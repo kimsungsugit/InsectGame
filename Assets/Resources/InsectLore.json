@@ -1,0 +1,516 @@
+{
+  "entries": [
+    {
+      "insectId": "beetle_basic",
+      "displayName": "풀색딱정벌레",
+      "description": "수풀 근처에서 자주 발견되는 기본 딱정벌레다.",
+      "habitatHint": "맑은 낮 시간, 풀밭 주변",
+      "spritePath": "Sprites/Insects/beetle_basic",
+      "rewardCoins": 5
+    },
+    {
+      "insectId": "mantis_green",
+      "displayName": "초록사마귀",
+      "description": "긴 팔을 이용해 먹이를 낚아채는 사마귀다.",
+      "habitatHint": "아침 또는 저녁, 나뭇잎 주변",
+      "spritePath": "Sprites/Insects/mantis_green",
+      "rewardCoins": 12
+    },
+    {
+      "insectId": "moth_night",
+      "displayName": "밤나방",
+      "description": "빛을 따라 날아다니는 밤나방이다.",
+      "habitatHint": "밤 시간, 불빛 근처",
+      "spritePath": "Sprites/Insects/moth_night",
+      "rewardCoins": 18
+    },
+    {
+      "insectId": "bee_worker",
+      "displayName": "일꿀벌",
+      "description": "꽃가루를 모으는 부지런한 벌이다.",
+      "habitatHint": "낮 시간, 꽃밭",
+      "spritePath": "Sprites/Insects/bee_worker",
+      "rewardCoins": 10
+    },
+    {
+      "insectId": "dragonfly_lake",
+      "displayName": "호수잠자리",
+      "description": "물가를 빠르게 스치는 잠자리다.",
+      "habitatHint": "낮 시간, 연못 주변",
+      "spritePath": "Sprites/Insects/dragonfly_lake",
+      "rewardCoins": 14
+    },
+    {
+      "insectId": "stag_beetle",
+      "displayName": "왕사슴벌레",
+      "description": "단단한 껍질과 큰 턱을 가진 사슴벌레다.",
+      "habitatHint": "저녁 시간, 나무 그늘",
+      "spritePath": "Sprites/Insects/stag_beetle",
+      "rewardCoins": 20
+    },
+    {
+      "insectId": "firefly_glow",
+      "displayName": "반딧불이",
+      "description": "밤에 은은하게 빛나는 반딧불이다.",
+      "habitatHint": "밤 시간, 풀숲",
+      "spritePath": "Sprites/Insects/firefly_glow",
+      "rewardCoins": 25
+    },
+    {
+      "insectId": "butterfly_azure",
+      "displayName": "푸른부전나비",
+      "description": "푸른 날개를 가진 희귀한 나비다.",
+      "habitatHint": "맑은 낮, 언덕 위",
+      "spritePath": "Sprites/Insects/butterfly_azure",
+      "rewardCoins": 30
+    },
+    {
+      "insectId": "cicada_summer",
+      "displayName": "참매미",
+      "description": "한여름 나무 위에서 우렁차게 우는 매미다. 소리로 위치를 알 수 있다.",
+      "habitatHint": "낮 시간, 풀밭 및 나무 주변",
+      "spritePath": "Sprites/Insects/cicada_summer",
+      "rewardCoins": 8
+    },
+    {
+      "insectId": "cricket_field",
+      "displayName": "왕귀뚜라미",
+      "description": "가을밤 풀숲에서 아름다운 소리를 내는 귀뚜라미다.",
+      "habitatHint": "밤 시간, 풀밭",
+      "spritePath": "Sprites/Insects/cricket_field",
+      "rewardCoins": 7
+    },
+    {
+      "insectId": "ant_soldier",
+      "displayName": "왕개미",
+      "description": "무리를 지어 이동하며 강한 턱으로 먹이를 운반하는 개미다.",
+      "habitatHint": "아무 시간, 땅 위",
+      "spritePath": "Sprites/Insects/ant_soldier",
+      "rewardCoins": 5
+    },
+    {
+      "insectId": "water_strider_pond",
+      "displayName": "소금쟁이",
+      "description": "수면 위를 미끄러지듯 이동하는 신기한 곤충이다.",
+      "habitatHint": "낮 시간, 연못 수면",
+      "spritePath": "Sprites/Insects/water_strider_pond",
+      "rewardCoins": 15
+    },
+    {
+      "insectId": "diving_beetle_deep",
+      "displayName": "물방개",
+      "description": "물속에서 빠르게 헤엄치며 작은 수서곤충을 사냥한다.",
+      "habitatHint": "아무 시간, 연못 깊은 곳",
+      "spritePath": "Sprites/Insects/diving_beetle_deep",
+      "rewardCoins": 16
+    },
+    {
+      "insectId": "jewel_beetle_gold",
+      "displayName": "비단벌레",
+      "description": "금빛으로 빛나는 아름다운 날개를 가진 귀한 딱정벌레다.",
+      "habitatHint": "맑은 낮, 나무 줄기",
+      "spritePath": "Sprites/Insects/jewel_beetle_gold",
+      "rewardCoins": 25
+    },
+    {
+      "insectId": "rhinoceros_beetle",
+      "displayName": "장수풍뎅이",
+      "description": "커다란 뿔을 가진 힘센 풍뎅이다. 나무 수액에 모여든다.",
+      "habitatHint": "저녁 시간, 나무 수액 주변",
+      "spritePath": "Sprites/Insects/rhinoceros_beetle",
+      "rewardCoins": 28
+    },
+    {
+      "insectId": "luna_moth_silver",
+      "displayName": "산누에나방",
+      "description": "달빛 아래 은빛 날개를 펄럭이는 신비로운 나방이다.",
+      "habitatHint": "밤 시간, 달빛 아래",
+      "spritePath": "Sprites/Insects/luna_moth_silver",
+      "rewardCoins": 40
+    },
+    {
+      "insectId": "atlas_moth_giant",
+      "displayName": "아틀라스나방",
+      "description": "세계에서 가장 큰 날개를 가진 거대한 나방이다.",
+      "habitatHint": "밤 시간, 깊은 숲",
+      "spritePath": "Sprites/Insects/atlas_moth_giant",
+      "rewardCoins": 45
+    },
+    {
+      "insectId": "butterfly_monarch",
+      "displayName": "왕나비",
+      "description": "주황색 날개에 검은 무늬가 특징인 대형 나비다.",
+      "habitatHint": "낮 시간, 꽃밭",
+      "spritePath": "Sprites/Insects/butterfly_monarch",
+      "rewardCoins": 16
+    },
+    {
+      "insectId": "scarab_ancient",
+      "displayName": "풍뎅이",
+      "description": "둥근 몸에 단단한 등껍질을 가진 고대부터 알려진 곤충이다.",
+      "habitatHint": "저녁 시간, 모래땅",
+      "spritePath": "Sprites/Insects/scarab_ancient",
+      "rewardCoins": 22
+    },
+    {
+      "insectId": "mantis_orchid",
+      "displayName": "꽃사마귀",
+      "description": "꽃잎처럼 화려한 몸으로 위장해 먹이를 기다리는 전설적인 사마귀다.",
+      "habitatHint": "맑은 낮, 꽃밭",
+      "spritePath": "Sprites/Insects/mantis_orchid",
+      "rewardCoins": 80
+    },
+    {
+      "insectId": "ladybug_seven",
+      "displayName": "칠성무당벌레",
+      "description": "빨간 등에 검은 점 7개, 풀잎 위에서 흔히 발견되는 귀여운 벌레다.",
+      "habitatHint": "맑은 낮, 풀잎 위",
+      "spritePath": "Sprites/Insects/ladybug_seven",
+      "rewardCoins": 5
+    },
+    {
+      "insectId": "grasshopper_green",
+      "displayName": "풀무치",
+      "description": "풀밭에서 폴짝폴짝 뛰어다니는 초록 메뚜기다.",
+      "habitatHint": "낮 시간, 풀밭",
+      "spritePath": "Sprites/Insects/grasshopper_green",
+      "rewardCoins": 6
+    },
+    {
+      "insectId": "mosquito_common",
+      "displayName": "모기",
+      "description": "여름밤 어디서든 나타나는 성가신 곤충이다.",
+      "habitatHint": "밤 시간, 풀숲",
+      "spritePath": "Sprites/Insects/mosquito_common",
+      "rewardCoins": 3
+    },
+    {
+      "insectId": "fly_house",
+      "displayName": "집파리",
+      "description": "어디서든 윙윙거리며 날아다니는 파리다.",
+      "habitatHint": "아무 시간, 마을 주변",
+      "spritePath": "Sprites/Insects/fly_house",
+      "rewardCoins": 3
+    },
+    {
+      "insectId": "pill_bug_garden",
+      "displayName": "공벌레",
+      "description": "건드리면 동그랗게 말리는 귀여운 벌레다.",
+      "habitatHint": "아무 시간, 돌 밑",
+      "spritePath": "Sprites/Insects/pill_bug_garden",
+      "rewardCoins": 5
+    },
+    {
+      "insectId": "earwig_common",
+      "displayName": "집게벌레",
+      "description": "꼬리에 집게를 가진 벌레다. 밤에 돌 밑에서 발견된다.",
+      "habitatHint": "밤 시간, 돌 밑",
+      "spritePath": "Sprites/Insects/earwig_common",
+      "rewardCoins": 6
+    },
+    {
+      "insectId": "caterpillar_green",
+      "displayName": "배추벌레",
+      "description": "느릿느릿 기어가는 초록 애벌레다.",
+      "habitatHint": "낮 시간, 풀밭",
+      "spritePath": "Sprites/Insects/caterpillar_green",
+      "rewardCoins": 4
+    },
+    {
+      "insectId": "aphid_colony",
+      "displayName": "진딧물",
+      "description": "떼로 모여 식물 즙을 빨아먹는 작은 벌레다.",
+      "habitatHint": "아무 시간, 나뭇잎",
+      "spritePath": "Sprites/Insects/aphid_colony",
+      "rewardCoins": 2
+    },
+    {
+      "insectId": "moth_brown",
+      "displayName": "갈색밤나방",
+      "description": "밤에 불빛에 모여드는 흔한 나방이다.",
+      "habitatHint": "밤 시간, 불빛 근처",
+      "spritePath": "Sprites/Insects/moth_brown",
+      "rewardCoins": 5
+    },
+    {
+      "insectId": "beetle_dung",
+      "displayName": "똥풍뎅이",
+      "description": "열심히 흙을 굴리는 풍뎅이다.",
+      "habitatHint": "낮 시간, 땅 위",
+      "spritePath": "Sprites/Insects/beetle_dung",
+      "rewardCoins": 6
+    },
+    {
+      "insectId": "centipede_common",
+      "displayName": "왕지네",
+      "description": "많은 다리로 빠르게 달리는 지네다.",
+      "habitatHint": "밤 시간, 돌 밑",
+      "spritePath": "Sprites/Insects/centipede_common",
+      "rewardCoins": 7
+    },
+    {
+      "insectId": "katydid_leaf",
+      "displayName": "여치",
+      "description": "나뭇잎을 닮은 초록 곤충이다. 밤에 아름답게 운다.",
+      "habitatHint": "밤 시간, 풀숲",
+      "spritePath": "Sprites/Insects/katydid_leaf",
+      "rewardCoins": 14
+    },
+    {
+      "insectId": "wasp_paper",
+      "displayName": "쌍살벌",
+      "description": "종이처럼 얇은 벌집을 짓는 벌이다. 주의가 필요하다.",
+      "habitatHint": "낮 시간, 처마 밑",
+      "spritePath": "Sprites/Insects/wasp_paper",
+      "rewardCoins": 16
+    },
+    {
+      "insectId": "damselfly_blue",
+      "displayName": "실잠자리",
+      "description": "잠자리보다 가늘고 우아한 파란 몸을 가진 곤충이다.",
+      "habitatHint": "낮 시간, 연못",
+      "spritePath": "Sprites/Insects/damselfly_blue",
+      "rewardCoins": 13
+    },
+    {
+      "insectId": "longhorn_beetle",
+      "displayName": "하늘소",
+      "description": "몸보다 긴 더듬이가 특징인 딱정벌레다.",
+      "habitatHint": "저녁 시간, 나무 줄기",
+      "spritePath": "Sprites/Insects/longhorn_beetle",
+      "rewardCoins": 15
+    },
+    {
+      "insectId": "butterfly_cabbage",
+      "displayName": "배추흰나비",
+      "description": "밭 주위를 날아다니는 하얀 나비다.",
+      "habitatHint": "낮 시간, 밭",
+      "spritePath": "Sprites/Insects/butterfly_cabbage",
+      "rewardCoins": 12
+    },
+    {
+      "insectId": "beetle_click",
+      "displayName": "방아벌레",
+      "description": "뒤집으면 딸깍 소리를 내며 튀어오르는 재미있는 벌레다.",
+      "habitatHint": "아무 시간, 나무 아래",
+      "spritePath": "Sprites/Insects/beetle_click",
+      "rewardCoins": 14
+    },
+    {
+      "insectId": "spider_garden",
+      "displayName": "무당거미",
+      "description": "화려한 무늬의 거미줄 장인이다.",
+      "habitatHint": "아침, 풀숲",
+      "spritePath": "Sprites/Insects/spider_garden",
+      "rewardCoins": 15
+    },
+    {
+      "insectId": "diving_beetle_small",
+      "displayName": "꼬마물방개",
+      "description": "작고 빠른 수서 딱정벌레다.",
+      "habitatHint": "낮 시간, 웅덩이",
+      "spritePath": "Sprites/Insects/diving_beetle_small",
+      "rewardCoins": 13
+    },
+    {
+      "insectId": "butterfly_swallowtail",
+      "displayName": "호랑나비",
+      "description": "노란 날개에 호랑이 줄무늬가 있는 대형 나비다.",
+      "habitatHint": "맑은 낮, 꽃밭",
+      "spritePath": "Sprites/Insects/butterfly_swallowtail",
+      "rewardCoins": 22
+    },
+    {
+      "insectId": "stick_insect_long",
+      "displayName": "대벌레",
+      "description": "나뭇가지처럼 생겨 좀처럼 발견하기 어렵다.",
+      "habitatHint": "낮 시간, 나뭇가지",
+      "spritePath": "Sprites/Insects/stick_insect_long",
+      "rewardCoins": 24
+    },
+    {
+      "insectId": "beetle_longhorn_rosalia",
+      "displayName": "꽃하늘소",
+      "description": "하늘색 몸에 검은 점이 아름다운 희귀 하늘소다.",
+      "habitatHint": "낮 시간, 활엽수",
+      "spritePath": "Sprites/Insects/beetle_longhorn_rosalia",
+      "rewardCoins": 28
+    },
+    {
+      "insectId": "hornet_asian",
+      "displayName": "장수말벌",
+      "description": "세계 최대급 말벌이다. 강한 독과 턱을 가졌다.",
+      "habitatHint": "낮 시간, 숲속",
+      "spritePath": "Sprites/Insects/hornet_asian",
+      "rewardCoins": 26
+    },
+    {
+      "insectId": "dragonfly_emperor",
+      "displayName": "왕잠자리",
+      "description": "잠자리 중 가장 크고 빠른 공중의 사냥꾼이다.",
+      "habitatHint": "낮 시간, 연못",
+      "spritePath": "Sprites/Insects/dragonfly_emperor",
+      "rewardCoins": 24
+    },
+    {
+      "insectId": "cicada_evening",
+      "displayName": "쓰르라미",
+      "description": "저녁 무렵에만 우는 희귀한 매미다.",
+      "habitatHint": "저녁 시간, 나무",
+      "spritePath": "Sprites/Insects/cicada_evening",
+      "rewardCoins": 22
+    },
+    {
+      "insectId": "firefly_blue",
+      "displayName": "파란반딧불이",
+      "description": "희귀한 파란빛을 내는 반딧불이다.",
+      "habitatHint": "밤 시간, 계곡",
+      "spritePath": "Sprites/Insects/firefly_blue",
+      "rewardCoins": 28
+    },
+    {
+      "insectId": "butterfly_morpho",
+      "displayName": "모르포나비",
+      "description": "메탈릭 파란 날개가 보는 각도마다 색이 변하는 신비로운 나비다.",
+      "habitatHint": "맑은 낮, 깊은 숲",
+      "spritePath": "Sprites/Insects/butterfly_morpho",
+      "rewardCoins": 42
+    },
+    {
+      "insectId": "beetle_hercules",
+      "displayName": "헤라클레스장수풍뎅이",
+      "description": "세계에서 가장 큰 딱정벌레다. 거대한 뿔이 위압적이다.",
+      "habitatHint": "밤 시간, 깊은 숲 나무",
+      "spritePath": "Sprites/Insects/beetle_hercules",
+      "rewardCoins": 48
+    },
+    {
+      "insectId": "mantis_ghost",
+      "displayName": "유령사마귀",
+      "description": "유령처럼 바람에 흔들리는 기괴한 자태의 사마귀다.",
+      "habitatHint": "밤 시간, 깊은 숲",
+      "spritePath": "Sprites/Insects/mantis_ghost",
+      "rewardCoins": 44
+    },
+    {
+      "insectId": "spider_golden_orb",
+      "displayName": "무인거미",
+      "description": "금빛 거미줄을 짓는 거대한 거미다.",
+      "habitatHint": "아침, 깊은 숲",
+      "spritePath": "Sprites/Insects/spider_golden_orb",
+      "rewardCoins": 40
+    },
+    {
+      "insectId": "leaf_insect_phantom",
+      "displayName": "잎벌레유령",
+      "description": "나뭇잎과 완벽히 동화되어 찾기 불가능에 가까운 곤충이다.",
+      "habitatHint": "낮 시간, 깊은 숲",
+      "spritePath": "Sprites/Insects/leaf_insect_phantom",
+      "rewardCoins": 46
+    },
+    {
+      "insectId": "butterfly_alexandras",
+      "displayName": "알렉산드라비단나비",
+      "description": "세계에서 가장 큰 나비다. 날개 폭이 30cm에 달한다.",
+      "habitatHint": "맑은 낮, 전설의 꽃밭",
+      "spritePath": "Sprites/Insects/butterfly_alexandras",
+      "rewardCoins": 100
+    },
+    {
+      "insectId": "beetle_golden_stag",
+      "displayName": "황금사슴벌레",
+      "description": "온몸이 황금빛으로 빛나는 전설의 사슴벌레다.",
+      "habitatHint": "보름달 밤, 고목나무",
+      "spritePath": "Sprites/Insects/beetle_golden_stag",
+      "rewardCoins": 100
+    },
+    {
+      "insectId": "dragonfly_ancient",
+      "displayName": "고대잠자리",
+      "description": "선사시대에서 온 것 같은 거대한 원시 잠자리다.",
+      "habitatHint": "비 온 뒤 저녁, 연못",
+      "spritePath": "Sprites/Insects/dragonfly_ancient",
+      "rewardCoins": 120
+    },
+    {
+      "insectId": "gacha_golden_ladybug",
+      "displayName": "황금무당벌레",
+      "description": "온몸이 순금빛으로 빛나는 전설적인 무당벌레. 랜덤 상자에서만 만날 수 있다.",
+      "habitatHint": "랜덤 상자 전용",
+      "spritePath": "Sprites/Insects/gacha_golden_ladybug",
+      "rewardCoins": 35
+    },
+    {
+      "insectId": "gacha_crystal_dragonfly",
+      "displayName": "수정잠자리",
+      "description": "투명한 수정 날개를 가진 신비로운 잠자리. 햇빛에 무지개빛으로 빛난다.",
+      "habitatHint": "랜덤 상자 전용",
+      "spritePath": "Sprites/Insects/gacha_crystal_dragonfly",
+      "rewardCoins": 50
+    },
+    {
+      "insectId": "gacha_shadow_mantis",
+      "displayName": "그림자사마귀",
+      "description": "검은 안개를 두른 사마귀. 어둠 속에서 붉은 눈만 빛난다.",
+      "habitatHint": "랜덤 상자 전용",
+      "spritePath": "Sprites/Insects/gacha_shadow_mantis",
+      "rewardCoins": 55
+    },
+    {
+      "insectId": "gacha_rainbow_butterfly",
+      "displayName": "무지개나비",
+      "description": "7색 날개를 가진 전설의 나비. 날갯짓할 때마다 무지개가 펼쳐진다.",
+      "habitatHint": "랜덤 상자 전용",
+      "spritePath": "Sprites/Insects/gacha_rainbow_butterfly",
+      "rewardCoins": 120
+    },
+    {
+      "insectId": "gacha_diamond_beetle",
+      "displayName": "다이아몬드풍뎅이",
+      "description": "다이아몬드처럼 빛나는 등껍질을 가진 풍뎅이. 모든 수집가의 꿈.",
+      "habitatHint": "랜덤 상자 전용",
+      "spritePath": "Sprites/Insects/gacha_diamond_beetle",
+      "rewardCoins": 130
+    },
+    {
+      "insectId": "gacha_neon_firefly",
+      "displayName": "네온반딧불이",
+      "description": "형광색으로 빛나는 반딧불이. 밤하늘에 네온사인처럼 흔적을 남긴다.",
+      "habitatHint": "랜덤 상자 전용",
+      "spritePath": "Sprites/Insects/gacha_neon_firefly",
+      "rewardCoins": 30
+    },
+    {
+      "insectId": "gacha_ice_spider",
+      "displayName": "얼음거미",
+      "description": "차가운 푸른빛의 거미. 얼음 결정으로 된 거미줄을 친다.",
+      "habitatHint": "랜덤 상자 전용",
+      "spritePath": "Sprites/Insects/gacha_ice_spider",
+      "rewardCoins": 48
+    },
+    {
+      "insectId": "gacha_phantom_moth",
+      "displayName": "환영나방",
+      "description": "반투명한 날개를 가진 신비로운 나방. 달빛 아래 환영처럼 나타났다 사라진다.",
+      "habitatHint": "랜덤 상자 전용",
+      "spritePath": "Sprites/Insects/gacha_phantom_moth",
+      "rewardCoins": 32
+    },
+    {
+      "insectId": "gacha_storm_hornet",
+      "displayName": "폭풍말벌",
+      "description": "번개를 두른 강력한 말벌. 날갯짓에서 전기가 튄다.",
+      "habitatHint": "랜덤 상자 전용",
+      "spritePath": "Sprites/Insects/gacha_storm_hornet",
+      "rewardCoins": 52
+    },
+    {
+      "insectId": "gacha_celestial_beetle",
+      "displayName": "천상의풍뎅이",
+      "description": "별빛을 담은 최상위 풍뎅이. 밤하늘의 별자리가 등껍질에 새겨져 있다.",
+      "habitatHint": "랜덤 상자 전용",
+      "spritePath": "Sprites/Insects/gacha_celestial_beetle",
+      "rewardCoins": 150
+    }
+  ]
+}

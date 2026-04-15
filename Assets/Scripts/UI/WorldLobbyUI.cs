@@ -1,0 +1,468 @@
+using System.Collections.Generic;
+using InsectGame.Core;
+using UnityEngine;
+
+namespace InsectGame.UI
+{
+    public class WorldLobbyUI : MonoBehaviour
+    {
+        private enum LobbyPhase { WorldSelect, Joining, InWorld, Hidden }
+
+        private LobbyPhase phase = LobbyPhase.Hidden;
+        private Vector2 worldScrollPos;
+        private Vector2 playerScrollPos;
+        private string errorMsg;
+        private float errorTimer;
+
+        // 스타일 캐시
+        private GUIStyle panelStyle;
+        private GUIStyle titleStyle;
+        private GUIStyle subtitleStyle;
+        private GUIStyle labelStyle;
+        private GUIStyle errorStyle;
+        private GUIStyle btnGreenStyle;
+        private GUIStyle btnBlueStyle;
+        private GUIStyle btnGrayStyle;
+        private GUIStyle btnRedStyle;
+        private GUIStyle worldRowStyle;
+        private GUIStyle worldRowFullStyle;
+        private GUIStyle playerRowStyle;
+        private GUIStyle playerMeStyle;
+        private GUIStyle barBgStyle;
+        private GUIStyle barFillStyle;
+        private bool stylesInitialized;
+
+        private WorldChannelManager manager;
+        private List<WorldInstance> cachedWorlds = new List<WorldInstance>();
+
+        // ── Public API ──
+
+        public void AutoWire(WorldChannelManager worldChannelManager)
+        {
+            manager = worldChannelManager;
+        }
+
+        public void ShowLobby()
+        {
+            // Firebase 미설정 또는 마스터 계정이면 월드 로비 건너뛰기
+            bool skipLobby = false;
+            if (FirebaseConfig.ApiKey == "YOUR_FIREBASE_API_KEY" || string.IsNullOrEmpty(FirebaseConfig.ApiKey))
+                skipLobby = true;
+            if (AuthManager.Instance != null && AuthManager.Instance.IsMasterAccount)
+                skipLobby = true;
+            if (AuthManager.Instance != null && !AuthManager.Instance.IsLoggedIn)
+                skipLobby = true;
+            // 마스터 토큰은 Firebase에서 유효하지 않음
+            if (AuthManager.Instance != null && AuthManager.Instance.IdToken == "master_token")
+                skipLobby = true;
+
+            if (skipLobby)
+            {
+                phase = LobbyPhase.Hidden;
+                PlayerMovement pm = FindFirstObjectByType<PlayerMovement>();
+                if (pm != null) pm.SetFrozen(false);
+                return;
+            }
+
+            phase = LobbyPhase.WorldSelect;
+            if (manager != null)
+            {
+                manager.RefreshWorldList();
+            }
+        }
+
+        public void HideLobby()
+        {
+            phase = LobbyPhase.Hidden;
+        }
+
+        // ── Lifecycle ──
+
+        private void OnEnable()
+        {
+            if (WorldChannelManager.Instance != null)
+            {
+                WorldChannelManager.Instance.WorldJoined += OnWorldJoined;
+                WorldChannelManager.Instance.WorldLeft += OnWorldLeft;
+                WorldChannelManager.Instance.WorldListUpdated += OnWorldListUpdated;
+                WorldChannelManager.Instance.ErrorOccurred += OnError;
+            }
+        }
+
+        private void OnDisable()
+        {
+            if (WorldChannelManager.Instance != null)
+            {
+                WorldChannelManager.Instance.WorldJoined -= OnWorldJoined;
+                WorldChannelManager.Instance.WorldLeft -= OnWorldLeft;
+                WorldChannelManager.Instance.WorldListUpdated -= OnWorldListUpdated;
+                WorldChannelManager.Instance.ErrorOccurred -= OnError;
+            }
+        }
+
+        private void Update()
+        {
+            if (errorTimer > 0) errorTimer -= Time.deltaTime;
+
+            // Tab key: toggle InWorld overlay
+            if (Input.GetKeyDown(KeyCode.Tab) && WorldChannelManager.Instance != null && WorldChannelManager.Instance.IsJoined)
+            {
+                if (phase == LobbyPhase.InWorld)
+                {
+                    phase = LobbyPhase.Hidden;
+                }
+                else if (phase == LobbyPhase.Hidden)
+                {
+                    phase = LobbyPhase.InWorld;
+                }
+            }
+        }
+
+        // ── Event Handlers ──
+
+        private void OnWorldJoined()
+        {
+            phase = LobbyPhase.Hidden;
+            // 월드 입장 후 플레이어 이동 해금
+            PlayerMovement pm = FindFirstObjectByType<PlayerMovement>();
+            if (pm != null) pm.SetFrozen(false);
+        }
+
+        private void OnWorldLeft()
+        {
+            phase = LobbyPhase.WorldSelect;
+            // 로비로 돌아오면 이동 잠금
+            PlayerMovement pm = FindFirstObjectByType<PlayerMovement>();
+            if (pm != null) pm.SetFrozen(true);
+        }
+
+        private void OnWorldListUpdated(List<WorldInstance> worlds)
+        {
+            cachedWorlds = worlds ?? new List<WorldInstance>();
+            if (phase == LobbyPhase.Joining)
+            {
+                phase = LobbyPhase.WorldSelect;
+            }
+        }
+
+        private void OnError(string msg)
+        {
+            errorMsg = msg;
+            errorTimer = 5f;
+            if (phase == LobbyPhase.Joining)
+            {
+                phase = LobbyPhase.WorldSelect;
+            }
+        }
+
+        // ── OnGUI ──
+
+        private void OnGUI()
+        {
+            if (phase == LobbyPhase.Hidden) return;
+
+            InitStyles();
+
+            switch (phase)
+            {
+                case LobbyPhase.WorldSelect:
+                    DrawWorldSelectPanel();
+                    break;
+                case LobbyPhase.Joining:
+                    DrawJoiningPanel();
+                    break;
+                case LobbyPhase.InWorld:
+                    DrawInWorldPanel();
+                    break;
+            }
+        }
+
+        // ── WorldSelect Panel ──
+
+        private void DrawWorldSelectPanel()
+        {
+            // 배경 오버레이
+            Texture2D bgTex = MakeTex(1, 1, new Color(0.03f, 0.03f, 0.1f, 0.85f));
+            GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), bgTex);
+
+            float pw = 600f;
+            float ph = 500f;
+            float px = (Screen.width - pw) * 0.5f;
+            float py = (Screen.height - ph) * 0.5f;
+
+            GUI.Box(new Rect(px, py, pw, ph), "", panelStyle);
+
+            float cx = px + 30f;
+            float cy = py + 20f;
+            float innerW = pw - 60f;
+
+            // 타이틀
+            GUI.Label(new Rect(px, cy, pw, 40f), "\uc6d4\ub4dc \uc120\ud0dd", titleStyle);
+            cy += 50f;
+
+            // 월드 목록 스크롤
+            float listH = ph - 180f;
+            Rect listArea = new Rect(cx, cy, innerW, listH);
+            float contentH = Mathf.Max(listH, cachedWorlds.Count * 74f);
+
+            worldScrollPos = GUI.BeginScrollView(listArea, worldScrollPos, new Rect(0, 0, innerW - 20f, contentH));
+
+            for (int i = 0; i < cachedWorlds.Count; i++)
+            {
+                DrawWorldRow(0, i * 74f, innerW - 20f, 68f, cachedWorlds[i]);
+            }
+
+            if (cachedWorlds.Count == 0)
+            {
+                GUI.Label(new Rect(0, 20f, innerW - 20f, 30f), "\uc6d4\ub4dc\ub97c \ubd88\ub7ec\uc624\ub294 \uc911...", labelStyle);
+            }
+
+            GUI.EndScrollView();
+            cy += listH + 10f;
+
+            // 버튼 행
+            float btnW = (innerW - 10f) * 0.5f;
+
+            if (GUI.Button(new Rect(cx, cy, btnW, 40f), "\uc790\ub3d9 \uc785\uc7a5", btnGreenStyle))
+            {
+                phase = LobbyPhase.Joining;
+                if (manager != null) manager.AutoJoinWorld();
+            }
+
+            if (GUI.Button(new Rect(cx + btnW + 10f, cy, btnW, 40f), "\uc0c8\ub85c\uace0\uce68", btnBlueStyle))
+            {
+                if (manager != null) manager.RefreshWorldList();
+            }
+            cy += 48f;
+
+            // 오프라인 시작 (마스터 계정만)
+            bool isMaster = AuthManager.Instance != null && AuthManager.Instance.IsMasterAccount;
+            if (isMaster)
+            {
+                if (GUI.Button(new Rect(cx, cy, innerW, 32f), "로컬 모드 (마스터 전용)", btnGrayStyle))
+                {
+                    phase = LobbyPhase.Hidden;
+                    PlayerMovement pm = FindFirstObjectByType<PlayerMovement>();
+                    if (pm != null) pm.SetFrozen(false);
+                }
+            }
+
+            // 에러 메시지
+            if (errorTimer > 0 && !string.IsNullOrEmpty(errorMsg))
+            {
+                cy += 36f;
+                GUI.Label(new Rect(cx, cy, innerW, 24f), errorMsg, errorStyle);
+            }
+        }
+
+        private void DrawWorldRow(float x, float y, float w, float h, WorldInstance world)
+        {
+            bool isFull = world.playerCount >= world.maxPlayers;
+            float ratio = (world.maxPlayers > 0) ? (float)world.playerCount / world.maxPlayers : 0f;
+
+            // 행 배경색: 여유=초록, 거의참=노랑, 꽉참=빨강
+            Color rowColor;
+            if (isFull) rowColor = new Color(0.4f, 0.12f, 0.12f, 0.7f);
+            else if (ratio > 0.7f) rowColor = new Color(0.45f, 0.4f, 0.1f, 0.6f);
+            else rowColor = new Color(0.1f, 0.3f, 0.15f, 0.6f);
+
+            Texture2D rowTex = MakeTex(1, 1, rowColor);
+            GUI.DrawTexture(new Rect(x, y, w, h), rowTex);
+
+            // 월드 이름
+            GUI.Label(new Rect(x + 12f, y + 6f, 200f, 24f), world.displayName, subtitleStyle);
+
+            // 인원 바
+            float barX = x + 12f;
+            float barY = y + 34f;
+            float barW = w - 130f;
+            float barH = 18f;
+
+            Texture2D barBgTex = MakeTex(1, 1, new Color(0.15f, 0.15f, 0.2f, 1f));
+            GUI.DrawTexture(new Rect(barX, barY, barW, barH), barBgTex);
+
+            Color fillColor;
+            if (isFull) fillColor = new Color(0.8f, 0.2f, 0.2f, 1f);
+            else if (ratio > 0.7f) fillColor = new Color(0.85f, 0.75f, 0.15f, 1f);
+            else fillColor = new Color(0.2f, 0.7f, 0.3f, 1f);
+
+            Texture2D fillTex = MakeTex(1, 1, fillColor);
+            GUI.DrawTexture(new Rect(barX, barY, barW * ratio, barH), fillTex);
+
+            // 인원 텍스트
+            GUI.Label(new Rect(barX, barY - 1f, barW, barH), $"  {world.playerCount}/{world.maxPlayers}", labelStyle);
+
+            // 입장 버튼
+            float btnX = x + w - 100f;
+            float btnY = y + 14f;
+            GUI.enabled = !isFull;
+            if (GUI.Button(new Rect(btnX, btnY, 88f, 36f), isFull ? "\uac00\ub4dd \ucc3c" : "\uc785\uc7a5", isFull ? btnRedStyle : btnGreenStyle))
+            {
+                if (!isFull && manager != null)
+                {
+                    phase = LobbyPhase.Joining;
+                    manager.JoinWorld(world.worldId);
+                }
+            }
+            GUI.enabled = true;
+        }
+
+        // ── Joining Panel ──
+
+        private void DrawJoiningPanel()
+        {
+            Texture2D bgTex = MakeTex(1, 1, new Color(0.03f, 0.03f, 0.1f, 0.85f));
+            GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), bgTex);
+
+            float pw = 300f;
+            float ph = 150f;
+            float px = (Screen.width - pw) * 0.5f;
+            float py = (Screen.height - ph) * 0.5f;
+
+            GUI.Box(new Rect(px, py, pw, ph), "", panelStyle);
+            GUI.Label(new Rect(px, py + 40f, pw, 40f), "\uc6d4\ub4dc \uc811\uc18d \uc911...", subtitleStyle);
+        }
+
+        // ── InWorld Panel (Tab overlay) ──
+
+        private void DrawInWorldPanel()
+        {
+            if (WorldChannelManager.Instance == null || WorldChannelManager.Instance.CurrentWorld == null) return;
+
+            WorldInstance cw = WorldChannelManager.Instance.CurrentWorld;
+
+            float pw = 350f;
+            float ph = 400f;
+            float px = Screen.width - pw - 20f;
+            float py = 20f;
+
+            GUI.Box(new Rect(px, py, pw, ph), "", panelStyle);
+
+            float cx = px + 16f;
+            float cy = py + 12f;
+            float innerW = pw - 32f;
+
+            // 헤더
+            GUI.Label(new Rect(px, cy, pw, 30f), $"{cw.displayName}  ({cw.playerCount}/{cw.maxPlayers})", subtitleStyle);
+            cy += 38f;
+
+            // 구분선
+            Texture2D lineTex = MakeTex(1, 1, new Color(0.4f, 0.4f, 0.45f, 0.6f));
+            GUI.DrawTexture(new Rect(cx, cy, innerW, 1f), lineTex);
+            cy += 8f;
+
+            // 플레이어 목록
+            float listH = ph - 120f;
+            float contentH = Mathf.Max(listH, (cw.players != null ? cw.players.Count : 0) * 34f);
+
+            playerScrollPos = GUI.BeginScrollView(new Rect(cx, cy, innerW, listH), playerScrollPos, new Rect(0, 0, innerW - 16f, contentH));
+
+            if (cw.players != null)
+            {
+                string myUid = (AuthManager.Instance != null) ? AuthManager.Instance.UserId : "";
+
+                for (int i = 0; i < cw.players.Count; i++)
+                {
+                    WorldPlayer p = cw.players[i];
+                    bool isMe = p.uid == myUid;
+                    float rowY = i * 34f;
+
+                    if (isMe)
+                    {
+                        Texture2D meBg = MakeTex(1, 1, new Color(0.3f, 0.25f, 0.05f, 0.4f));
+                        GUI.DrawTexture(new Rect(0, rowY, innerW - 16f, 30f), meBg);
+                    }
+
+                    string prefix = isMe ? "\u2605 " : "  ";
+                    string displayText = $"{prefix}{p.displayName}  Lv.{p.level}";
+                    GUIStyle rowStyle = isMe ? playerMeStyle : playerRowStyle;
+                    GUI.Label(new Rect(4f, rowY + 4f, innerW - 24f, 24f), displayText, rowStyle);
+                }
+            }
+
+            GUI.EndScrollView();
+            cy += listH + 8f;
+
+            // 월드 나가기 버튼
+            if (GUI.Button(new Rect(cx, cy, innerW, 34f), "\uc6d4\ub4dc \ub098\uac00\uae30", btnRedStyle))
+            {
+                if (manager != null) manager.LeaveWorld();
+            }
+        }
+
+        // ── Style Init ──
+
+        private void InitStyles()
+        {
+            if (stylesInitialized) return;
+            stylesInitialized = true;
+
+            Texture2D panelTex = MakeTex(1, 1, new Color(0.06f, 0.06f, 0.12f, 0.94f));
+            panelStyle = new GUIStyle(GUI.skin.box);
+            panelStyle.normal.background = panelTex;
+
+            titleStyle = new GUIStyle(GUI.skin.label);
+            titleStyle.fontSize = 28;
+            titleStyle.fontStyle = FontStyle.Bold;
+            titleStyle.normal.textColor = new Color(1f, 0.84f, 0f, 1f);
+            titleStyle.alignment = TextAnchor.MiddleCenter;
+
+            subtitleStyle = new GUIStyle(GUI.skin.label);
+            subtitleStyle.fontSize = 20;
+            subtitleStyle.fontStyle = FontStyle.Bold;
+            subtitleStyle.normal.textColor = Color.white;
+            subtitleStyle.alignment = TextAnchor.MiddleCenter;
+
+            labelStyle = new GUIStyle(GUI.skin.label);
+            labelStyle.fontSize = 14;
+            labelStyle.normal.textColor = new Color(0.85f, 0.85f, 0.9f, 1f);
+            labelStyle.alignment = TextAnchor.MiddleCenter;
+
+            errorStyle = new GUIStyle(GUI.skin.label);
+            errorStyle.fontSize = 14;
+            errorStyle.normal.textColor = new Color(1f, 0.3f, 0.3f, 1f);
+            errorStyle.alignment = TextAnchor.MiddleCenter;
+            errorStyle.wordWrap = true;
+
+            GUIStyle MakeBtnStyle(Color bgColor, int fontSize = 18)
+            {
+                Texture2D tex = MakeTex(1, 1, bgColor);
+                GUIStyle s = new GUIStyle(GUI.skin.button);
+                s.normal.background = tex;
+                s.hover.background = MakeTex(1, 1, bgColor * 1.15f);
+                s.active.background = MakeTex(1, 1, bgColor * 0.85f);
+                s.normal.textColor = Color.white;
+                s.hover.textColor = Color.white;
+                s.active.textColor = Color.white;
+                s.fontSize = fontSize;
+                s.fontStyle = FontStyle.Bold;
+                s.alignment = TextAnchor.MiddleCenter;
+                return s;
+            }
+
+            btnGreenStyle = MakeBtnStyle(new Color(0.15f, 0.55f, 0.15f, 1f));
+            btnBlueStyle = MakeBtnStyle(new Color(0.2f, 0.35f, 0.7f, 1f));
+            btnGrayStyle = MakeBtnStyle(new Color(0.35f, 0.35f, 0.38f, 1f), 14);
+            btnRedStyle = MakeBtnStyle(new Color(0.6f, 0.15f, 0.15f, 1f), 15);
+
+            playerRowStyle = new GUIStyle(GUI.skin.label);
+            playerRowStyle.fontSize = 15;
+            playerRowStyle.normal.textColor = new Color(0.85f, 0.88f, 0.9f, 1f);
+
+            playerMeStyle = new GUIStyle(GUI.skin.label);
+            playerMeStyle.fontSize = 15;
+            playerMeStyle.fontStyle = FontStyle.Bold;
+            playerMeStyle.normal.textColor = new Color(1f, 0.84f, 0f, 1f);
+        }
+
+        private static Texture2D MakeTex(int w, int h, Color col)
+        {
+            Color[] pix = new Color[w * h];
+            for (int i = 0; i < pix.Length; i++) pix[i] = col;
+            Texture2D tex = new Texture2D(w, h);
+            tex.SetPixels(pix);
+            tex.Apply();
+            return tex;
+        }
+    }
+}

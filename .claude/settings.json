@@ -1,0 +1,70 @@
+{
+  "language": "korean",
+  "env": {
+    "UNITY_EDITOR_PATH": "C:/Program Files/Unity/Hub/Editor/6000.3.10f1/Editor/Unity.exe"
+  },
+  "permissions": {
+    "defaultMode": "dontAsk",
+    "allow": [
+      "Read",
+      "Edit",
+      "Write",
+      "Glob",
+      "Grep",
+      "Bash",
+      "Agent",
+      "WebFetch",
+      "WebSearch",
+      "NotebookEdit",
+      "mcp__*"
+    ],
+    "deny": [
+      "Edit(*.meta)",
+      "Write(*.meta)",
+      "Edit(Library/**)",
+      "Write(Library/**)",
+      "Edit(Logs/**)",
+      "Write(Logs/**)",
+      "Edit(UserSettings/**)",
+      "Write(UserSettings/**)",
+      "Bash(rm:*)",
+      "Bash(git push --force *)",
+      "Bash(git push -f *)",
+      "Bash(git push * --force *)",
+      "Bash(git push * -f *)",
+      "Bash(git push * +*)"
+    ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "bash C:/Project/곤충게임/.claude/statusline-command.sh"
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .claude/hooks/warn_monolith.py",
+            "timeout": 5,
+            "statusMessage": "모놀리스 파일 확인 중..."
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .claude/hooks/check_namespace.py",
+            "timeout": 5,
+            "statusMessage": "C# 네임스페이스 검증 중..."
+          }
+        ]
+      }
+    ]
+  }
+}
