@@ -14,6 +14,8 @@ namespace InsectGame.UI
             {
                 if (instance == null)
                     instance = Resources.Load<UITheme>("UITheme");
+                if (instance == null)
+                    instance = CreateInstance<UITheme>();
                 return instance;
             }
         }

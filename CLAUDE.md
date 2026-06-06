@@ -112,6 +112,7 @@ MainMenu → PlayScene
 ## 규칙
 
 - `.meta` 파일 수정 금지
+- **audit 자동 플로우**: 사용자 작업 완료 후 라운드 결과 보고 직후 `.claude/audit-progress.md` Uncovered ≥ 1이면 audit skill 자동 실행 (.claude/rules/audit-flow.md). `/audit` 명시 호출도 가능. 거부: "audit 안 해" 한 마디.
 - `Library/`, `Logs/`, `UserSettings/` 무시
 - MonoBehaviour 생성자 사용 금지 (Awake/Start 사용)
 - public 필드 직접 노출 지양

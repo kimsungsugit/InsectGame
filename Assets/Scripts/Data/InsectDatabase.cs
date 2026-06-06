@@ -9,6 +9,17 @@ namespace InsectGame.Data
     {
         public List<InsectData> insects = new List<InsectData>();
 
+        public InsectData GetById(string insectId)
+        {
+            if (string.IsNullOrEmpty(insectId)) return null;
+            foreach (InsectData data in insects)
+            {
+                if (data != null && data.insectId == insectId)
+                    return data;
+            }
+            return null;
+        }
+
         public List<InsectData> GetCandidates(WorldState state)
         {
             List<InsectData> results = new List<InsectData>();
@@ -32,6 +43,8 @@ namespace InsectGame.Data
             float total = 0f;
             foreach (InsectData data in candidates)
             {
+                // null 가드 — 외부에서 직접 candidates 전달 시 NRE 차단(GetCandidates 외 경로).
+                if (data == null) continue;
                 total += Mathf.Max(0.01f, data.spawnWeight);
             }
 
@@ -39,6 +52,7 @@ namespace InsectGame.Data
             float cumulative = 0f;
             foreach (InsectData data in candidates)
             {
+                if (data == null) continue;
                 cumulative += Mathf.Max(0.01f, data.spawnWeight);
                 if (roll <= cumulative)
                 {
@@ -59,6 +73,7 @@ namespace InsectGame.Data
             float total = 0f;
             foreach (InsectData data in candidates)
             {
+                if (data == null) continue;
                 float weight = Mathf.Max(0.01f, data.spawnWeight) * GetRarityWeight(data, rareMultiplier);
                 total += weight;
             }
@@ -67,6 +82,7 @@ namespace InsectGame.Data
             float cumulative = 0f;
             foreach (InsectData data in candidates)
             {
+                if (data == null) continue;
                 float weight = Mathf.Max(0.01f, data.spawnWeight) * GetRarityWeight(data, rareMultiplier);
                 cumulative += weight;
                 if (roll <= cumulative)

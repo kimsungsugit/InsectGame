@@ -3,512 +3,512 @@
     {
       "insectId": "beetle_basic",
       "displayName": "풀색딱정벌레",
-      "description": "수풀 근처에서 자주 발견되는 기본 딱정벌레다.",
-      "habitatHint": "맑은 낮 시간, 풀밭 주변",
+      "description": "반짝이는 청록빛 등껍질을 두른 땅 위의 작은 사냥꾼이에요. 날개가 거의 퇴화해 잘 날지 못하는 대신, 길고 튼튼한 다리로 풀밭을 빠르게 누비며 달팽이나 애벌레를 잡아먹는답니다. 밤사이 부지런히 해충을 잡아주는 농부의 친구라서, 옛날부터 사람들에게 고마운 벌레로 여겨졌어요!",
+      "habitatHint": "맑은 날 낮, 풀밭과 돌 틈 사이 땅바닥",
       "spritePath": "Sprites/Insects/beetle_basic",
       "rewardCoins": 5
     },
     {
       "insectId": "mantis_green",
       "displayName": "초록사마귀",
-      "description": "긴 팔을 이용해 먹이를 낚아채는 사마귀다.",
-      "habitatHint": "아침 또는 저녁, 나뭇잎 주변",
+      "description": "톱니가 돋은 앞다리를 두 손처럼 모으고 가만히 기도하듯 기다리는 풀잎의 명사수예요. 머리를 거의 180도 돌려 사방을 살피다가, 먹잇감이 다가오면 눈 깜짝할 사이에 앞다리를 뻗어 낚아챈답니다. 몸 색깔이 주변 잎과 똑같아서 나비도 메뚜기도 코앞까지 다가올 때까지 전혀 눈치채지 못해요!",
+      "habitatHint": "선선한 아침이나 해 질 녘, 넓은 나뭇잎 위",
       "spritePath": "Sprites/Insects/mantis_green",
       "rewardCoins": 12
     },
     {
       "insectId": "moth_night",
       "displayName": "밤나방",
-      "description": "빛을 따라 날아다니는 밤나방이다.",
-      "habitatHint": "밤 시간, 불빛 근처",
+      "description": "두툼한 가루 날개를 펄럭이며 어둠 속을 헤매는 밤의 여행자예요. 사실 달빛을 나침반 삼아 일정한 각도로 날도록 진화했는데, 가로등이나 전등 불빛을 달로 착각하는 바람에 자꾸 불빛 주위를 빙빙 돌게 된답니다. 더듬이로 아주 먼 곳의 꽃향기까지 맡아내는 코의 달인이기도 해요!",
+      "habitatHint": "구름 낀 밤, 가로등이나 창문 불빛 근처",
       "spritePath": "Sprites/Insects/moth_night",
       "rewardCoins": 18
     },
     {
       "insectId": "bee_worker",
       "displayName": "일꿀벌",
-      "description": "꽃가루를 모으는 부지런한 벌이다.",
-      "habitatHint": "낮 시간, 꽃밭",
+      "description": "노란 줄무늬 옷을 입고 온종일 꽃밭을 오가는 부지런한 일꾼이에요. 다리에 달린 '꽃가루 주머니'에 노란 가루를 가득 담아 벌집으로 나르고, 좋은 꽃을 찾으면 8자 모양으로 춤을 춰서 친구들에게 위치를 알려준답니다. 이 작은 친구가 꽃가루를 옮겨준 덕분에 우리가 사과와 딸기를 먹을 수 있어요!",
+      "habitatHint": "햇살 좋은 낮, 활짝 핀 꽃밭",
       "spritePath": "Sprites/Insects/bee_worker",
       "rewardCoins": 10
     },
     {
       "insectId": "dragonfly_lake",
       "displayName": "호수잠자리",
-      "description": "물가를 빠르게 스치는 잠자리다.",
-      "habitatHint": "낮 시간, 연못 주변",
+      "description": "투명한 두 쌍의 날개로 물가를 스치듯 날아다니는 하늘의 사냥꾼이에요. 머리의 대부분을 차지하는 커다란 겹눈으로 거의 모든 방향을 한꺼번에 볼 수 있어서, 날아가는 모기를 공중에서 척척 낚아챈답니다. 어릴 적엔 물속에서 '수채'로 지내다가 어른이 되어서야 비로소 하늘로 날아오르는 신기한 벌레예요!",
+      "habitatHint": "햇볕 따뜻한 낮, 잔잔한 연못과 호숫가",
       "spritePath": "Sprites/Insects/dragonfly_lake",
       "rewardCoins": 14
     },
     {
       "insectId": "stag_beetle",
       "displayName": "왕사슴벌레",
-      "description": "단단한 껍질과 큰 턱을 가진 사슴벌레다.",
-      "habitatHint": "저녁 시간, 나무 그늘",
+      "description": "사슴뿔처럼 멋지게 휘어진 큰턱을 자랑하는 숲속의 힘센 장군이에요. 그 우람한 턱은 사실 라이벌 수컷과 힘겨루기를 할 때 상대를 번쩍 들어 던지는 씨름 무기랍니다. 단단한 갑옷 같은 등껍질을 두르고 밤마다 참나무 수액을 찾아 모여드는데, 수명이 길어 잘 키우면 몇 년을 함께할 수 있어요!",
+      "habitatHint": "여름 해 질 녘부터 밤, 참나무 그늘과 수액 주변",
       "spritePath": "Sprites/Insects/stag_beetle",
       "rewardCoins": 20
     },
     {
       "insectId": "firefly_glow",
       "displayName": "반딧불이",
-      "description": "밤에 은은하게 빛나는 반딧불이다.",
-      "habitatHint": "밤 시간, 풀숲",
+      "description": "캄캄한 여름밤 풀숲에 별처럼 노란 불빛을 깜빡이는 빛의 요정이에요. 배 끝의 발광 기관에서 나오는 이 빛은 신기하게도 거의 열이 없는 '차가운 빛'이라, 깜빡이는 신호로 서로 짝을 찾는 말 대신 쓴답니다. 맑고 깨끗한 물가에서만 사는 까다로운 친구라서, 반딧불이가 보인다는 건 그곳이 무척 깨끗하다는 증거예요!",
+      "habitatHint": "습한 여름밤, 깨끗한 시냇가 풀숲",
       "spritePath": "Sprites/Insects/firefly_glow",
       "rewardCoins": 25
     },
     {
       "insectId": "butterfly_azure",
       "displayName": "푸른부전나비",
-      "description": "푸른 날개를 가진 희귀한 나비다.",
-      "habitatHint": "맑은 낮, 언덕 위",
+      "description": "동전만큼 작지만 하늘을 오려 붙인 듯 새파란 날개가 눈부신 보석 같은 나비예요. 날개 윗면은 반짝이는 파란색이고 아랫면은 점무늬 회색이라, 앉아서 날개를 접으면 감쪽같이 모습을 숨길 수 있답니다. 놀랍게도 어떤 부전나비 애벌레는 개미와 친구가 되어 개미집에서 보살핌을 받으며 자라기도 해요!",
+      "habitatHint": "맑고 화창한 낮, 햇살 드는 언덕 위 풀꽃밭",
       "spritePath": "Sprites/Insects/butterfly_azure",
       "rewardCoins": 30
     },
     {
       "insectId": "cicada_summer",
       "displayName": "참매미",
-      "description": "한여름 나무 위에서 우렁차게 우는 매미다. 소리로 위치를 알 수 있다.",
-      "habitatHint": "낮 시간, 풀밭 및 나무 주변",
+      "description": "한여름 나무 위에서 '맴맴맴' 우렁차게 울어대는 우리나라의 대표 매미예요. 우는 건 오직 수컷뿐이고, 배에 있는 작은 진동막을 떨어 암컷을 부른답니다. 땅속에서 몇 년이나 애벌레로 지내다가 한여름에야 어른벌레가 되어 나무 수액을 빨아 먹어요.",
+      "habitatHint": "맑은 한여름 한낮, 참나무나 버드나무 줄기 높은 곳",
       "spritePath": "Sprites/Insects/cicada_summer",
       "rewardCoins": 8
     },
     {
       "insectId": "cricket_field",
       "displayName": "왕귀뚜라미",
-      "description": "가을밤 풀숲에서 아름다운 소리를 내는 귀뚜라미다.",
-      "habitatHint": "밤 시간, 풀밭",
+      "description": "가을밤 풀숲에서 '귀뚤귀뚤' 맑은 소리로 노래하는 까만 귀뚜라미예요. 두 앞날개를 비벼서 소리를 내는데, 노래하는 건 짝을 찾는 수컷이랍니다. 밤에 풀씨나 떨어진 잎을 갉아 먹으며 돌 틈이나 풀뿌리 사이에 숨어 지내요.",
+      "habitatHint": "선선한 가을밤, 풀밭이나 돌담 틈새",
       "spritePath": "Sprites/Insects/cricket_field",
       "rewardCoins": 7
     },
     {
       "insectId": "ant_soldier",
       "displayName": "왕개미",
-      "description": "무리를 지어 이동하며 강한 턱으로 먹이를 운반하는 개미다.",
-      "habitatHint": "아무 시간, 땅 위",
+      "description": "우리나라에서 가장 큰 개미로, 줄을 지어 부지런히 먹이를 나르는 일꾼이에요. 강한 큰턱으로 자기 몸보다 무거운 먹이도 척척 운반하고, 동료들과 더듬이를 맞대며 길을 알려준답니다. 죽은 벌레나 단물을 좋아해서 진딧물을 돌보며 단물을 받아먹기도 해요.",
+      "habitatHint": "낮이든 밤이든, 양지바른 땅 위나 썩은 나무 둘레",
       "spritePath": "Sprites/Insects/ant_soldier",
       "rewardCoins": 5
     },
     {
       "insectId": "water_strider_pond",
       "displayName": "소금쟁이",
-      "description": "수면 위를 미끄러지듯 이동하는 신기한 곤충이다.",
-      "habitatHint": "낮 시간, 연못 수면",
+      "description": "연못 수면 위를 스케이트 타듯 미끄러지는 신기한 곤충이에요. 가느다란 다리 끝의 잔털이 물을 밀어내서 가라앉지 않고 둥둥 떠 다닐 수 있답니다. 물에 떨어진 작은 벌레의 움직임을 물결로 느끼고 재빠르게 다가가 즙을 빨아 먹어요.",
+      "habitatHint": "바람 잔잔한 낮, 잔물결이 이는 연못이나 웅덩이 수면",
       "spritePath": "Sprites/Insects/water_strider_pond",
       "rewardCoins": 15
     },
     {
       "insectId": "diving_beetle_deep",
       "displayName": "물방개",
-      "description": "물속에서 빠르게 헤엄치며 작은 수서곤충을 사냥한다.",
-      "habitatHint": "아무 시간, 연못 깊은 곳",
+      "description": "물속을 쏜살같이 헤엄치는 매끈한 수서 딱정벌레예요. 날개 밑에 공기방울을 잠수부 산소통처럼 품고 들어가 한참을 물속에서 버틸 수 있답니다. 뒷다리를 노처럼 저어 헤엄치며 작은 물벌레나 올챙이를 사냥하는 연못 속 솜씨 좋은 사냥꾼이에요.",
+      "habitatHint": "낮이든 밤이든, 수초가 우거진 연못 깊은 곳",
       "spritePath": "Sprites/Insects/diving_beetle_deep",
       "rewardCoins": 16
     },
     {
       "insectId": "jewel_beetle_gold",
       "displayName": "비단벌레",
-      "description": "금빛으로 빛나는 아름다운 날개를 가진 귀한 딱정벌레다.",
-      "habitatHint": "맑은 낮, 나무 줄기",
+      "description": "보는 각도마다 금빛과 초록빛으로 영롱하게 빛나는 보석 같은 딱정벌레예요. 화려한 날개 색은 색소가 아니라 빛이 반사되는 구조에서 나와서, 죽은 뒤에도 그 빛깔이 변하지 않는답니다. 햇볕 따뜻한 낮에 활엽수 줄기를 천천히 기어 다니며 잎을 갉아 먹어요.",
+      "habitatHint": "햇살 쨍한 한낮, 팽나무나 벚나무 줄기",
       "spritePath": "Sprites/Insects/jewel_beetle_gold",
       "rewardCoins": 25
     },
     {
       "insectId": "rhinoceros_beetle",
       "displayName": "장수풍뎅이",
-      "description": "커다란 뿔을 가진 힘센 풍뎅이다. 나무 수액에 모여든다.",
-      "habitatHint": "저녁 시간, 나무 수액 주변",
+      "description": "이마에 우뚝 솟은 큰 뿔이 마치 작은 코뿔소 같은 힘센 풍뎅이예요. 밤이 되면 참나무 수액 냄새를 맡고 모여들어 달콤한 즙을 쪽쪽 빨아 먹는답니다. 자기 몸무게의 수십 배를 들어 올릴 만큼 곤충 세계의 천하장사로 유명해요!",
+      "habitatHint": "한여름 무더운 밤, 참나무 수액이 흐르는 나무 줄기",
       "spritePath": "Sprites/Insects/rhinoceros_beetle",
       "rewardCoins": 28
     },
     {
       "insectId": "luna_moth_silver",
       "displayName": "산누에나방",
-      "description": "달빛 아래 은빛 날개를 펄럭이는 신비로운 나방이다.",
-      "habitatHint": "밤 시간, 달빛 아래",
+      "description": "연한 은빛 초록 날개에 긴 꼬리가 우아하게 늘어진 아름다운 나방이에요. 어른벌레는 입이 없어 아무것도 먹지 않고, 오직 짝을 찾는 일에만 짧은 일생을 보낸답니다. 달빛이 환한 밤에 날개를 펄럭이면 마치 살아있는 보석처럼 반짝여요.",
+      "habitatHint": "달빛 밝은 늦봄 밤, 활엽수가 우거진 숲 가장자리",
       "spritePath": "Sprites/Insects/luna_moth_silver",
       "rewardCoins": 40
     },
     {
       "insectId": "atlas_moth_giant",
       "displayName": "아틀라스나방",
-      "description": "세계에서 가장 큰 날개를 가진 거대한 나방이다.",
-      "habitatHint": "밤 시간, 깊은 숲",
+      "description": "세계에서 가장 큰 날개를 가진 어마어마한 나방으로, 두 날개를 펼치면 어른 손바닥보다도 훨씬 커요. 날개 끝이 뱀 머리처럼 생겨서 적을 깜짝 놀라게 쫓아낸답니다. 애벌레 때 잔뜩 먹어 둔 영양분으로 살기 때문에 어른이 되면 먹지 않고 며칠만 살아요.",
+      "habitatHint": "후텁지근한 밤, 깊은 숲속 나무 그늘",
       "spritePath": "Sprites/Insects/atlas_moth_giant",
       "rewardCoins": 45
     },
     {
       "insectId": "butterfly_monarch",
       "displayName": "왕나비",
-      "description": "주황색 날개에 검은 무늬가 특징인 대형 나비다.",
-      "habitatHint": "낮 시간, 꽃밭",
+      "description": "주황빛 날개에 검은 그물 무늬와 흰 점이 콕콕 박힌 늠름한 대형 나비예요. 꽃밭을 천천히 누비며 달콤한 꿀을 빨아 먹는 걸 가장 좋아한답니다. 친척뻘인 제왕나비는 수천 킬로미터를 날아 이동하는 것으로 유명한, 정말 대단한 여행가 나비예요!",
+      "habitatHint": "햇살 따스한 낮, 꽃이 활짝 핀 들판",
       "spritePath": "Sprites/Insects/butterfly_monarch",
       "rewardCoins": 16
     },
     {
       "insectId": "scarab_ancient",
       "displayName": "풍뎅이",
-      "description": "둥근 몸에 단단한 등껍질을 가진 고대부터 알려진 곤충이다.",
-      "habitatHint": "저녁 시간, 모래땅",
+      "description": "동글동글한 몸에 반질반질 단단한 등껍질을 두른 귀여운 곤충이에요. 흙 속을 부지런히 파고들거나 식물 뿌리 근처에서 지내며 살아간답니다. 옛날 이집트 사람들은 둥근 풍뎅이를 행운과 부활의 상징으로 여겨 무척 소중히 여겼대요.",
+      "habitatHint": "해 질 무렵, 부드러운 모래흙이 많은 땅 위",
       "spritePath": "Sprites/Insects/scarab_ancient",
       "rewardCoins": 22
     },
     {
       "insectId": "mantis_orchid",
       "displayName": "꽃사마귀",
-      "description": "꽃잎처럼 화려한 몸으로 위장해 먹이를 기다리는 전설적인 사마귀다.",
-      "habitatHint": "맑은 낮, 꽃밭",
+      "description": "마치 활짝 핀 난초 꽃처럼 분홍빛 다리와 몸으로 변장하는 신비로운 사마귀예요. 꽃인 척 가만히 숨어 있다가 꿀을 찾아온 곤충을 번개같이 낚아챈답니다. 꽃보다 더 꽃 같아서 나비조차 속아 넘어가는, 자연이 만든 최고의 위장술사예요!",
+      "habitatHint": "맑고 환한 낮, 꽃이 흐드러진 꽃밭 한가운데",
       "spritePath": "Sprites/Insects/mantis_orchid",
       "rewardCoins": 80
     },
     {
       "insectId": "ladybug_seven",
       "displayName": "칠성무당벌레",
-      "description": "빨간 등에 검은 점 7개, 풀잎 위에서 흔히 발견되는 귀여운 벌레다.",
-      "habitatHint": "맑은 낮, 풀잎 위",
+      "description": "새빨간 등에 까만 점 일곱 개가 콕콕 찍힌 동글동글 귀여운 벌레예요. 식물을 괴롭히는 진딧물을 하루에도 수십 마리씩 잡아먹는 농부들의 든든한 친구랍니다. 위험할 땐 다리에서 쓴 액체를 살짝 내보내 새들이 함부로 먹지 못하게 한대요.",
+      "habitatHint": "맑은 봄날 낮, 진딧물이 모인 풀잎과 어린 새싹 위",
       "spritePath": "Sprites/Insects/ladybug_seven",
       "rewardCoins": 5
     },
     {
       "insectId": "grasshopper_green",
       "displayName": "풀무치",
-      "description": "풀밭에서 폴짝폴짝 뛰어다니는 초록 메뚜기다.",
-      "habitatHint": "낮 시간, 풀밭",
+      "description": "기다란 뒷다리로 폴짝폴짝 멀리 뛰어오르는 초록빛 메뚜기예요. 풀잎을 오물오물 갉아 먹으며 따뜻한 풀밭에서 살아간답니다. 떼를 지으면 몸 색깔이 변하고 무리가 함께 멀리 이동하기도 하는, 변신술을 부리는 신기한 곤충이에요!",
+      "habitatHint": "햇볕 쨍쨍한 낮, 키 큰 풀이 우거진 풀밭",
       "spritePath": "Sprites/Insects/grasshopper_green",
       "rewardCoins": 6
     },
     {
       "insectId": "mosquito_common",
       "displayName": "모기",
-      "description": "여름밤 어디서든 나타나는 성가신 곤충이다.",
-      "habitatHint": "밤 시간, 풀숲",
+      "description": "가느다란 다리와 투명한 날개로 윙윙 소리를 내며 날아드는 여름밤의 단골손님이에요. 피를 빠는 건 알을 낳아야 하는 암컷뿐이고, 평소에는 암수 모두 꽃의 꿀을 먹고 산답니다. 사람이 내쉬는 숨과 따뜻한 체온을 멀리서도 척척 알아채는 놀라운 감각을 지녔어요.",
+      "habitatHint": "후텁지근한 여름밤, 물기가 고인 풀숲과 웅덩이 가까이",
       "spritePath": "Sprites/Insects/mosquito_common",
       "rewardCoins": 3
     },
     {
       "insectId": "fly_house",
       "displayName": "집파리",
-      "description": "어디서든 윙윙거리며 날아다니는 파리다.",
-      "habitatHint": "아무 시간, 마을 주변",
+      "description": "윙윙 날아다니며 어디서든 마주치는 친숙한 회색빛 파리예요. 발끝으로도 맛을 느낄 수 있어 음식 위에 살짝 앉기만 해도 단맛인지 바로 알아챈답니다. 눈 깜짝할 사이에 방향을 홱 바꾸며 날아 손바닥을 요리조리 피하는, 알고 보면 대단한 비행 솜씨의 주인공이에요.",
+      "habitatHint": "시간을 가리지 않고, 사람이 사는 마을과 집 주변",
       "spritePath": "Sprites/Insects/fly_house",
       "rewardCoins": 3
     },
     {
       "insectId": "pill_bug_garden",
       "displayName": "공벌레",
-      "description": "건드리면 동그랗게 말리는 귀여운 벌레다.",
-      "habitatHint": "아무 시간, 돌 밑",
+      "description": "살짝 건드리면 데구르르 몸을 동그랗게 마는 모습이 너무 귀여운 작은 친구예요. 곤충이 아니라 게나 새우의 먼 친척인 갑각류라서, 등에 단단한 마디 갑옷을 두르고 축축한 곳을 좋아한답니다. 낙엽과 썩은 것을 야금야금 먹어 흙으로 되돌려 주는 자연의 청소부랍니다!",
+      "habitatHint": "시간을 가리지 않고, 축축한 돌 밑이나 낙엽 더미 아래",
       "spritePath": "Sprites/Insects/pill_bug_garden",
       "rewardCoins": 5
     },
     {
       "insectId": "earwig_common",
       "displayName": "집게벌레",
-      "description": "꼬리에 집게를 가진 벌레다. 밤에 돌 밑에서 발견된다.",
-      "habitatHint": "밤 시간, 돌 밑",
+      "description": "꽁무니에 멋진 집게를 단 야행성 곤충이에요. 무섭게 생긴 집게는 사실 적을 위협하거나 먹이를 다룰 때 쓰는 도구라 사람을 해치진 않는답니다. 어미가 알과 새끼를 정성껏 돌보는, 곤충 중에서는 보기 드문 자상한 부모예요!",
+      "habitatHint": "축축한 밤, 돌 밑이나 화분 아래 어두운 틈",
       "spritePath": "Sprites/Insects/earwig_common",
       "rewardCoins": 6
     },
     {
       "insectId": "caterpillar_green",
       "displayName": "배추벌레",
-      "description": "느릿느릿 기어가는 초록 애벌레다.",
-      "habitatHint": "낮 시간, 풀밭",
+      "description": "잎사귀를 야금야금 갉아 먹으며 무럭무럭 자라는 통통한 초록 애벌레예요. 먹고 또 먹어 허물을 여러 번 벗으며 몸집을 불린 뒤, 번데기가 되어 어느 날 나비나 나방으로 변신한답니다. 작은 몸에 숨은 가짜 눈무늬로 천적을 깜짝 놀라게 하기도 해요!",
+      "habitatHint": "따뜻한 낮, 연하고 푸른 잎이 무성한 나뭇가지",
       "spritePath": "Sprites/Insects/caterpillar_green",
       "rewardCoins": 4
     },
     {
       "insectId": "aphid_colony",
       "displayName": "진딧물",
-      "description": "떼로 모여 식물 즙을 빨아먹는 작은 벌레다.",
-      "habitatHint": "아무 시간, 나뭇잎",
+      "description": "새순에 다닥다닥 붙어 식물의 단물을 빨아 먹는 아주 작은 곤충이에요. 엉덩이에서 달콤한 단물을 내놓아 개미와 거래를 하는데, 대신 개미가 무당벌레 같은 천적으로부터 지켜준답니다. 알을 낳지 않고도 새끼를 쑥쑥 불리는 놀라운 번식왕이에요!",
+      "habitatHint": "포근한 봄낮, 여린 새순과 잎 뒷면",
       "spritePath": "Sprites/Insects/aphid_colony",
       "rewardCoins": 2
     },
     {
       "insectId": "moth_brown",
       "displayName": "갈색밤나방",
-      "description": "밤에 불빛에 모여드는 흔한 나방이다.",
-      "habitatHint": "밤 시간, 불빛 근처",
+      "description": "수수한 갈색 날개로 나무껍질에 앉으면 감쪽같이 사라지는 위장의 달인이에요. 화려하진 않지만 그 흐릿한 무늬 덕분에 새의 눈을 잘 피한답니다. 밤이면 더듬이로 향기를 좇아 꽃과 수액을 찾아 조용히 날아다녀요.",
+      "habitatHint": "선선한 밤, 나무껍질과 울타리 그늘",
       "spritePath": "Sprites/Insects/moth_brown",
       "rewardCoins": 5
     },
     {
       "insectId": "beetle_dung",
       "displayName": "똥풍뎅이",
-      "description": "열심히 흙을 굴리는 풍뎅이다.",
-      "habitatHint": "낮 시간, 땅 위",
+      "description": "동물의 똥을 동그랗게 빚어 데굴데굴 굴리는 부지런한 청소부예요. 자기 몸보다 훨씬 큰 똥 경단을 뒷다리로 밀어 안전한 곳에 묻고, 그 속에 알을 낳는답니다. 놀랍게도 밤에는 은하수를 길잡이 삼아 똑바로 굴러가는 천문학자이기도 해요!",
+      "habitatHint": "햇볕 따가운 낮, 풀 뜯는 동물이 다니는 들판",
       "spritePath": "Sprites/Insects/beetle_dung",
       "rewardCoins": 6
     },
     {
       "insectId": "centipede_common",
       "displayName": "왕지네",
-      "description": "많은 다리로 빠르게 달리는 지네다.",
-      "habitatHint": "밤 시간, 돌 밑",
+      "description": "수많은 다리를 물결처럼 움직이며 빠르게 기어 다니는 밤의 사냥꾼이에요. 머리 앞의 독 발톱으로 작은 벌레를 마비시켜 잡아먹는답니다. 다리가 백 개라 백족이라 불리지만 실제로는 종마다 다리 수가 제각각인 게 비밀이에요!",
+      "habitatHint": "축축한 밤, 낙엽 더미와 썩은 통나무 밑",
       "spritePath": "Sprites/Insects/centipede_common",
       "rewardCoins": 7
     },
     {
       "insectId": "katydid_leaf",
       "displayName": "여치",
-      "description": "나뭇잎을 닮은 초록 곤충이다. 밤에 아름답게 운다.",
-      "habitatHint": "밤 시간, 풀숲",
+      "description": "나뭇잎을 쏙 빼닮은 연두색 몸으로 풀숲에 숨는 여름밤의 가수예요. 앞날개를 비벼 쩌르르 노래하며, 잎맥까지 흉내 낸 날개 덕분에 천적도 진짜 잎과 구별하지 못한답니다. 긴 더듬이로 어둠 속에서도 길을 척척 찾아내요.",
+      "habitatHint": "무더운 여름밤, 키 큰 풀과 관목의 잎 사이",
       "spritePath": "Sprites/Insects/katydid_leaf",
       "rewardCoins": 14
     },
     {
       "insectId": "wasp_paper",
       "displayName": "쌍살벌",
-      "description": "종이처럼 얇은 벌집을 짓는 벌이다. 주의가 필요하다.",
-      "habitatHint": "낮 시간, 처마 밑",
+      "description": "씹은 나무를 침과 섞어 종이 같은 육각형 집을 짓는 솜씨 좋은 건축가예요. 가느다란 허리와 매끈한 몸으로 날아다니며 애벌레를 사냥해 새끼에게 먹인답니다. 꿀벌과 달리 침을 여러 번 쏠 수 있으니 집 근처에선 살살 피해 주는 게 좋아요!",
+      "habitatHint": "맑은 낮, 처마 밑이나 나뭇가지에 매단 종이집 주변",
       "spritePath": "Sprites/Insects/wasp_paper",
       "rewardCoins": 16
     },
     {
       "insectId": "damselfly_blue",
       "displayName": "실잠자리",
-      "description": "잠자리보다 가늘고 우아한 파란 몸을 가진 곤충이다.",
-      "habitatHint": "낮 시간, 연못",
+      "description": "잠자리의 가느다란 친척으로, 실처럼 가는 파란 몸이 풀잎 끝에서 살랑살랑 흔들려요. 쉴 때는 잠자리와 달리 네 장의 날개를 등 위로 가지런히 접는답니다. 작은 날벌레를 공중에서 낚아채 먹는 솜씨 좋은 사냥꾼이에요.",
+      "habitatHint": "맑은 한낮, 물풀이 우거진 연못 가장자리",
       "spritePath": "Sprites/Insects/damselfly_blue",
       "rewardCoins": 13
     },
     {
       "insectId": "longhorn_beetle",
       "displayName": "하늘소",
-      "description": "몸보다 긴 더듬이가 특징인 딱정벌레다.",
-      "habitatHint": "저녁 시간, 나무 줄기",
+      "description": "제 몸길이보다도 긴 더듬이를 휘저으며 나무 위를 누비는 멋쟁이 딱정벌레예요. 위협을 느끼면 가슴을 비벼 '끼익' 하는 소리를 내 적을 놀래킨답니다. 애벌레는 나무 속을 파고들며 자라서 농부들에겐 골칫거리이기도 해요.",
+      "habitatHint": "해 질 무렵, 참나무 줄기와 갓 베어낸 통나무 주변",
       "spritePath": "Sprites/Insects/longhorn_beetle",
       "rewardCoins": 15
     },
     {
       "insectId": "butterfly_cabbage",
       "displayName": "배추흰나비",
-      "description": "밭 주위를 날아다니는 하얀 나비다.",
-      "habitatHint": "낮 시간, 밭",
+      "description": "텃밭과 들판을 팔랑팔랑 날아다니는, 봄을 가장 먼저 알리는 하얀 나비예요. 앞날개의 까만 점으로 암수를 구분할 수 있는데, 점이 두 개면 암컷이랍니다. 애벌레 시절엔 배춧잎을 좋아하는 통통한 초록 '배추벌레'였다는 사실, 알고 있었나요?",
+      "habitatHint": "따스한 봄낮, 배추와 유채꽃이 핀 밭",
       "spritePath": "Sprites/Insects/butterfly_cabbage",
       "rewardCoins": 12
     },
     {
       "insectId": "beetle_click",
       "displayName": "방아벌레",
-      "description": "뒤집으면 딸깍 소리를 내며 튀어오르는 재미있는 벌레다.",
-      "habitatHint": "아무 시간, 나무 아래",
+      "description": "뒤집혀도 걱정 없어요! 가슴의 용수철 같은 장치로 '딸깍' 소리를 내며 공중으로 톡 튀어올라 몸을 바로잡는 재주꾼이거든요. 그 모습이 방아를 찧는 것 같다고 해서 이런 이름이 붙었답니다. 깜짝 놀라 죽은 척하다가 갑자기 튀어오르는 장난꾸러기예요.",
+      "habitatHint": "시간 상관없이, 썩은 나무와 낙엽이 쌓인 나무 그늘 아래",
       "spritePath": "Sprites/Insects/beetle_click",
       "rewardCoins": 14
     },
     {
       "insectId": "spider_garden",
       "displayName": "무당거미",
-      "description": "화려한 무늬의 거미줄 장인이다.",
-      "habitatHint": "아침, 풀숲",
+      "description": "노랑과 검정 줄무늬가 화려한, 거미줄 짜기의 진정한 장인이에요. 끈끈한 가로줄과 매끈한 세로줄을 구분해 짜기 때문에 자기 줄에는 절대 들러붙지 않는답니다. 가을이 깊어지면 큼직한 암컷 곁에 작디작은 수컷이 함께 매달려 있는 모습을 볼 수 있어요.",
+      "habitatHint": "이슬 맺힌 아침, 처마 밑이나 나뭇가지 사이에 친 큰 거미줄",
       "spritePath": "Sprites/Insects/spider_garden",
       "rewardCoins": 15
     },
     {
       "insectId": "diving_beetle_small",
       "displayName": "꼬마물방개",
-      "description": "작고 빠른 수서 딱정벌레다.",
-      "habitatHint": "낮 시간, 웅덩이",
+      "description": "작지만 날쌘 물속의 다이버예요. 뒷다리에 노처럼 생긴 털이 나 있어 물살을 가르며 쏜살같이 헤엄친답니다. 숨을 쉴 땐 꽁무니를 수면에 살짝 내밀어 공기 방울을 등껍질 아래 챙겨 다시 물속으로 잠수해요.",
+      "habitatHint": "낮 시간, 물풀이 떠 있는 얕은 웅덩이와 논두렁",
       "spritePath": "Sprites/Insects/diving_beetle_small",
       "rewardCoins": 13
     },
     {
       "insectId": "butterfly_swallowtail",
       "displayName": "호랑나비",
-      "description": "노란 날개에 호랑이 줄무늬가 있는 대형 나비다.",
-      "habitatHint": "맑은 낮, 꽃밭",
+      "description": "노란 바탕에 호랑이 같은 검은 줄무늬를 두른 늠름한 대형 나비예요. 뒷날개 끝에 제비 꼬리처럼 길게 뻗은 돌기가 있어 우아하게 나는 모습이 일품이랍니다. 애벌레는 적을 만나면 머리에서 주황색 뿔을 쏙 내밀어 고약한 냄새로 쫓아내요.",
+      "habitatHint": "햇살 가득한 맑은 낮, 귤나무와 산초나무가 있는 꽃밭",
       "spritePath": "Sprites/Insects/butterfly_swallowtail",
       "rewardCoins": 22
     },
     {
       "insectId": "stick_insect_long",
       "displayName": "대벌레",
-      "description": "나뭇가지처럼 생겨 좀처럼 발견하기 어렵다.",
-      "habitatHint": "낮 시간, 나뭇가지",
+      "description": "나뭇가지인 줄 알았는데 살아 있어요! 길고 비쩍 마른 몸을 나뭇가지로 완벽하게 위장해 천적의 눈을 감쪽같이 속인답니다. 바람이 불면 가지처럼 살랑살랑 몸을 흔들고, 다리가 떨어져도 다시 자라나는 신기한 곤충이에요.",
+      "habitatHint": "낮 시간, 잎이 무성한 참나무와 밤나무 가지 사이",
       "spritePath": "Sprites/Insects/stick_insect_long",
       "rewardCoins": 24
     },
     {
       "insectId": "beetle_longhorn_rosalia",
       "displayName": "꽃하늘소",
-      "description": "하늘색 몸에 검은 점이 아름다운 희귀 하늘소다.",
-      "habitatHint": "낮 시간, 활엽수",
+      "description": "몸길이만큼 길고 우아한 더듬이를 자랑하는 하늘빛 고운 딱정벌레예요. 푸른 잿빛 날개에 검은 점이 박힌 모습이 무척 아름다워 비단 하늘소라 불린답니다. 튼튼한 큰턱으로 나무를 갉으며, 애벌레 때는 몇 년이나 나무속에서 자라요.",
+      "habitatHint": "한여름 한낮, 오래된 활엽수 줄기와 그루터기",
       "spritePath": "Sprites/Insects/beetle_longhorn_rosalia",
       "rewardCoins": 28
     },
     {
       "insectId": "hornet_asian",
       "displayName": "장수말벌",
-      "description": "세계 최대급 말벌이다. 강한 독과 턱을 가졌다.",
-      "habitatHint": "낮 시간, 숲속",
+      "description": "우리나라에서 가장 크고 힘센 말벌로, 윙윙 묵직한 날갯소리만으로도 위풍당당해요. 강한 큰턱으로 다른 벌의 집을 습격할 만큼 사납지만, 그만큼 숲의 곤충 수를 조절하는 든든한 포식자랍니다. 절대 자극하지 말고 멀리서 지켜보는 게 안전해요!",
+      "habitatHint": "한여름 낮, 깊은 숲속 나무 구멍이나 땅속 집 근처",
       "spritePath": "Sprites/Insects/hornet_asian",
       "rewardCoins": 26
     },
     {
       "insectId": "dragonfly_emperor",
       "displayName": "왕잠자리",
-      "description": "잠자리 중 가장 크고 빠른 공중의 사냥꾼이다.",
-      "habitatHint": "낮 시간, 연못",
+      "description": "잠자리 무리 중에서 가장 크고 빠른 하늘의 사냥꾼이에요. 네 장의 투명한 날개를 따로따로 움직여 공중에서 멈추거나 뒤로도 날 수 있고, 작은 날벌레를 날아다니며 척척 잡아먹는답니다. 머리 대부분을 차지하는 커다란 겹눈으로 거의 사방을 한꺼번에 볼 수 있어요!",
+      "habitatHint": "맑고 더운 한낮, 연못이나 저수지 위를 빠르게 순찰하듯 나는 모습",
       "spritePath": "Sprites/Insects/dragonfly_emperor",
       "rewardCoins": 24
     },
     {
       "insectId": "cicada_evening",
       "displayName": "쓰르라미",
-      "description": "저녁 무렵에만 우는 희귀한 매미다.",
-      "habitatHint": "저녁 시간, 나무",
+      "description": "하루 종일이 아니라 해 질 무렵에만 '쓰르람 쓰르람' 하고 우는 수줍은 매미예요. 다른 매미들이 잠잠해지는 저녁에 노래를 시작해서 숲에 시원한 가을 분위기를 더해 준답니다. 우는 건 수컷뿐인데, 배에 있는 얇은 막을 빠르게 떨어 그 큰 소리를 낸대요.",
+      "habitatHint": "해가 뉘엿뉘엿 지는 늦여름 저녁, 산기슭 나무줄기",
       "spritePath": "Sprites/Insects/cicada_evening",
       "rewardCoins": 22
     },
     {
       "insectId": "firefly_blue",
       "displayName": "파란반딧불이",
-      "description": "희귀한 파란빛을 내는 반딧불이다.",
-      "habitatHint": "밤 시간, 계곡",
+      "description": "노란 반딧불이와 달리 차가운 파란빛을 깜빡이는 아주 귀한 반딧불이예요. 배 끝에서 빛을 내는데, 이 빛은 뜨겁지 않은 '차가운 불빛'이라 손으로 만져도 데지 않는답니다. 짝을 찾으려고 빛으로 신호를 주고받기 때문에 깨끗한 물과 어둠이 있어야만 만날 수 있어요.",
+      "habitatHint": "바람 없는 깊은 밤, 맑은 물이 흐르는 계곡가 풀숲",
       "spritePath": "Sprites/Insects/firefly_blue",
       "rewardCoins": 28
     },
     {
       "insectId": "butterfly_morpho",
       "displayName": "모르포나비",
-      "description": "메탈릭 파란 날개가 보는 각도마다 색이 변하는 신비로운 나비다.",
-      "habitatHint": "맑은 낮, 깊은 숲",
+      "description": "보는 각도에 따라 반짝이는 금속 같은 파란 날개를 가진 신비로운 나비예요. 사실 이 파란색은 물감 색이 아니라, 날개 비늘이 빛을 잘게 쪼개 만들어 내는 빛의 마술이랍니다. 날개 뒷면은 칙칙한 갈색이라 접으면 나뭇잎처럼 감쪽같이 숨을 수 있어요.",
+      "habitatHint": "햇살이 쏟아지는 한낮, 습기 가득한 깊은 숲속 빈터",
       "spritePath": "Sprites/Insects/butterfly_morpho",
       "rewardCoins": 42
     },
     {
       "insectId": "beetle_hercules",
       "displayName": "헤라클레스장수풍뎅이",
-      "description": "세계에서 가장 큰 딱정벌레다. 거대한 뿔이 위압적이다.",
-      "habitatHint": "밤 시간, 깊은 숲 나무",
+      "description": "뿔까지 합치면 세상에서 가장 긴 딱정벌레로, 이름처럼 어마어마한 힘을 자랑해요. 위아래로 맞물린 두 개의 커다란 뿔로 다른 수컷을 번쩍 들어 던지며 싸운답니다. 제 몸무게의 수십 배나 되는 무게도 거뜬히 들 수 있어서 곤충 세계의 진정한 힘짱이에요!",
+      "habitatHint": "무덥고 습한 한밤중, 깊은 숲 큰 나무의 수액이 흐르는 자리",
       "spritePath": "Sprites/Insects/beetle_hercules",
       "rewardCoins": 48
     },
     {
       "insectId": "mantis_ghost",
       "displayName": "유령사마귀",
-      "description": "유령처럼 바람에 흔들리는 기괴한 자태의 사마귀다.",
-      "habitatHint": "밤 시간, 깊은 숲",
+      "description": "마른 나뭇잎과 나뭇가지를 똑 닮아 바람이 불면 함께 흔들흔들, 마치 유령처럼 보이는 사마귀예요. 이렇게 감쪽같이 위장한 채 가만히 기다리다가 가까이 온 벌레를 앞다리로 번개같이 낚아챈답니다. 위험을 느끼면 죽은 척 바닥에 툭 떨어지기도 해요.",
+      "habitatHint": "고요한 밤, 깊은 숲 마른 덤불과 낙엽 사이",
       "spritePath": "Sprites/Insects/mantis_ghost",
       "rewardCoins": 44
     },
     {
       "insectId": "spider_golden_orb",
-      "displayName": "무인거미",
-      "description": "금빛 거미줄을 짓는 거대한 거미다.",
-      "habitatHint": "아침, 깊은 숲",
+      "displayName": "황금왕거미",
+      "description": "햇빛에 황금빛으로 반짝이는 튼튼한 거미줄을 짓는 커다란 거미예요. 이 거미줄은 어찌나 질긴지 같은 굵기의 강철보다도 끈끈하고 잘 늘어난답니다. 알록달록한 큰 몸집은 대부분 암컷이고, 그 곁에 붙은 아주 작은 거미가 수컷이라는 점이 재미있어요.",
+      "habitatHint": "이슬 맺힌 이른 아침, 깊은 숲 나무 사이에 크게 펼쳐진 거미줄",
       "spritePath": "Sprites/Insects/spider_golden_orb",
       "rewardCoins": 40
     },
     {
       "insectId": "leaf_insect_phantom",
-      "displayName": "잎벌레유령",
-      "description": "나뭇잎과 완벽히 동화되어 찾기 불가능에 가까운 곤충이다.",
-      "habitatHint": "낮 시간, 깊은 숲",
+      "displayName": "잎사귀벌레",
+      "description": "진짜 나뭇잎인지 벌레인지 헷갈릴 만큼 완벽하게 잎을 흉내 낸 곤충이에요. 몸에는 잎맥 무늬와 벌레 먹은 자국까지 그려져 있고, 걸을 땐 바람에 흔들리는 잎처럼 몸을 살랑살랑 움직여 천적을 속인답니다. 한자리에서 잎을 갉아 먹으며 거의 움직이지 않아 찾아내기가 정말 어려워요.",
+      "habitatHint": "바람 잔잔한 한낮, 깊은 숲 활엽수의 잎이 우거진 가지",
       "spritePath": "Sprites/Insects/leaf_insect_phantom",
       "rewardCoins": 46
     },
     {
       "insectId": "butterfly_alexandras",
       "displayName": "알렉산드라비단나비",
-      "description": "세계에서 가장 큰 나비다. 날개 폭이 30cm에 달한다.",
-      "habitatHint": "맑은 낮, 전설의 꽃밭",
+      "description": "날개를 펼치면 거의 30cm에 달하는, 세계에서 가장 큰 나비예요. 파푸아뉴기니의 깊은 숲에만 사는 아주 귀한 나비라, 새처럼 크고 우아하게 활공한답니다. 수컷은 영롱한 청록빛, 암컷은 점잖은 갈색이라 한 종인데도 전혀 다른 모습이에요!",
+      "habitatHint": "햇살 비치는 한낮, 깊은 열대우림의 높은 나무 꼭대기",
       "spritePath": "Sprites/Insects/butterfly_alexandras",
       "rewardCoins": 100
     },
     {
       "insectId": "beetle_golden_stag",
       "displayName": "황금사슴벌레",
-      "description": "온몸이 황금빛으로 빛나는 전설의 사슴벌레다.",
-      "habitatHint": "보름달 밤, 고목나무",
+      "description": "온몸이 진짜 황금처럼 반짝반짝 빛나는 전설의 사슴벌레예요. 보통 사슴벌레처럼 커다란 뿔 같은 턱으로 나무 수액을 차지하려 다른 곤충과 힘겨루기를 하지요. 보름달 밤에만 모습을 드러낸다고 전해져, 한 번이라도 본 사람은 행운이 따른다는 이야기가 있어요.",
+      "habitatHint": "보름달이 뜬 맑은 밤, 숲 깊은 곳의 고목나무 수액 주변",
       "spritePath": "Sprites/Insects/beetle_golden_stag",
       "rewardCoins": 100
     },
     {
       "insectId": "dragonfly_ancient",
       "displayName": "고대잠자리",
-      "description": "선사시대에서 온 것 같은 거대한 원시 잠자리다.",
-      "habitatHint": "비 온 뒤 저녁, 연못",
+      "description": "공룡이 살던 시절부터 날아다닌 것 같은 거대한 원시 잠자리예요. 옛날 아주 먼 옛날에는 날개를 펴면 사람 팔만큼 컸다고 하는데, 지금도 네 장의 날개를 자유자재로 움직여 공중에서 멈췄다 쏜살같이 날아가지요. 작은 벌레들을 사냥하는 하늘의 최강 사냥꾼이랍니다.",
+      "habitatHint": "비가 그친 직후의 저녁 무렵, 안개가 옅게 깔린 연못 위",
       "spritePath": "Sprites/Insects/dragonfly_ancient",
       "rewardCoins": 120
     },
     {
       "insectId": "gacha_golden_ladybug",
       "displayName": "황금무당벌레",
-      "description": "온몸이 순금빛으로 빛나는 전설적인 무당벌레. 랜덤 상자에서만 만날 수 있다.",
-      "habitatHint": "랜덤 상자 전용",
+      "description": "보통 무당벌레는 빨간 등에 검은 점이 콕콕 박혀 있지만, 이 친구는 온몸이 순금처럼 반짝여요. 작은 몸으로 또르르 굴러가듯 잎사귀 위를 누비며 진딧물을 사냥하는 부지런한 사냥꾼이지요. 너무나 귀해서 오직 랜덤 상자 속에서만 만날 수 있는 행운의 벌레랍니다.",
+      "habitatHint": "랜덤 상자에서만 만날 수 있어요",
       "spritePath": "Sprites/Insects/gacha_golden_ladybug",
       "rewardCoins": 35
     },
     {
       "insectId": "gacha_crystal_dragonfly",
       "displayName": "수정잠자리",
-      "description": "투명한 수정 날개를 가진 신비로운 잠자리. 햇빛에 무지개빛으로 빛난다.",
-      "habitatHint": "랜덤 상자 전용",
+      "description": "투명한 수정으로 빚은 듯 맑은 날개를 가진 신비로운 잠자리예요. 햇빛이 비치면 날개가 무지개처럼 알록달록 빛나서 마치 보석이 날아다니는 것 같답니다. 잠자리답게 큰 눈으로 사방을 살피며 공중에서 작은 곤충을 낚아채는 솜씨가 일품이에요.",
+      "habitatHint": "랜덤 상자에서만 만날 수 있어요",
       "spritePath": "Sprites/Insects/gacha_crystal_dragonfly",
       "rewardCoins": 50
     },
     {
       "insectId": "gacha_shadow_mantis",
       "displayName": "그림자사마귀",
-      "description": "검은 안개를 두른 사마귀. 어둠 속에서 붉은 눈만 빛난다.",
-      "habitatHint": "랜덤 상자 전용",
+      "description": "온몸을 검은 안개로 휘감은 신비로운 사마귀예요. 어둠 속에 완전히 녹아들어 오직 붉게 타오르는 두 눈만 반짝이며, 낫처럼 굽은 앞다리를 소리 없이 휘둘러 먹이를 사냥하지요. 그림자처럼 조용해서, 곁에 있어도 좀처럼 눈치채기 어려운 수집가들의 로망이랍니다.",
+      "habitatHint": "랜덤 상자 전용 — 칠흑 같은 그믐밤의 기운을 머금은 희귀 곤충",
       "spritePath": "Sprites/Insects/gacha_shadow_mantis",
       "rewardCoins": 55
     },
     {
       "insectId": "gacha_rainbow_butterfly",
       "displayName": "무지개나비",
-      "description": "7색 날개를 가진 전설의 나비. 날갯짓할 때마다 무지개가 펼쳐진다.",
-      "habitatHint": "랜덤 상자 전용",
+      "description": "일곱 빛깔이 한데 어우러진 전설의 나비예요. 살랑살랑 날갯짓을 할 때마다 공중에 작은 무지개가 그려져, 지나간 자리마다 알록달록한 빛 가루가 흩날린답니다. 비 갠 하늘에 걸린 무지개를 그대로 옮겨 담은 듯, 보기만 해도 마음이 환해지는 귀한 친구예요.",
+      "habitatHint": "랜덤 상자 전용 — 비 갠 뒤 무지개가 뜬 하늘의 빛을 품은 전설 곤충",
       "spritePath": "Sprites/Insects/gacha_rainbow_butterfly",
       "rewardCoins": 120
     },
     {
       "insectId": "gacha_diamond_beetle",
       "displayName": "다이아몬드풍뎅이",
-      "description": "다이아몬드처럼 빛나는 등껍질을 가진 풍뎅이. 모든 수집가의 꿈.",
-      "habitatHint": "랜덤 상자 전용",
+      "description": "등껍질이 다이아몬드처럼 영롱하게 반짝이는 풍뎅이예요. 빛을 받으면 단단한 겉날개가 수백 개의 보석 조각처럼 반짝거려, 가만히 있어도 주위가 환해진답니다. 좀처럼 만나기 힘든 보물 같은 존재라, 모든 수집가가 한 번쯤 품에 안기를 꿈꾸는 곤충이지요.",
+      "habitatHint": "랜덤 상자 전용 — 보석처럼 빛나는 최상급 수집 곤충",
       "spritePath": "Sprites/Insects/gacha_diamond_beetle",
       "rewardCoins": 130
     },
     {
       "insectId": "gacha_neon_firefly",
       "displayName": "네온반딧불이",
-      "description": "형광색으로 빛나는 반딧불이. 밤하늘에 네온사인처럼 흔적을 남긴다.",
-      "habitatHint": "랜덤 상자 전용",
+      "description": "형광빛으로 또렷하게 빛나는 신기한 반딧불이예요. 보통 반딧불이가 은은하게 깜빡인다면, 이 친구는 마치 거리의 네온사인처럼 선명한 빛줄기를 남기며 밤하늘을 가른답니다. 어두울수록 빛이 더 또렷해져, 까만 밤을 작은 빛의 그림으로 수놓는 멋진 친구예요.",
+      "habitatHint": "랜덤 상자 전용 — 칠흑 같은 밤일수록 더 또렷이 빛나는 희귀 곤충",
       "spritePath": "Sprites/Insects/gacha_neon_firefly",
       "rewardCoins": 30
     },
     {
       "insectId": "gacha_ice_spider",
       "displayName": "얼음거미",
-      "description": "차가운 푸른빛의 거미. 얼음 결정으로 된 거미줄을 친다.",
-      "habitatHint": "랜덤 상자 전용",
+      "description": "차가운 푸른빛이 감도는 신비로운 거미예요. 거미줄마저 반짝이는 얼음 결정으로 짜내어, 햇빛이 닿으면 서리꽃처럼 영롱하게 빛난답니다. 닿으면 손끝이 시릴 것 같은 서늘한 분위기를 풍기지만, 그 정교한 얼음 거미줄은 누구나 한 번쯤 들여다보고 싶어 하는 작은 예술이에요.",
+      "habitatHint": "랜덤 상자 전용 — 한겨울 서리의 냉기를 머금은 희귀 곤충",
       "spritePath": "Sprites/Insects/gacha_ice_spider",
       "rewardCoins": 48
     },
     {
       "insectId": "gacha_phantom_moth",
       "displayName": "환영나방",
-      "description": "반투명한 날개를 가진 신비로운 나방. 달빛 아래 환영처럼 나타났다 사라진다.",
-      "habitatHint": "랜덤 상자 전용",
+      "description": "반투명한 날개를 가진 신비로운 나방이에요. 달빛이 날개를 비추면 유리처럼 속이 비쳐 보이고, 한 번 날아오르면 환영처럼 스르르 나타났다가 어느새 사라져 버린답니다. 잡았다 싶으면 손가락 사이로 빠져나가는 듯한 몽환적인 매력 때문에, 한 번 보면 잊기 힘든 곤충이지요.",
+      "habitatHint": "랜덤 상자 전용 — 환한 달빛 아래 어른거리는 몽환의 곤충",
       "spritePath": "Sprites/Insects/gacha_phantom_moth",
       "rewardCoins": 32
     },
     {
       "insectId": "gacha_storm_hornet",
       "displayName": "폭풍말벌",
-      "description": "번개를 두른 강력한 말벌. 날갯짓에서 전기가 튄다.",
-      "habitatHint": "랜덤 상자 전용",
+      "description": "번개의 기운을 두른 강력한 말벌이에요. 빠르게 날갯짓할 때마다 몸 주위로 작은 전기가 찌릿찌릿 튀어, 마치 폭풍을 통째로 데리고 다니는 것 같답니다. 윙윙거리는 날개 소리가 천둥처럼 우렁차서, 가까이 다가가면 등골이 오싹해지는 박력 만점의 친구예요.",
+      "habitatHint": "랜덤 상자 전용 — 천둥번개 치는 폭풍의 기운을 두른 희귀 곤충",
       "spritePath": "Sprites/Insects/gacha_storm_hornet",
       "rewardCoins": 52
     },
     {
       "insectId": "gacha_celestial_beetle",
-      "displayName": "천상의풍뎅이",
-      "description": "별빛을 담은 최상위 풍뎅이. 밤하늘의 별자리가 등껍질에 새겨져 있다.",
-      "habitatHint": "랜덤 상자 전용",
+      "displayName": "천상의 풍뎅이",
+      "description": "밤하늘의 별빛을 그대로 담은 최상위 풍뎅이예요. 둥근 등껍질에는 반짝이는 별자리가 또렷이 새겨져 있어, 가만히 들여다보면 작은 우주를 손에 쥔 듯한 기분이 든답니다. 좀처럼 만날 수 없는 전설 중의 전설이라, 이 친구를 품에 안으면 모든 수집가가 부러워할 거예요.",
+      "habitatHint": "랜덤 상자 전용 — 별이 쏟아지는 밤하늘의 정수를 담은 최상위 곤충",
       "spritePath": "Sprites/Insects/gacha_celestial_beetle",
       "rewardCoins": 150
     }

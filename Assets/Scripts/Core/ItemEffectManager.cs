@@ -41,6 +41,8 @@ namespace InsectGame.Core
             activeItem = item;
             remainingSeconds = Mathf.Max(1f, item.durationSeconds);
             ActiveItemChanged?.Invoke(item);
+            // q_item 진행도 — 단일 진입점 (CaptureChoiceUI/PlayerItemInventoryGridUIController 모두 통과)
+            TutorialQuestManager.Instance?.NotifyItemUsed();
             return true;
         }
 

@@ -70,59 +70,107 @@ namespace InsectGame.Core
             if (candyInventory == null) candyInventory = candy;
         }
 
+        public void AutoWire(InsectDatabase db)
+        {
+            if (database == null) database = db;
+        }
+
+        // 캐시 — GetInsectDisplayName이 매 가챠 결과마다 FindFirstObjectByType 호출하던 회귀 차단
+        private InsectDatabase database;
+
+        // PickRandomInsect 결과 검증: data drift로 코드 상수의 ID가 DB에 없을 수 있음.
+        // 옛은 검증 없이 AddCapturedInsect 호출 → DB에서 못 찾으면 에러 + 보상 일부만 지급.
+        // 무효 ID면 fallback "beetle_basic"(Meadow Common, 항상 존재) 사용.
+        private string ValidateInsectId(string id)
+        {
+            if (string.IsNullOrEmpty(id)) return "beetle_basic";
+            InsectDatabase db = database;
+            if (db == null) db = FindFirstObjectByType<InsectDatabase>();
+            if (db == null || db.insects == null) return id; // DB 미로드 — 검증 스킵
+            for (int i = 0; i < db.insects.Count; i++)
+            {
+                if (db.insects[i] != null && db.insects[i].insectId == id) return id;
+            }
+            Debug.LogWarning($"[Gacha] insectId '{id}' DB 미존재 — fallback beetle_basic 사용");
+            return "beetle_basic";
+        }
+
+        // 동시/중복 OpenBox 호출 차단 (버튼 rapid-click, 네트워크 지연 시 보상 이중 지급 방지)
+        private bool isOpening;
+
         public void OpenBox(string boxId)
         {
-            float roll = UnityEngine.Random.value * 100f;
-            InsectRarity rarity;
-            int bonusCandy;
-
-            switch (boxId)
+            if (isOpening) return;
+            isOpening = true;
+            try
             {
-                case "box_bronze":
-                    rarity = GetBronzeRarity(roll);
-                    bonusCandy = UnityEngine.Random.Range(5, 16);
-                    break;
-                case "box_silver":
-                    rarity = GetSilverRarity(roll);
-                    bonusCandy = UnityEngine.Random.Range(10, 31);
-                    break;
-                case "box_gold":
-                    rarity = GetGoldRarity(roll);
-                    bonusCandy = UnityEngine.Random.Range(20, 51);
-                    break;
-                default:
-                    return;
+                float roll = UnityEngine.Random.value * 100f;
+                InsectRarity rarity;
+                int bonusCandy;
+
+                switch (boxId)
+                {
+                    case "box_bronze":
+                        rarity = GetBronzeRarity(roll);
+                        bonusCandy = UnityEngine.Random.Range(5, 16);
+                        break;
+                    case "box_silver":
+                        rarity = GetSilverRarity(roll);
+                        bonusCandy = UnityEngine.Random.Range(10, 31);
+                        break;
+                    case "box_gold":
+                        rarity = GetGoldRarity(roll);
+                        bonusCandy = UnityEngine.Random.Range(20, 51);
+                        break;
+                    default:
+                        return;
+                }
+
+                string insectId = ValidateInsectId(PickRandomInsect(rarity, boxId));
+                bool isExclusive = insectId.StartsWith("gacha_");
+
+                // 각 보상을 독립 try-catch로 감싸 한 단계 실패가 나머지를 막지 않게 함
+                // (곤충 지급 예외로 캔디/도감 미실행되는 회귀 방지).
+                try
+                {
+                    if (insectCollection != null)
+                        insectCollection.AddCapturedInsect(insectId, GetGachaLevel(rarity));
+                }
+                catch (System.Exception e) { Debug.LogError($"[Gacha] 곤충 지급 실패: {e.Message}"); }
+
+                try
+                {
+                    if (candyInventory != null)
+                        candyInventory.AddCandy(bonusCandy);
+                }
+                catch (System.Exception e) { Debug.LogError($"[Gacha] 캔디 지급 실패: {e.Message}"); }
+
+                try
+                {
+                    Dex.DexController dex = FindFirstObjectByType<Dex.DexController>();
+                    if (dex != null)
+                    {
+                        dex.RegisterEncounter(insectId);
+                        dex.RegisterCapture(insectId);
+                    }
+                }
+                catch (System.Exception e) { Debug.LogError($"[Gacha] 도감 등록 실패: {e.Message}"); }
+
+                LastResult = new GachaResult
+                {
+                    insectId = insectId,
+                    displayName = GetInsectDisplayName(insectId),
+                    rarity = rarity,
+                    isExclusive = isExclusive,
+                    bonusCandy = bonusCandy
+                };
+
+                BoxOpened?.Invoke(LastResult);
             }
-
-            string insectId = PickRandomInsect(rarity, boxId);
-            bool isExclusive = insectId.StartsWith("gacha_");
-
-            // 곤충 지급
-            if (insectCollection != null)
-                insectCollection.AddCapturedInsect(insectId, GetGachaLevel(rarity));
-
-            // 캔디 보너스
-            if (candyInventory != null)
-                candyInventory.AddCandy(bonusCandy);
-
-            // 도감 등록
-            Dex.DexController dex = FindFirstObjectByType<Dex.DexController>();
-            if (dex != null)
+            finally
             {
-                dex.RegisterEncounter(insectId);
-                dex.RegisterCapture(insectId);
+                isOpening = false;
             }
-
-            LastResult = new GachaResult
-            {
-                insectId = insectId,
-                displayName = GetInsectDisplayName(insectId),
-                rarity = rarity,
-                isExclusive = isExclusive,
-                bonusCandy = bonusCandy
-            };
-
-            BoxOpened?.Invoke(LastResult);
         }
 
         // -- 등급 결정 --
@@ -138,20 +186,21 @@ namespace InsectGame.Core
 
         private InsectRarity GetSilverRarity(float roll)
         {
-            if (roll < 20f) return InsectRarity.Common;
-            if (roll < 55f) return InsectRarity.Uncommon;
-            if (roll < 85f) return InsectRarity.Rare;
-            if (roll < 97f) return InsectRarity.Epic;
+            // C:12% U:25% R:33% E:22% L:8% — 가격 600젬, EV/gem×1000 = 2.632 (bronze 2.308 대비 1.140x)
+            if (roll < 12f) return InsectRarity.Common;
+            if (roll < 37f) return InsectRarity.Uncommon;
+            if (roll < 70f) return InsectRarity.Rare;
+            if (roll < 92f) return InsectRarity.Epic;
             return InsectRarity.Legendary;
         }
 
         private InsectRarity GetGoldRarity(float roll)
         {
-            // C:10% U:25% R:35% E:25% L:5%
-            if (roll < 10f) return InsectRarity.Common;
-            if (roll < 35f) return InsectRarity.Uncommon;
-            if (roll < 70f) return InsectRarity.Rare;
-            if (roll < 95f) return InsectRarity.Epic;
+            // C:5% U:5% R:13% E:32% L:45% — 가격 750젬, EV/gem×1000 = 2.940 (silver 2.632 대비 1.117x)
+            if (roll < 5f)  return InsectRarity.Common;
+            if (roll < 10f) return InsectRarity.Uncommon;
+            if (roll < 23f) return InsectRarity.Rare;
+            if (roll < 55f) return InsectRarity.Epic;
             return InsectRarity.Legendary;
         }
 
@@ -198,8 +247,9 @@ namespace InsectGame.Core
                 return gachaDisplayNames[insectId];
 
             // InsectLore.json 기반 이름은 InsectLoreService에서 이미 적용됨
-            // database에서 찾기 시도
-            InsectDatabase db = FindFirstObjectByType<InsectDatabase>();
+            // database 캐시 우선, 없으면 FindFirstObjectByType fallback (옛은 매번 Find 호출)
+            InsectDatabase db = database;
+            if (db == null) db = FindFirstObjectByType<InsectDatabase>();
             if (db != null && db.insects != null)
             {
                 foreach (var insect in db.insects)

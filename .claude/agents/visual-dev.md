@@ -22,7 +22,15 @@ tools:
 - `Assets/Scripts/Battle/BattleArenaController.cs` - 배틀 아레나 환경 구축
 - `Assets/Scripts/Core/ProceduralAudioGenerator.cs` - 프로시저럴 오디오
 - `Assets/Scripts/Core/AudioManager.cs` - 오디오 매니저 (싱글턴)
+- `Assets/Scripts/Core/UIAudioBinder.cs` - UI 버튼 자동 hover/click 사운드 부착
 - `Assets/Scripts/Data/ItemRarityPalette.cs` - 레어도별 색상 ※data-architect 공유
+- `Assets/Scripts/Dex/RarityIconProvider.cs` - 레어도 아이콘 렌더링 ※data-architect 공유
+
+### 환경 비주얼
+- `Assets/Scripts/Core/SubAreaEnvironment.cs` - 서브에리어 환경 전환 (조명, 안개, 앰비언트)
+- `Assets/Scripts/Core/WorldTerrainBuilder.cs` - 월드 지형 생성 (절벽, 강, 다리, 경사면)
+- `Assets/Scripts/Core/SubAreaWorldBuilder.cs` - 서브에리어 프로시저럴 던전/환경 생성
+- `Assets/Scripts/Core/RegionTerrainBuilder.cs` - 리전별 필드 지형 생성 (언덕, 길, 바위, 나무)
 
 ### 캐릭터/의상 비주얼
 - `Assets/Scripts/Core/CharacterOutfitManager.cs` - 의상 관리

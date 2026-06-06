@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using InsectGame.Core;
 using InsectGame.Data;
 using InsectGame.Spawning;
+using InsectGame.UI;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -22,12 +23,6 @@ namespace InsectGame.Battle
         [SerializeField] private Image[] skillIconImages;
         [SerializeField] private Image[] skillCooldownImages;
         [SerializeField] private Image[] skillBorderImages;
-        [Header("Rarity Colors")]
-        [SerializeField] private Color commonColor = new Color(0.8f, 0.8f, 0.8f, 1f);
-        [SerializeField] private Color uncommonColor = new Color(0.5f, 0.9f, 0.5f, 1f);
-        [SerializeField] private Color rareColor = new Color(0.4f, 0.7f, 1f, 1f);
-        [SerializeField] private Color epicColor = new Color(0.8f, 0.4f, 1f, 1f);
-        [SerializeField] private Color legendaryColor = new Color(1f, 0.75f, 0.2f, 1f);
         [SerializeField] private string skillIconResourceRoot = "SkillIcons";
         [SerializeField] private Text playerHpTextLegacy;
         [SerializeField] private Text enemyHpTextLegacy;
@@ -81,11 +76,8 @@ namespace InsectGame.Battle
 
         private void OnEnable()
         {
-            if (battleController != null)
-            {
-                battleController.BattleUpdated += HandleBattleUpdated;
-                battleController.BattleEnded += HandleBattleEnded;
-            }
+            // 구독은 AutoWire에서만 수행 (중복 구독 방지).
+            // OnEnable 호출 시점에 battleController가 이미 wired 되어 있다면 AutoWire 안의 -= 후 += 패턴이 안전 보장.
         }
 
         private void OnDisable()
@@ -178,7 +170,7 @@ namespace InsectGame.Battle
 
                 if (skillBorderImages != null && i < skillBorderImages.Length && skillBorderImages[i] != null)
                 {
-                    skillBorderImages[i].color = playerInsect != null ? GetRarityColor(playerInsect.rarity) : commonColor;
+                    skillBorderImages[i].color = GetRarityColor(playerInsect != null ? playerInsect.rarity : InsectRarity.Common);
                     skillBorderImages[i].enabled = true;
                 }
             }
@@ -326,21 +318,7 @@ namespace InsectGame.Battle
 
         private Color GetRarityColor(InsectRarity rarity)
         {
-            switch (rarity)
-            {
-                case InsectRarity.Common:
-                    return commonColor;
-                case InsectRarity.Uncommon:
-                    return uncommonColor;
-                case InsectRarity.Rare:
-                    return rareColor;
-                case InsectRarity.Epic:
-                    return epicColor;
-                case InsectRarity.Legendary:
-                    return legendaryColor;
-                default:
-                    return commonColor;
-            }
+            return UITheme.Instance.GetInsectRarityColor(rarity);
         }
 
         private Sprite ResolveSkillIcon(InsectSkill skill)

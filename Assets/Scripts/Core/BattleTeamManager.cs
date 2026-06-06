@@ -63,7 +63,12 @@ namespace InsectGame.Core
                 }
             }
 
-            saveData.slotIds[index] = normalizedId ?? string.Empty;
+            string newValue = normalizedId ?? string.Empty;
+            // no-op 가드 — 같은 값 재설정 시 TeamChanged 발화 안 함.
+            // 옛은 TutorialQuestManager가 TeamChanged 구독해 q_team 진행도 중복 가산 위험.
+            if (saveData.slotIds[index] == newValue) return true;
+
+            saveData.slotIds[index] = newValue;
             Save(saveData);
             TeamChanged?.Invoke();
             return true;
@@ -118,7 +123,8 @@ namespace InsectGame.Core
             if (changed)
             {
                 Save(saveData);
-                TeamChanged?.Invoke();
+                // 마이그레이션은 시스템 내부 정리 — 사용자 액션 아님. TeamChanged 발화 시 TutorialQuestManager가
+                // q_team 진행도 자동 가산하는 회귀 차단. UI는 다음 사용자 SetSlot 또는 첫 OnGUI 호출에서 갱신.
             }
         }
 
@@ -127,14 +133,22 @@ namespace InsectGame.Core
             string path = GetPath();
             if (!System.IO.File.Exists(path))
                 return new BattleTeamSave();
-            string json = System.IO.File.ReadAllText(path);
-            return JsonUtility.FromJson<BattleTeamSave>(json) ?? new BattleTeamSave();
+            try
+            {
+                string json = System.IO.File.ReadAllText(path);
+                return JsonUtility.FromJson<BattleTeamSave>(json) ?? new BattleTeamSave();
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning($"[BattleTeamManager] 손상된 세이브 — 기본값으로 시작: {e.Message}");
+                return new BattleTeamSave();
+            }
         }
 
         private void Save(BattleTeamSave data)
         {
             string json = JsonUtility.ToJson(data, true);
-            System.IO.File.WriteAllText(GetPath(), json);
+            AtomicFileWriter.WriteAllText(GetPath(), json);
         }
 
         private string GetPath()

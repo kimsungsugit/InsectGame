@@ -1,5 +1,10 @@
 """에이전트 커버리지 재검증"""
-import glob
+import glob, sys, io
+
+try:
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+except Exception:
+    pass
 
 agents = {
     "architect": [
@@ -50,6 +55,7 @@ agents = {
         "Assets/Scripts/UI/CaptureChoiceUI.cs",
     ],
     "data-architect": [
+        "Assets/Scripts/Core/RegionDefinitions.cs",
         "Assets/Scripts/Data/InsectData.cs",
         "Assets/Scripts/Data/InsectDatabase.cs",
         "Assets/Scripts/Data/InsectSkill.cs",
@@ -124,9 +130,11 @@ agents = {
         "Assets/Scripts/UI/QuickAccessBarUI.cs",
         "Assets/Scripts/UI/TutorialQuestUI.cs",
         "Assets/Scripts/UI/WorldLobbyUI.cs",
+        "Assets/Scripts/UI/CharacterPortraitRenderer.cs",
         "Assets/Scripts/UI/UIHelper.cs",
         "Assets/Scripts/UI/UITheme.cs",
         "Assets/Scripts/UI/UITween.cs",
+        "Assets/Scripts/UI/ModalUIRegistry.cs",
         "Assets/Scripts/Core/PlayerCurrencyUIController.cs",
         "Assets/Scripts/Core/PlayerProgressUIController.cs",
         "Assets/Scripts/Core/PlayerInsectLevelUpUIController.cs",
@@ -142,13 +150,19 @@ agents = {
         "Assets/Scripts/UI/BattleScreenUI.cs",
         "Assets/Scripts/UI/RaidBattleUI.cs",
         "Assets/Scripts/Data/ItemRarityPalette.cs",
+        "Assets/Scripts/Core/SubAreaEnvironment.cs",
+        "Assets/Scripts/Core/WorldTerrainBuilder.cs",
+        "Assets/Scripts/Core/SubAreaWorldBuilder.cs",
+        "Assets/Scripts/Core/RegionTerrainBuilder.cs",
         "Assets/Scripts/Core/ProceduralAudioGenerator.cs",
         "Assets/Scripts/Core/AudioManager.cs",
+        "Assets/Scripts/Core/UIAudioBinder.cs",
         "Assets/Scripts/Core/CharacterOutfitManager.cs",
         "Assets/Scripts/Core/OutfitBonusProvider.cs",
         "Assets/Scripts/Core/CameraFollower.cs",
         "Assets/Scripts/Core/GameplayTuningApplier.cs",
         "Assets/Scripts/Core/GameplayTuningProfile.cs",
+        "Assets/Scripts/Core/PlayerVisualBuilder.cs",
         "Assets/Scripts/Dex/RarityIconProvider.cs",
     ],
 }

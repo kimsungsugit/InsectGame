@@ -16,6 +16,42 @@ namespace InsectGame.UI
 
         private bool battleActive;
 
+        // GUIStyle 캐싱
+        private GUIStyle headerStyle;
+        private GUIStyle keyStyle;
+        private GUIStyle descStyle;
+        private GUIStyle centeredKeyStyle;
+        private GUIStyle hintStyle;
+        private GUIStyle titleStyle;
+        private GUIStyle itemNameStyle;
+        private GUIStyle itemCountStyle;
+        private bool stylesInit;
+
+        private void InitStyles()
+        {
+            if (stylesInit) return;
+            stylesInit = true;
+
+            headerStyle = new GUIStyle(GUI.skin.label) { fontSize = 36, fontStyle = FontStyle.Bold };
+            headerStyle.normal.textColor = new Color(0.95f, 0.88f, 0.5f);
+
+            keyStyle = new GUIStyle(GUI.skin.label) { fontSize = 32, fontStyle = FontStyle.Bold };
+            keyStyle.normal.textColor = Color.white;
+
+            descStyle = new GUIStyle(GUI.skin.label) { fontSize = 32 };
+            descStyle.normal.textColor = new Color(0.78f, 0.78f, 0.78f);
+
+            centeredKeyStyle = new GUIStyle(keyStyle) { alignment = TextAnchor.MiddleCenter };
+
+            hintStyle = new GUIStyle(GUI.skin.label) { fontSize = 32, fontStyle = FontStyle.Bold };
+
+            titleStyle = new GUIStyle(GUI.skin.label) { fontSize = 32, fontStyle = FontStyle.Bold };
+
+            itemNameStyle = new GUIStyle(GUI.skin.label) { fontSize = 30 };
+
+            itemCountStyle = new GUIStyle(GUI.skin.label) { fontSize = 30 };
+        }
+
         private void OnEnable()
         {
             if (battleController != null)
@@ -39,9 +75,12 @@ namespace InsectGame.UI
 
         private void OnGUI()
         {
+            UIScale.Begin();
+            InitStyles();
             DrawKeyGuide();
             DrawCurrentRegion();
             DrawCaptureItems();
+            UIScale.End();
         }
 
         private void DrawKeyGuide()
@@ -53,7 +92,7 @@ namespace InsectGame.UI
             if (inMinigame) rowCount++;
             if (battleActive) rowCount++;
             float bgH = (rowCount + 1) * lineH + 20;
-            float y = Screen.height - bgH - 18f;
+            float y = UIScale.VirtualScreenHeight - bgH - 18f;
 
             GUI.color = new Color(0, 0, 0, 0.6f);
             GUI.DrawTexture(new Rect(x - 8, y - 8, 560, bgH), Texture2D.whiteTexture);
@@ -61,17 +100,7 @@ namespace InsectGame.UI
             GUI.DrawTexture(new Rect(x - 8, y - 8, 560, 4), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
-            GUIStyle header = new GUIStyle(GUI.skin.label)
-            { fontSize = 36, fontStyle = FontStyle.Bold };
-            header.normal.textColor = new Color(0.95f, 0.88f, 0.5f);
-
-            GUIStyle keyStyle = new GUIStyle(GUI.skin.label) { fontSize = 32, fontStyle = FontStyle.Bold };
-            keyStyle.normal.textColor = Color.white;
-
-            GUIStyle descStyle = new GUIStyle(GUI.skin.label) { fontSize = 32 };
-            descStyle.normal.textColor = new Color(0.78f, 0.78f, 0.78f);
-
-            GUI.Label(new Rect(x + 6, y, 460, lineH), "조작법", header);
+            GUI.Label(new Rect(x + 6, y, 460, lineH), "조작법", headerStyle);
             y += lineH + 2;
 
             DrawKeyRow(x, ref y, lineH, "WASD", "이동", keyStyle, descStyle);
@@ -97,8 +126,7 @@ namespace InsectGame.UI
             GUI.DrawTexture(new Rect(x, y + 3, keyW, h - 6), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
-            GUIStyle centeredKey = new GUIStyle(ks) { alignment = TextAnchor.MiddleCenter };
-            GUI.Label(new Rect(x, y, keyW, h), key, centeredKey);
+            GUI.Label(new Rect(x, y, keyW, h), key, centeredKeyStyle);
             GUI.Label(new Rect(x + keyW + 16, y, 400, h), desc, ds);
             y += h;
         }
@@ -113,7 +141,7 @@ namespace InsectGame.UI
 
             float w = 520f;
             float h = 80f;
-            float x = (Screen.width - w) / 2f;
+            float x = (UIScale.VirtualScreenWidth - w) / 2f;
             float y = 14f;
 
             GUI.color = new Color(0, 0, 0, 0.6f);
@@ -121,11 +149,11 @@ namespace InsectGame.UI
             GUI.color = regionCol;
             GUI.DrawTexture(new Rect(x, y + h - 5, w, 5), Texture2D.whiteTexture);
 
-            GUIStyle style = new GUIStyle(GUI.skin.label)
-            { fontSize = 44, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            style.normal.textColor = regionCol;
+            hintStyle.fontSize = 44;
+            hintStyle.alignment = TextAnchor.MiddleCenter;
+            hintStyle.normal.textColor = regionCol;
             GUI.color = Color.white;
-            GUI.Label(new Rect(x, y, w, h), regionName, style);
+            GUI.Label(new Rect(x, y, w, h), regionName, hintStyle);
         }
 
         private void DrawCaptureItems()
@@ -134,7 +162,7 @@ namespace InsectGame.UI
 
             float w = 440f;
             float h = 220f;
-            float x = Screen.width - w - 20;
+            float x = UIScale.VirtualScreenWidth - w - 20;
             float y = 60f;
 
             GUI.color = new Color(0, 0, 0, 0.6f);
@@ -143,9 +171,8 @@ namespace InsectGame.UI
             GUI.DrawTexture(new Rect(x, y, w, 4), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
-            GUIStyle titleS = new GUIStyle(GUI.skin.label) { fontSize = 32, fontStyle = FontStyle.Bold };
-            titleS.normal.textColor = new Color(0.75f, 0.75f, 0.75f);
-            GUI.Label(new Rect(x + 16, y + 10, w, 40), "포획 아이템", titleS);
+            titleStyle.normal.textColor = new Color(0.75f, 0.75f, 0.75f);
+            GUI.Label(new Rect(x + 16, y + 10, w, 40), "포획 아이템", titleStyle);
 
             float iy = y + 56;
             DrawItemCount(x + 16, iy, "기본 채집망", itemInventory.GetCount("net_basic"), new Color(0.65f, 0.65f, 0.65f));
@@ -159,14 +186,14 @@ namespace InsectGame.UI
             GUI.DrawTexture(new Rect(x, y + 10, 22, 22), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
-            GUIStyle ns = new GUIStyle(GUI.skin.label) { fontSize = 30 };
-            ns.normal.textColor = col;
-            GUI.Label(new Rect(x + 32, y, 220, 42), label, ns);
+            itemNameStyle.normal.textColor = col;
+            GUI.Label(new Rect(x + 32, y, 220, 42), label, itemNameStyle);
 
-            GUIStyle cs = new GUIStyle(GUI.skin.label)
-            { fontSize = 32, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleRight };
-            cs.normal.textColor = count > 0 ? new Color(1f, 0.92f, 0.5f) : new Color(0.4f, 0.3f, 0.3f);
-            GUI.Label(new Rect(x + 260, y, 120, 42), $"x{count}", cs);
+            itemCountStyle.fontStyle = FontStyle.Bold;
+            itemCountStyle.fontSize = 32;
+            itemCountStyle.alignment = TextAnchor.MiddleRight;
+            itemCountStyle.normal.textColor = count > 0 ? new Color(1f, 0.92f, 0.5f) : new Color(0.4f, 0.3f, 0.3f);
+            GUI.Label(new Rect(x + 260, y, 120, 42), $"x{count}", itemCountStyle);
         }
 
         public void AutoWire(CaptureMinigameController mg, InsectBattleController bc, InsectBattleUIController bui)

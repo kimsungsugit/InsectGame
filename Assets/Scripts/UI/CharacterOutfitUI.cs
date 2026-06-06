@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace InsectGame.UI
 {
-    public class CharacterOutfitUI : MonoBehaviour
+    public class CharacterOutfitUI : MonoBehaviour, IModalUI
     {
         [SerializeField] private CharacterOutfitManager outfitManager;
         [SerializeField] private OutfitBonusProvider bonusProvider;
@@ -23,6 +23,9 @@ namespace InsectGame.UI
         // 패널 페이드
         private TweenHandle openFade;
         private bool wasOpen;
+
+        // 캐릭터 미리보기 회전
+        private float previewRotate;
 
         // 호버 툴팁 (ScrollView 밖에서 렌더링)
         private OutfitItem hoveredItemForTooltip;
@@ -50,11 +53,31 @@ namespace InsectGame.UI
         private GUIStyle bonusStyle;
         private GUIStyle setStyle;
         private GUIStyle setActiveStyle;
+        private GUIStyle infoStyleCache;
+        private GUIStyle infoNameStyleCache;
         private bool stylesInitialized;
+
+        private static readonly Color InfoLabelCol = new Color(0.85f, 0.9f, 1f);
 
         public void Toggle()
         {
             isOpen = !isOpen;
+            if (isOpen) ModalUIRegistry.Register(this);
+            else ModalUIRegistry.Unregister(this);
+        }
+
+        public void CloseModal()
+        {
+            isOpen = false;
+            ModalUIRegistry.Unregister(this);
+        }
+
+        private void OnDisable()
+        {
+            // 옛은 isOpen=true 그대로 두고 Unregister만 호출 → 같은 GO SetActive 토글 시
+            // isOpen=true이지만 Registry 미등록 상태로 stale. HandleEscape가 이 모달을 무시.
+            isOpen = false;
+            ModalUIRegistry.Unregister(this);
         }
 
         public void AutoWire(CharacterOutfitManager manager)
@@ -90,7 +113,7 @@ namespace InsectGame.UI
             tabNormalStyle = new GUIStyle(GUI.skin.button);
             tabNormalStyle.normal.background = tabNormalTex;
             tabNormalStyle.normal.textColor = Color.white;
-            tabNormalStyle.fontSize = 14;
+            tabNormalStyle.fontSize = 20;
             tabNormalStyle.fontStyle = FontStyle.Bold;
             tabNormalStyle.alignment = TextAnchor.MiddleCenter;
 
@@ -117,13 +140,14 @@ namespace InsectGame.UI
             titleStyle.alignment = TextAnchor.MiddleLeft;
 
             labelStyle = new GUIStyle(GUI.skin.label);
-            labelStyle.fontSize = 12;
+            labelStyle.fontSize = 18;
+            labelStyle.fontStyle = FontStyle.Bold;
             labelStyle.normal.textColor = Color.white;
             labelStyle.alignment = TextAnchor.MiddleCenter;
             labelStyle.wordWrap = true;
 
             coinStyle = new GUIStyle(GUI.skin.label);
-            coinStyle.fontSize = 16;
+            coinStyle.fontSize = 22;
             coinStyle.fontStyle = FontStyle.Bold;
             coinStyle.normal.textColor = new Color(1f, 0.84f, 0f, 1f);
             coinStyle.alignment = TextAnchor.MiddleLeft;
@@ -131,7 +155,7 @@ namespace InsectGame.UI
             buttonStyle = new GUIStyle(GUI.skin.button);
             buttonStyle.normal.background = btnTex;
             buttonStyle.normal.textColor = Color.white;
-            buttonStyle.fontSize = 11;
+            buttonStyle.fontSize = 16;
             buttonStyle.fontStyle = FontStyle.Bold;
 
             closeStyle = new GUIStyle(GUI.skin.button);
@@ -153,6 +177,15 @@ namespace InsectGame.UI
 
             setActiveStyle = new GUIStyle(setStyle);
             setActiveStyle.fontStyle = FontStyle.Bold;
+
+            // OnGUI 매 프레임 new GUIStyle 회귀 차단 — DrawPanel 캐릭터 아래 슬롯 정보 라벨용.
+            infoStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 16, alignment = TextAnchor.MiddleLeft, wordWrap = true };
+            infoStyleCache.normal.textColor = InfoLabelCol;
+
+            infoNameStyleCache = new GUIStyle(infoStyleCache)
+            { fontSize = 20, fontStyle = FontStyle.Bold };
+            infoNameStyleCache.normal.textColor = Color.white;
         }
 
         private void OnGUI()
@@ -173,29 +206,63 @@ namespace InsectGame.UI
 
             InitStyles();
 
-            float panelW = 800f;
-            float panelH = 600f;
+            // 회전 애니메이션 갱신 (Repaint에서만 누적)
+            if (Event.current.type == EventType.Repaint)
+                previewRotate += Time.deltaTime * 30f;
+
+            float panelW = Mathf.Min(1200f, Screen.width * 0.96f);
+            float panelH = Mathf.Min(820f, Screen.height * 0.95f);
             float x = (Screen.width - panelW) * 0.5f;
             float y = (Screen.height - panelH) * 0.5f;
             Rect panelRect = new Rect(x, y, panelW, panelH);
 
             GUI.Box(panelRect, "", panelStyle);
 
-            // 제목
-            GUI.Label(new Rect(x + 16, y + 10, 300, 36), "캐릭터 꾸미기", titleStyle);
+            // 제목 — UIHelper.CachedStyle로 1회 캐싱 (옛 매 OnGUI new GUIStyle 회귀 차단)
+            GUIStyle bigTitle = UIHelper.CachedStyle("outfit_big_title", () =>
+            {
+                GUIStyle s = new GUIStyle(GUI.skin.label) { fontSize = 30, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
+                s.normal.textColor = Color.white;
+                return s;
+            });
+            GUI.Label(new Rect(x + 24, y + 14, 500, 44), "캐릭터 꾸미기", bigTitle);
 
             // 닫기 버튼
-            if (GUI.Button(new Rect(x + panelW - 44, y + 8, 32, 32), "X", closeStyle))
+            if (GUI.Button(new Rect(x + panelW - 56, y + 12, 44, 40), "X", closeStyle))
             {
-                isOpen = false;
+                CloseModal();
             }
 
-            // ── 왼쪽 슬롯 탭 ──
-            float tabX = x + 10;
-            float tabY = y + 52;
-            float tabW = 100;
-            float tabH = 38;
-            float tabGap = 4;
+            // ── 좌측 캐릭터 미리보기 영역 ──
+            float charAreaX = x + 20;
+            float charAreaY = y + 70;
+            float charAreaW = 360f;
+            float charAreaH = panelH - 90;
+            GUI.color = new Color(0.04f, 0.06f, 0.12f, 0.6f * panelAlpha);
+            GUI.DrawTexture(new Rect(charAreaX, charAreaY, charAreaW, charAreaH), Texture2D.whiteTexture);
+            GUI.color = new Color(1f, 1f, 1f, panelAlpha);
+
+            float charCx = charAreaX + charAreaW * 0.5f;
+            float charCy = charAreaY + charAreaH * 0.45f;
+            // 치비 비례로 캐릭터 총 높이가 줄어(204→137 단위) 미리보기가 작아짐 → 박스(360px 폭)에
+            // 맞춰 2.4→2.9로 키움. 치비 최대 폭 ~72×2.9≈209px < 360 여유.
+            float charScale = 2.9f;
+            float swayX = Mathf.Sin(previewRotate * Mathf.Deg2Rad) * 12f * charScale;
+            CharacterPortraitRenderer.DrawWithOutfit(charCx, charCy, charScale, swayX);
+
+            // 활성 슬롯 정보 (캐릭터 아래)
+            float infoY = charAreaY + charAreaH - 200f;
+            OutfitItem cur = outfitManager.GetEquipped(selectedSlot);
+            string curName = cur != null ? cur.displayName : "(없음)";
+            GUI.Label(new Rect(charAreaX + 16, infoY, charAreaW - 32, 30), $"현재 {slotLabels[(int)selectedSlot]}:", infoStyleCache);
+            GUI.Label(new Rect(charAreaX + 16, infoY + 28, charAreaW - 32, 32), curName, infoNameStyleCache);
+
+            // ── 슬롯 탭 (캐릭터 영역 우측) ──
+            float tabX = charAreaX + charAreaW + 20;
+            float tabY = y + 70;
+            float tabW = 140;
+            float tabH = 50;
+            float tabGap = 6;
 
             OutfitSlot[] slots = (OutfitSlot[])System.Enum.GetValues(typeof(OutfitSlot));
             for (int i = 0; i < slots.Length; i++)
@@ -253,16 +320,16 @@ namespace InsectGame.UI
             }
 
             // ── 오른쪽 아이템 그리드 ──
-            float gridX = x + tabW + 20;
-            float gridY = y + 52;
-            float gridW = panelW - tabW - 34;
-            float gridH = panelH - 100;
+            float gridX = tabX + tabW + 20;
+            float gridY = y + 70;
+            float gridW = panelW - (gridX - x) - 20;
+            float gridH = panelH - 150;
 
             OutfitItem[] items = outfitManager.GetItemsForSlot(selectedSlot);
 
-            float cardW = 120f;
-            float cardH = 160f;
-            float cardGap = 10f;
+            float cardW = 200f;
+            float cardH = 240f;
+            float cardGap = 14f;
             int cols = Mathf.Max(1, Mathf.FloorToInt((gridW - 10) / (cardW + cardGap)));
             int rows = Mathf.CeilToInt((float)items.Length / cols);
             float contentH = rows * (cardH + cardGap) + 10;
@@ -311,29 +378,51 @@ namespace InsectGame.UI
                     GUI.DrawTexture(cardRect, UIHelper.GetCachedTex(new Color(1f, 1f, 1f, flashAlpha)));
                 }
 
-                // 색상 미리보기
-                float previewSize = 50f;
+                // 프로시저럴 의상 아이콘 — 슬롯별 실제 형태 (모자/도구/신발/...)
+                // 옛 GetSlotSymbol("^", "T" 등 텍스트)은 어떤 아이템인지 시각적 구별 불가
+                float previewSize = 100f;
                 Rect previewRect = new Rect(cx + (cardW - previewSize) * 0.5f, cy + 10, previewSize, previewSize);
                 if (item.primaryColor.a > 0.01f)
                 {
-                    GUI.DrawTexture(previewRect, UIHelper.GetCachedTex(item.primaryColor));
+                    // 배경 (어두운 톤)
+                    Color bgCol = new Color(item.primaryColor.r * 0.3f + 0.05f, item.primaryColor.g * 0.3f + 0.05f, item.primaryColor.b * 0.3f + 0.05f, 0.8f);
+                    GUI.DrawTexture(previewRect, UIHelper.GetCachedTex(bgCol));
+                    // 테두리
+                    GUI.DrawTexture(new Rect(previewRect.x, previewRect.y, previewRect.width, 2), UIHelper.GetCachedTex(item.primaryColor));
+                    GUI.DrawTexture(new Rect(previewRect.x, previewRect.yMax - 2, previewRect.width, 2), UIHelper.GetCachedTex(item.primaryColor));
+                    GUI.DrawTexture(new Rect(previewRect.x, previewRect.y, 2, previewRect.height), UIHelper.GetCachedTex(item.primaryColor));
+                    GUI.DrawTexture(new Rect(previewRect.xMax - 2, previewRect.y, 2, previewRect.height), UIHelper.GetCachedTex(item.primaryColor));
+                    // 슬롯/itemId별 실제 형태 렌더링
+                    CharacterPortraitRenderer.DrawItemPreview(previewRect, item.slot, item.itemId, item.primaryColor, item.secondaryColor);
                 }
                 else
                 {
-                    // 투명 표시 (체크 패턴 대신 회색 X)
-                    GUI.Label(previewRect, "--", labelStyle);
+                    GUI.DrawTexture(previewRect, UIHelper.GetCachedTex(new Color(0.15f, 0.15f, 0.15f, 0.5f)));
+                    GUIStyle emptyStyle = UIHelper.CachedStyle("outfit_empty", () =>
+                    {
+                        GUIStyle s = new GUIStyle(GUI.skin.label) { fontSize = 20, alignment = TextAnchor.MiddleCenter };
+                        s.normal.textColor = new Color(0.4f, 0.4f, 0.4f);
+                        return s;
+                    });
+                    GUI.Label(previewRect, "---", emptyStyle);
                 }
 
                 // 이름
-                Rect nameRect = new Rect(cx + 2, cy + 65, cardW - 4, 30);
+                Rect nameRect = new Rect(cx + 4, cy + 116, cardW - 8, 36);
                 GUI.Label(nameRect, item.displayName, labelStyle);
 
-                // 보너스 표시
+                // 보너스 표시 — CachedStyle로 1회 캐싱 (카드 12개 × 30FPS = 360회/초 new GUIStyle 회귀 차단)
                 string bonusText = item.statBonus.GetPrimaryBonusText();
                 if (!string.IsNullOrEmpty(bonusText))
                 {
-                    Rect bonusRect = new Rect(cx + 2, cy + 90, cardW - 4, 16);
-                    GUI.Label(bonusRect, bonusText, bonusStyle);
+                    Rect bonusRect = new Rect(cx + 4, cy + 152, cardW - 8, 22);
+                    GUIStyle bigBonus = UIHelper.CachedStyle("outfit_big_bonus", () =>
+                    {
+                        GUIStyle s = new GUIStyle(GUI.skin.label) { fontSize = 14, alignment = TextAnchor.MiddleCenter };
+                        s.normal.textColor = new Color(0.4f, 0.9f, 0.4f);
+                        return s;
+                    });
+                    GUI.Label(bonusRect, bonusText, bigBonus);
                 }
 
                 // 세트 도트 표시
@@ -355,7 +444,7 @@ namespace InsectGame.UI
                 }
 
                 // 버튼 영역
-                Rect btnRect = new Rect(cx + 10, cy + cardH - 36, cardW - 20, 26);
+                Rect btnRect = new Rect(cx + 14, cy + cardH - 48, cardW - 28, 38);
 
                 if (owned)
                 {
@@ -398,11 +487,11 @@ namespace InsectGame.UI
                         GUI.backgroundColor = Color.white;
 
                         // 프리미엄 표시
-                        Rect premRect = new Rect(cx + 2, cy + 95, cardW - 4, 16);
+                        Rect premRect = new Rect(cx + 4, cy + 178, cardW - 8, 20);
                         GUIStyle premStyle = UIHelper.CachedStyle("outfit_prem", () =>
                         {
                             GUIStyle s = new GUIStyle(GUI.skin.label);
-                            s.fontSize = 10;
+                            s.fontSize = 14;
                             s.normal.textColor = new Color(0.9f, 0.7f, 1f);
                             s.alignment = TextAnchor.MiddleCenter;
                             return s;
@@ -426,13 +515,14 @@ namespace InsectGame.UI
                         GUI.Button(btnRect, "잠김", buttonStyle);
                         GUI.enabled = true;
 
-                        Rect hintRect = new Rect(cx + 2, cy + 95, cardW - 4, 20);
+                        Rect hintRect = new Rect(cx + 4, cy + 178, cardW - 8, 24);
                         GUIStyle hintStyle = UIHelper.CachedStyle("outfit_hint", () =>
                         {
                             GUIStyle s = new GUIStyle(GUI.skin.label);
-                            s.fontSize = 10;
+                            s.fontSize = 13;
                             s.normal.textColor = new Color(0.7f, 0.6f, 0.3f);
                             s.alignment = TextAnchor.MiddleCenter;
+                            s.wordWrap = true;
                             return s;
                         });
                         GUI.Label(hintRect, item.unlockCondition, hintStyle);
@@ -494,11 +584,12 @@ namespace InsectGame.UI
                     if (total.candyMultiplier > 0f) summary += $" 캔디+{total.candyMultiplier * 100f:0}%";
                     if (total.rareSpawnBonus > 0f) summary += $" 레어+{total.rareSpawnBonus * 100f:0}%";
 
-                    Rect summaryRect = new Rect(x + 16, y + panelH - 60, panelW - 32, 20);
+                    Rect summaryRect = new Rect(x + 24, y + panelH - 72, panelW - 48, 26);
                     GUIStyle summaryStyle = UIHelper.CachedStyle("outfit_summary", () =>
                     {
                         GUIStyle s = new GUIStyle(GUI.skin.label);
-                        s.fontSize = 11;
+                        s.fontSize = 16;
+                        s.fontStyle = FontStyle.Bold;
                         s.normal.textColor = new Color(0.4f, 0.9f, 0.4f);
                         s.alignment = TextAnchor.MiddleLeft;
                         return s;
@@ -507,7 +598,7 @@ namespace InsectGame.UI
                 }
             }
 
-            Rect coinRect = new Rect(x + 16, y + panelH - 38, 500, 30);
+            Rect coinRect = new Rect(x + 24, y + panelH - 44, 800, 32);
             PlayerCurrencyWallet w = outfitManager.GetComponent<PlayerCurrencyWallet>() ??
                 FindFirstObjectByType<PlayerCurrencyWallet>();
             int coinCount = (w != null) ? w.Coins : 0;
@@ -536,6 +627,22 @@ namespace InsectGame.UI
                 }
 
                 prevSetStates[setInfo.set.setId] = nowActive;
+            }
+        }
+
+        private static string GetSlotSymbol(OutfitSlot slot)
+        {
+            switch (slot)
+            {
+                case OutfitSlot.Hat: return "^";
+                case OutfitSlot.Top: return "T";
+                case OutfitSlot.Bottom: return "II";
+                case OutfitSlot.Outerwear: return "W";
+                case OutfitSlot.Shoes: return "U";
+                case OutfitSlot.Backpack: return "B";
+                case OutfitSlot.Tool: return "+";
+                case OutfitSlot.Accessory: return "*";
+                default: return "?";
             }
         }
     }

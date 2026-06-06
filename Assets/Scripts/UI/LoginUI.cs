@@ -64,6 +64,7 @@ namespace InsectGame.UI
             {
                 AuthManager.Instance.LoginCompleted += OnLoginCompleted;
                 AuthManager.Instance.RegisterCompleted += OnRegisterCompleted;
+                AuthManager.Instance.AuthFailed += OnAuthFailed;
             }
         }
 
@@ -73,7 +74,16 @@ namespace InsectGame.UI
             {
                 AuthManager.Instance.LoginCompleted -= OnLoginCompleted;
                 AuthManager.Instance.RegisterCompleted -= OnRegisterCompleted;
+                AuthManager.Instance.AuthFailed -= OnAuthFailed;
             }
+        }
+
+        // 토큰 갱신 실패 등 silent ClearAuth 시 사용자에게 메시지 표시 + 로그인 화면 복귀
+        private void OnAuthFailed(string reason)
+        {
+            errorMessage = reason ?? "인증 실패 — 다시 로그인 해주세요";
+            errorTimer = 5f;
+            phase = LoginPhase.Login;
         }
 
         private void Update()
@@ -136,43 +146,43 @@ namespace InsectGame.UI
 
         private void DrawLoginPanel()
         {
-            float pw = Mathf.Min(720f, Screen.width * 0.85f);
-            float ph = Mathf.Min(820f, Screen.height * 0.9f);
+            float pw = Mathf.Min(1125f, Screen.width * 0.9f);
+            float ph = Mathf.Min(1250f, Screen.height * 0.95f);
             float px = (Screen.width - pw) * 0.5f;
             float py = (Screen.height - ph) * 0.5f;
 
             GUI.Box(new Rect(px, py, pw, ph), "", panelStyle);
 
-            float cx = px + 60f;
-            float cy = py + 40f;
-            float fieldW = pw - 120f;
-            float fieldH = 44f;
-            float btnH = 54f;
+            float cx = px + 88f;
+            float cy = py + 63f;
+            float fieldW = pw - 175f;
+            float fieldH = 70f;
+            float btnH = 85f;
 
-            // 타이틀
-            GUIStyle bigTitle = new GUIStyle(titleStyle) { fontSize = 52 };
-            GUI.Label(new Rect(px, cy, pw, 64f), "곤충탐험 온라인", bigTitle);
-            cy += 80f;
+            // 타이틀 — base 캐시 + fontSize 동적 갱신 (옛 매 프레임 new GUIStyle 회귀 차단)
+            titleStyle.fontSize = 80;
+            GUI.Label(new Rect(px, cy, pw, 100f), "곤충탐험 온라인", titleStyle);
+            cy += 125f;
 
             // 이메일
-            GUIStyle bigLabel = new GUIStyle(labelStyle) { fontSize = 22 };
-            GUI.Label(new Rect(cx, cy, 120f, 30f), "이메일:", bigLabel);
-            cy += 32f;
-            GUIStyle bigField = new GUIStyle(fieldStyle) { fontSize = 22 };
-            bigField.fixedHeight = fieldH;
-            emailInput = GUI.TextField(new Rect(cx, cy, fieldW, fieldH), emailInput, 128, bigField);
-            cy += fieldH + 14f;
+            labelStyle.fontSize = 35;
+            GUI.Label(new Rect(cx, cy, 250f, 48f), "이메일:", labelStyle);
+            cy += 50f;
+            fieldStyle.fontSize = 35;
+            fieldStyle.fixedHeight = fieldH;
+            emailInput = GUI.TextField(new Rect(cx, cy, fieldW, fieldH), emailInput, 128, fieldStyle);
+            cy += fieldH + 23f;
 
             // 비밀번호
-            GUI.Label(new Rect(cx, cy, 120f, 30f), "비밀번호:", bigLabel);
-            cy += 32f;
-            passwordInput = GUI.PasswordField(new Rect(cx, cy, fieldW, fieldH), passwordInput, '*', 64, bigField);
-            cy += fieldH + 20f;
+            GUI.Label(new Rect(cx, cy, 250f, 48f), "비밀번호:", labelStyle);
+            cy += 50f;
+            passwordInput = GUI.PasswordField(new Rect(cx, cy, fieldW, fieldH), passwordInput, '*', 64, fieldStyle);
+            cy += fieldH + 33f;
 
             // 로그인 버튼
-            GUIStyle bigBtn = new GUIStyle(btnGreenStyle) { fontSize = 26 };
+            btnGreenStyle.fontSize = 40;
             GUI.enabled = !isProcessing;
-            if (GUI.Button(new Rect(cx, cy, fieldW, btnH), isProcessing ? "로딩 중..." : "로그인", bigBtn))
+            if (GUI.Button(new Rect(cx, cy, fieldW, btnH), isProcessing ? "로딩 중..." : "로그인", btnGreenStyle))
             {
                 if (!isProcessing && AuthManager.Instance != null)
                 {
@@ -180,11 +190,11 @@ namespace InsectGame.UI
                     AuthManager.Instance.LoginWithEmail(emailInput, passwordInput);
                 }
             }
-            cy += btnH + 12f;
+            cy += btnH + 18f;
 
             // 회원가입 버튼
-            GUIStyle bigBtnBlue = new GUIStyle(btnBlueStyle) { fontSize = 22 };
-            if (GUI.Button(new Rect(cx, cy, fieldW, btnH - 6), "이메일 회원가입", bigBtnBlue))
+            btnBlueStyle.fontSize = 35;
+            if (GUI.Button(new Rect(cx, cy, fieldW, btnH - 8), "이메일 회원가입", btnBlueStyle))
             {
                 if (!isProcessing)
                 {
@@ -195,18 +205,18 @@ namespace InsectGame.UI
                 }
             }
             GUI.enabled = true;
-            cy += btnH + 8f;
+            cy += btnH + 13f;
 
             // 구분선
-            GUIStyle bigSep = new GUIStyle(separatorStyle) { fontSize = 20 };
-            GUI.Label(new Rect(px, cy, pw, 28f), "───── 또는 ─────", bigSep);
-            cy += 38f;
+            separatorStyle.fontSize = 30;
+            GUI.Label(new Rect(px, cy, pw, 40f), "───── 또는 ─────", separatorStyle);
+            cy += 53f;
 
             // 소셜 로그인
-            float socialBtnH = 48f;
+            float socialBtnH = 73f;
             GUI.enabled = !isProcessing;
-            GUIStyle bigYellow = new GUIStyle(btnYellowStyle) { fontSize = 22 };
-            if (GUI.Button(new Rect(cx, cy, fieldW, socialBtnH), "Google로 로그인", bigYellow))
+            btnYellowStyle.fontSize = 33;
+            if (GUI.Button(new Rect(cx, cy, fieldW, socialBtnH), "Google로 로그인", btnYellowStyle))
             {
                 if (!isProcessing && AuthManager.Instance != null)
                 {
@@ -214,10 +224,10 @@ namespace InsectGame.UI
                     AuthManager.Instance.LoginWithGoogle();
                 }
             }
-            cy += socialBtnH + 8f;
+            cy += socialBtnH + 13f;
 
-            GUIStyle bigBrown = new GUIStyle(btnBrownStyle) { fontSize = 22 };
-            if (GUI.Button(new Rect(cx, cy, fieldW, socialBtnH), "카카오로 로그인", bigBrown))
+            btnBrownStyle.fontSize = 33;
+            if (GUI.Button(new Rect(cx, cy, fieldW, socialBtnH), "카카오로 로그인", btnBrownStyle))
             {
                 if (!isProcessing && AuthManager.Instance != null)
                 {
@@ -225,10 +235,10 @@ namespace InsectGame.UI
                     AuthManager.Instance.LoginWithKakao();
                 }
             }
-            cy += socialBtnH + 8f;
+            cy += socialBtnH + 13f;
 
-            GUIStyle bigGray = new GUIStyle(btnGrayStyle) { fontSize = 22 };
-            if (GUI.Button(new Rect(cx, cy, fieldW, socialBtnH), "게스트로 시작", bigGray))
+            btnGrayStyle.fontSize = 33;
+            if (GUI.Button(new Rect(cx, cy, fieldW, socialBtnH), "게스트로 시작", btnGrayStyle))
             {
                 if (!isProcessing && AuthManager.Instance != null)
                 {
@@ -237,13 +247,13 @@ namespace InsectGame.UI
                 }
             }
             GUI.enabled = true;
-            cy += socialBtnH + 14f;
+            cy += socialBtnH + 23f;
 
             // 에러 메시지
             if (errorTimer > 0 && !string.IsNullOrEmpty(errorMessage))
             {
-                GUIStyle bigError = new GUIStyle(errorStyle) { fontSize = 20 };
-                GUI.Label(new Rect(cx, cy, fieldW, 36f), errorMessage, bigError);
+                errorStyle.fontSize = 30;
+                GUI.Label(new Rect(cx, cy, fieldW, 55f), errorMessage, errorStyle);
             }
         }
 
@@ -251,56 +261,56 @@ namespace InsectGame.UI
 
         private void DrawRegisterPanel()
         {
-            float pw = Mathf.Min(720f, Screen.width * 0.85f);
-            float ph = Mathf.Min(720f, Screen.height * 0.85f);
+            float pw = Mathf.Min(1125f, Screen.width * 0.9f);
+            float ph = Mathf.Min(1125f, Screen.height * 0.92f);
             float px = (Screen.width - pw) * 0.5f;
             float py = (Screen.height - ph) * 0.5f;
 
             GUI.Box(new Rect(px, py, pw, ph), "", panelStyle);
 
-            float cx = px + 60f;
-            float cy = py + 40f;
-            float fieldW = pw - 120f;
-            float fieldH = 44f;
+            float cx = px + 88f;
+            float cy = py + 63f;
+            float fieldW = pw - 175f;
+            float fieldH = 70f;
 
-            // 타이틀
-            GUIStyle bigSub = new GUIStyle(subtitleStyle) { fontSize = 38 };
-            GUI.Label(new Rect(px, cy, pw, 50f), "회원가입", bigSub);
-            cy += 60f;
+            // 타이틀 — base 스타일 동적 fontSize 갱신
+            subtitleStyle.fontSize = 60;
+            GUI.Label(new Rect(px, cy, pw, 80f), "회원가입", subtitleStyle);
+            cy += 100f;
 
-            GUIStyle bigLabel = new GUIStyle(labelStyle) { fontSize = 22 };
-            GUIStyle bigField = new GUIStyle(fieldStyle) { fontSize = 22 };
-            bigField.fixedHeight = fieldH;
+            labelStyle.fontSize = 35;
+            fieldStyle.fontSize = 35;
+            fieldStyle.fixedHeight = fieldH;
 
             // 이메일
-            GUI.Label(new Rect(cx, cy, 120f, 30f), "이메일:", bigLabel);
-            cy += 32f;
-            emailInput = GUI.TextField(new Rect(cx, cy, fieldW, fieldH), emailInput, 128, bigField);
-            cy += 38f;
+            GUI.Label(new Rect(cx, cy, 250f, 48f), "이메일:", labelStyle);
+            cy += 50f;
+            emailInput = GUI.TextField(new Rect(cx, cy, fieldW, fieldH), emailInput, 128, fieldStyle);
+            cy += fieldH + 18f;
 
             // 비밀번호
-            GUI.Label(new Rect(cx, cy, 100f, 24f), "비밀번호:", labelStyle);
-            cy += 26f;
-            passwordInput = GUI.PasswordField(new Rect(cx, cy, fieldW, fieldH), passwordInput, '*', 64, bigField);
-            cy += fieldH + 14f;
+            GUI.Label(new Rect(cx, cy, 250f, 48f), "비밀번호:", labelStyle);
+            cy += 50f;
+            passwordInput = GUI.PasswordField(new Rect(cx, cy, fieldW, fieldH), passwordInput, '*', 64, fieldStyle);
+            cy += fieldH + 18f;
 
             // 비밀번호 확인
-            GUI.Label(new Rect(cx, cy, 160f, 30f), "비밀번호 확인:", bigLabel);
-            cy += 32f;
-            confirmPasswordInput = GUI.PasswordField(new Rect(cx, cy, fieldW, fieldH), confirmPasswordInput, '*', 64, bigField);
-            cy += fieldH + 14f;
+            GUI.Label(new Rect(cx, cy, 300f, 48f), "비밀번호 확인:", labelStyle);
+            cy += 50f;
+            confirmPasswordInput = GUI.PasswordField(new Rect(cx, cy, fieldW, fieldH), confirmPasswordInput, '*', 64, fieldStyle);
+            cy += fieldH + 18f;
 
             // 닉네임
-            GUI.Label(new Rect(cx, cy, 120f, 30f), "닉네임:", bigLabel);
-            cy += 32f;
-            nicknameInput = GUI.TextField(new Rect(cx, cy, fieldW, fieldH), nicknameInput, 20, bigField);
-            cy += fieldH + 20f;
+            GUI.Label(new Rect(cx, cy, 250f, 48f), "닉네임:", labelStyle);
+            cy += 50f;
+            nicknameInput = GUI.TextField(new Rect(cx, cy, fieldW, fieldH), nicknameInput, 20, fieldStyle);
+            cy += fieldH + 30f;
 
             // 가입하기 버튼
-            float btnH = 54f;
-            GUIStyle bigBtnGreen = new GUIStyle(btnGreenStyle) { fontSize = 26 };
+            float btnH = 85f;
+            btnGreenStyle.fontSize = 40;
             GUI.enabled = !isProcessing;
-            if (GUI.Button(new Rect(cx, cy, fieldW, btnH), isProcessing ? "로딩 중..." : "가입하기", bigBtnGreen))
+            if (GUI.Button(new Rect(cx, cy, fieldW, btnH), isProcessing ? "로딩 중..." : "가입하기", btnGreenStyle))
             {
                 if (!isProcessing)
                 {
@@ -316,11 +326,11 @@ namespace InsectGame.UI
                     }
                 }
             }
-            cy += btnH + 12f;
+            cy += btnH + 18f;
 
             // 뒤로가기 버튼
-            GUIStyle bigBtnGray = new GUIStyle(btnGrayStyle) { fontSize = 22 };
-            if (GUI.Button(new Rect(cx, cy, fieldW, btnH - 6), "뒤로가기", bigBtnGray))
+            btnGrayStyle.fontSize = 35;
+            if (GUI.Button(new Rect(cx, cy, fieldW, btnH - 8), "뒤로가기", btnGrayStyle))
             {
                 if (!isProcessing)
                 {
@@ -329,13 +339,13 @@ namespace InsectGame.UI
                 }
             }
             GUI.enabled = true;
-            cy += btnH + 8f;
+            cy += btnH + 13f;
 
             // 에러 메시지
             if (errorTimer > 0 && !string.IsNullOrEmpty(errorMessage))
             {
-                GUIStyle bigError = new GUIStyle(errorStyle) { fontSize = 20 };
-                GUI.Label(new Rect(cx, cy, fieldW, 36f), errorMessage, bigError);
+                errorStyle.fontSize = 30;
+                GUI.Label(new Rect(cx, cy, fieldW, 55f), errorMessage, errorStyle);
             }
         }
 
@@ -343,30 +353,30 @@ namespace InsectGame.UI
 
         private void DrawLoadingPanel()
         {
-            float pw = 300f;
-            float ph = 200f;
+            float pw = 600f;
+            float ph = 375f;
             float px = (Screen.width - pw) * 0.5f;
             float py = (Screen.height - ph) * 0.5f;
 
             GUI.Box(new Rect(px, py, pw, ph), "", panelStyle);
 
-            GUI.Label(new Rect(px, py + 30f, pw, 40f), "로딩 중...", subtitleStyle);
+            subtitleStyle.fontSize = 50;
+            GUI.Label(new Rect(px, py + 63f, pw, 75f), "로딩 중...", subtitleStyle);
 
             // 회전하는 곤충 아이콘 (sin/cos 원형 이동 점)
             loadingAngle += Time.deltaTime * 3f;
             float centerX = px + pw * 0.5f;
-            float centerY = py + ph * 0.6f;
-            float radius = 25f;
+            float centerY = py + ph * 0.65f;
+            float radius = 50f;
 
-            Texture2D dotTex = MakeTex(1, 1, new Color(0.4f, 0.8f, 0.3f, 1f));
             for (int i = 0; i < 6; i++)
             {
                 float angle = loadingAngle + i * Mathf.PI * 2f / 6f;
-                float dotX = centerX + Mathf.Cos(angle) * radius - 4f;
-                float dotY = centerY + Mathf.Sin(angle) * radius - 4f;
+                float dotX = centerX + Mathf.Cos(angle) * radius - 9f;
+                float dotY = centerY + Mathf.Sin(angle) * radius - 9f;
                 float alpha = 0.3f + 0.7f * ((i + 1f) / 6f);
                 Texture2D fadeTex = MakeTex(1, 1, new Color(0.4f, 0.8f, 0.3f, alpha));
-                GUI.DrawTexture(new Rect(dotX, dotY, 8f, 8f), fadeTex);
+                GUI.DrawTexture(new Rect(dotX, dotY, 18f, 18f), fadeTex);
             }
         }
 
@@ -374,74 +384,74 @@ namespace InsectGame.UI
 
         private void DrawCharacterCreatePanel()
         {
-            float pw = Mathf.Min(750f, Screen.width * 0.88f);
-            float ph = Mathf.Min(1050f, Screen.height * 0.95f);
+            float pw = Mathf.Min(940f, Screen.width * 0.88f);
+            float ph = Mathf.Min(1313f, Screen.height * 0.95f);
             float px = (Screen.width - pw) * 0.5f;
             float py = (Screen.height - ph) * 0.5f;
 
             GUI.Box(new Rect(px, py, pw, ph), "", panelStyle);
 
-            float cx = px + 50f;
-            float cy = py + 35f;
-            float fieldW = pw - 100f;
+            float cx = px + 63f;
+            float cy = py + 44f;
+            float fieldW = pw - 125f;
 
             // 타이틀
-            GUI.Label(new Rect(px, cy, pw, 40f), "캐릭터 생성", subtitleStyle);
-            cy += 50f;
+            GUI.Label(new Rect(px, cy, pw, 50f), "캐릭터 생성", subtitleStyle);
+            cy += 63f;
 
             // 캐릭터 미리보기 (간단한 사각형 조합 실루엣)
-            DrawCharacterPreview(px + pw * 0.5f - 40f, cy, 80f, 140f);
-            cy += 155f;
+            DrawCharacterPreview(px + pw * 0.5f - 50f, cy, 100f, 175f);
+            cy += 194f;
 
             // 이름
-            GUI.Label(new Rect(cx, cy, 60f, 24f), "이름:", labelStyle);
-            characterName = GUI.TextField(new Rect(cx + 65f, cy, fieldW - 65f, 28f), characterName, 12, fieldStyle);
-            cy += 40f;
+            GUI.Label(new Rect(cx, cy, 75f, 30f), "이름:", labelStyle);
+            characterName = GUI.TextField(new Rect(cx + 82f, cy, fieldW - 82f, 35f), characterName, 12, fieldStyle);
+            cy += 50f;
 
             // 성별
             string[] genderLabels = { "남자", "여자" };
-            GUI.Label(new Rect(cx, cy, 60f, 24f), "성별:", sectionLabelStyle);
-            cy += 28f;
+            GUI.Label(new Rect(cx, cy, 75f, 30f), "성별:", sectionLabelStyle);
+            cy += 35f;
             selectedGender = DrawRadioRow(cx, cy, fieldW, genderLabels, selectedGender);
-            cy += 36f;
+            cy += 45f;
 
             // 피부색
             string[] skinLabels = { "밝은", "보통", "어두운", "진한" };
-            GUI.Label(new Rect(cx, cy, 60f, 24f), "피부색:", sectionLabelStyle);
-            cy += 28f;
+            GUI.Label(new Rect(cx, cy, 75f, 30f), "피부색:", sectionLabelStyle);
+            cy += 35f;
             selectedSkinColor = DrawRadioRow(cx, cy, fieldW, skinLabels, selectedSkinColor);
-            cy += 36f;
+            cy += 45f;
 
             // 머리 스타일
             string[] hairLabels = { "짧은", "중간", "긴", "올림" };
-            GUI.Label(new Rect(cx, cy, 60f, 24f), "머리:", sectionLabelStyle);
-            cy += 28f;
+            GUI.Label(new Rect(cx, cy, 75f, 30f), "머리:", sectionLabelStyle);
+            cy += 35f;
             selectedHairStyle = DrawRadioRow(cx, cy, fieldW, hairLabels, selectedHairStyle);
-            cy += 36f;
+            cy += 45f;
 
             // 머리 색상
             string[] hairColorLabels = { "검정", "갈색", "금발", "빨강", "보라", "파랑" };
-            GUI.Label(new Rect(cx, cy, 60f, 24f), "머리색:", sectionLabelStyle);
-            cy += 28f;
+            GUI.Label(new Rect(cx, cy, 75f, 30f), "머리색:", sectionLabelStyle);
+            cy += 35f;
             selectedHairColor = DrawRadioRow(cx, cy, fieldW, hairColorLabels, selectedHairColor);
-            cy += 36f;
+            cy += 45f;
 
             // 표정
             string[] faceLabels = { "미소", "활짝", "차분", "무표정" };
-            GUI.Label(new Rect(cx, cy, 60f, 24f), "표정:", sectionLabelStyle);
-            cy += 28f;
+            GUI.Label(new Rect(cx, cy, 75f, 30f), "표정:", sectionLabelStyle);
+            cy += 35f;
             selectedFaceType = DrawRadioRow(cx, cy, fieldW, faceLabels, selectedFaceType);
-            cy += 36f;
+            cy += 45f;
 
             // 의상
             string[] outfitLabels = { "탐험가", "연구원", "자유" };
-            GUI.Label(new Rect(cx, cy, 60f, 24f), "의상:", sectionLabelStyle);
-            cy += 28f;
+            GUI.Label(new Rect(cx, cy, 75f, 30f), "의상:", sectionLabelStyle);
+            cy += 35f;
             selectedOutfit = DrawRadioRow(cx, cy, fieldW, outfitLabels, selectedOutfit);
-            cy += 50f;
+            cy += 63f;
 
             // 모험 시작 버튼
-            if (GUI.Button(new Rect(cx, cy, fieldW, 46f), "모험 시작!", btnGreenStyle))
+            if (GUI.Button(new Rect(cx, cy, fieldW, 58f), "모험 시작!", btnGreenStyle))
             {
                 SaveCharacterCreation();
                 ApplyCharacterOutfitPreset();
@@ -451,12 +461,12 @@ namespace InsectGame.UI
 
         private int DrawRadioRow(float x, float y, float totalW, string[] labels, int selected)
         {
-            float btnW = (totalW - (labels.Length - 1) * 6f) / labels.Length;
+            float btnW = (totalW - (labels.Length - 1) * 8f) / labels.Length;
             for (int i = 0; i < labels.Length; i++)
             {
-                float bx = x + i * (btnW + 6f);
+                float bx = x + i * (btnW + 8f);
                 GUIStyle style = (i == selected) ? radioSelectedStyle : radioStyle;
-                if (GUI.Button(new Rect(bx, y, btnW, 28f), labels[i], style))
+                if (GUI.Button(new Rect(bx, y, btnW, 35f), labels[i], style))
                 {
                     selected = i;
                 }
@@ -466,126 +476,12 @@ namespace InsectGame.UI
 
         private void DrawCharacterPreview(float x, float y, float w, float h)
         {
-            // 피부색
-            Color[] skinColors =
-            {
-                new Color(1.0f, 0.87f, 0.75f),
-                new Color(0.9f, 0.75f, 0.6f),
-                new Color(0.65f, 0.5f, 0.35f),
-                new Color(0.4f, 0.28f, 0.18f)
-            };
-            Color skin = skinColors[Mathf.Clamp(selectedSkinColor, 0, 3)];
-
-            // 머리색
-            Color[] hairColors =
-            {
-                new Color(0.12f, 0.08f, 0.05f),   // 검정
-                new Color(0.35f, 0.2f, 0.1f),     // 갈색
-                new Color(0.85f, 0.7f, 0.3f),     // 금발
-                new Color(0.6f, 0.15f, 0.1f),     // 빨강
-                new Color(0.2f, 0.15f, 0.35f),    // 보라
-                new Color(0.15f, 0.3f, 0.5f)      // 파랑
-            };
-            Color hair = hairColors[Mathf.Clamp(selectedHairColor, 0, hairColors.Length - 1)];
-
-            // 의상색
-            Color[] outfitColors =
-            {
-                new Color(0.16f, 0.32f, 0.72f),  // 탐험가: 파랑
-                new Color(0.9f, 0.9f, 0.92f),     // 연구원: 흰
-                new Color(0.6f, 0.2f, 0.2f)       // 자유: 빨강
-            };
-            Color outfit = outfitColors[Mathf.Clamp(selectedOutfit, 0, 2)];
-
-            // 머리 (머리카락 또는 모자)
-            Texture2D hairTex = MakeTex(1, 1, hair);
-            if (selectedHairStyle == 3)
-            {
-                // 올림 머리
-                Texture2D hatTex = MakeTex(1, 1, hair);
-                // 베이스 볼륨
-                GUI.DrawTexture(new Rect(x + 2f, y - 6f, w - 4f, 20f), hatTex);
-                if (selectedGender == 0)
-                {
-                    // 남자: 뾰족하게 위로
-                    GUI.DrawTexture(new Rect(x + w * 0.3f, y - 16f, w * 0.15f, 14f), hatTex);
-                    GUI.DrawTexture(new Rect(x + w * 0.55f, y - 12f, w * 0.12f, 10f), hatTex);
-                }
-                else
-                {
-                    // 여자: 번 (둥근 볼륨)
-                    GUI.DrawTexture(new Rect(x + w * 0.25f, y - 18f, w * 0.5f, 16f), hatTex);
-                    GUI.DrawTexture(new Rect(x + w * 0.3f, y - 22f, w * 0.4f, 10f), hatTex);
-                }
-            }
-            else if (selectedHairStyle == 0)
-            {
-                // 짧은 머리: 상단만
-                GUI.DrawTexture(new Rect(x + 5f, y, w - 10f, 14f), hairTex);
-            }
-            else if (selectedHairStyle == 1)
-            {
-                // 중간 머리: 상단 + 옆으로 약간 내려옴
-                GUI.DrawTexture(new Rect(x + 5f, y, w - 10f, 16f), hairTex);
-                GUI.DrawTexture(new Rect(x + 2f, y + 10f, 8f, 18f), hairTex);
-                GUI.DrawTexture(new Rect(x + w - 10f, y + 10f, 8f, 18f), hairTex);
-            }
-            else
-            {
-                // 긴 머리 (style 2): 어깨까지
-                GUI.DrawTexture(new Rect(x + 5f, y, w - 10f, 18f), hairTex);
-                GUI.DrawTexture(new Rect(x, y + 10f, 10f, 42f), hairTex);
-                GUI.DrawTexture(new Rect(x + w - 10f, y + 10f, 10f, 42f), hairTex);
-            }
-
-            // 얼굴
-            Texture2D skinTex = MakeTex(1, 1, skin);
-            GUI.DrawTexture(new Rect(x + 10f, y + 10f, w - 20f, 35f), skinTex);
-
-            // 눈
-            Texture2D whiteTex = MakeTex(1, 1, Color.white);
-            Texture2D blackTex = MakeTex(1, 1, new Color(0.1f, 0.08f, 0.05f));
-            float eyeY = y + 18f;
-            GUI.DrawTexture(new Rect(x + 18f, eyeY, 10f, 10f), whiteTex);       // 왼눈
-            GUI.DrawTexture(new Rect(x + w - 28f, eyeY, 10f, 10f), whiteTex);    // 오른눈
-            GUI.DrawTexture(new Rect(x + 21f, eyeY + 3f, 4f, 4f), blackTex);     // 왼동공
-            GUI.DrawTexture(new Rect(x + w - 25f, eyeY + 3f, 4f, 4f), blackTex); // 오른동공
-
-            // 눈썹
-            Texture2D browTex = MakeTex(1, 1, new Color(hair.r * 0.6f, hair.g * 0.6f, hair.b * 0.6f));
-            GUI.DrawTexture(new Rect(x + 16f, eyeY - 4f, 14f, 2f), browTex);
-            GUI.DrawTexture(new Rect(x + w - 30f, eyeY - 4f, 14f, 2f), browTex);
-
-            // 코
-            GUI.DrawTexture(new Rect(x + w * 0.5f - 3f, y + 28f, 6f, 5f), skinTex);
-
-            // 입
-            Texture2D mouthTex = MakeTex(1, 1, new Color(0.8f, 0.4f, 0.35f));
-            float mouthW = 8f + selectedFaceType * 2f;
-            GUI.DrawTexture(new Rect(x + w * 0.5f - mouthW * 0.5f, y + 35f, mouthW, 3f), mouthTex);
-
-            // 볼터치 (여자)
-            if (selectedGender == 1)
-            {
-                Texture2D blushTex = MakeTex(1, 1, new Color(1f, 0.6f, 0.6f, 0.5f));
-                GUI.DrawTexture(new Rect(x + 12f, y + 30f, 8f, 5f), blushTex);
-                GUI.DrawTexture(new Rect(x + w - 20f, y + 30f, 8f, 5f), blushTex);
-            }
-
-            // 몸통 (의상) — 여자는 약간 가늘게
-            float bodyInset = (selectedGender == 1) ? 12f : 8f;
-            Texture2D outfitTex = MakeTex(1, 1, outfit);
-            GUI.DrawTexture(new Rect(x + bodyInset, y + 48f, w - bodyInset * 2f, 50f), outfitTex);
-
-            // 팔
-            GUI.DrawTexture(new Rect(x - 6f, y + 48f, 14f, 40f), outfitTex);
-            GUI.DrawTexture(new Rect(x + w - 8f, y + 48f, 14f, 40f), outfitTex);
-
-            // 다리
-            Color pantsColor = new Color(0.25f, 0.25f, 0.28f);
-            Texture2D pantsTex = MakeTex(1, 1, pantsColor);
-            GUI.DrawTexture(new Rect(x + 12f, y + 100f, 20f, 35f), pantsTex);
-            GUI.DrawTexture(new Rect(x + w - 32f, y + 100f, 20f, 35f), pantsTex);
+            // 새 7등신 포트레이트: 캐릭터 시각 높이 ≈ 212·s, 가로 ≈ 65·s. 박스에 90% 마진으로 fit.
+            float previewScale = Mathf.Min(w / 70f, h / 220f);
+            float cx = x + w * 0.5f;
+            float cy = y + h * 0.5f;
+            CharacterPortraitRenderer.DrawForCreation(cx, cy, previewScale,
+                selectedGender, selectedSkinColor, selectedHairColor, selectedHairStyle, selectedFaceType, selectedOutfit);
         }
 
         // ── 이벤트 핸들러 ──
@@ -659,11 +555,22 @@ namespace InsectGame.UI
             if (PlayerPrefs.GetInt(CharCreatedKey, 0) == 1)
             {
                 OnGameReady();
+                return;
             }
-            else
+
+            // PlayerPrefs는 비어있지만 이전 진행 세이브가 있으면 = 이전에 플레이한 적 있음.
+            // (마스터 계정이 다른 환경 접속, PlayerPrefs 손실 등). 기본 캐릭터로 즉시 시작.
+            string progressPath = System.IO.Path.Combine(
+                Application.persistentDataPath, GameConstants.SaveFiles.PlayerProgress);
+            if (System.IO.File.Exists(progressPath))
             {
-                phase = LoginPhase.CharacterCreate;
+                PlayerPrefs.SetInt(CharCreatedKey, 1);
+                PlayerPrefs.Save();
+                OnGameReady();
+                return;
             }
+
+            phase = LoginPhase.CharacterCreate;
         }
 
         // ── 캐릭터 데이터 저장 ──
@@ -679,6 +586,8 @@ namespace InsectGame.UI
             PlayerPrefs.SetInt(CharFaceTypeKey, selectedFaceType);
             PlayerPrefs.SetInt(CharCreatedKey, 1);
             PlayerPrefs.Save();
+            // CharacterPortraitRenderer 캐시는 OutfitChanged만 구독하므로 외형 변경 시 명시적 무효화
+            CharacterPortraitRenderer.InvalidateCache();
         }
 
         // ── 의상 프리셋 적용 ──
@@ -749,38 +658,38 @@ namespace InsectGame.UI
             panelStyle = new GUIStyle(GUI.skin.box);
             panelStyle.normal.background = panelTex;
 
-            // 타이틀: 금색 44px Bold
+            // 타이틀: 금색 Bold
             titleStyle = new GUIStyle(GUI.skin.label);
-            titleStyle.fontSize = 44;
+            titleStyle.fontSize = 70;
             titleStyle.fontStyle = FontStyle.Bold;
             titleStyle.normal.textColor = new Color(1f, 0.84f, 0f, 1f);
             titleStyle.alignment = TextAnchor.MiddleCenter;
 
             // 서브타이틀
             subtitleStyle = new GUIStyle(GUI.skin.label);
-            subtitleStyle.fontSize = 28;
+            subtitleStyle.fontSize = 45;
             subtitleStyle.fontStyle = FontStyle.Bold;
             subtitleStyle.normal.textColor = Color.white;
             subtitleStyle.alignment = TextAnchor.MiddleCenter;
 
             // 입력 필드
             fieldStyle = new GUIStyle(GUI.skin.textField);
-            fieldStyle.fontSize = 16;
+            fieldStyle.fontSize = 30;
             fieldStyle.normal.textColor = Color.white;
             Texture2D fieldBg = MakeTex(1, 1, new Color(0.15f, 0.15f, 0.2f, 1f));
             fieldStyle.normal.background = fieldBg;
             fieldStyle.focused.background = MakeTex(1, 1, new Color(0.2f, 0.2f, 0.28f, 1f));
             fieldStyle.focused.textColor = Color.white;
-            fieldStyle.padding = new RectOffset(8, 8, 4, 4);
+            fieldStyle.padding = new RectOffset(15, 15, 10, 10);
 
             // 라벨
             labelStyle = new GUIStyle(GUI.skin.label);
-            labelStyle.fontSize = 15;
+            labelStyle.fontSize = 28;
             labelStyle.normal.textColor = new Color(0.85f, 0.85f, 0.9f, 1f);
 
             // 에러
             errorStyle = new GUIStyle(GUI.skin.label);
-            errorStyle.fontSize = 14;
+            errorStyle.fontSize = 25;
             errorStyle.normal.textColor = new Color(1f, 0.3f, 0.3f, 1f);
             errorStyle.alignment = TextAnchor.MiddleCenter;
             errorStyle.wordWrap = true;
@@ -796,7 +705,7 @@ namespace InsectGame.UI
                 s.normal.textColor = Color.white;
                 s.hover.textColor = Color.white;
                 s.active.textColor = Color.white;
-                s.fontSize = 18;
+                s.fontSize = 33;
                 s.fontStyle = FontStyle.Bold;
                 s.alignment = TextAnchor.MiddleCenter;
                 return s;
@@ -807,39 +716,39 @@ namespace InsectGame.UI
 
             // 파란색 (회원가입)
             btnBlueStyle = BaseBtnStyle(new Color(0.2f, 0.35f, 0.7f, 1f));
-            btnBlueStyle.fontSize = 16;
+            btnBlueStyle.fontSize = 30;
 
             // 노란색 (Google)
             btnYellowStyle = BaseBtnStyle(new Color(0.75f, 0.65f, 0.1f, 1f));
-            btnYellowStyle.fontSize = 15;
+            btnYellowStyle.fontSize = 28;
             btnYellowStyle.normal.textColor = Color.white;
 
             // 갈색 (카카오)
             btnBrownStyle = BaseBtnStyle(new Color(0.55f, 0.35f, 0.1f, 1f));
-            btnBrownStyle.fontSize = 15;
+            btnBrownStyle.fontSize = 28;
 
             // 회색 (게스트)
             btnGrayStyle = BaseBtnStyle(new Color(0.35f, 0.35f, 0.38f, 1f));
-            btnGrayStyle.fontSize = 15;
+            btnGrayStyle.fontSize = 28;
 
             // 구분선
             separatorStyle = new GUIStyle(GUI.skin.label);
-            separatorStyle.fontSize = 14;
+            separatorStyle.fontSize = 25;
             separatorStyle.normal.textColor = new Color(0.5f, 0.5f, 0.55f, 1f);
             separatorStyle.alignment = TextAnchor.MiddleCenter;
 
             // 라디오 버튼
             radioStyle = BaseBtnStyle(new Color(0.25f, 0.25f, 0.3f, 1f));
-            radioStyle.fontSize = 14;
+            radioStyle.fontSize = 25;
             radioStyle.fontStyle = FontStyle.Normal;
 
             radioSelectedStyle = BaseBtnStyle(new Color(0.2f, 0.5f, 0.8f, 1f));
-            radioSelectedStyle.fontSize = 14;
+            radioSelectedStyle.fontSize = 25;
             radioSelectedStyle.fontStyle = FontStyle.Bold;
 
             // 섹션 라벨
             sectionLabelStyle = new GUIStyle(GUI.skin.label);
-            sectionLabelStyle.fontSize = 15;
+            sectionLabelStyle.fontSize = 28;
             sectionLabelStyle.fontStyle = FontStyle.Bold;
             sectionLabelStyle.normal.textColor = new Color(0.9f, 0.85f, 0.6f, 1f);
         }

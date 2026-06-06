@@ -37,6 +37,7 @@ namespace InsectGame.Core
             public const string QuestProgress = "InsectGame.QuestProgress";
             public const string QuestCompleted = "InsectGame.QuestCompleted";
             public const string ActiveQuest = "InsectGame.ActiveQuest";
+            public const string LastSubAreaId = "InsectGame.SubArea.LastEntered";
         }
 
         // ── 플레이어 ──

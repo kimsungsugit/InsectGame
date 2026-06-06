@@ -32,6 +32,18 @@ namespace InsectGame.UI
         private GUIStyle barFillStyle;
         private bool stylesInitialized;
 
+        // OnGUI 매 프레임 new Texture2D 회귀 차단용 정적 색 (UIHelper.GetCachedTex 키로 사용)
+        private static readonly Color BgOverlayCol = new Color(0.03f, 0.03f, 0.1f, 0.85f);
+        private static readonly Color RowFullCol = new Color(0.4f, 0.12f, 0.12f, 0.7f);
+        private static readonly Color RowAlmostCol = new Color(0.45f, 0.4f, 0.1f, 0.6f);
+        private static readonly Color RowOkCol = new Color(0.1f, 0.3f, 0.15f, 0.6f);
+        private static readonly Color BarBgCol = new Color(0.15f, 0.15f, 0.2f, 1f);
+        private static readonly Color FillFullCol = new Color(0.8f, 0.2f, 0.2f, 1f);
+        private static readonly Color FillAlmostCol = new Color(0.85f, 0.75f, 0.15f, 1f);
+        private static readonly Color FillOkCol = new Color(0.2f, 0.7f, 0.3f, 1f);
+        private static readonly Color LineSepCol = new Color(0.4f, 0.4f, 0.45f, 0.6f);
+        private static readonly Color MeRowBgCol = new Color(0.3f, 0.25f, 0.05f, 0.4f);
+
         private WorldChannelManager manager;
         private List<WorldInstance> cachedWorlds = new List<WorldInstance>();
 
@@ -182,8 +194,7 @@ namespace InsectGame.UI
         private void DrawWorldSelectPanel()
         {
             // 배경 오버레이
-            Texture2D bgTex = MakeTex(1, 1, new Color(0.03f, 0.03f, 0.1f, 0.85f));
-            GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), bgTex);
+            GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), UIHelper.GetCachedTex(BgOverlayCol));
 
             float pw = 600f;
             float ph = 500f;
@@ -261,13 +272,8 @@ namespace InsectGame.UI
             float ratio = (world.maxPlayers > 0) ? (float)world.playerCount / world.maxPlayers : 0f;
 
             // 행 배경색: 여유=초록, 거의참=노랑, 꽉참=빨강
-            Color rowColor;
-            if (isFull) rowColor = new Color(0.4f, 0.12f, 0.12f, 0.7f);
-            else if (ratio > 0.7f) rowColor = new Color(0.45f, 0.4f, 0.1f, 0.6f);
-            else rowColor = new Color(0.1f, 0.3f, 0.15f, 0.6f);
-
-            Texture2D rowTex = MakeTex(1, 1, rowColor);
-            GUI.DrawTexture(new Rect(x, y, w, h), rowTex);
+            Color rowColor = isFull ? RowFullCol : (ratio > 0.7f ? RowAlmostCol : RowOkCol);
+            GUI.DrawTexture(new Rect(x, y, w, h), UIHelper.GetCachedTex(rowColor));
 
             // 월드 이름
             GUI.Label(new Rect(x + 12f, y + 6f, 200f, 24f), world.displayName, subtitleStyle);
@@ -278,16 +284,10 @@ namespace InsectGame.UI
             float barW = w - 130f;
             float barH = 18f;
 
-            Texture2D barBgTex = MakeTex(1, 1, new Color(0.15f, 0.15f, 0.2f, 1f));
-            GUI.DrawTexture(new Rect(barX, barY, barW, barH), barBgTex);
+            GUI.DrawTexture(new Rect(barX, barY, barW, barH), UIHelper.GetCachedTex(BarBgCol));
 
-            Color fillColor;
-            if (isFull) fillColor = new Color(0.8f, 0.2f, 0.2f, 1f);
-            else if (ratio > 0.7f) fillColor = new Color(0.85f, 0.75f, 0.15f, 1f);
-            else fillColor = new Color(0.2f, 0.7f, 0.3f, 1f);
-
-            Texture2D fillTex = MakeTex(1, 1, fillColor);
-            GUI.DrawTexture(new Rect(barX, barY, barW * ratio, barH), fillTex);
+            Color fillColor = isFull ? FillFullCol : (ratio > 0.7f ? FillAlmostCol : FillOkCol);
+            GUI.DrawTexture(new Rect(barX, barY, barW * ratio, barH), UIHelper.GetCachedTex(fillColor));
 
             // 인원 텍스트
             GUI.Label(new Rect(barX, barY - 1f, barW, barH), $"  {world.playerCount}/{world.maxPlayers}", labelStyle);
@@ -311,8 +311,7 @@ namespace InsectGame.UI
 
         private void DrawJoiningPanel()
         {
-            Texture2D bgTex = MakeTex(1, 1, new Color(0.03f, 0.03f, 0.1f, 0.85f));
-            GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), bgTex);
+            GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), UIHelper.GetCachedTex(BgOverlayCol));
 
             float pw = 300f;
             float ph = 150f;
@@ -347,8 +346,7 @@ namespace InsectGame.UI
             cy += 38f;
 
             // 구분선
-            Texture2D lineTex = MakeTex(1, 1, new Color(0.4f, 0.4f, 0.45f, 0.6f));
-            GUI.DrawTexture(new Rect(cx, cy, innerW, 1f), lineTex);
+            GUI.DrawTexture(new Rect(cx, cy, innerW, 1f), UIHelper.GetCachedTex(LineSepCol));
             cy += 8f;
 
             // 플레이어 목록
@@ -369,8 +367,7 @@ namespace InsectGame.UI
 
                     if (isMe)
                     {
-                        Texture2D meBg = MakeTex(1, 1, new Color(0.3f, 0.25f, 0.05f, 0.4f));
-                        GUI.DrawTexture(new Rect(0, rowY, innerW - 16f, 30f), meBg);
+                        GUI.DrawTexture(new Rect(0, rowY, innerW - 16f, 30f), UIHelper.GetCachedTex(MeRowBgCol));
                     }
 
                     string prefix = isMe ? "\u2605 " : "  ";

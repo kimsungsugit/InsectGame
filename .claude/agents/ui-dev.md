@@ -36,7 +36,9 @@ tools:
 - `Assets/Scripts/UI/QuickAccessBarUI.cs` - 퀵액세스 바
 - `Assets/Scripts/UI/TutorialQuestUI.cs` - 튜토리얼 퀘스트 UI
 - `Assets/Scripts/UI/WorldLobbyUI.cs` - 월드 로비
+- `Assets/Scripts/UI/CharacterPortraitRenderer.cs` - 통합 캐릭터 포트레이트 렌더러
 - `Assets/Scripts/UI/UIHelper.cs` - UI 유틸리티
+- `Assets/Scripts/UI/UIScale.cs` - 1920×1080 기준 가상 좌표계 / GUI.matrix 자동 스케일링
 - `Assets/Scripts/UI/UITheme.cs` - UI 테마/스타일
 - `Assets/Scripts/UI/UITween.cs` - UI 트윈 애니메이션
 

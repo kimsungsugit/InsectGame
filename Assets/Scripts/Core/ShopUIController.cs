@@ -62,7 +62,8 @@ namespace InsectGame.Core
                 if (buyLabels != null && index < buyLabels.Length && buyLabels[index] != null)
                 {
                     string itemId = index < itemIds.Length ? itemIds[index] : string.Empty;
-                    ItemData data = !string.IsNullOrEmpty(itemId) ? itemDatabase.FindById(itemId) : null;
+                    // itemDatabase null 가드 — EnsureDatabase의 Resources.Load 실패 시 NRE 차단.
+                    ItemData data = (!string.IsNullOrEmpty(itemId) && itemDatabase != null) ? itemDatabase.FindById(itemId) : null;
                     int price = index < prices.Length ? prices[index] : 0;
                     buyLabels[index].text = data != null ? $"{data.displayName} ({price})" : "구매";
                 }
@@ -93,9 +94,28 @@ namespace InsectGame.Core
             int price = index < prices.Length ? prices[index] : 0;
             if (price > 0)
             {
-                bool paid = payWithCoins && allowCoinPayment
-                    ? wallet.SpendCoins(price)
-                    : wallet.SpendGems(price);
+                bool paid;
+                if (payWithCoins && allowCoinPayment)
+                {
+                    paid = wallet.SpendCoins(price);
+                }
+                else
+                {
+                    // 보석 차감은 CashShopManager 경로로 통일 (이중 관리 동기화).
+                    // CashShopManager.AddGems(-price)가 wallet.SpendGems도 함께 호출.
+                    bool hasEnough = CashShopManager.Instance != null
+                        ? CashShopManager.Instance.Gems >= price
+                        : wallet.Gems >= price;
+                    if (hasEnough && CashShopManager.Instance != null)
+                    {
+                        CashShopManager.Instance.AddGems(-price);
+                        paid = true;
+                    }
+                    else
+                    {
+                        paid = wallet.SpendGems(price);
+                    }
+                }
 
                 if (!paid)
                 {
@@ -103,11 +123,13 @@ namespace InsectGame.Core
                     {
                         resultText.text = failMessage;
                     }
+                    if (AudioManager.Instance != null) AudioManager.Instance.PlaySFX(SfxType.Error);
                     return;
                 }
             }
 
             inventory.AddItem(itemId, 1);
+            if (AudioManager.Instance != null) AudioManager.Instance.PlaySFX(SfxType.Purchase);
             if (resultText != null)
             {
                 resultText.text = successMessage;

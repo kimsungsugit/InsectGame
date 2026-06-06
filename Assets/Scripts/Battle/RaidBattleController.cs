@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using InsectGame.Core;
 using InsectGame.Data;
@@ -14,6 +15,7 @@ namespace InsectGame.Battle
         [SerializeField] private PlayerProgressController playerProgress;
         [SerializeField] private Dex.DexController dexController;
         [SerializeField] private TrainingManager trainingManager;
+        [SerializeField] private BattleArenaController arena;
 
         public event Action RaidUpdated;
         public event Action<bool> RaidEnded;
@@ -123,23 +125,30 @@ namespace InsectGame.Battle
             int damage = Mathf.RoundToInt((baseDmg + attacker.Level * 2) * mult);
             damage = Mathf.Max(1, damage);
 
+            // 스킬 이름 효과 텍스트 (속성 색상)
+            if (skill != null && !string.IsNullOrEmpty(skill.displayName))
+                TryPlayEffectText($"{skill.displayName}!", BattleArenaController.GetUIElementColor(skill.element));
+
             if (skill.effectType == SkillEffectType.Damage)
             {
                 BossStats.ApplyDamage(damage, attacker.Attack, BossStats.Defense);
                 LastDamageToBoss = Mathf.Max(1, Mathf.RoundToInt(damage * (attacker.Attack / (float)Mathf.Max(1, BossStats.Defense))));
                 LastActionText = $"{attacker.Data.displayName}의 {skill.displayName}!";
+                TryPlayBossHitFlash();
             }
             else if (skill.effectType == SkillEffectType.BuffAttack)
             {
                 attacker.AttackBonus += skill.effectValue;
                 LastDamageToBoss = 0;
                 LastActionText = $"{attacker.Data.displayName}의 {skill.displayName}! ATK UP!";
+                TryPlayEffectText("공격력 상승!", new Color(1f, 0.8f, 0.3f));
             }
             else
             {
                 BossStats.AttackBonus -= skill.effectValue;
                 LastDamageToBoss = 0;
                 LastActionText = $"{attacker.Data.displayName}의 {skill.displayName}! Boss ATK DOWN!";
+                TryPlayEffectText("보스 공격력 하락!", new Color(0.6f, 0.4f, 0.9f));
             }
 
             TeamCooldowns[ActiveSlot][skillIndex] = skill.cooldownTurns;
@@ -176,10 +185,17 @@ namespace InsectGame.Battle
                 bossCooldown = 3;
                 BossUsedAoe = true;
                 int aoeDmg = Mathf.Max(1, bossDmg * 2 / 3);
+                TryPlayEffectText("전체 공격!", new Color(1f, 0.5f, 0.2f));
                 for (int i = 0; i < TeamStats.Length; i++)
                 {
                     if (TeamStats[i].CurrentHp > 0)
+                    {
+                        bool wasAlive = TeamStats[i].CurrentHp > 0;
                         TeamStats[i].ApplyDamage(aoeDmg, BossStats.Attack, TeamStats[i].Defense);
+                        TryPlayTeamHitFlash(i);
+                        if (wasAlive && TeamStats[i].CurrentHp <= 0)
+                            TryPlayTeamFaint(i);
+                    }
                 }
                 LastDamageToTeam = aoeDmg;
                 LastHitSlot = -1;
@@ -195,15 +211,24 @@ namespace InsectGame.Battle
                 if (alive.Count > 0)
                 {
                     int target = alive[UnityEngine.Random.Range(0, alive.Count)];
+                    bool wasAlive = TeamStats[target].CurrentHp > 0;
                     TeamStats[target].ApplyDamage(bossDmg, BossStats.Attack, TeamStats[target].Defense);
                     LastDamageToTeam = Mathf.Max(1, Mathf.RoundToInt(bossDmg * (BossStats.Attack / (float)Mathf.Max(1, TeamStats[target].Defense))));
                     LastHitSlot = target;
                     LastActionText += $"\n{bd.displayName}이(가) {TeamStats[target].Data.displayName}을(를) 공격!";
                     UniteGauge = Mathf.Min(UniteGauge + 10f, UniteGaugeMax);
+
+                    TryPlayTeamHitFlash(target);
+                    if (wasAlive && TeamStats[target].CurrentHp <= 0)
+                    {
+                        TryPlayTeamFaint(target);
+                        TryPlayEffectText($"{TeamStats[target].Data.displayName} 쓰러짐!", new Color(0.9f, 0.2f, 0.2f));
+                    }
                 }
             }
 
-            if (TeamStats[ActiveSlot].CurrentHp <= 0)
+            if (ActiveSlot >= 0 && ActiveSlot < TeamStats.Length
+                && TeamStats[ActiveSlot] != null && TeamStats[ActiveSlot].CurrentHp <= 0)
             {
                 int next = FindFirstAlive();
                 if (next >= 0) ActiveSlot = next;
@@ -223,6 +248,8 @@ namespace InsectGame.Battle
         {
             if (BossStats.CurrentHp <= 0)
             {
+                TryPlayBossFaint();
+                TryPlayEffectText("보스 격파!", new Color(0.3f, 1f, 0.5f));
                 PlayerWon = true;
                 IsActive = false;
                 OnRaidVictory();
@@ -230,8 +257,12 @@ namespace InsectGame.Battle
             }
             else if (FindFirstAlive() < 0)
             {
+                TryPlayEffectText("팀 전멸!", new Color(0.9f, 0.2f, 0.2f));
                 PlayerWon = false;
                 IsActive = false;
+                // 레이드 패배 시에도 BossEntity Despawn — 옛은 패배 시 보스가 필드에 잔존,
+                // 다음 진입 시 같은 보스 중첩 발동 가능 (사용자 보고: "전투 끝나면 사라져야").
+                if (BossEntity != null) BossEntity.Despawn();
                 RaidEnded?.Invoke(false);
             }
         }
@@ -251,10 +282,14 @@ namespace InsectGame.Battle
                 dexController.RegisterEncounter(bd.insectId);
                 dexController.RegisterCapture(bd.insectId);
             }
-            if (playerCollection != null && BossEntity != null)
+            if (BossEntity != null)
             {
-                bool bossShiny = BossEntity.IsShiny;
-                playerCollection.AddCapturedInsect(bd.insectId, BossEntity.Level, bossShiny);
+                // playerCollection 가드 분리 — null이어도 보스 Despawn은 항상 보장
+                if (playerCollection != null)
+                {
+                    bool bossShiny = BossEntity.IsShiny;
+                    playerCollection.AddCapturedInsect(bd.insectId, BossEntity.Level, bossShiny);
+                }
                 BossEntity.Despawn();
             }
         }
@@ -269,6 +304,8 @@ namespace InsectGame.Battle
             LastDamageToBoss = 0;
             UniteSlotDamages = new int[TeamStats.Length];
 
+            TryPlayEffectText("★ 합체공격! ★", new Color(1f, 0.9f, 0.3f));
+
             int totalDmg = 0;
             List<string> names = new List<string>();
             for (int i = 0; i < TeamStats.Length; i++)
@@ -282,13 +319,18 @@ namespace InsectGame.Battle
                 int baseDmg = 15 + atk.Level * 2;
                 float mult = Mathf.Clamp(1f + atk.AttackBonus, 0.3f, 3f);
                 int dmg = Mathf.Max(1, Mathf.RoundToInt(baseDmg * mult * 1.5f));
-                int actual = Mathf.Max(1, Mathf.RoundToInt(dmg * (atk.Attack / (float)Mathf.Max(1, BossStats.Defense))));
+                // 실제 보스 HP 감소량과 동일 공식 사용 — ApplyDamage 내부 clamp(0.5, 2.5) 정합.
+                // 옛은 actual = dmg × (atk/def) (clamp 없음) → UI 표시가 실제보다 크게 보였고,
+                // totalDmg += dmg (방어 미반영)는 LastDamageToBoss를 과대 표시.
+                float ratio = Mathf.Clamp(atk.Attack / (float)Mathf.Max(1, BossStats.Defense), 0.5f, 2.5f);
+                int actual = Mathf.Max(1, Mathf.RoundToInt(dmg * ratio));
                 UniteSlotDamages[i] = actual;
-                totalDmg += dmg;
+                totalDmg += actual;
                 names.Add(atk.Data.displayName);
                 BossStats.ApplyDamage(dmg, atk.Attack, BossStats.Defense);
             }
 
+            TryPlayBossHitFlash();
             LastDamageToBoss = totalDmg;
             LastActionText = $"★ 합체공격! {string.Join(" + ", names)} ★";
 
@@ -330,6 +372,54 @@ namespace InsectGame.Battle
             if (dexController == null) dexController = dex;
             if (trainingManager == null) trainingManager = tm;
         }
+
+        public void AutoWire(BattleArenaController a)
+        {
+            if (arena == null) arena = a;
+        }
+
+        // ── 액션 헬퍼 (BattleArenaController 시각 코루틴 wrapper) ──
+
+        private BattleArenaController Arena => arena;
+
+        private void TryPlayBossHitFlash()
+        {
+            if (Arena == null) return;
+            GameObject m = Arena.BossModel;
+            if (m != null && m.activeInHierarchy)
+                StartCoroutine(Arena.PlayHitFlashCoroutine(m));
+        }
+
+        private void TryPlayTeamHitFlash(int index)
+        {
+            if (Arena == null) return;
+            GameObject m = Arena.GetTeamModel(index);
+            if (m != null && m.activeInHierarchy)
+                StartCoroutine(Arena.PlayHitFlashCoroutine(m));
+        }
+
+        private void TryPlayBossFaint()
+        {
+            if (Arena == null) return;
+            GameObject m = Arena.BossModel;
+            if (m != null && m.activeInHierarchy)
+                StartCoroutine(Arena.PlayFaintCoroutine(m));
+        }
+
+        private void TryPlayTeamFaint(int index)
+        {
+            if (Arena == null) return;
+            GameObject m = Arena.GetTeamModel(index);
+            if (m != null && m.activeInHierarchy)
+                StartCoroutine(Arena.PlayFaintCoroutine(m));
+        }
+
+        private void TryPlayEffectText(string text, Color color)
+        {
+            if (Arena == null || string.IsNullOrEmpty(text)) return;
+            Arena.PlayEffectText(text, color);
+        }
+
     }
 
     public class RaidBossStats : InsectBattleStats

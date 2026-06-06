@@ -72,16 +72,18 @@ namespace InsectGame.Core
             }
             if (!inPool) return false;
 
+            // 액션 성공 후 SpendCandy — 옛은 SpendCandy 먼저라 ReplaceSkill 실패(replaceSkillId가
+            // learnedSkillIds에 없는 경우 등) 시 candy 손실 회귀.
             if (insect.IsSkillsFull())
             {
                 if (string.IsNullOrEmpty(replaceSkillId)) return false;
+                if (!insect.ReplaceSkill(replaceSkillId, skillId)) return false;
                 candyInventory.SpendCandy(method.candyCost);
-                insect.ReplaceSkill(replaceSkillId, skillId);
             }
             else
             {
+                if (!insect.LearnSkill(skillId)) return false;
                 candyInventory.SpendCandy(method.candyCost);
-                insect.LearnSkill(skillId);
 
                 if (insect.EquippedCount() < PlayerInsectData.MaxEquipSlots)
                 {
@@ -100,6 +102,8 @@ namespace InsectGame.Core
                 collection.ForceSave();
 
             TrainingCompleted?.Invoke();
+            // q_training 진행도 — TrainSkill 성공 분기 끝
+            TutorialQuestManager.Instance?.NotifyTraining();
             return true;
         }
 

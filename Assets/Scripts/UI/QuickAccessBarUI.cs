@@ -23,6 +23,8 @@ namespace InsectGame.UI
             public Color color;
         }
 
+        private GUIStyle cachedBtnStyle;
+
         private readonly ButtonDef[] buttons = new ButtonDef[]
         {
             new ButtonDef { label = "도감", key = "N", color = new Color(1f, 0.85f, 0.3f) },
@@ -70,12 +72,14 @@ namespace InsectGame.UI
                 if (handled) e.Use();
             }
 
-            float btnW = Mathf.Min(140f, (Screen.width - 100f) / buttons.Length);
+            UIScale.Begin();
+
+            float btnW = Mathf.Min(140f, (UIScale.VirtualScreenWidth - 100f) / buttons.Length);
             float btnH = 64f;
             float gap = 6f;
             float totalW = buttons.Length * btnW + (buttons.Length - 1) * gap;
-            float startX = (Screen.width - totalW) / 2f;
-            float y = Screen.height - btnH - 16f;
+            float startX = (UIScale.VirtualScreenWidth - totalW) / 2f;
+            float y = UIScale.VirtualScreenHeight - btnH - 16f;
 
             GUI.color = new Color(0, 0, 0, 0.5f);
             GUI.DrawTexture(new Rect(startX - 14, y - 8, totalW + 28, btnH + 16), Texture2D.whiteTexture);
@@ -92,12 +96,13 @@ namespace InsectGame.UI
                     ? new Color(def.color.r * 0.6f, def.color.g * 0.6f, def.color.b * 0.6f)
                     : new Color(def.color.r * 0.2f, def.color.g * 0.2f, def.color.b * 0.2f);
 
-                GUIStyle btnStyle = new GUIStyle(GUI.skin.button)
-                { fontSize = 20, fontStyle = FontStyle.Bold };
-                btnStyle.normal.textColor = isActive ? Color.white : def.color;
-                btnStyle.hover.textColor = Color.white;
+                if (cachedBtnStyle == null)
+                    cachedBtnStyle = new GUIStyle(GUI.skin.button)
+                    { fontSize = 20, fontStyle = FontStyle.Bold, richText = true };
+                cachedBtnStyle.normal.textColor = isActive ? Color.white : def.color;
+                cachedBtnStyle.hover.textColor = Color.white;
 
-                if (GUI.Button(new Rect(bx, y, btnW, btnH), $"{def.label}\n<size=14>[{def.key}]</size>", btnStyle))
+                if (GUI.Button(new Rect(bx, y, btnW, btnH), $"{def.label}\n<size=14>[{def.key}]</size>", cachedBtnStyle))
                     OnClick(i);
 
                 if (isActive)
@@ -109,6 +114,7 @@ namespace InsectGame.UI
             }
 
             GUI.backgroundColor = Color.white;
+            UIScale.End();
         }
 
         private bool IsActive(int index)

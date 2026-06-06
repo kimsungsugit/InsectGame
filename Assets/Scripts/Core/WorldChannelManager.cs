@@ -70,31 +70,84 @@ namespace InsectGame.Core
                 && !AuthManager.Instance.IsMasterAccount;
         }
 
+        // 코루틴 중복 실행 차단 — 네트워크 지연으로 코루틴이 RefreshInterval(30s)/PresenceInterval 초과 시
+        // Update가 매 프레임 새 코루틴 시작 → CurrentWorld 동시 접근/PATCH race. 진행 중 플래그로 차단.
+        private bool isRefreshingWorld;
+        private bool isUpdatingPresence;
+
         private void Update()
         {
             if (!IsFirebaseReady()) return;
             if (CurrentWorld == null) return;
 
             refreshTimer += Time.deltaTime;
-            if (refreshTimer >= RefreshInterval)
+            if (refreshTimer >= RefreshInterval && !isRefreshingWorld)
             {
                 refreshTimer = 0f;
-                StartCoroutine(RefreshCurrentWorldCoroutine());
+                StartCoroutine(RefreshCurrentWorldGuarded());
             }
 
             presenceTimer += Time.deltaTime;
-            if (presenceTimer >= PresenceInterval)
+            if (presenceTimer >= PresenceInterval && !isUpdatingPresence)
             {
                 presenceTimer = 0f;
-                StartCoroutine(UpdatePresenceCoroutine());
+                StartCoroutine(UpdatePresenceGuarded());
             }
+        }
+
+        private System.Collections.IEnumerator RefreshCurrentWorldGuarded()
+        {
+            isRefreshingWorld = true;
+            yield return RefreshCurrentWorldCoroutine();
+            isRefreshingWorld = false;
+        }
+
+        private System.Collections.IEnumerator UpdatePresenceGuarded()
+        {
+            isUpdatingPresence = true;
+            yield return UpdatePresenceCoroutine();
+            isUpdatingPresence = false;
         }
 
         private void OnApplicationQuit()
         {
-            if (CurrentWorld != null)
+            BestEffortLeaveWorld();
+        }
+
+        // 모바일 백그라운드 진입 시에도 best-effort 퇴장 (앱 강제 종료 대비)
+        private void OnApplicationPause(bool pauseStatus)
+        {
+            if (pauseStatus) BestEffortLeaveWorld();
+        }
+
+        // OnApplicationQuit은 비동기 코루틴 완료 보장 안 됨 → 동기 polling으로 best-effort.
+        // Fire-and-forget: 메인 스레드 블록 없음 (이전엔 Thread.Sleep 폴링으로 최대 500ms 블록 → Android ANR 위험).
+        // 단점: 일부 케이스에서 요청 송신 전 앱 종료 → currentPlayers 즉시 감소 안 됨.
+        // 보완: Firestore 측 lastSeenAt 기반 서버 cleanup으로 결국 정리됨 (UX 우선 trade-off).
+        private void BestEffortLeaveWorld()
+        {
+            if (CurrentWorld == null || AuthManager.Instance == null) return;
+
+            string url = $"{FirebaseConfig.FirestoreBaseUrl}/{WorldsCollection}/{CurrentWorld.worldId}";
+            CurrentWorld.players.RemoveAll(p => p.uid == AuthManager.Instance.UserId);
+            CurrentWorld.playerCount = CurrentWorld.players.Count;
+            string json = BuildWorldDocument(CurrentWorld.worldId, CurrentWorld.displayName, CurrentWorld.maxPlayers, CurrentWorld.players);
+
+            try
             {
-                StartCoroutine(LeaveWorldCoroutine());
+                UnityWebRequest req = new UnityWebRequest(url, "PATCH");
+                byte[] body = Encoding.UTF8.GetBytes(json);
+                req.uploadHandler = new UploadHandlerRaw(body);
+                req.downloadHandler = new DownloadHandlerBuffer();
+                req.SetRequestHeader("Content-Type", "application/json");
+                req.SetRequestHeader("Authorization", $"Bearer {AuthManager.Instance.IdToken}");
+
+                // SendWebRequest는 비동기 — 호출만 하고 결과 폴링 안 함. Dispose는 OS가 정리.
+                req.SendWebRequest();
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning($"[WorldChannel] best-effort leave 실패: {e.Message}");
             }
         }
 

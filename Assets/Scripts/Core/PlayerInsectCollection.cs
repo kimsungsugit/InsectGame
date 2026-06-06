@@ -20,7 +20,43 @@ namespace InsectGame.Core
         private PlayerInsectCollectionSave saveData;
         private readonly Dictionary<string, PlayerInsectData> lookup = new Dictionary<string, PlayerInsectData>();
 
+        // 디스크 IO 디바운스: 가챠 10연 등 연속 변경 시 매번 File.WriteAllText 안 하고 0.5초 후 1회 저장.
+        private bool saveDirty;
+        private float saveDebounceTimer;
+        private const float SaveDebounceSeconds = 0.5f;
+
         public event Action<PlayerInsectData> InsectUpdated;
+
+        private void MarkDirty()
+        {
+            saveDirty = true;
+            saveDebounceTimer = 0f;
+        }
+
+        private void Update()
+        {
+            if (!saveDirty) return;
+            saveDebounceTimer += Time.unscaledDeltaTime;
+            if (saveDebounceTimer >= SaveDebounceSeconds)
+            {
+                saveDebounceTimer = 0f;
+                saveDirty = false;
+                if (saveData != null) Save(saveData);
+            }
+        }
+
+        private void OnDisable()
+        {
+            // 종료 직전 강제 flush — 디바운스 대기 중 변경 손실 방지
+            if (saveDirty && saveData != null)
+            {
+                Save(saveData);
+                saveDirty = false;
+            }
+        }
+
+        private void OnApplicationQuit() { OnDisable(); }
+        private void OnApplicationPause(bool pauseStatus) { if (pauseStatus) OnDisable(); }
 
         private void Awake()
         {
@@ -34,6 +70,15 @@ namespace InsectGame.Core
                 }
 
                 data.EnsureInstanceId();
+
+                // 옛 세이브에서 instanceId 중복 발견 시 새 GUID 발급.
+                // 옛은 dictionary에 1개만 보존되어 BattleTeam.GetByInstanceId가 나머지 인스턴스 못 찾는 회귀.
+                if (lookup.ContainsKey(data.instanceId))
+                {
+                    data.instanceId = Guid.NewGuid().ToString("N");
+                    needsSave = true;
+                }
+
                 InsectData insect = GetInsectData(data.insectId);
                 if (EnsureLevelSkills(data, insect))
                 {
@@ -67,7 +112,7 @@ namespace InsectGame.Core
             EnsureLevelSkills(data, insect);
             lookup[data.instanceId] = data;
             saveData.insects.Add(data);
-            Save(saveData);
+            MarkDirty();
             InsectUpdated?.Invoke(data);
             return data;
         }
@@ -146,7 +191,9 @@ namespace InsectGame.Core
                 return;
             }
 
-            InsectLevelCurve curve = insect.levelCurve != null ? insect.levelCurve : defaultCurve;
+            // insect null 가드 — 형제 GainXp(InsectData, int) 오버로드와 대칭.
+            // 외부에서 PlayerInsectData만 가진 채 insect=null로 호출하면 옛은 NRE.
+            InsectLevelCurve curve = insect != null && insect.levelCurve != null ? insect.levelCurve : defaultCurve;
             data.currentXp += amount;
             int maxLevel = curve != null ? curve.maxLevel : 50;
             while (data.level < maxLevel && curve != null && data.currentXp >= curve.GetXpToNextLevel(data.level))
@@ -157,7 +204,7 @@ namespace InsectGame.Core
 
             EnsureLevelSkills(data, insect);
 
-            Save(saveData);
+            MarkDirty();
             InsectUpdated?.Invoke(data);
         }
 
@@ -227,7 +274,7 @@ namespace InsectGame.Core
             data.level++;
             data.currentXp = 0;
             EnsureLevelSkills(data, insect);
-            Save(saveData);
+            MarkDirty();
             InsectUpdated?.Invoke(data);
             return true;
         }
@@ -251,7 +298,13 @@ namespace InsectGame.Core
                 return new List<PlayerInsectData>();
             }
 
-            return new List<PlayerInsectData>(saveData.insects);
+            // 손상된 세이브에서 null 항목이 섞일 경우 호출자(BattleTeamUI/CollectionUI/DexScreenUI 등) NRE 방지.
+            var result = new List<PlayerInsectData>(saveData.insects.Count);
+            foreach (PlayerInsectData d in saveData.insects)
+            {
+                if (d != null) result.Add(d);
+            }
+            return result;
         }
 
         public string ResolveLegacyOrInstanceId(string id)
@@ -291,7 +344,7 @@ namespace InsectGame.Core
             InsectData insect = GetInsectData(data.insectId);
             if (EnsureLevelSkills(data, insect))
             {
-                Save(saveData);
+                MarkDirty();
             }
 
             InsectSkill[] result = new InsectSkill[PlayerInsectData.MaxEquipSlots];
@@ -449,14 +502,22 @@ namespace InsectGame.Core
                 return new PlayerInsectCollectionSave();
             }
 
-            string json = System.IO.File.ReadAllText(path);
-            return JsonUtility.FromJson<PlayerInsectCollectionSave>(json) ?? new PlayerInsectCollectionSave();
+            try
+            {
+                string json = System.IO.File.ReadAllText(path);
+                return JsonUtility.FromJson<PlayerInsectCollectionSave>(json) ?? new PlayerInsectCollectionSave();
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning($"[PlayerInsectCollection] 손상된 세이브 — 기본값으로 시작: {e.Message}");
+                return new PlayerInsectCollectionSave();
+            }
         }
 
         private void Save(PlayerInsectCollectionSave data)
         {
             string json = JsonUtility.ToJson(data, true);
-            System.IO.File.WriteAllText(GetPath(), json);
+            AtomicFileWriter.WriteAllText(GetPath(), json);
         }
 
         private string GetPath()

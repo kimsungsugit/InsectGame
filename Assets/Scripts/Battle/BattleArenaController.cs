@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using InsectGame.Core;
 using InsectGame.Data;
 using InsectGame.Spawning;
@@ -8,8 +9,6 @@ namespace InsectGame.Battle
 {
     public class BattleArenaController : MonoBehaviour
     {
-        public static BattleArenaController Instance { get; private set; }
-
         private GameObject arenaRoot;
         private GameObject playerModel;
         private GameObject enemyModel;
@@ -24,6 +23,7 @@ namespace InsectGame.Battle
         private Vector3 bossBattlePos;
 
         private bool isActive;
+        private CameraFollower cachedCameraFollower;
 
         private int selectedTeamIndex = -1;
 
@@ -31,13 +31,23 @@ namespace InsectGame.Battle
         public Vector3 ArenaCenter => arenaCenter;
         public Vector3 PlayerModelPos => playerBattlePos;
         public Vector3 EnemyModelPos => enemyBattlePos;
+        public GameObject PlayerModel => playerModel;
+        public GameObject EnemyModel => enemyModel;
+        public GameObject BossModel => bossModel;
+        public int TeamModelCount => teamModels != null ? teamModels.Length : 0;
+        public GameObject GetTeamModel(int index)
+        {
+            if (teamModels == null || index < 0 || index >= teamModels.Length) return null;
+            return teamModels[index];
+        }
 
         public void SetSelectedTeamIndex(int index) { selectedTeamIndex = index; }
 
-        private void Awake()
+        // 씬 전환/컴포넌트 비활성화 시 정리 — CleanupArena 위임 (DRY + model 필드 null화 포함).
+        // 옛은 OnDisable과 CleanupArena가 동일 작업을 중복 수행 + OnDisable에 model null화 누락.
+        private void OnDisable()
         {
-            if (Instance != null && Instance != this) { Destroy(gameObject); return; }
-            Instance = this;
+            CleanupArena();
         }
 
         public void SetupNormalBattle(InsectData playerInsect, int playerLevel,
@@ -49,8 +59,9 @@ namespace InsectGame.Battle
             // 아레나를 필드와 완전 분리된 위치에 생성 (필드 오브젝트와 겹침 방지)
             arenaCenter = new Vector3(1000f, 0f, 1000f);
 
-            playerBattlePos = arenaCenter + new Vector3(-2.5f, 0.5f, 0f);
-            enemyBattlePos = arenaCenter + new Vector3(2.5f, 0.5f, 0f);
+            // 플레이어 앞(가까이), 적 뒤(멀리) — 깊이감 있는 대결 구도
+            playerBattlePos = arenaCenter + new Vector3(-1.2f, 0.5f, -2.5f);
+            enemyBattlePos = arenaCenter + new Vector3(1.2f, 0.5f, 2.5f);
 
             arenaRoot = new GameObject("BattleArena");
             arenaRoot.transform.position = arenaCenter;
@@ -63,7 +74,10 @@ namespace InsectGame.Battle
 
             enemyModel = CreateBattleInsect(enemyInsect, enemyLevel, enemyShiny, enemyBattlePos, 1.5f);
             enemyModel.name = "BattleInsect_Enemy";
-            enemyModel.transform.rotation = Quaternion.Euler(0f, 180f, 0f);
+
+            // 서로 마주보게
+            playerModel.transform.LookAt(enemyBattlePos);
+            enemyModel.transform.LookAt(playerBattlePos);
 
             // 카메라를 아레나 정면으로 이동
             SetupBattleCamera();
@@ -80,8 +94,9 @@ namespace InsectGame.Battle
             // 아레나를 필드와 완전 분리된 위치에 생성 (필드 오브젝트와 겹침 방지)
             arenaCenter = new Vector3(1000f, 0f, 1000f);
 
-            bossBattlePos = arenaCenter + new Vector3(0f, 1f, 3f);
-            playerBattlePos = arenaCenter + new Vector3(0f, 0.5f, -3f);
+            // 보스: 멀리 위에, 팀: 가까이 아래 — 올려보는 구도
+            bossBattlePos = arenaCenter + new Vector3(0f, 1.2f, 4f);
+            playerBattlePos = arenaCenter + new Vector3(0f, 0.5f, -3.5f);
             enemyBattlePos = bossBattlePos;
 
             arenaRoot = new GameObject("RaidArena");
@@ -98,15 +113,18 @@ namespace InsectGame.Battle
 
             int count = teamInsects != null ? teamInsects.Length : 0;
             teamModels = new GameObject[count];
-            float spacing = count > 1 ? 4f / (count - 1) : 0f;
-            float startX = count > 1 ? -2f : 0f;
 
+            // 호 형태 배치: 카메라에서 봤을 때 겹치지 않게
             for (int i = 0; i < count; i++)
             {
                 if (teamInsects[i] == null) continue;
-                Vector3 pos = arenaCenter + new Vector3(startX + i * spacing, 0.5f, -3f);
+                float t = count > 1 ? (float)i / (count - 1) : 0.5f;
+                float x = Mathf.Lerp(-2.5f, 2.5f, t);
+                float z = -3.5f + Mathf.Abs(t - 0.5f) * 2f; // 양 끝이 약간 뒤로
+                Vector3 pos = arenaCenter + new Vector3(x, 0.5f, z);
                 teamModels[i] = CreateBattleInsect(teamInsects[i], teamLevels[i], false, pos, 1.0f);
                 teamModels[i].name = $"RaidInsect_Team_{i}";
+                teamModels[i].transform.LookAt(bossBattlePos); // 보스를 바라봄
             }
 
             SetupBattleCamera();
@@ -124,6 +142,26 @@ namespace InsectGame.Battle
             entity.BuildForBattle(insectData, level, isShiny);
 
             return insectObj;
+        }
+
+        // 1v1 배틀 중 플레이어 곤충 교체 시 호출. 이전 모델을 파괴하고 새 곤충으로 재생성.
+        public void RebuildPlayerInsect(InsectData newInsect, int newLevel)
+        {
+            if (!isActive || arenaRoot == null || newInsect == null) return;
+
+            if (playerModel != null)
+            {
+                Destroy(playerModel);
+                playerModel = null;
+            }
+
+            playerModel = CreateBattleInsect(newInsect, newLevel, false, playerBattlePos, 1.5f);
+            playerModel.name = "BattleInsect_Player";
+
+            if (enemyModel != null)
+                playerModel.transform.LookAt(enemyModel.transform.position);
+            else
+                playerModel.transform.LookAt(enemyBattlePos);
         }
 
         private void CreateArenaFloor()
@@ -226,20 +264,23 @@ namespace InsectGame.Battle
 
             if (attacker == null || target == null) return;
 
-            StartCoroutine(AttackCoroutine(attacker, attacker.transform.position, target.transform.position, onImpact));
+            StartCoroutine(AttackCoroutine(attacker, target, onImpact));
         }
 
-        private IEnumerator AttackCoroutine(GameObject attacker, Vector3 startPos, Vector3 targetPos, System.Action onImpact)
+        private IEnumerator AttackCoroutine(GameObject attacker, GameObject target, System.Action onImpact)
         {
-            float t = 0f;
+            Vector3 startPos = attacker.transform.position;
+            Vector3 targetPos = target != null ? target.transform.position : startPos;
 
-            // Phase 1: rush (0~0.3s)
+            // 근접: 적 앞 95%까지 러시 → 임팩트 → 원위치 복귀
+            // Phase 1: rush 95% (0~0.3s)
+            float t = 0f;
             while (t < 0.3f)
             {
                 t += Time.deltaTime;
                 float progress = t / 0.3f;
                 float eased = progress * progress * (3f - 2f * progress);
-                Vector3 pos = Vector3.Lerp(startPos, targetPos, eased * 0.7f);
+                Vector3 pos = Vector3.Lerp(startPos, targetPos, eased * 0.95f);
                 pos.y += Mathf.Sin(eased * Mathf.PI) * 0.8f;
                 attacker.transform.position = pos;
                 yield return null;
@@ -248,17 +289,17 @@ namespace InsectGame.Battle
             onImpact?.Invoke();
             CreateImpactEffect(targetPos);
 
-            GameObject target = (attacker == playerModel) ? enemyModel : playerModel;
             if (target != null)
                 StartCoroutine(ShakeModel(target, 0.3f, 0.3f));
 
             // Phase 2: return (0.3s)
             t = 0f;
+            Vector3 contactPos = Vector3.Lerp(startPos, targetPos, 0.95f);
             while (t < 0.3f)
             {
                 t += Time.deltaTime;
                 float progress = t / 0.3f;
-                attacker.transform.position = Vector3.Lerp(targetPos * 0.7f + startPos * 0.3f, startPos, progress);
+                attacker.transform.position = Vector3.Lerp(contactPos, startPos, progress);
                 yield return null;
             }
 
@@ -417,19 +458,34 @@ namespace InsectGame.Battle
             Camera cam = Camera.main;
             if (cam == null) return;
 
-            // 카메라를 아레나 정면 위에서 약간 비스듬히 내려다보게
-            Vector3 camPos = arenaCenter + new Vector3(0f, 5f, -7f);
-            cam.transform.position = camPos;
-            cam.transform.LookAt(arenaCenter + Vector3.up * 0.5f);
+            bool isRaid = bossModel != null;
+            Vector3 camPos;
+            Vector3 lookTarget;
 
-            // CameraFollower의 배틀 모드도 이 위치로 오버라이드
+            if (isRaid)
+            {
+                // 레이드: 팀 뒤쪽 높은 곳에서 보스를 올려보는 각도
+                // 보스의 거대함과 위압감을 강조
+                camPos = arenaCenter + new Vector3(0f, 4f, -7.5f);
+                lookTarget = bossBattlePos + Vector3.up * 0.8f;
+            }
+            else
+            {
+                // 1v1: 플레이어 뒤 어깨 너머에서 적을 바라보는 각도
+                // 대결 긴장감 + 플레이어 곤충이 가까이 보임
+                camPos = playerBattlePos + new Vector3(1.5f, 2.8f, -4f);
+                lookTarget = Vector3.Lerp(playerBattlePos, enemyBattlePos, 0.6f) + Vector3.up * 0.3f;
+            }
+
+            cam.transform.position = camPos;
+            cam.transform.LookAt(lookTarget);
+
             CameraFollower follower = cam.GetComponent<CameraFollower>();
             if (follower != null)
             {
                 follower.EnterBattleMode(playerBattlePos, enemyBattlePos);
-                // 오버라이드: 직접 위치 설정
                 cam.transform.position = camPos;
-                cam.transform.LookAt(arenaCenter + Vector3.up * 0.5f);
+                cam.transform.LookAt(lookTarget);
             }
         }
 
@@ -437,7 +493,14 @@ namespace InsectGame.Battle
 
         public void PlaySkillEffect(bool isPlayerAttacking, InsectElement element, SkillEffectType effectType, System.Action onImpact = null)
         {
+            PlaySkillEffect(isPlayerAttacking, element, effectType, onImpact, false);
+        }
+
+        public void PlaySkillEffect(bool isPlayerAttacking, InsectElement element, SkillEffectType effectType, System.Action onImpact, bool isMelee)
+        {
             if (!isActive) return;
+
+            if (AudioManager.Instance != null) AudioManager.Instance.PlaySkillSFX(element);
 
             if (effectType == SkillEffectType.BuffAttack)
             {
@@ -452,10 +515,10 @@ namespace InsectGame.Battle
                 return;
             }
 
-            StartCoroutine(SkillAttackCoroutine(isPlayerAttacking, element, onImpact));
+            StartCoroutine(SkillAttackCoroutine(isPlayerAttacking, element, onImpact, isMelee));
         }
 
-        private IEnumerator SkillAttackCoroutine(bool isPlayerAttacking, InsectElement element, System.Action onImpact)
+        private IEnumerator SkillAttackCoroutine(bool isPlayerAttacking, InsectElement element, System.Action onImpact, bool isMelee)
         {
             GameObject attacker = isPlayerAttacking ? playerModel : enemyModel;
             if (isPlayerAttacking && teamModels != null && selectedTeamIndex >= 0 && selectedTeamIndex < teamModels.Length)
@@ -468,15 +531,61 @@ namespace InsectGame.Battle
             Vector3 targetPos = target.transform.position;
             Color elemColor = GetElementColor3D(element);
 
+            if (isMelee)
+            {
+                // 근접 스킬: 러시 → 임팩트 → 복귀 (투사체 없음)
+                float t = 0f;
+                while (t < 0.3f)
+                {
+                    t += Time.deltaTime;
+                    float progress = t / 0.3f;
+                    float eased = progress * progress * (3f - 2f * progress);
+                    Vector3 pos = Vector3.Lerp(startPos, targetPos, eased * 0.95f);
+                    pos.y += Mathf.Sin(eased * Mathf.PI) * 0.8f;
+                    attacker.transform.position = pos;
+                    CreateTrailParticle(pos, elemColor, 0.1f);
+                    yield return null;
+                }
+
+                onImpact?.Invoke();
+                CreateElementImpact3D(targetPos, element, elemColor);
+                StartCoroutine(ShakeModel(target, 0.4f, 0.35f));
+
+                if (cachedCameraFollower == null && Camera.main != null)
+                    cachedCameraFollower = Camera.main.GetComponent<CameraFollower>();
+                if (cachedCameraFollower != null)
+                {
+                    float intensity = (element == InsectElement.Earth || element == InsectElement.Metal) ? 0.35f : 0.2f;
+                    cachedCameraFollower.Shake(intensity, 0.25f);
+                }
+
+                if (AudioManager.Instance != null)
+                    AudioManager.Instance.PlaySFX(SfxType.Hit);
+
+                // 복귀
+                t = 0f;
+                Vector3 contactPos = Vector3.Lerp(startPos, targetPos, 0.95f);
+                while (t < 0.3f)
+                {
+                    t += Time.deltaTime;
+                    float progress = t / 0.3f;
+                    attacker.transform.position = Vector3.Lerp(contactPos, startPos, progress);
+                    yield return null;
+                }
+                attacker.transform.position = startPos;
+                yield break;
+            }
+
+            // 원거리: 투사체 발사
             // Phase 1: element projectile (0~0.4s)
             GameObject projectile = CreateElementProjectile(element, elemColor);
             projectile.transform.position = startPos + Vector3.up * 0.5f;
 
-            float t = 0f;
-            while (t < 0.4f)
+            float tt = 0f;
+            while (tt < 0.4f)
             {
-                t += Time.deltaTime;
-                float progress = t / 0.4f;
+                tt += Time.deltaTime;
+                float progress = tt / 0.4f;
                 float eased = progress * progress * (3f - 2f * progress);
                 Vector3 pos = Vector3.Lerp(startPos + Vector3.up * 0.5f, targetPos + Vector3.up * 0.5f, eased);
                 pos += GetElementTrajectoryOffset(element, progress);
@@ -492,6 +601,15 @@ namespace InsectGame.Battle
             onImpact?.Invoke();
             CreateElementImpact3D(targetPos, element, elemColor);
             StartCoroutine(ShakeModel(target, 0.4f, 0.35f));
+
+            // 카메라 쉐이크 (속성별 강도 차이)
+            if (cachedCameraFollower == null && Camera.main != null)
+                cachedCameraFollower = Camera.main.GetComponent<CameraFollower>();
+            if (cachedCameraFollower != null)
+            {
+                float intensity = (element == InsectElement.Earth || element == InsectElement.Metal) ? 0.35f : 0.2f;
+                cachedCameraFollower.Shake(intensity, 0.25f);
+            }
 
             if (AudioManager.Instance != null)
                 AudioManager.Instance.PlaySFX(SfxType.Hit);
@@ -1437,6 +1555,25 @@ namespace InsectGame.Battle
 
         // --- Skill Effect Helpers ---
 
+        // UI 효과 텍스트 색상 (1v1 / 5v1 컨트롤러 공용)
+        public static Color GetUIElementColor(InsectElement element)
+        {
+            switch (element)
+            {
+                case InsectElement.Bug:      return new Color(0.7f, 0.85f, 0.3f);
+                case InsectElement.Metal:    return new Color(0.75f, 0.78f, 0.85f);
+                case InsectElement.Earth:    return new Color(0.65f, 0.45f, 0.25f);
+                case InsectElement.Leaf:     return new Color(0.35f, 0.8f, 0.35f);
+                case InsectElement.Water:    return new Color(0.3f, 0.65f, 1f);
+                case InsectElement.Wind:     return new Color(0.7f, 0.95f, 0.9f);
+                case InsectElement.Light:    return new Color(1f, 0.95f, 0.55f);
+                case InsectElement.Electric: return new Color(1f, 0.95f, 0.3f);
+                case InsectElement.Dark:     return new Color(0.45f, 0.35f, 0.6f);
+                case InsectElement.Poison:   return new Color(0.7f, 0.4f, 0.85f);
+                default:                     return new Color(0.9f, 0.9f, 0.9f);
+            }
+        }
+
         private Color GetElementColor3D(InsectElement element)
         {
             switch (element)
@@ -1515,8 +1652,292 @@ namespace InsectGame.Battle
 
         // ===== End Skill Effect System =====
 
+        // ===== Faint / Hit Flash / Floating Effect Text =====
+
+        public class EffectTextEntry
+        {
+            public string text;
+            public Color color;
+            public float startTime;
+            public float duration;
+        }
+
+        private readonly List<EffectTextEntry> activeEffectTexts = new List<EffectTextEntry>();
+        private const int MaxConcurrentEffectTexts = 3;
+        private GUIStyle effectTextStyle;
+        private GUIStyle effectTextShadowStyle;
+
+        // HitFlash/Faint 호출 시마다 GetComponentsInChildren 반복 방지용 캐시
+        private readonly Dictionary<GameObject, MeshRenderer[]> rendererCache = new Dictionary<GameObject, MeshRenderer[]>();
+
+        private MeshRenderer[] GetRenderersCached(GameObject model)
+        {
+            if (model == null) return new MeshRenderer[0];
+            if (rendererCache.TryGetValue(model, out var cached))
+            {
+                if (cached != null && cached.Length > 0 && cached[0] != null)
+                    return cached;
+                rendererCache.Remove(model);
+            }
+            var fresh = model.GetComponentsInChildren<MeshRenderer>();
+            rendererCache[model] = fresh;
+            return fresh;
+        }
+
+        public IReadOnlyList<EffectTextEntry> GetActiveEffectTexts() => activeEffectTexts;
+
+        public void PlayEffectText(string text, Color color)
+        {
+            if (string.IsNullOrEmpty(text)) return;
+            // 가장 오래된 항목 제거 (최대 3개 유지)
+            if (activeEffectTexts.Count >= MaxConcurrentEffectTexts)
+                activeEffectTexts.RemoveAt(0);
+
+            activeEffectTexts.Add(new EffectTextEntry
+            {
+                text = text,
+                color = color,
+                startTime = Time.time,
+                duration = 1.0f
+            });
+        }
+
+        private void OnGUI()
+        {
+            if (!isActive) return;
+            if (activeEffectTexts.Count == 0) return;
+
+            float now = Time.time;
+            // 만료 항목 정리
+            for (int i = activeEffectTexts.Count - 1; i >= 0; i--)
+            {
+                EffectTextEntry e = activeEffectTexts[i];
+                if (e == null || now - e.startTime >= e.duration)
+                    activeEffectTexts.RemoveAt(i);
+            }
+
+            if (activeEffectTexts.Count == 0) return;
+
+            if (effectTextStyle == null)
+            {
+                effectTextStyle = new GUIStyle(GUI.skin.label)
+                {
+                    fontSize = 40,
+                    fontStyle = FontStyle.Bold,
+                    alignment = TextAnchor.MiddleCenter
+                };
+                effectTextShadowStyle = new GUIStyle(effectTextStyle);
+            }
+            GUIStyle style = effectTextStyle;
+            GUIStyle shadowStyle = effectTextShadowStyle;
+
+            float centerX = Screen.width * 0.5f;
+            float baseY = Screen.height * 0.35f;
+            float stackSpacing = 56f;
+            float width = 600f;
+            float height = 50f;
+
+            Color prevColor = GUI.color;
+            for (int i = 0; i < activeEffectTexts.Count; i++)
+            {
+                EffectTextEntry e = activeEffectTexts[i];
+                if (e == null) continue;
+
+                float elapsed = now - e.startTime;
+                float progress = Mathf.Clamp01(elapsed / e.duration);
+                float alpha = 1f - progress;
+                float yOffset = -40f * progress; // 위로 떠오름
+                float y = baseY + i * stackSpacing + yOffset;
+                Rect rect = new Rect(centerX - width * 0.5f, y, width, height);
+
+                // Shadow
+                GUI.color = new Color(0f, 0f, 0f, alpha * 0.7f);
+                Rect shadowRect = new Rect(rect.x + 2f, rect.y + 2f, rect.width, rect.height);
+                GUI.Label(shadowRect, e.text, shadowStyle);
+
+                // Main
+                Color c = e.color;
+                c.a *= alpha;
+                GUI.color = c;
+                GUI.Label(rect, e.text, style);
+            }
+            GUI.color = prevColor;
+        }
+
+        public IEnumerator PlayFaintCoroutine(GameObject model)
+        {
+            if (model == null) yield break;
+
+            Vector3 originalPos = model.transform.position;
+            Quaternion originalRot = model.transform.rotation;
+            Vector3 targetPos = originalPos + new Vector3(0f, -0.2f, 0f);
+            Quaternion targetRot = originalRot * Quaternion.Euler(0f, 0f, 90f);
+
+            MeshRenderer[] renderers = GetRenderersCached(model);
+            int count = renderers != null ? renderers.Length : 0;
+            Color[] originalColors = new Color[count];
+            bool[] hasBaseColor = new bool[count];
+            Color[] originalBaseColors = new Color[count];
+
+            for (int i = 0; i < count; i++)
+            {
+                if (renderers[i] == null) continue;
+                Material mat = renderers[i].material; // 인스턴스
+                // Standard/URP 셰이더를 Transparent(Fade) 모드로 전환해야 알파 페이드가 시각적으로 보임.
+                SetMaterialTransparentFade(mat);
+                originalColors[i] = mat.HasProperty("_Color") ? mat.color : Color.white;
+                if (mat.HasProperty("_BaseColor"))
+                {
+                    hasBaseColor[i] = true;
+                    originalBaseColors[i] = mat.GetColor("_BaseColor");
+                }
+            }
+
+            float duration = 0.6f;
+            float t = 0f;
+            while (t < duration)
+            {
+                if (model == null) yield break;
+                t += Time.deltaTime;
+                float progress = Mathf.Clamp01(t / duration);
+                float eased = progress * progress * (3f - 2f * progress);
+
+                model.transform.position = Vector3.Lerp(originalPos, targetPos, eased);
+                model.transform.rotation = Quaternion.Slerp(originalRot, targetRot, eased);
+
+                float alpha = 1f - progress;
+                for (int i = 0; i < count; i++)
+                {
+                    if (renderers[i] == null) continue;
+                    Material mat = renderers[i].material;
+                    if (mat.HasProperty("_Color"))
+                    {
+                        Color c = originalColors[i];
+                        c.a = originalColors[i].a * alpha;
+                        mat.color = c;
+                    }
+                    if (hasBaseColor[i] && mat.HasProperty("_BaseColor"))
+                    {
+                        Color c = originalBaseColors[i];
+                        c.a = originalBaseColors[i].a * alpha;
+                        mat.SetColor("_BaseColor", c);
+                    }
+                }
+                yield return null;
+            }
+
+            if (model != null) model.SetActive(false);
+        }
+
+        // Standard / URP Lit 머티리얼을 Transparent(Fade) 모드로 전환.
+        // Opaque 모드에서는 알파 변경이 시각적으로 보이지 않으므로 페이드 전에 반드시 호출.
+        private static void SetMaterialTransparentFade(Material mat)
+        {
+            if (mat == null) return;
+            // Standard (Built-in)
+            if (mat.HasProperty("_Mode"))
+            {
+                mat.SetFloat("_Mode", 2f); // Fade
+                mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+                mat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+                mat.SetInt("_ZWrite", 0);
+                mat.DisableKeyword("_ALPHATEST_ON");
+                mat.EnableKeyword("_ALPHABLEND_ON");
+                mat.DisableKeyword("_ALPHAPREMULTIPLY_ON");
+            }
+            // URP Lit
+            if (mat.HasProperty("_Surface"))
+            {
+                mat.SetFloat("_Surface", 1f); // Transparent
+                if (mat.HasProperty("_Blend")) mat.SetFloat("_Blend", 0f); // Alpha
+                mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+                mat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+                mat.SetInt("_ZWrite", 0);
+                mat.DisableKeyword("_SURFACE_TYPE_OPAQUE");
+                mat.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            }
+            mat.renderQueue = 3000;
+        }
+
+        public IEnumerator PlayHitFlashCoroutine(GameObject model)
+        {
+            if (model == null) yield break;
+
+            Vector3 originalPos = model.transform.position;
+            // 모델 정면 방향 기준 뒤로 0.3 백스텝 (forward의 반대)
+            Vector3 backDir = -model.transform.forward;
+            if (backDir.sqrMagnitude < 0.001f) backDir = Vector3.back;
+            Vector3 backPos = originalPos + backDir.normalized * 0.3f;
+
+            MeshRenderer[] renderers = GetRenderersCached(model);
+            int count = renderers != null ? renderers.Length : 0;
+            Color[] originalColors = new Color[count];
+            bool[] hasBaseColor = new bool[count];
+            Color[] originalBaseColors = new Color[count];
+
+            for (int i = 0; i < count; i++)
+            {
+                if (renderers[i] == null) continue;
+                Material mat = renderers[i].material;
+                originalColors[i] = mat.HasProperty("_Color") ? mat.color : Color.white;
+                if (mat.HasProperty("_BaseColor"))
+                {
+                    hasBaseColor[i] = true;
+                    originalBaseColors[i] = mat.GetColor("_BaseColor");
+                }
+            }
+
+            float duration = 0.15f;
+            float t = 0f;
+            while (t < duration)
+            {
+                if (model == null) yield break;
+                t += Time.deltaTime;
+                float progress = Mathf.Clamp01(t / duration);
+                // 0~0.5 백스텝, 0.5~1 복귀
+                float backWeight = progress < 0.5f ? (progress / 0.5f) : (1f - (progress - 0.5f) / 0.5f);
+                model.transform.position = Vector3.Lerp(originalPos, backPos, backWeight);
+
+                // 빨강 추가: 0 → 0.5 → 0 (피크 0.5)
+                float redWeight = Mathf.Sin(progress * Mathf.PI) * 0.5f;
+                for (int i = 0; i < count; i++)
+                {
+                    if (renderers[i] == null) continue;
+                    Material mat = renderers[i].material;
+                    if (mat.HasProperty("_Color"))
+                    {
+                        Color flashed = Color.Lerp(originalColors[i], Color.red, redWeight);
+                        flashed.a = originalColors[i].a;
+                        mat.color = flashed;
+                    }
+                    if (hasBaseColor[i] && mat.HasProperty("_BaseColor"))
+                    {
+                        Color flashed = Color.Lerp(originalBaseColors[i], Color.red, redWeight);
+                        flashed.a = originalBaseColors[i].a;
+                        mat.SetColor("_BaseColor", flashed);
+                    }
+                }
+                yield return null;
+            }
+
+            // 원위치 / 원색 복원
+            if (model == null) yield break;
+            model.transform.position = originalPos;
+            for (int i = 0; i < count; i++)
+            {
+                if (renderers[i] == null) continue;
+                Material mat = renderers[i].material;
+                if (mat.HasProperty("_Color")) mat.color = originalColors[i];
+                if (hasBaseColor[i] && mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", originalBaseColors[i]);
+            }
+        }
+
+        // ===== End Faint / Hit Flash / Floating Effect Text =====
+
         public void CleanupArena()
         {
+            // 진행 중인 Faint/HitFlash/스킬 코루틴이 destroyed GameObject에 접근하지 않도록 우선 정지.
+            StopAllCoroutines();
             isActive = false;
             if (arenaRoot != null)
             {
@@ -1527,6 +1948,8 @@ namespace InsectGame.Battle
             enemyModel = null;
             bossModel = null;
             teamModels = null;
+            activeEffectTexts.Clear();
+            rendererCache.Clear();
         }
 
         public void HighlightTeamMember(int index)

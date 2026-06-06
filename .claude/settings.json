@@ -4,7 +4,7 @@
     "UNITY_EDITOR_PATH": "C:/Program Files/Unity/Hub/Editor/6000.3.10f1/Editor/Unity.exe"
   },
   "permissions": {
-    "defaultMode": "dontAsk",
+    "defaultMode": "acceptEdits",
     "allow": [
       "Read",
       "Edit",
@@ -12,6 +12,40 @@
       "Glob",
       "Grep",
       "Bash",
+      "Bash(python:*)",
+      "Bash(python3:*)",
+      "Bash(ls:*)",
+      "Bash(mkdir:*)",
+      "Bash(mv:*)",
+      "Bash(cp:*)",
+      "Bash(cat:*)",
+      "Bash(echo:*)",
+      "Bash(find:*)",
+      "Bash(wc:*)",
+      "Bash(grep:*)",
+      "Bash(rg:*)",
+      "Bash(which:*)",
+      "Bash(where:*)",
+      "Bash(git:*)",
+      "Bash(gh:*)",
+      "Bash(choco:*)",
+      "Bash(powershell:*)",
+      "Bash(npm:*)",
+      "Bash(node:*)",
+      "Bash(dotnet:*)",
+      "Bash(curl:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(sed:*)",
+      "Bash(awk:*)",
+      "Bash(sort:*)",
+      "Bash(uniq:*)",
+      "Bash(diff:*)",
+      "Bash(test:*)",
+      "Bash([ :*)",
+      "Bash(true)",
+      "Bash(false)",
+      "Bash(export:*)",
       "Agent",
       "WebFetch",
       "WebSearch",
@@ -46,7 +80,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python .claude/hooks/warn_monolith.py",
+            "command": "python -X utf8 .claude/hooks/warn_monolith.py",
             "timeout": 5,
             "statusMessage": "모놀리스 파일 확인 중..."
           }
@@ -59,9 +93,49 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python .claude/hooks/check_namespace.py",
+            "command": "python -X utf8 .claude/hooks/check_namespace.py",
             "timeout": 5,
             "statusMessage": "C# 네임스페이스 검증 중..."
+          },
+          {
+            "type": "command",
+            "command": "python -X utf8 .claude/hooks/auto_verify_trigger.py",
+            "timeout": 5,
+            "statusMessage": "변경 크기 분석 중..."
+          },
+          {
+            "type": "command",
+            "command": "python -X utf8 .claude/hooks/quick_compile_check.py",
+            "timeout": 5,
+            "statusMessage": "빠른 컴파일 점검 중..."
+          },
+          {
+            "type": "command",
+            "command": "python -X utf8 .claude/hooks/scan_static_patterns.py",
+            "timeout": 5,
+            "statusMessage": "정적 회귀 패턴 스캔 중..."
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python -X utf8 .claude/hooks/audit_reminder.py",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python -X utf8 .claude/hooks/audit_flow_inject.py",
+            "timeout": 5
           }
         ]
       }

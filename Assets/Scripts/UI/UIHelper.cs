@@ -23,6 +23,9 @@ namespace InsectGame.UI
                 foreach (Texture2D old in texCache.Values)
                     if (old != null) Object.Destroy(old);
                 texCache.Clear();
+                // styleCache의 GUIStyle.normal.background이 방금 Destroy된 텍스처를 참조하므로 함께 invalidate.
+                // 옛은 stale background → MissingReferenceException 또는 invisible 버튼 렌더링.
+                styleCache.Clear();
             }
 
             tex = MakeTex(1, 1, col);

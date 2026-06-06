@@ -3,13 +3,24 @@ using UnityEngine;
 
 namespace InsectGame.UI
 {
-    public class CharacterViewerUI : MonoBehaviour
+    public class CharacterViewerUI : MonoBehaviour, IModalUI
     {
         private bool isOpen;
         private float rotateAngle;
 
         public bool IsOpen => isOpen;
-        public void Toggle() { isOpen = !isOpen; }
+        public void Toggle()
+        {
+            isOpen = !isOpen;
+            if (isOpen) ModalUIRegistry.Register(this);
+            else ModalUIRegistry.Unregister(this);
+        }
+        public void CloseModal()
+        {
+            isOpen = false;
+            ModalUIRegistry.Unregister(this);
+        }
+        private void OnDisable() { ModalUIRegistry.Unregister(this); }
 
         // 스타일 캐시
         private GUIStyle panelStyle;
@@ -18,7 +29,14 @@ namespace InsectGame.UI
         private GUIStyle labelStyle;
         private GUIStyle infoStyle;
         private GUIStyle closeStyle;
+        private GUIStyle statValueStyle;
+        private GUIStyle xpBarTextStyle;
         private bool stylesInitialized;
+
+        // 컴포넌트 캐싱 (FindFirstObjectByType 매 프레임 호출 방지)
+        private PlayerProgressController cachedProgress;
+        private PlayerCandyInventory cachedCandyInv;
+        private PlayerCurrencyWallet cachedCurrencyWallet;
 
         private void Update()
         {
@@ -44,10 +62,10 @@ namespace InsectGame.UI
             GUI.DrawTexture(new Rect(0, 0, sw, sh), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
-            // 캐릭터 미리보기 (화면 좌측-중앙)
+            // 캐릭터 미리보기 (화면 좌측-중앙). cy는 캐릭터 시각 중심.
             float charCx = sw * 0.38f;
-            float charCy = sh * 0.45f;
-            float charScale = Mathf.Min(sw, sh) * 0.003f;
+            float charCy = sh * 0.52f;
+            float charScale = Mathf.Min(sw, sh) * 0.0028f;
             DrawCharacterModel(charCx, charCy, charScale);
 
             // 오른쪽 버튼 패널
@@ -70,7 +88,7 @@ namespace InsectGame.UI
             {
                 CashShopUI cashShop = FindFirstObjectByType<CashShopUI>();
                 if (cashShop != null) cashShop.Toggle();
-                isOpen = false;
+                CloseModal();
             }
             curY += btnH + 8f;
 
@@ -86,7 +104,7 @@ namespace InsectGame.UI
                         System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                     if (tabField != null) tabField.SetValue(cashShop, 2);
                 }
-                isOpen = false;
+                CloseModal();
             }
             curY += btnH + 8f;
 
@@ -98,7 +116,7 @@ namespace InsectGame.UI
                 {
                     if (!outfitUi.IsOpen) outfitUi.Toggle();
                 }
-                isOpen = false;
+                CloseModal();
             }
             curY += btnH + 8f;
 
@@ -114,7 +132,7 @@ namespace InsectGame.UI
                         System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                     if (slotField != null) slotField.SetValue(outfitUi, OutfitSlot.Accessory);
                 }
-                isOpen = false;
+                CloseModal();
             }
             curY += btnH + 24f;
 
@@ -128,184 +146,57 @@ namespace InsectGame.UI
             GUI.Label(new Rect(btnX, curY, btnW, 24f), "캐릭터 정보", titleStyle);
             curY += 28f;
 
+            // 참조 캐싱 (첫 열림 시 1회)
+            if (cachedProgress == null) cachedProgress = FindFirstObjectByType<PlayerProgressController>();
+            if (cachedCandyInv == null) cachedCandyInv = FindFirstObjectByType<PlayerCandyInventory>();
+            if (cachedCurrencyWallet == null) cachedCurrencyWallet = FindFirstObjectByType<PlayerCurrencyWallet>();
+
             string charName = PlayerPrefs.GetString("InsectGame.Character.Name", "탐험가");
-            GUI.Label(new Rect(btnX, curY, btnW, 22f), $"이름: {charName}", infoStyle);
-            curY += 24f;
+            int level = cachedProgress != null ? cachedProgress.Level : 1;
+            int xp = cachedProgress != null ? cachedProgress.CurrentXp : 0;
+            int xpNext = cachedProgress != null ? cachedProgress.XpToNextLevel : 1;
+            int candies = cachedCandyInv != null ? cachedCandyInv.Candies : 0;
+            int gems = cachedCurrencyWallet != null ? cachedCurrencyWallet.Gems :
+                       (CashShopManager.Instance != null ? CashShopManager.Instance.Gems : 0);
+            int coins = cachedCurrencyWallet != null ? cachedCurrencyWallet.Coins : 0;
 
-            PlayerProgressController progress = FindFirstObjectByType<PlayerProgressController>();
-            int level = (progress != null) ? progress.Level : 1;
-            GUI.Label(new Rect(btnX, curY, btnW, 22f), $"Lv.{level}", infoStyle);
-            curY += 24f;
+            // 이름 + Lv 행
+            GUI.Label(new Rect(btnX, curY, btnW, 22f), $"{charName}  Lv.{level}", infoStyle);
+            curY += 26f;
 
-            PlayerCandyInventory candyInv = FindFirstObjectByType<PlayerCandyInventory>();
-            int candies = (candyInv != null) ? candyInv.Candies : 0;
-            GUI.Label(new Rect(btnX, curY, btnW, 22f), $"캔디: {candies}", infoStyle);
-            curY += 24f;
+            // EXP 바
+            float barH = 22f;
+            GUI.color = new Color(0.08f, 0.08f, 0.12f, 1f);
+            GUI.DrawTexture(new Rect(btnX, curY, btnW, barH), Texture2D.whiteTexture);
+            float xpRatio = xpNext > 0 ? Mathf.Clamp01((float)xp / xpNext) : 0f;
+            GUI.color = new Color(0.3f, 0.65f, 1f, 1f);
+            GUI.DrawTexture(new Rect(btnX, curY, btnW * xpRatio, barH), Texture2D.whiteTexture);
+            // 테두리
+            GUI.color = new Color(0.4f, 0.5f, 0.8f, 0.7f);
+            GUI.DrawTexture(new Rect(btnX, curY, btnW, 1f), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(btnX, curY + barH - 1, btnW, 1f), Texture2D.whiteTexture);
+            GUI.color = Color.white;
+            GUI.Label(new Rect(btnX, curY, btnW, barH), $"EXP {xp} / {xpNext}", xpBarTextStyle);
+            curY += barH + 10f;
 
-            int gems = (CashShopManager.Instance != null) ? CashShopManager.Instance.Gems : 0;
-            GUI.Label(new Rect(btnX, curY, btnW, 22f), $"보석: {gems}", infoStyle);
+            // 재화 박스 3개 (캔디/코인/보석)
+            float resRowH = 36f;
+            float resW = (btnW - 12f) / 3f;
+            DrawResourceRow(btnX, curY, resW, resRowH, "캔디", candies, new Color(1f, 0.7f, 0.85f));
+            DrawResourceRow(btnX + resW + 6f, curY, resW, resRowH, "코인", coins, new Color(1f, 0.85f, 0.3f));
+            DrawResourceRow(btnX + (resW + 6f) * 2f, curY, resW, resRowH, "보석", gems, new Color(0.4f, 0.7f, 1f));
 
             // 닫기 버튼 (우하단)
             if (GUI.Button(new Rect(sw - 70f, sh - 60f, 50f, 36f), "X", closeStyle))
             {
-                isOpen = false;
+                CloseModal();
             }
         }
 
         private void DrawCharacterModel(float cx, float cy, float scale)
         {
-            // 현재 장착 의상 색상 가져오기
-            CharacterOutfitManager outfitMgr = CharacterOutfitManager.Instance;
-            Color hatColor = GetEquippedColor(outfitMgr, OutfitSlot.Hat);
-            Color topColor = GetEquippedColor(outfitMgr, OutfitSlot.Top);
-            Color bottomColor = GetEquippedColor(outfitMgr, OutfitSlot.Bottom);
-            Color shoeColor = GetEquippedColor(outfitMgr, OutfitSlot.Shoes);
-
-            // 피부색/머리색
-            int skinIdx = PlayerPrefs.GetInt("InsectGame.Character.SkinColor", 0);
-            int hairColorIdx = PlayerPrefs.GetInt("InsectGame.Character.HairColor", 0);
-            int hairStyle = PlayerPrefs.GetInt("InsectGame.Character.HairStyle", 0);
-            int gender = PlayerPrefs.GetInt("InsectGame.Character.Gender", 0);
-            int faceType = PlayerPrefs.GetInt("InsectGame.Character.FaceType", 0);
-
-            Color[] skinColors =
-            {
-                new Color(1.0f, 0.87f, 0.75f),
-                new Color(0.9f, 0.75f, 0.6f),
-                new Color(0.65f, 0.5f, 0.35f),
-                new Color(0.4f, 0.28f, 0.18f)
-            };
-            Color skin = skinColors[Mathf.Clamp(skinIdx, 0, 3)];
-
-            Color[] hairColors =
-            {
-                new Color(0.12f, 0.08f, 0.05f),
-                new Color(0.35f, 0.2f, 0.1f),
-                new Color(0.85f, 0.7f, 0.3f),
-                new Color(0.6f, 0.15f, 0.1f),
-                new Color(0.2f, 0.15f, 0.35f),
-                new Color(0.15f, 0.3f, 0.5f)
-            };
-            Color hair = hairColors[Mathf.Clamp(hairColorIdx, 0, hairColors.Length - 1)];
-
-            float s = scale;
-            // 회전 시뮬레이션: 좌우 오프셋으로 흔들림 효과
-            float swayX = Mathf.Sin(rotateAngle * Mathf.Deg2Rad) * 8f * s;
-
-            float headW = 50f * s;
-            float headH = 40f * s;
-            float bodyW = (gender == 1) ? 42f * s : 48f * s;
-            float bodyH = 60f * s;
-            float legW = 18f * s;
-            float legH = 50f * s;
-
-            // 그림자
-            GUI.color = new Color(0f, 0f, 0f, 0.2f);
-            GUI.DrawTexture(new Rect(cx - bodyW * 0.6f + swayX, cy + bodyH * 0.5f + legH + 4f * s, bodyW * 1.2f, 6f * s), Texture2D.whiteTexture);
-            GUI.color = Color.white;
-
-            // 신발
-            Texture2D shoeTex = MakeTex(1, 1, shoeColor);
-            GUI.DrawTexture(new Rect(cx - bodyW * 0.35f - legW * 0.5f + swayX, cy + bodyH * 0.5f + legH - 2f * s, legW + 4f * s, 10f * s), shoeTex);
-            GUI.DrawTexture(new Rect(cx + bodyW * 0.35f - legW * 0.5f + swayX, cy + bodyH * 0.5f + legH - 2f * s, legW + 4f * s, 10f * s), shoeTex);
-
-            // 다리 (하의)
-            Texture2D bottomTex = MakeTex(1, 1, bottomColor);
-            GUI.DrawTexture(new Rect(cx - bodyW * 0.35f - legW * 0.5f + swayX, cy + bodyH * 0.5f, legW, legH), bottomTex);
-            GUI.DrawTexture(new Rect(cx + bodyW * 0.35f - legW * 0.5f + swayX, cy + bodyH * 0.5f, legW, legH), bottomTex);
-
-            // 몸통 (상의)
-            Texture2D topTex = MakeTex(1, 1, topColor);
-            GUI.DrawTexture(new Rect(cx - bodyW * 0.5f + swayX, cy - bodyH * 0.5f, bodyW, bodyH), topTex);
-
-            // 팔
-            float armW = 12f * s;
-            float armH = 44f * s;
-            GUI.DrawTexture(new Rect(cx - bodyW * 0.5f - armW + swayX, cy - bodyH * 0.4f, armW, armH), topTex);
-            GUI.DrawTexture(new Rect(cx + bodyW * 0.5f + swayX, cy - bodyH * 0.4f, armW, armH), topTex);
-
-            // 손 (피부색)
-            Texture2D skinTex = MakeTex(1, 1, skin);
-            GUI.DrawTexture(new Rect(cx - bodyW * 0.5f - armW + swayX, cy - bodyH * 0.4f + armH, armW, 8f * s), skinTex);
-            GUI.DrawTexture(new Rect(cx + bodyW * 0.5f + swayX, cy - bodyH * 0.4f + armH, armW, 8f * s), skinTex);
-
-            // 목
-            GUI.DrawTexture(new Rect(cx - 6f * s + swayX, cy - bodyH * 0.5f - 8f * s, 12f * s, 10f * s), skinTex);
-
-            // 머리 (얼굴)
-            float headX = cx - headW * 0.5f + swayX;
-            float headY = cy - bodyH * 0.5f - headH - 4f * s;
-            GUI.DrawTexture(new Rect(headX, headY, headW, headH), skinTex);
-
-            // 머리카락
-            Texture2D hairTex = MakeTex(1, 1, hair);
-            if (hairStyle == 3)
-            {
-                GUI.DrawTexture(new Rect(headX - 2f * s, headY - 4f * s, headW + 4f * s, 16f * s), hairTex);
-                if (gender == 0)
-                {
-                    GUI.DrawTexture(new Rect(headX + headW * 0.3f, headY - 16f * s, headW * 0.15f, 14f * s), hairTex);
-                }
-                else
-                {
-                    GUI.DrawTexture(new Rect(headX + headW * 0.2f, headY - 20f * s, headW * 0.6f, 18f * s), hairTex);
-                }
-            }
-            else if (hairStyle == 0)
-            {
-                GUI.DrawTexture(new Rect(headX + 2f * s, headY - 2f * s, headW - 4f * s, 14f * s), hairTex);
-            }
-            else if (hairStyle == 1)
-            {
-                GUI.DrawTexture(new Rect(headX + 2f * s, headY - 2f * s, headW - 4f * s, 16f * s), hairTex);
-                GUI.DrawTexture(new Rect(headX - 2f * s, headY + 10f * s, 8f * s, 20f * s), hairTex);
-                GUI.DrawTexture(new Rect(headX + headW - 6f * s, headY + 10f * s, 8f * s, 20f * s), hairTex);
-            }
-            else
-            {
-                GUI.DrawTexture(new Rect(headX + 2f * s, headY - 2f * s, headW - 4f * s, 18f * s), hairTex);
-                GUI.DrawTexture(new Rect(headX - 4f * s, headY + 10f * s, 10f * s, 50f * s), hairTex);
-                GUI.DrawTexture(new Rect(headX + headW - 6f * s, headY + 10f * s, 10f * s, 50f * s), hairTex);
-            }
-
-            // 눈
-            Texture2D whiteTex = MakeTex(1, 1, Color.white);
-            Texture2D blackTex = MakeTex(1, 1, new Color(0.1f, 0.08f, 0.05f));
-            float eyeY = headY + headH * 0.3f;
-            float eyeSize = 8f * s;
-            float pupilSize = 4f * s;
-            GUI.DrawTexture(new Rect(headX + headW * 0.2f, eyeY, eyeSize, eyeSize), whiteTex);
-            GUI.DrawTexture(new Rect(headX + headW * 0.6f, eyeY, eyeSize, eyeSize), whiteTex);
-            GUI.DrawTexture(new Rect(headX + headW * 0.2f + 2f * s, eyeY + 2f * s, pupilSize, pupilSize), blackTex);
-            GUI.DrawTexture(new Rect(headX + headW * 0.6f + 2f * s, eyeY + 2f * s, pupilSize, pupilSize), blackTex);
-
-            // 눈썹
-            Texture2D browTex = MakeTex(1, 1, new Color(hair.r * 0.6f, hair.g * 0.6f, hair.b * 0.6f));
-            GUI.DrawTexture(new Rect(headX + headW * 0.15f, eyeY - 4f * s, 12f * s, 2f * s), browTex);
-            GUI.DrawTexture(new Rect(headX + headW * 0.55f, eyeY - 4f * s, 12f * s, 2f * s), browTex);
-
-            // 코
-            GUI.DrawTexture(new Rect(headX + headW * 0.45f, eyeY + eyeSize + 2f * s, 5f * s, 5f * s), skinTex);
-
-            // 입
-            Texture2D mouthTex = MakeTex(1, 1, new Color(0.8f, 0.4f, 0.35f));
-            float mouthW = (8f + faceType * 2f) * s;
-            GUI.DrawTexture(new Rect(headX + headW * 0.5f - mouthW * 0.5f, eyeY + eyeSize + 9f * s, mouthW, 3f * s), mouthTex);
-
-            // 볼터치 (여자)
-            if (gender == 1)
-            {
-                Texture2D blushTex = MakeTex(1, 1, new Color(1f, 0.6f, 0.6f, 0.5f));
-                GUI.DrawTexture(new Rect(headX + 4f * s, eyeY + eyeSize + 2f * s, 8f * s, 5f * s), blushTex);
-                GUI.DrawTexture(new Rect(headX + headW - 12f * s, eyeY + eyeSize + 2f * s, 8f * s, 5f * s), blushTex);
-            }
-
-            // 모자 (장착중이면)
-            if (hatColor.a > 0.01f)
-            {
-                Texture2D hatTex = MakeTex(1, 1, hatColor);
-                GUI.DrawTexture(new Rect(headX - 4f * s, headY - 10f * s, headW + 8f * s, 14f * s), hatTex);
-            }
+            float swayX = Mathf.Sin(rotateAngle * Mathf.Deg2Rad) * 8f * scale;
+            CharacterPortraitRenderer.DrawWithOutfit(cx, cy, scale, swayX);
         }
 
         private Color GetEquippedColor(CharacterOutfitManager mgr, OutfitSlot slot)
@@ -336,6 +227,20 @@ namespace InsectGame.UI
             tex.SetPixels(pix);
             tex.Apply();
             return tex;
+        }
+
+        private void DrawResourceRow(float x, float y, float w, float h, string label, int value, Color accent)
+        {
+            GUI.color = new Color(accent.r * 0.12f, accent.g * 0.12f, accent.b * 0.12f, 0.85f);
+            GUI.DrawTexture(new Rect(x, y, w, h), Texture2D.whiteTexture);
+            GUI.color = accent;
+            GUI.DrawTexture(new Rect(x, y, w, 2f), Texture2D.whiteTexture);
+
+            GUI.color = Color.white;
+            labelStyle.normal.textColor = new Color(accent.r * 0.8f, accent.g * 0.8f, accent.b * 0.8f);
+            GUI.Label(new Rect(x + 6, y + 2, w - 12, 16), label, labelStyle);
+            statValueStyle.normal.textColor = accent;
+            GUI.Label(new Rect(x + 6, y + 14, w - 12, 20), value.ToString(), statValueStyle);
         }
 
         private void InitStyles()
@@ -373,6 +278,17 @@ namespace InsectGame.UI
             closeStyle.normal.textColor = new Color(1f, 0.4f, 0.4f);
             closeStyle.normal.background = MakeTex(1, 1, new Color(0.15f, 0.1f, 0.1f, 0.85f));
             closeStyle.hover.background = MakeTex(1, 1, new Color(0.3f, 0.1f, 0.1f, 0.9f));
+
+            statValueStyle = new GUIStyle(GUI.skin.label);
+            statValueStyle.fontSize = 16;
+            statValueStyle.fontStyle = FontStyle.Bold;
+            statValueStyle.alignment = TextAnchor.MiddleRight;
+
+            xpBarTextStyle = new GUIStyle(GUI.skin.label);
+            xpBarTextStyle.fontSize = 13;
+            xpBarTextStyle.fontStyle = FontStyle.Bold;
+            xpBarTextStyle.alignment = TextAnchor.MiddleCenter;
+            xpBarTextStyle.normal.textColor = Color.white;
         }
     }
 }

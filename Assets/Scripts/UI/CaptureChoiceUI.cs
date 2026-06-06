@@ -7,7 +7,7 @@ using UnityEngine;
 
 namespace InsectGame.UI
 {
-    public class CaptureChoiceUI : MonoBehaviour
+    public class CaptureChoiceUI : MonoBehaviour, IModalUI
     {
         [SerializeField] private CaptureMinigameController minigame;
         [SerializeField] private InsectBattleController battleController;
@@ -25,6 +25,8 @@ namespace InsectGame.UI
         private CaptureItemData[] captureItems;
 
         private bool isOpen;
+        public bool IsOpen => isOpen;
+        public void CloseModal() { Hide(); }
         private InsectEntity targetInsect;
 #pragma warning disable 0414
         private int selectedTeamSlot = -1;
@@ -47,6 +49,7 @@ namespace InsectGame.UI
             selectedTeamSlot = -1;
             showTeamSelect = false;
             showItemSelect = false;
+            ModalUIRegistry.Register(this);
             if (playerMovement != null) playerMovement.SetFrozen(true);
         }
 
@@ -56,8 +59,11 @@ namespace InsectGame.UI
             targetInsect = null;
             showTeamSelect = false;
             showItemSelect = false;
+            ModalUIRegistry.Unregister(this);
             if (playerMovement != null) playerMovement.SetFrozen(false);
         }
+
+        private void OnDisable() { ModalUIRegistry.Unregister(this); }
 
         private void Update()
         {

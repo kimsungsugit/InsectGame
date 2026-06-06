@@ -25,8 +25,31 @@ namespace InsectGame.Core
 
         private CashShopItem[] shopItems;
         private int gems;
+        private PlayerCurrencyWallet wallet; // 보석 이중 관리 동기화용
 
-        public int Gems => gems;
+        // wallet이 single source of truth. wallet 있으면 wallet.Gems 우선, AutoWire 전에는 캐시 사용.
+        public int Gems => wallet != null ? wallet.Gems : gems;
+
+        public void AutoWire(PlayerCurrencyWallet w)
+        {
+            if (wallet == null) wallet = w;
+            if (wallet == null) return;
+
+            // 1회 마이그레이션: PlayerPrefs "InsectGame.Gems" 값이 wallet보다 크면 wallet에 반영 후 키 삭제.
+            // 이후 사이클부터 wallet 단일 소스로 동작 — 이중 관리 종료.
+            if (wallet.Gems < gems)
+            {
+                wallet.AddGems(gems - wallet.Gems);
+            }
+            // PlayerPrefs 키는 더 이상 진실의 원천이 아님 — 다음 세션 혼동 방지
+            if (PlayerPrefs.HasKey(GemsKey))
+            {
+                PlayerPrefs.DeleteKey(GemsKey);
+                PlayerPrefs.Save();
+            }
+            gems = wallet.Gems; // 캐시 동기화
+            GemsChanged?.Invoke();
+        }
 
         public event Action<CashShopItem> ItemPurchased;
         public event Action GemsChanged;
@@ -53,14 +76,14 @@ namespace InsectGame.Core
                 // -- 미니게임 아이템 (보석으로 구매) --
                 new CashShopItem { itemId = "shop_net_silver",   displayName = "은빛 채집망",   description = "포획 확률 +15% 증가",      category = CashItemCategory.MinigameItem, priceKRW = 0, gemPrice = 200, rewardItemId = "net_silver",   rewardCount = 5 },
                 new CashShopItem { itemId = "shop_net_gold",     displayName = "황금 채집망",   description = "포획 확률 +30% 증가",      category = CashItemCategory.MinigameItem, priceKRW = 0, gemPrice = 400, rewardItemId = "net_gold",     rewardCount = 3 },
-                new CashShopItem { itemId = "shop_rare_incense", displayName = "희귀 향로",     description = "10분간 Rare+ 출현율 2배",  category = CashItemCategory.MinigameItem, priceKRW = 0, gemPrice = 350, rewardItemId = "incense_rare", rewardCount = 1 },
+                // shop_rare_incense (rewardItemId="incense_rare") — ItemData SO 미정의로 비활성화. /add-item 스킬로 추가 후 복원
                 new CashShopItem { itemId = "shop_candy_pack",   displayName = "캔디 대량팩",   description = "캔디 50개",                category = CashItemCategory.MinigameItem, priceKRW = 0, gemPrice = 300, rewardItemId = "candy",        rewardCount = 50 },
                 new CashShopItem { itemId = "shop_exp_boost",    displayName = "경험치 부스터", description = "10분간 경험치 2배",        category = CashItemCategory.MinigameItem, priceKRW = 0, gemPrice = 300, rewardItemId = "exp_boost",    rewardCount = 1 },
 
                 // -- 랜덤 상자 (보석으로 구매) --
-                new CashShopItem { itemId = "box_bronze", displayName = "브론즈 상자", description = "기본 곤충 + 소량 희귀 확률", category = CashItemCategory.GachaBox, priceKRW = 0, gemPrice = 500,  rewardCount = 1 },
-                new CashShopItem { itemId = "box_silver", displayName = "실버 상자",   description = "희귀 곤충 확률 UP!",        category = CashItemCategory.GachaBox, priceKRW = 0, gemPrice = 800,  rewardCount = 1 },
-                new CashShopItem { itemId = "box_gold",   displayName = "골드 상자",   description = "전설 곤충 확률 대폭 UP!",   category = CashItemCategory.GachaBox, priceKRW = 0, gemPrice = 1200, rewardCount = 1 },
+                new CashShopItem { itemId = "box_bronze", displayName = "브론즈 상자", description = "기본 곤충 + 소량 희귀 확률", category = CashItemCategory.GachaBox, priceKRW = 0, gemPrice = 500, rewardCount = 1 },
+                new CashShopItem { itemId = "box_silver", displayName = "실버 상자",   description = "희귀 곤충 확률 UP!",        category = CashItemCategory.GachaBox, priceKRW = 0, gemPrice = 600, rewardCount = 1 },
+                new CashShopItem { itemId = "box_gold",   displayName = "골드 상자",   description = "전설 곤충 확률 대폭 UP!",   category = CashItemCategory.GachaBox, priceKRW = 0, gemPrice = 750, rewardCount = 1 },
             };
         }
 
@@ -76,6 +99,9 @@ namespace InsectGame.Core
             if (item.itemId.StartsWith("gem_"))
             {
                 AddGems(item.rewardCount);
+                // 결제 손실 방지: 보석 충전 직후 클라우드 즉시 저장(자동저장 120초 대기 안 함).
+                if (CloudSaveManager.Instance != null)
+                    CloudSaveManager.Instance.SaveToCloud();
                 ItemPurchased?.Invoke(item);
                 return true;
             }
@@ -90,29 +116,65 @@ namespace InsectGame.Core
             if (item == null || item.gemPrice <= 0) return false;
 
             bool isMaster = AuthManager.Instance != null && AuthManager.Instance.IsMasterAccount;
-            if (!isMaster && gems < item.gemPrice) return false;
-            if (!isMaster) gems -= item.gemPrice;
-            SaveGems();
-            GemsChanged?.Invoke();
+            // Gems 프로퍼티 사용 — wallet 우선 (single source of truth).
+            // 옛은 stale gems 캐시 사용으로 외부 wallet 변경 후 잘못된 검사 가능.
+            if (!isMaster && Gems < item.gemPrice) return false;
 
-            // 아이템 지급
+            // 1단계: 지급 가능 여부 사전 검증 (수령 시스템 존재 확인). 차감 전이라 환불 불필요.
+            bool deliverable = true;
             if (item.category == CashItemCategory.GachaBox)
             {
-                if (GachaBoxManager.Instance != null)
-                    GachaBoxManager.Instance.OpenBox(item.itemId);
+                deliverable = GachaBoxManager.Instance != null;
             }
             else if (!string.IsNullOrEmpty(item.rewardItemId))
             {
                 if (item.rewardItemId == "candy")
-                {
-                    PlayerCandyInventory candy = FindFirstObjectByType<PlayerCandyInventory>();
-                    if (candy != null) candy.AddCandy(item.rewardCount);
-                }
+                    deliverable = FindFirstObjectByType<PlayerCandyInventory>() != null;
                 else
+                    deliverable = FindFirstObjectByType<PlayerItemInventory>() != null;
+            }
+            if (!deliverable) return false;
+
+            // 2단계: 결제 (보석 차감) — AddGems(-...) 경로로 wallet 동기화 보장.
+            // Gems 프로퍼티로 환불 기준값 캡처 (wallet 변경 시 stale 방지).
+            int gemsBefore = Gems;
+            if (!isMaster) AddGems(-item.gemPrice);
+
+            // 3단계: 지급. 실패 시 환불.
+            bool delivered = false;
+            try
+            {
+                if (item.category == CashItemCategory.GachaBox)
                 {
-                    PlayerItemInventory inv = FindFirstObjectByType<PlayerItemInventory>();
-                    if (inv != null) inv.AddItem(item.rewardItemId, item.rewardCount);
+                    GachaBoxManager.Instance.OpenBox(item.itemId);
+                    delivered = true;
                 }
+                else if (!string.IsNullOrEmpty(item.rewardItemId))
+                {
+                    if (item.rewardItemId == "candy")
+                    {
+                        PlayerCandyInventory candy = FindFirstObjectByType<PlayerCandyInventory>();
+                        if (candy != null) { candy.AddCandy(item.rewardCount); delivered = true; }
+                    }
+                    else
+                    {
+                        PlayerItemInventory inv = FindFirstObjectByType<PlayerItemInventory>();
+                        if (inv != null) { inv.AddItem(item.rewardItemId, item.rewardCount); delivered = true; }
+                    }
+                }
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning($"[CashShop] 지급 실패 — 환불 진행: {e.Message}");
+                delivered = false;
+            }
+
+            if (!delivered)
+            {
+                // 환불: AddGems 양수 경로로 wallet 동기화 보장. gemsBefore - 현재 Gems 차이만큼 복원.
+                int refund = gemsBefore - Gems;
+                if (refund > 0) AddGems(refund);
+                return false;
             }
 
             ItemPurchased?.Invoke(item);
@@ -121,8 +183,22 @@ namespace InsectGame.Core
 
         public void AddGems(int amount)
         {
-            gems += amount;
-            SaveGems();
+            // amount 0 early return — 무의미한 GemsChanged 발화 + 구독자 갱신 차단.
+            if (amount == 0) return;
+
+            // wallet 단일 소스 경로. wallet 있으면 wallet으로만 변경, 캐시는 read-back.
+            if (wallet != null)
+            {
+                if (amount > 0) wallet.AddGems(amount);
+                else wallet.SpendGems(-amount);
+                gems = wallet.Gems;
+            }
+            else
+            {
+                // AutoWire 전(매우 짧은 부트스트랩 구간) fallback — PlayerPrefs 캐시
+                gems += amount;
+                SaveGems();
+            }
             GemsChanged?.Invoke();
         }
 

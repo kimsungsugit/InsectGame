@@ -63,6 +63,7 @@ namespace InsectGame.Spawning
             if (!other.CompareTag("Player")) return;
 
             inventory.AddItem(itemData.itemId, 1);
+            if (AudioManager.Instance != null) AudioManager.Instance.PlaySFX(SfxType.ItemPickup);
             Destroy(gameObject);
         }
 

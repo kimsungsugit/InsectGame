@@ -23,6 +23,106 @@ namespace InsectGame.UI
 
         private Vector2 detailScroll;
 
+        // OnGUI 매 프레임 GUIStyle 생성 회귀 차단 — DrawQuestPanel은 매 프레임 호출되어 P0.
+        // DrawCompletionNotification/DrawNewQuestNotification/DrawDetailPanel은 일시적 표시라 별도 라운드.
+        private GUIStyle doneStyleCache;
+        private GUIStyle questTitleStyleCache;
+        private GUIStyle questDescStyleCache;
+        private GUIStyle questProgStyleCache;
+        private GUIStyle questHintStyleCache;
+        private bool questPanelStylesReady;
+
+        // 알림(Notification) 캐시 - 일시 표시이나 OnGUI 매 호출 시 GC 차단
+        private GUIStyle compHeaderStyleCache;
+        private GUIStyle compTitleStyleCache;
+        private GUIStyle rewardStyleCache;
+        private GUIStyle newQuestStyleCache;
+        private bool notifStylesReady;
+
+        // 상세 패널 캐시
+        private GUIStyle detailHeaderStyleCache;
+        private GUIStyle detailCloseStyleCache;
+        private GUIStyle detailRowStyleCache;
+        private GUIStyle detailStatusStyleCache;
+        private bool detailStylesReady;
+
+        private static readonly Color DoneTextCol = new Color(0.9f, 0.75f, 0.2f);
+        private static readonly Color QuestTitleCol = new Color(0.9f, 0.75f, 0.2f);
+        private static readonly Color QuestHintBaseCol = new Color(0.65f, 0.65f, 0.65f);
+        private static readonly Color CompHeaderBaseCol = new Color(0.2f, 1f, 0.4f);
+        private static readonly Color CompTitleBaseCol = new Color(1f, 0.95f, 0.8f);
+        private static readonly Color RewardBaseCol = new Color(1f, 0.85f, 0.5f);
+        private static readonly Color NewQuestBaseCol = new Color(0.7f, 0.85f, 1f);
+        private static readonly Color RowCompletedCol = new Color(0.5f, 0.8f, 0.5f);
+        private static readonly Color RowLockedCol = new Color(0.45f, 0.45f, 0.5f);
+        private static readonly Color RowPendingCol = new Color(0.7f, 0.7f, 0.7f);
+        private static readonly Color StatusCompletedCol = new Color(0.4f, 0.75f, 0.4f);
+        private static readonly Color StatusActiveCol = new Color(0.9f, 0.85f, 0.3f);
+
+        private void InitQuestPanelStyles()
+        {
+            if (questPanelStylesReady) return;
+            questPanelStylesReady = true;
+
+            doneStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 22, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, wordWrap = true };
+            doneStyleCache.normal.textColor = DoneTextCol;
+
+            questTitleStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 22, fontStyle = FontStyle.Bold };
+            questTitleStyleCache.normal.textColor = QuestTitleCol;
+
+            questDescStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 18, wordWrap = true };
+            questDescStyleCache.normal.textColor = Color.white;
+
+            questProgStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 16, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
+            questProgStyleCache.normal.textColor = Color.white;
+
+            questHintStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 16, fontStyle = FontStyle.Italic, wordWrap = true };
+            // hintStyle.normal.textColor는 alpha 동적이라 매 호출 갱신 (BattleScreenUI 패턴).
+        }
+
+        private void InitNotifStyles()
+        {
+            if (notifStylesReady) return;
+            notifStylesReady = true;
+
+            compHeaderStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 26, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            compTitleStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 20, alignment = TextAnchor.MiddleCenter };
+            rewardStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 18, alignment = TextAnchor.MiddleCenter };
+            newQuestStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 20, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            // 4개 모두 textColor는 alpha 동적이라 매 호출 갱신.
+        }
+
+        private void InitDetailStyles()
+        {
+            if (detailStylesReady) return;
+            detailStylesReady = true;
+
+            detailHeaderStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 24, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
+            detailHeaderStyleCache.normal.textColor = QuestTitleCol;
+
+            detailCloseStyleCache = new GUIStyle(GUI.skin.button)
+            { fontSize = 20, fontStyle = FontStyle.Bold };
+            detailCloseStyleCache.normal.textColor = Color.white;
+
+            detailRowStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 18, alignment = TextAnchor.MiddleLeft };
+            // textColor는 4분기(완료/활성/잠금/대기) 동적 갱신.
+
+            detailStatusStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 16, alignment = TextAnchor.MiddleRight };
+            // textColor 4분기 동적 갱신.
+        }
+
         private void OnEnable()
         {
             if (questManager != null)
@@ -88,6 +188,8 @@ namespace InsectGame.UI
         {
             if (questManager == null) return;
 
+            InitQuestPanelStyles();
+
             Rect panelRect = new Rect(20f, 120f, 380f, 140f);
 
             // Background
@@ -103,15 +205,7 @@ namespace InsectGame.UI
 
             if (active == null && questManager.AllCompleted)
             {
-                GUIStyle doneStyle = new GUIStyle(GUI.skin.label)
-                {
-                    fontSize = 22,
-                    fontStyle = FontStyle.Bold,
-                    alignment = TextAnchor.MiddleCenter,
-                    wordWrap = true
-                };
-                doneStyle.normal.textColor = new Color(0.9f, 0.75f, 0.2f);
-                GUI.Label(panelRect, "\u2728 \ubaa8\ub4e0 \ud29c\ud1a0\ub9ac\uc5bc \uc644\ub8cc!", doneStyle);
+                GUI.Label(panelRect, "\u2728 \ubaa8\ub4e0 \ud29c\ud1a0\ub9ac\uc5bc \uc644\ub8cc!", doneStyleCache);
                 return;
             }
 
@@ -122,23 +216,11 @@ namespace InsectGame.UI
             float w = panelRect.width - 24f;
 
             // Title
-            GUIStyle titleStyle = new GUIStyle(GUI.skin.label)
-            {
-                fontSize = 22,
-                fontStyle = FontStyle.Bold
-            };
-            titleStyle.normal.textColor = new Color(0.9f, 0.75f, 0.2f);
-            GUI.Label(new Rect(x, y, w, 28f), "\u2605 \ud034\uc2a4\ud2b8: " + active.title, titleStyle);
+            GUI.Label(new Rect(x, y, w, 28f), "\u2605 \ud034\uc2a4\ud2b8: " + active.title, questTitleStyleCache);
             y += 28f;
 
             // Description
-            GUIStyle descStyle = new GUIStyle(GUI.skin.label)
-            {
-                fontSize = 18,
-                wordWrap = true
-            };
-            descStyle.normal.textColor = Color.white;
-            GUI.Label(new Rect(x, y, w, 36f), active.description, descStyle);
+            GUI.Label(new Rect(x, y, w, 36f), active.description, questDescStyleCache);
             y += 36f;
 
             // Progress bar
@@ -162,28 +244,15 @@ namespace InsectGame.UI
 
             // Progress text
             GUI.color = Color.white;
-            GUIStyle progStyle = new GUIStyle(GUI.skin.label)
-            {
-                fontSize = 16,
-                fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleLeft
-            };
-            progStyle.normal.textColor = Color.white;
-            GUI.Label(new Rect(x + barW + 6f, y, 54f, barH + 4f), current + "/" + target, progStyle);
+            GUI.Label(new Rect(x + barW + 6f, y, 54f, barH + 4f), current + "/" + target, questProgStyleCache);
             y += barH + 8f;
 
-            // Hint with pulsing alpha
+            // Hint with pulsing alpha \u2014 base style \uce90\uc2dc + textColor\ub9cc \ub3d9\uc801 \uac31\uc2e0 (BattleScreenUI \ud328\ud134).
             if (!string.IsNullOrEmpty(active.hint))
             {
                 float hintAlpha = 0.4f + 0.4f * (0.5f + 0.5f * Mathf.Sin(hintPulse));
-                GUIStyle hintStyle = new GUIStyle(GUI.skin.label)
-                {
-                    fontSize = 16,
-                    fontStyle = FontStyle.Italic,
-                    wordWrap = true
-                };
-                hintStyle.normal.textColor = new Color(0.65f, 0.65f, 0.65f, hintAlpha);
-                GUI.Label(new Rect(x, y, w, 24f), "\ud83d\udca1 " + active.hint, hintStyle);
+                questHintStyleCache.normal.textColor = new Color(QuestHintBaseCol.r, QuestHintBaseCol.g, QuestHintBaseCol.b, hintAlpha);
+                GUI.Label(new Rect(x, y, w, 24f), "\ud83d\udca1 " + active.hint, questHintStyleCache);
             }
         }
 
@@ -232,25 +301,16 @@ namespace InsectGame.UI
 
             GUI.color = new Color(1f, 1f, 1f, alpha);
 
-            // "Quest Complete!" header
-            GUIStyle headerStyle = new GUIStyle(GUI.skin.label)
-            {
-                fontSize = 26,
-                fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleCenter
-            };
-            headerStyle.normal.textColor = new Color(0.2f, 1f, 0.4f, alpha);
-            GUI.Label(new Rect(panelX, panelY + 8f, panelW, 34f), "\u2713 \ud034\uc2a4\ud2b8 \uc644\ub8cc!", headerStyle);
+            InitNotifStyles();
+
+            // "Quest Complete!" header \u2014 base \uce90\uc2dc + textColor alpha \ub3d9\uc801
+            compHeaderStyleCache.normal.textColor = new Color(CompHeaderBaseCol.r, CompHeaderBaseCol.g, CompHeaderBaseCol.b, alpha);
+            GUI.Label(new Rect(panelX, panelY + 8f, panelW, 34f), "\u2713 \ud034\uc2a4\ud2b8 \uc644\ub8cc!", compHeaderStyleCache);
 
             // Quest title
-            GUIStyle titleStyle = new GUIStyle(GUI.skin.label)
-            {
-                fontSize = 20,
-                alignment = TextAnchor.MiddleCenter
-            };
-            titleStyle.normal.textColor = new Color(1f, 0.95f, 0.8f, alpha);
+            compTitleStyleCache.normal.textColor = new Color(CompTitleBaseCol.r, CompTitleBaseCol.g, CompTitleBaseCol.b, alpha);
             GUI.Label(new Rect(panelX, panelY + 42f, panelW, 26f),
-                "\"" + (completedQuestTitle ?? "") + "\"", titleStyle);
+                "\"" + (completedQuestTitle ?? "") + "\"", compTitleStyleCache);
 
             // Rewards
             string rewardText = "";
@@ -264,14 +324,9 @@ namespace InsectGame.UI
 
             if (rewardText.Length > 0)
             {
-                GUIStyle rewardStyle = new GUIStyle(GUI.skin.label)
-                {
-                    fontSize = 18,
-                    alignment = TextAnchor.MiddleCenter
-                };
-                rewardStyle.normal.textColor = new Color(1f, 0.85f, 0.5f, alpha);
+                rewardStyleCache.normal.textColor = new Color(RewardBaseCol.r, RewardBaseCol.g, RewardBaseCol.b, alpha);
                 GUI.Label(new Rect(panelX, panelY + 74f, panelW, 24f),
-                    "\ubcf4\uc0c1: " + rewardText, rewardStyle);
+                    "\ubcf4\uc0c1: " + rewardText, rewardStyleCache);
             }
 
             GUI.color = Color.white;
@@ -312,16 +367,11 @@ namespace InsectGame.UI
             GUI.DrawTexture(new Rect(panelX, panelY, panelW, 2f), Texture2D.whiteTexture);
             GUI.DrawTexture(new Rect(panelX, panelY + panelH - 2f, panelW, 2f), Texture2D.whiteTexture);
 
-            GUIStyle style = new GUIStyle(GUI.skin.label)
-            {
-                fontSize = 20,
-                fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleCenter
-            };
-            style.normal.textColor = new Color(0.7f, 0.85f, 1f, alpha);
+            InitNotifStyles();
+            newQuestStyleCache.normal.textColor = new Color(NewQuestBaseCol.r, NewQuestBaseCol.g, NewQuestBaseCol.b, alpha);
             GUI.color = new Color(1f, 1f, 1f, alpha);
             GUI.Label(new Rect(panelX, panelY, panelW, panelH),
-                "\uc0c8 \ud034\uc2a4\ud2b8! \u2192 \"" + (newQuestTitle ?? "") + "\"", style);
+                "\uc0c8 \ud034\uc2a4\ud2b8! \u2192 \"" + (newQuestTitle ?? "") + "\"", newQuestStyleCache);
 
             GUI.color = Color.white;
         }
@@ -332,6 +382,8 @@ namespace InsectGame.UI
         private void DrawDetailPanel()
         {
             if (questManager == null) return;
+
+            InitDetailStyles();
 
             float panelW = 440f;
             float panelH = 500f;
@@ -348,24 +400,11 @@ namespace InsectGame.UI
             GUI.color = Color.white;
 
             // Header
-            GUIStyle headerStyle = new GUIStyle(GUI.skin.label)
-            {
-                fontSize = 24,
-                fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleLeft
-            };
-            headerStyle.normal.textColor = new Color(0.9f, 0.75f, 0.2f);
             GUI.Label(new Rect(panelX + 16f, panelY + 8f, panelW - 80f, 36f),
-                "\u2605 \ud034\uc2a4\ud2b8 \ubaa9\ub85d", headerStyle);
+                "\u2605 \ud034\uc2a4\ud2b8 \ubaa9\ub85d", detailHeaderStyleCache);
 
             // Close button [X]
-            GUIStyle closeStyle = new GUIStyle(GUI.skin.button)
-            {
-                fontSize = 20,
-                fontStyle = FontStyle.Bold
-            };
-            closeStyle.normal.textColor = Color.white;
-            if (GUI.Button(new Rect(panelX + panelW - 50f, panelY + 8f, 38f, 32f), "X", closeStyle))
+            if (GUI.Button(new Rect(panelX + panelW - 50f, panelY + 8f, 38f, 32f), "X", detailCloseStyleCache))
             {
                 detailOpen = false;
                 return;
@@ -419,71 +458,59 @@ namespace InsectGame.UI
 
                 GUI.color = Color.white;
 
-                // Status icon + title
-                GUIStyle rowStyle = new GUIStyle(GUI.skin.label)
-                {
-                    fontSize = 18,
-                    alignment = TextAnchor.MiddleLeft
-                };
-
+                // Status icon + title \u2014 base \uce90\uc2dc, textColor\ub9cc \ubd84\uae30 \ub3d9\uc801 \uac31\uc2e0
                 string icon;
                 if (isCompleted)
                 {
                     icon = "\u2713 ";
-                    rowStyle.normal.textColor = new Color(0.5f, 0.8f, 0.5f);
+                    detailRowStyleCache.normal.textColor = RowCompletedCol;
                 }
                 else if (isActive)
                 {
                     icon = "\u25ba ";
-                    rowStyle.normal.textColor = Color.white;
+                    detailRowStyleCache.normal.textColor = Color.white;
                 }
                 else if (isLocked)
                 {
                     icon = "\ud83d\udd12 ";
-                    rowStyle.normal.textColor = new Color(0.45f, 0.45f, 0.5f);
+                    detailRowStyleCache.normal.textColor = RowLockedCol;
                 }
                 else
                 {
                     icon = "  ";
-                    rowStyle.normal.textColor = new Color(0.7f, 0.7f, 0.7f);
+                    detailRowStyleCache.normal.textColor = RowPendingCol;
                 }
 
                 GUI.Label(new Rect(8f, ry, viewRect.width * 0.6f, rowH),
-                    icon + quest.title, rowStyle);
+                    icon + quest.title, detailRowStyleCache);
 
-                // Status text (right side)
-                GUIStyle statusStyle = new GUIStyle(GUI.skin.label)
-                {
-                    fontSize = 16,
-                    alignment = TextAnchor.MiddleRight
-                };
-
+                // Status text (right side) \u2014 base \uce90\uc2dc, textColor \ubd84\uae30 \ub3d9\uc801
                 string statusText;
                 if (isCompleted)
                 {
                     statusText = "\uc644\ub8cc";
-                    statusStyle.normal.textColor = new Color(0.4f, 0.75f, 0.4f);
+                    detailStatusStyleCache.normal.textColor = StatusCompletedCol;
                 }
                 else if (isActive)
                 {
                     int cur = questManager.ActiveProgress;
                     int tgt = quest.targetCount;
                     statusText = cur + "/" + tgt;
-                    statusStyle.normal.textColor = new Color(0.9f, 0.85f, 0.3f);
+                    detailStatusStyleCache.normal.textColor = StatusActiveCol;
                 }
                 else if (isLocked)
                 {
                     statusText = "\ubbf8\ud574\uae08";
-                    statusStyle.normal.textColor = new Color(0.45f, 0.45f, 0.5f);
+                    detailStatusStyleCache.normal.textColor = RowLockedCol;
                 }
                 else
                 {
                     statusText = "\ub300\uae30";
-                    statusStyle.normal.textColor = new Color(0.6f, 0.6f, 0.65f);
+                    detailStatusStyleCache.normal.textColor = RowPendingCol;
                 }
 
                 GUI.Label(new Rect(viewRect.width * 0.6f, ry, viewRect.width * 0.38f, rowH),
-                    statusText, statusStyle);
+                    statusText, detailStatusStyleCache);
             }
 
             GUI.EndScrollView();

@@ -32,6 +32,60 @@ namespace InsectGame.UI
         }
         private Star[] stars;
 
+        // OnGUI 매 프레임(popupTimer>0 동안 5초) new GUIStyle 12회 회귀 차단.
+        // 모든 textColor는 alpha/rarity 동적이라 base 캐시 + textColor 매 호출 갱신 (BattleScreenUI 패턴).
+        private GUIStyle headerStyleCache;
+        private GUIStyle nameStyleCache;
+        private GUIStyle subStyleCache;
+        private GUIStyle gradeTitleStyleCache;
+        private GUIStyle gradeLblStyleCache;
+        private GUIStyle pctLblStyleCache;
+        private GUIStyle rewardLabelStyleCache;
+        private GUIStyle rewardValStyleCache;
+        private GUIStyle failStyleCache;
+        private GUIStyle failSubStyleCache;
+        private GUIStyle ivLblStyleCache;
+        private GUIStyle ivVsStyleCache;
+        private bool popupStylesReady;
+
+        private static readonly Color SubGrayBase = new Color(0.8f, 0.8f, 0.8f);
+        private static readonly Color GradeTitleGrayBase = new Color(0.6f, 0.6f, 0.6f);
+        private static readonly Color RewardCandyBase = new Color(1f, 0.5f, 0.8f);
+        private static readonly Color RewardExpBase = new Color(0.4f, 0.8f, 1f);
+        private static readonly Color FailMsgBase = new Color(1f, 0.35f, 0.3f);
+        private static readonly Color FailSubBase = new Color(0.7f, 0.7f, 0.7f);
+        private static readonly Color IvLblBase = new Color(0.55f, 0.55f, 0.55f);
+
+        private void InitPopupStyles()
+        {
+            if (popupStylesReady) return;
+            popupStylesReady = true;
+
+            headerStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 28, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            nameStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 34, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            subStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 22, alignment = TextAnchor.MiddleCenter };
+            gradeTitleStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 19, alignment = TextAnchor.MiddleLeft };
+            gradeLblStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 48, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
+            pctLblStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 24, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
+            rewardLabelStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 20, alignment = TextAnchor.MiddleCenter };
+            rewardValStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 24, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            failStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 40, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            failSubStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 22, alignment = TextAnchor.MiddleCenter };
+            ivLblStyleCache = new GUIStyle(GUI.skin.label) { fontSize = 19 };
+            ivVsStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 19, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleRight };
+        }
+
         private void OnEnable()
         {
             if (captureController != null)
@@ -114,6 +168,8 @@ namespace InsectGame.UI
         {
             if (popupTimer <= 0f) return;
 
+            InitPopupStyles();
+
             float alpha = popupTimer < 0.5f ? popupTimer / 0.5f : Mathf.Clamp01(animTime / 0.3f);
 
             if (wasSuccess)
@@ -134,7 +190,7 @@ namespace InsectGame.UI
             float slideIn = Mathf.Clamp01(animTime / 0.25f);
             py += (1f - slideIn) * 30f;
 
-            Color rarityCol = GetRarityColor(insectRarity);
+            Color rarityCol = UITheme.Instance.GetInsectRarityColor(insectRarity);
 
             GUI.color = new Color(0.03f, 0.05f, 0.1f, 0.94f * alpha);
             GUI.DrawTexture(new Rect(px, py, panelW, panelH), Texture2D.whiteTexture);
@@ -167,24 +223,18 @@ namespace InsectGame.UI
                 }
             }
 
-            GUIStyle headerStyle = new GUIStyle(GUI.skin.label)
-            { fontSize = 28, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            headerStyle.normal.textColor = new Color(1, 1, 1, alpha);
+            headerStyleCache.normal.textColor = new Color(1, 1, 1, alpha);
             GUI.color = Color.white;
-            GUI.Label(new Rect(px, py + 14, panelW, 36), "포획 성공!", headerStyle);
+            GUI.Label(new Rect(px, py + 14, panelW, 36), "포획 성공!", headerStyleCache);
 
             DrawTypedInsectPortrait(cx, py + 105, insectId, insectRarity, alpha);
 
-            GUIStyle nameStyle = new GUIStyle(GUI.skin.label)
-            { fontSize = 34, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            nameStyle.normal.textColor = new Color(rarityCol.r, rarityCol.g, rarityCol.b, alpha);
-            GUI.Label(new Rect(px, py + 175, panelW, 40), insectName, nameStyle);
+            nameStyleCache.normal.textColor = new Color(rarityCol.r, rarityCol.g, rarityCol.b, alpha);
+            GUI.Label(new Rect(px, py + 175, panelW, 40), insectName, nameStyleCache);
 
-            GUIStyle subStyle = new GUIStyle(GUI.skin.label)
-            { fontSize = 22, alignment = TextAnchor.MiddleCenter };
-            subStyle.normal.textColor = new Color(0.8f, 0.8f, 0.8f, alpha);
+            subStyleCache.normal.textColor = new Color(SubGrayBase.r, SubGrayBase.g, SubGrayBase.b, alpha);
             GUI.Label(new Rect(px, py + 216, panelW, 28),
-                $"Lv.{insectLevel}  |  {insectRarity}", subStyle);
+                $"Lv.{insectLevel}  |  {insectRarity}", subStyleCache);
 
             Color gc = GetGradeColor(capturedGrade);
             float gradeBoxY = py + 256;
@@ -195,20 +245,14 @@ namespace InsectGame.UI
             GUI.DrawTexture(new Rect(px + 30, gradeBoxY, 5, 120), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
-            GUIStyle gradeTitle = new GUIStyle(GUI.skin.label)
-            { fontSize = 19, alignment = TextAnchor.MiddleLeft };
-            gradeTitle.normal.textColor = new Color(0.6f, 0.6f, 0.6f, alpha);
-            GUI.Label(new Rect(px + 44, gradeBoxY + 6, 120, 22), "개체값 감정", gradeTitle);
+            gradeTitleStyleCache.normal.textColor = new Color(GradeTitleGrayBase.r, GradeTitleGrayBase.g, GradeTitleGrayBase.b, alpha);
+            GUI.Label(new Rect(px + 44, gradeBoxY + 6, 120, 22), "개체값 감정", gradeTitleStyleCache);
 
-            GUIStyle gradeLbl = new GUIStyle(GUI.skin.label)
-            { fontSize = 48, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
-            gradeLbl.normal.textColor = new Color(gc.r, gc.g, gc.b, alpha);
-            GUI.Label(new Rect(px + 44, gradeBoxY + 26, 65, 56), GetGradeLabel(capturedGrade), gradeLbl);
+            gradeLblStyleCache.normal.textColor = new Color(gc.r, gc.g, gc.b, alpha);
+            GUI.Label(new Rect(px + 44, gradeBoxY + 26, 65, 56), GetGradeLabel(capturedGrade), gradeLblStyleCache);
 
-            GUIStyle pctLbl = new GUIStyle(GUI.skin.label)
-            { fontSize = 24, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
-            pctLbl.normal.textColor = new Color(gc.r, gc.g, gc.b, alpha * 0.8f);
-            GUI.Label(new Rect(px + 102, gradeBoxY + 38, 100, 30), $"{capturedIvPct * 100:0}%", pctLbl);
+            pctLblStyleCache.normal.textColor = new Color(gc.r, gc.g, gc.b, alpha * 0.8f);
+            GUI.Label(new Rect(px + 102, gradeBoxY + 38, 100, 30), $"{capturedIvPct * 100:0}%", pctLblStyleCache);
 
             float ivX = px + 210;
             float ivW = panelW - 260;
@@ -220,20 +264,15 @@ namespace InsectGame.UI
             GUI.color = new Color(0.15f, 0.17f, 0.25f, 0.7f * alpha);
             GUI.DrawTexture(new Rect(px + 36, rewardY, panelW - 72, 68), Texture2D.whiteTexture);
 
-            GUIStyle rewardLabel = new GUIStyle(GUI.skin.label)
-            { fontSize = 20, alignment = TextAnchor.MiddleCenter };
-            rewardLabel.normal.textColor = new Color(0.6f, 0.6f, 0.6f, alpha);
+            rewardLabelStyleCache.normal.textColor = new Color(GradeTitleGrayBase.r, GradeTitleGrayBase.g, GradeTitleGrayBase.b, alpha);
             GUI.color = Color.white;
-            GUI.Label(new Rect(px, rewardY + 4, panelW, 22), "보상", rewardLabel);
+            GUI.Label(new Rect(px, rewardY + 4, panelW, 22), "보상", rewardLabelStyleCache);
 
-            GUIStyle rewardVal = new GUIStyle(GUI.skin.label)
-            { fontSize = 24, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            rewardValStyleCache.normal.textColor = new Color(RewardCandyBase.r, RewardCandyBase.g, RewardCandyBase.b, alpha);
+            GUI.Label(new Rect(px, rewardY + 32, panelW / 2f, 30), $"+{candyReward} 캔디", rewardValStyleCache);
 
-            rewardVal.normal.textColor = new Color(1f, 0.5f, 0.8f, alpha);
-            GUI.Label(new Rect(px, rewardY + 32, panelW / 2f, 30), $"+{candyReward} 캔디", rewardVal);
-
-            rewardVal.normal.textColor = new Color(0.4f, 0.8f, 1f, alpha);
-            GUI.Label(new Rect(px + panelW / 2f, rewardY + 32, panelW / 2f, 30), $"+{expReward} XP", rewardVal);
+            rewardValStyleCache.normal.textColor = new Color(RewardExpBase.r, RewardExpBase.g, RewardExpBase.b, alpha);
+            GUI.Label(new Rect(px + panelW / 2f, rewardY + 32, panelW / 2f, 30), $"+{expReward} XP", rewardValStyleCache);
         }
 
         private void DrawFailPopup(float alpha)
@@ -245,15 +284,11 @@ namespace InsectGame.UI
             GUI.DrawTexture(new Rect(cx - 240, cy - 20, 480, 120), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
-            GUIStyle style = new GUIStyle(GUI.skin.label)
-            { fontSize = 40, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            style.normal.textColor = new Color(1f, 0.35f, 0.3f, alpha);
-            GUI.Label(new Rect(cx - 240, cy - 10, 480, 55), "도망갔다...", style);
+            failStyleCache.normal.textColor = new Color(FailMsgBase.r, FailMsgBase.g, FailMsgBase.b, alpha);
+            GUI.Label(new Rect(cx - 240, cy - 10, 480, 55), "도망갔다...", failStyleCache);
 
-            GUIStyle sub = new GUIStyle(GUI.skin.label)
-            { fontSize = 22, alignment = TextAnchor.MiddleCenter };
-            sub.normal.textColor = new Color(0.7f, 0.7f, 0.7f, alpha);
-            GUI.Label(new Rect(cx - 240, cy + 45, 480, 32), $"{insectName}(이)가 도망쳤습니다!", sub);
+            failSubStyleCache.normal.textColor = new Color(FailSubBase.r, FailSubBase.g, FailSubBase.b, alpha);
+            GUI.Label(new Rect(cx - 240, cy + 45, 480, 32), $"{insectName}(이)가 도망쳤습니다!", failSubStyleCache);
         }
 
         public static void DrawTypedInsectPortrait(float cx, float cy, string id, InsectRarity rarity, float alpha)
@@ -263,7 +298,8 @@ namespace InsectGame.UI
             Color darkCol = new Color(col.r * 0.45f, col.g * 0.45f, col.b * 0.45f, alpha);
             Color lightCol = new Color(
                 Mathf.Min(1, col.r + 0.4f), Mathf.Min(1, col.g + 0.4f), Mathf.Min(1, col.b + 0.4f), alpha);
-            Color accentCol = new Color(GetRarityColor(rarity).r, GetRarityColor(rarity).g, GetRarityColor(rarity).b, alpha);
+            Color rarityBase = UITheme.Instance.GetInsectRarityColor(rarity);
+            Color accentCol = new Color(rarityBase.r, rarityBase.g, rarityBase.b, alpha);
             float s = 1.6f;
 
             if (string.IsNullOrEmpty(id)) { DrawInsectPortrait(cx, cy, rarity, alpha); return; }
@@ -902,9 +938,8 @@ namespace InsectGame.UI
 
         private void DrawMiniIVBar(float x, float y, float w, string label, int iv, float alpha)
         {
-            GUIStyle lbl = new GUIStyle(GUI.skin.label) { fontSize = 19 };
-            lbl.normal.textColor = new Color(0.55f, 0.55f, 0.55f, alpha);
-            GUI.Label(new Rect(x, y, 50, 22), label, lbl);
+            ivLblStyleCache.normal.textColor = new Color(IvLblBase.r, IvLblBase.g, IvLblBase.b, alpha);
+            GUI.Label(new Rect(x, y, 50, 22), label, ivLblStyleCache);
 
             float barX = x + 52;
             float barW = w - 90;
@@ -919,15 +954,13 @@ namespace InsectGame.UI
             GUI.DrawTexture(new Rect(barX, y + 4, barW * ratio, barH), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
-            GUIStyle vs = new GUIStyle(GUI.skin.label)
-            { fontSize = 19, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleRight };
-            vs.normal.textColor = new Color(bc.r, bc.g, bc.b, alpha);
-            GUI.Label(new Rect(barX + barW + 6, y, 34, 22), $"{iv}", vs);
+            ivVsStyleCache.normal.textColor = new Color(bc.r, bc.g, bc.b, alpha);
+            GUI.Label(new Rect(barX + barW + 6, y, 34, 22), $"{iv}", ivVsStyleCache);
         }
 
         public static void DrawInsectPortrait(float cx, float cy, InsectRarity rarity, float alpha)
         {
-            Color col = GetRarityColor(rarity);
+            Color col = UITheme.Instance.GetInsectRarityColor(rarity);
             Color bodyCol = new Color(col.r, col.g, col.b, alpha);
             Color darkCol = new Color(col.r * 0.6f, col.g * 0.6f, col.b * 0.6f, alpha);
             Color lightCol = new Color(
@@ -964,23 +997,9 @@ namespace InsectGame.UI
             GUI.color = Color.white;
         }
 
-        [System.Obsolete("Use UITheme.Instance.GetInsectRarityColor() instead")]
-        public static Color GetRarityColor(InsectRarity rarity)
-        {
-            switch (rarity)
-            {
-                case InsectRarity.Common: return new Color(0.55f, 0.45f, 0.3f);
-                case InsectRarity.Uncommon: return new Color(0.3f, 0.8f, 0.3f);
-                case InsectRarity.Rare: return new Color(0.3f, 0.5f, 0.95f);
-                case InsectRarity.Epic: return new Color(0.75f, 0.3f, 0.95f);
-                case InsectRarity.Legendary: return new Color(1f, 0.8f, 0.2f);
-                default: return Color.gray;
-            }
-        }
-
         public static Color GetInsectColor(string insectId, InsectRarity rarity)
         {
-            if (string.IsNullOrEmpty(insectId)) return GetRarityColor(rarity);
+            if (string.IsNullOrEmpty(insectId)) return UITheme.Instance.GetInsectRarityColor(rarity);
 
             uint hash = 0;
             for (int i = 0; i < insectId.Length; i++)

@@ -24,11 +24,13 @@ namespace InsectGame.Core
             EnsureDatabase();
             if (inventory != null)
             {
+                inventory.ItemsChanged -= HandleItemsChanged;
                 inventory.ItemsChanged += HandleItemsChanged;
             }
 
             if (effectManager != null)
             {
+                effectManager.ActiveItemChanged -= HandleActiveChanged;
                 effectManager.ActiveItemChanged += HandleActiveChanged;
             }
 
@@ -50,9 +52,18 @@ namespace InsectGame.Core
             }
         }
 
+        // 잔여시간 표시는 1초 단위라 매 프레임 갱신 불필요. 디바운스로 60fps→1fps 갱신.
+        // 만료 시점은 ItemEffectManager.ActiveItemChanged 이벤트가 즉시 처리하므로 무해.
+        private float remainingTextTimer;
+
         private void Update()
         {
-            UpdateRemainingTime();
+            remainingTextTimer += Time.unscaledDeltaTime;
+            if (remainingTextTimer >= 1f)
+            {
+                remainingTextTimer = 0f;
+                UpdateRemainingTime();
+            }
         }
 
         private void HandleItemsChanged(PlayerItemSave save)
@@ -62,12 +73,15 @@ namespace InsectGame.Core
 
         private void HandleActiveChanged(ItemData item)
         {
-            if (activeItemText == null)
+            if (activeItemText != null)
             {
-                return;
+                activeItemText.text = item != null ? $"사용중: {item.displayName}" : "사용중: 없음";
             }
 
-            activeItemText.text = item != null ? $"사용중: {item.displayName}" : "사용중: 없음";
+            // 만료/시작 시점에 남은 시간 표시 즉시 갱신 — 옛은 Update 1초 디바운스 대기로 "남은 시간: 00:00" 표시 지연.
+            // 주석(line 56)이 "만료 시점은 ActiveItemChanged 즉시 처리" 명시했으나 실제 호출 누락 회귀.
+            UpdateRemainingTime();
+            remainingTextTimer = 0f;
         }
 
         private void UpdateRemainingTime()

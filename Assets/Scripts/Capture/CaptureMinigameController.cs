@@ -44,6 +44,42 @@ namespace InsectGame.Capture
         private float itemTimeMult = 1f;
         private float itemCaptureBonus;
 
+        // OnGUI 스타일 캐시 — 옛은 매 프레임 6개 new GUIStyle (라인 244/279/288/309/318/337).
+        // 콤보 별은 loop 안이라 매 프레임 최대 3개 추가 → 60 FPS × 6~9 = 360~540회/초 회귀.
+        // textColor가 동적인 스타일(title/phase/result)은 베이스만 캐시 후 textColor 매번 할당.
+        private GUIStyle titleStyleCache;
+        private GUIStyle phaseStyleCache;
+        private GUIStyle starStyleCache;
+        private GUIStyle captureBtnCache;
+        private GUIStyle cancelBtnCache;
+        private GUIStyle resultStyleCache;
+        private bool stylesInitialized;
+
+        private void InitMinigameStyles()
+        {
+            if (stylesInitialized) return;
+            stylesInitialized = true;
+
+            titleStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 20, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+
+            phaseStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 16, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+
+            starStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 26, alignment = TextAnchor.MiddleCenter };
+            starStyleCache.normal.textColor = Color.green;
+
+            captureBtnCache = new GUIStyle(GUI.skin.button)
+            { fontSize = 18, fontStyle = FontStyle.Bold };
+
+            cancelBtnCache = new GUIStyle(GUI.skin.button)
+            { fontSize = 16 };
+
+            resultStyleCache = new GUIStyle(GUI.skin.label)
+            { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+        }
+
         public void StartMinigame(InsectEntity target)
         {
             StartMinigame(target, 1f, 1f, 1f, 0f);
@@ -193,6 +229,13 @@ namespace InsectGame.Capture
             if (playerMovement != null) playerMovement.SetFrozen(false);
         }
 
+        private void OnDisable()
+        {
+            // 외부에서 컴포넌트 disable되어도 isActive/playerMovement.frozen이 잔존하지 않도록 보장.
+            // 옛은 OnDisable 없음 → 씬 전환 시 player가 영구 멈춤 + 다음 활성화 시 OnGUI 미니게임 잔존.
+            if (isActive) StopMinigame();
+        }
+
         private void OnGUI()
         {
             if (isActive)
@@ -241,11 +284,10 @@ namespace InsectGame.Capture
             string rarityName = currentTarget != null && currentTarget.Data != null
                 ? currentTarget.Data.rarity.ToString() : "";
 
-            GUIStyle titleStyle = new GUIStyle(GUI.skin.label)
-            { fontSize = 20, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            titleStyle.normal.textColor = GetRarityGUIColor();
+            InitMinigameStyles();
+            titleStyleCache.normal.textColor = GetRarityGUIColor();
             GUI.color = Color.white;
-            GUI.Label(new Rect(x, y + 8, panelW, 30), $"{targetName} [{rarityName}]", titleStyle);
+            GUI.Label(new Rect(x, y + 8, panelW, 30), $"{targetName} [{rarityName}]", titleStyleCache);
 
             float barX = x + 30;
             float barY = y + 48;
@@ -276,20 +318,15 @@ namespace InsectGame.Capture
             GUI.DrawTexture(new Rect(cursorX, barY - 4, 6, barH + 8), Texture2D.whiteTexture);
 
             GUI.color = Color.white;
-            GUIStyle phaseStyle = new GUIStyle(GUI.skin.label)
-            { fontSize = 16, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             string phaseLabel = phase == Phase.Attempt1 ? "1st" :
                                phase == Phase.Attempt2 ? "2nd - Faster!" : "FINAL!";
-            phaseStyle.normal.textColor = phase == Phase.Attempt3 ? Color.yellow : Color.white;
-            GUI.Label(new Rect(x, barY + barH + 4, panelW, 22), phaseLabel, phaseStyle);
+            phaseStyleCache.normal.textColor = phase == Phase.Attempt3 ? Color.yellow : Color.white;
+            GUI.Label(new Rect(x, barY + barH + 4, panelW, 22), phaseLabel, phaseStyleCache);
 
             for (int i = 0; i < comboHits && i < 3; i++)
             {
-                GUIStyle starStyle = new GUIStyle(GUI.skin.label)
-                { fontSize = 26, alignment = TextAnchor.MiddleCenter };
-                starStyle.normal.textColor = Color.green;
                 float starX = x + panelW / 2f - 45 + i * 30;
-                GUI.Label(new Rect(starX, barY + barH + 22, 28, 28), "*", starStyle);
+                GUI.Label(new Rect(starX, barY + barH + 22, 28, 28), "*", starStyleCache);
             }
 
             float timerRatio = Mathf.Clamp01(timer / timeLimit);
@@ -306,18 +343,14 @@ namespace InsectGame.Capture
             float btnW = 140f;
             float btnH = 34f;
 
-            GUIStyle captureBtn = new GUIStyle(GUI.skin.button)
-            { fontSize = 18, fontStyle = FontStyle.Bold };
             GUI.backgroundColor = new Color(0.2f, 0.8f, 0.3f);
-            if (GUI.Button(new Rect(x + panelW / 2f - btnW - 10, btnY, btnW, btnH), "포획! [Space/클릭]", captureBtn))
+            if (GUI.Button(new Rect(x + panelW / 2f - btnW - 10, btnY, btnW, btnH), "포획! [Space/클릭]", captureBtnCache))
             {
                 wantConfirm = true;
             }
 
             GUI.backgroundColor = new Color(0.6f, 0.2f, 0.2f);
-            GUIStyle cancelBtn = new GUIStyle(GUI.skin.button)
-            { fontSize = 16 };
-            if (GUI.Button(new Rect(x + panelW / 2f + 10, btnY, btnW, btnH), "취소 [ESC]", cancelBtn))
+            if (GUI.Button(new Rect(x + panelW / 2f + 10, btnY, btnW, btnH), "취소 [ESC]", cancelBtnCache))
             {
                 wantCancel = true;
             }
@@ -334,20 +367,20 @@ namespace InsectGame.Capture
             float bounce = 1f + Mathf.Sin(progress * Mathf.PI) * 0.15f;
             int fontSize = (int)(42 * bounce);
 
-            GUIStyle style = new GUIStyle(GUI.skin.label)
-            { fontSize = fontSize, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            style.normal.textColor = resultSuccess
+            InitMinigameStyles();
+            resultStyleCache.fontSize = fontSize; // fontSize는 bounce에 따라 동적
+            resultStyleCache.normal.textColor = resultSuccess
                 ? new Color(0.3f, 1f, 0.5f, alpha)
                 : new Color(1f, 0.4f, 0.3f, alpha);
 
             float w = 400;
             GUI.color = new Color(1, 1, 1, alpha);
-            GUI.Label(new Rect(cx - w / 2f, baseY, w, 60), resultMessage, style);
+            GUI.Label(new Rect(cx - w / 2f, baseY, w, 60), resultMessage, resultStyleCache);
 
             if (resultSuccess)
             {
                 float glowSize = 120f + progress * 60f;
-                Color glowCol = style.normal.textColor;
+                Color glowCol = resultStyleCache.normal.textColor;
                 GUI.color = new Color(glowCol.r, glowCol.g, glowCol.b, 0.08f * alpha);
                 GUI.DrawTexture(new Rect(cx - glowSize / 2, baseY + 30 - glowSize / 2, glowSize, glowSize), Texture2D.whiteTexture);
             }

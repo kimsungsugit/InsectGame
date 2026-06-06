@@ -35,6 +35,26 @@
 | | visual-dev | 색상값, 그라디언트 |
 | `RarityIconProvider.cs` | data-architect | 아이콘 매핑 데이터 |
 | | visual-dev | 아이콘 렌더링, 크기/위치 |
+| `ItemData.cs` | data-architect | 필드 정의, SO 구조, 직렬화 |
+| | game-designer | captureChanceBonus / expMultiplier / candyMultiplier 등 효과 매개변수 값 |
+| `RegionData.cs` | data-architect | SO 필드 구조, 직렬화 |
+| | game-designer | insectIds 풀, requiredLevel, guardianLevel 등 게임 디자인 수치 |
+| `RegionManager.cs` | game-designer | GetNextRegionId/GetPreviousRegionId switch, 진행 로직, 가디언 격파 |
+| | data-architect | unlockedRegions/defeatedGuardians PlayerPrefs 직렬화 |
+| `RegionTerrainBuilder.cs` | visual-dev | BuildXxxTerrain() 프로시저럴 지형/오브젝트 디자인 |
+| | game-designer | BuildAllRegions switch 분기 추가 (신규 리전 등록 트리거) |
+| `PlayerVisualBuilder.cs` | visual-dev | BuildAll() 슬림 비례, BuildHair*, Accessory 노드 추가, Material/슈더 fallback |
+| | data-architect | 8슬롯 ↔ 노드 매핑(Hat/Top/Outerwear 등), RefreshOutfitColors 흐름 |
+| `SubAreaWorldBuilder.cs` | visual-dev | BuildCave/BuildDeepForest 등 프로시저럴 지형 + 조명 |
+| | capture-dev | EnterSubArea/ExitSubArea/HideMainWorld 흐름, sticky 모드 연계, 25m 이탈 트리거 |
+| `ModalUIRegistry.cs` | ui-dev | IModalUI 인터페이스, 스택 push/pop, HandleEscape 우선순위 |
+| `RegionManager.cs` SubArea 처리 | capture-dev | subAreaSticky/쿨다운/RestoreLastSubArea 등 진입·이탈 동기화 |
+| | game-designer | switch (region 진행 순서, 가디언) 분리 유지 |
+| `CashShopManager.cs` | architect | gems 이중 관리 동기화(wallet AutoWire), pendingSave/즉시 클라우드 저장 트리거 |
+| | game-designer | shopItems 가격/카테고리, 보석 패키지 구성 |
+| `CharacterOutfitManager.cs` | data-architect | 8슬롯 enum, allOutfits 정의, LoadOwnership/SaveEquipment 직렬화 |
+| | game-designer | unlockedByDefault/price/gemPrice/statBonus 게임 디자인 수치 |
+| | visual-dev | ApplyToCharacter / ApplyPartColor / ApplyToolShape 좌표·색상 적용 |
 
 ## 충돌 방지 절차
 

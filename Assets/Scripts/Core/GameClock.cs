@@ -16,6 +16,7 @@ namespace InsectGame.Core
         [Range(0f, 1f)] [SerializeField] private float startTime01 = 0.25f;
 
         private float time01;
+        private bool paused; // 모바일 백그라운드 시 시간 정지
 
         public float Time01 => time01;
 
@@ -26,6 +27,7 @@ namespace InsectGame.Core
 
         private void Update()
         {
+            if (paused) return;
             if (dayLengthMinutes <= 0f)
             {
                 return;
@@ -34,6 +36,9 @@ namespace InsectGame.Core
             float delta = Time.deltaTime / (dayLengthMinutes * 60f);
             time01 = (time01 + delta) % 1f;
         }
+
+        private void OnApplicationPause(bool pauseStatus) { paused = pauseStatus; }
+        private void OnApplicationFocus(bool hasFocus) { if (hasFocus) paused = false; }
 
         public int GetHour24()
         {

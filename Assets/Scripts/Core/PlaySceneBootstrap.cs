@@ -70,10 +70,51 @@ namespace InsectGame.Core
                 BuildSystems(player, camera);
                 Debug.Log("[PlaySceneBootstrap] BuildSystems 완료");
             }
+            catch (CriticalBootstrapException e)
+            {
+                // 핵심 시스템 (InsectDatabase, InsectSpawner 등) 실패 — 게임 진행 불가능.
+                // catch-all로 묻으면 "곤충 안 보임" 같은 비명시적 장애로 이어짐 → 사용자 알림.
+                Debug.LogError($"[PlaySceneBootstrap] 핵심 시스템 실패 — 게임 중단: {e.Message}\n{e.StackTrace}");
+                criticalError = e.Message;
+            }
             catch (System.Exception e)
             {
+                // 부가 시스템 (UI/Battle/Capture 등) 부분 실패 — 옛 동작 유지(게임 계속).
                 Debug.LogError($"[PlaySceneBootstrap] 시스템 초기화 중 에러 발생 (게임은 계속 실행됩니다): {e.Message}\n{e.StackTrace}");
             }
+        }
+
+        // 핵심 시스템 실패는 별도 예외로 분리하여 catch에서 게임 중단 처리.
+        // 옛 catch-all은 database null 같은 치명 오류도 묻어 곤충 안 스폰 등의 비명시적 장애 발생.
+        private class CriticalBootstrapException : System.Exception
+        {
+            public CriticalBootstrapException(string msg) : base(msg) { }
+        }
+
+        private string criticalError;
+        private GUIStyle criticalErrStyle; // OnGUI 매 프레임 new GUIStyle 차단 — lazy 1회 생성
+
+        private void OnGUI()
+        {
+            if (string.IsNullOrEmpty(criticalError)) return;
+            if (criticalErrStyle == null)
+            {
+                criticalErrStyle = new GUIStyle(GUI.skin.box)
+                {
+                    fontSize = 18,
+                    fontStyle = FontStyle.Bold,
+                    alignment = TextAnchor.MiddleCenter,
+                    wordWrap = true
+                };
+                criticalErrStyle.normal.textColor = new Color(1f, 0.9f, 0.9f);
+            }
+            float w = Mathf.Min(640f, Screen.width - 40f);
+            float h = 200f;
+            Rect r = new Rect((Screen.width - w) * 0.5f, (Screen.height - h) * 0.5f, w, h);
+            GUI.color = new Color(0f, 0f, 0f, 0.85f);
+            GUI.DrawTexture(r, Texture2D.whiteTexture);
+            GUI.color = Color.white;
+            GUI.Label(r, $"⚠ 핵심 시스템 초기화 실패\n\n{criticalError}\n\n게임을 재시작 하세요.", criticalErrStyle);
         }
 
         private void BuildSystems(GameObject player, Camera camera)
@@ -94,8 +135,16 @@ namespace InsectGame.Core
             worldState.AutoWire(clock, weather);
 
             InsectDatabase database = EnsureExpandedDatabase();
+            if (database == null || database.insects == null || database.insects.Count == 0)
+            {
+                throw new CriticalBootstrapException("InsectDatabase 생성 실패 — 곤충 데이터 로드 불가");
+            }
 
             InsectSpawner spawner = EnsureComponent<InsectSpawner>("World/InsectSpawner");
+            if (spawner == null)
+            {
+                throw new CriticalBootstrapException("InsectSpawner 컴포넌트 생성 실패");
+            }
             if (buildSpawns)
             {
                 spawner.AutoWire(database, worldState, EnsureSpawnPoints());
@@ -127,6 +176,9 @@ namespace InsectGame.Core
             DexScreenUI dexScreen = EnsureComponent<DexScreenUI>("UI/DexScreen");
             dexScreen.AutoWire(database, dex);
             dexScreen.AutoWire(insectCollection, itemInventory);
+            // 곤충 3D 모델을 도감에 RenderTexture로 표시(옛 단색 박스/약식 2D 대체)
+            InsectModelPreviewRenderer insectPreview = EnsureComponent<InsectModelPreviewRenderer>("UI/InsectModelPreview");
+            dexScreen.AutoWire(insectPreview);
 
             CaptureController capture = EnsureComponent<CaptureController>("Capture/CaptureController");
             capture.AutoWire(dex);
@@ -212,15 +264,20 @@ namespace InsectGame.Core
             raidBattleUi.AutoWire(raidController, camFollower, playerMov);
 
             Battle.BattleArenaController arenaController = EnsureComponent<Battle.BattleArenaController>("World/BattleArena");
+            battleController.AutoWire(arenaController);
+            raidController.AutoWire(arenaController);
+            battleScreen.AutoWire(arenaController);
+            raidBattleUi.AutoWire(arenaController);
 
             InsectGame.UI.CaptureChoiceUI captureChoice = EnsureComponent<InsectGame.UI.CaptureChoiceUI>("UI/CaptureChoice");
             captureChoice.AutoWire(minigame, battleController, battleUi, battleTeam, insectCollection, proximityTrigger, capture, dex, trainingMgr, itemInventory, raidController);
             captureChoice.AutoWire(playerMov);
             captureChoice.SetCaptureItems(captureItemDefs);
 
-            Spawning.CaptureItemSpawner itemSpawner = EnsureComponent<Spawning.CaptureItemSpawner>("World/CaptureItemSpawner");
-            itemSpawner.AutoWire(itemInventory);
-            itemSpawner.Initialize(captureItemDefs, player.transform);
+            // 필드 아이템 스폰 비활성화 — 아이템은 샵/보상에서만 획득
+            // Spawning.CaptureItemSpawner itemSpawner = EnsureComponent<Spawning.CaptureItemSpawner>("World/CaptureItemSpawner");
+            // itemSpawner.AutoWire(itemInventory);
+            // itemSpawner.Initialize(captureItemDefs, player.transform);
 
             if (itemInventory.GetCount("net_basic") < 1)
                 itemInventory.AddItem("net_basic", 5);
@@ -232,7 +289,7 @@ namespace InsectGame.Core
             CaptureInputController inputController = EnsureComponent<CaptureInputController>("Capture/InputController");
             inputController.AutoWire(modeController, raycastTrigger, proximityTrigger);
             inputController.AutoWire(captureChoice);
-            inputController.AutoWire(battleScreen, dexScreen);
+            inputController.AutoWire(battleScreen, raidBattleUi, dexScreen);
             inputController.GetType().GetField("minigame", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
                 ?.SetValue(inputController, minigame);
 
@@ -249,10 +306,25 @@ namespace InsectGame.Core
             InsectGame.UI.BattleTeamUI battleTeamUi = EnsureComponent<InsectGame.UI.BattleTeamUI>("UI/BattleTeamUI");
             battleTeamUi.AutoWire(battleTeam, insectCollection);
 
-            Data.RegionData[] regionDefs = CreateExpandedRegions();
+            Data.RegionData[] regionDefs = RegionDefinitions.CreateAll();
             RegionManager regionMgr = EnsureComponent<RegionManager>("World/RegionManager");
             regionMgr.Initialize(regionDefs);
             regionMgr.AutoWire(progress);
+
+            SubAreaEnvironment subAreaEnv = EnsureComponent<SubAreaEnvironment>("World/SubAreaEnvironment");
+            subAreaEnv.AutoWire(regionMgr);
+
+            SubAreaWorldBuilder subAreaWorld = EnsureComponent<SubAreaWorldBuilder>("World/SubAreaWorld");
+            subAreaWorld.AutoWire(regionMgr, camFollower);
+
+            spawner.AutoWire(regionMgr);
+
+            // 리전 진입 시 BGM 자동 전환
+            regionMgr.RegionChanged += region =>
+            {
+                if (region != null && AudioManager.Instance != null)
+                    AudioManager.Instance.PlayBGMForRegion(region.regionId);
+            };
 
             // 수문장 곤충 스폰 (3D 엔티티)
             CreateGuardians(regionDefs, database);
@@ -260,12 +332,17 @@ namespace InsectGame.Core
             PlayerMovement playerMovement = player.GetComponent<PlayerMovement>();
             if (playerMovement != null) playerMovement.AutoWire(regionMgr);
 
-            // 로그인 완료 전까지 이동 제한
-            if (playerMovement != null)
-                playerMovement.SetFrozen(true);
+            // 재진입 자동 복귀: 이전 종료 시 SubArea 안이었으면 그 위치로 텔레포트.
+            // 다음 RegionManager.Update가 ContainsPoint 감지 → 자동 SubArea 진입 트리거.
+            regionMgr.RestoreLastSubArea(player.transform);
+
+            // 시작 시 frozen은 LoginUI/WorldLobbyUI가 OnGUI로 입력 흡수하므로 불필요.
+            // 월드 선택 미완료 시 frozen이 풀리지 않는 버그 회피 (이전: SetFrozen(true) 호출).
+            // 마우스 클릭은 PlayerMovement:84-85의 pointerOverUI 체크로 UI 위에서 캐릭터 이동 안 함.
 
             InsectGame.UI.RegionMapUI mapUi = EnsureComponent<InsectGame.UI.RegionMapUI>("UI/RegionMapUI");
             mapUi.AutoWire(regionMgr, progress, dex, database);
+            mapUi.AutoWire(spawner);
 
             InsectGame.UI.KeyGuideHUD keyGuide = EnsureComponent<InsectGame.UI.KeyGuideHUD>("UI/KeyGuideHUD");
             keyGuide.AutoWire(minigame, battleController, battleUi);
@@ -277,6 +354,7 @@ namespace InsectGame.Core
 
             InsectGame.UI.PlayerStatusHUD statusHud = EnsureComponent<InsectGame.UI.PlayerStatusHUD>("UI/PlayerStatusHUD");
             statusHud.AutoWire(progress, candyInventory, insectCollection, itemInventory, dex, battleTeam, regionMgr);
+            statusHud.AutoWire(wallet);
 
             CharacterOutfitManager outfitManager = EnsureComponent<CharacterOutfitManager>("World/CharacterOutfit");
             outfitManager.AutoWire(wallet);
@@ -311,8 +389,10 @@ namespace InsectGame.Core
 
             // 캐시 상점 + 가챠 시스템
             CashShopManager cashShop = EnsureComponent<CashShopManager>("World/CashShop");
+            cashShop.AutoWire(wallet); // 보석 동기화 (PlayerCurrencyWallet ↔ CashShopManager)
             GachaBoxManager gachaBox = EnsureComponent<GachaBoxManager>("World/GachaBox");
             gachaBox.AutoWire(insectCollection, candyInventory);
+            gachaBox.AutoWire(database); // PickRandomInsect 결과 검증 + DisplayName 캐싱
 
             InsectGame.UI.CashShopUI cashShopUI = EnsureComponent<InsectGame.UI.CashShopUI>("UI/CashShopUI");
             InsectGame.UI.CharacterViewerUI viewerUI = EnsureComponent<InsectGame.UI.CharacterViewerUI>("UI/CharacterViewerUI");
@@ -345,7 +425,8 @@ namespace InsectGame.Core
             if (audioManager != null)
             {
                 audioManager.PlayBGM(BgmType.Explore);
-                audioManager.PlayAmbient("forest");
+                audioManager.PlayAmbient("day");
+                EnsureComponent<UIAudioBinder>("World/UIAudioBinder");
             }
         }
 
@@ -410,6 +491,8 @@ namespace InsectGame.Core
 
             if (player.GetComponent<CapsuleCollider>() == null)
             {
+                // 충돌 캡슐은 옛 값 유지 (시각은 7등신, 충돌은 옛 캡슐 분리).
+                // 새 캡슐(height 2.5, center 1.2)로 변경 시 OverlapSphere 자기 자신 가드 실패로 이동 차단 회귀 발생.
                 CapsuleCollider cc = player.AddComponent<CapsuleCollider>();
                 cc.height = 2f;
                 cc.radius = 0.5f;
@@ -423,55 +506,65 @@ namespace InsectGame.Core
 
             if (player.GetComponentInChildren<MeshFilter>() == null)
             {
-                BuildPlayerVisual(player);
+                player.AddComponent<PlayerVisualBuilder>();
             }
 
             return player;
         }
 
-        private void BuildPlayerVisual(GameObject player)
+        // BuildPlayerVisual + BuildHair 계열 메서드는 PlayerVisualBuilder.cs로 이전됨.
+        // (필드 캐릭터 6.4등신 슬림 비례 + CharacterOutfitManager 연동을 위해 분리)
+        // 호출처: EnsurePlayer()에서 player.AddComponent<PlayerVisualBuilder>().
+        // ───── 아래 잔존 코드는 모두 비활성 폐기 블록. 컴파일 통과를 위해 #if false로 차단. ─────
+#if false
+        private void __DeadCode_PlayerVisualLegacy(GameObject player)
         {
-            Material jacketMat = CreateSafeMaterial(new Color(0.16f, 0.32f, 0.72f));
-            Material shirtMat = CreateSafeMaterial(new Color(0.95f, 0.93f, 0.86f));
-            Material pantsMat = CreateSafeMaterial(new Color(0.18f, 0.22f, 0.28f));
-            Material skinMat = CreateSafeMaterial(new Color(0.92f, 0.78f, 0.62f));
-            Material accentMat = CreateSafeMaterial(new Color(0.94f, 0.58f, 0.18f));
-            Material bootMat = CreateSafeMaterial(new Color(0.12f, 0.10f, 0.08f));
+            const float headPivotScale = 0.42f;
+            int gender = 0;
+            Material jacketMat = null, shirtMat = null, pantsMat = null, skinMat = null, accentMat = null, bootMat = null;
 
-            int gender = PlayerPrefs.GetInt("InsectGame.Character.Gender", 0);
-
-            // 남자: 기존 크기 그대로 / 여자: 몸통 약간 가늘게, 머리 약간 크게, 다리 약간 가늘게
-            float bodyScaleX = gender == 1 ? 0.65f : 0.72f;
-            float bodyScaleZ = gender == 1 ? 0.55f : 0.62f;
-            float headScale = gender == 1 ? 0.5f : 0.48f;
-            float legScale = gender == 1 ? 0.18f : 0.2f;
+            float bodyScaleX = gender == 1 ? 0.72f : 0.78f;
+            float bodyScaleZ = gender == 1 ? 0.6f : 0.66f;
+            float headScale = gender == 1 ? 0.74f : 0.72f;
+            float legScale = gender == 1 ? 0.2f : 0.22f;
 
             GameObject body = GameObject.CreatePrimitive(PrimitiveType.Capsule);
             body.name = "Body";
             body.transform.SetParent(player.transform, false);
-            body.transform.localPosition = new Vector3(0f, 1f, 0f);
-            body.transform.localScale = new Vector3(bodyScaleX, 0.68f, bodyScaleZ);
+            body.transform.localPosition = new Vector3(0f, 1.40f, 0f);
+            body.transform.localScale = new Vector3(bodyScaleX, 0.5f, bodyScaleZ);
             body.GetComponent<MeshRenderer>().material = jacketMat;
             Object.Destroy(body.GetComponent<Collider>());
 
             GameObject shirt = GameObject.CreatePrimitive(PrimitiveType.Cube);
             shirt.name = "Shirt";
             shirt.transform.SetParent(player.transform, false);
-            shirt.transform.localPosition = new Vector3(0f, 1.08f, 0.18f);
+            shirt.transform.localPosition = new Vector3(0f, 1.48f, 0.18f);
             shirt.transform.localScale = new Vector3(0.42f, 0.62f, 0.24f);
             shirt.GetComponent<MeshRenderer>().material = shirtMat;
             Object.Destroy(shirt.GetComponent<Collider>());
 
-            // HeadPivot: 스케일 (1,1,1) 빈 오브젝트 — 자식 파츠의 스케일 왜곡 방지
+            // 목: 작아진 머리와 몸통 사이 공백을 메움
+            GameObject neck = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+            neck.name = "Neck";
+            neck.transform.SetParent(player.transform, false);
+            neck.transform.localPosition = new Vector3(0f, 1.96f, 0.02f);
+            neck.transform.localScale = new Vector3(0.16f, 0.08f, 0.14f);
+            neck.GetComponent<MeshRenderer>().material = skinMat;
+            Object.Destroy(neck.GetComponent<Collider>());
+
+            // HeadPivot: 자식 파츠가 동일 비율로 함께 축소되도록 균일 스케일 적용
             GameObject headPivot = new GameObject("HeadPivot");
             headPivot.transform.SetParent(player.transform, false);
-            headPivot.transform.localPosition = new Vector3(0f, 1.86f, 0.04f);
+            headPivot.transform.localPosition = new Vector3(0f, 2.20f, 0.04f);
+            headPivot.transform.localScale = Vector3.one * headPivotScale;
 
             GameObject head = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             head.name = "Head";
             head.transform.SetParent(headPivot.transform, false);
             head.transform.localPosition = Vector3.zero;
-            head.transform.localScale = new Vector3(headScale, headScale + 0.04f, headScale - 0.02f);
+            // 갸름한 오발형: X 좁게, Y 길게, Z 약간 좁게
+            head.transform.localScale = new Vector3(headScale - 0.10f, headScale + 0.12f, headScale - 0.04f);
             head.GetComponent<MeshRenderer>().material = skinMat;
             Object.Destroy(head.GetComponent<Collider>());
 
@@ -479,7 +572,7 @@ namespace InsectGame.Core
             cap.name = "Cap";
             cap.transform.SetParent(headPivot.transform, false);
             cap.transform.localPosition = new Vector3(0f, 0.3f, -0.02f);
-            cap.transform.localScale = new Vector3(0.34f, 0.12f, 0.34f);
+            cap.transform.localScale = new Vector3(0.30f, 0.12f, 0.30f);
             cap.GetComponent<MeshRenderer>().material = accentMat;
             Object.Destroy(cap.GetComponent<Collider>());
 
@@ -487,7 +580,7 @@ namespace InsectGame.Core
             brim.name = "CapBrim";
             brim.transform.SetParent(headPivot.transform, false);
             brim.transform.localPosition = new Vector3(0f, 0.14f, 0.28f);
-            brim.transform.localScale = new Vector3(0.32f, 0.03f, 0.16f);
+            brim.transform.localScale = new Vector3(0.28f, 0.03f, 0.14f);
             brim.GetComponent<MeshRenderer>().material = accentMat;
             Object.Destroy(brim.GetComponent<Collider>());
 
@@ -497,34 +590,52 @@ namespace InsectGame.Core
             GameObject eyeL = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             eyeL.name = "EyeL";
             eyeL.transform.SetParent(headPivot.transform, false);
-            eyeL.transform.localPosition = new Vector3(-0.06f, 0.02f, 0.22f);
-            eyeL.transform.localScale = new Vector3(0.06f, 0.06f, 0.03f);
+            eyeL.transform.localPosition = new Vector3(-0.1f, 0.0f, 0.32f);
+            eyeL.transform.localScale = new Vector3(0.11f, 0.11f, 0.05f);
             eyeL.GetComponent<MeshRenderer>().material = eyeMat;
             Object.Destroy(eyeL.GetComponent<Collider>());
 
             GameObject eyeR = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             eyeR.name = "EyeR";
             eyeR.transform.SetParent(headPivot.transform, false);
-            eyeR.transform.localPosition = new Vector3(0.06f, 0.02f, 0.22f);
-            eyeR.transform.localScale = new Vector3(0.06f, 0.06f, 0.03f);
+            eyeR.transform.localPosition = new Vector3(0.1f, 0.0f, 0.32f);
+            eyeR.transform.localScale = new Vector3(0.11f, 0.11f, 0.05f);
             eyeR.GetComponent<MeshRenderer>().material = eyeMat;
             Object.Destroy(eyeR.GetComponent<Collider>());
 
             GameObject pupilL = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             pupilL.name = "PupilL";
             pupilL.transform.SetParent(headPivot.transform, false);
-            pupilL.transform.localPosition = new Vector3(-0.06f, 0.02f, 0.24f);
-            pupilL.transform.localScale = new Vector3(0.025f, 0.025f, 0.01f);
+            pupilL.transform.localPosition = new Vector3(-0.1f, 0.0f, 0.35f);
+            pupilL.transform.localScale = new Vector3(0.055f, 0.055f, 0.02f);
             pupilL.GetComponent<MeshRenderer>().material = pupilMat;
             Object.Destroy(pupilL.GetComponent<Collider>());
 
             GameObject pupilR = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             pupilR.name = "PupilR";
             pupilR.transform.SetParent(headPivot.transform, false);
-            pupilR.transform.localPosition = new Vector3(0.06f, 0.02f, 0.24f);
-            pupilR.transform.localScale = new Vector3(0.025f, 0.025f, 0.01f);
+            pupilR.transform.localPosition = new Vector3(0.1f, 0.0f, 0.35f);
+            pupilR.transform.localScale = new Vector3(0.055f, 0.055f, 0.02f);
             pupilR.GetComponent<MeshRenderer>().material = pupilMat;
             Object.Destroy(pupilR.GetComponent<Collider>());
+
+            // 눈 하이라이트 (반짝임)
+            Material hlMat = CreateSafeMaterial(new Color(1f, 1f, 1f, 0.9f));
+            GameObject hlL = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            hlL.name = "HighlightL";
+            hlL.transform.SetParent(headPivot.transform, false);
+            hlL.transform.localPosition = new Vector3(-0.08f, 0.03f, 0.36f);
+            hlL.transform.localScale = new Vector3(0.025f, 0.025f, 0.01f);
+            hlL.GetComponent<MeshRenderer>().material = hlMat;
+            Object.Destroy(hlL.GetComponent<Collider>());
+
+            GameObject hlR = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            hlR.name = "HighlightR";
+            hlR.transform.SetParent(headPivot.transform, false);
+            hlR.transform.localPosition = new Vector3(0.08f, 0.03f, 0.36f);
+            hlR.transform.localScale = new Vector3(0.025f, 0.025f, 0.01f);
+            hlR.GetComponent<MeshRenderer>().material = hlMat;
+            Object.Destroy(hlR.GetComponent<Collider>());
 
             // ── 얼굴 ──
             int faceType = PlayerPrefs.GetInt("InsectGame.Character.FaceType", 0);
@@ -534,16 +645,16 @@ namespace InsectGame.Core
             GameObject browL = GameObject.CreatePrimitive(PrimitiveType.Cube);
             browL.name = "BrowL";
             browL.transform.SetParent(headPivot.transform, false);
-            browL.transform.localPosition = new Vector3(-0.06f, 0.07f, 0.22f);
-            browL.transform.localScale = new Vector3(0.05f, 0.01f, 0.015f);
+            browL.transform.localPosition = new Vector3(-0.1f, 0.08f, 0.32f);
+            browL.transform.localScale = new Vector3(0.08f, 0.015f, 0.02f);
             browL.GetComponent<MeshRenderer>().material = browMat;
             Object.Destroy(browL.GetComponent<Collider>());
 
             GameObject browR = GameObject.CreatePrimitive(PrimitiveType.Cube);
             browR.name = "BrowR";
             browR.transform.SetParent(headPivot.transform, false);
-            browR.transform.localPosition = new Vector3(0.06f, 0.07f, 0.22f);
-            browR.transform.localScale = new Vector3(0.05f, 0.01f, 0.015f);
+            browR.transform.localPosition = new Vector3(0.1f, 0.08f, 0.32f);
+            browR.transform.localScale = new Vector3(0.08f, 0.015f, 0.02f);
             browR.GetComponent<MeshRenderer>().material = browMat;
             Object.Destroy(browR.GetComponent<Collider>());
 
@@ -551,8 +662,8 @@ namespace InsectGame.Core
             GameObject nose = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             nose.name = "Nose";
             nose.transform.SetParent(headPivot.transform, false);
-            nose.transform.localPosition = new Vector3(0f, -0.01f, 0.24f);
-            nose.transform.localScale = new Vector3(0.03f, 0.025f, 0.025f);
+            nose.transform.localPosition = new Vector3(0f, -0.04f, 0.35f);
+            nose.transform.localScale = new Vector3(0.04f, 0.035f, 0.03f);
             nose.GetComponent<MeshRenderer>().material = skinMat;
             Object.Destroy(nose.GetComponent<Collider>());
 
@@ -570,8 +681,8 @@ namespace InsectGame.Core
                 case 2: mouthWidth = 0.03f; mouthY = -0.04f; break;   // 차분
                 case 3: mouthWidth = 0.02f; mouthY = -0.045f; break;   // 무표정
             }
-            mouth.transform.localPosition = new Vector3(0f, mouthY, 0.22f);
-            mouth.transform.localScale = new Vector3(mouthWidth, 0.008f, 0.01f);
+            mouth.transform.localPosition = new Vector3(0f, mouthY, 0.32f);
+            mouth.transform.localScale = new Vector3(mouthWidth, 0.015f, 0.015f);
             mouth.GetComponent<MeshRenderer>().material = mouthMat;
             Object.Destroy(mouth.GetComponent<Collider>());
 
@@ -582,16 +693,16 @@ namespace InsectGame.Core
                 GameObject blushL = GameObject.CreatePrimitive(PrimitiveType.Sphere);
                 blushL.name = "BlushL";
                 blushL.transform.SetParent(headPivot.transform, false);
-                blushL.transform.localPosition = new Vector3(-0.08f, -0.02f, 0.20f);
-                blushL.transform.localScale = new Vector3(0.04f, 0.025f, 0.015f);
+                blushL.transform.localPosition = new Vector3(-0.14f, -0.04f, 0.28f);
+                blushL.transform.localScale = new Vector3(0.06f, 0.035f, 0.02f);
                 blushL.GetComponent<MeshRenderer>().material = blushMat;
                 Object.Destroy(blushL.GetComponent<Collider>());
 
                 GameObject blushR = GameObject.CreatePrimitive(PrimitiveType.Sphere);
                 blushR.name = "BlushR";
                 blushR.transform.SetParent(headPivot.transform, false);
-                blushR.transform.localPosition = new Vector3(0.08f, -0.02f, 0.20f);
-                blushR.transform.localScale = new Vector3(0.04f, 0.025f, 0.015f);
+                blushR.transform.localPosition = new Vector3(0.14f, -0.04f, 0.28f);
+                blushR.transform.localScale = new Vector3(0.06f, 0.035f, 0.02f);
                 blushR.GetComponent<MeshRenderer>().material = blushMat;
                 Object.Destroy(blushR.GetComponent<Collider>());
 
@@ -651,8 +762,8 @@ namespace InsectGame.Core
             GameObject armL = GameObject.CreatePrimitive(PrimitiveType.Capsule);
             armL.name = "ArmL";
             armL.transform.SetParent(player.transform, false);
-            armL.transform.localPosition = new Vector3(-0.48f, 1.08f, 0f);
-            armL.transform.localScale = new Vector3(0.18f, 0.48f, 0.18f);
+            armL.transform.localPosition = new Vector3(-0.5f, 1.48f, 0f);
+            armL.transform.localScale = new Vector3(0.18f, 0.42f, 0.18f);
             armL.transform.localRotation = Quaternion.Euler(0f, 0f, 14f);
             armL.GetComponent<MeshRenderer>().material = jacketMat;
             Object.Destroy(armL.GetComponent<Collider>());
@@ -660,57 +771,74 @@ namespace InsectGame.Core
             GameObject armR = GameObject.CreatePrimitive(PrimitiveType.Capsule);
             armR.name = "ArmR";
             armR.transform.SetParent(player.transform, false);
-            armR.transform.localPosition = new Vector3(0.48f, 1.08f, 0f);
-            armR.transform.localScale = new Vector3(0.18f, 0.48f, 0.18f);
+            armR.transform.localPosition = new Vector3(0.5f, 1.48f, 0f);
+            armR.transform.localScale = new Vector3(0.18f, 0.42f, 0.18f);
             armR.transform.localRotation = Quaternion.Euler(0f, 0f, -14f);
             armR.GetComponent<MeshRenderer>().material = jacketMat;
             Object.Destroy(armR.GetComponent<Collider>());
 
+            // 손 (피부색 구체): 팔이 14° 기울어 끝나는 위치 (x ≈ ±0.40, y ≈ 1.07)에 손 약간 바깥쪽으로 배치
+            GameObject handL = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            handL.name = "HandL";
+            handL.transform.SetParent(player.transform, false);
+            handL.transform.localPosition = new Vector3(-0.55f, 1.07f, 0f);
+            handL.transform.localScale = new Vector3(0.11f, 0.11f, 0.11f);
+            handL.GetComponent<MeshRenderer>().material = skinMat;
+            Object.Destroy(handL.GetComponent<Collider>());
+
+            GameObject handR = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            handR.name = "HandR";
+            handR.transform.SetParent(player.transform, false);
+            handR.transform.localPosition = new Vector3(0.55f, 1.07f, 0f);
+            handR.transform.localScale = new Vector3(0.11f, 0.11f, 0.11f);
+            handR.GetComponent<MeshRenderer>().material = skinMat;
+            Object.Destroy(handR.GetComponent<Collider>());
+
             GameObject legL = GameObject.CreatePrimitive(PrimitiveType.Capsule);
             legL.name = "LegL";
             legL.transform.SetParent(player.transform, false);
-            legL.transform.localPosition = new Vector3(-0.18f, 0.36f, 0f);
-            legL.transform.localScale = new Vector3(legScale, 0.55f, legScale);
+            legL.transform.localPosition = new Vector3(-0.2f, 0.55f, 0f);
+            legL.transform.localScale = new Vector3(legScale, 0.62f, legScale);
             legL.GetComponent<MeshRenderer>().material = pantsMat;
             Object.Destroy(legL.GetComponent<Collider>());
 
             GameObject legR = GameObject.CreatePrimitive(PrimitiveType.Capsule);
             legR.name = "LegR";
             legR.transform.SetParent(player.transform, false);
-            legR.transform.localPosition = new Vector3(0.18f, 0.36f, 0f);
-            legR.transform.localScale = new Vector3(legScale, 0.55f, legScale);
+            legR.transform.localPosition = new Vector3(0.2f, 0.55f, 0f);
+            legR.transform.localScale = new Vector3(legScale, 0.62f, legScale);
             legR.GetComponent<MeshRenderer>().material = pantsMat;
             Object.Destroy(legR.GetComponent<Collider>());
 
             GameObject bootL = GameObject.CreatePrimitive(PrimitiveType.Cube);
             bootL.name = "BootL";
             bootL.transform.SetParent(player.transform, false);
-            bootL.transform.localPosition = new Vector3(-0.18f, 0.02f, 0.08f);
-            bootL.transform.localScale = new Vector3(0.2f, 0.12f, 0.32f);
+            bootL.transform.localPosition = new Vector3(-0.2f, 0.04f, 0.08f);
+            bootL.transform.localScale = new Vector3(0.22f, 0.14f, 0.32f);
             bootL.GetComponent<MeshRenderer>().material = bootMat;
             Object.Destroy(bootL.GetComponent<Collider>());
 
             GameObject bootR = GameObject.CreatePrimitive(PrimitiveType.Cube);
             bootR.name = "BootR";
             bootR.transform.SetParent(player.transform, false);
-            bootR.transform.localPosition = new Vector3(0.18f, 0.02f, 0.08f);
-            bootR.transform.localScale = new Vector3(0.2f, 0.12f, 0.32f);
+            bootR.transform.localPosition = new Vector3(0.2f, 0.04f, 0.08f);
+            bootR.transform.localScale = new Vector3(0.22f, 0.14f, 0.32f);
             bootR.GetComponent<MeshRenderer>().material = bootMat;
             Object.Destroy(bootR.GetComponent<Collider>());
 
             GameObject pack = GameObject.CreatePrimitive(PrimitiveType.Cube);
             pack.name = "Backpack";
             pack.transform.SetParent(player.transform, false);
-            pack.transform.localPosition = new Vector3(0f, 1.02f, -0.28f);
-            pack.transform.localScale = new Vector3(0.34f, 0.46f, 0.18f);
+            pack.transform.localPosition = new Vector3(0f, 1.42f, -0.28f);
+            pack.transform.localScale = new Vector3(0.34f, 0.42f, 0.2f);
             pack.GetComponent<MeshRenderer>().material = accentMat;
             Object.Destroy(pack.GetComponent<Collider>());
 
             GameObject netHandle = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
             netHandle.name = "NetHandle";
             netHandle.transform.SetParent(player.transform, false);
-            netHandle.transform.localPosition = new Vector3(0.62f, 1.18f, -0.18f);
-            netHandle.transform.localScale = new Vector3(0.04f, 0.75f, 0.04f);
+            netHandle.transform.localPosition = new Vector3(0.55f, 1.62f, -0.18f);
+            netHandle.transform.localScale = new Vector3(0.04f, 0.7f, 0.04f);
             netHandle.transform.localRotation = Quaternion.Euler(18f, 0f, -38f);
             netHandle.GetComponent<MeshRenderer>().material = bootMat;
             Object.Destroy(netHandle.GetComponent<Collider>());
@@ -718,7 +846,7 @@ namespace InsectGame.Core
             GameObject netRing = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
             netRing.name = "NetRing";
             netRing.transform.SetParent(player.transform, false);
-            netRing.transform.localPosition = new Vector3(0.95f, 1.92f, -0.1f);
+            netRing.transform.localPosition = new Vector3(0.82f, 2.28f, -0.1f);
             netRing.transform.localScale = new Vector3(0.24f, 0.02f, 0.24f);
             netRing.transform.localRotation = Quaternion.Euler(0f, 0f, 90f);
             netRing.GetComponent<MeshRenderer>().material = shirtMat;
@@ -939,6 +1067,8 @@ namespace InsectGame.Core
                 }
             }
         }
+#endif
+        // ───── 폐기 블록 끝. 이후 정상 코드. ─────
 
         private void EnsureGround()
         {
@@ -947,7 +1077,7 @@ namespace InsectGame.Core
                 return;
             }
 
-            Data.RegionData[] regionDefs = CreateExpandedRegions();
+            Data.RegionData[] regionDefs = RegionDefinitions.CreateAll();
 
             // --- Base ground ---
             Material baseMat = CreateSafeMaterial(new Color(0.25f, 0.45f, 0.18f));
@@ -984,7 +1114,7 @@ namespace InsectGame.Core
                 Material mat = CreateSafeMaterial(new Color(col.r * 0.5f + 0.1f, col.g * 0.5f + 0.1f, col.b * 0.4f + 0.08f));
                 GameObject regionGround = GameObject.CreatePrimitive(PrimitiveType.Plane);
                 regionGround.name = $"Region_{region.regionId}";
-                regionGround.transform.position = region.centerPosition + new Vector3(0f, 0.02f, 0f);
+                regionGround.transform.position = region.centerPosition + new Vector3(0f, 0.08f, 0f);
                 float s = region.radius / 5f;
                 regionGround.transform.localScale = new Vector3(s, 1f, s);
                 regionGround.GetComponent<MeshRenderer>().material = mat;
@@ -1036,6 +1166,14 @@ namespace InsectGame.Core
             AddSceneryObjects(baseMat);
             AddRegionScenery(regionDefs);
 
+            // 지형 구축 (고저차, 절벽, 강, 다리)
+            WorldTerrainBuilder terrainBuilder = new GameObject("WorldTerrainBuilder").AddComponent<WorldTerrainBuilder>();
+            terrainBuilder.BuildTerrain(regionDefs);
+
+            // 리전별 게임 필드 지형 (언덕, 길, 바위, 나무 등)
+            RegionTerrainBuilder regionTerrain = new GameObject("RegionTerrainBuilder").AddComponent<RegionTerrainBuilder>();
+            regionTerrain.BuildAllRegions(regionDefs);
+
             // 수문장은 BuildSystems에서 database와 함께 생성
             CreateSubAreaEntries(regionDefs);
         }
@@ -1069,7 +1207,7 @@ namespace InsectGame.Core
                 // Path plane segment
                 GameObject path = GameObject.CreatePrimitive(PrimitiveType.Plane);
                 path.name = $"Path_Seg_{seg}";
-                path.transform.position = segMid + new Vector3(0f, 0.015f, 0f);
+                path.transform.position = segMid + new Vector3(0f, 0.12f, 0f);
                 path.transform.rotation = Quaternion.Euler(0f, segAngle, 0f);
                 path.transform.localScale = new Vector3(width / 10f, 1f, segLen / 10f);
                 path.GetComponent<MeshRenderer>().material = mat;
@@ -1088,7 +1226,7 @@ namespace InsectGame.Core
                     GameObject gravel = GameObject.CreatePrimitive(PrimitiveType.Sphere);
                     gravel.name = $"Path_Gravel_{pathIdx}";
                     float gs = Random.Range(0.15f, 0.3f);
-                    gravel.transform.position = gPos + new Vector3(0f, gs * 0.15f + 0.02f, 0f);
+                    gravel.transform.position = gPos + new Vector3(0f, gs * 0.15f + 0.1f, 0f);
                     gravel.transform.localScale = new Vector3(gs * 1.3f, gs * 0.3f, gs);
                     gravel.GetComponent<MeshRenderer>().material = gravelMat;
                     Object.Destroy(gravel.GetComponent<Collider>());
@@ -2931,57 +3069,6 @@ namespace InsectGame.Core
             };
         }
 
-        private Data.RegionData[] CreateRegions()
-        {
-            return new Data.RegionData[]
-            {
-                new Data.RegionData
-                {
-                    regionId = "meadow",
-                    displayName = "초원",
-                    description = "평화로운 초원 - 초보자에게 적합",
-                    themeColor = new Color(0.4f, 0.8f, 0.3f),
-                    centerPosition = Vector3.zero,
-                    radius = 50f,
-                    requiredLevel = 1,
-                    insectIds = new[] { "beetle_basic", "mantis_green", "moth_night", "bee_worker", "cricket_field", "ant_soldier" }
-                },
-                new Data.RegionData
-                {
-                    regionId = "pond",
-                    displayName = "연못",
-                    description = "물가에 사는 곤충들의 서식지",
-                    themeColor = new Color(0.3f, 0.6f, 1f),
-                    centerPosition = new Vector3(100f, 0f, 30f),
-                    radius = 45f,
-                    requiredLevel = 3,
-                    insectIds = new[] { "dragonfly_lake", "water_strider", "diving_beetle", "jewel_beetle" }
-                },
-                new Data.RegionData
-                {
-                    regionId = "forest",
-                    displayName = "숲",
-                    description = "울창한 숲 속 강력한 곤충이 서식",
-                    themeColor = new Color(0.2f, 0.5f, 0.15f),
-                    centerPosition = new Vector3(-80f, 0f, 80f),
-                    radius = 55f,
-                    requiredLevel = 5,
-                    insectIds = new[] { "stag_beetle", "firefly_glow", "cicada_summer", "rhinoceros_beetle", "atlas_moth" }
-                },
-                new Data.RegionData
-                {
-                    regionId = "garden",
-                    displayName = "꽃밭",
-                    description = "희귀한 나비와 전설의 곤충이 숨어있는 곳",
-                    themeColor = new Color(1f, 0.5f, 0.7f),
-                    centerPosition = new Vector3(60f, 0f, -90f),
-                    radius = 40f,
-                    requiredLevel = 8,
-                    insectIds = new[] { "butterfly_azure", "luna_moth", "golden_scarab" }
-                }
-            };
-        }
-
         private InsectDatabase EnsureExpandedDatabase()
         {
             InsectDatabase database = ScriptableObject.CreateInstance<InsectDatabase>();
@@ -3355,337 +3442,6 @@ namespace InsectGame.Core
             return result;
         }
 
-        private Data.RegionData[] CreateExpandedRegions()
-        {
-            return new Data.RegionData[]
-            {
-                // ── 초원: Lv.1~10, 입문 지역, Common/Uncommon 위주 ──
-                new Data.RegionData
-                {
-                    regionId = "meadow",
-                    displayName = "초원",
-                    description = "평화로운 초원 — 흔한 곤충이 많아 초보자에게 적합합니다.",
-                    themeColor = new Color(0.4f, 0.8f, 0.3f),
-                    centerPosition = Vector3.zero,
-                    radius = 50f,
-                    requiredLevel = 1,
-                    insectIds = new[]
-                    {
-                        "beetle_basic", "bee_worker", "cricket_field", "ant_soldier",
-                        "grasshopper_green", "ladybug_seven", "caterpillar_green", "aphid_colony",
-                        "moth_brown", "beetle_dung"
-                    },
-                    guardianInsectId = "mantis_green",
-                    guardianDisplayName = "초원의 수호자 사마귀",
-                    guardianLevel = 13,
-                    subAreas = new Data.SubAreaData[]
-                    {
-                        new Data.SubAreaData
-                        {
-                            subAreaId = "meadow_cave",
-                            displayName = "초원 동굴",
-                            description = "초원 아래 숨겨진 동굴 — 어둠 속 곤충이 서식합니다.",
-                            centerPosition = new Vector3(15f, 0f, 25f),
-                            radius = 10f,
-                            exclusiveInsectIds = new[] { "centipede_common", "earwig_common", "pill_bug_garden" },
-                            minLevel = 3,
-                            maxLevel = 10,
-                            environmentType = "cave"
-                        },
-                        new Data.SubAreaData
-                        {
-                            subAreaId = "meadow_pond",
-                            displayName = "숨겨진 웅덩이",
-                            description = "초원 한쪽에 숨겨진 작은 웅덩이 — 물가 곤충이 출현합니다.",
-                            centerPosition = new Vector3(-20f, 0f, 15f),
-                            radius = 8f,
-                            exclusiveInsectIds = new[] { "mosquito_common", "damselfly_blue" },
-                            minLevel = 2,
-                            maxLevel = 8,
-                            environmentType = "pond"
-                        }
-                    }
-                },
-                // ── 연못: Lv.6~16, 수서곤충 + 희귀종 등장 ──
-                new Data.RegionData
-                {
-                    regionId = "pond",
-                    displayName = "연못",
-                    description = "물가에 사는 곤충들의 서식지 — 수서곤충과 희귀종이 출현합니다.",
-                    themeColor = new Color(0.3f, 0.6f, 1f),
-                    centerPosition = new Vector3(100f, 0f, 30f),
-                    radius = 45f,
-                    requiredLevel = 6,
-                    insectIds = new[]
-                    {
-                        "dragonfly_lake", "water_strider_pond", "fly_house",
-                        "dragonfly_emperor"
-                    },
-                    guardianInsectId = "dragonfly_emperor",
-                    guardianDisplayName = "연못의 파수꾼 왕잠자리",
-                    guardianLevel = 20,
-                    subAreas = new Data.SubAreaData[]
-                    {
-                        new Data.SubAreaData
-                        {
-                            subAreaId = "pond_deep",
-                            displayName = "연못 깊은 곳",
-                            description = "연못 깊숙한 곳 — 수중 곤충만이 살아남을 수 있습니다.",
-                            centerPosition = new Vector3(105f, 0f, 25f),
-                            radius = 10f,
-                            exclusiveInsectIds = new[] { "diving_beetle_deep", "diving_beetle_small" },
-                            minLevel = 8,
-                            maxLevel = 16,
-                            environmentType = "underwater"
-                        },
-                        new Data.SubAreaData
-                        {
-                            subAreaId = "pond_reeds",
-                            displayName = "갈대 밀림",
-                            description = "갈대가 빽빽이 우거진 곳 — 야행성 곤충이 숨어있습니다.",
-                            centerPosition = new Vector3(90f, 0f, 40f),
-                            radius = 12f,
-                            exclusiveInsectIds = new[] { "firefly_blue", "cicada_evening" },
-                            minLevel = 6,
-                            maxLevel = 14,
-                            environmentType = "reeds"
-                        }
-                    }
-                },
-                // ── 숲: Lv.12~24, 강력한 곤충 ──
-                new Data.RegionData
-                {
-                    regionId = "forest",
-                    displayName = "숲",
-                    description = "울창한 숲 속 강력한 곤충이 서식 — 높은 레벨의 도전이 필요합니다.",
-                    themeColor = new Color(0.2f, 0.5f, 0.15f),
-                    centerPosition = new Vector3(-80f, 0f, 80f),
-                    radius = 55f,
-                    requiredLevel = 12,
-                    insectIds = new[]
-                    {
-                        "stag_beetle", "rhinoceros_beetle", "cicada_summer", "moth_night",
-                        "mantis_green", "longhorn_beetle", "stick_insect_long", "beetle_longhorn_rosalia",
-                        "hornet_asian"
-                    },
-                    guardianInsectId = "beetle_hercules",
-                    guardianDisplayName = "숲의 문지기 헤라클레스",
-                    guardianLevel = 28,
-                    subAreas = new Data.SubAreaData[]
-                    {
-                        new Data.SubAreaData
-                        {
-                            subAreaId = "forest_deep",
-                            displayName = "깊은 숲",
-                            description = "빛이 닿지 않는 깊은 숲 — 유령 곤충과 거대 나방이 출현합니다.",
-                            centerPosition = new Vector3(-90f, 0f, 95f),
-                            radius = 14f,
-                            exclusiveInsectIds = new[] { "mantis_ghost", "leaf_insect_phantom", "atlas_moth_giant" },
-                            minLevel = 18,
-                            maxLevel = 28,
-                            environmentType = "deep_forest"
-                        },
-                        new Data.SubAreaData
-                        {
-                            subAreaId = "forest_cave",
-                            displayName = "숲속 동굴",
-                            description = "숲 깊은 곳의 동굴 — 보스급 곤충이 서식합니다.",
-                            centerPosition = new Vector3(-70f, 0f, 70f),
-                            radius = 10f,
-                            exclusiveInsectIds = new[] { "beetle_hercules", "scarab_ancient" },
-                            minLevel = 15,
-                            maxLevel = 24,
-                            environmentType = "cave"
-                        }
-                    }
-                },
-                // ── 습지: Lv.20~32, 독/어둠 곤충 (신규) ──
-                new Data.RegionData
-                {
-                    regionId = "swamp",
-                    displayName = "습지",
-                    description = "안개가 자욱한 습지 — 독을 가진 곤충과 어둠의 포식자가 서식합니다.",
-                    themeColor = new Color(0.25f, 0.35f, 0.2f),
-                    centerPosition = new Vector3(-30f, 0f, -60f),
-                    radius = 45f,
-                    requiredLevel = 20,
-                    insectIds = new[]
-                    {
-                        "centipede_common", "earwig_common", "mosquito_common", "pill_bug_garden",
-                        "damselfly_blue", "firefly_blue", "cicada_evening"
-                    },
-                    guardianInsectId = "mantis_ghost",
-                    guardianDisplayName = "습지의 유령 사마귀",
-                    guardianLevel = 37,
-                    subAreas = new Data.SubAreaData[]
-                    {
-                        new Data.SubAreaData
-                        {
-                            subAreaId = "swamp_fog",
-                            displayName = "안개 습지",
-                            description = "짙은 안개가 시야를 가리는 곳 — 유령 곤충이 출몰합니다.",
-                            centerPosition = new Vector3(-25f, 0f, -70f),
-                            radius = 12f,
-                            exclusiveInsectIds = new[] { "mantis_ghost", "leaf_insect_phantom" },
-                            minLevel = 24,
-                            maxLevel = 32,
-                            environmentType = "fog"
-                        },
-                        new Data.SubAreaData
-                        {
-                            subAreaId = "swamp_cave",
-                            displayName = "습지 동굴",
-                            description = "습지 깊숙한 동굴 — 고대 곤충이 잠들어 있습니다.",
-                            centerPosition = new Vector3(-40f, 0f, -55f),
-                            radius = 10f,
-                            exclusiveInsectIds = new[] { "scarab_ancient", "beetle_hercules" },
-                            minLevel = 22,
-                            maxLevel = 30,
-                            environmentType = "cave"
-                        }
-                    }
-                },
-                // ── 산: Lv.28~40, 고산 곤충 (신규) ──
-                new Data.RegionData
-                {
-                    regionId = "mountain",
-                    displayName = "산",
-                    description = "험준한 산악 지형 — 강인한 고산 곤충만이 살아남는 극한 환경입니다.",
-                    themeColor = new Color(0.5f, 0.45f, 0.4f),
-                    centerPosition = new Vector3(-120f, 0f, -30f),
-                    radius = 50f,
-                    requiredLevel = 28,
-                    insectIds = new[]
-                    {
-                        "hornet_asian", "beetle_longhorn_rosalia", "stick_insect_long",
-                        "katydid_leaf", "beetle_click", "spider_garden"
-                    },
-                    guardianInsectId = "atlas_moth_giant",
-                    guardianDisplayName = "산의 거신 아틀라스나방",
-                    guardianLevel = 45,
-                    subAreas = new Data.SubAreaData[]
-                    {
-                        new Data.SubAreaData
-                        {
-                            subAreaId = "mountain_peak",
-                            displayName = "산 정상",
-                            description = "바람이 휘몰아치는 정상 — 전설급 곤충이 날아다닙니다.",
-                            centerPosition = new Vector3(-130f, 0f, -20f),
-                            radius = 12f,
-                            exclusiveInsectIds = new[] { "dragonfly_ancient", "butterfly_morpho" },
-                            minLevel = 34,
-                            maxLevel = 42,
-                            environmentType = "peak"
-                        },
-                        new Data.SubAreaData
-                        {
-                            subAreaId = "mountain_cave",
-                            displayName = "산속 동굴",
-                            description = "산 깊은 곳의 동굴 — 거대 거미와 나방이 서식합니다.",
-                            centerPosition = new Vector3(-110f, 0f, -40f),
-                            radius = 10f,
-                            exclusiveInsectIds = new[] { "spider_golden_orb", "atlas_moth_giant" },
-                            minLevel = 30,
-                            maxLevel = 38,
-                            environmentType = "cave"
-                        }
-                    }
-                },
-                // ── 꽃밭: Lv.18~35, 희귀 나비 (분기 경로) ──
-                new Data.RegionData
-                {
-                    regionId = "garden",
-                    displayName = "꽃밭",
-                    description = "희귀한 나비와 전설의 곤충이 숨어있는 비밀의 정원입니다.",
-                    themeColor = new Color(1f, 0.5f, 0.7f),
-                    centerPosition = new Vector3(60f, 0f, -90f),
-                    radius = 40f,
-                    requiredLevel = 18,
-                    insectIds = new[]
-                    {
-                        "butterfly_azure", "butterfly_monarch", "butterfly_swallowtail",
-                        "luna_moth_silver", "jewel_beetle_gold", "firefly_glow",
-                        "wasp_paper", "butterfly_cabbage"
-                    },
-                    guardianInsectId = "butterfly_swallowtail",
-                    guardianDisplayName = "꽃밭의 문지기 호랑나비",
-                    guardianLevel = 13,
-                    subAreas = new Data.SubAreaData[]
-                    {
-                        new Data.SubAreaData
-                        {
-                            subAreaId = "garden_maze",
-                            displayName = "꽃 미로",
-                            description = "거대한 꽃으로 이루어진 미로 — 전설급 곤충이 숨어있습니다.",
-                            centerPosition = new Vector3(55f, 0f, -100f),
-                            radius = 12f,
-                            exclusiveInsectIds = new[] { "butterfly_alexandras", "mantis_orchid" },
-                            minLevel = 30,
-                            maxLevel = 40,
-                            environmentType = "flower_maze"
-                        },
-                        new Data.SubAreaData
-                        {
-                            subAreaId = "garden_greenhouse",
-                            displayName = "온실",
-                            description = "유리로 된 온실 — 최상위 곤충이 서식합니다.",
-                            centerPosition = new Vector3(70f, 0f, -80f),
-                            radius = 10f,
-                            exclusiveInsectIds = new[] { "spider_golden_orb", "beetle_golden_stag" },
-                            minLevel = 25,
-                            maxLevel = 35,
-                            environmentType = "greenhouse"
-                        }
-                    }
-                },
-                // ── 고대 유적: Lv.36~50, 전설급 (신규) ──
-                new Data.RegionData
-                {
-                    regionId = "ruins",
-                    displayName = "고대 유적",
-                    description = "잊혀진 문명의 유적 — 전설급 곤충만이 서식하는 최종 지역입니다.",
-                    themeColor = new Color(0.4f, 0.35f, 0.3f),
-                    centerPosition = new Vector3(0f, 0f, 140f),
-                    radius = 45f,
-                    requiredLevel = 36,
-                    insectIds = new[]
-                    {
-                        "mantis_orchid", "butterfly_alexandras", "beetle_golden_stag",
-                        "dragonfly_ancient", "butterfly_morpho"
-                    },
-                    guardianInsectId = null,
-                    guardianDisplayName = null,
-                    guardianLevel = 0,
-                    subAreas = new Data.SubAreaData[]
-                    {
-                        new Data.SubAreaData
-                        {
-                            subAreaId = "ruins_temple",
-                            displayName = "고대 신전",
-                            description = "유적 깊숙한 신전 — 필드 전설 곤충만이 출현합니다.",
-                            centerPosition = new Vector3(5f, 0f, 150f),
-                            radius = 12f,
-                            exclusiveInsectIds = new[] { "mantis_orchid", "butterfly_alexandras" },
-                            minLevel = 40,
-                            maxLevel = 50,
-                            environmentType = "temple"
-                        },
-                        new Data.SubAreaData
-                        {
-                            subAreaId = "ruins_underground",
-                            displayName = "유적 지하",
-                            description = "유적 아래 봉인된 지하 — 고대 곤충이 잠들어 있습니다.",
-                            centerPosition = new Vector3(-10f, 0f, 135f),
-                            radius = 10f,
-                            exclusiveInsectIds = new[] { "beetle_hercules", "leaf_insect_phantom" },
-                            minLevel = 38,
-                            maxLevel = 48,
-                            environmentType = "underground"
-                        }
-                    }
-                }
-            };
-        }
 
         private int GetStableValue(string text)
         {
@@ -3709,7 +3465,7 @@ namespace InsectGame.Core
                 return existing;
             }
 
-            Data.RegionData[] regionDefs = CreateExpandedRegions();
+            Data.RegionData[] regionDefs = RegionDefinitions.CreateAll();
             List<SpawnPoint> points = new List<SpawnPoint>();
             int pointsPerRegion = Mathf.Max(4, Mathf.CeilToInt(spawnPointCount / (float)Mathf.Max(1, regionDefs.Length)));
 
@@ -4656,6 +4412,7 @@ namespace InsectGame.Core
                 platform.transform.position = guardianPos + new Vector3(0, 0.15f, 0);
                 platform.transform.localScale = new Vector3(4f, 0.15f, 4f);
                 platform.GetComponent<MeshRenderer>().material = platMat;
+                Object.Destroy(platform.GetComponent<Collider>());
 
                 // 수문장 기둥 (양쪽)
                 Material pillarMat = CreateSafeMaterial(new Color(0.4f, 0.3f, 0.25f));
@@ -4666,6 +4423,7 @@ namespace InsectGame.Core
                     pillar.transform.position = guardianPos + new Vector3(side * 3f, 2f, 0);
                     pillar.transform.localScale = new Vector3(0.5f, 2f, 0.5f);
                     pillar.GetComponent<MeshRenderer>().material = pillarMat;
+                    Object.Destroy(pillar.GetComponent<Collider>());
                 }
 
                 // 오라 (빨간 반투명)

@@ -299,6 +299,10 @@ namespace InsectGame.Core
                 regionManager.RegionChanged += OnRegionChanged;
                 regionManager.SubAreaChanged += OnSubAreaChanged;
             }
+
+            // 팀 편성 변경 (q_team) — 옛은 NotifyTeamSet 호출처 없어 영구 정지
+            if (battleTeamManager != null)
+                battleTeamManager.TeamChanged += OnTeamChanged;
         }
 
         private void UnsubscribeEvents()
@@ -314,7 +318,12 @@ namespace InsectGame.Core
                 regionManager.RegionChanged -= OnRegionChanged;
                 regionManager.SubAreaChanged -= OnSubAreaChanged;
             }
+
+            if (battleTeamManager != null)
+                battleTeamManager.TeamChanged -= OnTeamChanged;
         }
+
+        private void OnTeamChanged() => NotifyAction(QuestType.SetTeam);
 
         // --- 이벤트 핸들러 ---
 
@@ -471,17 +480,29 @@ namespace InsectGame.Core
             TutorialQuest quest = GetQuest(questId);
             if (quest == null) return;
 
-            if (quest.rewardCandy > 0 && candyInventory != null)
-                candyInventory.AddCandy(quest.rewardCandy);
+            if (quest.rewardCandy > 0)
+            {
+                if (candyInventory != null) candyInventory.AddCandy(quest.rewardCandy);
+                else Debug.LogWarning($"[Quest] candyInventory null — 캔디 보상 손실: {questId} (+{quest.rewardCandy})");
+            }
 
-            if (quest.rewardExp > 0 && progressController != null)
-                progressController.GainXp(quest.rewardExp);
+            if (quest.rewardExp > 0)
+            {
+                if (progressController != null) progressController.GainXp(quest.rewardExp);
+                else Debug.LogWarning($"[Quest] progressController null — XP 보상 손실: {questId} (+{quest.rewardExp})");
+            }
 
-            if (!string.IsNullOrEmpty(quest.rewardItemId) && quest.rewardItemCount > 0 && itemInventory != null)
-                itemInventory.AddItem(quest.rewardItemId, quest.rewardItemCount);
+            if (!string.IsNullOrEmpty(quest.rewardItemId) && quest.rewardItemCount > 0)
+            {
+                if (itemInventory != null) itemInventory.AddItem(quest.rewardItemId, quest.rewardItemCount);
+                else Debug.LogWarning($"[Quest] itemInventory null — 아이템 보상 손실: {questId} {quest.rewardItemId}x{quest.rewardItemCount}");
+            }
 
             QuestCompleted?.Invoke(quest);
             SaveProgress();
+            // 퀘스트 완료 보상은 캔디/XP/아이템 → 클라우드 즉시 동기 (다른 기기 진입 시 재진행 방지).
+            // IncrementProgress의 잦은 호출은 120초 자동저장에 맡겨 API 폭주 차단.
+            if (CloudSaveManager.Instance != null) CloudSaveManager.Instance.SaveToCloud();
             ActivateNextQuest();
         }
 

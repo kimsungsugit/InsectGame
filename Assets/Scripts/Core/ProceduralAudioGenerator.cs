@@ -36,6 +36,13 @@ namespace InsectGame.Core
                 case "victory": clip = GenerateVictoryBGM(); break;
                 case "defeat":  clip = GenerateDefeatBGM();  break;
                 case "menu":    clip = GenerateMenuBGM();    break;
+                case "explore_meadow":   clip = GenerateRegionBGM("Meadow", 110, new[] { C4, D4, E4, G4, A4, C5 }, new[] { C3, F4 * 0.5f, G3, C3 }, 42); break;
+                case "explore_forest":   clip = GenerateRegionBGM("Forest", 95,  new[] { D4, E4, G4, A4, B4, D5 }, new[] { D2, A2, G3, D2 }, 88); break;
+                case "explore_pond":     clip = GenerateRegionBGM("Pond", 100, new[] { F4, G4, A4, C5, D5, F5 }, new[] { F4 * 0.5f, C3, G3, F4 * 0.5f }, 134); break;
+                case "explore_swamp":    clip = GenerateRegionBGM("Swamp", 75,  new[] { E4, G4, A4, B4, D5, E5 }, new[] { E3, A2, B3, E3 }, 56); break;
+                case "explore_mountain": clip = GenerateRegionBGM("Mountain", 105, new[] { G4, A4, C5, D5, E5, G5 }, new[] { G3, D4, A4, G3 }, 167); break;
+                case "explore_garden":   clip = GenerateRegionBGM("Garden", 120, new[] { C5, D5, E5, G5, A5, C6 }, new[] { F4 * 0.5f, A2, G3, C3 }, 73); break;
+                case "explore_ruins":    clip = GenerateRegionBGM("Ruins", 80,  new[] { D4, F4, G4, A4, C5, D5 }, new[] { D2, A2, F4 * 0.5f, D2 }, 199); break;
                 default:
                     Debug.LogWarning($"[ProceduralAudio] Unknown BGM type: {type}");
                     return null;
@@ -77,6 +84,21 @@ namespace InsectGame.Core
                 case "item_use":        clip = GenerateItemUseSFX(); break;
                 case "equip":           clip = GenerateEquipSFX(); break;
                 case "set_complete":    clip = GenerateSetCompleteSFX(); break;
+                case "footstep":        clip = GenerateFootstepSFX(); break;
+                case "level_up_gain":   clip = GenerateLevelUpGainSFX(); break;
+                case "menu_hover":      clip = GenerateMenuHoverSFX(); break;
+                case "purchase":        clip = GeneratePurchaseSFX(); break;
+                case "error":           clip = GenerateErrorSFX(); break;
+                case "skill_bug":       clip = GenerateElementSkillSFX(0); break;
+                case "skill_poison":    clip = GenerateElementSkillSFX(1); break;
+                case "skill_water":     clip = GenerateElementSkillSFX(2); break;
+                case "skill_leaf":      clip = GenerateElementSkillSFX(3); break;
+                case "skill_wind":      clip = GenerateElementSkillSFX(4); break;
+                case "skill_electric":  clip = GenerateElementSkillSFX(5); break;
+                case "skill_earth":     clip = GenerateElementSkillSFX(6); break;
+                case "skill_light":     clip = GenerateElementSkillSFX(7); break;
+                case "skill_dark":      clip = GenerateElementSkillSFX(8); break;
+                case "skill_metal":     clip = GenerateElementSkillSFX(9); break;
                 default:
                     Debug.LogWarning($"[ProceduralAudio] Unknown SFX type: {type}");
                     return null;
@@ -100,6 +122,17 @@ namespace InsectGame.Core
                 case "forest": clip = GenerateForestAmbient(); break;
                 case "pond":   clip = GeneratePondAmbient();   break;
                 case "night":  clip = GenerateNightAmbient();  break;
+                case "cave":         clip = GenerateCaveAmbient(); break;
+                case "underground":  clip = GenerateUndergroundAmbient(); break;
+                case "deep_forest":  clip = GenerateDeepForestAmbient(); break;
+                case "underwater":   clip = GenerateUnderwaterAmbient(); break;
+                case "fog":          clip = GenerateFogAmbient(); break;
+                case "reeds":        clip = GenerateReedsAmbient(); break;
+                case "peak":         clip = GeneratePeakAmbient(); break;
+                case "flower_maze":  clip = GenerateFlowerMazeAmbient(); break;
+                case "greenhouse":   clip = GenerateGreenhouseAmbient(); break;
+                case "temple":       clip = GenerateTempleAmbient(); break;
+                case "day":          clip = GenerateDayAmbient(); break;
                 default:
                     Debug.LogWarning($"[ProceduralAudio] Unknown Ambient type: {type}");
                     return null;
@@ -133,6 +166,89 @@ namespace InsectGame.Core
         private static float Noise(System.Random rng)
         {
             return (float)(rng.NextDouble() * 2.0 - 1.0);
+        }
+
+        /// <summary>배음 합산 (1f, 0.5f, 0.33f, 0.25f 비율로 부분배음 추가) — 풍부한 음색.</summary>
+        private static float Harmonic(float freq, int sample, float[] partials = null)
+        {
+            float[] amps = partials ?? new[] { 1f, 0.5f, 0.33f, 0.25f };
+            float sum = 0f;
+            float total = 0f;
+            for (int p = 0; p < amps.Length; p++)
+            {
+                sum += SinWave(freq * (p + 1), sample) * amps[p];
+                total += amps[p];
+            }
+            return total > 0f ? sum / total : 0f;
+        }
+
+        /// <summary>간이 reverb: comb filter 4탭 합산 in-place.</summary>
+        private static void ApplySimpleReverb(float[] data, float decay = 0.4f, int delayMs = 80)
+        {
+            int delaySamples = SampleRate * delayMs / 1000;
+            int[] delays = { delaySamples, delaySamples * 2, (int)(delaySamples * 1.5f), (int)(delaySamples * 2.7f) };
+            float[] gains = { decay, decay * 0.7f, decay * 0.5f, decay * 0.35f };
+
+            float[] buffer = new float[data.Length];
+            System.Array.Copy(data, buffer, data.Length);
+
+            for (int i = 0; i < data.Length; i++)
+            {
+                float wet = 0f;
+                for (int t = 0; t < delays.Length; t++)
+                {
+                    int srcIdx = i - delays[t];
+                    if (srcIdx >= 0) wet += buffer[srcIdx] * gains[t];
+                }
+                data[i] = Mathf.Clamp(buffer[i] + wet * 0.5f, -1f, 1f);
+            }
+        }
+
+        /// <summary>간이 echo: 단일 탭 + 피드백.</summary>
+        private static void ApplyEcho(float[] data, int delayMs = 200, float feedback = 0.4f, float wetMix = 0.3f)
+        {
+            int delaySamples = SampleRate * delayMs / 1000;
+            float[] buffer = new float[data.Length];
+            System.Array.Copy(data, buffer, data.Length);
+
+            for (int i = 0; i < data.Length; i++)
+            {
+                float echo = 0f;
+                int srcIdx = i - delaySamples;
+                if (srcIdx >= 0) echo = buffer[srcIdx] * feedback;
+                int srcIdx2 = i - delaySamples * 2;
+                if (srcIdx2 >= 0) echo += buffer[srcIdx2] * feedback * 0.5f;
+                data[i] = Mathf.Clamp(buffer[i] + echo * wetMix, -1f, 1f);
+            }
+        }
+
+        /// <summary>모티프 기반 멜로디 시퀀스 생성. motif는 음계 인덱스 배열, bars만큼 반복하며 변조.</summary>
+        private static int[] GenerateMotifMelody(int[] motif, int scaleSize, int bars, int notesPerBar, int seed)
+        {
+            System.Random rng = new System.Random(seed);
+            int[] sequence = new int[bars * notesPerBar];
+
+            for (int b = 0; b < bars; b++)
+            {
+                int variation = rng.Next(4); // 0=원본, 1=transpose, 2=invert, 3=retrograde
+                int transpose = rng.Next(-2, 3);
+
+                for (int n = 0; n < notesPerBar; n++)
+                {
+                    int motifIdx = n % motif.Length;
+                    int note;
+                    switch (variation)
+                    {
+                        case 1: note = motif[motifIdx] + transpose; break;
+                        case 2: note = (scaleSize - 1) - motif[motifIdx]; break; // invert
+                        case 3: note = motif[(motif.Length - 1) - motifIdx]; break; // retrograde
+                        default: note = motif[motifIdx]; break;
+                    }
+                    sequence[b * notesPerBar + n] = ((note % scaleSize) + scaleSize) % scaleSize;
+                }
+            }
+
+            return sequence;
         }
 
         // ────────────────────────────────────────────
@@ -1256,6 +1372,586 @@ namespace InsectGame.Core
             }
 
             return CreateClip("Ambient_Night", data, true);
+        }
+
+        // ────────────────────────────────────────────
+        //  신규 BGM (리전별)
+        // ────────────────────────────────────────────
+
+        /// <summary>리전별 탐험 BGM 공통 생성기 — 음계/베이스/BPM/시드만 다름.</summary>
+        private static AudioClip GenerateRegionBGM(string label, float bpm, float[] melodyScale, float[] bassNotes, int seed)
+        {
+            const float durationSec = 16f;
+            int totalSamples = SecondsToSamples(durationSec);
+            float[] data = new float[totalSamples];
+            System.Random rng = new System.Random(seed);
+
+            float secPerBeat = 60f / bpm;
+            int samplesPerBeat = SecondsToSamples(secPerBeat);
+            int samplesPerEighth = samplesPerBeat / 2;
+
+            int totalEighths = (int)(durationSec / (secPerBeat * 0.5f));
+            // 모티프 기반 멜로디: 4음 모티프 + 변조
+            int[] motif = { 0, 2, 4, 3 };
+            int notesPerBar = 8;
+            int bars = totalEighths / notesPerBar;
+            int[] melodySequence = GenerateMotifMelody(motif, melodyScale.Length, bars, notesPerBar, seed);
+
+            float[] arpNotes = { melodyScale[0], melodyScale[2], melodyScale[4], melodyScale[5] };
+
+            for (int i = 0; i < totalSamples; i++)
+            {
+                float t = (float)i / SampleRate;
+                float beatPos = t / secPerBeat;
+
+                int bassIndex = ((int)(beatPos / 4f)) % bassNotes.Length;
+                float bass = SinWave(bassNotes[bassIndex], i) * 0.3f;
+
+                int eighthIndex = ((int)(beatPos * 2f)) % melodySequence.Length;
+                float melFreq = melodyScale[melodySequence[eighthIndex]];
+                int posInEighth = i % samplesPerEighth;
+                float melEnv = Envelope(posInEighth, samplesPerEighth / 10, samplesPerEighth / 5,
+                    0.6f, samplesPerEighth / 4, samplesPerEighth);
+                // 배음 합산으로 더 풍부한 음색
+                float melody = Harmonic(melFreq, i) * 0.22f * melEnv;
+
+                int arpIndex = ((int)(beatPos * 4f)) % arpNotes.Length;
+                int posInSixteenth = i % (samplesPerEighth / 2);
+                int sixteenthLen = samplesPerEighth / 2;
+                float arpEnv = Envelope(posInSixteenth, sixteenthLen / 8, sixteenthLen / 6,
+                    0.4f, sixteenthLen / 3, sixteenthLen);
+                float arp = TriWave(arpNotes[arpIndex], i) * 0.13f * arpEnv;
+
+                float pad = Noise(rng) * 0.015f;
+
+                data[i] = bass + melody + arp + pad;
+            }
+
+            return CreateClip("BGM_" + label, data, true);
+        }
+
+        // ────────────────────────────────────────────
+        //  신규 SFX
+        // ────────────────────────────────────────────
+
+        /// <summary>발소리: 짧은 노이즈 버스트 (0.08초).</summary>
+        private static AudioClip GenerateFootstepSFX()
+        {
+            int totalSamples = SecondsToSamples(0.08f);
+            float[] data = new float[totalSamples];
+            System.Random rng = new System.Random(30);
+
+            for (int i = 0; i < totalSamples; i++)
+            {
+                float env = Decay(i, totalSamples, 25f);
+                float thump = SinWave(120f, i) * 0.3f * env;
+                float scuff = Noise(rng) * 0.15f * env;
+                data[i] = (thump + scuff) * 0.5f;
+            }
+
+            return CreateClip("SFX_Footstep", data, false);
+        }
+
+        /// <summary>레벨업 획득 SFX: 부드러운 상승 (0.25초).</summary>
+        private static AudioClip GenerateLevelUpGainSFX()
+        {
+            int totalSamples = SecondsToSamples(0.25f);
+            float[] data = new float[totalSamples];
+
+            for (int i = 0; i < totalSamples; i++)
+            {
+                float t = (float)i / totalSamples;
+                float freq = Mathf.Lerp(440f, 880f, t);
+                float env = Envelope(i, totalSamples / 10, totalSamples / 5,
+                    0.7f, totalSamples / 3, totalSamples);
+                float sparkle = SinWave(freq * 2f, i) * 0.1f * t;
+                data[i] = (SinWave(freq, i) * 0.4f + sparkle) * env;
+            }
+
+            return CreateClip("SFX_LevelUpGain", data, false);
+        }
+
+        /// <summary>메뉴 호버 SFX: 짧은 사인 (0.04초).</summary>
+        private static AudioClip GenerateMenuHoverSFX()
+        {
+            int totalSamples = SecondsToSamples(0.04f);
+            float[] data = new float[totalSamples];
+
+            for (int i = 0; i < totalSamples; i++)
+            {
+                float env = Decay(i, totalSamples, 35f);
+                data[i] = SinWave(1800f, i) * env * 0.3f;
+            }
+
+            return CreateClip("SFX_MenuHover", data, false);
+        }
+
+        /// <summary>구매 SFX: 코인 짤랑 (0.3초).</summary>
+        private static AudioClip GeneratePurchaseSFX()
+        {
+            int totalSamples = SecondsToSamples(0.3f);
+            float[] data = new float[totalSamples];
+            System.Random rng = new System.Random(31);
+
+            float[] notes = { C5, E5, G5 };
+            float noteLen = 0.08f;
+            int noteSamples = SecondsToSamples(noteLen);
+
+            for (int i = 0; i < totalSamples; i++)
+            {
+                float t = (float)i / SampleRate;
+                float sample = 0f;
+
+                for (int n = 0; n < notes.Length; n++)
+                {
+                    float noteStart = n * noteLen * 0.6f;
+                    if (t >= noteStart && t < noteStart + noteLen)
+                    {
+                        int posInNote = SecondsToSamples(t - noteStart);
+                        float env = Decay(posInNote, noteSamples, 12f);
+                        sample += SinWave(notes[n], i) * 0.35f * env;
+                    }
+                }
+
+                // 짤랑 노이즈
+                if (t < 0.15f)
+                {
+                    float chimeEnv = Decay(i, SecondsToSamples(0.15f), 18f);
+                    sample += Noise(rng) * 0.05f * chimeEnv;
+                }
+
+                data[i] = sample;
+            }
+
+            return CreateClip("SFX_Purchase", data, false);
+        }
+
+        /// <summary>오류 SFX: 하강 2음 (0.25초).</summary>
+        private static AudioClip GenerateErrorSFX()
+        {
+            int totalSamples = SecondsToSamples(0.25f);
+            float[] data = new float[totalSamples];
+
+            float[] notes = { D4, A2 };
+            float noteLen = 0.12f;
+
+            for (int i = 0; i < totalSamples; i++)
+            {
+                float t = (float)i / SampleRate;
+                float sample = 0f;
+
+                for (int n = 0; n < notes.Length; n++)
+                {
+                    float noteStart = n * noteLen;
+                    if (t >= noteStart)
+                    {
+                        int posInNote = SecondsToSamples(t - noteStart);
+                        int remaining = totalSamples - SecondsToSamples(noteStart);
+                        float env = Decay(posInNote, remaining, 8f);
+                        sample += SquareWave(notes[n], i) * 0.25f * env;
+                    }
+                }
+
+                data[i] = sample;
+            }
+
+            return CreateClip("SFX_Error", data, false);
+        }
+
+        /// <summary>속성별 스킬 효과음 (0.3초). element index: 0=Bug, 1=Poison, 2=Water, ...</summary>
+        private static AudioClip GenerateElementSkillSFX(int elementIndex)
+        {
+            int totalSamples = SecondsToSamples(0.3f);
+            float[] data = new float[totalSamples];
+            System.Random rng = new System.Random(40 + elementIndex);
+
+            // 속성별 파라미터: (베이스 주파수, 파형 종류 0=Sin/1=Tri/2=Sqr, 노이즈 비율, 변조 깊이)
+            float baseFreq = 600f;
+            int waveType = 0;
+            float noiseAmt = 0.1f;
+            float modDepth = 200f;
+            switch (elementIndex)
+            {
+                case 0: baseFreq = 800f; waveType = 0; noiseAmt = 0.2f; modDepth = 100f; break; // Bug: 가벼운 윙
+                case 1: baseFreq = 350f; waveType = 1; noiseAmt = 0.3f; modDepth = 150f; break; // Poison: 부글부글
+                case 2: baseFreq = 500f; waveType = 0; noiseAmt = 0.4f; modDepth = 300f; break; // Water: 물 튀김
+                case 3: baseFreq = 700f; waveType = 1; noiseAmt = 0.15f; modDepth = 200f; break; // Leaf: 나뭇잎 스침
+                case 4: baseFreq = 1000f; waveType = 0; noiseAmt = 0.5f; modDepth = 400f; break; // Wind: 휘이잉
+                case 5: baseFreq = 1500f; waveType = 2; noiseAmt = 0.3f; modDepth = 600f; break; // Electric: 지지직
+                case 6: baseFreq = 200f; waveType = 2; noiseAmt = 0.4f; modDepth = 80f; break;  // Earth: 쿵
+                case 7: baseFreq = 1200f; waveType = 0; noiseAmt = 0.05f; modDepth = 500f; break; // Light: 반짝
+                case 8: baseFreq = 280f; waveType = 1; noiseAmt = 0.25f; modDepth = 120f; break; // Dark: 어두운 윙
+                case 9: baseFreq = 900f; waveType = 2; noiseAmt = 0.2f; modDepth = 50f; break;   // Metal: 챙
+            }
+
+            for (int i = 0; i < totalSamples; i++)
+            {
+                float env = Decay(i, totalSamples, 6f);
+                float modFreq = baseFreq + modDepth * SinWave(8f, i);
+
+                float wave = waveType == 0 ? SinWave(modFreq, i)
+                           : waveType == 1 ? TriWave(modFreq, i)
+                           : SquareWave(modFreq, i);
+
+                float noise = Noise(rng) * noiseAmt;
+                data[i] = (wave * 0.4f + noise) * env * 0.6f;
+            }
+
+            return CreateClip($"SFX_Skill_{elementIndex}", data, false);
+        }
+
+        // ────────────────────────────────────────────
+        //  신규 환경음 (서브에리어)
+        // ────────────────────────────────────────────
+
+        /// <summary>동굴 환경음: 물방울 + 낮은 윙 + 메아리 노이즈 (20초).</summary>
+        private static AudioClip GenerateCaveAmbient()
+        {
+            const float durationSec = 20f;
+            int totalSamples = SecondsToSamples(durationSec);
+            float[] data = new float[totalSamples];
+            System.Random rng = new System.Random(300);
+
+            int dripCount = 8;
+            float[] dripTimes = new float[dripCount];
+            for (int d = 0; d < dripCount; d++)
+                dripTimes[d] = (float)(rng.NextDouble() * durationSec);
+
+            System.Random noiseRng = new System.Random(301);
+
+            for (int i = 0; i < totalSamples; i++)
+            {
+                float t = (float)i / SampleRate;
+
+                // 낮은 동굴 윙 (저주파 드론)
+                float drone = SinWave(60f, i) * 0.06f + SinWave(90f, i) * 0.04f;
+
+                // 메아리 노이즈
+                float echo = Noise(noiseRng) * 0.015f;
+
+                // 물방울
+                float drip = 0f;
+                for (int d = 0; d < dripCount; d++)
+                {
+                    float dripStart = dripTimes[d];
+                    float dripDur = 0.2f;
+                    if (t >= dripStart && t < dripStart + dripDur)
+                    {
+                        float localT = t - dripStart;
+                        int localSample = SecondsToSamples(localT);
+                        int dripSamples = SecondsToSamples(dripDur);
+                        float env = Decay(localSample, dripSamples, 18f);
+                        drip += SinWave(900f - localT * 600f, i) * env * 0.1f;
+                    }
+                }
+
+                data[i] = drone + echo + drip;
+            }
+
+            ApplySimpleReverb(data, 0.5f, 120);
+            return CreateClip("Ambient_Cave", data, true);
+        }
+
+        /// <summary>지하 환경음: 더 깊은 동굴, 미세한 바람 (20초).</summary>
+        private static AudioClip GenerateUndergroundAmbient()
+        {
+            const float durationSec = 20f;
+            int totalSamples = SecondsToSamples(durationSec);
+            float[] data = new float[totalSamples];
+            System.Random noiseRng = new System.Random(311);
+
+            for (int i = 0; i < totalSamples; i++)
+            {
+                float drone = SinWave(40f, i) * 0.07f + SinWave(55f, i) * 0.04f;
+                float wind = Noise(noiseRng) * 0.02f;
+                if (i > 0) wind = data[i - 1] * 0.85f + wind * 0.15f;
+                data[i] = drone + wind;
+            }
+
+            ApplySimpleReverb(data, 0.6f, 180);
+            return CreateClip("Ambient_Underground", data, true);
+        }
+
+        /// <summary>깊은 숲: 더 어두운 노이즈 + 멀리서 새 (20초).</summary>
+        private static AudioClip GenerateDeepForestAmbient()
+        {
+            const float durationSec = 20f;
+            int totalSamples = SecondsToSamples(durationSec);
+            float[] data = new float[totalSamples];
+            System.Random rng = new System.Random(320);
+            System.Random noiseRng = new System.Random(321);
+
+            int birdCount = 5;
+            float[] birdTimes = new float[birdCount];
+            for (int b = 0; b < birdCount; b++)
+                birdTimes[b] = (float)(rng.NextDouble() * durationSec);
+
+            for (int i = 0; i < totalSamples; i++)
+            {
+                float t = (float)i / SampleRate;
+                float bg = Noise(noiseRng) * 0.04f;
+
+                float bird = 0f;
+                for (int b = 0; b < birdCount; b++)
+                {
+                    if (t >= birdTimes[b] && t < birdTimes[b] + 0.2f)
+                    {
+                        float localT = t - birdTimes[b];
+                        int localSample = SecondsToSamples(localT);
+                        float env = Decay(localSample, SecondsToSamples(0.2f), 12f);
+                        bird += SinWave(1500f + 300f * SinWave(20f, i), i) * env * 0.04f;
+                    }
+                }
+
+                data[i] = bg + bird;
+            }
+
+            return CreateClip("Ambient_DeepForest", data, true);
+        }
+
+        /// <summary>수중 환경음: 거품 + 저음 드론 (20초).</summary>
+        private static AudioClip GenerateUnderwaterAmbient()
+        {
+            const float durationSec = 20f;
+            int totalSamples = SecondsToSamples(durationSec);
+            float[] data = new float[totalSamples];
+            System.Random rng = new System.Random(330);
+            System.Random noiseRng = new System.Random(331);
+
+            int bubbleCount = 15;
+            float[] bubbleTimes = new float[bubbleCount];
+            for (int b = 0; b < bubbleCount; b++)
+                bubbleTimes[b] = (float)(rng.NextDouble() * durationSec);
+
+            for (int i = 0; i < totalSamples; i++)
+            {
+                float t = (float)i / SampleRate;
+                float drone = SinWave(80f, i) * 0.06f;
+                float water = Noise(noiseRng) * 0.025f;
+                if (i > 0) water = data[i - 1] * 0.9f + water * 0.1f;
+
+                float bubble = 0f;
+                for (int b = 0; b < bubbleCount; b++)
+                {
+                    if (t >= bubbleTimes[b] && t < bubbleTimes[b] + 0.15f)
+                    {
+                        float localT = t - bubbleTimes[b];
+                        int localSample = SecondsToSamples(localT);
+                        float env = Decay(localSample, SecondsToSamples(0.15f), 20f);
+                        bubble += SinWave(400f + localT * 400f, i) * env * 0.05f;
+                    }
+                }
+
+                data[i] = drone + water + bubble;
+            }
+
+            return CreateClip("Ambient_Underwater", data, true);
+        }
+
+        /// <summary>안개 늪: 미스터리한 윙윙 + 물 (20초).</summary>
+        private static AudioClip GenerateFogAmbient()
+        {
+            const float durationSec = 20f;
+            int totalSamples = SecondsToSamples(durationSec);
+            float[] data = new float[totalSamples];
+            System.Random noiseRng = new System.Random(341);
+
+            for (int i = 0; i < totalSamples; i++)
+            {
+                float t = (float)i / SampleRate;
+                float mistDrone = SinWave(110f + 30f * SinWave(0.2f, i), i) * 0.05f;
+                float wisp = SinWave(220f, i) * 0.03f * (0.5f + 0.5f * SinWave(0.3f, i));
+                float bg = Noise(noiseRng) * 0.025f;
+                data[i] = mistDrone + wisp + bg;
+            }
+
+            return CreateClip("Ambient_Fog", data, true);
+        }
+
+        /// <summary>갈대밭: 바람에 흔들리는 갈대 (20초).</summary>
+        private static AudioClip GenerateReedsAmbient()
+        {
+            const float durationSec = 20f;
+            int totalSamples = SecondsToSamples(durationSec);
+            float[] data = new float[totalSamples];
+            System.Random noiseRng = new System.Random(351);
+
+            for (int i = 0; i < totalSamples; i++)
+            {
+                float windEnv = 0.3f + 0.7f * (0.5f + 0.5f * SinWave(0.4f, i));
+                float rustleNoise = Noise(noiseRng) * 0.05f * windEnv;
+                if (i > 0) rustleNoise = data[i - 1] * 0.7f + rustleNoise * 0.3f;
+                data[i] = rustleNoise;
+            }
+
+            return CreateClip("Ambient_Reeds", data, true);
+        }
+
+        /// <summary>산 정상: 바람 휘이잉 (20초).</summary>
+        private static AudioClip GeneratePeakAmbient()
+        {
+            const float durationSec = 20f;
+            int totalSamples = SecondsToSamples(durationSec);
+            float[] data = new float[totalSamples];
+            System.Random noiseRng = new System.Random(361);
+
+            for (int i = 0; i < totalSamples; i++)
+            {
+                float windPower = 0.5f + 0.5f * SinWave(0.15f, i);
+                float wind = Noise(noiseRng) * 0.06f * windPower;
+                if (i > 0) wind = data[i - 1] * 0.75f + wind * 0.25f;
+                float whistle = SinWave(280f + 80f * SinWave(0.5f, i), i) * 0.02f * windPower;
+                data[i] = wind + whistle;
+            }
+
+            return CreateClip("Ambient_Peak", data, true);
+        }
+
+        /// <summary>꽃밭: 평화로운 새소리 + 벌 윙윙 (20초).</summary>
+        private static AudioClip GenerateFlowerMazeAmbient()
+        {
+            const float durationSec = 20f;
+            int totalSamples = SecondsToSamples(durationSec);
+            float[] data = new float[totalSamples];
+            System.Random rng = new System.Random(370);
+            System.Random noiseRng = new System.Random(371);
+
+            int birdCount = 14;
+            float[] birdTimes = new float[birdCount];
+            float[] birdFreqs = new float[birdCount];
+            for (int b = 0; b < birdCount; b++)
+            {
+                birdTimes[b] = (float)(rng.NextDouble() * durationSec);
+                birdFreqs[b] = 2200f + (float)(rng.NextDouble() * 1500f);
+            }
+
+            for (int i = 0; i < totalSamples; i++)
+            {
+                float t = (float)i / SampleRate;
+                float bg = Noise(noiseRng) * 0.02f;
+                float beeBuzz = SinWave(220f, i) * 0.015f * (0.5f + 0.5f * SinWave(0.7f, i));
+
+                float bird = 0f;
+                for (int b = 0; b < birdCount; b++)
+                {
+                    if (t >= birdTimes[b] && t < birdTimes[b] + 0.12f)
+                    {
+                        float localT = t - birdTimes[b];
+                        int localSample = SecondsToSamples(localT);
+                        float env = Decay(localSample, SecondsToSamples(0.12f), 18f);
+                        bird += SinWave(birdFreqs[b] * (1f + 0.05f * SinWave(40f, i)), i) * env * 0.06f;
+                    }
+                }
+
+                data[i] = bg + bird + beeBuzz;
+            }
+
+            return CreateClip("Ambient_FlowerMaze", data, true);
+        }
+
+        /// <summary>온실: 잔잔한 물 + 환풍 (20초).</summary>
+        private static AudioClip GenerateGreenhouseAmbient()
+        {
+            const float durationSec = 20f;
+            int totalSamples = SecondsToSamples(durationSec);
+            float[] data = new float[totalSamples];
+            System.Random noiseRng = new System.Random(381);
+
+            for (int i = 0; i < totalSamples; i++)
+            {
+                float fanHum = SinWave(120f, i) * 0.04f + SinWave(180f, i) * 0.02f;
+                float bg = Noise(noiseRng) * 0.02f;
+                if (i > 0) bg = data[i - 1] * 0.8f + bg * 0.2f;
+                data[i] = fanHum + bg;
+            }
+
+            return CreateClip("Ambient_Greenhouse", data, true);
+        }
+
+        /// <summary>사원: 신비로운 메아리 + 종소리 (20초).</summary>
+        private static AudioClip GenerateTempleAmbient()
+        {
+            const float durationSec = 20f;
+            int totalSamples = SecondsToSamples(durationSec);
+            float[] data = new float[totalSamples];
+            System.Random rng = new System.Random(390);
+
+            int bellCount = 4;
+            float[] bellTimes = new float[bellCount];
+            for (int b = 0; b < bellCount; b++)
+                bellTimes[b] = (float)(rng.NextDouble() * durationSec);
+
+            for (int i = 0; i < totalSamples; i++)
+            {
+                float t = (float)i / SampleRate;
+
+                // 신비한 패드
+                float pad = (SinWave(165f, i) + SinWave(220f, i) + SinWave(330f, i)) * 0.025f;
+
+                // 메아리 종
+                float bell = 0f;
+                for (int b = 0; b < bellCount; b++)
+                {
+                    if (t >= bellTimes[b])
+                    {
+                        float localT = t - bellTimes[b];
+                        if (localT < 3f)
+                        {
+                            int localSample = SecondsToSamples(localT);
+                            float env = Decay(localSample, SecondsToSamples(3f), 1.5f);
+                            bell += (SinWave(523f, i) + SinWave(659f, i) * 0.6f) * 0.08f * env;
+                        }
+                    }
+                }
+
+                data[i] = pad + bell;
+            }
+
+            ApplySimpleReverb(data, 0.55f, 150);
+            return CreateClip("Ambient_Temple", data, true);
+        }
+
+        /// <summary>낮 환경음: 밝은 새소리 + 부드러운 바람 (20초).</summary>
+        private static AudioClip GenerateDayAmbient()
+        {
+            const float durationSec = 20f;
+            int totalSamples = SecondsToSamples(durationSec);
+            float[] data = new float[totalSamples];
+            System.Random rng = new System.Random(400);
+            System.Random noiseRng = new System.Random(401);
+
+            int birdCount = 10;
+            float[] birdTimes = new float[birdCount];
+            float[] birdFreqs = new float[birdCount];
+            for (int b = 0; b < birdCount; b++)
+            {
+                birdTimes[b] = (float)(rng.NextDouble() * durationSec);
+                birdFreqs[b] = 2500f + (float)(rng.NextDouble() * 1500f);
+            }
+
+            for (int i = 0; i < totalSamples; i++)
+            {
+                float t = (float)i / SampleRate;
+                float breeze = Noise(noiseRng) * 0.025f;
+                if (i > 0) breeze = data[i - 1] * 0.6f + breeze * 0.4f;
+
+                float bird = 0f;
+                for (int b = 0; b < birdCount; b++)
+                {
+                    if (t >= birdTimes[b] && t < birdTimes[b] + 0.18f)
+                    {
+                        float localT = t - birdTimes[b];
+                        int localSample = SecondsToSamples(localT);
+                        float env = Decay(localSample, SecondsToSamples(0.18f), 14f);
+                        float vib = 1f + 0.08f * SinWave(35f, i);
+                        bird += SinWave(birdFreqs[b] * vib, i) * env * 0.07f;
+                    }
+                }
+
+                data[i] = breeze + bird;
+            }
+
+            return CreateClip("Ambient_Day", data, true);
         }
     }
 }

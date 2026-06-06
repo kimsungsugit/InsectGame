@@ -3,6 +3,7 @@ using InsectGame.Core;
 using InsectGame.Data;
 using InsectGame.Spawning;
 using UnityEngine;
+using System.Collections;
 using System.Collections.Generic;
 
 namespace InsectGame.Battle
@@ -14,6 +15,7 @@ namespace InsectGame.Battle
         [SerializeField] private PlayerProgressController playerProgress;
         [SerializeField] private PlayerItemInventory itemInventory;
         [SerializeField] private Dex.DexController dexController;
+        [SerializeField] private BattleArenaController arena;
 
         public event Action<bool> BattleEnded;
         public event Action<InsectBattleStats, InsectBattleStats> BattleUpdated;
@@ -31,6 +33,8 @@ namespace InsectGame.Battle
         private string lastItemId;
         private int lastItemCount;
         private bool lastPlayerWon;
+
+        private BattleArenaController Arena => arena;
 
         public void StartBattle(InsectData playerInsect, int playerLevel, InsectEntity enemy, Action<InsectBattleStats, InsectBattleStats> onStarted = null, InsectSkill[] equippedSkills = null, Core.PlayerInsectData playerPid = null)
         {
@@ -96,6 +100,7 @@ namespace InsectGame.Battle
 
             int damage = Mathf.Max(1, Mathf.RoundToInt(playerStats.Attack * 0.7f));
             enemyStats.ApplyDamage(damage, playerStats.Attack, enemyStats.Defense);
+            TryPlayHitFlash(false);
 
             if (enemyStats.CurrentHp > 0)
             {
@@ -121,6 +126,9 @@ namespace InsectGame.Battle
 
             if (escaped)
             {
+                // 도주 성공 시에도 enemyEntity Despawn — 사용자 의도("전투 끝나면 사라져야").
+                // 옛은 도주 후 곤충이 필드에 잔존했고 같은 적이 그대로 다시 만남 가능.
+                if (enemyEntity != null) enemyEntity.Despawn();
                 BattleEnded?.Invoke(false);
                 return true;
             }
@@ -212,25 +220,38 @@ namespace InsectGame.Battle
 
         private void ApplySkill(InsectBattleStats attacker, InsectBattleStats defender, InsectSkill skill, bool isPlayer)
         {
+            // 방어자(맞는 쪽)가 플래시되어야 함. isPlayer는 공격자 기준이므로 반전.
+            bool defenderIsPlayer = !isPlayer;
+
             if (skill == null)
             {
                 int damage = GetDamage(attacker, 10);
                 defender.ApplyDamage(damage, attacker.Attack, defender.Defense);
+                TryPlayHitFlash(defenderIsPlayer);
                 return;
+            }
+
+            // 스킬 이름 효과 텍스트 (속성 색상)
+            if (!string.IsNullOrEmpty(skill.displayName))
+            {
+                TryPlayEffectText($"{skill.displayName}!", BattleArenaController.GetUIElementColor(skill.element));
             }
 
             switch (skill.effectType)
             {
                 case SkillEffectType.BuffAttack:
                     AddEffect(isPlayer, skill.effectValue, skill.effectDurationTurns);
+                    TryPlayEffectText("공격력 상승!", new Color(1f, 0.8f, 0.3f));
                     break;
                 case SkillEffectType.DebuffAttack:
                     AddEffect(!isPlayer, -skill.effectValue, skill.effectDurationTurns);
+                    TryPlayEffectText("공격력 하락!", new Color(0.6f, 0.4f, 0.9f));
                     break;
                 default:
                     int baseDamage = skill.power;
                     int damage = GetDamage(attacker, baseDamage);
                     defender.ApplyDamage(damage, attacker.Attack, defender.Defense);
+                    TryPlayHitFlash(defenderIsPlayer);
                     break;
             }
         }
@@ -362,7 +383,10 @@ namespace InsectGame.Battle
                 }
 
                 bool entityShiny = enemyEntity != null && enemyEntity.IsShiny;
-                playerCollection?.AddCapturedInsect(enemyEntity.Data.insectId, enemyEntity.Level, entityShiny);
+                if (playerCollection != null)
+                    playerCollection.AddCapturedInsect(enemyEntity.Data.insectId, enemyEntity.Level, entityShiny);
+                else
+                    Debug.LogError("[Battle] playerCollection null — 캡처 보상 손실: " + enemyEntity.Data.insectId);
 
                 if (dexController != null)
                 {
@@ -375,6 +399,7 @@ namespace InsectGame.Battle
                 lastItemId = itemId;
                 lastItemCount = itemCount;
 
+                TryPlayFaint(false);
                 enemyEntity.Despawn();
             }
 
@@ -385,11 +410,55 @@ namespace InsectGame.Battle
             }
             else if (playerStats.CurrentHp <= 0)
             {
-                if (PlayerFainted != null)
-                    PlayerFainted.Invoke();
-                else
-                    BattleEnded?.Invoke(false);
+                TryPlayFaint(true);
+                TryPlayEffectText("쓰러졌다!", new Color(0.9f, 0.2f, 0.2f));
+                // 패배 시에도 enemyEntity Despawn — 옛은 패배 시 곤충이 필드에 잔존했고, 다음
+                // 진입 시 같은 곤충 중첩 발동 가능 (사용자 보고: "전투 끝나면 사라져야").
+                if (enemyEntity != null) enemyEntity.Despawn();
+                // 핸들러 예외 격리 — 한 구독자 예외가 BattleEnded fallback을 차단하지 않게
+                bool fainted = false;
+                try
+                {
+                    if (PlayerFainted != null)
+                    {
+                        PlayerFainted.Invoke();
+                        fainted = true;
+                    }
+                }
+                catch (System.Exception e)
+                {
+                    Debug.LogWarning($"[InsectBattle] PlayerFainted 핸들러 예외: {e.Message}");
+                }
+                if (!fainted) BattleEnded?.Invoke(false);
             }
+        }
+
+        // ── 액션 헬퍼 (BattleArenaController 시각 코루틴 호출 wrapper) ──
+
+        private void TryPlayHitFlash(bool isPlayerSide)
+        {
+            if (Arena == null) return;
+            GameObject model = isPlayerSide ? Arena.PlayerModel : Arena.EnemyModel;
+            if (model != null && model.activeInHierarchy)
+            {
+                StartCoroutine(Arena.PlayHitFlashCoroutine(model));
+            }
+        }
+
+        private void TryPlayFaint(bool isPlayerSide)
+        {
+            if (Arena == null) return;
+            GameObject model = isPlayerSide ? Arena.PlayerModel : Arena.EnemyModel;
+            if (model != null && model.activeInHierarchy)
+            {
+                StartCoroutine(Arena.PlayFaintCoroutine(model));
+            }
+        }
+
+        private void TryPlayEffectText(string text, Color color)
+        {
+            if (Arena == null || string.IsNullOrEmpty(text)) return;
+            Arena.PlayEffectText(text, color);
         }
 
         public void AutoWire(PlayerInsectCollection collection, PlayerCandyInventory candies, PlayerProgressController progress, PlayerItemInventory items)
@@ -420,6 +489,11 @@ namespace InsectGame.Battle
             if (dexController == null) dexController = dex;
         }
 
+        public void AutoWire(BattleArenaController a)
+        {
+            if (arena == null) arena = a;
+        }
+
         private OutfitBonusProvider outfitBonus;
 
         public void AutoWire(OutfitBonusProvider bonus)
@@ -437,6 +511,10 @@ namespace InsectGame.Battle
             playerCooldowns = new int[skillCount];
             effects.Clear();
             RecalculateBonuses();
+
+            // Faint 후 비활성/페이드된 PlayerModel을 새 곤충으로 재생성
+            if (Arena != null) Arena.RebuildPlayerInsect(newInsect, newLevel);
+
             BattleUpdated?.Invoke(playerStats, enemyStats);
         }
 

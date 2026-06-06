@@ -25,7 +25,8 @@ namespace InsectGame.Core
 
         public void AddCandy(int amount)
         {
-            if (amount <= 0)
+            // data null 가드 — Awake 실패/순서 race 시 NRE 차단. Candies 프로퍼티(line 17)와 비대칭 회귀.
+            if (amount <= 0 || data == null)
             {
                 return;
             }
@@ -37,7 +38,7 @@ namespace InsectGame.Core
 
         public bool SpendCandy(int amount)
         {
-            if (amount <= 0 || data.candies < amount)
+            if (amount <= 0 || data == null || data.candies < amount)
             {
                 return false;
             }
@@ -56,14 +57,24 @@ namespace InsectGame.Core
                 return new PlayerCandyData();
             }
 
-            string json = File.ReadAllText(path);
-            return JsonUtility.FromJson<PlayerCandyData>(json) ?? new PlayerCandyData();
+            try
+            {
+                string json = File.ReadAllText(path);
+                return JsonUtility.FromJson<PlayerCandyData>(json) ?? new PlayerCandyData();
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning($"[PlayerCandyInventory] 손상된 세이브 — 기본값으로 시작: {e.Message}");
+                return new PlayerCandyData();
+            }
         }
 
         private void Save(PlayerCandyData save)
         {
+            // PlayerProgressSaveService와 일관성 — null 진입 시 빈 파일 쓰기 차단.
+            if (save == null) return;
             string json = JsonUtility.ToJson(save, true);
-            File.WriteAllText(GetPath(), json);
+            AtomicFileWriter.WriteAllText(GetPath(), json);
         }
 
         private string GetPath()

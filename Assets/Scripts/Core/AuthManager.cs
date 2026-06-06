@@ -25,6 +25,8 @@ namespace InsectGame.Core
         public event Action<bool, string> LoginCompleted;
         public event Action<bool, string> RegisterCompleted;
         public event Action LoggedOut;
+        // 토큰 갱신/인증 실패로 silent 로그아웃되는 경우 사용자에게 알릴 채널 (LoginUI 등 구독).
+        public event Action<string> AuthFailed;
 
         // ── PlayerPrefs 키 ──
         private const string TokenKey = "InsectGame.Auth.RefreshToken";
@@ -39,6 +41,7 @@ namespace InsectGame.Core
             if (Instance == null)
             {
                 Instance = this;
+                if (transform.parent == null) DontDestroyOnLoad(gameObject);
             }
             else if (Instance != this)
             {
@@ -63,7 +66,30 @@ namespace InsectGame.Core
 
         public void RegisterWithEmail(string email, string password, string displayName)
         {
+            string validationError = ValidateCredentials(email, password);
+            if (validationError != null)
+            {
+                // Firebase 호출 전 클라이언트 검증 — 빈 칸/짧은 비밀번호 즉시 차단
+                AuthFailed?.Invoke(validationError);
+                RegisterCompleted?.Invoke(false, validationError);
+                return;
+            }
             StartCoroutine(RegisterCoroutine(email, password, displayName));
+        }
+
+        // 이메일/비밀번호 사전 검증 — 빈 칸/형식 오류/짧은 비밀번호 즉시 차단.
+        // 마스터 계정은 별도 분기에서 처리(LoginWithEmail 라인 115)되므로 검증 우회.
+        private static string ValidateCredentials(string email, string password)
+        {
+            if (string.IsNullOrWhiteSpace(email))
+                return "이메일을 입력해주세요";
+            if (email.IndexOf('@') < 0 || email.IndexOf('.') < 0)
+                return "이메일 형식이 올바르지 않습니다";
+            if (string.IsNullOrEmpty(password))
+                return "비밀번호를 입력해주세요";
+            if (password.Length < 6)
+                return "비밀번호는 6자 이상이어야 합니다";
+            return null;
         }
 
         private IEnumerator RegisterCoroutine(string email, string password, string displayName)
@@ -108,12 +134,20 @@ namespace InsectGame.Core
 
         public void LoginWithEmail(string email, string password)
         {
-            // 마스터 계정 체크 — Firebase 없이 로컬 즉시 로그인
+            // 마스터 계정 체크 — Firebase 없이 로컬 즉시 로그인 (검증 우회)
             if (email == "pride1119" && password == "qksqhf11!!")
             {
                 SetLoggedIn("master_admin_001", "pride1119", "마스터", "master_token", "master_refresh");
                 ApplyMasterPrivileges();
                 LoginCompleted?.Invoke(true, null);
+                return;
+            }
+
+            string validationError = ValidateCredentials(email, password);
+            if (validationError != null)
+            {
+                AuthFailed?.Invoke(validationError);
+                LoginCompleted?.Invoke(false, validationError);
                 return;
             }
 
@@ -285,6 +319,30 @@ namespace InsectGame.Core
 
         // ── 토큰 갱신 ──
 
+        // CloudSave 등이 401 응답 받았을 때 외부에서 즉시 갱신을 트리거하기 위한 진입점.
+        // 자동 갱신(AutoRefreshIfNeeded)과 동시 호출 방지 위해 refreshInProgress 가드 공유.
+        // 결과: onComplete(true)=갱신 성공 후 재시도 가능, onComplete(false)=실패(AuthFailed 발화됨).
+        public IEnumerator TryRefreshTokenForRetry(Action<bool> onComplete)
+        {
+            if (!IsLoggedIn || string.IsNullOrEmpty(RefreshToken))
+            {
+                onComplete?.Invoke(false);
+                yield break;
+            }
+            // 이미 진행 중이면 끝날 때까지 대기 후 결과 판정 (IdToken 갱신 여부)
+            string oldToken = IdToken;
+            if (refreshInProgress)
+            {
+                while (refreshInProgress) yield return null;
+                onComplete?.Invoke(IsLoggedIn && IdToken != oldToken);
+                yield break;
+            }
+            refreshInProgress = true;
+            yield return RefreshIdTokenCoroutine();
+            refreshInProgress = false;
+            onComplete?.Invoke(IsLoggedIn && IdToken != oldToken);
+        }
+
         private IEnumerator RefreshIdTokenCoroutine()
         {
             string json = "{\"grant_type\":\"refresh_token\",\"refresh_token\":\""
@@ -310,12 +368,20 @@ namespace InsectGame.Core
                     Email = PlayerPrefs.GetString(EmailKey, "");
                     DisplayName = PlayerPrefs.GetString(NameKey, "");
                     IsLoggedIn = true;
+                    // SetLoggedIn 경로를 거치지 않는 갱신이라 acquiredAt를 여기서 직접 갱신.
+                    // 빠뜨리면 TryAutoLogin → 3000초 후 매 프레임 자동 갱신 폭주.
+                    idTokenAcquiredAt = Time.realtimeSinceStartup;
                     SaveTokens();
                     LoginCompleted?.Invoke(true, null);
                 }
                 else
                 {
+                    // 토큰 갱신 실패 — silent ClearAuth 대신 사용자에게 알림 후 로그아웃
+                    string reason = req.responseCode == 401 || req.responseCode == 403
+                        ? "세션 만료 — 다시 로그인 해주세요"
+                        : "인증 갱신 실패 — 네트워크 확인 후 다시 로그인 해주세요";
                     ClearAuth();
+                    AuthFailed?.Invoke(reason);
                 }
             }
         }
@@ -345,6 +411,12 @@ namespace InsectGame.Core
 
         // ── 헬퍼 ──
 
+        // Firebase IdToken은 발급 후 1시간 유효. 50분 경과 시 자동 갱신.
+        private float idTokenAcquiredAt;
+        private const float IdTokenLifetimeSeconds = 3600f;
+        private const float IdTokenRefreshAheadSeconds = 600f; // 만료 10분 전 갱신
+        private bool refreshInProgress;
+
         private void SetLoggedIn(string uid, string email, string name,
             string idToken, string refreshToken)
         {
@@ -355,7 +427,29 @@ namespace InsectGame.Core
             IdToken = idToken;
             RefreshToken = refreshToken;
             IsLoggedIn = true;
+            idTokenAcquiredAt = Time.realtimeSinceStartup;
             SaveTokens();
+        }
+
+        private void Update()
+        {
+            // 토큰 자동 갱신: 만료 임박 시 1회 RefreshIdTokenCoroutine 호출
+            if (!IsLoggedIn || refreshInProgress || string.IsNullOrEmpty(RefreshToken)) return;
+            float elapsed = Time.realtimeSinceStartup - idTokenAcquiredAt;
+            if (elapsed >= IdTokenLifetimeSeconds - IdTokenRefreshAheadSeconds)
+            {
+                refreshInProgress = true;
+                StartCoroutine(AutoRefreshThenClear());
+            }
+        }
+
+        private IEnumerator AutoRefreshThenClear()
+        {
+            yield return StartCoroutine(RefreshIdTokenCoroutine());
+            // RefreshIdTokenCoroutine 성공 시 SetLoggedIn 분기를 안 거치고 IdToken만 갱신하므로
+            // idTokenAcquiredAt를 여기서 직접 갱신.
+            idTokenAcquiredAt = Time.realtimeSinceStartup;
+            refreshInProgress = false;
         }
 
         private void ClearMasterDataIfNeeded(string newUid)

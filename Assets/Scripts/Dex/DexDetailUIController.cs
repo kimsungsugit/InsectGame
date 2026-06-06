@@ -1,5 +1,6 @@
 using InsectGame.Core;
 using InsectGame.Data;
+using InsectGame.UI;
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
@@ -28,12 +29,6 @@ namespace InsectGame.Dex
         [SerializeField] private TMP_Text rewardTextTmp;
         [SerializeField] private RarityIconProvider rarityIconProvider;
         [SerializeField] private GameObject panelRoot;
-        [Header("Rarity Colors")]
-        [SerializeField] private Color commonColor = new Color(0.8f, 0.8f, 0.8f, 1f);
-        [SerializeField] private Color uncommonColor = new Color(0.5f, 0.9f, 0.5f, 1f);
-        [SerializeField] private Color rareColor = new Color(0.4f, 0.7f, 1f, 1f);
-        [SerializeField] private Color epicColor = new Color(0.8f, 0.4f, 1f, 1f);
-        [SerializeField] private Color legendaryColor = new Color(1f, 0.75f, 0.2f, 1f);
 
         public void Show(string insectId)
         {
@@ -213,21 +208,7 @@ namespace InsectGame.Dex
 
         private Color GetRarityColor(InsectRarity rarity)
         {
-            switch (rarity)
-            {
-                case InsectRarity.Common:
-                    return commonColor;
-                case InsectRarity.Uncommon:
-                    return uncommonColor;
-                case InsectRarity.Rare:
-                    return rareColor;
-                case InsectRarity.Epic:
-                    return epicColor;
-                case InsectRarity.Legendary:
-                    return legendaryColor;
-                default:
-                    return Color.white;
-            }
+            return UITheme.Instance.GetInsectRarityColor(rarity);
         }
 
         public void AutoWire(InsectDatabase db, DexController dex)

@@ -24,16 +24,17 @@ namespace InsectGame.Spawning
         private float spawnTimer;
         private float cleanupTimer;
         private float relocateTimer;
+        private float subAreaRespawnTimer;
         private readonly List<InsectEntity> activeInsects = new List<InsectEntity>();
         private SimpleObjectPool pool;
         private bool poolInitialized;
         private string debugStatus = "초기화 대기";
         private int totalSpawned;
 
-        private string raidAlertName;
-        private InsectRarity raidAlertRarity;
-        private float raidAlertTimer;
-        private float raidAlertPulse;
+        private RegionManager regionManager;
+        private Data.SubAreaData currentSubArea;
+
+        public event System.Action<InsectEntity> RaidBossSpawned;
 
         private void Start()
         {
@@ -148,7 +149,26 @@ namespace InsectGame.Spawning
                 return;
             }
 
-            if (raidAlertTimer > 0) raidAlertTimer -= Time.deltaTime;
+            // SubArea 진입 중: 메인 월드 스폰/정리는 스킵하되, SubArea 곤충이 캡처/배틀로 줄어들면
+            // 재스폰. 빈 SubArea가 되는 것 방지.
+            if (currentSubArea != null)
+            {
+                CleanupDeadEntities();
+                if (currentSubArea.exclusiveInsectIds != null
+                    && currentSubArea.exclusiveInsectIds.Length > 0
+                    && activeInsects.Count < 2)
+                {
+                    subAreaRespawnTimer += Time.deltaTime;
+                    if (subAreaRespawnTimer >= 4f)
+                    {
+                        subAreaRespawnTimer = 0f;
+                        SpawnSubAreaInsects(currentSubArea);
+                    }
+                }
+                debugStatus = $"SubArea 활성: {currentSubArea.subAreaId} | {activeInsects.Count}마리";
+                return;
+            }
+            subAreaRespawnTimer = 0f;
 
             cleanupTimer += Time.deltaTime;
             if (cleanupTimer > 5f)
@@ -233,6 +253,25 @@ namespace InsectGame.Spawning
                     candidates = regionFiltered;
             }
 
+            // 서브에리어 전용 곤충 우선
+            if (currentSubArea != null && currentSubArea.exclusiveInsectIds != null && currentSubArea.exclusiveInsectIds.Length > 0)
+            {
+                Vector3 spawnPos = point.GetRandomPosition();
+                if (currentSubArea.ContainsPoint(spawnPos))
+                {
+                    List<InsectData> subFiltered = new List<InsectData>();
+                    foreach (var c in candidates)
+                    {
+                        foreach (string sid in currentSubArea.exclusiveInsectIds)
+                        {
+                            if (c.insectId == sid) { subFiltered.Add(c); break; }
+                        }
+                    }
+                    if (subFiltered.Count > 0)
+                        candidates = subFiltered;
+                }
+            }
+
             float rareBoost = (itemEffects != null ? itemEffects.GetRareSpawnMultiplier() : 1f)
                             * (outfitBonus != null ? outfitBonus.GetRareSpawnMultiplier() : 1f);
             InsectData selected = rareBoost > 1f
@@ -278,10 +317,7 @@ namespace InsectGame.Spawning
 
             if (selected.rarity == InsectRarity.Epic || selected.rarity == InsectRarity.Legendary)
             {
-                raidAlertName = selected.displayName;
-                raidAlertRarity = selected.rarity;
-                raidAlertTimer = 6f;
-                raidAlertPulse = 0f;
+                RaidBossSpawned?.Invoke(entity);
             }
         }
 
@@ -333,71 +369,26 @@ namespace InsectGame.Spawning
             spawnTimer = 0f;
         }
 
+        // OnGUI GUIStyle 캐싱 — 옛 매 프레임 new GUIStyle 회귀 차단
+        private GUIStyle debugStyleCache;
+
         private void OnGUI()
         {
-            GUIStyle style = new GUIStyle(GUI.skin.box)
-            { fontSize = 14, alignment = TextAnchor.MiddleLeft, wordWrap = true };
-            style.normal.textColor = Color.white;
+            if (debugStyleCache == null)
+            {
+                debugStyleCache = new GUIStyle(GUI.skin.box)
+                { fontSize = 14, alignment = TextAnchor.MiddleLeft, wordWrap = true };
+                debugStyleCache.normal.textColor = Color.white;
+            }
 
             float y = Screen.height - 80;
             string info = $"[스포너] {debugStatus}\n" +
                           $"DB:{database != null} | 프리팹:{defaultPrefab != null} | 풀:{pool != null} | " +
                           $"SP:{spawnPoints?.Length ?? 0} | 활성:{activeInsects.Count}/{maxActiveTotal}";
-            GUI.Box(new Rect(10, y, 600, 70), info, style);
+            GUI.Box(new Rect(10, y, 600, 70), info, debugStyleCache);
 
-            if (raidAlertTimer > 0)
-                DrawRaidAlert();
         }
 
-        private void DrawRaidAlert()
-        {
-            raidAlertPulse += Time.deltaTime;
-            float alpha = raidAlertTimer > 1f ? 1f : raidAlertTimer;
-            float fadeIn = Mathf.Clamp01((6f - raidAlertTimer) / 0.5f);
-            alpha *= fadeIn;
-
-            float sw = Screen.width;
-            float cx = sw / 2f;
-            float bannerH = 120f;
-            float bannerY = 60f;
-
-            bool isLegendary = raidAlertRarity == InsectRarity.Legendary;
-            Color mainCol = isLegendary ? new Color(1f, 0.8f, 0.15f) : new Color(0.7f, 0.3f, 0.95f);
-            Color bgCol = isLegendary ? new Color(0.15f, 0.1f, 0.02f) : new Color(0.08f, 0.03f, 0.15f);
-
-            GUI.color = new Color(bgCol.r, bgCol.g, bgCol.b, 0.92f * alpha);
-            GUI.DrawTexture(new Rect(0, bannerY, sw, bannerH), Texture2D.whiteTexture);
-
-            float pulse = 0.6f + Mathf.Sin(raidAlertPulse * 6f) * 0.4f;
-            GUI.color = new Color(mainCol.r, mainCol.g, mainCol.b, pulse * alpha);
-            GUI.DrawTexture(new Rect(0, bannerY, sw, 4), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(0, bannerY + bannerH - 4, sw, 4), Texture2D.whiteTexture);
-
-            float sideW = 120f + Mathf.Sin(raidAlertPulse * 4f) * 30f;
-            GUI.color = new Color(mainCol.r, mainCol.g, mainCol.b, 0.08f * alpha);
-            GUI.DrawTexture(new Rect(0, bannerY, sideW, bannerH), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(sw - sideW, bannerY, sideW, bannerH), Texture2D.whiteTexture);
-
-            GUI.color = Color.white;
-
-            float shakeX = Mathf.Sin(raidAlertPulse * 12f) * 2f * Mathf.Clamp01(6f - raidAlertTimer);
-
-            GUIStyle warningStyle = new GUIStyle(GUI.skin.label)
-            { fontSize = 22, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            warningStyle.normal.textColor = new Color(1f, 0.4f, 0.3f, alpha);
-            GUI.Label(new Rect(shakeX, bannerY + 8, sw, 28),
-                isLegendary ? "LEGENDARY RAID BOSS DETECTED!" : "EPIC RAID BOSS DETECTED!", warningStyle);
-
-            GUIStyle nameStyle = new GUIStyle(GUI.skin.label)
-            { fontSize = 36, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            nameStyle.normal.textColor = new Color(mainCol.r, mainCol.g, mainCol.b, alpha);
-            GUI.Label(new Rect(shakeX, bannerY + 36, sw, 44), raidAlertName ?? "???", nameStyle);
-
-            GUIStyle hintStyle = new GUIStyle(GUI.skin.label)
-            { fontSize = 18, alignment = TextAnchor.MiddleCenter };
-            hintStyle.normal.textColor = new Color(0.8f, 0.8f, 0.8f, alpha * 0.8f);
-            GUI.Label(new Rect(0, bannerY + 84, sw, 24), "가까이 가서 [E]키로 레이드에 도전하세요!", hintStyle);
-        }
 
         private SpawnPoint GetAvailableSpawnPoint(string preferredRegionId = null)
         {
@@ -555,11 +546,17 @@ namespace InsectGame.Spawning
             }
         }
 
+        // 옛은 GetPlayerTransform이 매 호출 GameObject.FindWithTag + GameObject.Find — DespawnFarInsects(5초)
+        // /RelocateSpawnPoints(8초)에서 호출. lazy 캐싱으로 첫 1회 후 재사용.
+        private Transform cachedPlayerTransformForSpawner;
+
         private Transform GetPlayerTransform()
         {
+            if (cachedPlayerTransformForSpawner != null) return cachedPlayerTransformForSpawner;
             GameObject playerObj = GameObject.FindWithTag("Player");
             if (playerObj == null) playerObj = GameObject.Find("Player");
-            return playerObj != null ? playerObj.transform : null;
+            if (playerObj != null) cachedPlayerTransformForSpawner = playerObj.transform;
+            return cachedPlayerTransformForSpawner;
         }
 
         private int GetSpawnLevel(InsectData data, SpawnPoint point)
@@ -651,6 +648,107 @@ namespace InsectGame.Spawning
             if (outfitBonus == null)
             {
                 outfitBonus = bonus;
+            }
+        }
+
+        public void AutoWire(RegionManager rm)
+        {
+            if (regionManager != null)
+                regionManager.SubAreaChanged -= OnSubAreaChanged;
+            regionManager = rm;
+            if (regionManager != null)
+                regionManager.SubAreaChanged += OnSubAreaChanged;
+        }
+
+        private void OnDisable()
+        {
+            if (regionManager != null)
+                regionManager.SubAreaChanged -= OnSubAreaChanged;
+        }
+
+        private void OnSubAreaChanged(SubAreaData subArea)
+        {
+            currentSubArea = subArea;
+
+            if (subArea != null)
+            {
+                // SubArea 진입: 메인 월드 활성 곤충 전부 풀로 반환 (메인 월드가 SetActive(false)되어 잔존 방지)
+                DespawnAllActiveInsects();
+
+                if (subArea.exclusiveInsectIds != null && subArea.exclusiveInsectIds.Length > 0)
+                {
+                    // SubAreaWorldBuilder.EnterSubArea가 같은 이벤트에서 player를 SubAreaOrigin으로
+                    // 텔레포트하지만 구독 순서상 InsectSpawner가 먼저 호출됨. 1프레임 yield 후 스폰해야
+                    // player가 새 좌표에 있는 상태에서 anchor 계산 → 곤충과 player가 같은 공간.
+                    StartCoroutine(SpawnSubAreaInsectsDelayed(subArea));
+                }
+            }
+            else
+            {
+                // SubArea 종료: SubArea 전용 곤충은 메인 좌표와 무관한 위치에 있으므로
+                // 메인 복귀 후 즉시 정리해야 화면에 잔존하지 않음 (다음 Update에서 메인 스폰 재개).
+                DespawnAllActiveInsects();
+            }
+        }
+
+        private System.Collections.IEnumerator SpawnSubAreaInsectsDelayed(SubAreaData subArea)
+        {
+            yield return null;
+            // currentSubArea가 그새 바뀌었다면(빠른 Exit) 스폰 스킵
+            if (currentSubArea != subArea) yield break;
+            SpawnSubAreaInsects(subArea);
+        }
+
+        private void DespawnAllActiveInsects()
+        {
+            // 스냅샷 후 List 비움 — entity.Despawn() 콜백이 activeInsects.Remove 호출 시 no-op (안전)
+            var snapshot = activeInsects.ToArray();
+            activeInsects.Clear();
+            foreach (var entity in snapshot)
+            {
+                if (entity != null) entity.Despawn();
+            }
+        }
+
+        private void SpawnSubAreaInsects(SubAreaData subArea)
+        {
+            if (database == null) return;
+
+            // (직전 OnSubAreaChanged에서 DespawnAllActiveInsects로 메인 곤충 전부 정리 완료)
+
+            // SubArea 진입 시 SubAreaWorldBuilder가 player를 별도 좌표(SubAreaOrigin)로 텔레포트했으므로
+            // subArea.centerPosition(메인 좌표) 기준 스폰은 player와 다른 공간이라 절대 만날 수 없다.
+            // player 현재 위치(=SubAreaOrigin 근처)를 anchor로 사용.
+            Vector3 anchor = subArea.centerPosition;
+            Transform pTrans = GetPlayerTransform();
+            if (pTrans != null) anchor = pTrans.position;
+
+            int spawnCount = Mathf.Min(subArea.exclusiveInsectIds.Length + 2, 5);
+            for (int i = 0; i < spawnCount; i++)
+            {
+                string insectId = subArea.exclusiveInsectIds[i % subArea.exclusiveInsectIds.Length];
+                InsectData data = database.GetById(insectId);
+                if (data == null) continue;
+
+                Vector2 offset = Random.insideUnitCircle * (subArea.radius * 0.6f);
+                Vector3 spawnPos = anchor + new Vector3(offset.x, 0f, offset.y);
+                int level = Random.Range(subArea.minLevel, subArea.maxLevel + 1);
+
+                GameObject instance;
+                if (pool != null)
+                    instance = pool.Get();
+                else
+                    instance = Instantiate(defaultPrefab, transform);
+
+                instance.SetActive(true);
+                instance.transform.position = spawnPos;
+
+                InsectEntity entity = instance.GetComponent<InsectEntity>();
+                if (entity == null) entity = instance.AddComponent<InsectEntity>();
+
+                entity.Initialize(data, level, null, DespawnEntity);
+                activeInsects.Add(entity);
+                totalSpawned++;
             }
         }
 

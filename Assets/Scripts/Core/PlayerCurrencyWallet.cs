@@ -27,7 +27,8 @@ namespace InsectGame.Core
 
         public void AddGems(int amount)
         {
-            if (amount <= 0)
+            // data null 가드 — Gems/Coins 프로퍼티(line 18-19)와 비대칭, Awake 실패 시 NRE 차단.
+            if (amount <= 0 || data == null)
             {
                 return;
             }
@@ -38,7 +39,7 @@ namespace InsectGame.Core
 
         public bool SpendGems(int amount)
         {
-            if (amount <= 0 || data.gems < amount)
+            if (amount <= 0 || data == null || data.gems < amount)
             {
                 return false;
             }
@@ -50,7 +51,7 @@ namespace InsectGame.Core
 
         public void AddCoins(int amount)
         {
-            if (amount <= 0)
+            if (amount <= 0 || data == null)
             {
                 return;
             }
@@ -61,7 +62,7 @@ namespace InsectGame.Core
 
         public bool SpendCoins(int amount)
         {
-            if (amount <= 0 || data.coins < amount)
+            if (amount <= 0 || data == null || data.coins < amount)
             {
                 return false;
             }
@@ -73,7 +74,9 @@ namespace InsectGame.Core
 
         private void Save()
         {
-            File.WriteAllText(GetPath(), JsonUtility.ToJson(data, true));
+            // data null 가드 — 빈 파일 쓰기 + 구독자에게 null 전파 차단.
+            if (data == null) return;
+            AtomicFileWriter.WriteAllText(GetPath(), JsonUtility.ToJson(data, true));
             CurrencyChanged?.Invoke(data);
         }
 
@@ -85,8 +88,16 @@ namespace InsectGame.Core
                 return new PlayerCurrencyData();
             }
 
-            string json = File.ReadAllText(path);
-            return JsonUtility.FromJson<PlayerCurrencyData>(json) ?? new PlayerCurrencyData();
+            try
+            {
+                string json = File.ReadAllText(path);
+                return JsonUtility.FromJson<PlayerCurrencyData>(json) ?? new PlayerCurrencyData();
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning($"[PlayerCurrencyWallet] 손상된 세이브 — 기본값으로 시작: {e.Message}");
+                return new PlayerCurrencyData();
+            }
         }
 
         private string GetPath()

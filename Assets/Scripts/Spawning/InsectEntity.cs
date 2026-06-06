@@ -15,7 +15,14 @@ namespace InsectGame.Spawning
         private Vector3 basePosition;
         private float wingPhase;
         private bool shiny;
+        private bool forBattle;
         private float shinySparkleTimer;
+        private Transform cachedShinySparkle;
+        private Transform cachedNameLabel;
+        private bool despawnedThisCycle; // Despawn 다중 호출 가드 (Battle/Capture 동시 호출 시 풀 중복 반환 차단)
+
+        // Camera.main은 매 호출마다 FindGameObjectWithTag — 최대 20마리×매 프레임 핫패스 회피.
+        private static Camera cachedMainCam;
 
         public InsectData Data => data;
         public int Level => level;
@@ -30,9 +37,17 @@ namespace InsectGame.Spawning
             ownerPoint = point;
             onDespawn = despawnCallback;
             shiny = UnityEngine.Random.value < 0.01f; // 1% 확률 색다른 곤충
+            // 풀 재사용 회귀 방지: BuildForBattle에서 true로 설정된 forBattle이 남아있으면
+            // 다음 Update에서 회전 안 하는 정적 곤충이 됨. 매 Initialize마다 명시적 false.
+            forBattle = false;
+            // 풀 재사용 시 stale Transform 참조 회피 (ClearChildren 직후 cache 무효).
+            cachedNameLabel = null;
+            cachedShinySparkle = null;
+            despawnedThisCycle = false;
 
             ClearChildren();
             BuildModel();
+            AddRarityEffects();
             CreateNameLabel();
             CreateGroundMarker();
             float scale = GetRarityScale();
@@ -47,6 +62,10 @@ namespace InsectGame.Spawning
             data = insectData;
             level = insectLevel;
             shiny = shinyOverride;
+            forBattle = true;
+            cachedNameLabel = null;
+            cachedShinySparkle = null;
+            despawnedThisCycle = false;
 
             ClearChildren();
             BuildModel();
@@ -63,37 +82,48 @@ namespace InsectGame.Spawning
 
         private void Update()
         {
-            float bob = Mathf.Sin(Time.time * 2f + bobPhase) * 0.35f;
+            float bobSpeed = 1.6f + (bobPhase % 1.5f);
+            float bob = Mathf.Sin(Time.time * bobSpeed + bobPhase) * 0.25f;
             transform.position = basePosition + new Vector3(0f, bob, 0f);
-            transform.Rotate(Vector3.up, 30f * Time.deltaTime, Space.World);
+            if (!forBattle)
+                transform.Rotate(Vector3.up, 12f * Time.deltaTime, Space.World);
 
             AnimateWings();
             if (shiny) AnimateShinySparkle();
 
-            if (Camera.main != null)
+            // Camera.main 매 프레임 FindGameObjectWithTag 회피 — static cache.
+            if (cachedMainCam == null) cachedMainCam = Camera.main;
+            if (cachedMainCam != null)
             {
-                Transform label = transform.Find("NameLabel");
-                if (label != null)
-                    label.rotation = Camera.main.transform.rotation;
+                if (cachedNameLabel == null) cachedNameLabel = transform.Find("NameLabel");
+                if (cachedNameLabel != null)
+                    cachedNameLabel.rotation = cachedMainCam.transform.rotation;
             }
         }
 
         private void AnimateShinySparkle()
         {
-            // Shiny 곤충: 주기적으로 반짝이는 파티클 생성
             shinySparkleTimer += Time.deltaTime;
-            Transform sparkle = transform.Find("ShinySparkle");
-            if (sparkle == null)
+            if (cachedShinySparkle == null)
             {
-                GameObject sparkleObj = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                sparkleObj.name = "ShinySparkle";
-                sparkleObj.transform.SetParent(transform, false);
-                sparkleObj.transform.localScale = Vector3.one * 0.15f;
-                Collider sc = sparkleObj.GetComponent<Collider>();
-                if (sc != null) Destroy(sc);
-                ApplyColor(sparkleObj, new Color(1f, 1f, 0.6f, 0.8f));
-                sparkle = sparkleObj.transform;
+                Transform existing = transform.Find("ShinySparkle");
+                if (existing != null)
+                {
+                    cachedShinySparkle = existing;
+                }
+                else
+                {
+                    GameObject sparkleObj = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                    sparkleObj.name = "ShinySparkle";
+                    sparkleObj.transform.SetParent(transform, false);
+                    sparkleObj.transform.localScale = Vector3.one * 0.15f;
+                    Collider sc = sparkleObj.GetComponent<Collider>();
+                    if (sc != null) Destroy(sc);
+                    ApplyColor(sparkleObj, new Color(1f, 1f, 0.6f, 0.8f));
+                    cachedShinySparkle = sparkleObj.transform;
+                }
             }
+            Transform sparkle = cachedShinySparkle;
 
             // 반짝임 원형 이동 + 크기 맥동
             float angle = shinySparkleTimer * 3f;
@@ -134,9 +164,16 @@ namespace InsectGame.Spawning
             if (data == null) { BuildGenericBeetle(GetRarityColor(), Color.gray); return; }
             string id = data.insectId ?? "";
             Color col = GetInsectColor();
-            Color dark = new Color(col.r * 0.4f, col.g * 0.4f, col.b * 0.4f);
+            // 음영색: 단순 절반(칙칙·무채색화)이 아니라 HSV로 채도 살짝 올리고 명도만 낮춰 색감 유지.
+            Color.RGBToHSV(col, out float dh, out float ds, out float dv);
+            Color dark = Color.HSVToRGB(dh, Mathf.Min(1f, ds * 1.1f), dv * 0.6f);
 
-            if (id.Contains("butterfly") || id.Contains("luna") || id.Contains("atlas") || id.Contains("alexandras"))
+            // 순서 중요: 구체적인 ID를 먼저 체크 (antlion→ant 오매칭 방지 등)
+            if (id.Contains("antlion"))
+                BuildAntlion(col, dark);
+            else if (id.Contains("aphid"))
+                BuildAphid(col, dark);
+            else if (id.Contains("butterfly") || id.Contains("luna") || id.Contains("atlas") || id.Contains("alexandras"))
                 BuildButterfly(col, dark);
             else if (id.Contains("moth"))
                 BuildMoth(col, dark);
@@ -150,12 +187,12 @@ namespace InsectGame.Spawning
                 BuildDamselfly(col, dark);
             else if (id.Contains("dragonfly") || id.Contains("ancient"))
                 BuildDragonfly(col, dark);
+            else if (id.Contains("firefly"))
+                BuildFirefly(col, dark);
             else if (id.Contains("bee"))
                 BuildBee(col, dark);
             else if (id.Contains("hornet") || id.Contains("wasp"))
                 BuildWasp(col, dark);
-            else if (id.Contains("firefly"))
-                BuildFirefly(col, dark);
             else if (id.Contains("rhinoceros") || id.Contains("hercules"))
                 BuildRhinocerosBeetle(col, dark);
             else if (id.Contains("stag") || id.Contains("golden_stag"))
@@ -192,21 +229,25 @@ namespace InsectGame.Spawning
                 BuildCaterpillar(col, dark);
             else if (id.Contains("mosquito") || id.Contains("fly"))
                 BuildFly(col, dark);
+            else if (id.Contains("dung"))
+                BuildDungBeetle(col, dark);
+            else if (id.Contains("click"))
+                BuildClickBeetle(col, dark);
             else
                 BuildGenericBeetle(col, dark);
         }
 
         private void BuildGenericBeetle(Color body, Color dark)
         {
-            MakePart("Body", PrimitiveType.Sphere, Vector3.zero, new Vector3(0.7f, 0.4f, 0.9f), body);
+            MakePart("Body", PrimitiveType.Sphere, Vector3.zero, new Vector3(0.72f, 0.46f, 0.86f), body);
+            MakeTopGloss(Vector3.zero, new Vector3(0.72f, 0.46f, 0.86f));
             MakePart("ShellL", PrimitiveType.Sphere, new Vector3(-0.13f, 0.18f, -0.05f), new Vector3(0.32f, 0.18f, 0.75f), dark);
             MakePart("ShellR", PrimitiveType.Sphere, new Vector3(0.13f, 0.18f, -0.05f), new Vector3(0.32f, 0.18f, 0.75f), dark);
             MakePart("ShellLine", PrimitiveType.Cylinder, new Vector3(0f, 0.22f, -0.05f), new Vector3(0.02f, 0.01f, 0.7f), body);
-            MakePart("Head", PrimitiveType.Sphere, new Vector3(0f, 0.05f, 0.5f), new Vector3(0.4f, 0.35f, 0.4f), dark);
-            MakePart("EyeL", PrimitiveType.Sphere, new Vector3(-0.15f, 0.15f, 0.65f), Vector3.one * 0.12f, Color.white);
-            MakePart("EyeR", PrimitiveType.Sphere, new Vector3(0.15f, 0.15f, 0.65f), Vector3.one * 0.12f, Color.white);
-            MakePart("PupilL", PrimitiveType.Sphere, new Vector3(-0.15f, 0.15f, 0.72f), Vector3.one * 0.06f, Color.black);
-            MakePart("PupilR", PrimitiveType.Sphere, new Vector3(0.15f, 0.15f, 0.72f), Vector3.one * 0.06f, Color.black);
+            // 가슴마디(prothorax) — 머리·몸 연결 자연화(옛엔 머리가 몸에 바로 붙어 뭉툭)
+            MakePart("Prothorax", PrimitiveType.Sphere, new Vector3(0f, 0.12f, 0.32f), new Vector3(0.5f, 0.34f, 0.32f), dark);
+            MakePart("Head", PrimitiveType.Sphere, new Vector3(0f, 0.05f, 0.56f), new Vector3(0.46f, 0.42f, 0.42f), dark);
+            MakeEyes(0.68f, 0.13f);
             MakePart("FrontLegL", PrimitiveType.Capsule, new Vector3(-0.28f, -0.15f, 0.3f), new Vector3(0.06f, 0.22f, 0.06f),
                 dark, Quaternion.Euler(0f, 0f, 25f));
             MakePart("FrontLegR", PrimitiveType.Capsule, new Vector3(0.28f, -0.15f, 0.3f), new Vector3(0.06f, 0.22f, 0.06f),
@@ -229,18 +270,15 @@ namespace InsectGame.Spawning
             MakePart("HornTip", PrimitiveType.Sphere, new Vector3(0f, 0.65f, 0.9f), Vector3.one * 0.1f, body);
             MakePart("ClawL", PrimitiveType.Cube, new Vector3(-0.28f, -0.22f, 0.25f), new Vector3(0.05f, 0.08f, 0.1f), dark);
             MakePart("ClawR", PrimitiveType.Cube, new Vector3(0.28f, -0.22f, 0.25f), new Vector3(0.05f, 0.08f, 0.1f), dark);
-            MakePart("EyeL", PrimitiveType.Sphere, new Vector3(-0.2f, 0.2f, 0.7f), Vector3.one * 0.13f, Color.white);
-            MakePart("EyeR", PrimitiveType.Sphere, new Vector3(0.2f, 0.2f, 0.7f), Vector3.one * 0.13f, Color.white);
-            MakePart("PupilL", PrimitiveType.Sphere, new Vector3(-0.2f, 0.2f, 0.77f), Vector3.one * 0.07f, Color.black);
-            MakePart("PupilR", PrimitiveType.Sphere, new Vector3(0.2f, 0.2f, 0.77f), Vector3.one * 0.07f, Color.black);
+            MakeEyes(0.7f, 0.14f, 0.2f);
             MakeLegs(dark, 3, 0f);
         }
 
         private void BuildButterfly(Color body, Color dark)
         {
-            MakePart("Body", PrimitiveType.Capsule, Vector3.zero, new Vector3(0.15f, 0.4f, 0.15f), dark,
+            MakePart("Body", PrimitiveType.Capsule, Vector3.zero, new Vector3(0.18f, 0.34f, 0.18f), dark,
                 Quaternion.Euler(90f, 0f, 0f));
-            MakePart("Head", PrimitiveType.Sphere, new Vector3(0f, 0.05f, 0.4f), new Vector3(0.25f, 0.25f, 0.25f), dark);
+            MakePart("Head", PrimitiveType.Sphere, new Vector3(0f, 0.05f, 0.45f), new Vector3(0.3f, 0.3f, 0.28f), dark);
             Color wingCol = new Color(body.r, body.g, body.b, 0.85f);
             Color wingSpot = new Color(Mathf.Min(1, body.r + 0.3f), Mathf.Min(1, body.g + 0.3f), body.b * 0.5f);
             Color wingEdge = new Color(dark.r, dark.g, dark.b, 0.7f);
@@ -252,14 +290,14 @@ namespace InsectGame.Spawning
             MakePart("SpotR2", PrimitiveType.Sphere, new Vector3(0.55f, 0.12f, 0f), new Vector3(0.12f, 0.02f, 0.12f), wingSpot);
             MakePart("SpotL3", PrimitiveType.Sphere, new Vector3(-0.4f, 0.12f, -0.1f), new Vector3(0.1f, 0.02f, 0.1f), wingSpot);
             MakePart("SpotR3", PrimitiveType.Sphere, new Vector3(0.4f, 0.12f, -0.1f), new Vector3(0.1f, 0.02f, 0.1f), wingSpot);
-            MakePart("WingTipL", PrimitiveType.Sphere, new Vector3(-0.8f, 0.1f, 0.05f), new Vector3(0.12f, 0.02f, 0.18f), wingEdge);
-            MakePart("WingTipR", PrimitiveType.Sphere, new Vector3(0.8f, 0.1f, 0.05f), new Vector3(0.12f, 0.02f, 0.18f), wingEdge);
+            MakePart("WingTipL", PrimitiveType.Sphere, new Vector3(-0.88f, 0.1f, 0.05f), new Vector3(0.18f, 0.025f, 0.24f), wingEdge);
+            MakePart("WingTipR", PrimitiveType.Sphere, new Vector3(0.88f, 0.1f, 0.05f), new Vector3(0.18f, 0.025f, 0.24f), wingEdge);
             MakePart("WingLB", PrimitiveType.Sphere, new Vector3(-0.35f, 0.08f, -0.25f), new Vector3(0.45f, 0.02f, 0.4f), wingCol);
             MakePart("WingRB", PrimitiveType.Sphere, new Vector3(0.35f, 0.08f, -0.25f), new Vector3(0.45f, 0.02f, 0.4f), wingCol);
             MakeAntennae(dark, 0.35f);
             MakePart("AntBallL", PrimitiveType.Sphere, new Vector3(-0.15f, 0.42f, 0.57f), Vector3.one * 0.06f, dark);
             MakePart("AntBallR", PrimitiveType.Sphere, new Vector3(0.15f, 0.42f, 0.57f), Vector3.one * 0.06f, dark);
-            MakeEyes(0.4f, 0.18f);
+            MakeEyes(0.45f, 0.18f);
         }
 
         private void BuildMoth(Color body, Color dark)
@@ -339,6 +377,7 @@ namespace InsectGame.Spawning
         private void BuildBee(Color body, Color dark)
         {
             MakePart("Body", PrimitiveType.Sphere, Vector3.zero, new Vector3(0.55f, 0.45f, 0.7f), body);
+            MakeTopGloss(Vector3.zero, new Vector3(0.55f, 0.45f, 0.7f), 0.1f);
             MakePart("Stripe1", PrimitiveType.Cylinder, new Vector3(0f, 0f, -0.15f), new Vector3(0.54f, 0.02f, 0.54f),
                 Color.black, Quaternion.Euler(90f, 0f, 0f));
             MakePart("Stripe2", PrimitiveType.Cylinder, new Vector3(0f, 0f, 0f), new Vector3(0.56f, 0.02f, 0.56f),
@@ -525,17 +564,22 @@ namespace InsectGame.Spawning
             MakePart("Head", PrimitiveType.Sphere, new Vector3(0f, 0.12f, 0.6f), new Vector3(0.55f, 0.45f, 0.5f), dark);
             MakePart("HornMain", PrimitiveType.Cylinder, new Vector3(0f, 0.45f, 0.7f), new Vector3(0.1f, 0.35f, 0.1f), body,
                 Quaternion.Euler(25f, 0f, 0f));
-            MakePart("HornMid", PrimitiveType.Sphere, new Vector3(0f, 0.6f, 0.85f), Vector3.one * 0.1f, body);
-            MakePart("HornTip", PrimitiveType.Cylinder, new Vector3(0f, 0.7f, 0.95f), new Vector3(0.06f, 0.15f, 0.06f), gloss,
+            // 3분절 곡선으로 뿔이 부드럽게 휨(옛 직선 실린더 2개 = 뚝뚝 끊김)
+            MakePart("HornCurve", PrimitiveType.Cylinder, new Vector3(0f, 0.6f, 0.82f), new Vector3(0.08f, 0.18f, 0.08f), body,
                 Quaternion.Euler(40f, 0f, 0f));
+            MakePart("HornMid", PrimitiveType.Sphere, new Vector3(0f, 0.62f, 0.88f), Vector3.one * 0.09f, body);
+            MakePart("HornTip", PrimitiveType.Cylinder, new Vector3(0f, 0.72f, 0.96f), new Vector3(0.06f, 0.13f, 0.06f), gloss,
+                Quaternion.Euler(52f, 0f, 0f));
+            // 끝 분기(Y자 뿔) — 장수풍뎅이 시그니처 실루엣
+            MakePart("HornForkL", PrimitiveType.Cylinder, new Vector3(-0.05f, 0.78f, 1.0f), new Vector3(0.04f, 0.1f, 0.04f), gloss,
+                Quaternion.Euler(50f, 0f, 12f));
+            MakePart("HornForkR", PrimitiveType.Cylinder, new Vector3(0.05f, 0.78f, 1.0f), new Vector3(0.04f, 0.1f, 0.04f), gloss,
+                Quaternion.Euler(50f, 0f, -12f));
             MakePart("HornSmall", PrimitiveType.Cylinder, new Vector3(0f, 0.3f, 0.55f), new Vector3(0.07f, 0.15f, 0.07f), dark,
                 Quaternion.Euler(15f, 0f, 0f));
             MakePart("ClawL", PrimitiveType.Cube, new Vector3(-0.3f, -0.25f, 0.3f), new Vector3(0.06f, 0.08f, 0.12f), dark);
             MakePart("ClawR", PrimitiveType.Cube, new Vector3(0.3f, -0.25f, 0.3f), new Vector3(0.06f, 0.08f, 0.12f), dark);
-            MakePart("EyeL", PrimitiveType.Sphere, new Vector3(-0.22f, 0.22f, 0.75f), Vector3.one * 0.13f, Color.white);
-            MakePart("EyeR", PrimitiveType.Sphere, new Vector3(0.22f, 0.22f, 0.75f), Vector3.one * 0.13f, Color.white);
-            MakePart("PupilL", PrimitiveType.Sphere, new Vector3(-0.22f, 0.22f, 0.82f), Vector3.one * 0.07f, Color.black);
-            MakePart("PupilR", PrimitiveType.Sphere, new Vector3(0.22f, 0.22f, 0.82f), Vector3.one * 0.07f, Color.black);
+            MakeEyes(0.78f, 0.14f, 0.22f);
             MakeLegs(dark, 3, 0f);
         }
 
@@ -978,35 +1022,86 @@ namespace InsectGame.Spawning
 
         private void MakeLegs(Color color, int pairs, float zOffset)
         {
+            Color joint = new Color(color.r * 0.7f + 0.03f, color.g * 0.7f + 0.03f, color.b * 0.7f + 0.03f);
             for (int i = 0; i < pairs; i++)
             {
                 float z = zOffset + (i - (pairs - 1) * 0.5f) * 0.2f;
-                MakePart($"LegL{i}", PrimitiveType.Capsule, new Vector3(-0.25f, -0.2f, z),
-                    new Vector3(0.05f, 0.2f, 0.05f), color, Quaternion.Euler(0f, 0f, 20f));
-                MakePart($"LegR{i}", PrimitiveType.Capsule, new Vector3(0.25f, -0.2f, z),
-                    new Vector3(0.05f, 0.2f, 0.05f), color, Quaternion.Euler(0f, 0f, -20f));
+                // 앞·중·뒷다리 각도 변주(기계적 동일각 해소) + z 부채꼴 펼침
+                float zSpread = (i - (pairs - 1) * 0.5f) * 0.04f;
+                float upAng = 26f + i * 4f;
+                float loAng = 8f + i * 3f;
+                // 대퇴 (상단)
+                MakePart($"LegUL{i}", PrimitiveType.Capsule, new Vector3(-0.22f, -0.1f, z + zSpread),
+                    new Vector3(0.055f, 0.12f, 0.055f), color, Quaternion.Euler(0f, 0f, upAng));
+                MakePart($"LegUR{i}", PrimitiveType.Capsule, new Vector3(0.22f, -0.1f, z + zSpread),
+                    new Vector3(0.055f, 0.12f, 0.055f), color, Quaternion.Euler(0f, 0f, -upAng));
+                // 관절
+                MakePart($"KneeL{i}", PrimitiveType.Sphere, new Vector3(-0.3f, -0.2f, z + zSpread),
+                    Vector3.one * 0.05f, joint);
+                MakePart($"KneeR{i}", PrimitiveType.Sphere, new Vector3(0.3f, -0.2f, z + zSpread),
+                    Vector3.one * 0.05f, joint);
+                // 경절 (하단)
+                MakePart($"LegLL{i}", PrimitiveType.Capsule, new Vector3(-0.32f, -0.3f, z + zSpread),
+                    new Vector3(0.038f, 0.12f, 0.038f), color, Quaternion.Euler(0f, 0f, loAng));
+                MakePart($"LegLR{i}", PrimitiveType.Capsule, new Vector3(0.32f, -0.3f, z + zSpread),
+                    new Vector3(0.038f, 0.12f, 0.038f), color, Quaternion.Euler(0f, 0f, -loAng));
+                // 발끝(tarsus) — 접지감(옛엔 발끝 없어 공중에 뜬 느낌)
+                MakePart($"FootL{i}", PrimitiveType.Sphere, new Vector3(-0.345f, -0.4f, z + zSpread),
+                    Vector3.one * 0.03f, joint);
+                MakePart($"FootR{i}", PrimitiveType.Sphere, new Vector3(0.345f, -0.4f, z + zSpread),
+                    Vector3.one * 0.03f, joint);
             }
         }
 
         private void MakeAntennae(Color color, float zBase, bool feathered = false)
         {
-            float tipScale = feathered ? 0.08f : 0.05f;
-            MakePart("AntennaL", PrimitiveType.Capsule, new Vector3(-0.1f, 0.2f, zBase + 0.15f),
-                new Vector3(0.03f, 0.2f, 0.03f), color, Quaternion.Euler(-30f, 0f, 15f));
-            MakePart("AntennaR", PrimitiveType.Capsule, new Vector3(0.1f, 0.2f, zBase + 0.15f),
-                new Vector3(0.03f, 0.2f, 0.03f), color, Quaternion.Euler(-30f, 0f, -15f));
-            MakePart("AntTipL", PrimitiveType.Sphere, new Vector3(-0.15f, 0.4f, zBase + 0.2f),
-                Vector3.one * tipScale, color);
-            MakePart("AntTipR", PrimitiveType.Sphere, new Vector3(0.15f, 0.4f, zBase + 0.2f),
-                Vector3.one * tipScale, color);
+            // 2분절 굴절로 부드러운 S곡선(옛 직선 캡슐 1개 = 막대기 느낌 해소).
+            MakePart("AntBaseL", PrimitiveType.Capsule, new Vector3(-0.1f, 0.18f, zBase + 0.13f),
+                new Vector3(0.03f, 0.14f, 0.03f), color, Quaternion.Euler(-38f, 0f, 16f));
+            MakePart("AntBaseR", PrimitiveType.Capsule, new Vector3(0.1f, 0.18f, zBase + 0.13f),
+                new Vector3(0.03f, 0.14f, 0.03f), color, Quaternion.Euler(-38f, 0f, -16f));
+            MakePart("AntMidL", PrimitiveType.Capsule, new Vector3(-0.15f, 0.36f, zBase + 0.2f),
+                new Vector3(0.025f, 0.12f, 0.025f), color, Quaternion.Euler(-10f, 0f, 8f));
+            MakePart("AntMidR", PrimitiveType.Capsule, new Vector3(0.15f, 0.36f, zBase + 0.2f),
+                new Vector3(0.025f, 0.12f, 0.025f), color, Quaternion.Euler(-10f, 0f, -8f));
+            float tipScale = feathered ? 0.08f : 0.055f;
+            MakePart("AntTipL", PrimitiveType.Sphere, new Vector3(-0.17f, 0.46f, zBase + 0.23f), Vector3.one * tipScale, color);
+            MakePart("AntTipR", PrimitiveType.Sphere, new Vector3(0.17f, 0.46f, zBase + 0.23f), Vector3.one * tipScale, color);
+            if (feathered)
+            {
+                // 나방/모기 깃털 더듬이 — 끝에 양옆 작은 깃
+                MakePart("AntFeatherL", PrimitiveType.Cube, new Vector3(-0.16f, 0.40f, zBase + 0.22f),
+                    new Vector3(0.07f, 0.012f, 0.03f), color, Quaternion.Euler(0f, 0f, 20f));
+                MakePart("AntFeatherR", PrimitiveType.Cube, new Vector3(0.16f, 0.40f, zBase + 0.22f),
+                    new Vector3(0.07f, 0.012f, 0.03f), color, Quaternion.Euler(0f, 0f, -20f));
+            }
         }
 
-        private void MakeEyes(float zPos, float size)
+        private void MakeEyes(float zPos, float size, float xSpread = 0.12f)
         {
-            MakePart("EyeL", PrimitiveType.Sphere, new Vector3(-0.12f, 0.15f, zPos), Vector3.one * size, Color.white);
-            MakePart("EyeR", PrimitiveType.Sphere, new Vector3(0.12f, 0.15f, zPos), Vector3.one * size, Color.white);
-            MakePart("PupilL", PrimitiveType.Sphere, new Vector3(-0.12f, 0.15f, zPos + 0.04f), Vector3.one * (size * 0.5f), Color.black);
-            MakePart("PupilR", PrimitiveType.Sphere, new Vector3(0.12f, 0.15f, zPos + 0.04f), Vector3.one * (size * 0.5f), Color.black);
+            MakePart("EyeL", PrimitiveType.Sphere, new Vector3(-xSpread, 0.15f, zPos), Vector3.one * size, Color.white);
+            MakePart("EyeR", PrimitiveType.Sphere, new Vector3(xSpread, 0.15f, zPos), Vector3.one * size, Color.white);
+            // 큰 동공 (치비 톤: 64%)
+            float pupilSize = size * 0.64f;
+            MakePart("PupilL", PrimitiveType.Sphere, new Vector3(-xSpread, 0.15f, zPos + 0.04f), Vector3.one * pupilSize, new Color(0.05f, 0.05f, 0.08f));
+            MakePart("PupilR", PrimitiveType.Sphere, new Vector3(xSpread, 0.15f, zPos + 0.04f), Vector3.one * pupilSize, new Color(0.05f, 0.05f, 0.08f));
+            // 메인 하이라이트 (확대 — 촉촉한 큰 눈)
+            float hlSize = size * 0.28f;
+            MakePart("HighlightL", PrimitiveType.Sphere, new Vector3(-(xSpread - 0.02f), 0.19f, zPos + 0.05f), Vector3.one * hlSize, new Color(1f, 1f, 1f, 0.95f));
+            MakePart("HighlightR", PrimitiveType.Sphere, new Vector3(xSpread - 0.02f, 0.19f, zPos + 0.05f), Vector3.one * hlSize, new Color(1f, 1f, 1f, 0.95f));
+            // 서브 글린트 (동공 반대편 작은 반짝임 — 치비 캐릭터의 생기있는 눈 시그니처)
+            float glintSize = size * 0.12f;
+            MakePart("GlintL", PrimitiveType.Sphere, new Vector3(-(xSpread + 0.025f), 0.115f, zPos + 0.05f), Vector3.one * glintSize, new Color(1f, 1f, 1f, 0.8f));
+            MakePart("GlintR", PrimitiveType.Sphere, new Vector3(xSpread - 0.025f, 0.115f, zPos + 0.05f), Vector3.one * glintSize, new Color(1f, 1f, 1f, 0.8f));
+        }
+
+        // 곤충 등껍질 상단 흰색 반투명 글로스 — 입체 광택(딱정벌레/풍뎅이류 1줄 호출).
+        private void MakeTopGloss(Vector3 bodyCenter, Vector3 bodyScale, float intensity = 0.14f)
+        {
+            MakePart("TopGloss", PrimitiveType.Sphere,
+                bodyCenter + new Vector3(0f, bodyScale.y * 0.35f, bodyScale.z * 0.05f),
+                new Vector3(bodyScale.x * 0.7f, bodyScale.y * 0.18f, bodyScale.z * 0.75f),
+                new Color(1f, 1f, 1f, intensity));
         }
 
         private void ApplyColor(GameObject go, Color color)
@@ -1020,6 +1115,9 @@ namespace InsectGame.Spawning
             if (shader == null) return;
             Material mat = new Material(shader);
             mat.color = color;
+            // PBR 광택: 옛 ApplyColor는 색만 칠해 전 곤충이 무광 점토처럼 보였음(품질 저하 핵심).
+            // Standard/URP Lit에서만 _Glossiness/_Metallic 설정(Unlit/Sprites fallback은 프로퍼티 없어 가드).
+            bool pbr = shader.name == "Standard" || shader.name.Contains("Lit");
             if (color.a < 1f)
             {
                 mat.SetFloat("_Mode", 3);
@@ -1030,6 +1128,15 @@ namespace InsectGame.Spawning
                 mat.EnableKeyword("_ALPHABLEND_ON");
                 mat.DisableKeyword("_ALPHAPREMULTIPLY_ON");
                 mat.renderQueue = 3000;
+                // 날개/반투명: 막·천 느낌(번들거림 억제)
+                if (pbr) { mat.SetFloat("_Glossiness", 0.2f); mat.SetFloat("_Smoothness", 0.2f); mat.SetFloat("_Metallic", 0f); }
+            }
+            else if (pbr)
+            {
+                // 외골격 키틴 광택 + 미세 금속감 — 전 34종 동시 개선
+                mat.SetFloat("_Glossiness", 0.55f);
+                mat.SetFloat("_Smoothness", 0.55f);
+                mat.SetFloat("_Metallic", 0.15f);
             }
             r.material = mat;
         }
@@ -1058,8 +1165,8 @@ namespace InsectGame.Spawning
 
             if (shiny)
             {
-                // 금빛 광택 추가
-                result = Color.Lerp(result, new Color(1f, 0.9f, 0.4f), 0.25f);
+                // 은은한 광택 추가 (색조 반전과 함께 자연스러운 밝기)
+                result = Color.Lerp(result, Color.white, 0.15f);
             }
 
             return result;
@@ -1117,6 +1224,121 @@ namespace InsectGame.Spawning
             }
         }
 
+        private void BuildAphid(Color body, Color dark)
+        {
+            // 진딧물: 아주 작고 둥글둥글, 긴 다리, 꿀관
+            MakePart("Body", PrimitiveType.Sphere, Vector3.zero, new Vector3(0.35f, 0.3f, 0.4f), body);
+            MakePart("Head", PrimitiveType.Sphere, new Vector3(0f, 0.05f, 0.25f), new Vector3(0.2f, 0.18f, 0.2f), dark);
+            // 꿀관 (뒤쪽 돌기 2개)
+            MakePart("CornicleL", PrimitiveType.Capsule, new Vector3(-0.1f, 0.1f, -0.22f), new Vector3(0.03f, 0.1f, 0.03f),
+                body, Quaternion.Euler(-20f, 0f, 10f));
+            MakePart("CornicleR", PrimitiveType.Capsule, new Vector3(0.1f, 0.1f, -0.22f), new Vector3(0.03f, 0.1f, 0.03f),
+                body, Quaternion.Euler(-20f, 0f, -10f));
+            // 긴 가느다란 다리
+            for (int i = 0; i < 3; i++)
+            {
+                float z = -0.05f + i * 0.12f;
+                MakePart($"LegL{i}", PrimitiveType.Capsule, new Vector3(-0.18f, -0.15f, z),
+                    new Vector3(0.02f, 0.18f, 0.02f), dark, Quaternion.Euler(0f, 0f, 20f));
+                MakePart($"LegR{i}", PrimitiveType.Capsule, new Vector3(0.18f, -0.15f, z),
+                    new Vector3(0.02f, 0.18f, 0.02f), dark, Quaternion.Euler(0f, 0f, -20f));
+            }
+            MakeAntennae(dark, 0.25f);
+            MakeEyes(0.28f, 0.08f);
+        }
+
+        private void BuildAntlion(Color body, Color dark)
+        {
+            // 개미귀신: 큰 턱, 납작한 몸, 넓은 머리
+            MakePart("Body", PrimitiveType.Sphere, new Vector3(0f, 0f, -0.1f), new Vector3(0.4f, 0.2f, 0.6f), body);
+            MakePart("Head", PrimitiveType.Sphere, new Vector3(0f, 0.05f, 0.3f), new Vector3(0.4f, 0.22f, 0.35f), dark);
+            // 거대한 턱 (집게)
+            MakePart("JawL", PrimitiveType.Capsule, new Vector3(-0.12f, 0f, 0.5f), new Vector3(0.05f, 0.2f, 0.05f),
+                dark, Quaternion.Euler(-50f, 20f, 0f));
+            MakePart("JawR", PrimitiveType.Capsule, new Vector3(0.12f, 0f, 0.5f), new Vector3(0.05f, 0.2f, 0.05f),
+                dark, Quaternion.Euler(-50f, -20f, 0f));
+            MakePart("JawTipL", PrimitiveType.Sphere, new Vector3(-0.18f, 0.05f, 0.65f), Vector3.one * 0.04f, body);
+            MakePart("JawTipR", PrimitiveType.Sphere, new Vector3(0.18f, 0.05f, 0.65f), Vector3.one * 0.04f, body);
+            MakeLegs(dark, 3, -0.05f);
+            MakeEyes(0.35f, 0.12f);
+        }
+
+        private void BuildDungBeetle(Color body, Color dark)
+        {
+            // 쇠똥구리: 넓적한 몸, 삽 모양 머리, 굵은 앞다리
+            MakePart("Body", PrimitiveType.Sphere, Vector3.zero, new Vector3(0.7f, 0.4f, 0.8f), body);
+            MakePart("Shell", PrimitiveType.Sphere, new Vector3(0f, 0.15f, -0.05f), new Vector3(0.65f, 0.25f, 0.7f), dark);
+            MakePart("Head", PrimitiveType.Sphere, new Vector3(0f, 0.05f, 0.45f), new Vector3(0.45f, 0.25f, 0.3f), dark);
+            // 삽 모양 머리 돌기
+            MakePart("Shovel", PrimitiveType.Cube, new Vector3(0f, 0.12f, 0.55f), new Vector3(0.35f, 0.06f, 0.1f), dark);
+            // 굵은 앞다리 (삽질용)
+            MakePart("DigLegL", PrimitiveType.Capsule, new Vector3(-0.3f, -0.1f, 0.3f), new Vector3(0.1f, 0.2f, 0.1f),
+                dark, Quaternion.Euler(0f, 0f, 35f));
+            MakePart("DigLegR", PrimitiveType.Capsule, new Vector3(0.3f, -0.1f, 0.3f), new Vector3(0.1f, 0.2f, 0.1f),
+                dark, Quaternion.Euler(0f, 0f, -35f));
+            // 소똥 (옆에)
+            MakePart("DungBall", PrimitiveType.Sphere, new Vector3(0.4f, -0.1f, -0.3f), Vector3.one * 0.25f,
+                new Color(0.35f, 0.28f, 0.15f));
+            MakeLegs(dark, 2, -0.1f);
+            MakeEyes(0.45f, 0.1f);
+        }
+
+        private void BuildClickBeetle(Color body, Color dark)
+        {
+            // 방아벌레: 길쭉한 몸, 뾰족한 모서리, 도약 장치(전흉)
+            MakePart("Body", PrimitiveType.Capsule, Vector3.zero, new Vector3(0.25f, 0.5f, 0.25f), body,
+                Quaternion.Euler(90f, 0f, 0f));
+            MakePart("Shell", PrimitiveType.Cube, new Vector3(0f, 0.1f, -0.1f), new Vector3(0.22f, 0.08f, 0.6f), dark);
+            MakePart("ShellLine", PrimitiveType.Cylinder, new Vector3(0f, 0.14f, -0.1f), new Vector3(0.01f, 0.01f, 0.55f), body);
+            MakePart("Head", PrimitiveType.Sphere, new Vector3(0f, 0.05f, 0.35f), new Vector3(0.22f, 0.18f, 0.2f), dark);
+            // 전흉 (클릭 장치)
+            MakePart("Pronotum", PrimitiveType.Cube, new Vector3(0f, 0.08f, 0.2f), new Vector3(0.24f, 0.1f, 0.15f), body);
+            MakePart("ClickSpine", PrimitiveType.Capsule, new Vector3(0f, -0.02f, 0.15f), new Vector3(0.04f, 0.06f, 0.04f),
+                body, Quaternion.Euler(90f, 0f, 0f));
+            MakeLegs(dark, 3, 0f);
+            MakeAntennae(dark, 0.3f);
+            MakeEyes(0.38f, 0.08f);
+        }
+
+        private void AddRarityEffects()
+        {
+            if (data == null) return;
+
+            if (data.rarity == InsectRarity.Epic)
+            {
+                // Epic: 은은한 보라 오라
+                GameObject aura = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                aura.name = "EpicAura";
+                aura.transform.SetParent(transform, false);
+                aura.transform.localPosition = Vector3.zero;
+                aura.transform.localScale = Vector3.one * 1.3f;
+                Collider c = aura.GetComponent<Collider>();
+                if (c != null) Destroy(c);
+                ApplyColor(aura, new Color(0.6f, 0.2f, 0.8f, 0.08f));
+            }
+            else if (data.rarity == InsectRarity.Legendary)
+            {
+                // Legendary: 금색 오라 + 빛나는 링
+                GameObject aura = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                aura.name = "LegendaryAura";
+                aura.transform.SetParent(transform, false);
+                aura.transform.localPosition = Vector3.zero;
+                aura.transform.localScale = Vector3.one * 1.5f;
+                Collider c = aura.GetComponent<Collider>();
+                if (c != null) Destroy(c);
+                ApplyColor(aura, new Color(1f, 0.85f, 0.2f, 0.1f));
+
+                GameObject ring = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+                ring.name = "LegendaryRing";
+                ring.transform.SetParent(transform, false);
+                ring.transform.localPosition = new Vector3(0f, -0.05f, 0f);
+                ring.transform.localScale = new Vector3(1.2f, 0.01f, 1.2f);
+                Collider rc = ring.GetComponent<Collider>();
+                if (rc != null) Destroy(rc);
+                ApplyColor(ring, new Color(1f, 0.8f, 0.15f, 0.3f));
+            }
+        }
+
         private float GetRarityScale()
         {
             if (data == null) return 1.2f;
@@ -1133,6 +1355,13 @@ namespace InsectGame.Spawning
 
         public void Despawn()
         {
+            // 다중 호출 가드 — Battle/Capture가 동시에 Despawn 호출 시 풀 중복 반환 차단.
+            // 옛은 onDespawn 두 번 발화 → 풀이 같은 객체 두 번 Return → 다음 Get에서 같은 인스턴스 2번 회귀.
+            if (despawnedThisCycle) return;
+            despawnedThisCycle = true;
+
+            // 풀 반환 전 진행 중 코루틴 정리 (다음 인스턴스 사용 시 잔존 영향 방지)
+            StopAllCoroutines();
             if (ownerPoint != null)
                 ownerPoint.NotifyDespawned();
             onDespawn?.Invoke(this);

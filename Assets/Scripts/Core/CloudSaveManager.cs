@@ -31,6 +31,7 @@ namespace InsectGame.Core
             if (Instance == null)
             {
                 Instance = this;
+                if (transform.parent == null) DontDestroyOnLoad(gameObject);
             }
             else if (Instance != this)
             {
@@ -60,17 +61,54 @@ namespace InsectGame.Core
             }
         }
 
+        // 종료 직전 강제 저장 — 자동저장 120초 사이클로 발생하는 마지막 1분 데이터 손실 방지
+        private void OnApplicationQuit()
+        {
+            if (!IsFirebaseConfigured()) return;
+            if (AuthManager.Instance == null || !AuthManager.Instance.IsLoggedIn) return;
+            SaveToCloud();
+        }
+
+        // 모바일 백그라운드 전환 시에도 강제 저장 (앱 강제 종료 대비)
+        private void OnApplicationPause(bool pauseStatus)
+        {
+            if (!pauseStatus) return;
+            if (!IsFirebaseConfigured()) return;
+            if (AuthManager.Instance == null || !AuthManager.Instance.IsLoggedIn) return;
+            SaveToCloud();
+        }
+
         // ── 저장 ──
+
+        private bool pendingSave;
+        private const string LastSaveTsKey = "InsectGame.LastSaveTs";
 
         public void SaveToCloud()
         {
             if (!IsFirebaseConfigured()) return;
             if (AuthManager.Instance == null || !AuthManager.Instance.IsLoggedIn) return;
-            if (IsSaving) return;
+            if (IsSaving)
+            {
+                // 진행 중인 저장이 끝난 직후 1회 더 저장 (보석 결제 등 사용자 액션 손실 방지)
+                pendingSave = true;
+                return;
+            }
             StartCoroutine(SaveCoroutine());
         }
 
         private IEnumerator SaveCoroutine()
+        {
+            yield return SaveCoroutineInternal(allowRetry: true);
+
+            // 진행 중 들어온 요청 처리 (옛 SaveCoroutine 끝 로직 — 분기와 무관하게 항상 실행)
+            if (pendingSave)
+            {
+                pendingSave = false;
+                StartCoroutine(SaveCoroutine());
+            }
+        }
+
+        private IEnumerator SaveCoroutineInternal(bool allowRetry)
         {
             IsSaving = true;
 
@@ -79,6 +117,10 @@ namespace InsectGame.Core
 
             string url = FirebaseConfig.FirestoreBaseUrl
                 + "/users/" + AuthManager.Instance.UserId;
+
+            long responseCode = 0;
+            bool success = false;
+            string errorMsg = null;
 
             using (UnityWebRequest req = new UnityWebRequest(url, "PATCH"))
             {
@@ -91,18 +133,39 @@ namespace InsectGame.Core
 
                 yield return req.SendWebRequest();
 
-                IsSaving = false;
-                if (req.result == UnityWebRequest.Result.Success)
-                {
-                    LastError = null;
-                    SaveCompleted?.Invoke();
-                }
-                else
-                {
-                    LastError = req.error;
-                    Debug.LogWarning("[CloudSave] Save failed: " + req.error);
-                }
+                responseCode = req.responseCode;
+                success = req.result == UnityWebRequest.Result.Success;
+                errorMsg = req.error;
             }
+
+            IsSaving = false;
+
+            if (success)
+            {
+                LastError = null;
+                PlayerPrefs.SetString(LastSaveTsKey, data.lastSaveTimestamp.ToString());
+                PlayerPrefs.Save();
+                SaveCompleted?.Invoke();
+                yield break;
+            }
+
+            // 401/403: 토큰 갱신 후 1회 재시도 (보석 결제 등 사용자 액션 손실 방지)
+            if ((responseCode == 401 || responseCode == 403) && allowRetry)
+            {
+                bool refreshed = false;
+                yield return AuthManager.Instance.TryRefreshTokenForRetry(r => refreshed = r);
+                if (refreshed)
+                {
+                    yield return SaveCoroutineInternal(allowRetry: false);
+                    yield break;
+                }
+                LastError = "session_expired";
+                Debug.LogWarning("[CloudSave] Save failed: session expired, refresh denied");
+                yield break;
+            }
+
+            LastError = errorMsg;
+            Debug.LogWarning("[CloudSave] Save failed: " + errorMsg);
         }
 
         // ── 로드 ──
@@ -122,10 +185,20 @@ namespace InsectGame.Core
 
         private IEnumerator LoadCoroutine()
         {
+            yield return LoadCoroutineInternal(allowRetry: true);
+        }
+
+        private IEnumerator LoadCoroutineInternal(bool allowRetry)
+        {
             IsLoading = true;
 
             string url = FirebaseConfig.FirestoreBaseUrl
                 + "/users/" + AuthManager.Instance.UserId;
+
+            long responseCode = 0;
+            bool success = false;
+            string errorMsg = null;
+            string downloadText = null;
 
             using (UnityWebRequest req = UnityWebRequest.Get(url))
             {
@@ -134,34 +207,55 @@ namespace InsectGame.Core
 
                 yield return req.SendWebRequest();
 
-                IsLoading = false;
-                if (req.result == UnityWebRequest.Result.Success)
+                responseCode = req.responseCode;
+                success = req.result == UnityWebRequest.Result.Success;
+                errorMsg = req.error;
+                if (success) downloadText = req.downloadHandler.text;
+            }
+
+            IsLoading = false;
+
+            if (success)
+            {
+                GameSaveData data = ParseFirestoreDocument(downloadText);
+                if (data != null)
                 {
-                    GameSaveData data = ParseFirestoreDocument(req.downloadHandler.text);
-                    if (data != null)
-                    {
-                        ApplySaveData(data);
-                        LoadCompleted?.Invoke(true);
-                    }
-                    else
-                    {
-                        LoadCompleted?.Invoke(false);
-                    }
+                    ApplySaveData(data);
+                    LoadCompleted?.Invoke(true);
                 }
                 else
                 {
-                    if (req.responseCode == 404 || req.responseCode == 401 || req.responseCode == 403)
-                    {
-                        // 404=새유저, 401/403=Firebase 미설정 → 새 유저 취급
-                        LoadCompleted?.Invoke(false);
-                    }
-                    else
-                    {
-                        LastError = req.error;
-                        Debug.LogWarning("[CloudSave] Load failed: " + req.error);
-                        LoadCompleted?.Invoke(false); // 에러여도 진행 가능하게
-                    }
+                    LoadCompleted?.Invoke(false);
                 }
+                yield break;
+            }
+
+            // 401/403: 토큰 만료 가능성 → 1회 갱신 후 재시도. 갱신 실패면 새 유저 취급.
+            // 옛 코드는 401/403을 "Firebase 미설정"으로 단일 처리해서 정상 유저도 데이터 손실 위험.
+            if ((responseCode == 401 || responseCode == 403) && allowRetry)
+            {
+                bool refreshed = false;
+                yield return AuthManager.Instance.TryRefreshTokenForRetry(r => refreshed = r);
+                if (refreshed)
+                {
+                    yield return LoadCoroutineInternal(allowRetry: false);
+                    yield break;
+                }
+                // 갱신 실패 = AuthFailed 발화됨 + ClearAuth 완료. 새 유저 취급.
+                LoadCompleted?.Invoke(false);
+                yield break;
+            }
+
+            if (responseCode == 404 || responseCode == 401 || responseCode == 403)
+            {
+                // 404=새유저, 갱신 후에도 401/403=Firebase 미설정 또는 영구 거부
+                LoadCompleted?.Invoke(false);
+            }
+            else
+            {
+                LastError = errorMsg;
+                Debug.LogWarning("[CloudSave] Load failed: " + errorMsg);
+                LoadCompleted?.Invoke(false);
             }
         }
 
@@ -176,6 +270,8 @@ namespace InsectGame.Core
                 playerXp = PlayerPrefs.GetInt("player_xp", 0),
                 candies = PlayerPrefs.GetInt("player_candies", 0),
                 coins = PlayerPrefs.GetInt("player_coins", 0),
+                // gems는 PlayerCurrencyWallet 단일 소스. CashShopManager가 wallet 경유 노출.
+                gems = CashShopManager.Instance != null ? CashShopManager.Instance.Gems : 0,
                 ownedInsects = LoadLocalFile(GameConstants.SaveFiles.PlayerInsects),
                 battleTeam = LoadLocalFile(GameConstants.SaveFiles.BattleTeam),
                 dexData = LoadLocalFile(GameConstants.SaveFiles.DexSave),
@@ -199,10 +295,31 @@ namespace InsectGame.Core
 
         private void ApplySaveData(GameSaveData data)
         {
+            // 타임스탬프 가드: 로컬 lastSaveTimestamp가 클라우드보다 새것이면 덮어쓰기 거부.
+            // 현재 LoadFromCloud는 LoginUI 로그인 직후 1회만 호출되지만, 미래 어디서든 LoadFromCloud가
+            // 게임 진행 중 호출될 수 있는 케이스(계정 전환, 강제 동기화 등)에 대비.
+            // long을 PlayerPrefs에 직접 저장 불가 → string으로 보관.
+            long localTs = 0;
+            long.TryParse(PlayerPrefs.GetString(LastSaveTsKey, "0"), out localTs);
+            if (localTs > 0 && data.lastSaveTimestamp > 0 && localTs > data.lastSaveTimestamp)
+            {
+                Debug.LogWarning(
+                    "[CloudSave] 로컬 데이터(" + localTs + ")가 클라우드(" + data.lastSaveTimestamp
+                    + ")보다 새것. 덮어쓰기 거부.");
+                return;
+            }
+
             PlayerPrefs.SetInt("player_level", data.playerLevel);
             PlayerPrefs.SetInt("player_xp", data.playerXp);
             PlayerPrefs.SetInt("player_candies", data.candies);
             PlayerPrefs.SetInt("player_coins", data.coins);
+            // gems: wallet 단일 소스. data.gems가 음수(옛 클라우드)면 로컬 유지.
+            // CashShopManager가 wallet에 직접 반영(여러 UI 이벤트 동기 발화 보장).
+            if (data.gems >= 0 && CashShopManager.Instance != null)
+            {
+                int diff = data.gems - CashShopManager.Instance.Gems;
+                if (diff != 0) CashShopManager.Instance.AddGems(diff);
+            }
             PlayerPrefs.SetString("InsectGame.Equipped", data.equippedOutfit ?? "");
             PlayerPrefs.SetString("InsectGame.OwnedOutfits", data.ownedOutfits ?? "");
             PlayerPrefs.SetString("InsectGame.UnlockedRegions",
@@ -236,6 +353,7 @@ namespace InsectGame.Core
             sb.Append(","); AppendIntField(sb, "playerXp", data.playerXp);
             sb.Append(","); AppendIntField(sb, "candies", data.candies);
             sb.Append(","); AppendIntField(sb, "coins", data.coins);
+            sb.Append(","); AppendIntField(sb, "gems", data.gems);
             sb.Append(","); AppendStringField(sb, "ownedInsects", data.ownedInsects);
             sb.Append(","); AppendStringField(sb, "battleTeam", data.battleTeam);
             sb.Append(","); AppendStringField(sb, "dexData", data.dexData);
@@ -264,6 +382,9 @@ namespace InsectGame.Core
             data.playerXp = ExtractIntValue(json, "playerXp");
             data.candies = ExtractIntValue(json, "candies");
             data.coins = ExtractIntValue(json, "coins");
+            // gems는 신규 필드 — 옛 클라우드 데이터에 없으면 -1 sentinel.
+            // ApplySaveData에서 음수면 PlayerPrefs 덮어쓰기 스킵(기존 로컬 보석 보존).
+            data.gems = ExtractIntValueOrDefault(json, "gems", -1);
             data.ownedInsects = ExtractStringValue(json, "ownedInsects");
             data.battleTeam = ExtractStringValue(json, "battleTeam");
             data.dexData = ExtractStringValue(json, "dexData");
@@ -346,17 +467,22 @@ namespace InsectGame.Core
         /// </summary>
         private int ExtractIntValue(string json, string fieldName)
         {
+            return ExtractIntValueOrDefault(json, fieldName, 0);
+        }
+
+        private int ExtractIntValueOrDefault(string json, string fieldName, int defaultValue)
+        {
             string marker = "\"" + fieldName + "\":{\"integerValue\":\"";
             int start = json.IndexOf(marker, StringComparison.Ordinal);
-            if (start < 0) return 0;
+            if (start < 0) return defaultValue;
             start += marker.Length;
             int end = json.IndexOf("\"", start, StringComparison.Ordinal);
-            if (end < 0) return 0;
+            if (end < 0) return defaultValue;
 
             string numStr = json.Substring(start, end - start);
             if (int.TryParse(numStr, out int result))
                 return result;
-            return 0;
+            return defaultValue;
         }
 
         // ── 로컬 파일 IO ──
@@ -371,7 +497,7 @@ namespace InsectGame.Core
         private void SaveLocalFile(string fileName, string content)
         {
             string path = Path.Combine(Application.persistentDataPath, fileName);
-            File.WriteAllText(path, content);
+            AtomicFileWriter.WriteAllText(path, content);
         }
     }
 
@@ -385,6 +511,7 @@ namespace InsectGame.Core
         public int playerXp;
         public int candies;
         public int coins;
+        public int gems;
         public string ownedInsects;
         public string battleTeam;
         public string dexData;

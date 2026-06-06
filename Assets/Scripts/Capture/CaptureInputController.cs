@@ -13,6 +13,7 @@ namespace InsectGame.Capture
         [SerializeField] private CaptureMinigameController minigame;
         [SerializeField] private CaptureChoiceUI choiceUi;
         [SerializeField] private BattleScreenUI battleScreen;
+        [SerializeField] private RaidBattleUI raidScreen;
         [SerializeField] private DexScreenUI dexScreen;
 
         private InsectEntity nearestInsect;
@@ -30,6 +31,7 @@ namespace InsectGame.Capture
             bool anyBlockingUI = (minigame != null && minigame.IsActive)
                 || (choiceUi != null && choiceUi.IsChoiceOpen)
                 || (battleScreen != null && battleScreen.IsBattleActive)
+                || (raidScreen != null && raidScreen.IsRaidActive)
                 || (dexScreen != null && dexScreen.IsOpen);
 
             if (Input.GetKeyDown(KeyCode.E) && !anyBlockingUI)
@@ -49,6 +51,7 @@ namespace InsectGame.Capture
             bool anyUI = (minigame != null && minigame.IsActive)
                 || (choiceUi != null && choiceUi.IsChoiceOpen)
                 || (battleScreen != null && battleScreen.IsBattleActive)
+                || (raidScreen != null && raidScreen.IsRaidActive)
                 || (dexScreen != null && dexScreen.IsOpen);
 
             Event evt = Event.current;
@@ -146,9 +149,10 @@ namespace InsectGame.Capture
             if (choiceUi == null) choiceUi = choice;
         }
 
-        public void AutoWire(BattleScreenUI battle, DexScreenUI dex)
+        public void AutoWire(BattleScreenUI battle, RaidBattleUI raid, DexScreenUI dex)
         {
             if (battleScreen == null) battleScreen = battle;
+            if (raidScreen == null) raidScreen = raid;
             if (dexScreen == null) dexScreen = dex;
         }
     }

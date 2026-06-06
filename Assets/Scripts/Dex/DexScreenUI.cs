@@ -6,10 +6,11 @@ using UnityEngine;
 
 namespace InsectGame.Dex
 {
-    public class DexScreenUI : MonoBehaviour
+    public class DexScreenUI : MonoBehaviour, IModalUI
     {
         [SerializeField] private InsectDatabase database;
         [SerializeField] private DexController dexController;
+        [SerializeField] private InsectModelPreviewRenderer previewRenderer; // 곤충 3D 모델 RenderTexture 프리뷰
         [SerializeField] private PlayerInsectCollection insectCollection;
         [SerializeField] private PlayerItemInventory itemInventory;
 
@@ -18,13 +19,180 @@ namespace InsectGame.Dex
         private int selectedIndex = -1;
         private int currentTab;
 
+        // === OnGUI GUIStyle 캐시 (옛은 매 OnGUI 31개 new GUIStyle 회귀) ===
+        // 매 프레임 호출되는 영역 21개 + 조건부 호출 10개 = 총 31개 1회 초기화 후 재사용.
+        // 동적 textColor/fontStyle은 매 호출 시 갱신.
+        private GUIStyle titleStyleCache, countStyleCache, tabStyleCache, closeStyleCache;
+        private GUIStyle numStyleCache, missingQStyleCache, listNameStyleCache, listSubStyleCache, checkStyleCache, eyeStyleCache;
+        private GUIStyle detailQStyleCache, detailNameStyleCache, raritySCache, caughtSCache, seenSCache, unkSCache;
+        private GUIStyle labelSCache, valSCache, hintSCache, habitatLabelCache, habitatValCache, descSCache;
+        private GUIStyle ownedNameCache, ownedInfoCache, ownedStCache, ownedGrCache, ownedPctCache;
+        private GUIStyle headerSCache, itemNameCache, itemDescCache, itemCountCache;
+        private GUIStyle noSelectionCache, centeredCache;
+        private bool dexStylesInitialized;
+
+        // 매 OnGUI 호출되는 정적 Color — new Color 회귀 차단
+        private static readonly Color DexBgColor = new Color(0.02f, 0.03f, 0.06f, 0.97f);
+        private static readonly Color TopBarBg = new Color(0.06f, 0.08f, 0.14f, 1f);
+        private static readonly Color TitleCol = new Color(1f, 0.88f, 0.3f);
+        private static readonly Color CountCol = new Color(0.6f, 0.65f, 0.7f);
+        private static readonly Color TabActiveBg = new Color(0.2f, 0.4f, 0.8f);
+        private static readonly Color TabInactiveBg = new Color(0.12f, 0.14f, 0.2f);
+        private static readonly Color TitleLineCol = new Color(1f, 0.88f, 0.3f, 0.6f);
+        private static readonly Color ListBg = new Color(0.04f, 0.05f, 0.09f, 0.9f);
+        private static readonly Color SelectedRowBg = new Color(0.15f, 0.2f, 0.35f, 0.95f);
+        private static readonly Color RowBgEven = new Color(0.06f, 0.07f, 0.12f, 0.6f);
+        private static readonly Color RowBgOdd = new Color(0.06f, 0.07f, 0.12f, 0.4f);
+        private static readonly Color NumCol = new Color(0.35f, 0.38f, 0.42f);
+        private static readonly Color UnknownIconCol = new Color(0.12f, 0.12f, 0.15f);
+        private static readonly Color UnknownQCol = new Color(0.2f, 0.2f, 0.22f);
+        private static readonly Color CaughtNameCol = new Color(0.55f, 0.55f, 0.6f);
+        private static readonly Color SubCol = new Color(0.4f, 0.42f, 0.48f);
+        private static readonly Color SubMissingCol = new Color(0.15f, 0.15f, 0.18f);
+        private static readonly Color CheckBg = new Color(0.2f, 0.7f, 0.3f);
+        private static readonly Color EyeBg = new Color(0.5f, 0.5f, 0.2f);
+        private static readonly Color DetailBg = new Color(0.04f, 0.06f, 0.1f, 0.95f);
+        private static readonly Color DetailUnknownBg = new Color(0.08f, 0.08f, 0.1f);
+        private static readonly Color DetailUnknownQ = new Color(0.15f, 0.15f, 0.18f);
+        private static readonly Color SeenLabelCol = new Color(0.8f, 0.8f, 0.3f);
+        private static readonly Color CaughtLabelCol = new Color(0.3f, 0.85f, 0.4f);
+        private static readonly Color UnkCol = new Color(0.2f, 0.2f, 0.22f);
+        private static readonly Color InfoBoxBg = new Color(0.08f, 0.1f, 0.16f, 0.8f);
+        private static readonly Color LabelCol = new Color(0.55f, 0.58f, 0.65f);
+        private static readonly Color HintCol = new Color(0.4f, 0.42f, 0.48f);
+        private static readonly Color HabitatLabelCol = new Color(0.35f, 0.55f, 0.35f);
+        private static readonly Color HabitatValCol = new Color(0.5f, 0.75f, 0.5f);
+        private static readonly Color DescBg = new Color(0.06f, 0.08f, 0.12f, 0.6f);
+        private static readonly Color DescCol = new Color(0.6f, 0.62f, 0.68f);
+        private static readonly Color OwnedBg = new Color(0.07f, 0.09f, 0.15f, 0.95f);
+        private static readonly Color InfoCol = new Color(0.6f, 0.6f, 0.65f);
+        private static readonly Color StCol = new Color(0.45f, 0.48f, 0.52f);
+        private static readonly Color HeaderCol = new Color(0.7f, 0.75f, 0.8f);
+        private static readonly Color ItemDescCol = new Color(0.5f, 0.52f, 0.58f);
+        private static readonly Color ItemCountGood = new Color(1f, 0.92f, 0.5f);
+        private static readonly Color ItemCountBad = new Color(0.3f, 0.3f, 0.3f);
+        private static readonly Color CenteredCol = new Color(0.35f, 0.35f, 0.4f);
+        private static readonly Color NoSelectionCol = new Color(0.3f, 0.3f, 0.35f);
+        private static readonly Color CaughtBgAlpha = new Color(0.2f, 0.7f, 0.3f, 0.15f);
+        private static readonly Color SeenBgAlpha = new Color(0.5f, 0.5f, 0.2f, 0.15f);
+
+        private void InitDexStyles()
+        {
+            if (dexStylesInitialized) return;
+            dexStylesInitialized = true;
+
+            titleStyleCache = new GUIStyle(GUI.skin.label) { fontSize = 52, fontStyle = FontStyle.Bold };
+            titleStyleCache.normal.textColor = TitleCol;
+
+            countStyleCache = new GUIStyle(GUI.skin.label) { fontSize = 36 };
+            countStyleCache.normal.textColor = CountCol;
+
+            tabStyleCache = new GUIStyle(GUI.skin.button) { fontSize = 36 };
+
+            closeStyleCache = new GUIStyle(GUI.skin.button) { fontSize = 38, fontStyle = FontStyle.Bold };
+
+            numStyleCache = new GUIStyle(GUI.skin.label) { fontSize = 28 };
+            numStyleCache.normal.textColor = NumCol;
+
+            missingQStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 36, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            missingQStyleCache.normal.textColor = UnknownQCol;
+
+            listNameStyleCache = new GUIStyle(GUI.skin.label) { fontSize = 36, fontStyle = FontStyle.Bold };
+            listSubStyleCache = new GUIStyle(GUI.skin.label) { fontSize = 28 };
+
+            checkStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 28, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            checkStyleCache.normal.textColor = Color.white;
+
+            eyeStyleCache = new GUIStyle(GUI.skin.label) { fontSize = 28, alignment = TextAnchor.MiddleCenter };
+            eyeStyleCache.normal.textColor = Color.white;
+
+            detailQStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 72, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            detailQStyleCache.normal.textColor = DetailUnknownQ;
+
+            detailNameStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 60, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+
+            raritySCache = new GUIStyle(GUI.skin.label) { fontSize = 38, alignment = TextAnchor.MiddleCenter };
+
+            caughtSCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 36, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            caughtSCache.normal.textColor = CaughtLabelCol;
+
+            seenSCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 36, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            seenSCache.normal.textColor = SeenLabelCol;
+
+            unkSCache = new GUIStyle(GUI.skin.label) { fontSize = 38, alignment = TextAnchor.MiddleCenter };
+            unkSCache.normal.textColor = UnkCol;
+
+            labelSCache = new GUIStyle(GUI.skin.label) { fontSize = 34 };
+            labelSCache.normal.textColor = LabelCol;
+
+            valSCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 34, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleRight };
+            valSCache.normal.textColor = Color.white;
+
+            hintSCache = new GUIStyle(GUI.skin.label) { fontSize = 36, alignment = TextAnchor.MiddleCenter };
+            hintSCache.normal.textColor = HintCol;
+
+            habitatLabelCache = new GUIStyle(GUI.skin.label) { fontSize = 32 };
+            habitatLabelCache.normal.textColor = HabitatLabelCol;
+
+            habitatValCache = new GUIStyle(GUI.skin.label) { fontSize = 36, fontStyle = FontStyle.Bold };
+            habitatValCache.normal.textColor = HabitatValCol;
+
+            descSCache = new GUIStyle(GUI.skin.label) { fontSize = 34, wordWrap = true };
+            descSCache.normal.textColor = DescCol;
+
+            ownedNameCache = new GUIStyle(GUI.skin.label) { fontSize = 38, fontStyle = FontStyle.Bold };
+            ownedInfoCache = new GUIStyle(GUI.skin.label) { fontSize = 32 };
+            ownedInfoCache.normal.textColor = InfoCol;
+            ownedStCache = new GUIStyle(GUI.skin.label) { fontSize = 28 };
+            ownedStCache.normal.textColor = StCol;
+            ownedGrCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 52, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            ownedPctCache = new GUIStyle(GUI.skin.label) { fontSize = 28, alignment = TextAnchor.MiddleCenter };
+
+            headerSCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 42, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            headerSCache.normal.textColor = HeaderCol;
+
+            itemNameCache = new GUIStyle(GUI.skin.label) { fontSize = 38, fontStyle = FontStyle.Bold };
+            itemDescCache = new GUIStyle(GUI.skin.label) { fontSize = 30 };
+            itemDescCache.normal.textColor = ItemDescCol;
+            itemCountCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 48, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleRight };
+
+            noSelectionCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 42, alignment = TextAnchor.MiddleCenter, wordWrap = true };
+            noSelectionCache.normal.textColor = NoSelectionCol;
+
+            centeredCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 42, alignment = TextAnchor.MiddleCenter, wordWrap = true };
+            centeredCache.normal.textColor = CenteredCol;
+        }
+
         public bool IsOpen => isOpen;
         public void Toggle()
         {
             isOpen = !isOpen;
-            if (isOpen && TutorialQuestManager.Instance != null)
-                TutorialQuestManager.Instance.NotifyDexOpened();
+            if (isOpen)
+            {
+                ModalUIRegistry.Register(this);
+                if (TutorialQuestManager.Instance != null)
+                    TutorialQuestManager.Instance.NotifyDexOpened();
+            }
+            else ModalUIRegistry.Unregister(this);
         }
+        public void CloseModal()
+        {
+            isOpen = false;
+            ModalUIRegistry.Unregister(this);
+        }
+        private void OnDisable() { ModalUIRegistry.Unregister(this); }
 
         private readonly string[] tabNames = { "곤충 도감", "보유 곤충", "아이템" };
 
@@ -33,7 +201,7 @@ namespace InsectGame.Dex
             if (!isOpen) return;
 
             if (Input.GetKeyDown(KeyCode.Escape))
-            { isOpen = false; return; }
+            { CloseModal(); return; }
 
             if (currentTab == 0 && database != null)
             {
@@ -61,7 +229,7 @@ namespace InsectGame.Dex
                 if (evt != null && evt.type == EventType.KeyDown)
                 {
                     if (evt.keyCode == KeyCode.Escape)
-                    { isOpen = false; evt.Use(); return; }
+                    { CloseModal(); evt.Use(); return; }
                     if (currentTab == 0 && database != null)
                     {
                         if (evt.keyCode == KeyCode.UpArrow)
@@ -74,9 +242,10 @@ namespace InsectGame.Dex
 
             if (!isOpen || database == null || dexController == null) return;
 
+            InitDexStyles();
             GUI.depth = -10;
 
-            GUI.color = new Color(0.02f, 0.03f, 0.06f, 0.97f);
+            GUI.color = DexBgColor;
             GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
@@ -95,7 +264,7 @@ namespace InsectGame.Dex
 
         private void DrawTopBar()
         {
-            GUI.color = new Color(0.06f, 0.08f, 0.14f, 1f);
+            GUI.color = TopBarBg;
             GUI.DrawTexture(new Rect(0, 0, Screen.width, 114), Texture2D.whiteTexture);
 
             int total = database.insects.Count;
@@ -107,35 +276,26 @@ namespace InsectGame.Dex
                 if (dexController.HasRecord(ins.insectId)) captured++;
             }
 
-            GUIStyle titleS = new GUIStyle(GUI.skin.label)
-            { fontSize = 52, fontStyle = FontStyle.Bold };
-            titleS.normal.textColor = new Color(1f, 0.88f, 0.3f);
             GUI.color = Color.white;
-            GUI.Label(new Rect(20, 10, 500, 60), "곤충 도감", titleS);
-
-            GUIStyle countS = new GUIStyle(GUI.skin.label) { fontSize = 36 };
-            countS.normal.textColor = new Color(0.6f, 0.65f, 0.7f);
+            GUI.Label(new Rect(20, 10, 500, 60), "곤충 도감", titleStyleCache);
             GUI.Label(new Rect(320, 16, 500, 50),
-                $"발견 {discovered}/{total}   포획 {captured}/{total}", countS);
+                $"발견 {discovered}/{total}   포획 {captured}/{total}", countStyleCache);
 
             float tabX = Screen.width / 2f - tabNames.Length * 120f;
             for (int i = 0; i < tabNames.Length; i++)
             {
                 bool active = currentTab == i;
-                GUIStyle tabS = new GUIStyle(GUI.skin.button)
-                { fontSize = 36, fontStyle = active ? FontStyle.Bold : FontStyle.Normal };
-                GUI.backgroundColor = active ? new Color(0.2f, 0.4f, 0.8f) : new Color(0.12f, 0.14f, 0.2f);
-                if (GUI.Button(new Rect(tabX + i * 240, 66, 230, 42), tabNames[i], tabS))
+                tabStyleCache.fontStyle = active ? FontStyle.Bold : FontStyle.Normal;
+                GUI.backgroundColor = active ? TabActiveBg : TabInactiveBg;
+                if (GUI.Button(new Rect(tabX + i * 240, 66, 230, 42), tabNames[i], tabStyleCache))
                 { currentTab = i; listScroll = Vector2.zero; selectedIndex = -1; }
             }
             GUI.backgroundColor = Color.white;
 
-            GUIStyle closeS = new GUIStyle(GUI.skin.button)
-            { fontSize = 38, fontStyle = FontStyle.Bold };
-            if (GUI.Button(new Rect(Screen.width - 180, 10, 168, 50), "닫기 [N]", closeS))
-                isOpen = false;
+            if (GUI.Button(new Rect(Screen.width - 180, 10, 168, 50), "닫기 [N]", closeStyleCache))
+                CloseModal();
 
-            GUI.color = new Color(1f, 0.88f, 0.3f, 0.6f);
+            GUI.color = TitleLineCol;
             GUI.DrawTexture(new Rect(0, 112, Screen.width, 3), Texture2D.whiteTexture);
             GUI.color = Color.white;
         }
@@ -146,7 +306,7 @@ namespace InsectGame.Dex
             float detailX = listW + 10;
             float detailW = Screen.width - detailX - 10;
 
-            GUI.color = new Color(0.04f, 0.05f, 0.09f, 0.9f);
+            GUI.color = ListBg;
             GUI.DrawTexture(new Rect(0, y, listW, h), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
@@ -171,23 +331,20 @@ namespace InsectGame.Dex
 
                 if (selected)
                 {
-                    GUI.color = new Color(0.15f, 0.2f, 0.35f, 0.95f);
+                    GUI.color = SelectedRowBg;
                     GUI.DrawTexture(new Rect(0, ry, listW - 28, rowH - 2), Texture2D.whiteTexture);
-                    Color rc = UITheme.Instance.GetInsectRarityColor(ins.rarity);
                     GUI.color = Color.white;
                     Rect rowRect = new Rect(0, ry, listW - 28, rowH - 2);
                     UIHelper.DrawRarityBorder(rowRect, (int)ins.rarity, Time.time);
                 }
                 else
                 {
-                    GUI.color = new Color(0.06f, 0.07f, 0.12f, i % 2 == 0 ? 0.6f : 0.4f);
+                    GUI.color = (i % 2 == 0) ? RowBgEven : RowBgOdd;
                     GUI.DrawTexture(new Rect(0, ry, listW - 28, rowH - 2), Texture2D.whiteTexture);
                 }
 
-                GUIStyle numS = new GUIStyle(GUI.skin.label) { fontSize = 28 };
-                numS.normal.textColor = new Color(0.35f, 0.38f, 0.42f);
                 GUI.color = Color.white;
-                GUI.Label(new Rect(10, ry + 4, 72, 20), $"#{i + 1:D3}", numS);
+                GUI.Label(new Rect(10, ry + 4, 72, 20), $"#{i + 1:D3}", numStyleCache);
 
                 float iconCx = 62, iconCy = ry + rowH / 2f;
                 if (found)
@@ -198,62 +355,49 @@ namespace InsectGame.Dex
                 }
                 else
                 {
-                    GUI.color = new Color(0.12f, 0.12f, 0.15f);
+                    GUI.color = UnknownIconCol;
                     GUI.DrawTexture(new Rect(iconCx - 14, iconCy - 14, 28, 28), Texture2D.whiteTexture);
-                    GUIStyle qS = new GUIStyle(GUI.skin.label)
-                    { fontSize = 36, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-                    qS.normal.textColor = new Color(0.2f, 0.2f, 0.22f);
                     GUI.color = Color.white;
-                    GUI.Label(new Rect(iconCx - 14, iconCy - 14, 28, 28), "?", qS);
+                    GUI.Label(new Rect(iconCx - 14, iconCy - 14, 28, 28), "?", missingQStyleCache);
                 }
 
-                GUIStyle nameS = new GUIStyle(GUI.skin.label)
-                { fontSize = 36, fontStyle = FontStyle.Bold };
                 if (found)
                 {
-                    nameS.normal.textColor = caught ? UITheme.Instance.GetInsectRarityColor(ins.rarity)
-                        : new Color(0.55f, 0.55f, 0.6f);
+                    listNameStyleCache.normal.textColor = caught ? UITheme.Instance.GetInsectRarityColor(ins.rarity) : CaughtNameCol;
                     GUI.color = Color.white;
-                    GUI.Label(new Rect(88, ry + 6, 260, 40), ins.displayName, nameS);
+                    GUI.Label(new Rect(88, ry + 6, 260, 40), ins.displayName, listNameStyleCache);
                 }
                 else
                 {
-                    nameS.normal.textColor = new Color(0.2f, 0.2f, 0.22f);
+                    listNameStyleCache.normal.textColor = UnknownQCol;
                     GUI.color = Color.white;
-                    GUI.Label(new Rect(88, ry + 6, 260, 40), "???", nameS);
+                    GUI.Label(new Rect(88, ry + 6, 260, 40), "???", listNameStyleCache);
                 }
 
-                GUIStyle subS = new GUIStyle(GUI.skin.label) { fontSize = 28 };
                 if (found)
                 {
-                    subS.normal.textColor = new Color(0.4f, 0.42f, 0.48f);
-                    GUI.Label(new Rect(88, ry + 44, 240, 30), ins.rarity.ToString(), subS);
+                    listSubStyleCache.normal.textColor = SubCol;
+                    GUI.Label(new Rect(88, ry + 44, 240, 30), ins.rarity.ToString(), listSubStyleCache);
                 }
                 else
                 {
-                    subS.normal.textColor = new Color(0.15f, 0.15f, 0.18f);
-                    GUI.Label(new Rect(88, ry + 44, 240, 30), "미발견", subS);
+                    listSubStyleCache.normal.textColor = SubMissingCol;
+                    GUI.Label(new Rect(88, ry + 44, 240, 30), "미발견", listSubStyleCache);
                 }
 
                 if (caught)
                 {
-                    GUI.color = new Color(0.2f, 0.7f, 0.3f);
+                    GUI.color = CheckBg;
                     GUI.DrawTexture(new Rect(listW - 66, ry + 22, 32, 32), Texture2D.whiteTexture);
-                    GUIStyle checkS = new GUIStyle(GUI.skin.label)
-                    { fontSize = 28, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-                    checkS.normal.textColor = Color.white;
                     GUI.color = Color.white;
-                    GUI.Label(new Rect(listW - 66, ry + 22, 32, 32), "✓", checkS);
+                    GUI.Label(new Rect(listW - 66, ry + 22, 32, 32), "✓", checkStyleCache);
                 }
                 else if (found)
                 {
-                    GUI.color = new Color(0.5f, 0.5f, 0.2f);
+                    GUI.color = EyeBg;
                     GUI.DrawTexture(new Rect(listW - 66, ry + 22, 32, 32), Texture2D.whiteTexture);
-                    GUIStyle eyeS = new GUIStyle(GUI.skin.label)
-                    { fontSize = 28, alignment = TextAnchor.MiddleCenter };
-                    eyeS.normal.textColor = Color.white;
                     GUI.color = Color.white;
-                    GUI.Label(new Rect(listW - 66, ry + 22, 32, 32), "◉", eyeS);
+                    GUI.Label(new Rect(listW - 66, ry + 22, 32, 32), "◉", eyeStyleCache);
                 }
 
                 if (GUI.Button(new Rect(0, ry, listW - 28, rowH - 2), "", GUIStyle.none))
@@ -270,11 +414,8 @@ namespace InsectGame.Dex
 
         private void DrawNoSelection(float x, float y, float w, float h)
         {
-            GUIStyle s = new GUIStyle(GUI.skin.label)
-            { fontSize = 42, alignment = TextAnchor.MiddleCenter, wordWrap = true };
-            s.normal.textColor = new Color(0.3f, 0.3f, 0.35f);
             GUI.Label(new Rect(x, y + h / 2f - 40, w, 80),
-                "← 왼쪽 목록에서 곤충을 선택하세요\n(↑↓ 방향키 또는 클릭)", s);
+                "← 왼쪽 목록에서 곤충을 선택하세요\n(↑↓ 방향키 또는 클릭)", noSelectionCache);
         }
 
         private void DrawDetail(float x, float y, float w, float h, InsectData ins)
@@ -284,7 +425,7 @@ namespace InsectGame.Dex
             DexRecord record = null;
             dexController.TryGetRecord(ins.insectId, out record);
 
-            GUI.color = new Color(0.04f, 0.06f, 0.1f, 0.95f);
+            GUI.color = DetailBg;
             GUI.DrawTexture(new Rect(x, y, w, h), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
@@ -296,125 +437,113 @@ namespace InsectGame.Dex
             if (found)
             {
                 float portraitSize = 90f;
-                GUI.color = new Color(rarityCol.r * 0.1f, rarityCol.g * 0.1f, rarityCol.b * 0.1f, 0.5f);
+                // 어두운 배경 — rarityCol 기반 동적이지만 struct copy로 alloc 없음
+                Color portBg = rarityCol;
+                portBg.r *= 0.1f; portBg.g *= 0.1f; portBg.b *= 0.1f; portBg.a = 0.5f;
+                GUI.color = portBg;
                 GUI.DrawTexture(new Rect(cx - portraitSize, py, portraitSize * 2, portraitSize * 2), Texture2D.whiteTexture);
                 GUI.color = Color.white;
 
-                Color ic = caught ? UITheme.Instance.GetInsectColor(ins.insectId, ins.rarity)
-                    : new Color(0.3f, 0.3f, 0.35f);
-                DrawTinyInsect(cx, py + portraitSize, portraitSize * 1.2f, ins.insectId, ic);
+                // 포획한 곤충은 3D 모델 프리뷰(RenderTexture)로 표시. 준비 전/미포획이면 약식 2D 폴백.
+                Texture preview = (caught && previewRenderer != null) ? previewRenderer.GetPreview(ins) : null;
+                if (preview != null)
+                {
+                    GUI.DrawTexture(new Rect(cx - portraitSize, py, portraitSize * 2f, portraitSize * 2f),
+                        preview, ScaleMode.ScaleToFit, true);
+                }
+                else
+                {
+                    Color ic = caught ? UITheme.Instance.GetInsectColor(ins.insectId, ins.rarity)
+                        : new Color(0.3f, 0.3f, 0.35f);
+                    DrawTinyInsect(cx, py + portraitSize, portraitSize * 1.2f, ins.insectId, ic);
+                }
 
                 py += portraitSize * 2 + 12;
             }
             else
             {
-                GUI.color = new Color(0.08f, 0.08f, 0.1f);
+                GUI.color = DetailUnknownBg;
                 GUI.DrawTexture(new Rect(cx - 70, py, 140, 140), Texture2D.whiteTexture);
-                GUIStyle qS = new GUIStyle(GUI.skin.label)
-                { fontSize = 72, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-                qS.normal.textColor = new Color(0.15f, 0.15f, 0.18f);
                 GUI.color = Color.white;
-                GUI.Label(new Rect(cx - 70, py, 140, 140), "?", qS);
+                GUI.Label(new Rect(cx - 70, py, 140, 140), "?", detailQStyleCache);
                 py += 158;
             }
 
-            GUIStyle nameS = new GUIStyle(GUI.skin.label)
-            { fontSize = 60, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             if (found)
             {
-                nameS.normal.textColor = caught ? rarityCol : new Color(0.5f, 0.5f, 0.55f);
-                GUI.Label(new Rect(x, py, w, 66), ins.displayName, nameS);
+                detailNameStyleCache.normal.textColor = caught ? rarityCol : CaughtNameCol;
+                GUI.Label(new Rect(x, py, w, 66), ins.displayName, detailNameStyleCache);
             }
             else
             {
-                nameS.normal.textColor = new Color(0.18f, 0.18f, 0.2f);
-                GUI.Label(new Rect(x, py, w, 66), "???", nameS);
+                detailNameStyleCache.normal.textColor = SubMissingCol;
+                GUI.Label(new Rect(x, py, w, 66), "???", detailNameStyleCache);
             }
             py += 70;
 
             if (found)
             {
-                GUIStyle rarityS = new GUIStyle(GUI.skin.label)
-                { fontSize = 38, alignment = TextAnchor.MiddleCenter };
-                rarityS.normal.textColor = rarityCol;
-                GUI.Label(new Rect(x, py, w, 46), ins.rarity.ToString(), rarityS);
+                raritySCache.normal.textColor = rarityCol;
+                GUI.Label(new Rect(x, py, w, 46), ins.rarity.ToString(), raritySCache);
                 py += 50;
             }
 
             if (caught)
             {
-                GUI.color = new Color(0.2f, 0.7f, 0.3f, 0.15f);
+                GUI.color = CaughtBgAlpha;
                 GUI.DrawTexture(new Rect(cx - 120, py, 240, 50), Texture2D.whiteTexture);
-                GUIStyle caughtS = new GUIStyle(GUI.skin.label)
-                { fontSize = 36, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-                caughtS.normal.textColor = new Color(0.3f, 0.85f, 0.4f);
                 GUI.color = Color.white;
-                GUI.Label(new Rect(cx - 120, py, 240, 50), "✓ 포획 완료", caughtS);
+                GUI.Label(new Rect(cx - 120, py, 240, 50), "✓ 포획 완료", caughtSCache);
                 py += 56;
             }
             else if (found)
             {
-                GUI.color = new Color(0.5f, 0.5f, 0.2f, 0.15f);
+                GUI.color = SeenBgAlpha;
                 GUI.DrawTexture(new Rect(cx - 120, py, 240, 50), Texture2D.whiteTexture);
-                GUIStyle seenS = new GUIStyle(GUI.skin.label)
-                { fontSize = 36, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-                seenS.normal.textColor = new Color(0.8f, 0.8f, 0.3f);
                 GUI.color = Color.white;
-                GUI.Label(new Rect(cx - 120, py, 240, 50), "◉ 발견만 됨", seenS);
+                GUI.Label(new Rect(cx - 120, py, 240, 50), "◉ 발견만 됨", seenSCache);
                 py += 56;
             }
             else
             {
-                GUIStyle unkS = new GUIStyle(GUI.skin.label)
-                { fontSize = 38, alignment = TextAnchor.MiddleCenter };
-                unkS.normal.textColor = new Color(0.2f, 0.2f, 0.22f);
-                GUI.Label(new Rect(x, py, w, 46), "아직 발견하지 못한 곤충입니다", unkS);
+                GUI.Label(new Rect(x, py, w, 46), "아직 발견하지 못한 곤충입니다", unkSCache);
                 py += 50;
                 GUI.color = Color.white;
                 return;
             }
 
-            GUI.color = new Color(0.08f, 0.1f, 0.16f, 0.8f);
+            GUI.color = InfoBoxBg;
             float infoBoxX = x + 20;
             float infoBoxW = w - 40;
             GUI.DrawTexture(new Rect(infoBoxX, py, infoBoxW, caught ? 350 : 120), Texture2D.whiteTexture);
             GUI.color = Color.white;
-
-            GUIStyle labelS = new GUIStyle(GUI.skin.label) { fontSize = 34 };
-            labelS.normal.textColor = new Color(0.55f, 0.58f, 0.65f);
-            GUIStyle valS = new GUIStyle(GUI.skin.label)
-            { fontSize = 34, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleRight };
-            valS.normal.textColor = Color.white;
 
             float lx = infoBoxX + 16;
             float lw = infoBoxW - 32;
 
             if (caught)
             {
-                DrawInfoRow(lx, py + 10, lw, "HP", $"{ins.baseHp}", labelS, valS);
-                DrawInfoRow(lx, py + 56, lw, "공격력", $"{ins.baseAtk}", labelS, valS);
-                DrawInfoRow(lx, py + 102, lw, "방어력", $"{ins.baseDef}", labelS, valS);
-                DrawInfoRow(lx, py + 148, lw, "레벨 범위", $"{ins.minLevel} ~ {ins.maxLevel}", labelS, valS);
+                DrawInfoRow(lx, py + 10, lw, "HP", $"{ins.baseHp}", labelSCache, valSCache);
+                DrawInfoRow(lx, py + 56, lw, "공격력", $"{ins.baseAtk}", labelSCache, valSCache);
+                DrawInfoRow(lx, py + 102, lw, "방어력", $"{ins.baseDef}", labelSCache, valSCache);
+                DrawInfoRow(lx, py + 148, lw, "레벨 범위", $"{ins.minLevel} ~ {ins.maxLevel}", labelSCache, valSCache);
                 DrawInfoRow(lx, py + 194, lw, "포획 난이도",
-                    ins.captureDifficulty < 0.3f ? "쉬움" : ins.captureDifficulty < 0.6f ? "보통" : "어려움", labelS, valS);
+                    ins.captureDifficulty < 0.3f ? "쉬움" : ins.captureDifficulty < 0.6f ? "보통" : "어려움", labelSCache, valSCache);
 
                 if (record != null)
                 {
-                    DrawInfoRow(lx, py + 248, lw, "발견 횟수", $"{record.discoveredCount}회", labelS, valS);
-                    DrawInfoRow(lx, py + 294, lw, "포획 횟수", $"{record.capturedCount}회", labelS, valS);
+                    DrawInfoRow(lx, py + 248, lw, "발견 횟수", $"{record.discoveredCount}회", labelSCache, valSCache);
+                    DrawInfoRow(lx, py + 294, lw, "포획 횟수", $"{record.capturedCount}회", labelSCache, valSCache);
                 }
 
                 py += 360;
             }
             else
             {
-                GUIStyle hintS = new GUIStyle(GUI.skin.label)
-                { fontSize = 36, alignment = TextAnchor.MiddleCenter };
-                hintS.normal.textColor = new Color(0.4f, 0.42f, 0.48f);
-                GUI.Label(new Rect(infoBoxX, py + 10, infoBoxW, 28), "포획하면 상세 스탯을 확인할 수 있습니다", hintS);
+                GUI.Label(new Rect(infoBoxX, py + 10, infoBoxW, 28), "포획하면 상세 스탯을 확인할 수 있습니다", hintSCache);
 
                 if (record != null)
-                    DrawInfoRow(lx, py + 56, lw, "발견 횟수", $"{record.discoveredCount}회", labelS, valS);
+                    DrawInfoRow(lx, py + 56, lw, "발견 횟수", $"{record.discoveredCount}회", labelSCache, valSCache);
 
                 py += 130;
             }
@@ -422,28 +551,18 @@ namespace InsectGame.Dex
             if (!string.IsNullOrEmpty(ins.habitatHint))
             {
                 py += 8;
-                GUIStyle habitatLabel = new GUIStyle(GUI.skin.label) { fontSize = 32 };
-                habitatLabel.normal.textColor = new Color(0.35f, 0.55f, 0.35f);
-                GUI.Label(new Rect(infoBoxX + 16, py, 80, 40), "서식지", habitatLabel);
-                GUIStyle habitatVal = new GUIStyle(GUI.skin.label)
-                { fontSize = 36, fontStyle = FontStyle.Bold };
-                habitatVal.normal.textColor = new Color(0.5f, 0.75f, 0.5f);
-                GUI.Label(new Rect(infoBoxX + 100, py, lw - 100, 40), ins.habitatHint, habitatVal);
+                GUI.Label(new Rect(infoBoxX + 16, py, 80, 40), "서식지", habitatLabelCache);
+                GUI.Label(new Rect(infoBoxX + 100, py, lw - 100, 40), ins.habitatHint, habitatValCache);
                 py += 46;
             }
 
             if (caught && !string.IsNullOrEmpty(ins.description))
             {
                 py += 8;
-                GUIStyle descS = new GUIStyle(GUI.skin.label)
-                { fontSize = 34, wordWrap = true };
-                descS.normal.textColor = new Color(0.6f, 0.62f, 0.68f);
-
-                GUI.color = new Color(0.06f, 0.08f, 0.12f, 0.6f);
+                GUI.color = DescBg;
                 GUI.DrawTexture(new Rect(infoBoxX, py, infoBoxW, 110), Texture2D.whiteTexture);
                 GUI.color = Color.white;
-
-                GUI.Label(new Rect(infoBoxX + 14, py + 8, infoBoxW - 28, 56), ins.description, descS);
+                GUI.Label(new Rect(infoBoxX + 14, py + 8, infoBoxW - 28, 56), ins.description, descSCache);
             }
         }
 
@@ -503,7 +622,7 @@ namespace InsectGame.Dex
             Color rc = data != null ? UITheme.Instance.GetInsectRarityColor(data.rarity) : Color.gray;
             int cardRarityTier = data != null ? (int)data.rarity : 0;
 
-            GUI.color = new Color(0.07f, 0.09f, 0.15f, 0.95f);
+            GUI.color = OwnedBg;
             GUI.DrawTexture(new Rect(x, y, w, h), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
@@ -519,32 +638,25 @@ namespace InsectGame.Dex
             }
 
             string name = data != null ? data.displayName : pid.insectId;
-            GUIStyle nameS = new GUIStyle(GUI.skin.label)
-            { fontSize = 38, fontStyle = FontStyle.Bold };
-            nameS.normal.textColor = rc;
-            GUI.Label(new Rect(x + 76, y + 8, w - 150, 44), name, nameS);
+            ownedNameCache.normal.textColor = rc;
+            GUI.Label(new Rect(x + 76, y + 8, w - 150, 44), name, ownedNameCache);
 
-            GUIStyle infoS = new GUIStyle(GUI.skin.label) { fontSize = 32 };
-            infoS.normal.textColor = new Color(0.6f, 0.6f, 0.65f);
             string rStr = data != null ? data.rarity.ToString() : "?";
             GUI.Label(new Rect(x + 76, y + 52, w - 90, 36),
-                $"Lv.{pid.level}  |  {rStr}  |  IV {pid.IVPercent * 100:0}%", infoS);
+                $"Lv.{pid.level}  |  {rStr}  |  IV {pid.IVPercent * 100:0}%", ownedInfoCache);
 
-            GUIStyle stS = new GUIStyle(GUI.skin.label) { fontSize = 28 };
-            stS.normal.textColor = new Color(0.45f, 0.48f, 0.52f);
             GUI.Label(new Rect(x + 76, y + 88, w - 90, 30),
-                $"HP:{pid.ivHp}  ATK:{pid.ivAtk}  DEF:{pid.ivDef}", stS);
+                $"HP:{pid.ivHp}  ATK:{pid.ivAtk}  DEF:{pid.ivDef}", ownedStCache);
 
             Color gc = UITheme.Instance.GetGradeColor(pid.Grade);
-            GUIStyle grS = new GUIStyle(GUI.skin.label)
-            { fontSize = 52, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            grS.normal.textColor = gc;
-            GUI.Label(new Rect(x + w - 80, y + 8, 70, 60), CapturePopupUI.GetGradeLabel(pid.Grade), grS);
+            ownedGrCache.normal.textColor = gc;
+            GUI.Label(new Rect(x + w - 80, y + 8, 70, 60), CapturePopupUI.GetGradeLabel(pid.Grade), ownedGrCache);
 
-            GUIStyle pctS = new GUIStyle(GUI.skin.label)
-            { fontSize = 28, alignment = TextAnchor.MiddleCenter };
-            pctS.normal.textColor = new Color(gc.r, gc.g, gc.b, 0.7f);
-            GUI.Label(new Rect(x + w - 80, y + 68, 70, 30), $"{pid.IVPercent * 100:0}%", pctS);
+            // grade 색의 alpha만 변경 — 매 호출 new Color 회귀 차단
+            Color pctCol = gc;
+            pctCol.a = 0.7f;
+            ownedPctCache.normal.textColor = pctCol;
+            GUI.Label(new Rect(x + w - 80, y + 68, 70, 30), $"{pid.IVPercent * 100:0}%", ownedPctCache);
         }
 
         private void DrawItems(float y, float h)
@@ -565,10 +677,7 @@ namespace InsectGame.Dex
             float panelW = Mathf.Min(Screen.width - 40, 700);
             float px = (Screen.width - panelW) / 2f;
 
-            GUIStyle headerS = new GUIStyle(GUI.skin.label)
-            { fontSize = 42, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            headerS.normal.textColor = new Color(0.7f, 0.75f, 0.8f);
-            GUI.Label(new Rect(px, y + 10, panelW, 50), "보유 아이템", headerS);
+            GUI.Label(new Rect(px, y + 10, panelW, 50), "보유 아이템", headerSCache);
 
             float iy = y + 52;
             float itemH = 120f;
@@ -586,40 +695,28 @@ namespace InsectGame.Dex
         {
             Color itemCol = GetItemColor(rec.itemId);
 
-            GUI.color = new Color(0.07f, 0.09f, 0.15f, 0.95f);
+            GUI.color = OwnedBg;
             GUI.DrawTexture(new Rect(x, y, w, h), Texture2D.whiteTexture);
             GUI.color = itemCol;
             GUI.DrawTexture(new Rect(x, y, 4, h), Texture2D.whiteTexture);
-            GUI.color = Color.white;
-
-            GUI.color = itemCol;
             GUI.DrawTexture(new Rect(x + 20, y + h / 2f - 24, 48, 48), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
             string displayName = GetItemDisplayName(rec.itemId);
             string desc = GetItemDescription(rec.itemId);
 
-            GUIStyle nameS = new GUIStyle(GUI.skin.label)
-            { fontSize = 38, fontStyle = FontStyle.Bold };
-            nameS.normal.textColor = itemCol;
-            GUI.Label(new Rect(x + 66, y + 12, w - 200, 46), displayName, nameS);
+            itemNameCache.normal.textColor = itemCol;
+            GUI.Label(new Rect(x + 66, y + 12, w - 200, 46), displayName, itemNameCache);
 
-            GUIStyle descS = new GUIStyle(GUI.skin.label) { fontSize = 30 };
-            descS.normal.textColor = new Color(0.5f, 0.52f, 0.58f);
-            GUI.Label(new Rect(x + 66, y + 60, w - 200, 36), desc, descS);
+            GUI.Label(new Rect(x + 66, y + 60, w - 200, 36), desc, itemDescCache);
 
-            GUIStyle countS = new GUIStyle(GUI.skin.label)
-            { fontSize = 48, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleRight };
-            countS.normal.textColor = rec.count > 0 ? new Color(1f, 0.92f, 0.5f) : new Color(0.3f, 0.3f, 0.3f);
-            GUI.Label(new Rect(x + w - 160, y + 10, 140, 80), $"x{rec.count}", countS);
+            itemCountCache.normal.textColor = rec.count > 0 ? ItemCountGood : ItemCountBad;
+            GUI.Label(new Rect(x + w - 160, y + 10, 140, 80), $"x{rec.count}", itemCountCache);
         }
 
         private void DrawCentered(float y, float h, string text)
         {
-            GUIStyle s = new GUIStyle(GUI.skin.label)
-            { fontSize = 42, alignment = TextAnchor.MiddleCenter, wordWrap = true };
-            s.normal.textColor = new Color(0.35f, 0.35f, 0.4f);
-            GUI.Label(new Rect(0, y, Screen.width, h), text, s);
+            GUI.Label(new Rect(0, y, Screen.width, h), text, centeredCache);
         }
 
         private void DrawTinyInsect(float cx, float cy, float size, string id, Color col)
@@ -803,6 +900,11 @@ namespace InsectGame.Dex
         {
             if (insectCollection == null) insectCollection = col;
             if (itemInventory == null) itemInventory = items;
+        }
+
+        public void AutoWire(InsectModelPreviewRenderer pr)
+        {
+            if (previewRenderer == null) previewRenderer = pr;
         }
     }
 }

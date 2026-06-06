@@ -36,7 +36,9 @@ namespace InsectGame.Capture
             float chance = Mathf.Clamp01(CalculateSuccessChance(target.Data, target.Level, timing01) + extraBonus);
             bool success = UnityEngine.Random.value <= chance;
 
-            CaptureResolved?.Invoke(target, success);
+            // 이벤트 핸들러 예외가 DEX/보상 처리를 차단하지 않도록 격리
+            try { CaptureResolved?.Invoke(target, success); }
+            catch (System.Exception e) { Debug.LogWarning($"[CaptureController] CaptureResolved 핸들러 예외: {e.Message}"); }
 
             if (dexController != null)
             {
@@ -65,6 +67,12 @@ namespace InsectGame.Capture
                     candyInventory.AddCandy(Mathf.RoundToInt(candy * candyMultiplier));
                 }
                 insectCollection?.AddCapturedInsect(target.Data.insectId, target.Level);
+                target.Despawn();
+            }
+            else
+            {
+                // 포획 실패 시에도 항상 Despawn — 사용자 의도("미니게임 끝나면 사라져야").
+                // 옛은 50% 확률 잔존이라 같은 곤충에 중첩 미니게임 발동 + 필드 중복 인스턴스 가능.
                 target.Despawn();
             }
         }

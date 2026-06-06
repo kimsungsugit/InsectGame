@@ -22,6 +22,7 @@ namespace InsectGame.Core
 
         private PlayerInsectData current;
         private string selectedInstanceId;
+        private bool subscribed; // OnEnable/AutoWire 이중 구독 차단
 
         private void Start()
         {
@@ -36,18 +37,26 @@ namespace InsectGame.Core
 
         private void OnEnable()
         {
-            if (collection != null)
-            {
-                collection.InsectUpdated += HandleInsectUpdated;
-            }
+            Subscribe();
         }
 
         private void OnDisable()
         {
-            if (collection != null)
-            {
-                collection.InsectUpdated -= HandleInsectUpdated;
-            }
+            Unsubscribe();
+        }
+
+        private void Subscribe()
+        {
+            if (subscribed || collection == null) return;
+            collection.InsectUpdated += HandleInsectUpdated;
+            subscribed = true;
+        }
+
+        private void Unsubscribe()
+        {
+            if (!subscribed || collection == null) return;
+            collection.InsectUpdated -= HandleInsectUpdated;
+            subscribed = false;
         }
 
         private void HandleInsectUpdated(PlayerInsectData data)
@@ -67,6 +76,13 @@ namespace InsectGame.Core
                 current = collection.GetByInstanceId(selectedInstanceId);
             }
             else if (!collection.TryGetAnyOwned(out current))
+            {
+                SetTexts("-", "-", "-");
+                return;
+            }
+
+            // selectedInstanceId가 stale(곤충 삭제/강화 후 변경)이면 GetByInstanceId가 null 반환 → NRE 차단.
+            if (current == null)
             {
                 SetTexts("-", "-", "-");
                 return;
@@ -103,6 +119,8 @@ namespace InsectGame.Core
             }
 
             bool success = collection.TryLevelUpWithCandyByInstance(current.instanceId);
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.PlaySFX(success ? SfxType.LevelUpGain : SfxType.Error);
             if (resultText != null)
             {
                 resultText.text = success ? successMessage : failMessage;
@@ -147,14 +165,11 @@ namespace InsectGame.Core
 
         public void AutoWire(PlayerInsectCollection playerCollection)
         {
-            if (collection == null || collection != playerCollection)
-            {
-                if (collection != null)
-                    collection.InsectUpdated -= HandleInsectUpdated;
-                collection = playerCollection;
-                if (collection != null)
-                    collection.InsectUpdated += HandleInsectUpdated;
-            }
+            if (collection == playerCollection) return;
+            Unsubscribe();
+            collection = playerCollection;
+            // 컴포넌트가 enable 상태일 때만 구독 — OnDisable 동안 구독 잔존 차단.
+            if (isActiveAndEnabled) Subscribe();
         }
 
         private static string GetShortInstanceId(PlayerInsectData data)
