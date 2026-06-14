@@ -263,6 +263,14 @@ namespace InsectGame.Core
 
         private IEnumerator GuestLoginCoroutine()
         {
+            // Firebase 미설정이면 REST 호출이 무효 API키로 실패 → 명확한 사유 표시.
+            if (!FirebaseConfig.IsConfigured)
+            {
+                LoginCompleted?.Invoke(false,
+                    "서버 미설정 — Assets/Resources/firebase_config.json 설정이 필요합니다");
+                yield break;
+            }
+
             string json = "{\"returnSecureToken\":true}";
 
             using (UnityWebRequest req = new UnityWebRequest(
@@ -285,7 +293,8 @@ namespace InsectGame.Core
                 }
                 else
                 {
-                    LoginCompleted?.Invoke(false, "게스트 로그인 실패");
+                    // 익명 인증 비활성/키 오류 등 실제 사유 파싱(ParseFirebaseError).
+                    LoginCompleted?.Invoke(false, ParseFirebaseError(req.downloadHandler.text));
                 }
             }
         }
@@ -737,6 +746,13 @@ namespace InsectGame.Core
                 return "올바른 이메일 형식이 아닙니다.";
             if (responseBody.Contains("TOO_MANY_ATTEMPTS"))
                 return "너무 많은 시도입니다. 잠시 후 다시 시도하세요.";
+            // 익명(게스트) 인증 비활성 — Firebase Console에서 켜야 함
+            if (responseBody.Contains("ADMIN_ONLY_OPERATION") || responseBody.Contains("OPERATION_NOT_ALLOWED"))
+                return "게스트(익명) 로그인이 비활성화돼 있습니다. Firebase Console → Authentication → 익명 사용 설정";
+            // API 키/프로젝트 설정 오류
+            if (responseBody.Contains("API key not valid") || responseBody.Contains("API_KEY_INVALID")
+                || responseBody.Contains("CONFIGURATION_NOT_FOUND"))
+                return "Firebase 설정 오류 — firebase_config.json의 API 키/프로젝트 ID를 확인하세요";
             return "로그인 실패. 다시 시도해주세요.";
         }
 

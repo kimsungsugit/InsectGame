@@ -145,7 +145,7 @@ namespace InsectGame.Core
                 string p = purchaseProvider.GetLocalizedPrice(itemId);
                 if (!string.IsNullOrEmpty(p)) return p;
             }
-            return "\\" + item.priceKRW.ToString("N0"); // 폰트상 '\'=₩
+            return item.priceKRW.ToString("N0") + "원"; // 예: 2,000원
         }
 
         // 결제 완료(ProcessPurchase) 권위 지급 — product ID로 보석 패키지를 찾아 지급.

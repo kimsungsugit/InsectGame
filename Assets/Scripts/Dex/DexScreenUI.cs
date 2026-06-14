@@ -143,7 +143,7 @@ namespace InsectGame.Dex
             habitatLabelCache = new GUIStyle(GUI.skin.label) { fontSize = 32 };
             habitatLabelCache.normal.textColor = HabitatLabelCol;
 
-            habitatValCache = new GUIStyle(GUI.skin.label) { fontSize = 36, fontStyle = FontStyle.Bold };
+            habitatValCache = new GUIStyle(GUI.skin.label) { fontSize = 36, fontStyle = FontStyle.Bold, wordWrap = true };
             habitatValCache.normal.textColor = HabitatValCol;
 
             descSCache = new GUIStyle(GUI.skin.label) { fontSize = 34, wordWrap = true };
@@ -549,7 +549,7 @@ namespace InsectGame.Dex
             GUI.color = InfoBoxBg;
             float infoBoxX = x + 20;
             float infoBoxW = w - 40;
-            GUI.DrawTexture(new Rect(infoBoxX, py, infoBoxW, caught ? 350 : 120), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(infoBoxX, py, infoBoxW, caught ? 396 : 120), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
             float lx = infoBoxX + 16;
@@ -557,20 +557,21 @@ namespace InsectGame.Dex
 
             if (caught)
             {
-                DrawInfoRow(lx, py + 10, lw, "HP", $"{ins.baseHp}", labelSCache, valSCache);
-                DrawInfoRow(lx, py + 56, lw, "공격력", $"{ins.baseAtk}", labelSCache, valSCache);
-                DrawInfoRow(lx, py + 102, lw, "방어력", $"{ins.baseDef}", labelSCache, valSCache);
-                DrawInfoRow(lx, py + 148, lw, "레벨 범위", $"{ins.minLevel} ~ {ins.maxLevel}", labelSCache, valSCache);
-                DrawInfoRow(lx, py + 194, lw, "포획 난이도",
+                // 행 간격 52px로 넓혀 글자 짤림/빡빡함 해소 (옛 46px).
+                DrawInfoRow(lx, py + 12, lw, "HP", $"{ins.baseHp}", labelSCache, valSCache);
+                DrawInfoRow(lx, py + 64, lw, "공격력", $"{ins.baseAtk}", labelSCache, valSCache);
+                DrawInfoRow(lx, py + 116, lw, "방어력", $"{ins.baseDef}", labelSCache, valSCache);
+                DrawInfoRow(lx, py + 168, lw, "레벨 범위", $"{ins.minLevel} ~ {ins.maxLevel}", labelSCache, valSCache);
+                DrawInfoRow(lx, py + 220, lw, "포획 난이도",
                     ins.captureDifficulty < 0.3f ? "쉬움" : ins.captureDifficulty < 0.6f ? "보통" : "어려움", labelSCache, valSCache);
 
                 if (record != null)
                 {
-                    DrawInfoRow(lx, py + 248, lw, "발견 횟수", $"{record.discoveredCount}회", labelSCache, valSCache);
-                    DrawInfoRow(lx, py + 294, lw, "포획 횟수", $"{record.capturedCount}회", labelSCache, valSCache);
+                    DrawInfoRow(lx, py + 276, lw, "발견 횟수", $"{record.discoveredCount}회", labelSCache, valSCache);
+                    DrawInfoRow(lx, py + 328, lw, "포획 횟수", $"{record.capturedCount}회", labelSCache, valSCache);
                 }
 
-                py += 360;
+                py += 408;
             }
             else
             {
@@ -584,27 +585,29 @@ namespace InsectGame.Dex
 
             if (!string.IsNullOrEmpty(ins.habitatHint))
             {
-                py += 8;
-                GUI.Label(new Rect(infoBoxX + 16, py, 80, 40), "서식지", habitatLabelCache);
-                GUI.Label(new Rect(infoBoxX + 100, py, lw - 100, 40), ins.habitatHint, habitatValCache);
-                py += 46;
+                py += 10;
+                GUI.Label(new Rect(infoBoxX + 16, py, 90, 40), "서식지", habitatLabelCache);
+                // 값 라벨 높이 확대(40→84) + wordWrap으로 긴 서식지 설명이 여러 줄로 온전히 표시.
+                GUI.Label(new Rect(infoBoxX + 110, py, lw - 110, 84), ins.habitatHint, habitatValCache);
+                py += 92;
             }
 
             if (caught && !string.IsNullOrEmpty(ins.description))
             {
                 py += 8;
                 GUI.color = DescBg;
-                GUI.DrawTexture(new Rect(infoBoxX, py, infoBoxW, 110), Texture2D.whiteTexture);
+                GUI.DrawTexture(new Rect(infoBoxX, py, infoBoxW, 160), Texture2D.whiteTexture);
                 GUI.color = Color.white;
-                GUI.Label(new Rect(infoBoxX + 14, py + 8, infoBoxW - 28, 56), ins.description, descSCache);
+                // 라벨 높이를 박스에 맞춰 키움(옛 56 → 144) — 여러 줄 설명 짤림 해소.
+                GUI.Label(new Rect(infoBoxX + 14, py + 10, infoBoxW - 28, 144), ins.description, descSCache);
             }
         }
 
         private void DrawInfoRow(float x, float y, float w, string label, string val,
             GUIStyle ls, GUIStyle vs)
         {
-            GUI.Label(new Rect(x, y, w * 0.5f, 42), label, ls);
-            GUI.Label(new Rect(x + w * 0.5f, y, w * 0.5f, 42), val, vs);
+            GUI.Label(new Rect(x, y, w * 0.5f, 44), label, ls);
+            GUI.Label(new Rect(x + w * 0.5f, y, w * 0.5f, 44), val, vs);
         }
 
         private void DrawOwnedInsects(float y, float h)
