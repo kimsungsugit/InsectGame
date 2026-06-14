@@ -104,6 +104,9 @@ namespace InsectGame.Battle
         public bool CanUseSkill(int skillIndex)
         {
             if (!IsActive || ActiveSlot < 0) return false;
+            // 방어: 활성 슬롯이 기절/무효면 행동 불가(죽은 멤버 공격 방지). 정상 흐름은 보스턴 후 자동 전환됨.
+            if (ActiveSlot >= TeamStats.Length || TeamStats[ActiveSlot] == null
+                || TeamStats[ActiveSlot].CurrentHp <= 0) return false;
             var skills = TeamSkills != null && ActiveSlot < TeamSkills.Length ? TeamSkills[ActiveSlot] : null;
             if (skills == null || skillIndex < 0 || skillIndex >= skills.Length) return false;
             if (skills[skillIndex] == null) return false;
