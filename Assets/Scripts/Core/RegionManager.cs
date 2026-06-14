@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace InsectGame.Core
 {
-    public class RegionManager : MonoBehaviour
+    public class RegionManager : MonoBehaviour, ICloudReloadable
     {
         [SerializeField] private PlayerProgressController progress;
 
@@ -299,6 +299,13 @@ namespace InsectGame.Core
         }
 
         // --- 저장/로드 ---
+
+        // 클라우드 로드 후 PlayerPrefs(지역 해금/수문장)를 다시 읽어 인메모리 갱신.
+        // 지도 UI(IMGUI)는 매 프레임 IsRegionUnlocked로 읽어 자동 반영.
+        public void ReloadFromDisk()
+        {
+            LoadUnlockState();
+        }
 
         private void LoadUnlockState()
         {

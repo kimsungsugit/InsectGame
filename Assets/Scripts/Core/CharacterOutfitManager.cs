@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace InsectGame.Core
 {
-    public class CharacterOutfitManager : MonoBehaviour
+    public class CharacterOutfitManager : MonoBehaviour, ICloudReloadable
     {
         public static CharacterOutfitManager Instance { get; private set; }
 
@@ -40,6 +40,15 @@ namespace InsectGame.Core
         public void AutoWire(PlayerCurrencyWallet w)
         {
             if (wallet == null) wallet = w;
+        }
+
+        // 클라우드 로드 후 PlayerPrefs(소유/장착 의상)를 다시 읽어 인메모리 갱신 + 외형 재적용.
+        // OutfitChanged 발화 → PlayerVisualBuilder/PortraitRenderer가 클라우드 의상으로 재구성.
+        public void ReloadFromDisk()
+        {
+            LoadOwnership();
+            LoadEquipment();
+            OutfitChanged?.Invoke();
         }
 
         private void Initialize()
@@ -657,11 +666,11 @@ namespace InsectGame.Core
                 // 지팡이: 가는 막대 + 구체 오브
                 SetMesh(handle, PrimitiveType.Cylinder);
                 SetMesh(ring, PrimitiveType.Sphere);
-                handle.localPosition = new Vector3(hx, hy + 0.25f, 0.05f);
-                handle.localScale = new Vector3(0.03f, 0.55f, 0.03f);
+                handle.localPosition = new Vector3(hx, hy + 0.18f, 0.05f);
+                handle.localScale = new Vector3(0.03f, 0.40f, 0.03f);
                 handle.localRotation = Quaternion.Euler(10f, 0f, -15f);
-                ring.localPosition = new Vector3(hx + 0.10f, hy + 0.78f, 0.05f);
-                ring.localScale = new Vector3(0.12f, 0.12f, 0.12f);
+                ring.localPosition = new Vector3(hx + 0.08f, hy + 0.58f, 0.05f);
+                ring.localScale = new Vector3(0.10f, 0.10f, 0.10f);
                 ring.localRotation = Quaternion.identity;
             }
             else if (id.Contains("lasso"))
@@ -694,11 +703,11 @@ namespace InsectGame.Core
                 // 검: 박스 손잡이 + 긴 박스 칼날
                 SetMesh(handle, PrimitiveType.Cube);
                 SetMesh(ring, PrimitiveType.Cube);
-                handle.localPosition = new Vector3(hx, hy + 0.08f, 0.05f);
-                handle.localScale = new Vector3(0.05f, 0.12f, 0.05f);
+                handle.localPosition = new Vector3(hx, hy + 0.06f, 0.05f);
+                handle.localScale = new Vector3(0.05f, 0.10f, 0.05f);
                 handle.localRotation = Quaternion.identity;
-                ring.localPosition = new Vector3(hx, hy + 0.42f, 0.05f);
-                ring.localScale = new Vector3(0.04f, 0.55f, 0.10f);
+                ring.localPosition = new Vector3(hx, hy + 0.32f, 0.05f);
+                ring.localScale = new Vector3(0.04f, 0.40f, 0.10f);
                 ring.localRotation = Quaternion.identity;
             }
             else if (id.Contains("web_shooter"))
@@ -747,11 +756,11 @@ namespace InsectGame.Core
                 // 어느 방향을 보든 57~95% 가시라 회전에 강건(법선 Y성분 우세).
                 SetMesh(handle, PrimitiveType.Cylinder);
                 SetMesh(ring, PrimitiveType.Cylinder);
-                handle.localPosition = new Vector3(hx, hy + 0.30f, 0.02f);
-                handle.localScale = new Vector3(0.04f, 0.55f, 0.04f);
+                handle.localPosition = new Vector3(hx, hy + 0.22f, 0.02f);
+                handle.localScale = new Vector3(0.04f, 0.40f, 0.04f);
                 handle.localRotation = Quaternion.Euler(20f, 0f, -15f);
-                ring.localPosition = new Vector3(hx + 0.06f, hy + 0.85f, 0.06f);
-                ring.localScale = new Vector3(0.26f, 0.02f, 0.26f);
+                ring.localPosition = new Vector3(hx + 0.05f, hy + 0.62f, 0.06f);
+                ring.localScale = new Vector3(0.20f, 0.02f, 0.20f);
                 ring.localRotation = Quaternion.Euler(-20f, 0f, 0f);
             }
         }

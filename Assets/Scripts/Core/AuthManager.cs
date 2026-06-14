@@ -15,6 +15,9 @@ namespace InsectGame.Core
 
         // ── 인증 상태 ──
         public bool IsLoggedIn { get; private set; }
+        // 캐시된 세션(refresh token)으로 자동 로그인 진행 중 — LoginUI가 이 동안 로그인 폼 대신
+        // 로딩을 표시해 폼 깜빡임을 방지. 성공(LoginCompleted)/실패(AuthFailed) 시 false로 해제.
+        public bool AutoLoginPending { get; private set; }
         public string UserId { get; private set; }
         public string Email { get; private set; }
         public string DisplayName { get; private set; }
@@ -24,6 +27,10 @@ namespace InsectGame.Core
         // ── 이벤트 ──
         public event Action<bool, string> LoginCompleted;
         public event Action<bool, string> RegisterCompleted;
+        // 게스트(익명)→정식 계정 승격 결과 (linkWithCredential 상당).
+        public event Action<bool, string> LinkCompleted;
+        // 계정 삭제 결과 (Play 필수 정책: 인앱 계정 삭제).
+        public event Action<bool, string> AccountDeleted;
         public event Action LoggedOut;
         // 토큰 갱신/인증 실패로 silent 로그아웃되는 경우 사용자에게 알릴 채널 (LoginUI 등 구독).
         public event Action<string> AuthFailed;
@@ -54,12 +61,36 @@ namespace InsectGame.Core
 
         private void TryAutoLogin()
         {
+            string savedUid = PlayerPrefs.GetString(UidKey, "");
+
+            // 마스터 계정: refresh token이 로컬 더미라 Firebase 갱신 불가 → 네트워크 없이 즉시 로컬 재로그인.
+            // 프로덕션 빌드(IsEnabled=false)에서는 마스터 자동 로그인도 비활성.
+            if (MasterAccount.IsEnabled && savedUid == MasterAccount.Uid)
+            {
+                SetLoggedIn(MasterAccount.Uid,
+                    PlayerPrefs.GetString(EmailKey, ""),
+                    PlayerPrefs.GetString(NameKey, "마스터"),
+                    MasterAccount.Token, MasterAccount.RefreshToken);
+                ApplyMasterPrivileges();
+                LoginCompleted?.Invoke(true, null);
+                return;
+            }
+
             string savedRefresh = PlayerPrefs.GetString(TokenKey, "");
             if (!string.IsNullOrEmpty(savedRefresh))
             {
+                // 캐시된 refresh token으로 자동 로그인 시도(이메일/게스트 공통).
                 RefreshToken = savedRefresh;
-                StartCoroutine(RefreshIdTokenCoroutine());
+                AutoLoginPending = true;
+                StartCoroutine(AutoLoginCoroutine());
             }
+        }
+
+        private IEnumerator AutoLoginCoroutine()
+        {
+            yield return RefreshIdTokenCoroutine();
+            // 성공=LoginCompleted, 실패=ClearAuth+AuthFailed 가 RefreshIdTokenCoroutine 내부에서 발화됨.
+            AutoLoginPending = false;
         }
 
         // ── 이메일 회원가입 ──
@@ -130,14 +161,20 @@ namespace InsectGame.Core
         // ── 이메일 로그인 ──
 
         /// <summary>마스터 계정 여부 (Firebase 없이 로컬 로그인됨).</summary>
-        public bool IsMasterAccount => UserId == "master_admin_001";
+        public bool IsMasterAccount => UserId == MasterAccount.Uid;
+
+        /// <summary>게스트(익명) 계정 여부 — 로그인됐지만 이메일이 없는 상태(마스터 제외).
+        /// 정식 계정 연동(LinkGuestWithEmail)을 권유할 대상.</summary>
+        public bool IsGuest => IsLoggedIn && !IsMasterAccount && string.IsNullOrEmpty(Email);
 
         public void LoginWithEmail(string email, string password)
         {
-            // 마스터 계정 체크 — Firebase 없이 로컬 즉시 로그인 (검증 우회)
-            if (email == "pride1119" && password == "qksqhf11!!")
+            // 마스터 계정 체크 — Firebase 없이 로컬 즉시 로그인 (검증 우회). 자격 증명은 소스에 없고
+            // Resources/master_config.json 에서 로드되며, 프로덕션 빌드에는 이 분기가 컴파일되지 않음(MasterAccount).
+            if (MasterAccount.TryMatch(email, password))
             {
-                SetLoggedIn("master_admin_001", "pride1119", "마스터", "master_token", "master_refresh");
+                SetLoggedIn(MasterAccount.Uid, email, "마스터",
+                    MasterAccount.Token, MasterAccount.RefreshToken);
                 ApplyMasterPrivileges();
                 LoginCompleted?.Invoke(true, null);
                 return;
@@ -272,9 +309,123 @@ namespace InsectGame.Core
 
         public void LoginWithKakao()
         {
-            // TODO: Kakao SDK 통합 후 Kakao Access Token을 받아서 아래 호출
+            // Kakao는 Firebase 기본 IDP가 아님(google/apple/facebook 등만 지원). 통합 경로:
+            //   1) Kakao SDK로 access token 획득
+            //   2) 백엔드(Cloud Functions 등)가 Kakao 토큰 검증 → Firebase Custom Token 발급
+            //   3) LoginWithCustomToken(customToken) 호출
             LoginCompleted?.Invoke(false,
-                "카카오 로그인은 Kakao SDK 설정이 필요합니다.");
+                "카카오 로그인은 Kakao SDK + 백엔드 Custom Token 발급 설정이 필요합니다.");
+        }
+
+        // ── 게스트 → 정식 계정 연동 (Firebase accounts:update) ──
+
+        /// <summary>게스트(익명) 계정을 이메일/비밀번호 정식 계정으로 승격.
+        /// uid가 그대로 유지돼 기존 진행 데이터가 보존된다.</summary>
+        public void LinkGuestWithEmail(string email, string password, string displayName)
+        {
+            if (!IsLoggedIn || string.IsNullOrEmpty(IdToken))
+            {
+                LinkCompleted?.Invoke(false, "로그인 상태가 아닙니다");
+                return;
+            }
+            string validationError = ValidateCredentials(email, password);
+            if (validationError != null)
+            {
+                LinkCompleted?.Invoke(false, validationError);
+                return;
+            }
+            StartCoroutine(LinkEmailCoroutine(email, password, displayName));
+        }
+
+        private IEnumerator LinkEmailCoroutine(string email, string password, string displayName)
+        {
+            // accounts:update — 현재 idToken에 이메일/비밀번호 자격을 추가(익명→영구). uid 동일.
+            // 이메일/비밀번호는 사용자 입력이라 JsonUtility로 안전하게 이스케이프.
+            string json = JsonUtility.ToJson(new LinkRequest
+            {
+                idToken = IdToken,
+                email = email,
+                password = password,
+                returnSecureToken = true
+            });
+
+            using (UnityWebRequest req = new UnityWebRequest(
+                FirebaseConfig.WithKey(FirebaseConfig.UpdateAccountUrl), "POST"))
+            {
+                byte[] bodyRaw = System.Text.Encoding.UTF8.GetBytes(json);
+                req.uploadHandler = new UploadHandlerRaw(bodyRaw);
+                req.downloadHandler = new DownloadHandlerBuffer();
+                req.SetRequestHeader("Content-Type", "application/json");
+
+                yield return req.SendWebRequest();
+
+                if (req.result == UnityWebRequest.Result.Success)
+                {
+                    AuthResponse response =
+                        JsonUtility.FromJson<AuthResponse>(req.downloadHandler.text);
+                    // uid 동일. 새 idToken/refreshToken이 오면 갱신, 비면 기존 유지.
+                    Email = email;
+                    DisplayName = string.IsNullOrEmpty(displayName) ? email : displayName;
+                    if (!string.IsNullOrEmpty(response.idToken)) IdToken = response.idToken;
+                    if (!string.IsNullOrEmpty(response.refreshToken)) RefreshToken = response.refreshToken;
+                    idTokenAcquiredAt = Time.realtimeSinceStartup;
+                    SaveTokens();
+                    LinkCompleted?.Invoke(true, null);
+                }
+                else
+                {
+                    LinkCompleted?.Invoke(false, ParseFirebaseError(req.downloadHandler.text));
+                }
+            }
+        }
+
+        // ── 커스텀 토큰 로그인 (Kakao 등: 백엔드가 검증 후 Firebase Custom Token 발급) ──
+
+        /// <summary>백엔드에서 발급한 Firebase Custom Token으로 로그인. Kakao처럼 Firebase 기본
+        /// IDP가 아닌 제공자의 통합 진입점.</summary>
+        public void LoginWithCustomToken(string customToken)
+        {
+            if (string.IsNullOrEmpty(customToken))
+            {
+                LoginCompleted?.Invoke(false, "유효하지 않은 토큰");
+                return;
+            }
+            StartCoroutine(CustomTokenCoroutine(customToken));
+        }
+
+        private IEnumerator CustomTokenCoroutine(string customToken)
+        {
+            string json = JsonUtility.ToJson(new CustomTokenRequest
+            {
+                token = customToken,
+                returnSecureToken = true
+            });
+
+            using (UnityWebRequest req = new UnityWebRequest(
+                FirebaseConfig.WithKey(FirebaseConfig.SignInWithCustomTokenUrl), "POST"))
+            {
+                byte[] bodyRaw = System.Text.Encoding.UTF8.GetBytes(json);
+                req.uploadHandler = new UploadHandlerRaw(bodyRaw);
+                req.downloadHandler = new DownloadHandlerBuffer();
+                req.SetRequestHeader("Content-Type", "application/json");
+
+                yield return req.SendWebRequest();
+
+                if (req.result == UnityWebRequest.Result.Success)
+                {
+                    // signInWithCustomToken 응답엔 localId가 없음 → refresh로 uid 확보 + 토큰 정착.
+                    // RefreshIdTokenCoroutine이 user_id/IsLoggedIn 세팅 + LoginCompleted 발화.
+                    CustomTokenResponse response =
+                        JsonUtility.FromJson<CustomTokenResponse>(req.downloadHandler.text);
+                    RefreshToken = response.refreshToken;
+                    IdToken = response.idToken;
+                    yield return RefreshIdTokenCoroutine();
+                }
+                else
+                {
+                    LoginCompleted?.Invoke(false, ParseFirebaseError(req.downloadHandler.text));
+                }
+            }
         }
 
         // ── IDP 로그인 공통 (Google/Kakao -> Firebase) ──
@@ -394,6 +545,89 @@ namespace InsectGame.Core
             LoggedOut?.Invoke();
         }
 
+        // ── 계정 삭제 (Play 필수 정책) ──
+
+        /// <summary>계정 영구 삭제: Firestore 문서 + Firebase Auth 계정 + 로컬 데이터 전부 제거.
+        /// 서버 호출 실패해도 로컬은 정리하고 로그아웃한다(재진입 방지).</summary>
+        public void DeleteAccount()
+        {
+            if (!IsLoggedIn)
+            {
+                AccountDeleted?.Invoke(false, "로그인 상태가 아닙니다");
+                return;
+            }
+            if (IsMasterAccount || !FirebaseConfig.IsConfigured)
+            {
+                // 마스터/오프라인(Firebase 미설정)은 서버 계정이 없음 → 로컬만 정리.
+                ClearAllLocalData();
+                ClearAuth();
+                AccountDeleted?.Invoke(true, null);
+                LoggedOut?.Invoke();
+                return;
+            }
+            StartCoroutine(DeleteAccountCoroutine());
+        }
+
+        private IEnumerator DeleteAccountCoroutine()
+        {
+            // 1) Firestore 사용자 문서 삭제 (토큰 유효한 동안 먼저).
+            string docUrl = FirebaseConfig.FirestoreBaseUrl + "/users/" + UserId;
+            using (UnityWebRequest del = UnityWebRequest.Delete(docUrl))
+            {
+                del.SetRequestHeader("Authorization", "Bearer " + IdToken);
+                yield return del.SendWebRequest();
+                // 문서 삭제 실패는 치명적 아님(없을 수도) — 계속 진행.
+            }
+
+            // 2) Firebase Auth 계정 삭제.
+            string json = JsonUtility.ToJson(new DeleteRequest { idToken = IdToken });
+            bool ok = false;
+            string err = null;
+            using (UnityWebRequest req = new UnityWebRequest(
+                FirebaseConfig.WithKey(FirebaseConfig.DeleteAccountUrl), "POST"))
+            {
+                byte[] bodyRaw = System.Text.Encoding.UTF8.GetBytes(json);
+                req.uploadHandler = new UploadHandlerRaw(bodyRaw);
+                req.downloadHandler = new DownloadHandlerBuffer();
+                req.SetRequestHeader("Content-Type", "application/json");
+                yield return req.SendWebRequest();
+                ok = req.result == UnityWebRequest.Result.Success;
+                if (!ok) err = ParseFirebaseError(req.downloadHandler.text);
+            }
+
+            // 3) 서버 결과와 무관하게 로컬 정리 + 로그아웃 (재진입/잔존 방지).
+            ClearAllLocalData();
+            ClearAuth();
+            AccountDeleted?.Invoke(ok, ok ? null : (err ?? "계정 삭제 실패"));
+            LoggedOut?.Invoke();
+        }
+
+        // 로컬 세이브 파일 + PlayerPrefs 전체 삭제 (계정 삭제 시 기기 데이터 완전 초기화).
+        private void ClearAllLocalData()
+        {
+            string[] files =
+            {
+                GameConstants.SaveFiles.PlayerProgress, GameConstants.SaveFiles.PlayerInsects,
+                GameConstants.SaveFiles.PlayerCandies, GameConstants.SaveFiles.PlayerCurrency,
+                GameConstants.SaveFiles.PlayerItems, GameConstants.SaveFiles.BattleTeam,
+                GameConstants.SaveFiles.DexSave
+            };
+            foreach (string f in files)
+            {
+                try
+                {
+                    string p = System.IO.Path.Combine(Application.persistentDataPath, f);
+                    if (System.IO.File.Exists(p)) System.IO.File.Delete(p);
+                }
+                catch (System.Exception e)
+                {
+                    Debug.LogWarning("[Auth] 세이브 파일 삭제 실패: " + f + " — " + e.Message);
+                }
+            }
+            PlayerPrefs.DeleteAll();
+            PlayerPrefs.Save();
+        }
+
         private void ClearAuth()
         {
             IsLoggedIn = false;
@@ -455,7 +689,7 @@ namespace InsectGame.Core
         private void ClearMasterDataIfNeeded(string newUid)
         {
             string savedUid = PlayerPrefs.GetString(UidKey, "");
-            if (savedUid == "master_admin_001" && newUid != "master_admin_001")
+            if (savedUid == MasterAccount.Uid && newUid != MasterAccount.Uid)
             {
                 PlayerPrefs.SetString("InsectGame.UnlockedRegions", "meadow");
                 PlayerPrefs.SetString("InsectGame.DefeatedGuardians", "");
@@ -524,6 +758,35 @@ namespace InsectGame.Core
             public string id_token;
             public string refresh_token;
             public string user_id;
+        }
+
+        [Serializable]
+        private class LinkRequest
+        {
+            public string idToken;
+            public string email;
+            public string password;
+            public bool returnSecureToken;
+        }
+
+        [Serializable]
+        private class CustomTokenRequest
+        {
+            public string token;
+            public bool returnSecureToken;
+        }
+
+        [Serializable]
+        private class DeleteRequest
+        {
+            public string idToken;
+        }
+
+        [Serializable]
+        private class CustomTokenResponse
+        {
+            public string idToken;
+            public string refreshToken;
         }
     }
 }

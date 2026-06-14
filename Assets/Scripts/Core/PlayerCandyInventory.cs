@@ -36,6 +36,15 @@ namespace InsectGame.Core
             CandyChanged?.Invoke(data.candies);
         }
 
+        // 클라우드 로드 값 적용 — AddCandy는 증분이라 절대값 세팅용 별도 메서드.
+        public void SetCandies(int amount)
+        {
+            if (data == null) return;
+            data.candies = Mathf.Max(0, amount);
+            Save(data);
+            CandyChanged?.Invoke(data.candies);
+        }
+
         public bool SpendCandy(int amount)
         {
             if (amount <= 0 || data == null || data.candies < amount)

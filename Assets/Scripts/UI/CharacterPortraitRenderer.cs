@@ -205,8 +205,8 @@ namespace InsectGame.UI
             {
                 case 0: // 짧은 머리
                     DrawCol(hair, headX, headY - headH * 0.10f, headW, headH * 0.32f);
-                    DrawCol(hair, headX - 1.5f * s, headY + 3f * s, 4f * s, 12f * s);
-                    DrawCol(hair, headX + headW - 2.5f * s, headY + 3f * s, 4f * s, 12f * s);
+                    DrawCol(hair, headX - headW * 0.02f, headY + 3f * s, headW * 0.13f, headH * 0.45f);
+                    DrawCol(hair, headX + headW - headW * 0.11f, headY + 3f * s, headW * 0.13f, headH * 0.45f);
                     if (gender == 1)
                         DrawCol(hair, headX + 2f * s, headY + headH * 0.1f, headW - 4f * s, 5f * s);
                     break;
@@ -412,7 +412,7 @@ namespace InsectGame.UI
         private static void DrawCharacterTool(float cx, float swayX, float bodyW, float headY, float headH, float s,
             string id, Color c, Color sec)
         {
-            float toolX = cx + bodyW * 0.5f + 12f * s + swayX;
+            float toolX = cx + bodyW * 0.5f + 8f * s + swayX; // 손 중앙(짧은 치비 팔 armW≈15s의 절반)
             float armBaseY = headY + headH + 4f * s; // 어깨 부근 시작
             // 손 부근 위치 (DrawWithOutfit의 손 좌표와 정합: bodyTop + 4s + armH)
             // 치비: 짧아진 팔(armH 58→34)에 맞춰 손 위치 동기(옛 58은 손보다 ~24s 아래 허공).
@@ -577,16 +577,18 @@ namespace InsectGame.UI
                 {
                     if (accId.Contains("glasses") || accId.Contains("visor") || accId.Contains("eyepatch"))
                     {
-                        // 안경/바이저/안대 — 눈 위치에 사각 2개
-                        float eyeY_local = headY + headH * 0.42f;
-                        float eyeLX_local = headX + headW * 0.18f;
-                        float eyeRX_local = headX + headW * 0.58f;
-                        DrawCol(accCol, eyeLX_local - 1f * s, eyeY_local - 1f * s, 9f * s, 7f * s);
+                        // 안경/바이저/안대 — 큰 치비 눈(headW*0.30)을 덮도록 비례. 기본 얼굴 눈 위치와 정합.
+                        float eyeY_local = headY + headH * 0.40f;
+                        float eyeLX_local = headX + headW * 0.16f;
+                        float eyeRX_local = headX + headW * 0.54f;
+                        float lensW = headW * 0.32f;
+                        float lensH = headH * 0.30f;
+                        DrawCol(accCol, eyeLX_local, eyeY_local, lensW, lensH);
                         // eyepatch는 한쪽만
                         if (!accId.Contains("eyepatch"))
-                            DrawCol(accCol, eyeRX_local - 1f * s, eyeY_local - 1f * s, 9f * s, 7f * s);
-                        // 안경 다리(왼쪽)
-                        DrawCol(accCol, eyeLX_local + 8f * s, eyeY_local + 2f * s, 4f * s, 1.5f * s);
+                            DrawCol(accCol, eyeRX_local, eyeY_local, lensW, lensH);
+                        // 브릿지(코받침) — 두 렌즈 사이
+                        DrawCol(accCol, headX + headW * 0.46f, eyeY_local + lensH * 0.4f, headW * 0.08f, headH * 0.05f);
                     }
                     else if (accId.Contains("necklace") || accId.Contains("pendant")
                           || accId.Contains("orb") || accId.Contains("crystal_orb"))

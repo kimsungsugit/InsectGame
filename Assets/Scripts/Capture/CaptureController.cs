@@ -66,7 +66,9 @@ namespace InsectGame.Capture
                                            * (outfitBonus != null ? outfitBonus.GetCandyMultiplier() : 1f);
                     candyInventory.AddCandy(Mathf.RoundToInt(candy * candyMultiplier));
                 }
-                insectCollection?.AddCapturedInsect(target.Data.insectId, target.Level);
+                // 필드에서 본 이로치(색다른 곤충)를 그대로 저장 — 옛 2-인자 호출은 isShiny=false라
+                // 미니게임 포획 시 색다른 개체가 일반 개체로 유실됐음(배틀/레이드 경로는 정상 전달).
+                insectCollection?.AddCapturedInsect(target.Data.insectId, target.Level, target.IsShiny);
                 target.Despawn();
             }
             else

@@ -30,6 +30,10 @@ namespace InsectGame.Core
         private Vector2 guiClickPos;
         private bool guiUnstickPressed; // OnGUI Event 경로 F9 백업
 
+        // 가상 조이스틱(터치) 입력 — VirtualJoystickUI(UI 계층)가 매 프레임 푸시. (UI→Core 허용)
+        private Vector2 joystickInput;
+        private bool joystickActive;
+
         // OnGUI 매 프레임 new GUIStyle 회귀 차단 — DexScreenUI/BattleScreenUI 패턴.
         private GUIStyle hintStyle, frozenStyle, blockStyle;
         private bool stylesInited;
@@ -56,6 +60,13 @@ namespace InsectGame.Core
         {
             frozen = value;
             if (value) frozenTimer = 0f;
+        }
+
+        // 가상 조이스틱 입력 주입 — VirtualJoystickUI가 호출. dir: -1..1, active: 조작 중 여부.
+        public void SetMoveInput(Vector2 dir, bool active)
+        {
+            joystickInput = dir;
+            joystickActive = active;
         }
 
         private bool outfitSubscribed;
@@ -154,7 +165,9 @@ namespace InsectGame.Core
             if (Input.GetKey(KeyCode.S) || Input.GetKey(KeyCode.DownArrow) || guiKeyS || guiKeyDown) v = -1f;
 
             bool hasKeyboard = h != 0f || v != 0f;
-            if (hasKeyboard) hasReceivedInput = true;
+            // 가상 조이스틱(터치) — 키보드 입력 없을 때 사용. 아날로그 크기 보존(부분 기울임=부분 속도).
+            bool hasJoystick = !hasKeyboard && joystickActive && joystickInput.sqrMagnitude > 0.0004f;
+            if (hasKeyboard || hasJoystick) hasReceivedInput = true;
 
             // 옛: line 145에서 guiClickRequest=false 즉시 reset → line 149 ternary 항상 false.
             // guiClickPos 분기가 dead branch였음. 로컬에 보존 후 reset.
@@ -212,6 +225,13 @@ namespace InsectGame.Core
             {
                 movingToClick = false;
                 direction = new Vector3(h, 0f, v).normalized;
+            }
+            else if (hasJoystick)
+            {
+                movingToClick = false;
+                Vector3 jd = new Vector3(joystickInput.x, 0f, joystickInput.y);
+                if (jd.sqrMagnitude > 1f) jd.Normalize(); // 반경 초과만 클램프 — 아날로그 속도 유지
+                direction = jd;
             }
             else if (movingToClick)
             {
@@ -344,7 +364,7 @@ namespace InsectGame.Core
                 GUI.color = HintBgCol;
                 GUI.DrawTexture(rect, Texture2D.whiteTexture);
                 GUI.color = Color.white;
-                GUI.Label(rect, "WASD 또는 마우스 클릭으로 이동하세요", hintStyle);
+                GUI.Label(rect, "좌하단 조이스틱 또는 화면 터치로 이동하세요", hintStyle);
             }
 
             if (frozen)

@@ -88,6 +88,7 @@ namespace InsectGame.Capture
         public void StartMinigame(InsectEntity target, float speedMult, float zoneMult, float timeMult, float captureBonus)
         {
             currentTarget = target;
+            if (target != null) target.SetEngaged(true); // 미니게임 중 — 곤충 도주 방지
             isActive = true;
             if (playerMovement != null) playerMovement.SetFrozen(true);
             resultTimer = 0f;
@@ -224,6 +225,7 @@ namespace InsectGame.Capture
             isActive = false;
             phase = Phase.Done;
             hits = 0;
+            if (currentTarget != null) currentTarget.SetEngaged(false); // 미니게임 종료 — 도주 가능 상태 복귀
             currentTarget = null;
             if (panelRoot != null) panelRoot.SetActive(false);
             if (playerMovement != null) playerMovement.SetFrozen(false);

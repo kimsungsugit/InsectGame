@@ -45,6 +45,7 @@ namespace InsectGame.UI
         {
             if (target == null || target.Data == null) return;
             targetInsect = target;
+            target.SetEngaged(true); // 포획 상호작용 중 — 곤충 도주 방지
             isOpen = true;
             selectedTeamSlot = -1;
             showTeamSelect = false;
@@ -56,6 +57,7 @@ namespace InsectGame.UI
         public void Hide()
         {
             isOpen = false;
+            if (targetInsect != null) targetInsect.SetEngaged(false); // 포획 취소 — 곤충 정상 행동 복귀
             targetInsect = null;
             showTeamSelect = false;
             showItemSelect = false;

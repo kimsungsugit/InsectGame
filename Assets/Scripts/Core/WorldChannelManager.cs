@@ -63,8 +63,7 @@ namespace InsectGame.Core
 
         private static bool IsFirebaseReady()
         {
-            return !string.IsNullOrEmpty(FirebaseConfig.ApiKey)
-                && FirebaseConfig.ApiKey != "YOUR_FIREBASE_API_KEY"
+            return FirebaseConfig.IsConfigured
                 && AuthManager.Instance != null
                 && AuthManager.Instance.IsLoggedIn
                 && !AuthManager.Instance.IsMasterAccount;

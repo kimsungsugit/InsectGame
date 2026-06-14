@@ -3,13 +3,38 @@ using UnityEngine;
 
 namespace InsectGame.UI
 {
-    public class TutorialQuestUI : MonoBehaviour
+    public class TutorialQuestUI : MonoBehaviour, IModalUI
     {
         [SerializeField] private TutorialQuestManager questManager;
 
         private bool detailOpen;
         public bool IsOpen => detailOpen;
-        public void Toggle() { detailOpen = !detailOpen; }
+        public void Toggle() { SetDetailOpen(!detailOpen); }
+        public void CloseModal() { SetDetailOpen(false); }
+
+        // 퀘스트 목록 팝업만 모달 등록(상시 패널/알림은 비모달). 열려있는 동안 이동 차단 + ESC로 닫기.
+        private void SetDetailOpen(bool v)
+        {
+            detailOpen = v;
+            if (v) ModalUIRegistry.Register(this);
+            else ModalUIRegistry.Unregister(this);
+        }
+
+        // 튜토리얼 표시 ON/OFF — 플레이 중 좌상단 패널·다음 단계 배너를 숨겨 방해 없이 진행.
+        // 단 완료 알림(DrawCompletionNotification)은 숨김과 무관하게 항상 표시(보상 순간 유지).
+        private bool tutorialHidden;
+
+        private void Awake()
+        {
+            tutorialHidden = PlayerPrefs.GetInt(GameConstants.PrefsKeys.TutorialHidden, 0) == 1;
+        }
+
+        private void SetTutorialHidden(bool hidden)
+        {
+            tutorialHidden = hidden;
+            PlayerPrefs.SetInt(GameConstants.PrefsKeys.TutorialHidden, hidden ? 1 : 0);
+            PlayerPrefs.Save();
+        }
 
         private float completionAnimTimer;
         private string completedQuestTitle;
@@ -20,6 +45,8 @@ namespace InsectGame.UI
 
         private float newQuestAnimTimer;
         private string newQuestTitle;
+        private string newQuestDesc;
+        private float newQuestDelay; // 완료 알림이 끝난 뒤 이어서 표시하기 위한 지연
 
         private Vector2 detailScroll;
 
@@ -30,6 +57,7 @@ namespace InsectGame.UI
         private GUIStyle questDescStyleCache;
         private GUIStyle questProgStyleCache;
         private GUIStyle questHintStyleCache;
+        private GUIStyle panelBtnStyleCache; // 숨기기/복원 작은 버튼 공용
         private bool questPanelStylesReady;
 
         // 알림(Notification) 캐시 - 일시 표시이나 OnGUI 매 호출 시 GC 차단
@@ -37,6 +65,8 @@ namespace InsectGame.UI
         private GUIStyle compTitleStyleCache;
         private GUIStyle rewardStyleCache;
         private GUIStyle newQuestStyleCache;
+        private GUIStyle newQuestDescStyleCache;
+        private GUIStyle newQuestPromptStyleCache;
         private bool notifStylesReady;
 
         // 상세 패널 캐시
@@ -53,6 +83,8 @@ namespace InsectGame.UI
         private static readonly Color CompTitleBaseCol = new Color(1f, 0.95f, 0.8f);
         private static readonly Color RewardBaseCol = new Color(1f, 0.85f, 0.5f);
         private static readonly Color NewQuestBaseCol = new Color(0.7f, 0.85f, 1f);
+        private static readonly Color NewQuestDescCol = new Color(0.85f, 0.92f, 1f);
+        private static readonly Color NewQuestPromptCol = new Color(0.5f, 0.9f, 0.6f);
         private static readonly Color RowCompletedCol = new Color(0.5f, 0.8f, 0.5f);
         private static readonly Color RowLockedCol = new Color(0.45f, 0.45f, 0.5f);
         private static readonly Color RowPendingCol = new Color(0.7f, 0.7f, 0.7f);
@@ -83,6 +115,9 @@ namespace InsectGame.UI
             questHintStyleCache = new GUIStyle(GUI.skin.label)
             { fontSize = 16, fontStyle = FontStyle.Italic, wordWrap = true };
             // hintStyle.normal.textColor는 alpha 동적이라 매 호출 갱신 (BattleScreenUI 패턴).
+
+            panelBtnStyleCache = new GUIStyle(GUI.skin.button)
+            { fontSize = 14, fontStyle = FontStyle.Bold };
         }
 
         private void InitNotifStyles()
@@ -98,7 +133,11 @@ namespace InsectGame.UI
             { fontSize = 18, alignment = TextAnchor.MiddleCenter };
             newQuestStyleCache = new GUIStyle(GUI.skin.label)
             { fontSize = 20, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            // 4개 모두 textColor는 alpha 동적이라 매 호출 갱신.
+            newQuestDescStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 16, alignment = TextAnchor.MiddleCenter, wordWrap = true };
+            newQuestPromptStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 15, fontStyle = FontStyle.Italic, alignment = TextAnchor.MiddleCenter };
+            // 모두 textColor는 alpha 동적이라 매 호출 갱신.
         }
 
         private void InitDetailStyles()
@@ -141,12 +180,18 @@ namespace InsectGame.UI
                 questManager.QuestProgressUpdated -= OnQuestProgressUpdated;
                 questManager.QuestCompleted -= OnQuestCompleted;
             }
+            ModalUIRegistry.Unregister(this);
         }
 
         private void OnQuestActivated(TutorialQuest quest)
         {
             newQuestTitle = quest.title;
-            newQuestAnimTimer = 2f;
+            newQuestDesc = quest.description;
+            // 완료 알림과 겹치지 않게 그 뒤에 이어서 표시.
+            // (옛: completionAnimTimer>0 동안 억제됐는데 완료=3s·새퀘=2s라 수명 내내 가려져
+            //  게임 시작 첫 퀘스트를 제외한 모든 "다음 단계" 배너가 영구 미표시였음.)
+            newQuestDelay = completionAnimTimer > 0f ? completionAnimTimer + 0.15f : 0f;
+            newQuestAnimTimer = 3.5f;
         }
 
         private void OnQuestProgressUpdated(TutorialQuest quest, int current, int target)
@@ -168,7 +213,9 @@ namespace InsectGame.UI
             hintPulse += Time.deltaTime * 2.5f;
             if (completionAnimTimer > 0f) completionAnimTimer -= Time.deltaTime;
             if (rewardAnimTimer > 0f) rewardAnimTimer -= Time.deltaTime;
-            if (newQuestAnimTimer > 0f) newQuestAnimTimer -= Time.deltaTime;
+            // 완료 알림이 끝나길 기다린 뒤(newQuestDelay) 새 퀘스트 배너 수명 소진.
+            if (newQuestDelay > 0f) newQuestDelay -= Time.deltaTime;
+            else if (newQuestAnimTimer > 0f) newQuestAnimTimer -= Time.deltaTime;
         }
 
         private void OnGUI()
@@ -190,7 +237,15 @@ namespace InsectGame.UI
 
             InitQuestPanelStyles();
 
-            Rect panelRect = new Rect(20f, 120f, 380f, 140f);
+            // 숨김 상태: 작은 복원 버튼만 표시(게임 진행에 방해 없음). 완료 알림은 별도로 항상 표시됨.
+            if (tutorialHidden)
+            {
+                if (GUI.Button(new Rect(20f + SafeArea.Left, 120f + SafeArea.Top, 130f, 30f), "▼ 퀘스트 보기", panelBtnStyleCache))
+                    SetTutorialHidden(false);
+                return;
+            }
+
+            Rect panelRect = new Rect(20f + SafeArea.Left, 120f + SafeArea.Top, 380f, 140f);
 
             // Background
             GUI.color = new Color(0.05f, 0.08f, 0.15f, 0.85f);
@@ -200,6 +255,13 @@ namespace InsectGame.UI
             GUI.color = new Color(0.9f, 0.75f, 0.2f, 1f);
             GUI.DrawTexture(new Rect(panelRect.x, panelRect.y, panelRect.width, 3f), Texture2D.whiteTexture);
             GUI.color = Color.white;
+
+            // 숨기기 버튼(우상단) — 누르면 패널·다음 단계 배너 끄고 방해 없이 플레이.
+            if (GUI.Button(new Rect(panelRect.xMax - 30f, panelRect.y + 6f, 24f, 22f), "X", panelBtnStyleCache))
+            {
+                SetTutorialHidden(true);
+                return;
+            }
 
             TutorialQuest active = questManager.ActiveQuest;
 
@@ -215,8 +277,8 @@ namespace InsectGame.UI
             float y = panelRect.y + 8f;
             float w = panelRect.width - 24f;
 
-            // Title
-            GUI.Label(new Rect(x, y, w, 28f), "\u2605 \ud034\uc2a4\ud2b8: " + active.title, questTitleStyleCache);
+            // Title \u2014 \uc6b0\uc0c1\ub2e8 \uc228\uae30\uae30 \ubc84\ud2bc\uacfc \uacb9\uce58\uc9c0 \uc54a\uac8c \ub108\ube44 \ucd95\uc18c(-28).
+            GUI.Label(new Rect(x, y, w - 28f, 28f), "\u2605 \ud018\uc2a4\ud2b8: " + active.title, questTitleStyleCache);
             y += 28f;
 
             // Description
@@ -288,7 +350,7 @@ namespace InsectGame.UI
             float panelW = 420f;
             float panelH = 120f;
             float panelX = (Screen.width - panelW) * 0.5f;
-            float panelY = 30f + slideOffset;
+            float panelY = 30f + SafeArea.Top + slideOffset;
 
             // Background
             GUI.color = new Color(0.15f, 0.12f, 0.02f, 0.9f * alpha);
@@ -337,30 +399,32 @@ namespace InsectGame.UI
         // ------------------------------------------------------------------
         private void DrawNewQuestNotification()
         {
+            if (tutorialHidden) return;           // \uc228\uae40 \uc911\uc5d4 \ub2e4\uc74c \ub2e8\uacc4 \uc548\ub0b4 \uc548 \ub744\uc6c0(\uc644\ub8cc \uc54c\ub9bc\uc740 \ubcc4\ub3c4 \uc720\uc9c0)
+            if (newQuestDelay > 0f) return;       // \uc644\ub8cc \uc54c\ub9bc\uc774 \ub05d\ub0a0 \ub54c\uae4c\uc9c0 \ub300\uae30
             if (newQuestAnimTimer <= 0f) return;
-            if (completionAnimTimer > 0f) return; // don't overlap with completion
 
             float alpha;
-            if (newQuestAnimTimer > 1.5f)
+            if (newQuestAnimTimer > 3f)
             {
-                float t = (2f - newQuestAnimTimer) / 0.5f;
+                float t = (3.5f - newQuestAnimTimer) / 0.5f; // \uc2ac\ub77c\uc774\ub4dc \uc778(0.5s)
                 alpha = Mathf.Clamp01(t);
             }
             else if (newQuestAnimTimer < 0.4f)
             {
-                alpha = Mathf.Clamp01(newQuestAnimTimer / 0.4f);
+                alpha = Mathf.Clamp01(newQuestAnimTimer / 0.4f); // \ud398\uc774\ub4dc \uc544\uc6c3(0.4s)
             }
             else
             {
                 alpha = 1f;
             }
 
-            float panelW = 380f;
-            float panelH = 44f;
+            bool hasDesc = !string.IsNullOrEmpty(newQuestDesc);
+            float panelW = 420f;
+            float panelH = hasDesc ? 92f : 48f;
             float panelX = (Screen.width - panelW) * 0.5f;
-            float panelY = 60f;
+            float panelY = 60f + SafeArea.Top;
 
-            GUI.color = new Color(0.08f, 0.15f, 0.3f, 0.9f * alpha);
+            GUI.color = new Color(0.08f, 0.15f, 0.3f, 0.92f * alpha);
             GUI.DrawTexture(new Rect(panelX, panelY, panelW, panelH), Texture2D.whiteTexture);
 
             GUI.color = new Color(0.3f, 0.6f, 1f, alpha);
@@ -368,10 +432,24 @@ namespace InsectGame.UI
             GUI.DrawTexture(new Rect(panelX, panelY + panelH - 2f, panelW, 2f), Texture2D.whiteTexture);
 
             InitNotifStyles();
-            newQuestStyleCache.normal.textColor = new Color(NewQuestBaseCol.r, NewQuestBaseCol.g, NewQuestBaseCol.b, alpha);
             GUI.color = new Color(1f, 1f, 1f, alpha);
-            GUI.Label(new Rect(panelX, panelY, panelW, panelH),
-                "\uc0c8 \ud034\uc2a4\ud2b8! \u2192 \"" + (newQuestTitle ?? "") + "\"", newQuestStyleCache);
+
+            // \ud5e4\ub354: \ub2e4\uc74c \ub2e8\uacc4\uac00 "\ubb34\uc5c7"\uc778\uc9c0
+            newQuestStyleCache.normal.textColor = new Color(NewQuestBaseCol.r, NewQuestBaseCol.g, NewQuestBaseCol.b, alpha);
+            GUI.Label(new Rect(panelX, panelY + 6f, panelW, 28f),
+                "\ub2e4\uc74c \ub2e8\uacc4 \u2192 \"" + (newQuestTitle ?? "") + "\"", newQuestStyleCache);
+
+            if (hasDesc)
+            {
+                // \ubb34\uc5c7\uc744 "\ud574\uc57c \ud558\ub294\uc9c0"(\uc124\uba85)
+                newQuestDescStyleCache.normal.textColor = new Color(NewQuestDescCol.r, NewQuestDescCol.g, NewQuestDescCol.b, alpha);
+                GUI.Label(new Rect(panelX + 10f, panelY + 34f, panelW - 20f, 34f), newQuestDesc, newQuestDescStyleCache);
+
+                // \uc9c4\ud589 \ub3c5\ub824
+                newQuestPromptStyleCache.normal.textColor = new Color(NewQuestPromptCol.r, NewQuestPromptCol.g, NewQuestPromptCol.b, alpha);
+                GUI.Label(new Rect(panelX, panelY + panelH - 24f, panelW, 20f),
+                    "\u25b6 \uc9c0\uae08 \uc9c4\ud589\ud574\ubcf4\uc138\uc694!", newQuestPromptStyleCache);
+            }
 
             GUI.color = Color.white;
         }
@@ -406,7 +484,7 @@ namespace InsectGame.UI
             // Close button [X]
             if (GUI.Button(new Rect(panelX + panelW - 50f, panelY + 8f, 38f, 32f), "X", detailCloseStyleCache))
             {
-                detailOpen = false;
+                SetDetailOpen(false);
                 return;
             }
 

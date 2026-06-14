@@ -131,8 +131,9 @@ namespace InsectGame.UI
             float panelH = 540f;
             float margin = 20f;
             float slideX = Mathf.Lerp(-panelW + 50, 0, toggleAnim);
-            float px = margin + slideX;
-            float py = margin;
+            // 세이프 에어리어(노치/상태바) 안쪽으로 — 가상 좌표라 픽셀 인셋을 Scale로 변환.
+            float px = margin + slideX + SafeArea.Left / UIScale.Scale;
+            float py = margin + SafeArea.Top / UIScale.Scale;
 
             GUI.color = PanelBgCol;
             GUI.DrawTexture(new Rect(px, py, panelW, panelH), Texture2D.whiteTexture);

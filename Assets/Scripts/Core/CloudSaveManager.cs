@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
 using UnityEngine.Networking;
@@ -24,6 +25,32 @@ namespace InsectGame.Core
         private float autoSaveTimer;
         private const float AutoSaveInterval = 120f;
 
+        // 실제 진행도 저장소(파일 기반)와 연결 — 옛은 PlayerPrefs("player_level"/"player_candies"/
+        // "player_coins")를 읽어 JSON 파일에 저장하는 실제 시스템과 어긋나 레벨/XP/캔디/코인이
+        // 클라우드에 전혀 동기화되지 않았음(항상 기본값 0/1 업로드 + 로드 시 무시).
+        private PlayerProgressController progressController;
+        private PlayerCandyInventory candyInventory;
+        private PlayerCurrencyWallet currencyWallet;
+
+        public void AutoWire(PlayerProgressController progress,
+            PlayerCandyInventory candy, PlayerCurrencyWallet wallet)
+        {
+            if (progressController == null) progressController = progress;
+            if (candyInventory == null) candyInventory = candy;
+            if (currencyWallet == null) currencyWallet = wallet;
+        }
+
+        // 클라우드 적용 후 인메모리 캐시를 다시 읽어야 하는 시스템들(곤충/팀/도감/지역/의상 등).
+        // 옛은 ApplySaveData가 파일/PlayerPrefs만 덮어써서 다른 기기 첫 로그인 시 앱 재시작 전까지
+        // 빈 상태로 보였음.
+        private readonly List<ICloudReloadable> reloadables = new List<ICloudReloadable>();
+
+        public void RegisterReloadable(ICloudReloadable reloadable)
+        {
+            if (reloadable != null && !reloadables.Contains(reloadable))
+                reloadables.Add(reloadable);
+        }
+
         // ── Lifecycle ──
 
         private void Awake()
@@ -42,8 +69,7 @@ namespace InsectGame.Core
 
         private static bool IsFirebaseConfigured()
         {
-            return !string.IsNullOrEmpty(FirebaseConfig.ApiKey)
-                && FirebaseConfig.ApiKey != "YOUR_FIREBASE_API_KEY"
+            return FirebaseConfig.IsConfigured
                 && AuthManager.Instance != null
                 && !AuthManager.Instance.IsMasterAccount;
         }
@@ -220,8 +246,9 @@ namespace InsectGame.Core
                 GameSaveData data = ParseFirestoreDocument(downloadText);
                 if (data != null)
                 {
-                    ApplySaveData(data);
-                    LoadCompleted?.Invoke(true);
+                    bool applied = ApplySaveData(data);
+                    if (applied) LoadCompleted?.Invoke(true);
+                    // 보류(충돌)면 SaveConflictUI 표시 후 ResolveConflict가 LoadCompleted를 발화.
                 }
                 else
                 {
@@ -266,10 +293,11 @@ namespace InsectGame.Core
             return new GameSaveData
             {
                 displayName = AuthManager.Instance.DisplayName,
-                playerLevel = PlayerPrefs.GetInt("player_level", 1),
-                playerXp = PlayerPrefs.GetInt("player_xp", 0),
-                candies = PlayerPrefs.GetInt("player_candies", 0),
-                coins = PlayerPrefs.GetInt("player_coins", 0),
+                // 실제 시스템(파일 기반)에서 읽음 — null이면 PlayerPrefs 폴백(부트 순서 안전).
+                playerLevel = progressController != null ? progressController.Level : PlayerPrefs.GetInt("player_level", 1),
+                playerXp = progressController != null ? progressController.CurrentXp : PlayerPrefs.GetInt("player_xp", 0),
+                candies = candyInventory != null ? candyInventory.Candies : PlayerPrefs.GetInt("player_candies", 0),
+                coins = currencyWallet != null ? currencyWallet.Coins : PlayerPrefs.GetInt("player_coins", 0),
                 // gems는 PlayerCurrencyWallet 단일 소스. CashShopManager가 wallet 경유 노출.
                 gems = CashShopManager.Instance != null ? CashShopManager.Instance.Gems : 0,
                 ownedInsects = LoadLocalFile(GameConstants.SaveFiles.PlayerInsects),
@@ -287,17 +315,29 @@ namespace InsectGame.Core
                     GameConstants.PrefsKeys.QuestCompleted, ""),
                 activeQuest = PlayerPrefs.GetString(
                     GameConstants.PrefsKeys.ActiveQuest, ""),
+                // 캐릭터 외형(LoginUI가 PlayerPrefs "InsectGame.Character.*"에 저장) — 옛은 클라우드
+                // 미수집이라 다른 기기 접속 시 외형(피부/머리/표정/성별) 전부 초기화됐음.
+                charCreated = PlayerPrefs.GetInt("InsectGame.Character.Created", 0),
+                charName = PlayerPrefs.GetString("InsectGame.Character.Name", ""),
+                charSkin = PlayerPrefs.GetInt("InsectGame.Character.SkinColor", 0),
+                charHair = PlayerPrefs.GetInt("InsectGame.Character.HairStyle", 0),
+                charGender = PlayerPrefs.GetInt("InsectGame.Character.Gender", 0),
+                charHairColor = PlayerPrefs.GetInt("InsectGame.Character.HairColor", 0),
+                charFace = PlayerPrefs.GetInt("InsectGame.Character.FaceType", 0),
+                charOutfit = PlayerPrefs.GetInt("InsectGame.Character.OutfitPreset", 0),
                 lastSaveTimestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
             };
         }
 
         // ── 데이터 적용 ──
 
-        private void ApplySaveData(GameSaveData data)
+        // 로드된 클라우드 데이터를 적용하되, 충돌(클라우드가 더 최신 + 로컬에 의미있는 진행) 시
+        // 사용자 선택을 위해 보류한다. 반환: true=적용/처리 완료(LoadCompleted 진행 가능),
+        // false=충돌로 보류(ResolveConflict가 마무리).
+        private bool ApplySaveData(GameSaveData data)
         {
-            // 타임스탬프 가드: 로컬 lastSaveTimestamp가 클라우드보다 새것이면 덮어쓰기 거부.
-            // 현재 LoadFromCloud는 LoginUI 로그인 직후 1회만 호출되지만, 미래 어디서든 LoadFromCloud가
-            // 게임 진행 중 호출될 수 있는 케이스(계정 전환, 강제 동기화 등)에 대비.
+            // 타임스탬프 가드: 로컬 lastSaveTimestamp(마지막 클라우드 푸시)가 클라우드보다 새것이면
+            // 이 기기가 앞선 것 → 덮어쓰기 거부(로컬 유지). 프롬프트 없이 진행.
             // long을 PlayerPrefs에 직접 저장 불가 → string으로 보관.
             long localTs = 0;
             long.TryParse(PlayerPrefs.GetString(LastSaveTsKey, "0"), out localTs);
@@ -306,9 +346,30 @@ namespace InsectGame.Core
                 Debug.LogWarning(
                     "[CloudSave] 로컬 데이터(" + localTs + ")가 클라우드(" + data.lastSaveTimestamp
                     + ")보다 새것. 덮어쓰기 거부.");
-                return;
+                return true;
             }
 
+            // 충돌 감지: 클라우드가 내 마지막 푸시보다 새것 + 로컬에 의미있는 진행 → 다른 기기 가능성.
+            // 구독자(SaveConflictUI)가 있으면 적용을 보류하고 사용자에게 선택을 묻는다.
+            // 구독자 없으면(데드락 방지) 기존 동작(last-write-wins)으로 클라우드 적용.
+            if (ConflictDetected != null && data.lastSaveTimestamp > localTs && HasMeaningfulLocalProgress())
+            {
+                pendingCloudData = data;
+                ConflictDetected.Invoke(new SaveConflictInfo
+                {
+                    local = BuildLocalSummary(localTs),
+                    cloud = BuildCloudSummary(data)
+                });
+                return false;
+            }
+
+            ApplyResolved(data);
+            return true;
+        }
+
+        // 실제 적용 — 충돌 없거나 사용자가 "클라우드 사용" 선택 시 호출.
+        private void ApplyResolved(GameSaveData data)
+        {
             PlayerPrefs.SetInt("player_level", data.playerLevel);
             PlayerPrefs.SetInt("player_xp", data.playerXp);
             PlayerPrefs.SetInt("player_candies", data.candies);
@@ -332,7 +393,23 @@ namespace InsectGame.Core
                 data.questCompleted ?? "");
             PlayerPrefs.SetString(GameConstants.PrefsKeys.ActiveQuest,
                 data.activeQuest ?? "");
+
+            // 캐릭터 외형 — 옛 클라우드 문서엔 없을 수 있어 sentinel(-1)이면 로컬 유지(초기화 방지).
+            if (data.charCreated == 1) PlayerPrefs.SetInt("InsectGame.Character.Created", 1);
+            if (!string.IsNullOrEmpty(data.charName)) PlayerPrefs.SetString("InsectGame.Character.Name", data.charName);
+            if (data.charSkin >= 0) PlayerPrefs.SetInt("InsectGame.Character.SkinColor", data.charSkin);
+            if (data.charHair >= 0) PlayerPrefs.SetInt("InsectGame.Character.HairStyle", data.charHair);
+            if (data.charGender >= 0) PlayerPrefs.SetInt("InsectGame.Character.Gender", data.charGender);
+            if (data.charHairColor >= 0) PlayerPrefs.SetInt("InsectGame.Character.HairColor", data.charHairColor);
+            if (data.charFace >= 0) PlayerPrefs.SetInt("InsectGame.Character.FaceType", data.charFace);
+            if (data.charOutfit >= 0) PlayerPrefs.SetInt("InsectGame.Character.OutfitPreset", data.charOutfit);
             PlayerPrefs.Save();
+
+            // 실제 진행도 시스템(파일 기반)에 반영 — PlayerPrefs 미러만으로는 게임플레이에 안 잡힘.
+            // (PlayerPrefs SetInt는 WorldChannelManager 등 레거시 리더용 미러로 유지.)
+            if (progressController != null) progressController.ApplyCloudProgress(data.playerLevel, data.playerXp);
+            if (candyInventory != null) candyInventory.SetCandies(data.candies);
+            if (currencyWallet != null) currencyWallet.SetCoins(data.coins);
 
             if (!string.IsNullOrEmpty(data.ownedInsects))
                 SaveLocalFile(GameConstants.SaveFiles.PlayerInsects, data.ownedInsects);
@@ -340,6 +417,89 @@ namespace InsectGame.Core
                 SaveLocalFile(GameConstants.SaveFiles.BattleTeam, data.battleTeam);
             if (!string.IsNullOrEmpty(data.dexData))
                 SaveLocalFile(GameConstants.SaveFiles.DexSave, data.dexData);
+
+            // 파일/PlayerPrefs 갱신 후 인메모리 캐시 리로드 — 곤충/팀/도감/지역/의상 등이
+            // 다른 기기 첫 로그인에서도 즉시 반영(앱 재시작 불필요).
+            for (int i = 0; i < reloadables.Count; i++)
+            {
+                if (reloadables[i] != null) reloadables[i].ReloadFromDisk();
+            }
+
+            // 이 클라우드 ts로 동기화 완료 표시 — 다음 로그인 시 동일/구 ts면 재충돌 프롬프트 안 함.
+            PlayerPrefs.SetString(LastSaveTsKey, data.lastSaveTimestamp.ToString());
+            PlayerPrefs.Save();
+        }
+
+        // ── 충돌 해결 (사용자 선택) ──
+
+        public event Action<SaveConflictInfo> ConflictDetected;
+        private GameSaveData pendingCloudData;
+
+        /// <summary>충돌 UI에서 사용자가 선택한 결과를 적용. useCloud=true→클라우드로 덮어씀,
+        /// false→로컬 유지(클라우드에 즉시 업로드해 재충돌 방지). 어느 쪽이든 LoadCompleted(true)로 게임 진행.</summary>
+        public void ResolveConflict(bool useCloud)
+        {
+            GameSaveData data = pendingCloudData;
+            pendingCloudData = null;
+            if (data == null) return;
+
+            if (useCloud)
+            {
+                ApplyResolved(data);
+            }
+            else
+            {
+                // 로컬 유지 → 클라우드를 로컬로 덮어쓰기 위해 즉시 업로드(다음 로그인 재프롬프트 방지).
+                SaveToCloud();
+            }
+            LoadCompleted?.Invoke(true);
+        }
+
+        // 로컬에 "지킬 가치가 있는" 진행이 있는지 — 레벨>1 또는 곤충 보유. 신규 설치엔 프롬프트 안 띄움.
+        private bool HasMeaningfulLocalProgress()
+        {
+            int level = progressController != null ? progressController.Level : PlayerPrefs.GetInt("player_level", 1);
+            if (level > 1) return true;
+            return CountInsects(LoadLocalFile(GameConstants.SaveFiles.PlayerInsects)) > 0;
+        }
+
+        private SaveSummary BuildLocalSummary(long localTs)
+        {
+            return new SaveSummary
+            {
+                level = progressController != null ? progressController.Level : PlayerPrefs.GetInt("player_level", 1),
+                candies = candyInventory != null ? candyInventory.Candies : PlayerPrefs.GetInt("player_candies", 0),
+                coins = currencyWallet != null ? currencyWallet.Coins : PlayerPrefs.GetInt("player_coins", 0),
+                insectCount = CountInsects(LoadLocalFile(GameConstants.SaveFiles.PlayerInsects)),
+                lastSaveUnix = localTs
+            };
+        }
+
+        private SaveSummary BuildCloudSummary(GameSaveData data)
+        {
+            return new SaveSummary
+            {
+                level = data.playerLevel,
+                candies = data.candies,
+                coins = data.coins,
+                insectCount = CountInsects(data.ownedInsects),
+                lastSaveUnix = data.lastSaveTimestamp
+            };
+        }
+
+        private static int CountInsects(string ownedInsectsJson)
+        {
+            if (string.IsNullOrEmpty(ownedInsectsJson)) return 0;
+            try
+            {
+                PlayerInsectCollectionSave save =
+                    JsonUtility.FromJson<PlayerInsectCollectionSave>(ownedInsectsJson);
+                return save != null && save.insects != null ? save.insects.Count : 0;
+            }
+            catch
+            {
+                return 0;
+            }
         }
 
         // ── Firestore JSON 변환 ──
@@ -364,6 +524,14 @@ namespace InsectGame.Core
             sb.Append(","); AppendStringField(sb, "questProgress", data.questProgress);
             sb.Append(","); AppendStringField(sb, "questCompleted", data.questCompleted);
             sb.Append(","); AppendStringField(sb, "activeQuest", data.activeQuest);
+            sb.Append(","); AppendIntField(sb, "charCreated", data.charCreated);
+            sb.Append(","); AppendStringField(sb, "charName", data.charName);
+            sb.Append(","); AppendIntField(sb, "charSkin", data.charSkin);
+            sb.Append(","); AppendIntField(sb, "charHair", data.charHair);
+            sb.Append(","); AppendIntField(sb, "charGender", data.charGender);
+            sb.Append(","); AppendIntField(sb, "charHairColor", data.charHairColor);
+            sb.Append(","); AppendIntField(sb, "charFace", data.charFace);
+            sb.Append(","); AppendIntField(sb, "charOutfit", data.charOutfit);
             sb.Append(","); AppendIntField(sb, "lastSaveTimestamp",
                 (int)data.lastSaveTimestamp);
             sb.Append("}}");
@@ -395,6 +563,15 @@ namespace InsectGame.Core
             data.questProgress = ExtractStringValue(json, "questProgress");
             data.questCompleted = ExtractStringValue(json, "questCompleted");
             data.activeQuest = ExtractStringValue(json, "activeQuest");
+            // 캐릭터 외형 — 옛 문서엔 없을 수 있어 sentinel(-1)로 받아 ApplySaveData에서 로컬 보존.
+            data.charCreated = ExtractIntValueOrDefault(json, "charCreated", 0);
+            data.charName = ExtractStringValue(json, "charName");
+            data.charSkin = ExtractIntValueOrDefault(json, "charSkin", -1);
+            data.charHair = ExtractIntValueOrDefault(json, "charHair", -1);
+            data.charGender = ExtractIntValueOrDefault(json, "charGender", -1);
+            data.charHairColor = ExtractIntValueOrDefault(json, "charHairColor", -1);
+            data.charFace = ExtractIntValueOrDefault(json, "charFace", -1);
+            data.charOutfit = ExtractIntValueOrDefault(json, "charOutfit", -1);
             data.lastSaveTimestamp = ExtractIntValue(json, "lastSaveTimestamp");
 
             return data;
@@ -522,6 +699,32 @@ namespace InsectGame.Core
         public string questProgress;
         public string questCompleted;
         public string activeQuest;
+        // 캐릭터 외형 — int는 -1 sentinel(옛 클라우드 문서 누락 시 로컬 유지), charCreated만 0 기본.
+        public int charCreated;
+        public string charName;
+        public int charSkin = -1;
+        public int charHair = -1;
+        public int charGender = -1;
+        public int charHairColor = -1;
+        public int charFace = -1;
+        public int charOutfit = -1;
         public long lastSaveTimestamp;
+    }
+
+    // ── 동기화 충돌 요약 (UI 표시용) ──
+
+    public class SaveSummary
+    {
+        public int level;
+        public int insectCount;
+        public int candies;
+        public int coins;
+        public long lastSaveUnix;
+    }
+
+    public class SaveConflictInfo
+    {
+        public SaveSummary local;
+        public SaveSummary cloud;
     }
 }

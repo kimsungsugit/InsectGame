@@ -123,6 +123,12 @@ namespace InsectGame.Core
             AuthManager authManager = EnsureComponent<AuthManager>("World/AuthManager");
             CloudSaveManager cloudSave = EnsureComponent<CloudSaveManager>("World/CloudSaveManager");
             InsectGame.UI.LoginUI loginUI = EnsureComponent<InsectGame.UI.LoginUI>("UI/LoginUI");
+            // 게스트 → 정식 계정 전환 패널(게스트일 때만 상단 배지 표시). 의존성 없음.
+            EnsureComponent<InsectGame.UI.AccountLinkUI>("UI/AccountLinkUI");
+            // 동기화 충돌(클라우드가 더 최신 + 로컬 진행) 시 선택 모달. CloudSaveManager(위) 이후 생성 — 구독 보장.
+            EnsureComponent<InsectGame.UI.SaveConflictUI>("UI/SaveConflictUI");
+            // 계정 설정/삭제 패널(Play 필수: 인앱 계정 삭제). AuthManager(위) 이후 생성.
+            EnsureComponent<InsectGame.UI.AccountSettingsUI>("UI/AccountSettingsUI");
 
             // 월드/채널 시스템
             WorldChannelManager worldChannel = EnsureComponent<WorldChannelManager>("World/WorldChannel");
@@ -164,6 +170,12 @@ namespace InsectGame.Core
             PlayerCandyInventory candyInventory = EnsureComponent<PlayerCandyInventory>("World/PlayerCandies");
             PlayerItemInventory itemInventory = EnsureComponent<PlayerItemInventory>("World/PlayerItems");
             PlayerCurrencyWallet wallet = EnsureComponent<PlayerCurrencyWallet>("World/PlayerCurrency");
+            // 클라우드 저장이 레벨/XP/캔디/코인을 실제 파일 시스템에서 읽고 쓰도록 연결
+            // (옛 PlayerPrefs 미러와 어긋나 진행도가 클라우드에 동기화되지 않던 문제 수정).
+            cloudSave.AutoWire(progress, candyInventory, wallet);
+            // 클라우드 로드 후 인메모리 캐시 리로드 — 다른 기기 첫 로그인 시 즉시 반영(재시작 불필요).
+            cloudSave.RegisterReloadable(insectCollection);
+            cloudSave.RegisterReloadable(dex);
             ShopUIController shopUi = EnsureComponent<ShopUIController>("UI/ShopUI");
             DexUIController dexSummary = EnsureComponent<DexUIController>("UI/DexSummary");
             dexSummary.AutoWire(dex);
@@ -203,6 +215,7 @@ namespace InsectGame.Core
 
             BattleTeamManager battleTeam = EnsureComponent<BattleTeamManager>("Battle/BattleTeam");
             battleTeam.AutoWire(insectCollection);
+            cloudSave.RegisterReloadable(battleTeam);
 
             Battle.InsectBattleController battleController = EnsureComponent<Battle.InsectBattleController>("Battle/BattleController");
             battleController.AutoWire(insectCollection, candyInventory, progress, itemInventory);
@@ -213,6 +226,9 @@ namespace InsectGame.Core
             CameraFollower camFollower = camera.GetComponent<CameraFollower>();
             PlayerMovement playerMov = player.GetComponent<PlayerMovement>();
             minigame.AutoWire(playerMov);
+            // 모바일 터치 이동 — 가상 조이스틱(UI→Core 입력 푸시)
+            InsectGame.UI.VirtualJoystickUI joystick = EnsureComponent<InsectGame.UI.VirtualJoystickUI>("UI/VirtualJoystick");
+            joystick.AutoWire(playerMov);
             InsectGame.UI.BattleScreenUI battleScreen = EnsureComponent<InsectGame.UI.BattleScreenUI>("UI/BattleScreen");
             battleScreen.AutoWire(battleController, camFollower, playerMov);
 
@@ -310,6 +326,7 @@ namespace InsectGame.Core
             RegionManager regionMgr = EnsureComponent<RegionManager>("World/RegionManager");
             regionMgr.Initialize(regionDefs);
             regionMgr.AutoWire(progress);
+            cloudSave.RegisterReloadable(regionMgr);
 
             SubAreaEnvironment subAreaEnv = EnsureComponent<SubAreaEnvironment>("World/SubAreaEnvironment");
             subAreaEnv.AutoWire(regionMgr);
@@ -358,6 +375,7 @@ namespace InsectGame.Core
 
             CharacterOutfitManager outfitManager = EnsureComponent<CharacterOutfitManager>("World/CharacterOutfit");
             outfitManager.AutoWire(wallet);
+            cloudSave.RegisterReloadable(outfitManager);
 
             OutfitBonusProvider outfitBonus = EnsureComponent<OutfitBonusProvider>("World/CharacterOutfit");
             outfitBonus.AutoWire(outfitManager);
@@ -383,6 +401,7 @@ namespace InsectGame.Core
             TutorialQuestManager questManager = EnsureComponent<TutorialQuestManager>("World/TutorialQuestManager");
             questManager.AutoWire(insectCollection, candyInventory, progress, itemInventory,
                 battleController, raidController, dex, trainingMgr, battleTeam, regionMgr);
+            cloudSave.RegisterReloadable(questManager);
 
             InsectGame.UI.TutorialQuestUI questUi = EnsureComponent<InsectGame.UI.TutorialQuestUI>("UI/TutorialQuestUI");
             questUi.AutoWire(questManager);
@@ -390,6 +409,9 @@ namespace InsectGame.Core
             // 캐시 상점 + 가챠 시스템
             CashShopManager cashShop = EnsureComponent<CashShopManager>("World/CashShop");
             cashShop.AutoWire(wallet); // 보석 동기화 (PlayerCurrencyWallet ↔ CashShopManager)
+            // 실결제(Google Play Billing) 어댑터 — Start에서 CashShopManager에 공급자 등록.
+            // INSECTGAME_IAP 정의 + Unity IAP 설치 전엔 IsReady=false(프로덕션 구매 비활성).
+            EnsureComponent<IAPManager>("World/IAPManager");
             GachaBoxManager gachaBox = EnsureComponent<GachaBoxManager>("World/GachaBox");
             gachaBox.AutoWire(insectCollection, candyInventory);
             gachaBox.AutoWire(database); // PickRandomInsect 결과 검증 + DisplayName 캐싱

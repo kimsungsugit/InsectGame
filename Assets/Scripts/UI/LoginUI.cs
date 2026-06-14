@@ -108,7 +108,16 @@ namespace InsectGame.UI
             // 배경 그라데이션 (위: 진한남색, 아래: 짙은녹색)
             DrawBackground();
 
-            switch (phase)
+            // 자동 로그인(캐시 세션 복원) 진행 중이면 로그인 폼 대신 로딩 표시 — 폼 깜빡임 방지.
+            // 성공 시 LoginCompleted, 실패 시 AuthFailed가 phase를 전환한다.
+            LoginPhase effectivePhase = phase;
+            if (phase == LoginPhase.Login && AuthManager.Instance != null
+                && (AuthManager.Instance.AutoLoginPending || AuthManager.Instance.IsLoggedIn))
+            {
+                effectivePhase = LoginPhase.Loading;
+            }
+
+            switch (effectivePhase)
             {
                 case LoginPhase.Login:
                     DrawLoginPanel();
@@ -142,6 +151,15 @@ namespace InsectGame.UI
             GUI.DrawTexture(new Rect(0, Screen.height * 0.35f, Screen.width, Screen.height * 0.3f), midTex);
         }
 
+        // 세이프 에어리어 안에서 패널을 세로 중앙 배치 — 짧은/노치 화면에서 상단 클립 방지.
+        // ph가 세이프 높이를 넘으면 줄여서 안에 맞춤.
+        private static float SafeCenterY(ref float ph)
+        {
+            float avail = Screen.height - SafeArea.Top - SafeArea.Bottom;
+            if (ph > avail) ph = avail;
+            return SafeArea.Top + (avail - ph) * 0.5f;
+        }
+
         // ── 로그인 패널 ──
 
         private void DrawLoginPanel()
@@ -149,7 +167,7 @@ namespace InsectGame.UI
             float pw = Mathf.Min(1125f, Screen.width * 0.9f);
             float ph = Mathf.Min(1250f, Screen.height * 0.95f);
             float px = (Screen.width - pw) * 0.5f;
-            float py = (Screen.height - ph) * 0.5f;
+            float py = SafeCenterY(ref ph);
 
             GUI.Box(new Rect(px, py, pw, ph), "", panelStyle);
 
@@ -264,7 +282,7 @@ namespace InsectGame.UI
             float pw = Mathf.Min(1125f, Screen.width * 0.9f);
             float ph = Mathf.Min(1125f, Screen.height * 0.92f);
             float px = (Screen.width - pw) * 0.5f;
-            float py = (Screen.height - ph) * 0.5f;
+            float py = SafeCenterY(ref ph);
 
             GUI.Box(new Rect(px, py, pw, ph), "", panelStyle);
 
@@ -356,7 +374,7 @@ namespace InsectGame.UI
             float pw = 600f;
             float ph = 375f;
             float px = (Screen.width - pw) * 0.5f;
-            float py = (Screen.height - ph) * 0.5f;
+            float py = SafeCenterY(ref ph);
 
             GUI.Box(new Rect(px, py, pw, ph), "", panelStyle);
 
@@ -387,7 +405,7 @@ namespace InsectGame.UI
             float pw = Mathf.Min(940f, Screen.width * 0.88f);
             float ph = Mathf.Min(1313f, Screen.height * 0.95f);
             float px = (Screen.width - pw) * 0.5f;
-            float py = (Screen.height - ph) * 0.5f;
+            float py = SafeCenterY(ref ph);
 
             GUI.Box(new Rect(px, py, pw, ph), "", panelStyle);
 

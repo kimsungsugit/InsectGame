@@ -10,7 +10,7 @@ namespace InsectGame.Core
         public List<string> slotIds = new List<string>();
     }
 
-    public class BattleTeamManager : MonoBehaviour
+    public class BattleTeamManager : MonoBehaviour, ICloudReloadable
     {
         public const int MaxSlots = GameConstants.Battle.MaxTeamSlots;
 
@@ -99,6 +99,17 @@ namespace InsectGame.Core
         public void AutoWire(PlayerInsectCollection col)
         {
             if (collection == null) collection = col;
+            MigrateLegacySlots();
+        }
+
+        // 클라우드 로드 후 battle_team.json을 다시 읽어 슬롯 갱신.
+        // TeamChanged는 발화하지 않음 — TutorialQuestManager가 q_team 진행도를 잘못 가산하는 회귀 차단.
+        // 팀 UI(IMGUI)는 매 프레임 GetAllSlots로 읽어 자동 반영.
+        public void ReloadFromDisk()
+        {
+            saveData = Load();
+            while (saveData.slotIds.Count < MaxSlots)
+                saveData.slotIds.Add(string.Empty);
             MigrateLegacySlots();
         }
 

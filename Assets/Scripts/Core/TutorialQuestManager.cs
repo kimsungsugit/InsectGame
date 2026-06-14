@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace InsectGame.Core
 {
-    public class TutorialQuestManager : MonoBehaviour
+    public class TutorialQuestManager : MonoBehaviour, ICloudReloadable
     {
         public static TutorialQuestManager Instance { get; private set; }
 
@@ -25,6 +25,18 @@ namespace InsectGame.Core
         private string activeQuestId;
 
         private Vector3 lastPlayerPos;
+        private Transform cachedPlayerTransform; // 매 프레임 GameObject.Find("Player") 회피
+
+        // 플레이어 Transform 지연 캐싱 — 최초 1회만 Find, 이후 재사용(디스폰 시 재탐색).
+        private Transform PlayerTransform()
+        {
+            if (cachedPlayerTransform == null)
+            {
+                GameObject p = GameObject.Find("Player");
+                if (p != null) cachedPlayerTransform = p.transform;
+            }
+            return cachedPlayerTransform;
+        }
 
         private const string ProgressKey = GameConstants.PrefsKeys.QuestProgress;
         private const string CompletedKey = GameConstants.PrefsKeys.QuestCompleted;
@@ -89,10 +101,10 @@ namespace InsectGame.Core
                 ActiveQuest = GetQuest(activeQuestId);
             }
 
-            GameObject player = GameObject.Find("Player");
+            Transform player = PlayerTransform();
             if (player != null)
             {
-                lastPlayerPos = player.transform.position;
+                lastPlayerPos = player.position;
             }
         }
 
@@ -365,15 +377,18 @@ namespace InsectGame.Core
         {
             if (ActiveQuest == null) return;
 
-            GameObject player = GameObject.Find("Player");
+            // 이동 퀘스트가 아닐 땐 위치 추적 자체가 불필요 — Find/거리계산 스킵.
+            if (ActiveQuest.type != QuestType.Movement) return;
+
+            Transform player = PlayerTransform();
             if (player != null)
             {
-                float dist = Vector3.Distance(player.transform.position, lastPlayerPos);
-                if (dist > 1f && ActiveQuest.type == QuestType.Movement)
+                float dist = Vector3.Distance(player.position, lastPlayerPos);
+                if (dist > 1f)
                 {
                     IncrementProgress(activeQuestId);
                 }
-                lastPlayerPos = player.transform.position;
+                lastPlayerPos = player.position;
             }
         }
 
@@ -527,6 +542,17 @@ namespace InsectGame.Core
 
             activeQuestId = null;
             ActiveQuest = null;
+        }
+
+        // 클라우드 로드 후 PlayerPrefs(퀘스트 진행/완료/활성)를 다시 읽어 인메모리 갱신.
+        // 이벤트 재구독은 안 함(Start에서 이미 구독). 활성 퀘스트가 비면 다음 퀘스트 재선정.
+        public void ReloadFromDisk()
+        {
+            LoadProgress();
+            if (string.IsNullOrEmpty(activeQuestId))
+                ActivateNextQuest();
+            else
+                ActiveQuest = GetQuest(activeQuestId);
         }
 
         public TutorialQuest[] GetAllQuests()

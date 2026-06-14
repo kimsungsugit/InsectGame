@@ -380,15 +380,21 @@ namespace InsectGame.UI
             GUILayout.Label($"<size=16>{item.description}</size>", yellowDescStyle);
 
             GUILayout.FlexibleSpace();
-            GUILayout.Label($"<size=22><b>\\{item.priceKRW:N0}</b></size>", shopCenterBoldStyle);
+            // 실결제 모듈 준비 시 스토어 현지화 가격(실제 청구액과 일치), 아니면 priceKRW 폴백.
+            GUILayout.Label($"<size=22><b>{CashShopManager.Instance.GetRealMoneyPriceText(item.itemId)}</b></size>", shopCenterBoldStyle);
             GUILayout.Space(8);
 
-            GUI.color = BuyButtonGreenCol;
-            if (GUILayout.Button("구매", buyButtonStyle, GUILayout.Height(44)))
+            // 결제 모듈 미준비(프로덕션)면 버튼 비활성 — 무료 지급/먹통 버튼 방지.
+            bool canBuy = CashShopManager.Instance.CanBuyRealMoney;
+            GUI.color = canBuy ? BuyButtonGreenCol : new Color(0.4f, 0.4f, 0.45f);
+            GUI.enabled = canBuy;
+            if (GUILayout.Button(canBuy ? "구매" : "준비 중", buyButtonStyle, GUILayout.Height(44)))
             {
+                // 실결제는 비동기(완료 콜백에서 지급) → 중립 문구. 실제 충전은 보석 수 갱신으로 반영.
                 if (CashShopManager.Instance.PurchaseWithRealMoney(item.itemId))
-                    ShowFeedback("보석 충전 완료!");
+                    ShowFeedback("구매를 처리합니다...");
             }
+            GUI.enabled = true;
             GUI.color = Color.white;
 
             GUILayout.EndVertical();

@@ -246,6 +246,8 @@ namespace InsectGame.Battle
 
         private void CheckEnd()
         {
+            if (!IsActive) return; // 이미 종료(IsActive=false) — ×3 보상/캡처 중복 차단
+
             if (BossStats.CurrentHp <= 0)
             {
                 TryPlayBossFaint();

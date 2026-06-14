@@ -794,10 +794,11 @@ namespace InsectGame.UI
             // 3D 아레나 활성 시: 상단 턴 표시 바만 그리고 2D 배경 스킵
             if (arena != null && arena.IsActive)
             {
+                float safeTop = SafeArea.Top / UIScale.Scale; // 노치/상태바 아래로
                 GUI.color = new Color(0.02f, 0.03f, 0.06f, 0.7f);
-                GUI.DrawTexture(new Rect(0, 0, sw, sh * 0.08f), Texture2D.whiteTexture);
+                GUI.DrawTexture(new Rect(0, 0, sw, sh * 0.08f + safeTop), Texture2D.whiteTexture);
                 GUI.color = Color.white;
-                GUI.Label(new Rect(0, 4, sw, 34), $"BATTLE  -  Turn {turnNumber + 1}", turnStyle3dCache);
+                GUI.Label(new Rect(0, 4 + safeTop, sw, 34), $"BATTLE  -  Turn {turnNumber + 1}", turnStyle3dCache);
                 return;
             }
 
@@ -1717,10 +1718,12 @@ namespace InsectGame.UI
 
             float sw = UIScale.VirtualScreenWidth;
             float panelH = 320f;
-            float panelY = UIScale.VirtualScreenHeight - panelH;
+            // 제스처바(하단 세이프 인셋) 위로 버튼을 올림. 배경은 바닥까지 채워 빈틈 방지.
+            float safeBottom = SafeArea.Bottom / UIScale.Scale;
+            float panelY = UIScale.VirtualScreenHeight - panelH - safeBottom;
 
             GUI.color = new Color(0.03f, 0.04f, 0.09f, 0.97f);
-            GUI.DrawTexture(new Rect(0, panelY, sw, panelH), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(0, panelY, sw, panelH + safeBottom), Texture2D.whiteTexture);
 
             GUI.color = new Color(0.3f, 0.5f, 0.9f);
             GUI.DrawTexture(new Rect(0, panelY, sw, 4), Texture2D.whiteTexture);

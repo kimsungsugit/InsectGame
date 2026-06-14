@@ -50,5 +50,13 @@ TestResults/
 # Claude Code local settings
 .claude/settings.local.json
 
+# 비밀 설정(자격 증명) — 소스/원격에 커밋 금지. 각 환경에서 직접 생성.
+# 형식: master_config.json={ "id": "...", "password": "..." }
+#       firebase_config.json={ "apiKey": "...", "projectId": "..." }
+/[Aa]ssets/[Rr]esources/master_config.json
+/[Aa]ssets/[Rr]esources/master_config.json.meta
+/[Aa]ssets/[Rr]esources/firebase_config.json
+/[Aa]ssets/[Rr]esources/firebase_config.json.meta
+
 # Duplicate Unity project
 /[Mm]y [Pp]roject/

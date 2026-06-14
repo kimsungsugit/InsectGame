@@ -11,6 +11,8 @@ namespace InsectGame.Dex
         [SerializeField] private InsectDatabase database;
         [SerializeField] private DexController dexController;
         [SerializeField] private InsectModelPreviewRenderer previewRenderer; // 곤충 3D 모델 RenderTexture 프리뷰
+        private float previewAngle = 150f; // 도감 곤충 프리뷰 Y회전(좌우 버튼으로 시점 변경)
+        private bool previewShiny;         // 이로치(색다른 모습) 프리뷰 토글
         [SerializeField] private PlayerInsectCollection insectCollection;
         [SerializeField] private PlayerItemInventory itemInventory;
 
@@ -434,30 +436,62 @@ namespace InsectGame.Dex
 
             Color rarityCol = UITheme.Instance.GetInsectRarityColor(ins.rarity);
 
-            if (found)
+            if (found && caught && previewRenderer != null)
             {
-                float portraitSize = 90f;
-                // 어두운 배경 — rarityCol 기반 동적이지만 struct copy로 alloc 없음
+                // 곤충 3D 프리뷰를 좌측에 크게(세로 가득), 텍스트는 우측 컬럼으로 재배치.
+                // 가로 공간(detailW ~1400px)이 대부분 낭비되던 것을 활용 → 이미지 대형화, 폰트 크기는 불변.
+                float rightEdge = x + w;
+                // 절대 상한(380) 추가 — w는 상세 패널 전체 폭(~1400px)이라 비율만으론 패널 따라 계속 커짐.
+                // 2-인자 Min 중첩(3-인자는 params float[] 할당 — OnGUI 핫패스 회피).
+                float previewSz = Mathf.Min(Mathf.Min(h - 30f, w * 0.42f), 380f);
+                float boxX = x + 10f;
+                float boxY = y + 20f;
+
                 Color portBg = rarityCol;
                 portBg.r *= 0.1f; portBg.g *= 0.1f; portBg.b *= 0.1f; portBg.a = 0.5f;
                 GUI.color = portBg;
-                GUI.DrawTexture(new Rect(cx - portraitSize, py, portraitSize * 2, portraitSize * 2), Texture2D.whiteTexture);
+                GUI.DrawTexture(new Rect(boxX, boxY, previewSz, previewSz), Texture2D.whiteTexture);
                 GUI.color = Color.white;
 
-                // 포획한 곤충은 3D 모델 프리뷰(RenderTexture)로 표시. 준비 전/미포획이면 약식 2D 폴백.
-                Texture preview = (caught && previewRenderer != null) ? previewRenderer.GetPreview(ins) : null;
+                bool ownsShiny = OwnsShiny(ins.insectId);
+                Texture preview = previewRenderer.GetPreview(ins, previewAngle, previewShiny);
                 if (preview != null)
-                {
-                    GUI.DrawTexture(new Rect(cx - portraitSize, py, portraitSize * 2f, portraitSize * 2f),
-                        preview, ScaleMode.ScaleToFit, true);
-                }
+                    GUI.DrawTexture(new Rect(boxX, boxY, previewSz, previewSz), preview, ScaleMode.ScaleToFit, true);
                 else
                 {
-                    Color ic = caught ? UITheme.Instance.GetInsectColor(ins.insectId, ins.rarity)
-                        : new Color(0.3f, 0.3f, 0.35f);
-                    DrawTinyInsect(cx, py + portraitSize, portraitSize * 1.2f, ins.insectId, ic);
+                    Color ic = UITheme.Instance.GetInsectColor(ins.insectId, ins.rarity);
+                    DrawTinyInsect(boxX + previewSz / 2f, boxY + previewSz / 2f, previewSz * 0.6f, ins.insectId, ic);
                 }
+                // 좌우 회전 버튼 — 박스 하단 양끝
+                float rotBtnY = boxY + previewSz - 56f;
+                if (GUI.Button(new Rect(boxX + 8f, rotBtnY, 46f, 50f), "◀"))
+                    previewAngle -= 30f;
+                if (GUI.Button(new Rect(boxX + previewSz - 54f, rotBtnY, 46f, 50f), "▶"))
+                    previewAngle += 30f;
+                // 이로치(색다른 모습) 토글 — 박스 상단 중앙
+                GUI.backgroundColor = previewShiny ? new Color(1f, 0.85f, 0.2f) : new Color(0.32f, 0.32f, 0.38f);
+                if (GUI.Button(new Rect(boxX + previewSz / 2f - 90f, boxY + 6f, 180f, 40f), previewShiny ? "★ 색다른 모습" : "✦ 일반 / 색다른"))
+                    previewShiny = !previewShiny;
+                GUI.backgroundColor = Color.white;
+                if (ownsShiny)
+                    GUI.Label(new Rect(boxX, boxY + previewSz - 112f, previewSz, 30f), "★ 색다른 개체 보유 중", caughtSCache);
 
+                // 이후 모든 텍스트는 우측 컬럼에 그림 — x/w/cx/py만 재배치(폰트 스타일 불변).
+                x = boxX + previewSz + 30f;
+                w = rightEdge - x - 10f;
+                cx = x + w / 2f;
+                py = y + 20f;
+            }
+            else if (found)
+            {
+                // 발견만(미포획): 3D 모델 미공개 → 기존 중앙 약식 실루엣 유지.
+                float portraitSize = 110f;
+                Color portBg = rarityCol;
+                portBg.r *= 0.1f; portBg.g *= 0.1f; portBg.b *= 0.1f; portBg.a = 0.5f;
+                GUI.color = portBg;
+                GUI.DrawTexture(new Rect(cx - portraitSize, py, portraitSize * 2f, portraitSize * 2f), Texture2D.whiteTexture);
+                GUI.color = Color.white;
+                DrawTinyInsect(cx, py + portraitSize, portraitSize * 1.2f, ins.insectId, new Color(0.3f, 0.3f, 0.35f));
                 py += portraitSize * 2 + 12;
             }
             else
@@ -888,6 +922,17 @@ namespace InsectGame.Dex
                 case "mat_honey": return new Color(0.9f, 0.7f, 0.2f);
                 default: return new Color(0.5f, 0.5f, 0.5f);
             }
+        }
+
+        // 선택된 종의 색다른(이로치) 개체를 플레이어가 보유 중인지 — 선택 곤충 1종에 대해서만 호출(저빈도).
+        private bool OwnsShiny(string insectId)
+        {
+            if (insectCollection == null || string.IsNullOrEmpty(insectId)) return false;
+            List<PlayerInsectData> owned = insectCollection.GetAllOwned();
+            if (owned == null) return false;
+            for (int i = 0; i < owned.Count; i++)
+                if (owned[i] != null && owned[i].isShiny && owned[i].insectId == insectId) return true;
+            return false;
         }
 
         public void AutoWire(InsectDatabase db, DexController dex)

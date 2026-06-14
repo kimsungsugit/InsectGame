@@ -5,7 +5,7 @@ using UnityEngine;
 
 namespace InsectGame.Dex
 {
-    public class DexController : MonoBehaviour
+    public class DexController : MonoBehaviour, InsectGame.Core.ICloudReloadable
     {
         [SerializeField] private InsectDatabase database;
 
@@ -106,6 +106,22 @@ namespace InsectGame.Dex
         private void SaveAndNotify()
         {
             DexSaveService.Save(saveData);
+            DexUpdated?.Invoke(saveData);
+        }
+
+        // 클라우드 로드 후 dex_save.json을 다시 읽어 lookup 재구성 + UI 갱신.
+        // DexUpdated는 표시 갱신용이라 발화 안전(퀘스트는 OpenDex 키 입력에만 반응).
+        public void ReloadFromDisk()
+        {
+            lookup.Clear();
+            saveData = DexSaveService.Load();
+            foreach (DexRecord record in saveData.records)
+            {
+                if (!string.IsNullOrEmpty(record.insectId))
+                {
+                    lookup[record.insectId] = record;
+                }
+            }
             DexUpdated?.Invoke(saveData);
         }
     }

@@ -73,6 +73,18 @@ namespace InsectGame.Core
                 CloudSaveManager.Instance.SaveToCloud();
         }
 
+        // 클라우드 로드 값 적용 — GainXp는 증분 누적이라 절대값 세팅이 불가능.
+        // level/xp를 직접 설정하되 손상값 방어(클램프) 후 저장·이벤트 발화.
+        public void ApplyCloudProgress(int level, int xp)
+        {
+            if (data == null) return;
+            data.level = Mathf.Clamp(level, 1, maxLevel);
+            data.currentXp = Mathf.Max(0, xp);
+            if (data.level >= maxLevel) data.currentXp = 0;
+            PlayerProgressSaveService.Save(data);
+            ProgressChanged?.Invoke(data);
+        }
+
         private int GetXpToNextLevel(int level)
         {
             return Mathf.Max(10, baseXpToLevel + (level - 1) * xpGrowthPerLevel);

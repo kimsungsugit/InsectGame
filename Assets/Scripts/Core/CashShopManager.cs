@@ -87,26 +87,83 @@ namespace InsectGame.Core
             };
         }
 
-        // -- 보석 충전 (실제 결제 시뮬레이션) --
+        // 실결제 공급자(IAPManager) — 없거나 미준비면 프로덕션에선 구매 비활성(무료 지급 금지).
+        private IPurchaseProvider purchaseProvider;
+        public bool IsRealMoneyReady => purchaseProvider != null && purchaseProvider.IsReady;
+        public void SetPurchaseProvider(IPurchaseProvider provider) { purchaseProvider = provider; }
+
+        // UI가 보석 패키지 구매 버튼을 활성화할지 — 프로덕션은 결제 모듈 준비 시에만, 에디터/개발은 항상(테스트).
+        public bool CanBuyRealMoney
+        {
+            get
+            {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                return true;
+#else
+                return IsRealMoneyReady;
+#endif
+            }
+        }
+
+        // -- 보석 충전 (실제 결제) --
+        // 반환값: 구매 "요청 시작" 성공 여부(실제 지급은 비동기 콜백/ItemPurchased 이벤트로 반영).
         public bool PurchaseWithRealMoney(string itemId)
         {
             CashShopItem item = GetItem(itemId);
-            if (item == null || item.priceKRW <= 0) return false;
+            if (item == null || item.priceKRW <= 0 || !item.itemId.StartsWith("gem_")) return false;
 
-            // TODO: 실제 결제 연동 (Google Play Billing / Apple IAP)
-            // 현재는 바로 지급 (테스트용)
-
-            if (item.itemId.StartsWith("gem_"))
+            // 실결제 모듈이 준비됐으면 스토어 결제 → 완료 콜백에서만 지급(영수증 검증은 공급자).
+            if (purchaseProvider != null && purchaseProvider.IsReady)
             {
-                AddGems(item.rewardCount);
-                // 결제 손실 방지: 보석 충전 직후 클라우드 즉시 저장(자동저장 120초 대기 안 함).
-                if (CloudSaveManager.Instance != null)
-                    CloudSaveManager.Instance.SaveToCloud();
-                ItemPurchased?.Invoke(item);
+                // 실결제 시작. 실제 지급은 ProcessPurchase(권위, 재시작 재전달 안전)에서 product 기준.
+                // 콜백은 실패 로깅만 — 여기서 지급하면 ProcessPurchase와 이중 지급.
+                purchaseProvider.Purchase(item.itemId, success =>
+                {
+                    if (!success) Debug.LogWarning("[CashShop] 결제 실패/취소: " + item.itemId);
+                });
                 return true;
             }
 
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            // 결제 모듈 미연동(에디터/개발 빌드) — 테스트 편의로 즉시 지급.
+            GrantGemPackage(item);
+            return true;
+#else
+            // 프로덕션에서 결제 모듈이 없으면 구매 불가 — 무료 지급 금지(Play 정책).
+            Debug.LogWarning("[CashShop] 결제 모듈 미초기화 — 보석 구매 불가");
             return false;
+#endif
+        }
+
+        // UI 표시용 가격 — 실결제 모듈이 주는 현지화 가격 우선(Google 청구액과 일치), 없으면 priceKRW 폴백.
+        public string GetRealMoneyPriceText(string itemId)
+        {
+            CashShopItem item = GetItem(itemId);
+            if (item == null) return "";
+            if (purchaseProvider != null && purchaseProvider.IsReady)
+            {
+                string p = purchaseProvider.GetLocalizedPrice(itemId);
+                if (!string.IsNullOrEmpty(p)) return p;
+            }
+            return "\\" + item.priceKRW.ToString("N0"); // 폰트상 '\'=₩
+        }
+
+        // 결제 완료(ProcessPurchase) 권위 지급 — product ID로 보석 패키지를 찾아 지급.
+        // 앱 재시작 후 미완료 결제가 재전달돼도 콜백 유실과 무관하게 지급(결제 후 미지급 방지).
+        public void GrantGemPackageByProductId(string productId)
+        {
+            CashShopItem item = GetItem(productId);
+            if (item != null && item.priceKRW > 0 && item.itemId.StartsWith("gem_"))
+                GrantGemPackage(item);
+        }
+
+        // 보석 패키지 지급(결제 성공 또는 개발 빌드). 결제 손실 방지를 위해 즉시 클라우드 저장.
+        private void GrantGemPackage(CashShopItem item)
+        {
+            AddGems(item.rewardCount);
+            if (CloudSaveManager.Instance != null)
+                CloudSaveManager.Instance.SaveToCloud();
+            ItemPurchased?.Invoke(item);
         }
 
         // -- 보석으로 아이템 구매 --

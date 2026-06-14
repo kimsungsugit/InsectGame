@@ -30,6 +30,9 @@ namespace InsectGame.Battle
         private readonly List<ActiveEffect> effects = new List<ActiveEffect>();
         private int lastCandyReward;
         private int lastExpReward;
+        // 종료 가드 — 승리/패배 처리(보상 지급·BattleEnded)를 1회로 제한.
+        // 없으면 종료 후 액션이 한 번 더 들어올 때(rapid tap/입력 큐) 보상 이중 지급.
+        private bool battleEnded;
         private string lastItemId;
         private int lastItemCount;
         private bool lastPlayerWon;
@@ -55,6 +58,7 @@ namespace InsectGame.Battle
             lastItemId = string.Empty;
             lastItemCount = 0;
             lastPlayerWon = false;
+            battleEnded = false;
             onStarted?.Invoke(playerStats, enemyStats);
             BattleUpdated?.Invoke(playerStats, enemyStats);
         }
@@ -65,6 +69,7 @@ namespace InsectGame.Battle
             {
                 return;
             }
+            if (battleEnded) return; // 종료 후 액션 차단
 
             if (!CanUseSkill(skillIndex))
             {
@@ -97,6 +102,7 @@ namespace InsectGame.Battle
             {
                 return;
             }
+            if (battleEnded) return; // 종료 후 액션 차단
 
             int damage = Mathf.Max(1, Mathf.RoundToInt(playerStats.Attack * 0.7f));
             enemyStats.ApplyDamage(damage, playerStats.Attack, enemyStats.Defense);
@@ -119,6 +125,7 @@ namespace InsectGame.Battle
             {
                 return false;
             }
+            if (battleEnded) return false; // 종료 후 액션 차단
 
             int levelDiff = playerStats.Level - enemyStats.Level;
             float escapeChance = Mathf.Clamp(0.5f + levelDiff * 0.05f, 0.1f, 0.9f);
@@ -129,6 +136,7 @@ namespace InsectGame.Battle
                 // 도주 성공 시에도 enemyEntity Despawn — 사용자 의도("전투 끝나면 사라져야").
                 // 옛은 도주 후 곤충이 필드에 잔존했고 같은 적이 그대로 다시 만남 가능.
                 if (enemyEntity != null) enemyEntity.Despawn();
+                battleEnded = true;
                 BattleEnded?.Invoke(false);
                 return true;
             }
@@ -366,6 +374,7 @@ namespace InsectGame.Battle
             {
                 return;
             }
+            if (battleEnded) return; // 이미 종료 — 보상/이벤트 중복 차단
 
             bool playerWon = enemyStats.CurrentHp <= 0 && playerStats.CurrentHp > 0;
             if (playerWon && enemyEntity != null)
@@ -405,11 +414,13 @@ namespace InsectGame.Battle
 
             if (enemyStats.CurrentHp <= 0)
             {
+                battleEnded = true;
                 lastPlayerWon = playerWon;
                 BattleEnded?.Invoke(playerWon);
             }
             else if (playerStats.CurrentHp <= 0)
             {
+                battleEnded = true;
                 TryPlayFaint(true);
                 TryPlayEffectText("쓰러졌다!", new Color(0.9f, 0.2f, 0.2f));
                 // 패배 시에도 enemyEntity Despawn — 옛은 패배 시 곤충이 필드에 잔존했고, 다음

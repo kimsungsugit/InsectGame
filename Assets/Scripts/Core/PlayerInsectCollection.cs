@@ -11,7 +11,7 @@ namespace InsectGame.Core
         public List<PlayerInsectData> insects = new List<PlayerInsectData>();
     }
 
-    public class PlayerInsectCollection : MonoBehaviour
+    public class PlayerInsectCollection : MonoBehaviour, ICloudReloadable
     {
         [SerializeField] private InsectLevelCurve defaultCurve;
         [SerializeField] private InsectDatabase database;
@@ -60,6 +60,13 @@ namespace InsectGame.Core
 
         private void Awake()
         {
+            LoadAndIndex();
+        }
+
+        // 디스크에서 보유 곤충을 읽어 lookup 재구성. Awake와 클라우드 로드 리로드가 공유.
+        private void LoadAndIndex()
+        {
+            lookup.Clear();
             saveData = Load();
             bool needsSave = false;
             foreach (PlayerInsectData data in saveData.insects)
@@ -93,12 +100,26 @@ namespace InsectGame.Core
             }
         }
 
+        // 클라우드 로드 후 player_insects.json을 다시 읽어 보유 목록 갱신.
+        // 컬렉션 UI(IMGUI)는 매 프레임 읽어 자동 반영하므로 별도 이벤트 발화 불필요.
+        public void ReloadFromDisk()
+        {
+            LoadAndIndex();
+        }
+
         public PlayerInsectData AddCapturedInsect(string insectId, int level)
         {
-            return AddCapturedInsect(insectId, level, false);
+            // shiny 미지정 — CreateWithIV의 자체 1% 롤을 그대로 사용(가챠/내부 폴백 등 필드 미경유 경로).
+            return AddInsectInternal(insectId, level, null);
         }
 
         public PlayerInsectData AddCapturedInsect(string insectId, int level, bool isShiny)
+        {
+            // 필드/배틀/레이드에서 실제로 본 이로치 상태를 권위값으로 전달.
+            return AddInsectInternal(insectId, level, isShiny);
+        }
+
+        private PlayerInsectData AddInsectInternal(string insectId, int level, bool? shinyOverride)
         {
             if (string.IsNullOrEmpty(insectId))
             {
@@ -108,7 +129,9 @@ namespace InsectGame.Core
             InsectData insect = GetInsectData(insectId);
             Data.InsectRarity rarity = insect != null ? insect.rarity : Data.InsectRarity.Common;
             PlayerInsectData data = PlayerInsectData.CreateWithIV(insectId, level, rarity);
-            if (isShiny) data.isShiny = true;
+            // 본 것과 보유가 일치하도록 권위값으로 덮어씀(true/false 모두). null이면 CreateWithIV 자체 롤 유지.
+            // 옛 `if (isShiny) data.isShiny = true`는 true만 강제 → 일반 개체도 포획 시 1% 이로치化(이중 롤) 버그.
+            if (shinyOverride.HasValue) data.isShiny = shinyOverride.Value;
             EnsureLevelSkills(data, insect);
             lookup[data.instanceId] = data;
             saveData.insects.Add(data);

@@ -128,6 +128,14 @@ namespace InsectGame.Core
                 RequestExit();
                 e.Use();
             }
+            // [E] 진입 OnGUI Event 백업 — Update의 Input.GetKeyDown이 focus/IME로 놓칠 때 대비
+            // (F2 퇴장과 동일 패턴). 사용자 보고 "E 눌러도 진입 안 됨"의 직접 원인.
+            if (e != null && e.type == EventType.KeyDown && e.keyCode == KeyCode.E
+                && !isInSubArea && regionManager != null && regionManager.NearbySubArea != null)
+            {
+                regionManager.RequestEnterSubArea();
+                e.Use();
+            }
 
             // SubArea 안일 때 우측 상단에 출입 안내 + 토스트 알림
             if (notifyStyleCache == null)
@@ -166,18 +174,22 @@ namespace InsectGame.Core
                 GUI.color = Color.white;
                 GUI.Label(r, "F2: 메인 월드로 나가기", notifyStyleCache);
             }
-            // 메인 월드 + 영역 안 → 진입 안내 ([E] 키)
+            // 메인 월드 + 영역 안 → 진입 안내 ([E] 키 또는 클릭)
             else if (regionManager != null && regionManager.NearbySubArea != null)
             {
                 SubAreaData sub = regionManager.NearbySubArea;
-                float w = 420f;
+                float w = 460f;
                 float h = 80f;
                 Rect r = new Rect((Screen.width - w) * 0.5f, Screen.height - h - 60f, w, h);
                 GUI.color = NotifyBgCol;
                 GUI.DrawTexture(r, Texture2D.whiteTexture);
                 notifyStyleCache.normal.textColor = NotifyEnterCol;
                 GUI.color = Color.white;
-                GUI.Label(r, $"[E] {GetSubAreaDisplayName(sub)} 진입", notifyStyleCache);
+                // 라벨 스타일 투명 버튼 — 마우스 클릭 진입 지원(키보드 외 입력 경로).
+                if (GUI.Button(r, $"[E] 또는 클릭: {GetSubAreaDisplayName(sub)} 진입", notifyStyleCache))
+                {
+                    regionManager.RequestEnterSubArea();
+                }
             }
             GUI.color = Color.white;
         }

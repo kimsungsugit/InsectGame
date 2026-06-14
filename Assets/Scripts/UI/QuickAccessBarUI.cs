@@ -79,7 +79,8 @@ namespace InsectGame.UI
             float gap = 6f;
             float totalW = buttons.Length * btnW + (buttons.Length - 1) * gap;
             float startX = (UIScale.VirtualScreenWidth - totalW) / 2f;
-            float y = UIScale.VirtualScreenHeight - btnH - 16f;
+            // 제스처바(하단 세이프 인셋) 위로 — 픽셀 인셋을 가상 단위로 변환.
+            float y = UIScale.VirtualScreenHeight - btnH - 16f - SafeArea.Bottom / UIScale.Scale;
 
             GUI.color = new Color(0, 0, 0, 0.5f);
             GUI.DrawTexture(new Rect(startX - 14, y - 8, totalW + 28, btnH + 16), Texture2D.whiteTexture);

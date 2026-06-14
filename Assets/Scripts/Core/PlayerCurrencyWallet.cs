@@ -60,6 +60,21 @@ namespace InsectGame.Core
             Save();
         }
 
+        // 클라우드 로드 값 적용 — AddCoins/AddGems는 증분이라 절대값 세팅용 별도 메서드.
+        public void SetCoins(int amount)
+        {
+            if (data == null) return;
+            data.coins = Mathf.Max(0, amount);
+            Save();
+        }
+
+        public void SetGems(int amount)
+        {
+            if (data == null) return;
+            data.gems = Mathf.Max(0, amount);
+            Save();
+        }
+
         public bool SpendCoins(int amount)
         {
             if (amount <= 0 || data == null || data.coins < amount)

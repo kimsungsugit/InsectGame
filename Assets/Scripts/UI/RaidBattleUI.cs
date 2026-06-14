@@ -1328,7 +1328,7 @@ namespace InsectGame.UI
             float w = Mathf.Min(700, UIScale.VirtualScreenWidth * 0.7f);
             float h = 100f;
             float x = (UIScale.VirtualScreenWidth - w) / 2f;
-            float y = 36f;
+            float y = 36f + SafeArea.Top / UIScale.Scale; // 노치/상태바 아래로
 
             GUI.color = new Color(0.05f, 0.03f, 0.08f, 0.95f);
             GUI.DrawTexture(new Rect(x, y, w, h), Texture2D.whiteTexture);
@@ -1535,10 +1535,11 @@ namespace InsectGame.UI
         {
             float panelW = UIScale.VirtualScreenWidth;
             float panelH = 200f;
-            float panelY = UIScale.VirtualScreenHeight - panelH;
+            float safeBottom = SafeArea.Bottom / UIScale.Scale; // 제스처바 위로
+            float panelY = UIScale.VirtualScreenHeight - panelH - safeBottom;
 
             GUI.color = new Color(0.04f, 0.05f, 0.10f, 0.97f);
-            GUI.DrawTexture(new Rect(0, panelY, panelW, panelH), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(0, panelY, panelW, panelH + safeBottom), Texture2D.whiteTexture);
             GUI.color = new Color(1f, 0.6f, 0.15f);
             GUI.DrawTexture(new Rect(0, panelY, panelW, 4), Texture2D.whiteTexture);
             GUI.color = Color.white;
@@ -1615,10 +1616,11 @@ namespace InsectGame.UI
 
             float panelW = UIScale.VirtualScreenWidth;
             float panelH = 280f;
-            float panelY = UIScale.VirtualScreenHeight - panelH;
+            float safeBottom = SafeArea.Bottom / UIScale.Scale; // 제스처바 위로
+            float panelY = UIScale.VirtualScreenHeight - panelH - safeBottom;
 
             GUI.color = new Color(0.03f, 0.04f, 0.09f, 0.97f);
-            GUI.DrawTexture(new Rect(0, panelY, panelW, panelH), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(0, panelY, panelW, panelH + safeBottom), Texture2D.whiteTexture);
             GUI.color = new Color(0.3f, 0.5f, 0.9f);
             GUI.DrawTexture(new Rect(0, panelY, panelW, 4), Texture2D.whiteTexture);
             GUI.color = Color.white;
@@ -2128,7 +2130,7 @@ namespace InsectGame.UI
             float barW = 360f;
             float barH = 36f;
             float bx = (UIScale.VirtualScreenWidth - barW) / 2f;
-            float by = UIScale.VirtualScreenHeight - 160f;
+            float by = UIScale.VirtualScreenHeight - 160f - SafeArea.Bottom / UIScale.Scale; // 하단 패널과 상대 위치 유지
 
             GUI.color = new Color(0.05f, 0.05f, 0.1f, 0.9f);
             GUI.DrawTexture(new Rect(bx - 4, by - 4, barW + 8, barH + 28), Texture2D.whiteTexture);

@@ -19,6 +19,22 @@ namespace InsectGame.Spawning
         private float shinySparkleTimer;
         private Transform cachedShinySparkle;
         private Transform cachedNameLabel;
+        private float cachedShinyShift = -1f; // 이로치 종별 고정 색조 이동량 캐시(빌드마다 -1로 리셋 후 첫 Shinify에서 산출)
+        private int cachedMoveStyle = -1;     // 0 일반/1 날개비행/2 점프 — 빌드마다 -1 리셋 후 첫 Update에서 산출
+        private Transform cachedGroundMarker; // 지면 마커: 상하 이동 상쇄용(곤충이 떠도 마커는 지면 고정)
+        private Transform cachedGrass;        // 풀숲 은신 더미(지상 곤충) — 곤충이 움직여도 제자리 고정
+        // 경계/도주(긴장감) 상태
+        private int alertState;               // 0 평온 / 1 경계(주시·떨림) / 2 도주
+        private float patience;               // 경계 인내심(0이면 도주)
+        private float alertGraceTimer;        // 경계 직후 도주 유예(반응 시간 보장)
+        private Vector3 fleeDir;
+        private float fleeTimer;
+        private bool engaged;                 // 포획 상호작용 중 — 절대 도주 안 함
+        // 플레이어 추적(전 곤충 공유, 프레임당 1회 계산)
+        private static Transform cachedPlayer;
+        private static Vector3 lastPlayerPos;
+        private static float playerSpeed;
+        private static int playerTrackFrame = -1;
         private bool despawnedThisCycle; // Despawn 다중 호출 가드 (Battle/Capture 동시 호출 시 풀 중복 반환 차단)
 
         // Camera.main은 매 호출마다 FindGameObjectWithTag — 최대 20마리×매 프레임 핫패스 회피.
@@ -43,6 +59,13 @@ namespace InsectGame.Spawning
             // 풀 재사용 시 stale Transform 참조 회피 (ClearChildren 직후 cache 무효).
             cachedNameLabel = null;
             cachedShinySparkle = null;
+            cachedShinyShift = -1f;
+            cachedMoveStyle = -1;
+            cachedGroundMarker = null;
+            cachedGrass = null;
+            alertState = 0;
+            fleeTimer = 0f;
+            engaged = false;
             despawnedThisCycle = false;
 
             ClearChildren();
@@ -65,6 +88,13 @@ namespace InsectGame.Spawning
             forBattle = true;
             cachedNameLabel = null;
             cachedShinySparkle = null;
+            cachedShinyShift = -1f;
+            cachedMoveStyle = -1;
+            cachedGroundMarker = null;
+            cachedGrass = null;
+            alertState = 0;
+            fleeTimer = 0f;
+            engaged = false;
             despawnedThisCycle = false;
 
             ClearChildren();
@@ -82,11 +112,7 @@ namespace InsectGame.Spawning
 
         private void Update()
         {
-            float bobSpeed = 1.6f + (bobPhase % 1.5f);
-            float bob = Mathf.Sin(Time.time * bobSpeed + bobPhase) * 0.25f;
-            transform.position = basePosition + new Vector3(0f, bob, 0f);
-            if (!forBattle)
-                transform.Rotate(Vector3.up, 12f * Time.deltaTime, Space.World);
+            UpdateMovement();
 
             AnimateWings();
             if (shiny) AnimateShinySparkle();
@@ -98,6 +124,258 @@ namespace InsectGame.Spawning
                 if (cachedNameLabel == null) cachedNameLabel = transform.Find("NameLabel");
                 if (cachedNameLabel != null)
                     cachedNameLabel.rotation = cachedMainCam.transform.rotation;
+            }
+        }
+
+        // 필드 곤충 이동 + 긴장감(경계/도주): 평소엔 풀숲에 낮게 숨어 배회/비행/점프, 플레이어가 다가오면
+        // 경계(고개 들고 떨며 주시)하고, 무심코 빠르게 접근하면 도망쳐 사라진다.
+        // 포획 중(engaged) 또는 플레이어 정지 시엔 도주하지 않음(SetFrozen으로 정지 → playerSpeed 0).
+        private void UpdateMovement()
+        {
+            float t = Time.time;
+            if (forBattle)
+            {
+                // 배틀: 전투 포즈 유지 — 가벼운 상하만(회전·드리프트·경계 없음)
+                float bs = 1.6f + (bobPhase % 1.5f);
+                transform.position = basePosition + new Vector3(0f, Mathf.Sin(t * bs + bobPhase) * 0.25f, 0f);
+                return;
+            }
+
+            EnsureMoveStyle();
+            UpdatePlayerTracking();
+            float dt = Time.deltaTime;
+
+            // ===== 도주 진행 (이동 방식별로 다른 도주 모션) =====
+            if (alertState == 2)
+            {
+                fleeTimer -= dt;
+                float elapsed = 1.1f - fleeTimer; // 도주 경과 시간
+                if (cachedMoveStyle == 1)
+                {
+                    // 비행: 날개로 날아오르며 멀어짐 — 점점 고도 상승(하늘로 사라짐)
+                    Vector3 p = transform.position + fleeDir * 7.5f * dt;
+                    p.y = basePosition.y + 0.55f + elapsed * 2.8f;
+                    transform.position = p;
+                    FaceFlee(dt, 8f);
+                }
+                else if (cachedMoveStyle == 2)
+                {
+                    // 점프: 큰 포물선 도약으로 튀어 달아남 — 공중에 뜬 동안 더 멀리, 착지 땐 멈칫
+                    float ph = (elapsed % 0.45f) / 0.45f;
+                    float hop = Mathf.Sin(ph * Mathf.PI);
+                    Vector3 p = transform.position + fleeDir * (6.5f * (0.3f + hop)) * dt;
+                    p.y = basePosition.y + hop * 0.75f;
+                    transform.position = p;
+                    FaceFlee(dt, 11f);
+                }
+                else
+                {
+                    // 기어다님: 지면에 낮게 빠르게 허둥지둥
+                    Vector3 p = transform.position + fleeDir * 6.0f * dt;
+                    p.y = basePosition.y + 0.05f + Mathf.Abs(Mathf.Sin(elapsed * 24f)) * 0.07f;
+                    transform.position = p;
+                    FaceFlee(dt, 12f);
+                }
+                AnchorGrass();
+                if (fleeTimer <= 0f) Despawn(); // 놓침 — 사라짐
+                return;
+            }
+
+            float dist = cachedPlayer != null ? Vector3.Distance(transform.position, cachedPlayer.position) : 999f;
+            float skit = Skittishness();
+            float alertR = 6.5f + skit * 1.6f;   // 레어할수록 먼 거리에서 눈치챔
+            float fleeR = 2.2f + skit * 0.8f;
+            bool moving = playerSpeed > 1.5f;
+
+            if (engaged)
+            {
+                alertState = 1; // 포획 중 — 경계 포즈 유지, 도주 분기 진입 안 함
+            }
+            else if (dist < alertR)
+            {
+                if (alertState != 1) { alertState = 1; patience = 2.6f - skit * 0.95f; alertGraceTimer = 0.5f; }
+                alertGraceTimer -= dt;
+                if (moving) patience -= dt * (dist < fleeR ? 3.0f : 1.2f);
+                else patience -= dt * 0.2f; // 멈추면 거의 안 닳음(E 누를 시간 확보)
+                bool burst = moving && dist < fleeR && playerSpeed > 4f; // 코앞으로 돌진하면 즉시
+                if (alertGraceTimer <= 0f && (patience <= 0f || burst))
+                {
+                    alertState = 2;
+                    Vector3 away = transform.position - cachedPlayer.position; away.y = 0f;
+                    fleeDir = away.sqrMagnitude > 0.01f ? away.normalized : Vector3.forward;
+                    fleeTimer = 1.1f;
+                    return;
+                }
+            }
+            else
+            {
+                alertState = 0;
+            }
+
+            Vector3 offset;
+            float rotSpeed;
+            if (alertState == 1)
+            {
+                // 경계: 배회 정지 + 긴장 떨림 + 풀 위로 확실히 솟아 주시("들켰다", 종류 식별 가능)
+                float tremble = Mathf.Sin(t * 27f) * 0.05f;
+                float rise = (cachedMoveStyle == 1)
+                    ? 0.55f + Mathf.Sin(t * 5f) * 0.18f
+                    : 0.34f + Mathf.Abs(Mathf.Sin(t * 6f)) * 0.06f;
+                offset = new Vector3(tremble, rise, 0f);
+                rotSpeed = 0f;
+                if (cachedPlayer != null)
+                {
+                    Vector3 look = cachedPlayer.position - transform.position; look.y = 0f;
+                    if (look.sqrMagnitude > 0.01f)
+                        transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.LookRotation(look), dt * 6f);
+                }
+            }
+            else if (cachedMoveStyle == 1)
+            {
+                // 날개: 공중 부유 + 좌우/앞뒤 드리프트(나는 느낌) + 빠른 회전
+                float bob = Mathf.Sin(t * 4.5f + bobPhase) * 0.5f;
+                float driftX = Mathf.Sin(t * 1.9f + wingPhase) * 0.55f;
+                float driftZ = Mathf.Sin(t * 1.4f + wingPhase * 1.7f) * 0.4f;
+                offset = new Vector3(driftX, 0.55f + bob, driftZ);
+                rotSpeed = 36f;
+            }
+            else if (cachedMoveStyle == 2)
+            {
+                // 긴 다리: 점프하듯 — 주기적 포물선 도약 + 착지 사이 짧은 정지
+                float cycle = 1.3f;
+                float phase = ((t + bobPhase * 0.3f) % cycle) / cycle;
+                float hop = phase < 0.55f ? Mathf.Sin(phase / 0.55f * Mathf.PI) * 0.85f : 0f;
+                offset = new Vector3(0f, hop, 0f);
+                rotSpeed = 12f;
+            }
+            else
+            {
+                // 일반(기어다님): 풀 위로 몸이 보이게 살짝 올라와 배회 + 느린 회전
+                float bs = 1.6f + (bobPhase % 1.5f);
+                offset = new Vector3(0f, 0.1f + Mathf.Sin(t * bs + bobPhase) * 0.12f, 0f);
+                rotSpeed = 8f;
+            }
+
+            transform.position = basePosition + offset;
+            if (rotSpeed > 0f)
+                transform.Rotate(Vector3.up, rotSpeed * Time.deltaTime, Space.World);
+
+            AnchorGroundMarker(offset.y);
+            AnchorGrass();
+        }
+
+        // 이동 스타일 1회 판정(캐시): grasshopper/cricket/katydid=점프, WingL 보유=비행, 그 외=일반.
+        // 지상 곤충(기어다님/점프)은 풀숲 은신 더미 생성(비행 곤충은 공중이라 제외).
+        private void EnsureMoveStyle()
+        {
+            if (cachedMoveStyle >= 0) return;
+            string id = data != null ? data.insectId ?? "" : "";
+            if (id.Contains("grasshopper") || id.Contains("cricket") || id.Contains("katydid"))
+                cachedMoveStyle = 2;
+            else if (transform.Find("WingL") != null)
+                cachedMoveStyle = 1;
+            else
+                cachedMoveStyle = 0;
+            if (!forBattle && cachedMoveStyle != 1)
+                BuildGrassTuft();
+        }
+
+        // 포획 상호작용 시작/종료 시 호출 — engaged면 절대 도주 안 함(경계 포즈만 유지).
+        // 진입 시 인내심·유예 리셋 → 포획 취소 직후 즉시 도망가지 않게(관대).
+        public void SetEngaged(bool value)
+        {
+            engaged = value;
+            if (value) { alertState = 1; patience = 2.6f; alertGraceTimer = 0.6f; }
+        }
+
+        // 플레이어 위치/속도 추적 — 프레임당 1회만 계산(전 곤충 공유).
+        private static void UpdatePlayerTracking()
+        {
+            if (playerTrackFrame == Time.frameCount) return;
+            playerTrackFrame = Time.frameCount;
+            if (cachedPlayer == null)
+            {
+                GameObject p = GameObject.FindWithTag("Player");
+                if (p == null) p = GameObject.Find("Player");
+                if (p != null) { cachedPlayer = p.transform; lastPlayerPos = cachedPlayer.position; playerSpeed = 0f; }
+                return;
+            }
+            float dt = Time.deltaTime;
+            if (dt > 0.0001f)
+            {
+                Vector3 cur = cachedPlayer.position;
+                playerSpeed = (cur - lastPlayerPos).magnitude / dt;
+                lastPlayerPos = cur;
+            }
+        }
+
+        // 레어도별 예민함(0~1.5): 높을수록 멀리서 눈치채고 더 쉽게 도망 — 희귀 포획에 긴장감.
+        private float Skittishness()
+        {
+            if (data == null) return 0f;
+            switch (data.rarity)
+            {
+                case InsectRarity.Uncommon: return 0.3f;
+                case InsectRarity.Rare: return 0.6f;
+                case InsectRarity.Epic: return 1.0f;
+                case InsectRarity.Legendary: return 1.5f;
+                default: return 0f;
+            }
+        }
+
+        // 지면 마커: 곤충이 떠도 항상 지면에 고정 — 부모 상하 이동량을 로컬에서 상쇄.
+        private void AnchorGroundMarker(float offsetY)
+        {
+            if (cachedGroundMarker == null) cachedGroundMarker = transform.Find("GroundMarker");
+            if (cachedGroundMarker == null) return;
+            float s = transform.localScale.y;
+            if (s < 0.0001f) s = 1f;
+            Vector3 mlp = cachedGroundMarker.localPosition;
+            mlp.y = -0.35f - offsetY / s;
+            cachedGroundMarker.localPosition = mlp;
+        }
+
+        // 도주 방향을 향해 부드럽게 회전(머리부터 달아남).
+        private void FaceFlee(float dt, float turnSpeed)
+        {
+            if (fleeDir.sqrMagnitude > 0.01f)
+                transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.LookRotation(fleeDir), dt * turnSpeed);
+        }
+
+        // 풀 더미는 곤충이 움직여도 제자리(스폰 지점)에 고정 — 자식이지만 월드 좌표를 매 프레임 고정.
+        private void AnchorGrass()
+        {
+            if (cachedGrass == null) return;
+            cachedGrass.position = basePosition;
+            cachedGrass.rotation = Quaternion.identity;
+        }
+
+        // 풀 더미: 스폰 지점 '바깥쪽'에 낮게 둘러 곤충을 프레이밍(가리지 않음). 곤충은 풀 위로 몸·특징이 보임.
+        // 주의: Unity 캡슐 기본 높이=2유닛 → 실제 높이 = 2*half. half는 작게(0.16~0.28 → 실제 0.32~0.56).
+        private void BuildGrassTuft()
+        {
+            GameObject tuft = new GameObject("GrassTuft");
+            tuft.transform.SetParent(transform, false);
+            cachedGrass = tuft.transform;
+            Color g1 = new Color(0.20f, 0.46f, 0.15f);
+            Color g2 = new Color(0.32f, 0.62f, 0.22f);
+            const int blades = 7;
+            for (int i = 0; i < blades; i++)
+            {
+                float ang = i * (360f / blades) + (i * 37 % 20);
+                float rad = 0.34f + (i % 3) * 0.10f;          // 곤충 바깥쪽(몸을 안 가림)
+                float bx = Mathf.Cos(ang * Mathf.Deg2Rad) * rad;
+                float bz = Mathf.Sin(ang * Mathf.Deg2Rad) * rad;
+                float half = 0.16f + (i % 4) * 0.04f;          // 실제 높이 0.32~0.56 (곤충보다 낮음)
+                GameObject blade = GameObject.CreatePrimitive(PrimitiveType.Capsule);
+                blade.name = "Blade";
+                blade.transform.SetParent(tuft.transform, false);
+                blade.transform.localPosition = new Vector3(bx, half - 0.35f, bz); // 뿌리를 지면(-0.35)에
+                blade.transform.localScale = new Vector3(0.045f, half, 0.045f);
+                blade.transform.localRotation = Quaternion.Euler((i % 2 == 0) ? 20f : -16f, ang, (i % 3 - 1) * 20f);
+                Collider c = blade.GetComponent<Collider>();
+                if (c != null) Destroy(c);
+                ApplyColorRaw(blade, (i % 2 == 0) ? g1 : g2);
             }
         }
 
@@ -119,7 +397,7 @@ namespace InsectGame.Spawning
                     sparkleObj.transform.localScale = Vector3.one * 0.15f;
                     Collider sc = sparkleObj.GetComponent<Collider>();
                     if (sc != null) Destroy(sc);
-                    ApplyColor(sparkleObj, new Color(1f, 1f, 0.6f, 0.8f));
+                    ApplyColorRaw(sparkleObj, new Color(1f, 1f, 0.6f, 0.8f));
                     cachedShinySparkle = sparkleObj.transform;
                 }
             }
@@ -141,18 +419,19 @@ namespace InsectGame.Spawning
             if (wl == null || wr == null) return;
 
             string id = data != null ? data.insectId ?? "" : "";
-            float speed = 6f;
-            float amplitude = 25f;
+            // 날갯짓 강화(빠르고 크게) — 정적이던 필드 곤충에 생동감.
+            float speed = 9f;
+            float amplitude = 34f;
             if (id.Contains("butterfly") || id.Contains("moth") || id.Contains("luna") || id.Contains("atlas"))
-            { speed = 3f; amplitude = 35f; }
+            { speed = 5f; amplitude = 48f; }
             else if (id.Contains("damselfly"))
-            { speed = 4f; amplitude = 30f; }
+            { speed = 7f; amplitude = 42f; }
             else if (id.Contains("bee") || id.Contains("dragonfly"))
-            { speed = 12f; amplitude = 20f; }
+            { speed = 16f; amplitude = 30f; }
             else if (id.Contains("wasp") || id.Contains("hornet"))
-            { speed = 14f; amplitude = 18f; }
+            { speed = 18f; amplitude = 27f; }
             else if (id.Contains("mosquito") || id.Contains("fly"))
-            { speed = 16f; amplitude = 15f; }
+            { speed = 22f; amplitude = 24f; }
 
             float angle = Mathf.Sin(Time.time * speed + wingPhase) * amplitude;
             wl.localRotation = Quaternion.Euler(0f, 0f, angle);
@@ -173,9 +452,11 @@ namespace InsectGame.Spawning
                 BuildAntlion(col, dark);
             else if (id.Contains("aphid"))
                 BuildAphid(col, dark);
-            else if (id.Contains("butterfly") || id.Contains("luna") || id.Contains("atlas") || id.Contains("alexandras"))
+            // 나비: alexandras(비단제비나비)는 진짜 나비라 포함. luna/atlas는 "moth" 포함이라
+            // 아래 moth 분기로 자연 라우팅(나방인데 나비로 렌더되던 종 불일치 해소).
+            else if (id.Contains("butterfly") || id.Contains("alexandras"))
                 BuildButterfly(col, dark);
-            else if (id.Contains("moth"))
+            else if (id.Contains("moth") || id.Contains("luna") || id.Contains("atlas"))
                 BuildMoth(col, dark);
             else if (id.Contains("orchid"))
                 BuildOrchidMantis(col, dark);
@@ -185,29 +466,34 @@ namespace InsectGame.Spawning
                 BuildMantis(col, dark);
             else if (id.Contains("damselfly"))
                 BuildDamselfly(col, dark);
-            else if (id.Contains("dragonfly") || id.Contains("ancient"))
+            // "ancient"를 dragonfly 별칭으로 두면 scarab_ancient(풍뎅이)가 잠자리로 오라우팅됨.
+            // dragonfly_ancient는 이미 "dragonfly" 포함이라 별칭 불필요 → 제거.
+            else if (id.Contains("dragonfly"))
                 BuildDragonfly(col, dark);
             else if (id.Contains("firefly"))
                 BuildFirefly(col, dark);
-            else if (id.Contains("bee"))
+            // "bee"는 "beetle"의 부분문자열 → 가드 없으면 전 딱정벌레가 벌로 렌더됨(stag/rhinoceros 등).
+            else if (id.Contains("bee") && !id.Contains("beetle"))
                 BuildBee(col, dark);
             else if (id.Contains("hornet") || id.Contains("wasp"))
                 BuildWasp(col, dark);
             else if (id.Contains("rhinoceros") || id.Contains("hercules"))
                 BuildRhinocerosBeetle(col, dark);
             else if (id.Contains("stag") || id.Contains("golden_stag"))
-                BuildHornBeetle(col, dark);
+                BuildStagBeetle(col, dark);
             else if (id.Contains("cicada"))
                 BuildCicada(col, dark);
             else if (id.Contains("cricket") || id.Contains("katydid"))
                 BuildCricket(col, dark);
-            else if (id.Contains("ant"))
+            // "phantom"이 "ant"를 포함 → leaf_insect_phantom(대벌레)이 개미로 오라우팅되던 문제 가드.
+            else if (id.Contains("ant") && !id.Contains("phantom"))
                 BuildAnt(col, dark);
             else if (id.Contains("water_strider") || id.Contains("strider"))
                 BuildWaterStrider(col, dark);
             else if (id.Contains("diving"))
                 BuildDivingBeetle(col, dark);
-            else if (id.Contains("scarab") || id.Contains("jewel"))
+            // diamond/celestial 가챠 딱정벌레는 보석곤충(무지갯빛 외골격)으로 — GenericBeetle 평범함 대신 프리미엄 외형.
+            else if (id.Contains("scarab") || id.Contains("jewel") || id.Contains("diamond") || id.Contains("celestial"))
                 BuildJewelBeetle(col, dark);
             else if (id.Contains("ladybug"))
                 BuildLadybug(col, dark);
@@ -274,6 +560,46 @@ namespace InsectGame.Spawning
             MakeLegs(dark, 3, 0f);
         }
 
+        // 사슴벌레: 시그니처는 코뿔소 뿔이 아니라 앞으로 뻗은 큰 집게턱(mandible).
+        // 좌우 한 쌍이 바깥으로 벌어졌다 끝이 안으로 굽는 사슴뿔 실루엣.
+        private void BuildStagBeetle(Color body, Color dark)
+        {
+            Color jaw = new Color(dark.r * 0.85f + 0.04f, dark.g * 0.72f + 0.03f, dark.b * 0.6f + 0.03f);
+            MakePart("Body", PrimitiveType.Sphere, Vector3.zero, new Vector3(0.78f, 0.46f, 1.0f), body);
+            MakeTopGloss(Vector3.zero, new Vector3(0.78f, 0.46f, 1.0f), 0.12f);
+            MakePart("Shell", PrimitiveType.Sphere, new Vector3(0f, 0.18f, -0.08f), new Vector3(0.72f, 0.3f, 0.86f), dark);
+            MakePart("ShellLineL", PrimitiveType.Cylinder, new Vector3(-0.14f, 0.26f, -0.08f), new Vector3(0.015f, 0.01f, 0.7f), body);
+            MakePart("ShellLineR", PrimitiveType.Cylinder, new Vector3(0.14f, 0.26f, -0.08f), new Vector3(0.015f, 0.01f, 0.7f), body);
+            // 각진 전흉(pronotum) — 사슴벌레 특유의 넓적한 가슴판
+            MakePart("Pronotum", PrimitiveType.Sphere, new Vector3(0f, 0.14f, 0.42f), new Vector3(0.62f, 0.3f, 0.4f), dark);
+            MakePart("Head", PrimitiveType.Sphere, new Vector3(0f, 0.1f, 0.68f), new Vector3(0.42f, 0.32f, 0.4f), dark);
+            // === 큰 집게턱 (좌우 대칭, 3분절 곡선) ===
+            MakePart("MandBaseL", PrimitiveType.Capsule, new Vector3(-0.17f, 0.12f, 0.86f), new Vector3(0.06f, 0.17f, 0.06f),
+                jaw, Quaternion.Euler(72f, 0f, 26f));
+            MakePart("MandBaseR", PrimitiveType.Capsule, new Vector3(0.17f, 0.12f, 0.86f), new Vector3(0.06f, 0.17f, 0.06f),
+                jaw, Quaternion.Euler(72f, 0f, -26f));
+            MakePart("MandMidL", PrimitiveType.Capsule, new Vector3(-0.29f, 0.13f, 1.06f), new Vector3(0.05f, 0.15f, 0.05f),
+                jaw, Quaternion.Euler(82f, 0f, 44f));
+            MakePart("MandMidR", PrimitiveType.Capsule, new Vector3(0.29f, 0.13f, 1.06f), new Vector3(0.05f, 0.15f, 0.05f),
+                jaw, Quaternion.Euler(82f, 0f, -44f));
+            // 안쪽 돌기(이빨) — 사슴벌레 턱 안쪽의 톱니
+            MakePart("MandToothL", PrimitiveType.Capsule, new Vector3(-0.2f, 0.13f, 1.12f), new Vector3(0.03f, 0.08f, 0.03f),
+                jaw, Quaternion.Euler(90f, 0f, -54f));
+            MakePart("MandToothR", PrimitiveType.Capsule, new Vector3(0.2f, 0.13f, 1.12f), new Vector3(0.03f, 0.08f, 0.03f),
+                jaw, Quaternion.Euler(90f, 0f, 54f));
+            // 끝 — 안쪽으로 굽어 마주봄
+            MakePart("MandTipL", PrimitiveType.Capsule, new Vector3(-0.16f, 0.14f, 1.26f), new Vector3(0.04f, 0.13f, 0.04f),
+                jaw, Quaternion.Euler(96f, 0f, 72f));
+            MakePart("MandTipR", PrimitiveType.Capsule, new Vector3(0.16f, 0.14f, 1.26f), new Vector3(0.04f, 0.13f, 0.04f),
+                jaw, Quaternion.Euler(96f, 0f, -72f));
+            MakePart("MandPointL", PrimitiveType.Sphere, new Vector3(-0.07f, 0.14f, 1.34f), Vector3.one * 0.04f, jaw);
+            MakePart("MandPointR", PrimitiveType.Sphere, new Vector3(0.07f, 0.14f, 1.34f), Vector3.one * 0.04f, jaw);
+            MakePart("ClawL", PrimitiveType.Cube, new Vector3(-0.28f, -0.24f, 0.28f), new Vector3(0.05f, 0.08f, 0.11f), dark);
+            MakePart("ClawR", PrimitiveType.Cube, new Vector3(0.28f, -0.24f, 0.28f), new Vector3(0.05f, 0.08f, 0.11f), dark);
+            MakeEyes(0.78f, 0.11f, 0.18f);
+            MakeLegs(dark, 3, 0f);
+        }
+
         private void BuildButterfly(Color body, Color dark)
         {
             MakePart("Body", PrimitiveType.Capsule, Vector3.zero, new Vector3(0.18f, 0.34f, 0.18f), dark,
@@ -320,6 +646,30 @@ namespace InsectGame.Spawning
             MakePart("FeatherL", PrimitiveType.Cube, new Vector3(-0.18f, 0.35f, 0.6f), new Vector3(0.1f, 0.02f, 0.06f), dark);
             MakePart("FeatherR", PrimitiveType.Cube, new Vector3(0.18f, 0.35f, 0.6f), new Vector3(0.1f, 0.02f, 0.06f), dark);
             MakeEyes(0.4f, 0.15f);
+
+            string mid = data != null ? data.insectId ?? "" : "";
+            if (mid.Contains("luna"))
+            {
+                // 루나나방 시그니처: 뒷날개에서 길게 뻗은 꼬리(스트리머)
+                Color tailCol = new Color(body.r * 0.85f, Mathf.Min(1f, body.g * 1.0f), body.b * 0.7f, 0.9f);
+                MakePart("HindTailL", PrimitiveType.Cube, new Vector3(-0.34f, 0.02f, -0.42f), new Vector3(0.13f, 0.02f, 0.5f),
+                    tailCol, Quaternion.Euler(0f, 16f, 0f));
+                MakePart("HindTailR", PrimitiveType.Cube, new Vector3(0.34f, 0.02f, -0.42f), new Vector3(0.13f, 0.02f, 0.5f),
+                    tailCol, Quaternion.Euler(0f, -16f, 0f));
+                MakePart("TailCurlL", PrimitiveType.Sphere, new Vector3(-0.4f, 0.02f, -0.68f), new Vector3(0.1f, 0.02f, 0.16f), tailCol);
+                MakePart("TailCurlR", PrimitiveType.Sphere, new Vector3(0.4f, 0.02f, -0.68f), new Vector3(0.1f, 0.02f, 0.16f), tailCol);
+            }
+            else if (mid.Contains("atlas"))
+            {
+                // 아틀라스나방(세계 최대 나방) 시그니처: 앞날개 끝 뱀머리형 갈고리 + 투명창 무늬
+                Color hookCol = new Color(Mathf.Min(1f, body.r + 0.18f), body.g * 0.78f, body.b * 0.55f);
+                MakePart("WingHookL", PrimitiveType.Sphere, new Vector3(-0.82f, 0.06f, 0.3f), new Vector3(0.2f, 0.025f, 0.16f), hookCol);
+                MakePart("WingHookR", PrimitiveType.Sphere, new Vector3(0.82f, 0.06f, 0.3f), new Vector3(0.2f, 0.025f, 0.16f), hookCol);
+                MakePart("WingWindowL", PrimitiveType.Sphere, new Vector3(-0.55f, 0.07f, 0.12f), new Vector3(0.14f, 0.02f, 0.16f),
+                    new Color(0.95f, 0.92f, 0.85f, 0.55f));
+                MakePart("WingWindowR", PrimitiveType.Sphere, new Vector3(0.55f, 0.07f, 0.12f), new Vector3(0.14f, 0.02f, 0.16f),
+                    new Color(0.95f, 0.92f, 0.85f, 0.55f));
+            }
         }
 
         private void BuildMantis(Color body, Color dark)
@@ -609,8 +959,10 @@ namespace InsectGame.Spawning
 
         private void BuildLadybug(Color body, Color dark)
         {
-            Color red = new Color(0.9f, 0.15f, 0.1f);
-            MakePart("Body", PrimitiveType.Sphere, Vector3.zero, new Vector3(0.65f, 0.5f, 0.7f), red);
+            // 금빛 무당벌레(가챠)는 황금 외피, 일반은 빨강. 검은 7점은 공통(칠성무당벌레 시그니처).
+            string id = data != null ? data.insectId ?? "" : "";
+            Color shell = id.Contains("golden") ? new Color(0.95f, 0.78f, 0.15f) : new Color(0.9f, 0.15f, 0.1f);
+            MakePart("Body", PrimitiveType.Sphere, Vector3.zero, new Vector3(0.65f, 0.5f, 0.7f), shell);
             MakePart("Head", PrimitiveType.Sphere, new Vector3(0f, 0.05f, 0.4f), new Vector3(0.28f, 0.25f, 0.25f), dark);
             MakePart("ShellLine", PrimitiveType.Cylinder, new Vector3(0f, 0.25f, 0f), new Vector3(0.02f, 0.01f, 0.6f), Color.black);
             MakePart("Spot1", PrimitiveType.Sphere, new Vector3(-0.15f, 0.26f, 0.1f), Vector3.one * 0.09f, Color.black);
@@ -1104,7 +1456,14 @@ namespace InsectGame.Spawning
                 new Color(1f, 1f, 1f, intensity));
         }
 
+        // 모델 파츠 색칠 — shiny면 종별 색변환을 거쳐 전 파츠(하드코딩 색 포함)가 이로치 팔레트로 바뀜.
         private void ApplyColor(GameObject go, Color color)
+        {
+            ApplyColorRaw(go, shiny ? Shinify(color) : color);
+        }
+
+        // shiny 변환을 건너뛰는 원색 적용 — 반짝임/오라/바닥마커 등 효과 오버레이용(레어/금빛 고정색 보존).
+        private void ApplyColorRaw(GameObject go, Color color)
         {
             Renderer r = go.GetComponent<Renderer>();
             if (r == null) return;
@@ -1144,32 +1503,71 @@ namespace InsectGame.Spawning
         private Color GetInsectColor()
         {
             if (data == null) return Color.gray;
-            uint hash = 0;
             string id = data.insectId ?? "";
+
+            // 종 시그니처 색 우선(군주나비=주황, 모르포=파랑 등) — 해시색이 종 날개색을 무시하던 문제 해소.
+            // shiny(이로치) 색변환은 ApplyColor에서 전 파츠에 일괄 적용하므로 여기선 항상 일반 베이스 반환.
+            if (TryGetSpeciesColor(id, out Color signature))
+                return Color.Lerp(signature, GetRarityColor(), 0.12f); // 시그니처 색은 약하게만 레어 틴트(식별성 유지)
+
+            uint hash = 0;
             foreach (char c in id) hash = hash * 31 + c;
             float hue = (hash % 360) / 360f;
             float sat = 0.5f + (hash % 100) / 200f;
             float val = 0.6f + (hash % 80) / 200f;
 
-            if (shiny)
-            {
-                // Shiny: 색조 반전 + 채도 높이기 + 밝기 올리기 + 금빛 틴트
-                hue = (hue + 0.5f) % 1f;
-                sat = Mathf.Min(1f, sat + 0.2f);
-                val = Mathf.Min(1f, val + 0.15f);
-            }
-
             Color baseCol = Color.HSVToRGB(hue, sat, val);
-            Color rarityTint = GetRarityColor();
-            Color result = Color.Lerp(baseCol, rarityTint, 0.3f);
+            return Color.Lerp(baseCol, GetRarityColor(), 0.3f);
+        }
 
-            if (shiny)
+        // 실제 곤충 외형에 맞춘 종 고유 시그니처 색. 없으면 false→해시 절차색 사용(변종 다양성 유지).
+        private static bool TryGetSpeciesColor(string id, out Color color)
+        {
+            if (id.Contains("monarch"))     { color = new Color(0.95f, 0.45f, 0.05f); return true; } // 군주나비 주황
+            if (id.Contains("morpho"))      { color = new Color(0.22f, 0.45f, 0.95f); return true; } // 모르포 이리데센트 블루
+            if (id.Contains("cabbage"))     { color = new Color(0.93f, 0.93f, 0.86f); return true; } // 배추흰나비 흰/크림
+            if (id.Contains("swallowtail")) { color = new Color(0.96f, 0.83f, 0.18f); return true; } // 호랑나비 노랑
+            if (id.Contains("azure"))       { color = new Color(0.40f, 0.70f, 0.96f); return true; } // 푸른부전나비 하늘
+            if (id.Contains("luna"))        { color = new Color(0.62f, 0.92f, 0.62f); return true; } // 루나나방 연두
+            if (id.Contains("atlas"))       { color = new Color(0.62f, 0.36f, 0.20f); return true; } // 아틀라스나방 적갈
+            if (id.Contains("alexandras"))  { color = new Color(0.10f, 0.62f, 0.50f); return true; } // 비단제비나비 청록
+            if (id.Contains("rainbow"))     { color = new Color(0.85f, 0.30f, 0.65f); return true; } // 무지개나비(가챠) 마젠타
+            color = default;
+            return false;
+        }
+
+        // 이로치(색다른 곤충) 색 변환 — 종마다 고정 색조 이동(포켓몬식 일관 팔레트). 전 파츠 일괄 적용해
+        // 하드코딩 색(무당벌레 빨강·말벌 노랑·벌 검정줄·사마귀 분홍)도 반드시 다른 색으로 바뀜.
+        private Color Shinify(Color c)
+        {
+            if (c.a <= 0f) return c;
+            Color.RGBToHSV(c, out float h, out float s, out float v);
+            // 흰색·눈 하이라이트(저채도+고명도)는 유지 — 눈/광택 식별성 보존
+            if (s < 0.12f && v > 0.78f) return c;
+
+            if (cachedShinyShift < 0f)
             {
-                // 은은한 광택 추가 (색조 반전과 함께 자연스러운 밝기)
-                result = Color.Lerp(result, Color.white, 0.15f);
+                // 종별 고정 색조 이동량(0.35~0.6): 같은 종 이로치는 항상 같은 색
+                uint hash = 0;
+                string id = data != null ? data.insectId ?? "" : "";
+                foreach (char ch in id) hash = hash * 31 + ch;
+                cachedShinyShift = 0.35f + (hash % 100) / 100f * 0.25f;
             }
+            h = (h + cachedShinyShift) % 1f;
 
-            return result;
+            if (s < 0.12f && v < 0.3f)
+            {
+                // 거의 검정(벌·말벌 줄무늬)은 색조만으론 안 보임 → 짙은 유채색 부여
+                s = 0.55f; v = Mathf.Max(v, 0.32f);
+            }
+            else
+            {
+                s = Mathf.Min(1f, s * 1.08f + 0.05f);
+                v = Mathf.Min(1f, v + 0.06f);
+            }
+            Color outC = Color.HSVToRGB(h, s, v);
+            outC.a = c.a;
+            return outC;
         }
 
         private void CreateNameLabel()
@@ -1207,7 +1605,7 @@ namespace InsectGame.Spawning
 
             Collider mc = marker.GetComponent<Collider>();
             if (mc != null) UnityEngine.Object.Destroy(mc);
-            ApplyColor(marker, new Color(color.r, color.g, color.b, 0.5f));
+            ApplyColorRaw(marker, new Color(color.r, color.g, color.b, 0.5f));
         }
 
         private Color GetRarityColor()
@@ -1314,7 +1712,7 @@ namespace InsectGame.Spawning
                 aura.transform.localScale = Vector3.one * 1.3f;
                 Collider c = aura.GetComponent<Collider>();
                 if (c != null) Destroy(c);
-                ApplyColor(aura, new Color(0.6f, 0.2f, 0.8f, 0.08f));
+                ApplyColorRaw(aura, new Color(0.6f, 0.2f, 0.8f, 0.08f));
             }
             else if (data.rarity == InsectRarity.Legendary)
             {
@@ -1326,7 +1724,7 @@ namespace InsectGame.Spawning
                 aura.transform.localScale = Vector3.one * 1.5f;
                 Collider c = aura.GetComponent<Collider>();
                 if (c != null) Destroy(c);
-                ApplyColor(aura, new Color(1f, 0.85f, 0.2f, 0.1f));
+                ApplyColorRaw(aura, new Color(1f, 0.85f, 0.2f, 0.1f));
 
                 GameObject ring = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
                 ring.name = "LegendaryRing";
@@ -1335,7 +1733,7 @@ namespace InsectGame.Spawning
                 ring.transform.localScale = new Vector3(1.2f, 0.01f, 1.2f);
                 Collider rc = ring.GetComponent<Collider>();
                 if (rc != null) Destroy(rc);
-                ApplyColor(ring, new Color(1f, 0.8f, 0.15f, 0.3f));
+                ApplyColorRaw(ring, new Color(1f, 0.8f, 0.15f, 0.3f));
             }
         }
 

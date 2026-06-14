@@ -388,8 +388,8 @@ namespace InsectGame.Core
             toolHandle = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
             toolHandle.name = "NetHandle";
             toolHandle.transform.SetParent(t, false);
-            toolHandle.transform.localPosition = new Vector3(0.29f, 0.82f, 0.02f);
-            toolHandle.transform.localScale = new Vector3(0.04f, 0.55f, 0.04f);
+            toolHandle.transform.localPosition = new Vector3(0.29f, 0.74f, 0.02f);
+            toolHandle.transform.localScale = new Vector3(0.04f, 0.40f, 0.04f);
             toolHandle.transform.localRotation = Quaternion.Euler(20f, 0f, -15f);
             toolHandle.GetComponent<MeshRenderer>().material = toolMat;
             Object.Destroy(toolHandle.GetComponent<Collider>());
@@ -397,8 +397,8 @@ namespace InsectGame.Core
             toolRing = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
             toolRing.name = "NetRing";
             toolRing.transform.SetParent(t, false);
-            toolRing.transform.localPosition = new Vector3(0.35f, 1.37f, 0.06f);
-            toolRing.transform.localScale = new Vector3(0.26f, 0.02f, 0.26f);
+            toolRing.transform.localPosition = new Vector3(0.34f, 1.14f, 0.06f);
+            toolRing.transform.localScale = new Vector3(0.20f, 0.02f, 0.20f);
             toolRing.transform.localRotation = Quaternion.Euler(-20f, 0f, 0f);
             toolRing.GetComponent<MeshRenderer>().material = toolRingMat;
             Object.Destroy(toolRing.GetComponent<Collider>());

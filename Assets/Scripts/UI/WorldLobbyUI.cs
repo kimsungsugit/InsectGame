@@ -58,14 +58,14 @@ namespace InsectGame.UI
         {
             // Firebase 미설정 또는 마스터 계정이면 월드 로비 건너뛰기
             bool skipLobby = false;
-            if (FirebaseConfig.ApiKey == "YOUR_FIREBASE_API_KEY" || string.IsNullOrEmpty(FirebaseConfig.ApiKey))
+            if (!FirebaseConfig.IsConfigured)
                 skipLobby = true;
             if (AuthManager.Instance != null && AuthManager.Instance.IsMasterAccount)
                 skipLobby = true;
             if (AuthManager.Instance != null && !AuthManager.Instance.IsLoggedIn)
                 skipLobby = true;
             // 마스터 토큰은 Firebase에서 유효하지 않음
-            if (AuthManager.Instance != null && AuthManager.Instance.IdToken == "master_token")
+            if (AuthManager.Instance != null && AuthManager.Instance.IdToken == MasterAccount.Token)
                 skipLobby = true;
 
             if (skipLobby)
@@ -197,9 +197,9 @@ namespace InsectGame.UI
             GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), UIHelper.GetCachedTex(BgOverlayCol));
 
             float pw = 600f;
-            float ph = 500f;
+            float ph = Mathf.Min(500f, Screen.height - SafeArea.Top - SafeArea.Bottom);
             float px = (Screen.width - pw) * 0.5f;
-            float py = (Screen.height - ph) * 0.5f;
+            float py = SafeArea.Top + (Screen.height - SafeArea.Top - SafeArea.Bottom - ph) * 0.5f;
 
             GUI.Box(new Rect(px, py, pw, ph), "", panelStyle);
 
@@ -316,7 +316,7 @@ namespace InsectGame.UI
             float pw = 300f;
             float ph = 150f;
             float px = (Screen.width - pw) * 0.5f;
-            float py = (Screen.height - ph) * 0.5f;
+            float py = SafeArea.Top + (Screen.height - SafeArea.Top - SafeArea.Bottom - ph) * 0.5f;
 
             GUI.Box(new Rect(px, py, pw, ph), "", panelStyle);
             GUI.Label(new Rect(px, py + 40f, pw, 40f), "\uc6d4\ub4dc \uc811\uc18d \uc911...", subtitleStyle);
