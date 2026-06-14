@@ -108,6 +108,8 @@ namespace InsectGame.Core
 
         private bool pendingSave;
         private const string LastSaveTsKey = "InsectGame.LastSaveTs";
+        // 로컬 세이브가 어느 계정(uid) 소유인지 — 계정 전환 시 교차 오염 차단용.
+        private const string LocalOwnerKey = "InsectGame.LocalOwnerUid";
 
         public void SaveToCloud()
         {
@@ -170,6 +172,7 @@ namespace InsectGame.Core
             {
                 LastError = null;
                 PlayerPrefs.SetString(LastSaveTsKey, data.lastSaveTimestamp.ToString());
+                PlayerPrefs.SetString(LocalOwnerKey, AuthManager.Instance.UserId ?? ""); // 로컬=이 계정 소유
                 PlayerPrefs.Save();
                 SaveCompleted?.Invoke();
                 yield break;
@@ -341,7 +344,15 @@ namespace InsectGame.Core
             // long을 PlayerPrefs에 직접 저장 불가 → string으로 보관.
             long localTs = 0;
             long.TryParse(PlayerPrefs.GetString(LastSaveTsKey, "0"), out localTs);
-            if (localTs > 0 && data.lastSaveTimestamp > 0 && localTs > data.lastSaveTimestamp)
+
+            // 계정 전환 안전장치: 로컬 데이터의 소유 uid가 현재 로그인 uid와 다르면(로그아웃 후 다른 계정
+            // 로그인 등 잔존 로컬) 로컬유지/충돌 분기를 건너뛰고 무조건 클라우드 적용 — 교차 계정 오염 차단.
+            string localOwner = PlayerPrefs.GetString(LocalOwnerKey, "");
+            string curUid = AuthManager.Instance != null ? AuthManager.Instance.UserId : "";
+            bool sameOwner = string.IsNullOrEmpty(localOwner) || localOwner == curUid;
+
+            // 로컬이 더 새것 + 같은 계정 → 덮어쓰기 거부(이 기기가 앞섬). 다른 계정이면 무시하고 클라우드 적용.
+            if (sameOwner && localTs > 0 && data.lastSaveTimestamp > 0 && localTs > data.lastSaveTimestamp)
             {
                 Debug.LogWarning(
                     "[CloudSave] 로컬 데이터(" + localTs + ")가 클라우드(" + data.lastSaveTimestamp
@@ -349,10 +360,10 @@ namespace InsectGame.Core
                 return true;
             }
 
-            // 충돌 감지: 클라우드가 내 마지막 푸시보다 새것 + 로컬에 의미있는 진행 → 다른 기기 가능성.
+            // 충돌 감지: 같은 계정 + 클라우드가 내 마지막 푸시보다 새것 + 로컬에 의미있는 진행 → 다른 기기 가능성.
             // 구독자(SaveConflictUI)가 있으면 적용을 보류하고 사용자에게 선택을 묻는다.
             // 구독자 없으면(데드락 방지) 기존 동작(last-write-wins)으로 클라우드 적용.
-            if (ConflictDetected != null && data.lastSaveTimestamp > localTs && HasMeaningfulLocalProgress())
+            if (sameOwner && ConflictDetected != null && data.lastSaveTimestamp > localTs && HasMeaningfulLocalProgress())
             {
                 pendingCloudData = data;
                 ConflictDetected.Invoke(new SaveConflictInfo
@@ -426,7 +437,10 @@ namespace InsectGame.Core
             }
 
             // 이 클라우드 ts로 동기화 완료 표시 — 다음 로그인 시 동일/구 ts면 재충돌 프롬프트 안 함.
+            // 로컬 소유자도 현재 계정으로 갱신(클라우드를 적용했으므로 이 계정 데이터가 됨).
             PlayerPrefs.SetString(LastSaveTsKey, data.lastSaveTimestamp.ToString());
+            PlayerPrefs.SetString(LocalOwnerKey,
+                AuthManager.Instance != null ? (AuthManager.Instance.UserId ?? "") : "");
             PlayerPrefs.Save();
         }
 

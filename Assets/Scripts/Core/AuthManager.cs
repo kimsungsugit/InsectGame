@@ -595,11 +595,19 @@ namespace InsectGame.Core
                 if (!ok) err = ParseFirebaseError(req.downloadHandler.text);
             }
 
-            // 3) 서버 결과와 무관하게 로컬 정리 + 로그아웃 (재진입/잔존 방지).
-            ClearAllLocalData();
-            ClearAuth();
-            AccountDeleted?.Invoke(ok, ok ? null : (err ?? "계정 삭제 실패"));
-            LoggedOut?.Invoke();
+            // 3) 성공 시에만 로컬 정리 + 로그아웃. 실패 시 로컬·세션 유지 → 사용자가 재시도 가능
+            //    (서버 삭제 실패인데 로컬만 날리면 "계정 살아있는데 데이터 소실" 모순 상태).
+            if (ok)
+            {
+                ClearAllLocalData();
+                ClearAuth();
+                AccountDeleted?.Invoke(true, null);
+                LoggedOut?.Invoke();
+            }
+            else
+            {
+                AccountDeleted?.Invoke(false, err ?? "계정 삭제 실패 — 다시 시도해주세요");
+            }
         }
 
         // 로컬 세이브 파일 + PlayerPrefs 전체 삭제 (계정 삭제 시 기기 데이터 완전 초기화).
