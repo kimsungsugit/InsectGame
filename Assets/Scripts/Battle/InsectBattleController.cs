@@ -420,12 +420,8 @@ namespace InsectGame.Battle
             }
             else if (playerStats.CurrentHp <= 0)
             {
-                battleEnded = true;
                 TryPlayFaint(true);
                 TryPlayEffectText("쓰러졌다!", new Color(0.9f, 0.2f, 0.2f));
-                // 패배 시에도 enemyEntity Despawn — 옛은 패배 시 곤충이 필드에 잔존했고, 다음
-                // 진입 시 같은 곤충 중첩 발동 가능 (사용자 보고: "전투 끝나면 사라져야").
-                if (enemyEntity != null) enemyEntity.Despawn();
                 // 핸들러 예외 격리 — 한 구독자 예외가 BattleEnded fallback을 차단하지 않게
                 bool fainted = false;
                 try
@@ -440,7 +436,16 @@ namespace InsectGame.Battle
                 {
                     Debug.LogWarning($"[InsectBattle] PlayerFainted 핸들러 예외: {e.Message}");
                 }
-                if (!fainted) BattleEnded?.Invoke(false);
+                // fainted=true: UI(SwapSelect)가 처리 — 팀원 교체로 배틀을 이어갈 수 있으므로
+                //   battleEnded/Despawn/BattleEnded를 보류해야 한다. (옛: battleEnded를 무조건 set해
+                //   교체 후 새 곤충이 액션 가드에 막혀 배틀이 멈추는 무한정지 버그.)
+                // !fainted: 교체 핸들러 없음 → 컨트롤러가 패배로 종료 + 적 Despawn(필드 잔존 방지).
+                if (!fainted)
+                {
+                    battleEnded = true;
+                    if (enemyEntity != null) enemyEntity.Despawn();
+                    BattleEnded?.Invoke(false);
+                }
             }
         }
 
