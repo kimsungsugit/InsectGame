@@ -40,6 +40,9 @@ namespace InsectGame.NPC
         private Vector3 wanderTarget;
         private InsectEntity targetInsect;    // Approach/CatchSwing 대상 (예약 보유)
         private InsectEntity watchInsect;     // Watch 대상 (예약 없음 — 구경만)
+        // 직전에 구경한 개체. 재스캔에서 제외해 Watch→Idle→Watch 고착을 끊는다.
+        // Wander를 한 번 거치면 해제되므로 같은 곤충을 나중에 다시 볼 수는 있다.
+        private InsectEntity lastWatchedInsect;
         private float cooldownUntilTime;
         private float groundY;
         private float baseYaw;                // GiveUp 두리번 기준 방향
@@ -88,7 +91,13 @@ namespace InsectGame.NPC
                 case State.Wander:
                     if (TryScanForInsect(time)) break;
                     if (time >= stateEndTime)
+                    {
+                        // 배회를 완주한 뒤에야 직전 구경 대상을 다시 볼 수 있게 푼다.
+                        // Wander 진입 시점에 풀면 이 케이스의 스캔이 곧바로 같은 곤충을
+                        // 다시 잡아 제자리 Watch로 되돌아간다(고착 재발).
+                        lastWatchedInsect = null;
                         EnterIdle(time);
+                    }
                     break;
 
                 case State.Watch:
@@ -173,8 +182,13 @@ namespace InsectGame.NPC
             var insects = manager.ActiveInsects;
             if (insects == null) return false;
 
-            InsectEntity best = null;
-            float bestSq = NpcCatchRules.KidSpotRadius * NpcCatchRules.KidSpotRadius;
+            // 잡기 후보와 구경 후보를 따로 고른다. 한 루프에서 최근접 하나만 뽑으면
+            // (a) Rare+가 최근접일 때 그 뒤의 잡을 수 있는 Common이 bestSq에 밀려 영영
+            // 가려지고, (b) Watch가 끝나 Idle로 돌아와도 같은 Rare가 여전히 최근접이라
+            // Watch→Idle→Watch로 영구 고착된다(그 곤충이 60m 밖으로 사라질 때까지).
+            InsectEntity bestCatch = null, bestWatch = null;
+            float radiusSq = NpcCatchRules.KidSpotRadius * NpcCatchRules.KidSpotRadius;
+            float bestCatchSq = radiusSq, bestWatchSq = radiusSq;
             Vector3 myPos = transform.position;
 
             for (int i = 0; i < insects.Count; i++)
@@ -182,27 +196,37 @@ namespace InsectGame.NPC
                 InsectEntity e = insects[i];
                 if (e == null || !e.gameObject.activeInHierarchy || e.Data == null) continue;
                 float sq = (e.transform.position - myPos).sqrMagnitude;
-                if (sq >= bestSq) continue;
-                // 잡기 후보는 규칙 통과 필요, Rare+는 구경 후보라 통과 없이 인정
-                if (!NpcCatchRules.ShouldWatchOnly(e.Data.rarity)
-                    && !NpcCatchRules.CanKidTarget(e.Data.rarity, e.CanBeEngaged,
-                        manager.DistanceFromPlayer(e.transform.position), manager.IsReserved(e)))
-                    continue;
-                bestSq = sq;
-                best = e;
+
+                if (NpcCatchRules.ShouldWatchOnly(e.Data.rarity))
+                {
+                    // 방금 구경한 개체는 건너뛴다 — 안 그러면 같은 곤충을 무한히 다시 본다.
+                    if (e == lastWatchedInsect) continue;
+                    if (sq >= bestWatchSq) continue;
+                    bestWatchSq = sq;
+                    bestWatch = e;
+                }
+                else if (NpcCatchRules.CanKidTarget(e.Data.rarity, e.CanBeEngaged,
+                    manager.DistanceFromPlayer(e.transform.position), manager.IsReserved(e)))
+                {
+                    if (sq >= bestCatchSq) continue;
+                    bestCatchSq = sq;
+                    bestCatch = e;
+                }
             }
 
-            if (best == null) return false;
-
-            if (NpcCatchRules.ShouldWatchOnly(best.Data.rarity))
+            // 잡을 수 있는 게 있으면 그쪽이 우선 — Rare가 시야를 막지 않는다.
+            if (bestCatch == null)
             {
+                if (bestWatch == null) return false;
                 // Rare 이상 — 정지하고 구경만 (2~4s)
-                watchInsect = best;
+                watchInsect = bestWatch;
+                lastWatchedInsect = bestWatch;
                 state = State.Watch;
                 stateEndTime = time + RandomRange(2f, 4f);
                 return true;
             }
 
+            InsectEntity best = bestCatch;
             if (manager.TryReserveInsect(best))
             {
                 targetInsect = best;

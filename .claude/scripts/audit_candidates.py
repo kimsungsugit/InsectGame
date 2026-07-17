@@ -124,7 +124,16 @@ _ALL_CODE = None
 
 
 def code_mentions(stem, self_path):
-    """자기 자신 말고 다른 .cs가 이 클래스명을 언급하는가."""
+    """자기 자신 말고 다른 .cs가 이 클래스명을 **실제 코드에서** 언급하는가.
+
+    주석은 제거하고 본다. 주석 처리로 꺼둔 배선도 '언급'으로 세면 dead code가 살아있는
+    것으로 잡힌다 — CaptureItemSpawner가 실제로 그랬다(PlaySceneBootstrap이
+    `// 필드 아이템 스폰 비활성화` 주석으로 꺼놨는데 그 주석 때문에 살아있는 것으로 판정).
+
+    한계: 참조를 1단계만 본다. A가 dead인데 A만 B를 부르면 B는 여전히 살아있는 것으로
+    잡힌다(CaptureItemPickup ← CaptureItemSpawner). 전이 폐쇄까지 하려면 반복 계산이
+    필요한데, 후보 발굴 용도에는 과하다 — Explore가 파일을 열면 금방 드러난다.
+    """
     global _ALL_CODE
     if _ALL_CODE is None:
         _ALL_CODE = {}
@@ -135,7 +144,7 @@ def code_mentions(stem, self_path):
                 p = os.path.join(dirpath, fn)
                 try:
                     with open(p, "r", encoding="utf-8", errors="replace") as fh:
-                        _ALL_CODE[p] = fh.read()
+                        _ALL_CODE[p] = strip_cs(fh.read())
                 except Exception:
                     pass
     # 경로는 반드시 정규화해서 비교한다. os.walk는 OS 구분자(Windows면 백슬래시)를 주는데

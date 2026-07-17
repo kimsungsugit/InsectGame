@@ -335,6 +335,90 @@ GetWeightedRandom/GetWeightedRandomWithRareBoost 4곳 foreach에 `if (data == nu
 
 진짜 P0/P1 회귀 없음. GetAllSets()는 OutfitBonusProvider.AutoWire에서 1회만 호출되어 allSets 필드에 캐시(매 프레임 호출 거짓양성). 12개 세트 정적 데이터 정합성 시각 review 결과 정상: requiredItemIds 중복/null 없음, partialThreshold ≤ requiredItemIds.Length 모두 만족(set_wizard threshold=2 items=4), partial/full Bonus 모두 정의, setColor 시각용 OK. GetAllSets static readonly 필드화는 변경 risky(P2 보류). Editor 시점 검증 도구는 별도 디자인 작업. Covered 이동만.
 
+### CatcherKidNpc (P1:1, 2026-07-17)
+
+**P1 — Rare+ 곤충이 12m 안에 있으면 아이가 영구 고착.** `TryScanForInsect`가 잡기 후보와
+구경 후보를 **한 루프에서 최근접 하나**로 뽑았다. Rare+는 `ShouldWatchOnly` 통과 시
+`CanKidTarget` 검사를 우회해 무조건 후보가 되므로, 최근접이 Rare면 `best`로 확정된다 →
+Watch(2~4s) → `EnterIdle` → Idle이 매 0.25s 스캔을 무조건 먼저 호출 → **같은 Rare가 여전히
+최근접** → Watch. Wander로 빠져나가지도 포획하지도 못한다. 같은 원인으로 Rare 뒤의 잡을 수
+있는 Common도 영영 가려진다(`bestSq`가 줄어 뒤쪽 후보가 탈락). 탈출은 그 곤충이 플레이어
+60m 밖으로 나가 `DespawnFarInsects`될 때뿐 — **플레이어가 근처면 무기한**이다.
+`KidSpotRadius=12f`, 아이 앵커 `wanderRadius=25f`로 고정 배치이고 Rare/Epic/Legendary는 전
+리전에서 스폰되므로 도달성이 높다.
+
+수정: 후보 루프를 `bestCatch`/`bestWatch`로 분리하고 **잡을 수 있는 쪽을 우선**한다(Rare가
+시야를 막지 않음). 여기에 `lastWatchedInsect`로 직전 구경 대상을 재스캔에서 제외해
+Watch→Idle→Watch 사이클을 끊었다. 해제는 **Wander 완주 시점**에 한다 — Wander 진입 시점에
+풀면 그 케이스의 스캔이 곧바로 같은 곤충을 다시 잡아 제자리 Watch로 되돌아간다(고착 재발).
+
+상태 전이를 모사해 검증: before는 `Watch→Idle→Watch→Idle…`로 Wander에 도달하지 못하고 포획
+0회, after는 `Watch→Idle→Wander→완주→Idle→Watch…`로 배회를 거치며, Common이 함께 있으면
+40틱에 20회 포획(before는 0회).
+
+**공정성 축은 clean(실측)**: 가로채기 방어가 3중이다 — `CaptureChoiceUI:48`/
+`CaptureMinigameController:95`가 진입 즉시 `SetEngaged(true)` → `CanBeEngaged=false`가
+스캔·`TickApproach`·`ResolveCatch` 세 지점에서 전부 탈락시키고, `PlayerClaimRadius=8f`도 같은
+3지점에서 검사된다. **플레이어가 미니게임 중인 곤충은 아이가 가로챌 수 없다.** 유령 곤충도
+없음(`ResolveCatch` → `Despawn` → `onDespawn` → `DespawnEntity`가 `activeInsects.Remove` +
+풀 반환을 모두 덮음). 쿨다운은 `[Range(10f,120f)]`가 하한을 강제해 0초 주입 불가.
+
+**미처리 P2**: `watchInsect`에 `ResolveCatch`와 달리 풀 재사용 ABA 가드가 없어 재초기화된
+인스턴스를 최대 4초 주시(먼 좌표로 몸이 홱 돌아감), `SampleGround`의 `MaxGroundStep` 비교
+기준이 "마지막 채택 groundY"라 한 번 거부되면 복구 경로가 없음(mountain 바위는 콜라이더
+유지), `SampleGround`가 `InsectEntity` 콜라이더를 배제하지 않아 곤충 위를 지면으로 오인 가능,
+Wander 타임아웃 8s × 2.5 = 20m인데 앵커 반경은 25f(실효 ~20m), `PlaySwing`은 거리 무관인데
+`swingTimer` 소진은 40m 게이트 안이라 지연 스윙 재생, `OnDisable`이 `watchInsect` 미정리.
+
+### VillagerNpc + NpcWalkAnimator (clean, 2026-07-17)
+
+**P0/P1 0건.** `Talking` 고착 가설을 세 경로 모두 반증했다: `BeginTalk` 진입점은
+`NpcDialogueUI` 2곳뿐이고, (a) 대화 중 `SetActive(false)`돼도 `NpcDialogueUI`가 참조를 유지해
+`CloseModal`의 `EndTalk()`가 정상 호출된다(**비활성 GameObject에서도 C# 메서드 호출은 된다** —
+Unity 메시지가 아니다), (b) 씬 전환은 `OnDisable` → `CloseModal`, (c) 대화 중엔
+`SetFrozen(true)`라 플레이어 이탈이 불가능하다. 재활성 시 상태 리셋이 없지만 자가 치유된다
+(`Wander`로 꺼졌다 켜지면 `stateEndTime`이 과거라 첫 틱에 Idle 복귀, `Talking`으로 꺼지는 건
+위 경로상 불가).
+
+좌표도 clean — `SampleGround`의 `MaxGroundStep` 클램프가 지붕 오인을 차단하고(레이 시점 +3m라
+처마 밑면이 first hit이어도 |ΔY| > 0.75로 거부), `PickWanderTarget`이 항상 앵커 반경 내부를
+뽑아 이탈이 불가능하며, NPC 캡슐은 `isTrigger=true`라 `QueryTriggerInteraction.Ignore`로
+자동 제외된다. 애니메이션 정지 리셋 정상, 이벤트/싱글턴 없음, Update 힙 할당 없음.
+
+**미처리 P2**: `IsSwinging` 소비처 0건(데드 프로퍼티. 단 `swingTimer` 감소가 40m 게이트 안이라
+훗날 소비하면 40m 밖에서 true로 래치됨), `Tick(time, ...)`의 `time` 미사용,
+`netHandleBaseRot`가 `default(Quaternion)` = (0,0,0,0)으로 identity가 아님(현재 null 가드
+안에서만 읽어 무해), `VillagerNpc:56` 주석("첫 틱에 Idle 타이머 시작") vs 동작(즉시 Wander)
+불일치, `PickWanderTarget`의 Y 대입이 `TickMovement`에서 지워지는 데드 대입,
+`TickMovement`의 `rng` 가드가 전이적.
+
+### CaptureItemPickup + CaptureItemSpawner + CaptureProximityTrigger (clean — dead code, 2026-07-17)
+
+**P0/P1 0건 — 점검 전제가 성립하지 않는다. 세 파일 모두 실행되지 않는다.**
+
+`CaptureItemSpawner`/`CaptureItemPickup`은 완전 사문이다. 유일한 부트스트랩
+(`PlaySceneBootstrap:335-338`)이 주석 처리돼 있고(`// 필드 아이템 스폰 비활성화 — 아이템은
+샵/보상에서만 획득`), `CaptureItemPickup`을 만드는 곳은 스포너의 `AddComponent` 하나뿐이라
+스포너가 안 뜨면 픽업도 없다. 씬/프리팹 GUID 역참조도 0건. **필드에 아이템을 뿌리고 줍는
+흐름은 현재 존재하지 않는다.**
+
+`CaptureProximityTrigger.TryStartCapture()`는 호출자가 0건이다. 실제 포획은
+`CaptureInputController:198`의 동명 메서드가 담당하고 `FindNearestInsect`가
+`RefreshNearby`/`GetNearest`를 재구현해뒀다. 이 컴포넌트가 살아있는 용도는
+`transform.position`(원점 앵커)과 `col.radius`(반경 8) 제공 **둘뿐**이라 삭제할 수는 없고,
+`TryStartCapture`/`RefreshNearby`/`GetNearest`/`inRange`/`autoStart` 등은 죽은 멤버다.
+
+**이 라운드가 채점기 구멍을 드러냈다**: `code_mentions`가 raw text를 읽어 **주석 안의 언급도
+"살아있음"으로 셌다**. `strip_cs`를 적용해 수정(같은 커밋). 다만 참조를 1단계만 보므로
+"dead인 Spawner가 부르는 Pickup"까지는 못 따라간다 — 알려진 한계로 주석에 명시.
+
+**미처리 P2(재활성화 시 터질 함정)**: `CaptureProximityTrigger:34-38`이 `StartMinigame` 전
+`CanBeEngaged`를 검사하지 않아(살아있는 경로는 검사함) 다시 배선하면 **전투 중 곤충에 중첩
+발동** — 이 프로젝트가 P0:4건으로 고쳤던 바로 그 클래스다. `CaptureItemPickup:72`는 픽업마다
+`new Mesh()`를 `sharedMesh`에 넣는데 Unity는 sharedMesh를 GameObject Destroy 시 정리하지
+않는다(Material과 다름) → 스폰당 메시 1개 영구 누수. 그 외 리전 전환 정리 훅 부재,
+`spawnWeight` null 가드 부재, `Debug.Log` 인자 안 `FindObjectsByType` 전체 씬 스캔.
+
 ### NpcManager (P1:1 + 튜닝 프로필 동반 수정, 2026-07-17)
 
 **P1 — 스폰 캡이 앵커 수보다 작아 뒤쪽 리전 NPC가 통째로 누락.** `SyncSpawns`는 앵커를
