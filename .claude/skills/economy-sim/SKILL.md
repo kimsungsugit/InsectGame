@@ -11,10 +11,12 @@ argument-hint: "[--days=14] [--profile=ftp|mid|whale] [--gacha-per-week=2] [--ca
 
 ## Phase 1: 입력 수집
 
-### 코드 자동 추출
-- `CashShopManager.cs:44-65` 캐시샵 가격: 2,000원/150젬, 5,000원/400젬, 10,000원/900젬
-- `GachaBoxManager` 박스 가격: bronze 500젬 / silver 800젬 / gold 1200젬
-- `InsectLevelCurve.cs` 캔디 비용 공식 (BASE=4, GROWTH=1.14)
+### 코드 자동 추출 — 수치 사본은 여기 없다
+- 젬 패키지(원↔젬), 가챠 박스 젬 가격: `game_facts`가 `CashShopManager`에서 실행 시점에 읽는다
+- 캔디 비용 공식: `InsectLevelCurve.cs`
+
+> 한때 박스 가격 사본이 `silver 800 / gold 1200`에 멈춰 있었다. 코드는 600 / 750이었다.
+> 추출 실패 시 exit 2 — 낡은 값으로 시뮬을 돌리지 않는다.
 
 ### grep 자동 점검
 - `AddCoins` 호출부 (코인 발행 경로) — 0건이면 FAIL

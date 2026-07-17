@@ -6,15 +6,33 @@ argument-hint: "[--box=bronze|silver|gold|all] [--pulls=100] [--trials=10000] [-
 
 # 가챠 박스 시뮬
 
-`GachaBoxManager.cs:130-180` 확률 분포로 몬테카를로 시뮬레이션 + `CashShopUI.cs`의 UI 표시값과 정본의 정합성을 자동 검증합니다.
+`GachaBoxManager`의 확률 분포로 몬테카를로 시뮬레이션 + `CashShopUI`의 표시값과 정본의
+정합성을 자동 검증합니다.
 **원칙: FAIL 1건이라도 있으면 PASS 보고 금지.**
 
 ## Phase 1: 입력 수집
 
-### 코드 자동 추출 (스크립트 상수 BOX_DEFS)
-- 브론즈 500젬: C55/U30/R12/E2.5/L0.5, 픽업 20%, 캔디 [5-15]
-- 실버 800젬: C20/U35/R30/E12/L3, 픽업 30%, 캔디 [10-30]
-- 골드 1200젬: C10/U25/R35/E25/L5, 픽업 50%, 캔디 [20-50]
+### 코드 자동 추출 — 수치 사본은 여기 없다
+
+확률·가격·픽업률·캔디 보너스·전용 풀 크기·보상 배율은 전부 `game_facts`가 실행 시점에
+코드에서 읽는다. 이 문서에 숫자를 적어두지 않는다.
+
+| 사실 | 출처 |
+|---|---|
+| 등급 확률 | `GachaBoxManager`의 `Bronze/Silver/GoldThresholds` → `C=a, U=b−a, R=c−b, E=d−c, L=100−d` |
+| 박스 가격(정본) | `CashShopManager.shopItems[].gemPrice` |
+| 박스 가격(표시) | `CashShopUI`의 박스 카드 가격 인자 |
+| 픽업 확률 | `GachaBoxManager.PickRandomInsect()`의 boxId 분기 |
+| 캔디 보너스 | `OpenBox()`의 `switch(boxId)` 안 `Random.Range` |
+| 전용 풀 | `gachaExclusives` |
+| 보상 배율 | `InsectRewardCalculator.GetRarityMultiplier()` |
+
+> 한때 이 자리에 "골드 1200젬: … L5%"라는 사본이 있었다. 실제는 750젬 / L**45%**였다.
+> 그 사본 위에서 돌린 시뮬은 존재하지 않는 게임을 시뮬레이션했고, "천장 부재" 판정과
+> "골드 Legendary 5%→7% 상향" 권고는 정반대로 무의미했다. 그래서 숫자를 없앴다.
+
+**추출 실패 시 exit 2** — 낡은 값으로 조용히 시뮬을 돌리지 않는다. 시뮬 결과가 아니라
+추출기를 먼저 고칠 것.
 
 ### 사용자 입력
 | 인자 | 기본값 | 설명 |

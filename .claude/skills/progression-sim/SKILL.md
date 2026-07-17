@@ -13,9 +13,14 @@ argument-hint: "[--target-level=50] [--rarity=Common|Uncommon|Rare|Epic|Legendar
 
 ### 코드 자동 추출 (스크립트 상수)
 - `MAX_LEVEL = 50`, `BASE_XP=20, XP_GROWTH=1.12`, `BASE_CANDY=4, CANDY_GROWTH=1.14` (`InsectLevelCurve.cs`)
-- `RARITY_MULT` (C 1.0 / U 1.2 / R 1.5 / E 2.0 / L 2.8) (`InsectRewardCalculator.cs`)
-- `RAID_MULT = 3.0` (`RaidBattleController.cs:239-248`)
-- `TUTORIAL_CANDY_TOTAL = 261, TUTORIAL_EXP_TOTAL = 500` (`TutorialQuestManager.cs:107-284`)
+수치 사본은 여기 없다 — `game_facts`가 실행 시점에 코드에서 읽는다.
+
+- 등급별 보상 배율 ← `InsectRewardCalculator.GetRarityMultiplier()`
+- 레이드 보상 배율 ← `RaidBattleController`의 `RewardCandy`/`RewardExp` 계산식
+- 튜토리얼 보상 총합 ← `TutorialQuestManager`의 `rewardCandy`/`rewardExp` 대입 전량
+
+> 한때 튜토리얼 사본이 `261 / 500`이었다. 실제는 **336 / 475**다.
+> 추출 실패 시 exit 2 — 낡은 값으로 시뮬을 돌리지 않는다.
 
 ### 사용자 입력 (선택)
 | 인자 | 기본값 | 설명 |

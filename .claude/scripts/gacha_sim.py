@@ -1,7 +1,16 @@
-"""가챠 박스 몬테카를로 시뮬 + UI-코드 정합성 자동 검증."""
+"""가챠 박스 몬테카를로 시뮬 + UI-코드 정합성 자동 검증.
+
+수치 사본은 두지 않는다 — 전부 game_facts가 코드에서 읽는다. 예전엔 BOX_DEFS가 확률·
+가격 사본을 들었고 실버/골드가 드리프트해 존재하지 않는 게임을 시뮬레이션했다
+(골드 Legendary 사본 5% vs 실제 45%).
+"""
 import argparse
+import os
 import random
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import game_facts  # noqa: E402
 
 if hasattr(sys.stdout, "reconfigure") and sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
@@ -11,9 +20,8 @@ if hasattr(sys.stdout, "reconfigure") and sys.stdout.encoding and sys.stdout.enc
 THRESHOLD_NO_PITY_LEGENDARY_FAIL = 0.50          # 100연차 Legendary 0개 확률 50%+ = FAIL
 # 근거: UI 텍스트와 코드 확률 분리는 UX 신뢰 위반. 사용자에게 표시된 값과 실 확률 불일치 = 환불 사유.
 THRESHOLD_UI_CODE_MISMATCH_FAIL = True            # UI 텍스트 ≠ 코드 = FAIL
-# 근거: UI 가격(300/500/700)과 Manager(500/800/1200) 분리 — 알려진 결함. 결제 표시 오인 위험.
+# 근거: UI 표기 가격과 Manager 정본 가격이 갈리면 결제 표시 오인 — 환불 사유.
 THRESHOLD_PRICE_MISMATCH_FAIL = True               # CashShopUI 가격 ≠ Manager 가격 = FAIL
-# 근거: 실버는 브론즈 대비 가격 +60%(500→800). 기댓값 +60% 미만이면 가성비 함정 — 차상위 박스 매력 부족.
 # 의미: 차상위 박스의 EV 증가율이 가격 증가율 × 이 비율 미만이면 가성비 함정 WARN.
 #       예) 가격 +60%일 때 EV 증가율이 +36%(60×0.6) 미만이면 WARN.
 THRESHOLD_VALUE_TRAP_RATIO_WARN = 0.6             # 가격 증가율 대비 EV 증가율 최소 비율
@@ -22,38 +30,42 @@ THRESHOLD_EXCLUSIVE_DUP_WARN = 15                 # 100연차 평균 중복 15+ 
 # 근거: 필드 샤이니 1% vs 가챠 0%는 가챠 매력 저하. 가챠 자체 보너스 디자인 부재 신호.
 THRESHOLD_SHINY_GACHA_GAP_WARN = True             # 가챠 샤이니 0% vs 필드 1% = WARN
 
-# === 정본 (GachaBoxManager.cs:130-180과 동기화) ===
-BOX_DEFS = {
-    "bronze": {
-        "price_manager": 500,
-        "rarity_pcts": {"Common": 55, "Uncommon": 30, "Rare": 12, "Epic": 2.5, "Legendary": 0.5},
-        "exclusive_chance": 0.20,
-        "candy_bonus_min": 5, "candy_bonus_max": 15,
-    },
-    "silver": {
-        "price_manager": 800,
-        "rarity_pcts": {"Common": 20, "Uncommon": 35, "Rare": 30, "Epic": 12, "Legendary": 3},
-        "exclusive_chance": 0.30,
-        "candy_bonus_min": 10, "candy_bonus_max": 30,
-    },
-    "gold": {
-        "price_manager": 1200,
-        "rarity_pcts": {"Common": 10, "Uncommon": 25, "Rare": 35, "Epic": 25, "Legendary": 5},
-        "exclusive_chance": 0.50,
-        "candy_bonus_min": 20, "candy_bonus_max": 50,
-    },
-}
+# === 정본 = 코드. 사본 없음 ===
+# 전부 game_facts가 GachaBoxManager.cs / CashShopManager.cs / InsectRewardCalculator.cs /
+# InsectEntity.cs에서 직접 읽는다. 추출이 실패하면 낡은 값으로 조용히 시뮬을 돌리는 대신
+# 여기서 exit 2로 죽는다. 이 로딩은 import 시점에 돌아서 main()의 try보다 이르므로
+# 트레이스백이 새어나가지 않게 여기서 잡는다.
+def _load_facts():
+    try:
+        pcts = game_facts.gacha_rarity_pcts()
+        prices = game_facts.box_gem_prices()
+        excl = game_facts.gacha_exclusive_chances()
+        candy = game_facts.gacha_candy_bonus()
+        return (
+            {
+                box: {
+                    "price_manager": prices[box],
+                    "rarity_pcts": pcts[box],
+                    "exclusive_chance": excl[box],
+                    "candy_bonus_min": candy[box][0],
+                    "candy_bonus_max": candy[box][1],
+                }
+                for box in game_facts.BOXES
+            },
+            game_facts.gacha_exclusive_pool_sizes(),
+            game_facts.rarity_multipliers(),
+            game_facts.field_shiny_pct(),
+            0.0 if not game_facts.gacha_has_shiny() else float("nan"),
+        )
+    except game_facts.ExtractorBroken as e:
+        print(f"추출기 고장: {e}\n", file=sys.stderr)
+        print("게임 수치를 코드에서 읽지 못했다. 시뮬 결과는 무의미하므로 실행하지 않는다.",
+              file=sys.stderr)
+        sys.exit(2)
 
-# GachaBoxManager.cs:160-180 전용곤충 풀 크기
-EXCLUSIVE_POOL_SIZE = {"Rare": 3, "Epic": 4, "Legendary": 3}
 
-# Assets/Scripts/Data/InsectRewardCalculator.cs (progression_sim과 동일).
 # 가챠 EV 가중치 = 게임 내 실제 보상 배율 — 박스 1회 가치를 보상 가치 기준으로 환산.
-RARITY_MULT = {"Common": 1.0, "Uncommon": 1.2, "Rare": 1.5, "Epic": 2.0, "Legendary": 2.8}
-
-# Assets/Scripts/Spawning/InsectEntity.cs (필드 샤이니 1%)
-FIELD_SHINY_PCT = 1.0
-GACHA_SHINY_PCT = 0.0   # GachaBoxManager에 샤이니 로직 없음
+BOX_DEFS, EXCLUSIVE_POOL_SIZE, RARITY_MULT, FIELD_SHINY_PCT, GACHA_SHINY_PCT = _load_facts()
 
 # Lv30 캔디 비용 (progression_sim과 일치)
 LV30_CANDY_COST = int(4 * (1.14 ** 29))
@@ -157,55 +169,20 @@ def prob_zero_legendary_analytic(box: str, pulls: int) -> float:
     return (1 - p) ** pulls
 
 
-# === UI-코드 정합성 grep ===
-# data_lint의 추출기를 재사용해 정규식 중복 제거. 같은 디렉토리에 있으므로 sys.path 추가.
-import os.path  # noqa: E402
-_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-if _SCRIPT_DIR not in sys.path:
-    sys.path.insert(0, _SCRIPT_DIR)
-from data_lint import extract_cashshop_ui_boxes  # noqa: E402
-
-_RARITY_FULL = {"C": "Common", "U": "Uncommon", "R": "Rare", "E": "Epic", "L": "Legendary"}
-
-
-def grep_ui_prices() -> dict:
-    """CashShopUI에서 박스 가격 추출 (box_ prefix 제거 후 단축 키로 반환)."""
-    return {b.replace("box_", ""): info["price"] for b, info in extract_cashshop_ui_boxes().items()}
-
-
-def grep_ui_rarity_text() -> dict:
-    """CashShopUI에서 박스별 확률 텍스트 추출 (등급명 풀네임으로 반환)."""
-    result = {}
-    for box, info in extract_cashshop_ui_boxes().items():
-        short = box.replace("box_", "")
-        result[short] = {_RARITY_FULL[g]: pct for g, pct in info["rates"].items()}
-    return result
-
+# === UI-코드 정합성 ===
+# 추출은 전부 game_facts가 소유한다. 한때 data_lint의 extract_cashshop_ui_boxes를 빌려
+# 썼는데, 그 추출기는 rateText 문자열 리터럴을 찾다가 0개를 반환하고 있었다 — UI가
+# 확률을 코드 파생으로 바꾼 뒤로. 그 결과 이쪽은 "UI에서 추출 실패" FAIL을 찍고
+# data_lint 쪽은 공허한 PASS를 찍었다. 같은 고장이 두 얼굴로 나타난 셈이다.
 
 def check_price_mismatch() -> list:
-    """UI 가격 vs 정본 가격 비교."""
-    ui_prices = grep_ui_prices()
-    mismatches = []
-    for box, manager_price in [(b, BOX_DEFS[b]["price_manager"]) for b in BOX_DEFS]:
-        ui_price = ui_prices.get(box)
-        if ui_price is None:
-            mismatches.append((box, "UI에서 추출 실패", manager_price))
-        elif ui_price != manager_price:
-            mismatches.append((box, ui_price, manager_price))
-    return mismatches
-
-
-def check_rarity_text_mismatch() -> list:
-    """UI 확률 텍스트 vs 정본 확률 비교."""
-    ui_rarity = grep_ui_rarity_text()
-    mismatches = []
-    for box, defs in BOX_DEFS.items():
-        ui_pcts = ui_rarity.get(box, {})
-        for rarity, pct in defs["rarity_pcts"].items():
-            ui_val = ui_pcts.get(rarity)
-            if ui_val is None or abs(ui_val - pct) > 0.001:
-                mismatches.append((box, rarity, ui_val, pct))
-    return mismatches
+    """UI 표시 가격 vs 정본(Manager) 가격 비교. 표시 ≠ 차감 = 결제 오인."""
+    ui_prices = game_facts.ui_box_prices()
+    return [
+        (box, ui_prices[box], BOX_DEFS[box]["price_manager"])
+        for box in game_facts.BOXES
+        if ui_prices[box] != BOX_DEFS[box]["price_manager"]
+    ]
 
 
 def evaluate_signals(args) -> list:
@@ -218,23 +195,25 @@ def evaluate_signals(args) -> list:
                     f"< {THRESHOLD_NO_PITY_LEGENDARY_FAIL*100:.0f}%",
                     f"{p0*100:.1f}%", judge))
 
-    # 2. 가격 불일치 (UI vs Manager)
+    # 2. 가격 불일치 (UI 표시 vs Manager 정본)
     price_mm = check_price_mismatch()
     judge = "FAIL" if price_mm else "PASS"
-    if price_mm:
-        details = ", ".join(f"{b}: UI={u} 정본={m}" for b, u, m in price_mm)
-    else:
-        details = "0건 불일치"
-    signals.append(("CashShopUI 가격 vs Manager 정합성", "0건 불일치", details, judge))
+    details = (", ".join(f"{b}: UI={u} 정본={m}" for b, u, m in price_mm) if price_mm
+               else f"0건 (검사한 박스 {len(game_facts.BOXES)}개)")
+    signals.append(("CashShopUI 표시 가격 vs Manager 정본", "0건 불일치", details, judge))
 
-    # 3. 확률 텍스트 불일치
-    rt_mm = check_rarity_text_mismatch()
-    judge = "FAIL" if rt_mm else "PASS"
-    if rt_mm:
-        details = f"{len(rt_mm)}건 불일치"
+    # 3. UI 확률 표기가 코드 파생인가 (하드코딩 회귀 감시)
+    # 값 비교였다가 폐물이 됐다 — UI가 GetGachaRateText → GachaBoxManager.GetRateText →
+    # GetRates → *Thresholds로 파생받게 바뀌었다. 남은 위험은 하드코딩 부활뿐이다.
+    hardcoded = game_facts.ui_hardcoded_rate_literals()
+    if hardcoded:
+        judge, details = "FAIL", f"확률 리터럴 {len(hardcoded)}건 부활 ({hardcoded})"
+    elif not game_facts.ui_derives_gacha_rates():
+        judge, details = "FAIL", "GetGachaRateText → GachaBoxManager 파생 사슬이 끊김"
     else:
-        details = "0건 불일치"
-    signals.append(("UI 확률 텍스트 vs 코드 정합성", "0건 불일치", details, judge))
+        judge, details = "PASS", "코드 파생 + 리터럴 0건"
+    signals.append(("UI 확률 표기 = 코드 파생 (하드코딩 회귀)", "파생 유지 + 리터럴 0건",
+                    details, judge))
 
     # 4. 실버 가성비
     bronze_ev = expected_value("bronze")
@@ -330,7 +309,7 @@ def main():
 
     print(f"# gacha-sim — 몬테카를로 {args.trials:,}회, {args.pulls}연차/시도\n")
 
-    print("## 박스 정본 (GachaBoxManager.cs:130-180)")
+    print("## 박스 정본 — GachaBoxManager.cs / CashShopManager.cs에서 실시간 추출 (사본 없음)")
     for b, d in BOX_DEFS.items():
         pcts = d["rarity_pcts"]
         print(f"- {b} ({d['price_manager']}젬): C{pcts['Common']}/U{pcts['Uncommon']}/R{pcts['Rare']}/E{pcts['Epic']}/L{pcts['Legendary']}, 픽업{int(d['exclusive_chance']*100)}%")

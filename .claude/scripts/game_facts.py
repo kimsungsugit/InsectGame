@@ -1,0 +1,347 @@
+"""게임 코드가 말하는 사실을 읽는 단일 모듈. 하네스는 수치 사본을 들지 않는다.
+
+왜 있나
+-------
+`.claude/rules/balance.md`와 CLAUDE.md는 "수치의 단일 출처는 코드"라고 못박는다.
+그런데 정작 그걸 검증하는 하네스 자신이 사본을 들고 있었다. gacha_sim.py의 BOX_DEFS는
+골드 Legendary를 **5%**로 알고 있었지만 코드는 **45%**였다(GoldThresholds={5,10,23,55}
+→ L=100-55). 실버/골드 가격도 800/1200으로 알았지만 실제는 600/750이었다. 브론즈만
+맞았다 — 즉 원래 맞았던 사본이 코드 변경을 못 따라간 순수한 드리프트다.
+
+그 위에서 돌린 시뮬은 존재하지 않는 게임을 시뮬레이션했고, "천장 부재" 판정과
+"골드 Legendary 5%→7% 상향" 권고는 정반대로 무의미했다. 아이러니하게도 코드는 이미
+GetGachaRates(boxId)로 "UI 표기 단일 출처"를 만들어놨다 — 코드가 사본을 없앤 뒤에도
+하네스만 사본을 붙들고 있었다.
+
+그래서 사실을 읽는 곳을 하나로 모은다. 여기가 유일한 추출 지점이다.
+
+썩을 때 거짓말하지 않는 법
+--------------------------
+정규식 추출기는 앞으로도 리팩터링을 따라가지 못한다. 그건 막을 수 없다.
+막을 수 있는 건 **썩으면서 거짓말하는 것**이다. 기대한 심볼을 못 찾으면 빈 값을
+반환하고 계속 가는 대신 ExtractorBroken으로 죽는다. 호출자는 exit 2로 종료해
+"데이터 결함"(exit 1)과 "검증기 자신의 고장"(exit 2)을 구별해야 한다.
+
+조용한 오탐은 무시된다. 무시되는 검증기는 없느니만 못하다.
+"""
+import os
+import re
+
+BOXES = ("bronze", "silver", "gold")
+
+PATHS = {
+    "gacha": "Assets/Scripts/Core/GachaBoxManager.cs",
+    "cash_shop": "Assets/Scripts/Core/CashShopManager.cs",
+    "cash_shop_ui": "Assets/Scripts/UI/CashShopUI.cs",
+    "reward_calc": "Assets/Scripts/Data/InsectRewardCalculator.cs",
+    "tutorial": "Assets/Scripts/Core/TutorialQuestManager.cs",
+    "insect_entity": "Assets/Scripts/Spawning/InsectEntity.cs",
+    "raid": "Assets/Scripts/Battle/RaidBattleController.cs",
+}
+
+RARITIES = ("Common", "Uncommon", "Rare", "Epic", "Legendary")
+
+
+class ExtractorBroken(Exception):
+    """기대한 심볼을 코드에서 찾지 못했다 — 데이터 결함이 아니라 추출기 자신의 고장."""
+
+
+def _read(key: str) -> str:
+    path = PATHS[key]
+    if not os.path.isfile(path):
+        raise ExtractorBroken(f"{path}가 없다 — 파일이 옮겨갔는가?")
+    with open(path, encoding="utf-8") as f:
+        return f.read()
+
+
+def _need(m, what: str, key: str):
+    if not m:
+        raise ExtractorBroken(f"{PATHS[key]}에서 {what}을(를) 찾지 못했다 — 개명/이동했는가?")
+    return m
+
+
+# ── 가챠 ────────────────────────────────────────────────────────────────────
+
+def gacha_thresholds() -> dict:
+    """{"bronze": [C상한, U상한, R상한, E상한], ...} 누적 임계값(roll 0~100).
+
+    출처: GachaBoxManager.cs의 Bronze/Silver/GoldThresholds 상수 배열.
+    Get{box}Rarity()는 이 배열을 GetRarityByThresholds()에 넘기는 한 줄일 뿐이므로
+    메서드 본체를 파봐야 리터럴이 없다(예전 추출기가 여기서 조용히 실패했다).
+    """
+    src = _read("gacha")
+    out = {}
+    for box in BOXES:
+        name = box.capitalize() + "Thresholds"
+        m = _need(re.search(rf"{name}\s*=\s*\{{([^}}]*)\}}", src), f"{name} 배열", "gacha")
+        vals = [float(x) for x in re.findall(r"([\d.]+)f", m.group(1))]
+        if len(vals) != 4:
+            raise ExtractorBroken(
+                f"{name}에서 임계값 4개를 기대했으나 {len(vals)}개 추출 ({vals}) — 구조가 바뀌었는가?"
+            )
+        if vals != sorted(vals):
+            raise ExtractorBroken(f"{name}이 단조증가가 아니다 ({vals}) — 추출이 어긋났는가?")
+        out[box] = vals
+    return out
+
+
+def gacha_rarity_pcts() -> dict:
+    """{"bronze": {"Common": 55.0, ..., "Legendary": 0.5}, ...} 등급별 확률(%).
+
+    환산식은 GachaBoxManager.cs 주석이 명시한다:
+    임계 [a,b,c,d] → C=a, U=b-a, R=c-b, E=d-c, L=100-d.
+    """
+    out = {}
+    for box, t in gacha_thresholds().items():
+        a, b, c, d = t
+        out[box] = dict(zip(RARITIES, [a, b - a, c - b, d - c, 100.0 - d]))
+    return out
+
+
+def gacha_exclusive_chances() -> dict:
+    """{"bronze": 0.2, "silver": 0.3, "gold": 0.5} — 전용(픽업) 곤충이 뽑힐 확률.
+
+    출처: PickRandomInsect()의 boxId 분기. gold/silver는 명시 분기, 나머지는 else.
+    """
+    src = _read("gacha")
+    body = _need(
+        re.search(r"PickRandomInsect\s*\([^)]*\)\s*\{(.*?)\n\s{8}\}", src, re.DOTALL),
+        "PickRandomInsect() 본체", "gacha",
+    ).group(1)
+    out = {}
+    for box in ("gold", "silver"):
+        m = _need(
+            re.search(rf'boxId\s*==\s*"box_{box}"\s*\)\s*exclusiveChance\s*=\s*([\d.]+)f', body),
+            f"box_{box} exclusiveChance 분기", "gacha",
+        )
+        out[box] = float(m.group(1))
+    m = _need(
+        re.search(r"else\s+exclusiveChance\s*=\s*([\d.]+)f", body),
+        "기본(else) exclusiveChance", "gacha",
+    )
+    out["bronze"] = float(m.group(1))
+    return out
+
+
+def gacha_candy_bonus() -> dict:
+    """{"bronze": (5, 15), ...} — 박스별 보너스 캔디 범위(양끝 포함).
+
+    출처: OpenBox()의 switch(boxId) 안 Random.Range(min, maxExclusive).
+    Unity의 int Random.Range는 상한 배타이므로 max는 -1 해서 돌려준다.
+    """
+    src = _read("gacha")
+    out = {}
+    for box in BOXES:
+        m = _need(
+            re.search(
+                rf'case\s+"box_{box}":.*?Random\.Range\((\d+),\s*(\d+)\)', src, re.DOTALL
+            ),
+            f'case "box_{box}"의 보너스 캔디 Random.Range', "gacha",
+        )
+        lo, hi_excl = int(m.group(1)), int(m.group(2))
+        out[box] = (lo, hi_excl - 1)
+    return out
+
+
+def gacha_exclusive_pool_sizes() -> dict:
+    """{"Rare": 3, "Epic": 4, "Legendary": 3} — 등급별 전용 곤충 풀 크기."""
+    src = _read("gacha")
+    block = _need(
+        re.search(r"gachaExclusives\s*=\s*new\s+Dictionary[^{]*\{(.*?)\n\s{8}\};", src, re.DOTALL),
+        "gachaExclusives 딕셔너리", "gacha",
+    ).group(1)
+    out = {}
+    for rarity, ids in re.findall(r"InsectRarity\.(\w+)\s*,\s*new\[\]\s*\{([^}]*)\}", block):
+        out[rarity] = len(re.findall(r'"[^"]+"', ids))
+    if not out:
+        raise ExtractorBroken("gachaExclusives에서 등급별 풀을 하나도 못 읽었다 — 구조가 바뀌었는가?")
+    return out
+
+
+# ── 상점 ────────────────────────────────────────────────────────────────────
+
+def box_gem_prices() -> dict:
+    """{"bronze": 500, "silver": 600, "gold": 750} — 가챠 박스 젬 가격(정본).
+
+    출처: CashShopManager.shopItems의 gemPrice.
+    """
+    src = _read("cash_shop")
+    out = {}
+    for box in BOXES:
+        m = _need(
+            re.search(rf'itemId\s*=\s*"box_{box}".*?gemPrice\s*=\s*(\d+)', src, re.DOTALL),
+            f'box_{box}의 gemPrice', "cash_shop",
+        )
+        out[box] = int(m.group(1))
+    return out
+
+
+def gem_packages() -> list:
+    """[(KRW, gems), ...] — 현금 젬 패키지. 출처: CashShopManager의 priceKRW > 0 품목."""
+    src = _read("cash_shop")
+    out = [
+        (int(krw), int(count))
+        for krw, count in re.findall(
+            r"priceKRW\s*=\s*(\d+)\s*,\s*gemPrice\s*=\s*0\s*,\s*rewardCount\s*=\s*(\d+)", src
+        )
+        if int(krw) > 0
+    ]
+    if not out:
+        raise ExtractorBroken(
+            f"{PATHS['cash_shop']}에서 젬 패키지(priceKRW>0, gemPrice=0)를 찾지 못했다 — "
+            "필드 순서나 구조가 바뀌었는가?"
+        )
+    return sorted(out)
+
+
+def ui_box_prices() -> dict:
+    """{"bronze": 500, ...} — CashShopUI가 화면에 찍는 박스 가격.
+
+    출처: `GetGachaRateText("box_X"), <price>, gems, mobile` 호출 인자.
+    가격은 아직 UI 리터럴이라 정본(box_gem_prices)과 갈릴 수 있다 — 그게 검사 대상이다.
+    표시 가격과 실제 차감액이 갈리면 결제 오인이므로 값이 아니라 **일치 여부**가 중요하다.
+    """
+    src = _read("cash_shop_ui")
+    out = {}
+    for box in BOXES:
+        m = _need(
+            re.search(rf'GetGachaRateText\(\s*"box_{box}"\s*\)\s*,\s*(\d+)\s*,', src),
+            f'box_{box} 박스 카드의 가격 인자', "cash_shop_ui",
+        )
+        out[box] = int(m.group(1))
+    return out
+
+
+def ui_derives_gacha_rates() -> bool:
+    """CashShopUI가 확률 표기를 코드에서 파생받는가(하드코딩이 아닌가).
+
+    한때는 UI가 확률 문자열을 하드코딩해서 "UI 텍스트 vs 코드 확률" 값 비교 검사가
+    의미 있었다. 지금은 GetGachaRateText → GachaBoxManager.GetRateText → GetRates →
+    *Thresholds로 파생된다(CashShopUI 주석: "하드코딩 금지(공시 위반 방지)").
+    그래서 값 비교는 폐물이고, 남은 위험은 **하드코딩이 되돌아오는 회귀**뿐이다.
+    """
+    src = _read("cash_shop_ui")
+    return bool(re.search(r"GetGachaRateText\s*\(", src)) and bool(
+        re.search(r"mgr\.GetRateText\s*\(|GachaBoxManager\.Instance", src)
+    )
+
+
+def ui_hardcoded_rate_literals() -> list:
+    """UI에 되살아난 확률 표기 리터럴(예: "C:55% U:30%"). 있으면 공시 위반 회귀."""
+    src = _read("cash_shop_ui")
+    return [
+        m.group(0)
+        for m in re.finditer(r'"[^"]*\b[CUREL]\s*:\s*\d+(?:\.\d+)?\s*%[^"]*"', src)
+    ]
+
+
+# ── 보상 ────────────────────────────────────────────────────────────────────
+
+def rarity_multipliers() -> dict:
+    """{"Common": 1.0, ..., "Legendary": 2.8} — 보상 배율.
+
+    출처: InsectRewardCalculator.GetRarityMultiplier()의 case별 return.
+    """
+    src = _read("reward_calc")
+    body = _need(
+        re.search(r"GetRarityMultiplier\s*\([^)]*\)\s*\{(.*?)\n\s{8}\}", src, re.DOTALL),
+        "GetRarityMultiplier() 본체", "reward_calc",
+    ).group(1)
+    out = {}
+    for rarity, val in re.findall(r"case\s+InsectRarity\.(\w+):\s*return\s+([\d.]+)f", body):
+        out[rarity] = float(val)
+    # default(Common)는 case 없이 return일 수 있다
+    if "Common" not in out:
+        m = re.search(r"(?:default:|^\s*)\s*return\s+([\d.]+)f\s*;", body, re.MULTILINE)
+        if m:
+            out["Common"] = float(m.group(1))
+    missing = [r for r in RARITIES if r not in out]
+    if missing:
+        raise ExtractorBroken(
+            f"GetRarityMultiplier에서 {missing} 배율을 못 읽었다 — 분기 구조가 바뀌었는가?"
+        )
+    return out
+
+
+def raid_reward_mult() -> float:
+    """레이드 보상 배율. 출처: RaidBattleController의 `RewardCandy = ...candyBase * N * ...`.
+
+    상수로 분리돼 있지 않고 계산식에 박힌 매직넘버라 계산식째로 고정해 읽는다.
+    캔디와 EXP가 서로 다른 배율을 쓰면 가정이 깨진 것이므로 죽는다.
+    """
+    src = _read("raid")
+    candy = _need(
+        re.search(r"RewardCandy\s*=\s*Mathf\.RoundToInt\(\s*candyBase\s*\*\s*([\d.]+)f?\s*\*", src),
+        "RewardCandy 계산식의 레이드 배율", "raid",
+    )
+    exp = _need(
+        re.search(r"RewardExp\s*=\s*Mathf\.RoundToInt\(\s*expBase\s*\*\s*([\d.]+)f?\s*\*", src),
+        "RewardExp 계산식의 레이드 배율", "raid",
+    )
+    c, e = float(candy.group(1)), float(exp.group(1))
+    if c != e:
+        raise ExtractorBroken(
+            f"레이드 캔디 배율({c})과 EXP 배율({e})이 다르다 — 단일 배율 가정이 깨졌다"
+        )
+    return c
+
+
+def tutorial_rewards() -> dict:
+    """{"candy": 336, "exp": 475} — 튜토리얼 퀘스트 보상 총합.
+
+    출처: TutorialQuestManager.cs의 rewardCandy = N / rewardExp = N 대입 전량.
+    지급 코드(quest.rewardCandy 등)는 대입이 아니라 자연히 제외된다.
+    """
+    src = _read("tutorial")
+    candy = [int(x) for x in re.findall(r"rewardCandy\s*=\s*(\d+)", src)]
+    exp = [int(x) for x in re.findall(r"rewardExp\s*=\s*(\d+)", src)]
+    if not candy or not exp:
+        raise ExtractorBroken(
+            f"튜토리얼 보상 대입을 못 찾았다 (candy {len(candy)}건 / exp {len(exp)}건) — "
+            "필드명이 바뀌었는가?"
+        )
+    return {"candy": sum(candy), "exp": sum(exp), "candy_n": len(candy), "exp_n": len(exp)}
+
+
+def field_shiny_pct() -> float:
+    """필드 샤이니 확률(%). 출처: InsectEntity.cs의 `shiny = Random.value < 0.01f`.
+
+    느슨한 정규식(`shiny\\w*\\s*[=<]\\s*([\\d.]+)f`)을 먼저 썼다가 `cachedShinyShift = -1f`
+    같은 무관한 필드를 물어 조용히 0.0을 반환했다. 대입 형태를 통째로 고정한다 —
+    형태가 바뀌면 0을 반환하는 대신 ExtractorBroken으로 죽는 게 낫다.
+    """
+    src = _read("insect_entity")
+    m = _need(
+        re.search(r"\bshiny\s*=\s*UnityEngine\.Random\.value\s*<\s*([\d.]+)f", src),
+        "`shiny = UnityEngine.Random.value < Xf` 형태의 샤이니 확률",
+        "insect_entity",
+    )
+    return float(m.group(1)) * 100.0
+
+
+def gacha_has_shiny() -> bool:
+    """가챠에 샤이니 로직이 있는가. 없으면 필드와의 격차가 위험 신호."""
+    return bool(re.search(r"[Ss]hiny", _read("gacha")))
+
+
+if __name__ == "__main__":
+    import io
+    import sys
+
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+    try:
+        print("# 코드가 말하는 사실\n")
+        print(f"가챠 임계값      : {gacha_thresholds()}")
+        for box, pcts in gacha_rarity_pcts().items():
+            print(f"  {box:7} 확률(%): " + " / ".join(f"{k[0]}{v:g}" for k, v in pcts.items()))
+        print(f"박스 젬 가격     : {box_gem_prices()}")
+        print(f"픽업 확률        : {gacha_exclusive_chances()}")
+        print(f"보너스 캔디      : {gacha_candy_bonus()}")
+        print(f"전용 풀 크기     : {gacha_exclusive_pool_sizes()}")
+        print(f"보상 배율        : {rarity_multipliers()}")
+        print(f"튜토리얼 보상 합 : {tutorial_rewards()}")
+        print(f"필드 샤이니(%)   : {field_shiny_pct()}")
+        print(f"가챠 샤이니 존재 : {gacha_has_shiny()}")
+    except ExtractorBroken as e:
+        print(f"\n추출기 고장: {e}")
+        sys.exit(2)

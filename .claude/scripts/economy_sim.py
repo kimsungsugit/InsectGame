@@ -1,8 +1,14 @@
-"""경제 시뮬레이션. 캔디/젬/코인 수입·지출 균형, 코드 결함(데드 화폐, 교환 부재) 자동 점검."""
+"""경제 시뮬레이션. 캔디/젬/코인 수입·지출 균형, 코드 결함(데드 화폐, 교환 부재) 자동 점검.
+
+가격 사본은 두지 않는다 — game_facts가 코드에서 읽는다.
+"""
 import argparse
 import os
 import re
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import game_facts  # noqa: E402
 
 # Windows cp949 환경에서 유니코드 출력 보장
 if hasattr(sys.stdout, "reconfigure") and sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
@@ -20,12 +26,24 @@ THRESHOLD_NO_EXCHANGE_WARN = True            # 캔디↔젬 교환 경로 0건 =
 # 근거: 효과 1% 차이에 가격 5배(diamond_net 2000젬 vs normal_net 150코인)는 명백한 P2W 함정.
 THRESHOLD_P2W_GAP_RATIO_WARN = 5.0           # 프리미엄/베이직 가격 비율 5배+ = WARN
 
-# === 정본 (코드와 동기화 필요) ===
-# Assets/Scripts/Core/CashShopManager.cs:44-65
-CASH_GEM_PACKAGES = [(2000, 150), (5000, 400), (10000, 900)]   # (KRW, gems)
-GACHA_BOX_PRICES = {"bronze": 500, "silver": 800, "gold": 1200}
-CASH_ITEM_GEMS = {"net_silver": 200, "net_gold": 400, "incense_rare": 350,
-                   "candy": 300, "exp_boost": 300}
+# === 정본 = 코드. 사본 없음 ===
+# "동기화 필요"라 적어둔 사본은 동기화되지 않는다 — 실제로 박스 가격이 실버 800 /
+# 골드 1200에 멈춰 있는 동안 코드는 600 / 750으로 바뀌어 있었다.
+#
+# CASH_ITEM_GEMS는 삭제했다: 정의만 있고 사용처가 0인 죽은 사본이었고, 그나마도
+# incense_rare(350젬)라는 유령 품목을 들고 있었다 — CashShopManager.cs:79가
+# "ItemData SO 미정의로 비활성화"라고 적어둔, 상점에 존재하지 않는 아이템이다.
+def _load_facts():
+    # import 시점에 돌아 main()의 예외 처리보다 이르므로 여기서 잡는다.
+    try:
+        return game_facts.box_gem_prices(), game_facts.gem_packages()
+    except game_facts.ExtractorBroken as e:
+        print(f"추출기 고장: {e}\n가격을 코드에서 읽지 못했다 — 시뮬을 돌리지 않는다.",
+              file=sys.stderr)
+        sys.exit(2)
+
+
+GACHA_BOX_PRICES, CASH_GEM_PACKAGES = _load_facts()   # CASH_GEM_PACKAGES: [(KRW, gems), ...]
 
 # Assets/Scripts/Data/InsectLevelCurve.cs (progression_sim과 동일)
 BASE_CANDY = 4

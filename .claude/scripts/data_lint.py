@@ -4,6 +4,10 @@ import os
 import re
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import game_facts  # noqa: E402
+from game_facts import ExtractorBroken  # noqa: E402  — 예외 타입은 game_facts가 소유
+
 if hasattr(sys.stdout, "reconfigure") and sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
 
@@ -24,19 +28,8 @@ UNITY_CALLBACKS = {
     "OnDrawGizmos", "OnDrawGizmosSelected", "OnValidate", "Reset",
 }
 
-class ExtractorBroken(Exception):
-    """추출기가 기대한 심볼을 코드에서 찾지 못했다 — 데이터 결함이 아니라 검증기 자신의 고장.
-
-    빈 값을 반환하고 계속 가면 고장이 "정의 없음"으로 둔갑해 멀쩡한 데이터를 FAIL로
-    보고한다. 실제로 그렇게 됐다: 리전 정의가 PlaySceneBootstrap에서 RegionDefinitions.cs로
-    옮겨간 뒤 이 스크립트는 리전 7개 전부를 "정의 없는데 참조"로 거짓 FAIL 처리했고,
-    가챠 확률은 조용한 WARN으로 묻혔다. 아무도 안 고쳤다 — 검증기가 늘 빨간불이면
-    빨간불에 의미가 없어지기 때문이다.
-
-    파서는 앞으로도 리팩터링을 따라가지 못한다. 그건 막을 수 없다. 막을 수 있는 건
-    썩는 것이 아니라 **썩으면서 거짓말하는 것**이다. 그래서 여기서 죽는다.
-    """
-
+# ExtractorBroken은 game_facts가 소유한다 (위에서 import). 예외 타입까지 사본을 두면
+# 한쪽만 잡히는 사고가 난다.
 
 # === 데이터 소스 경로 ===
 PATHS = {
@@ -247,37 +240,11 @@ def extract_gacha_pools() -> dict:
 
 
 def extract_gacha_probabilities() -> dict:
-    """Bronze/Silver/GoldThresholds 배열에서 누적 임계값 추출.
+    """{"bronze": [C상한, U상한, R상한, E상한], ...} 누적 임계값.
 
-    이전엔 Get{box}Rarity() 메서드 본체의 `roll < Xf` 리터럴을 셌다. 그 메서드들은 이제
-    expression-body 한 줄(`=> GetRarityByThresholds(roll, BronzeThresholds)`)이라 본체에
-    리터럴이 없다 — 확률이 상수 배열로 분리됐다(GachaBoxManager.cs 주석: "분기 로직과 UI
-    확률 표기가 같은 출처를 쓰도록 상수로 분리"). 그래서 추출이 조용히 실패했고 확률
-    검증 3건이 "추출 실패" WARN으로 묻혔다.
-
-    반환: {"Bronze": [55.0, 85.0, 97.0, 99.5], ...} — 누적 임계값 [C상한, U상한, R상한, E상한].
-    Legendary는 나머지(100 - 마지막).
+    추출 자체는 game_facts가 소유한다 — 여기에 또 사본을 두면 같은 병이 반복된다.
     """
-    content = _read_clean(PATHS["gacha_mgr"])
-    if not content:
-        raise ExtractorBroken(f"{PATHS['gacha_mgr']}를 읽을 수 없음 — 파일이 옮겨갔는가?")
-    results = {}
-    for box in ["Bronze", "Silver", "Gold"]:
-        m = re.search(
-            rf'{box}Thresholds\s*=\s*\{{([^}}]*)\}}', content
-        )
-        if not m:
-            raise ExtractorBroken(
-                f"{PATHS['gacha_mgr']}에서 {box}Thresholds 배열을 찾지 못함 — 개명/이동했는가?"
-            )
-        thresholds = [float(x) for x in re.findall(r'([\d.]+)f', m.group(1))]
-        if len(thresholds) != 4:
-            raise ExtractorBroken(
-                f"{box}Thresholds에서 임계값 4개를 기대했으나 {len(thresholds)}개 추출 "
-                f"({thresholds}) — 배열 구조가 바뀌었는가?"
-            )
-        results[box] = thresholds
-    return results
+    return game_facts.gacha_thresholds()
 
 
 # ===== 평가 =====
@@ -388,54 +355,42 @@ def evaluate_signals() -> list:
             judge
         ))
 
-    # 8. CashShop UI 박스 가격 ↔ Manager gemPrice 정합성 (UI 하드코딩 검출)
-    ui_boxes = extract_cashshop_ui_boxes()
-    mgr_prices = extract_cashshop_manager_box_prices()
-    price_mismatches = []
-    for box_id, ui in ui_boxes.items():
-        mgr = mgr_prices.get(box_id)
-        if mgr is None:
-            price_mismatches.append(f"{box_id}: UI={ui['price']} / Manager 미정의")
-        elif mgr != ui["price"]:
-            price_mismatches.append(f"{box_id}: UI={ui['price']} ≠ Manager={mgr}")
+    # 8. CashShop UI 표시 가격 ↔ Manager gemPrice 정합성
+    # 가격은 아직 UI 리터럴이라 정본과 갈릴 수 있다. 표시 가격 ≠ 실제 차감액 = 결제 오인.
+    ui_prices = game_facts.ui_box_prices()
+    mgr_prices = game_facts.box_gem_prices()
+    price_mismatches = [
+        f"{box}: UI={ui_prices[box]} ≠ Manager={mgr_prices[box]}"
+        for box in game_facts.BOXES
+        if ui_prices[box] != mgr_prices[box]
+    ]
     judge = "FAIL" if price_mismatches else "PASS"
     signals.append((
-        "CashShop UI 박스 가격 ↔ Manager gemPrice",
+        "CashShop UI 표시 가격 ↔ Manager gemPrice",
         "0건 불일치",
-        f"{len(price_mismatches)}건 ({price_mismatches})" if price_mismatches else "0건",
+        f"{len(price_mismatches)}건 ({price_mismatches})" if price_mismatches
+        else f"0건 (검사한 박스 {len(game_facts.BOXES)}개)",
         judge
     ))
 
-    # 9. CashShop UI 박스 확률 텍스트 ↔ GachaBoxManager 임계값 정합성
-    box_to_box_name = {"box_bronze": "Bronze", "box_silver": "Silver", "box_gold": "Gold"}
-    grades = ["C", "U", "R", "E", "L"]
-    prob_mismatches = []
-    for box_id, ui in ui_boxes.items():
-        box_name = box_to_box_name.get(box_id)
-        if box_name is None:
-            continue
-        thresholds = probs.get(box_name)
-        if thresholds is None:
-            continue  # UI에만 있고 Manager에 없는 박스 — 아래 가격 검사가 잡는다
-        # 누적 임계값 → 단계별 확률
-        code_rates = {}
-        prev = 0.0
-        for grade, t in zip(grades[:4], thresholds):
-            code_rates[grade] = t - prev
-            prev = t
-        code_rates["L"] = 100.0 - prev
-        for grade in grades:
-            ui_v = ui["rates"].get(grade)
-            code_v = code_rates.get(grade)
-            if ui_v is None or code_v is None:
-                continue
-            if abs(ui_v - code_v) > THRESHOLD_GACHA_PROB_TOLERANCE:
-                prob_mismatches.append(f"{box_id}.{grade}: UI={ui_v} ≠ Code={code_v:.2f}")
-    judge = "FAIL" if prob_mismatches else "PASS"
+    # 9. UI 확률 표기가 코드 파생인가 (하드코딩 회귀 감시)
+    # 예전엔 "UI 텍스트 % vs 코드 확률" 값 비교였다. 그 검사는 폐물이 됐다 — UI가
+    # GetGachaRateText → GachaBoxManager.GetRateText → GetRates → *Thresholds로
+    # 파생받게 바뀌었기 때문(CashShopUI 주석: "하드코딩 금지(공시 위반 방지)").
+    # 그런데 옛 추출기는 rateText 문자열 리터럴을 찾다가 0개를 반환했고, 그 결과 이 검사와
+    # 위 가격 검사가 **둘 다 공허한 PASS**를 찍고 있었다. 값 비교 대신 파생 구조 자체를 지킨다.
+    derives = game_facts.ui_derives_gacha_rates()
+    hardcoded = game_facts.ui_hardcoded_rate_literals()
+    if hardcoded:
+        judge, detail = "FAIL", f"확률 리터럴 {len(hardcoded)}건 부활 ({hardcoded})"
+    elif not derives:
+        judge, detail = "FAIL", "GetGachaRateText → GachaBoxManager 파생 사슬이 끊김"
+    else:
+        judge, detail = "PASS", "코드 파생 + 리터럴 0건"
     signals.append((
-        "CashShop UI 박스 확률 텍스트 ↔ GachaBoxManager 임계값",
-        f"0건 불일치 (tolerance ±{THRESHOLD_GACHA_PROB_TOLERANCE})",
-        f"{len(prob_mismatches)}건 ({prob_mismatches})" if prob_mismatches else "0건",
+        "CashShop UI 확률 표기 = 코드 파생 (하드코딩 회귀)",
+        "파생 유지 + 리터럴 0건",
+        detail,
         judge
     ))
 

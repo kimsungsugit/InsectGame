@@ -1,6 +1,14 @@
-"""Lv1->50 진행 곡선 시뮬레이션. 캔디/EXP 누적, 전투 횟수 추정, 비관적 위험 신호 점검."""
+"""Lv1->50 진행 곡선 시뮬레이션. 캔디/EXP 누적, 전투 횟수 추정, 비관적 위험 신호 점검.
+
+게임 수치 사본은 두지 않는다 — game_facts가 코드에서 읽는다. 예전엔 튜토리얼 보상을
+261/500으로 알고 있었으나 실제는 336/475였다.
+"""
 import argparse
+import os
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import game_facts  # noqa: E402
 
 # Windows cp949 환경에서 유니코드 출력 보장
 if hasattr(sys.stdout, "reconfigure") and sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
@@ -13,7 +21,8 @@ THRESHOLD_BATTLES_LV50_FAIL = 4000          # 캔디만 경로에서 Lv50 도달
 THRESHOLD_DEADZONE_RATIO_WARN = 10.0        # Lv35-50 평균 EXP / Lv1-20 평균 EXP > 10x = WARN
 # 근거: RARITY_MULT(Common=1.0 vs Legendary=2.8) 자체가 2.8배 격차 — 진행속도 200% 초과 시 P2W 압박.
 THRESHOLD_RARITY_GAP_WARN = 2.0             # Common vs Legendary 진행속도 격차 200%+ = WARN
-# 근거: 5% 미만은 신규 사용자 진입 인센티브 부족. 현재 1.3%(261/500 캔디+EXP) 알려진 결함.
+# 근거: 5% 미만은 신규 사용자 진입 인센티브 부족.
+# (실측값은 출력 표에서 확인할 것 — 여기 적어두면 또 썩는다)
 THRESHOLD_TUTORIAL_RATIO_WARN = 0.05        # 튜토리얼 보상 / 전체 누적 < 5% = WARN
 # 근거: 주 5시간 캐주얼 가정 시 80h = 4개월. 이 이상이면 콘텐츠 소진 후 이탈.
 THRESHOLD_PLAY_HOURS_WARN = 80.0            # Lv50 도달 추정 플레이 시간 80h+ = WARN
@@ -28,15 +37,22 @@ XP_GROWTH = 1.12
 BASE_CANDY = 4
 CANDY_GROWTH = 1.14
 
-# Assets/Scripts/Data/InsectRewardCalculator.cs
-RARITY_MULT = {"Common": 1.0, "Uncommon": 1.2, "Rare": 1.5, "Epic": 2.0, "Legendary": 2.8}
+# 정본 = 코드. game_facts가 InsectRewardCalculator.cs / TutorialQuestManager.cs에서 읽는다.
+# 튜토리얼 보상은 한때 261/500 사본을 들고 있었으나 실제는 336/475였다 — 퀘스트가
+# 추가·조정되는 동안 사본이 안 따라간 드리프트.
+def _load_facts():
+    # import 시점에 돌아 main()의 예외 처리보다 이르므로 여기서 잡는다.
+    try:
+        tut = game_facts.tutorial_rewards()
+        return (game_facts.rarity_multipliers(), tut["candy"], tut["exp"],
+                game_facts.raid_reward_mult())
+    except game_facts.ExtractorBroken as e:
+        print(f"추출기 고장: {e}\n게임 수치를 코드에서 읽지 못했다 — 시뮬을 돌리지 않는다.",
+              file=sys.stderr)
+        sys.exit(2)
 
-# Assets/Scripts/Battle/RaidBattleController.cs:239-248
-RAID_MULT = 3.0
 
-# Assets/Scripts/Core/TutorialQuestManager.cs:107-284
-TUTORIAL_CANDY_TOTAL = 261
-TUTORIAL_EXP_TOTAL = 500
+RARITY_MULT, TUTORIAL_CANDY_TOTAL, TUTORIAL_EXP_TOTAL, RAID_MULT = _load_facts()
 
 
 def xp_to_next_level(level: int) -> int:
