@@ -40,6 +40,10 @@ namespace InsectGame.UI
 
         private void OnEnable()
         {
+            // 요청 중에 GameObject가 토글되면 OnDisable이 구독을 끊어 응답을 놓친다.
+            // 그 상태로 재활성되면 isProcessing이 true로 남아 "연동하기"가 영영 비활성이므로
+            // 여기서 초기화한다.
+            isProcessing = false;
             if (AuthManager.Instance != null)
                 AuthManager.Instance.LinkCompleted += OnLinkCompleted;
         }
@@ -92,7 +96,9 @@ namespace InsectGame.UI
             else
             {
                 if (open) SetOpen(false); // 연동 완료/비게스트 시 폼 자동 종료
-                if (IsGuest()) DrawBadge();
+                // 다른 모달이 열려 있으면 배지를 숨긴다. 안 그러면 전체화면 모달 위에
+                // 배지가 그려지고 클릭까지 가로챈다 (MinimapUI/QuickAccessBarUI와 동일 관례).
+                if (IsGuest() && !ModalUIRegistry.IsAnyOpen()) DrawBadge();
             }
 
             DrawMessage();
@@ -115,6 +121,9 @@ namespace InsectGame.UI
 
         private void DrawForm()
         {
+            // IMGUI는 depth로 렌더 순서를 정한다. 기본 0이면 DexScreenUI(-10) 같은 패널
+            // 아래에 깔리면서도 모달로 등록돼 "안 보이는데 입력만 먹는" 상태가 된다.
+            GUI.depth = -20;
             float pw = Mathf.Min(760f, Screen.width * 0.86f);
             float ph = Mathf.Min(660f, Screen.height * 0.9f);
             float px = (Screen.width - pw) * 0.5f;
@@ -161,16 +170,25 @@ namespace InsectGame.UI
             cy += fieldH + 20f;
 
             float btnW = (fieldW - 16f) * 0.5f;
-            GUI.enabled = !isProcessing;
+            bool prevEnabled = GUI.enabled;
+
+            GUI.enabled = prevEnabled && !isProcessing;
             if (GUI.Button(new Rect(cx, cy, btnW, 60f), isProcessing ? "처리 중..." : "연동하기", btnGreenStyle))
             {
                 Submit();
             }
+
+            // 닫기는 처리 중에도 반드시 눌려야 한다. 옛 코드는 위 GUI.enabled 블록이 이
+            // 버튼까지 덮어 `if (!isProcessing) SetOpen(false)`가 실행될 수 없었고
+            // (GUI.enabled=false면 Button은 항상 false), 응답이 없으면 전체화면 딤 모달에
+            // 갇혔다 — 탈출구가 ESC뿐이라 모바일에선 사실상 복구 불가.
+            GUI.enabled = prevEnabled;
             if (GUI.Button(new Rect(cx + btnW + 16f, cy, btnW, 60f), "닫기", btnGrayStyle))
             {
-                if (!isProcessing) SetOpen(false);
+                // 처리 중 닫아도 안전하다 — 응답이 오면 OnLinkCompleted가 isProcessing을
+                // 내리고 결과는 DrawMessage 토스트로 표시된다.
+                SetOpen(false);
             }
-            GUI.enabled = true;
         }
 
         private void Submit()
@@ -179,6 +197,15 @@ namespace InsectGame.UI
             if (passwordInput != confirmInput)
             {
                 message = "비밀번호가 일치하지 않습니다.";
+                messageIsError = true;
+                messageTimer = 5f;
+                return;
+            }
+            // 닉네임이 비면 AuthManager가 DisplayName을 email로 채운다 —
+            // 월드/친구 목록에 이메일이 그대로 공개된다. 여기서 막는다.
+            if (string.IsNullOrWhiteSpace(nicknameInput))
+            {
+                message = "닉네임을 입력해주세요. (비우면 이메일이 표시명으로 공개됩니다)";
                 messageIsError = true;
                 messageTimer = 5f;
                 return;
@@ -248,9 +275,11 @@ namespace InsectGame.UI
         {
             GUIStyle s = new GUIStyle(GUI.skin.button)
             { fontSize = 24, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            // Color * float는 알파까지 곱한다 — 그대로 쓰면 눌림 상태(0.85)가 반투명해진다.
+            // 명도만 조절하고 알파는 보존한다.
             s.normal.background = MakeTex(bg);
-            s.hover.background = MakeTex(bg * 1.15f);
-            s.active.background = MakeTex(bg * 0.85f);
+            s.hover.background = MakeTex(new Color(bg.r * 1.15f, bg.g * 1.15f, bg.b * 1.15f, bg.a));
+            s.active.background = MakeTex(new Color(bg.r * 0.85f, bg.g * 0.85f, bg.b * 0.85f, bg.a));
             s.normal.textColor = Color.white;
             s.hover.textColor = Color.white;
             s.active.textColor = Color.white;

@@ -335,6 +335,63 @@ GetWeightedRandom/GetWeightedRandomWithRareBoost 4곳 foreach에 `if (data == nu
 
 진짜 P0/P1 회귀 없음. GetAllSets()는 OutfitBonusProvider.AutoWire에서 1회만 호출되어 allSets 필드에 캐시(매 프레임 호출 거짓양성). 12개 세트 정적 데이터 정합성 시각 review 결과 정상: requiredItemIds 중복/null 없음, partialThreshold ≤ requiredItemIds.Length 모두 만족(set_wizard threshold=2 items=4), partial/full Bonus 모두 정의, setColor 시각용 OK. GetAllSets static readonly 필드화는 변경 risky(P2 보류). Editor 시점 검증 도구는 별도 디자인 작업. Covered 이동만.
 
+### AccountLinkUI (P1:3, P2:2, 2026-07-17)
+
+**P1 — 처리 중 "닫기"가 죽어 해제 불가 모달.** `GUI.enabled = !isProcessing`이 "연동하기"와
+"닫기" **양쪽**을 덮어, `if (!isProcessing) SetOpen(false)`가 실행될 수 없는 죽은 코드였다
+(`GUI.enabled=false`면 `GUI.Button`은 항상 false). 여기에 `LinkEmailCoroutine`은 타임아웃이
+없었다 — Unity 기본값 0은 무제한이라 모바일 네트워크가 물리면 OS TCP 타임아웃까지 수 분간
+전체화면 딤 모달이 "처리 중..."에 갇히고 탈출구는 ESC뿐(모바일에선 사실상 없음).
+수정: 닫기를 `GUI.enabled` 블록 밖으로 빼 항상 누르게 하고(처리 중 닫아도 응답은
+`OnLinkCompleted`가 받아 토스트로 표시), `prevEnabled` 보존/복원으로 바꿔 호출부 상태를
+덮지 않게 했다. **AuthManager의 UnityWebRequest 7곳 전부에 `timeout = 15` 추가** —
+코드베이스에서 타임아웃을 걸던 곳은 `WorldChannelManager`(12초) 하나뿐이었고, 로그인·회원가입·
+토큰갱신·연동이 모두 무한 대기였다.
+
+**P1 — 배지가 모달 위에 그려지고 클릭을 가로챔.** `OnGUI`에 모달 가드가 없어 게스트인 동안
+배지가 전체화면 모달 위에 매 프레임 그려졌다. 같은 프로젝트의 `MinimapUI:52`,
+`QuickAccessBarUI:113`은 `if (ModalUIRegistry.IsAnyOpen()) return;`으로 자신을 숨기는데 여기만
+빠져 있었다. 또 `GUI.depth` 미설정(기본 0)이라 `DexScreenUI`(-10)/`SaveConflictUI`(-50)에 가려
+보이지 않으면서도 입력은 먹는 상태가 가능했다. 수정: 배지에 `IsAnyOpen()` 가드,
+`DrawForm` 진입 시 `GUI.depth = -20`.
+
+**P1 — `isProcessing` 리셋 경로 부재.** false로 되돌리는 곳이 `OnLinkCompleted` 하나뿐이라,
+요청 중 GameObject가 토글되면 `OnDisable`이 구독을 끊어 응답을 놓치고 `isProcessing=true`가
+남아 "연동하기"가 세션 내내 비활성이 된다. `OnEnable`에 초기화 추가(1줄).
+
+**P2 — 닉네임 무검증으로 이메일이 공개 표시명이 됨.** `ValidateCredentials`는 email/password만
+보고, 닉네임이 비면 `AuthManager`가 `DisplayName = email`로 채운다 → 월드/친구 목록에 이메일이
+그대로 노출. `Submit()`에 공백 검증 추가.
+
+**P2 — 버튼 눌림 상태가 반투명.** `bg * 1.15f` / `bg * 0.85f`가 알파까지 곱했다. RGB만 조절하고
+알파는 보존하도록 수정.
+
+**Explore 거짓양성(검증 후 제외)**: `MakeTex` 11개는 `stylesReady` 가드로 1회만 호출 —
+`WorldLobbyUI MakeTex 누수(P0:7)` 라운드가 *"InitStyles의 4곳 MakeTex는 1회만 호출이라 유지"*로
+이미 판정한 것과 같은 패턴. `msgStyle.normal.textColor` 매 프레임 갱신은 프로젝트 표준 해법.
+이벤트 짝 정합, Bootstrap 등록(:156), 싱글턴 8건 전부 가드 존재. 연동은 uid를 보존하므로
+`CloudSaveManager`의 `LocalOwnerKey`/`targetUid` 캡처와 충돌 없고, `LinkGuestWithEmail`의 실패
+경로 3개 전부 `LinkCompleted`를 발화해 데이터 유실 벡터 없음.
+
+### UIHelper 텍스처 캐시 오버플로 (P1:1, 2026-07-17)
+
+`AccountLinkUI` 라운드 중 횡단 이슈로 발견. `DrawRarityBorder`는 `pulse`로 RGB를,
+`DrawRarityGlow`는 `breathe`로 alpha를 **연속 변조**한 뒤 그 색을 `GetCachedTex`에 넣었다.
+프레임마다 새 `Color32` 키가 생겨 `MaxCacheSize`(256)를 실제로 넘긴다. 넘치면 캐시된 텍스처를
+전부 `Destroy`하는데, UIHelper가 무효화할 수 있는 건 자기 `styleCache`뿐이다 — 각 UI가 자기
+필드로 들고 있는 `GUIStyle.normal.background`는 그대로 파괴된 텍스처를 가리키고, 그 UI들은
+`stylesReady` 가드 때문에 재생성되지 않아 **영구히 배경이 깨진다**.
+
+수정: 동적 색은 텍스처를 만들지 않고 빌트인 `Texture2D.whiteTexture`에 `GUI.color`로 입히는
+`DrawTinted`로 전환(`DrawBorder`/`DrawProgressBar`/`DrawDimOverlay`/`DrawRarityGlow`).
+`GetCachedTex`는 `GUIStyle.normal.background`용 정적 색 전용으로 한정하고, 오버플로 시
+`Destroy`를 제거해 stale 참조 가능성 자체를 없앴다(1x1 RGBA32는 개당 4바이트라 정적 색만
+담기는 구조에서 누적량은 무시할 수준).
+
+**중요**: `GUI.color`는 대입이 아니라 **곱셈**이어야 한다. `AccountLinkUI:124`,
+`AccountSettingsUI:105` 등이 딤 오버레이로 `GUI.color`를 미리 설정하고, 색 텍스처를 그리던
+옛 동작도 그 값과 곱해졌다. 대입했다면 그 페이드가 전부 사라지는 회귀였다.
+
 ### WorldFieldMultiplayerUI (P0:1, P1:1, 2026-07-17)
 
 **P0 — 채팅 대상이 uid로 고정되지 않아 입력 소프트락 + 사설 메시지 오배송.**

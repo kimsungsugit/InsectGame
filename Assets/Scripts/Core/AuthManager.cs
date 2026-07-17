@@ -41,6 +41,39 @@ namespace InsectGame.Core
         private const string EmailKey = "InsectGame.Auth.Email";
         private const string NameKey = "InsectGame.Auth.DisplayName";
 
+#if UNITY_ANDROID && !UNITY_EDITOR
+        private readonly object googleSignInLock = new object();
+        private GoogleSignInCallback googleSignInCallback;
+        private bool googleSignInInProgress;
+        private bool googleSignInResultReady;
+        private string pendingGoogleIdToken;
+        private string pendingGoogleError;
+
+        [UnityEngine.Scripting.Preserve]
+        private sealed class GoogleSignInCallback : AndroidJavaProxy
+        {
+            private readonly AuthManager owner;
+
+            public GoogleSignInCallback(AuthManager owner)
+                : base("com.insectexploration.auth.GoogleSignInBridge$Callback")
+            {
+                this.owner = owner;
+            }
+
+            [UnityEngine.Scripting.Preserve]
+            public void onSuccess(string idToken)
+            {
+                owner.SetPendingGoogleSignInResult(idToken, null);
+            }
+
+            [UnityEngine.Scripting.Preserve]
+            public void onError(string error)
+            {
+                owner.SetPendingGoogleSignInResult(null, error);
+            }
+        }
+#endif
+
         // ── Lifecycle ──
 
         private void Awake()
@@ -139,6 +172,10 @@ namespace InsectGame.Core
                 req.uploadHandler = new UploadHandlerRaw(bodyRaw);
                 req.downloadHandler = new DownloadHandlerBuffer();
                 req.SetRequestHeader("Content-Type", "application/json");
+                // 타임아웃 미설정 시 Unity 기본값은 0(무제한)이라 모바일 네트워크가 물리면
+                // OS TCP 타임아웃까지 수 분간 매달린다. 그동안 호출 UI는 "처리 중..."에
+                // 갇힌다. WorldChannelManager(12초)와 같은 계열로 맞춘다.
+                req.timeout = 15;
 
                 yield return req.SendWebRequest();
 
@@ -191,28 +228,43 @@ namespace InsectGame.Core
             StartCoroutine(LoginCoroutine(email, password));
         }
 
+        /// <summary>
+        /// PlayerPrefs 키를 현재 로그인 계정(UserId)별로 스코핑한다. 같은 기기에서 계정 간 데이터
+        /// 교차 오염을 막기 위함(예: 퀘스트 진행). 비로그인/Instance 없음이면 전역 키로 폴백.
+        /// </summary>
+        public static string ScopedKey(string baseKey)
+        {
+            AuthManager inst = Instance;
+            string uid = inst != null ? inst.UserId : null;
+            return string.IsNullOrEmpty(uid) ? baseKey : baseKey + "." + uid;
+        }
+
         private void ApplyMasterPrivileges()
         {
             if (!IsMasterAccount) return;
 
             // 모든 지역 해금 + 수문장 격파
-            PlayerPrefs.SetString("InsectGame.UnlockedRegions", "meadow,pond,forest,swamp,mountain,garden,ruins");
-            PlayerPrefs.SetString("InsectGame.DefeatedGuardians", "meadow,pond,forest,swamp,mountain,garden");
+            PlayerPrefs.SetString(SaveScope.PrefsKey("InsectGame.UnlockedRegions"), "meadow,pond,forest,swamp,mountain,garden,ruins");
+            PlayerPrefs.SetString(SaveScope.PrefsKey("InsectGame.DefeatedGuardians"), "meadow,pond,forest,swamp,mountain,garden");
 
             // 무한 재화
             PlayerPrefs.SetInt("player_coins", 999999);
             PlayerPrefs.SetInt("player_candies", 999999);
             PlayerPrefs.SetInt("InsectGame.Gems", 999999);
 
-            // 캐릭터 생성 완료
-            PlayerPrefs.SetString("InsectGame.Character.Created", "1");
+            // 캐릭터 생성 완료 — Created는 GetInt로 판독되므로 SetInt로 기록(SetString이면 GetInt가 0 반환)
+            PlayerPrefs.SetInt(SaveScope.PrefsKey("InsectGame.Character.Created"), 1);
 
-            // 모든 퀘스트 완료
-            PlayerPrefs.SetString("InsectGame.QuestCompleted",
-                "q_move,q_approach,q_collection,q_dex,q_capture3,q_levelup,q_equip,q_battle," +
-                "q_item,q_training,q_team,q_battle3,q_capture_rare,q_guardian1,q_visit_pond," +
-                "q_subarea,q_raid,q_capture10,q_battle10,q_complete");
-            PlayerPrefs.SetString("InsectGame.ActiveQuest", "");
+            // 퀘스트는 자동 완료하지 않고 초기화 상태로 둔다 — 마스터 계정으로 튜토리얼을 처음부터 테스트할 수 있게.
+            // (이전엔 20개 퀘스트를 전부 완료 처리해 마스터 로그인마다 튜토리얼 완료가 고정 → 재테스트/리셋 불가였음)
+            // 하드닝 후 퀘스트는 계정별 키에서 읽히므로 계정별 키를 비우고, 레거시 전역 키도 함께 정리한다.
+            PlayerPrefs.DeleteKey(ScopedKey(GameConstants.PrefsKeys.QuestCompleted));
+            PlayerPrefs.DeleteKey(ScopedKey(GameConstants.PrefsKeys.QuestProgress));
+            PlayerPrefs.SetString(ScopedKey(GameConstants.PrefsKeys.ActiveQuest), "");
+            PlayerPrefs.DeleteKey(ScopedKey(GameConstants.PrefsKeys.QuestUnseen));
+            PlayerPrefs.DeleteKey(GameConstants.PrefsKeys.QuestCompleted);
+            PlayerPrefs.DeleteKey(GameConstants.PrefsKeys.QuestProgress);
+            PlayerPrefs.DeleteKey(GameConstants.PrefsKeys.QuestUnseen);
 
             PlayerPrefs.Save();
         }
@@ -233,6 +285,10 @@ namespace InsectGame.Core
                 req.uploadHandler = new UploadHandlerRaw(bodyRaw);
                 req.downloadHandler = new DownloadHandlerBuffer();
                 req.SetRequestHeader("Content-Type", "application/json");
+                // 타임아웃 미설정 시 Unity 기본값은 0(무제한)이라 모바일 네트워크가 물리면
+                // OS TCP 타임아웃까지 수 분간 매달린다. 그동안 호출 UI는 "처리 중..."에
+                // 갇힌다. WorldChannelManager(12초)와 같은 계열로 맞춘다.
+                req.timeout = 15;
 
                 yield return req.SendWebRequest();
 
@@ -280,6 +336,10 @@ namespace InsectGame.Core
                 req.uploadHandler = new UploadHandlerRaw(bodyRaw);
                 req.downloadHandler = new DownloadHandlerBuffer();
                 req.SetRequestHeader("Content-Type", "application/json");
+                // 타임아웃 미설정 시 Unity 기본값은 0(무제한)이라 모바일 네트워크가 물리면
+                // OS TCP 타임아웃까지 수 분간 매달린다. 그동안 호출 UI는 "처리 중..."에
+                // 갇힌다. WorldChannelManager(12초)와 같은 계열로 맞춘다.
+                req.timeout = 15;
 
                 yield return req.SendWebRequest();
 
@@ -303,16 +363,88 @@ namespace InsectGame.Core
 
         public void LoginWithGoogle()
         {
-            // TODO: Google Sign-In SDK 통합 후 Google ID Token을 받아서 아래 호출
-            // LoginWithGoogleToken(googleIdToken);
+#if UNITY_ANDROID && !UNITY_EDITOR
+            if (!FirebaseConfig.IsGoogleConfigured)
+            {
+                LoginCompleted?.Invoke(false, "Google 로그인 설정이 없습니다.");
+                return;
+            }
+            if (googleSignInInProgress) return;
+
+            googleSignInInProgress = true;
+            googleSignInCallback = new GoogleSignInCallback(this);
+            try
+            {
+                using (AndroidJavaClass unityPlayer =
+                    new AndroidJavaClass("com.unity3d.player.UnityPlayer"))
+                using (AndroidJavaObject activity =
+                    unityPlayer.GetStatic<AndroidJavaObject>("currentActivity"))
+                using (AndroidJavaClass bridge =
+                    new AndroidJavaClass("com.insectexploration.auth.GoogleSignInBridge"))
+                {
+                    bridge.CallStatic("signIn", activity,
+                        FirebaseConfig.GoogleWebClientId, googleSignInCallback);
+                }
+            }
+            catch (Exception e)
+            {
+                googleSignInInProgress = false;
+                googleSignInCallback = null;
+                LoginCompleted?.Invoke(false, "Google 로그인 실행 실패: " + e.Message);
+            }
+#else
             LoginCompleted?.Invoke(false,
-                "Google 로그인은 Google Sign-In SDK 설정이 필요합니다.");
+                "Google 로그인은 Android 기기 빌드에서 사용할 수 있습니다.");
+#endif
         }
 
         public void LoginWithGoogleToken(string googleIdToken)
         {
+            if (string.IsNullOrWhiteSpace(googleIdToken))
+            {
+                LoginCompleted?.Invoke(false, "Google ID 토큰을 받지 못했습니다.");
+                return;
+            }
             StartCoroutine(LoginWithIdpCoroutine("google.com", googleIdToken));
         }
+
+#if UNITY_ANDROID && !UNITY_EDITOR
+        private void SetPendingGoogleSignInResult(string idToken, string error)
+        {
+            lock (googleSignInLock)
+            {
+                pendingGoogleIdToken = idToken;
+                pendingGoogleError = error;
+                googleSignInResultReady = true;
+            }
+        }
+
+        private void ProcessPendingGoogleSignInResult()
+        {
+            string idToken;
+            string error;
+            lock (googleSignInLock)
+            {
+                if (!googleSignInResultReady) return;
+                idToken = pendingGoogleIdToken;
+                error = pendingGoogleError;
+                pendingGoogleIdToken = null;
+                pendingGoogleError = null;
+                googleSignInResultReady = false;
+            }
+
+            googleSignInInProgress = false;
+            googleSignInCallback = null;
+            if (!string.IsNullOrEmpty(idToken))
+            {
+                LoginWithGoogleToken(idToken);
+                return;
+            }
+
+            LoginCompleted?.Invoke(false,
+                string.IsNullOrEmpty(error) ? "Google 로그인이 취소되었습니다." : error);
+        }
+#endif
 
         // ── Kakao 로그인 ──
 
@@ -365,6 +497,10 @@ namespace InsectGame.Core
                 req.uploadHandler = new UploadHandlerRaw(bodyRaw);
                 req.downloadHandler = new DownloadHandlerBuffer();
                 req.SetRequestHeader("Content-Type", "application/json");
+                // 타임아웃 미설정 시 Unity 기본값은 0(무제한)이라 모바일 네트워크가 물리면
+                // OS TCP 타임아웃까지 수 분간 매달린다. 그동안 호출 UI는 "처리 중..."에
+                // 갇힌다. WorldChannelManager(12초)와 같은 계열로 맞춘다.
+                req.timeout = 15;
 
                 yield return req.SendWebRequest();
 
@@ -417,6 +553,10 @@ namespace InsectGame.Core
                 req.uploadHandler = new UploadHandlerRaw(bodyRaw);
                 req.downloadHandler = new DownloadHandlerBuffer();
                 req.SetRequestHeader("Content-Type", "application/json");
+                // 타임아웃 미설정 시 Unity 기본값은 0(무제한)이라 모바일 네트워크가 물리면
+                // OS TCP 타임아웃까지 수 분간 매달린다. 그동안 호출 UI는 "처리 중..."에
+                // 갇힌다. WorldChannelManager(12초)와 같은 계열로 맞춘다.
+                req.timeout = 15;
 
                 yield return req.SendWebRequest();
 
@@ -454,6 +594,10 @@ namespace InsectGame.Core
                 req.uploadHandler = new UploadHandlerRaw(bodyRaw);
                 req.downloadHandler = new DownloadHandlerBuffer();
                 req.SetRequestHeader("Content-Type", "application/json");
+                // 타임아웃 미설정 시 Unity 기본값은 0(무제한)이라 모바일 네트워크가 물리면
+                // OS TCP 타임아웃까지 수 분간 매달린다. 그동안 호출 UI는 "처리 중..."에
+                // 갇힌다. WorldChannelManager(12초)와 같은 계열로 맞춘다.
+                req.timeout = 15;
 
                 yield return req.SendWebRequest();
 
@@ -515,6 +659,10 @@ namespace InsectGame.Core
                 req.uploadHandler = new UploadHandlerRaw(bodyRaw);
                 req.downloadHandler = new DownloadHandlerBuffer();
                 req.SetRequestHeader("Content-Type", "application/json");
+                // 타임아웃 미설정 시 Unity 기본값은 0(무제한)이라 모바일 네트워크가 물리면
+                // OS TCP 타임아웃까지 수 분간 매달린다. 그동안 호출 UI는 "처리 중..."에
+                // 갇힌다. WorldChannelManager(12초)와 같은 계열로 맞춘다.
+                req.timeout = 15;
 
                 yield return req.SendWebRequest();
 
@@ -525,6 +673,8 @@ namespace InsectGame.Core
                     IdToken = response.id_token;
                     RefreshToken = response.refresh_token;
                     UserId = response.user_id;
+                    // 자동 로그인은 SetLoggedIn을 거치지 않으므로 여기서도 레거시→계정별 이전 보장.
+                    SaveScope.MigrateLegacyIfOwned();
                     Email = PlayerPrefs.GetString(EmailKey, "");
                     DisplayName = PlayerPrefs.GetString(NameKey, "");
                     IsLoggedIn = true;
@@ -550,6 +700,11 @@ namespace InsectGame.Core
 
         public void Logout()
         {
+            // 로그아웃 전 마지막 클라우드 플러시 — ClearAuth가 토큰을 무효화하기 전에 시도해 마지막 진행 보존.
+            // SaveToCloud는 동기적으로 코루틴을 시작해 현재 토큰으로 요청을 발사하고(첫 yield 전에 헤더 설정),
+            // CloudSaveManager는 DontDestroyOnLoad라 씬 리로드 후에도 in-flight 요청이 완료된다.
+            // 마스터/오프라인은 클라우드가 없으므로 생략.
+            if (IsLoggedIn && !IsMasterAccount) CloudSaveManager.Instance?.SaveToCloud();
             ClearAuth();
             LoggedOut?.Invoke();
         }
@@ -565,6 +720,8 @@ namespace InsectGame.Core
                 AccountDeleted?.Invoke(false, "로그인 상태가 아닙니다");
                 return;
             }
+            // 삭제 진행 동안 자동/백그라운드 저장이 삭제된 Firestore 문서를 재생성(PII 부활)하지 않게 차단.
+            CloudSaveManager.Instance?.SetDeletionInProgress(true);
             if (IsMasterAccount || !FirebaseConfig.IsConfigured)
             {
                 // 마스터/오프라인(Firebase 미설정)은 서버 계정이 없음 → 로컬만 정리.
@@ -615,6 +772,8 @@ namespace InsectGame.Core
             }
             else
             {
+                // 삭제 실패 → 세션 유지하므로 자동저장 재개(삭제 차단 해제).
+                CloudSaveManager.Instance?.SetDeletionInProgress(false);
                 AccountDeleted?.Invoke(false, err ?? "계정 삭제 실패 — 다시 시도해주세요");
             }
         }
@@ -641,7 +800,26 @@ namespace InsectGame.Core
                     Debug.LogWarning("[Auth] 세이브 파일 삭제 실패: " + f + " — " + e.Message);
                 }
             }
-            PlayerPrefs.DeleteAll();
+            // 계정별(users/<uid>) 저장 파일 + 계정별 PlayerPrefs 키 삭제 — 위 루프는 레거시 전역 파일만 처리.
+            SaveScope.ClearCurrentAccountLocal();
+
+            // 전역(비계정) 미러/세션 키만 개별 삭제. PlayerPrefs.DeleteAll()은 같은 기기의 다른
+            // 계정 스코프 키(.<otherUid>)와 기기 설정(볼륨 등)까지 파괴하므로 금지 — 공유 기기 격리 무력화.
+            PlayerPrefs.DeleteKey("player_level");
+            PlayerPrefs.DeleteKey("player_xp");
+            PlayerPrefs.DeleteKey("player_candies");
+            PlayerPrefs.DeleteKey("player_coins");
+            PlayerPrefs.DeleteKey("InsectGame.Gems");
+            PlayerPrefs.DeleteKey("InsectGame.CurrentWorldId");
+            PlayerPrefs.DeleteKey("InsectGame.LastSaveTs");
+            string deletedUid = UserId;
+            if (!string.IsNullOrEmpty(deletedUid))
+            {
+                PlayerPrefs.DeleteKey("InsectGame.MigratedVer." + deletedUid);
+                // 이 계정이 로컬 데이터 소유자였다면 소유권만 해제(다른 계정 스코프 데이터는 보존).
+                if (PlayerPrefs.GetString("InsectGame.LocalOwnerUid", "") == deletedUid)
+                    PlayerPrefs.DeleteKey("InsectGame.LocalOwnerUid");
+            }
             PlayerPrefs.Save();
         }
 
@@ -673,6 +851,8 @@ namespace InsectGame.Core
         {
             ClearMasterDataIfNeeded(uid);
             UserId = uid;
+            // 레거시 전역 로컬 데이터를 계정별 위치로 1회 이전(이 계정이 소유자일 때만 — 데이터 보존).
+            SaveScope.MigrateLegacyIfOwned();
             Email = email;
             DisplayName = string.IsNullOrEmpty(name) ? email : name;
             IdToken = idToken;
@@ -684,6 +864,11 @@ namespace InsectGame.Core
 
         private void Update()
         {
+#if UNITY_ANDROID && !UNITY_EDITOR
+            // AndroidJavaProxy 콜백은 백그라운드 스레드에서 올 수 있으므로
+            // Unity 메인 스레드인 Update에서 REST 로그인 코루틴을 시작합니다.
+            ProcessPendingGoogleSignInResult();
+#endif
             // 토큰 자동 갱신: 만료 임박 시 1회 RefreshIdTokenCoroutine 호출
             if (!IsLoggedIn || refreshInProgress || string.IsNullOrEmpty(RefreshToken)) return;
             float elapsed = Time.realtimeSinceStartup - idTokenAcquiredAt;
@@ -708,12 +893,12 @@ namespace InsectGame.Core
             string savedUid = PlayerPrefs.GetString(UidKey, "");
             if (savedUid == MasterAccount.Uid && newUid != MasterAccount.Uid)
             {
-                PlayerPrefs.SetString("InsectGame.UnlockedRegions", "meadow");
-                PlayerPrefs.SetString("InsectGame.DefeatedGuardians", "");
+                PlayerPrefs.SetString(SaveScope.PrefsKey("InsectGame.UnlockedRegions"), "meadow");
+                PlayerPrefs.SetString(SaveScope.PrefsKey("InsectGame.DefeatedGuardians"), "");
                 PlayerPrefs.SetInt("player_coins", 0);
                 PlayerPrefs.SetInt("player_candies", 0);
                 PlayerPrefs.SetInt("InsectGame.Gems", 0);
-                PlayerPrefs.DeleteKey("InsectGame.Character.Created");
+                PlayerPrefs.DeleteKey(SaveScope.PrefsKey("InsectGame.Character.Created"));
                 PlayerPrefs.DeleteKey("InsectGame.QuestCompleted");
                 PlayerPrefs.DeleteKey("InsectGame.QuestProgress");
                 PlayerPrefs.DeleteKey("InsectGame.ActiveQuest");
