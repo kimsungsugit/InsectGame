@@ -335,6 +335,37 @@ GetWeightedRandom/GetWeightedRandomWithRareBoost 4곳 foreach에 `if (data == nu
 
 진짜 P0/P1 회귀 없음. GetAllSets()는 OutfitBonusProvider.AutoWire에서 1회만 호출되어 allSets 필드에 캐시(매 프레임 호출 거짓양성). 12개 세트 정적 데이터 정합성 시각 review 결과 정상: requiredItemIds 중복/null 없음, partialThreshold ≤ requiredItemIds.Length 모두 만족(set_wizard threshold=2 items=4), partial/full Bonus 모두 정의, setColor 시각용 OK. GetAllSets static readonly 필드화는 변경 risky(P2 보류). Editor 시점 검증 도구는 별도 디자인 작업. Covered 이동만.
 
+### WorldFieldMultiplayerUI (P0:1, P1:1, 2026-07-17)
+
+**P0 — 채팅 대상이 uid로 고정되지 않아 입력 소프트락 + 사설 메시지 오배송.**
+`chatOpen`은 bool인데 대상은 매 Update 재계산되는 `nearestPlayer`였다(Update 첫 줄이
+무조건 `nearestPlayer = null`). 결과 두 가지: (a) 상대가 대화 범위를 벗어나거나 접속을
+끊으면 composer는 사라지는데 `chatOpen`이 true로 남아 `IsOpen`→`ModalUIRegistry` 등록이
+유지되고, `IsAnyOpen()`이 PlayerMovement/VirtualJoystickUI/WorldInteractionController/
+CaptureInputController의 입력을 전부 차단 — **화면에 아무것도 없는데 입력만 잠긴다**
+(모바일은 조이스틱까지 죽어 ESC/백버튼 외 복구 불가). (b) 작성 중 다른 탐험가가 더
+가까워지면 `SendPrivateChat(nearestPlayer.uid, ...)`가 **엉뚱한 상대에게 전송**.
+수정: `chatTargetUid` 필드로 "대화" 클릭 시점의 상대를 고정하고, 신설 `ResolveChatTarget()`이
+매 프레임 `remoteAvatars[chatTargetUid]`로 해석(없음/범위밖/차단이면 null) → null이면
+`CloseModal()`로 모달 잠금 해제. 모달 전환 지점(친구 패널 토글, 차단 확정, 전송 완료)을
+전부 `CloseModal()` 경유로 통일해 `chatTargetUid`/`chatInput` 초기화 누락을 구조적으로 차단.
+
+**P1 — OnGUI 매 프레임 문자열 보간.** OnGUI는 프레임당 Layout/Repaint/입력 이벤트로 여러 번
+호출되는데 `DrawFieldStatus`(월드 타이틀), `DrawNearbyInteraction`(근처 탐험가 라벨),
+`DrawMessages`(최대 5줄)가 매번 `$"..."`로 string을 힙 할당했다(struct인 Rect/Color와 달리
+진짜 GC 압박). 내용은 서버 이벤트 시점에만 바뀌므로 `cachedWorldTitle`(HandleWorldState),
+`messageLines`(HandleMessages), `cachedNearbyLabel`(Update에서 대상 uid 변경 시에만) 캐싱으로
+전환. Draw 경로의 문자열 보간 0건.
+
+**자체 발견 회귀 1건**: `messageLines` 도입 후 `HandleWorldLeft`가 `messages.Clear()`만 하고
+`messageLines.Clear()`를 빠뜨려 두 리스트의 인덱스가 어긋날 수 있었다. 같은 커밋에서 수정하고
+`cachedWorldTitle`/`cachedNearbyLabel`/`nearbyLabelUid` 초기화도 함께 추가.
+
+**Explore 거짓양성(검증 후 제외)**: `InitStyles()`는 이미 `stylesReady` 가드 + 캐시 필드 +
+`UIHelper.GetCachedTex` 표준 패턴이라 정상(자동 채점의 "프레임 할당 51"은 대부분 struct인
+`new Rect`/`new Color`). 싱글턴 5곳 전부 null 가드 있음. 이벤트 `+=`/`-=` 짝 정상(Subscribe가
+idempotent). AutoWire는 PlaySceneBootstrap:398에 존재. 200줄+ 메서드 없음. 세이브 표면 없음.
+
 ### PlayerItemInventoryGridUIController (P1:1, 2026-05-21)
 
 HandleActiveChanged에서 UpdateRemainingTime() 즉시 호출 + remainingTextTimer=0 리셋 추가. 옛은 activeItemText만 갱신하고 남은 시간 표시는 Update의 1초 디바운스 대기 → 만료 시 "남은 시간: 00:00" 표시 최대 1초 지연. 주석(line 56)이 "만료 시점은 ActiveItemChanged 즉시 처리" 명시했으나 실제 호출 누락 회귀. OnEnable/AutoWire 이중 구독은 -=/+= 패턴으로 안전(거짓양성), BuildGrid Destroy+Instantiate 1프레임 중복은 정상 Unity 동작, EnsureDatabase 매 진입은 null 가드로 1회만 Load.
