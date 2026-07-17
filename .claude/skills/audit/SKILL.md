@@ -15,10 +15,25 @@ description: 미검토 영역 1개 자동 탐색·개선. "문제점 분석 및 
 Read .claude/audit-progress.md
 ```
 
-- `## Covered` 섹션 → 누적 처리 영역 목록 추출 (Explore 프롬프트 거짓양성 가드용)
-- `## Uncovered` 섹션 → **첫 번째 항목**을 대상으로 선택 (우선순위 정렬은 파일 작성 시점에 이미 적용됨)
+- `## Covered` 섹션 → 누적 처리 영역 목록 추출 (Explore 프롬프트 거짓양성 가드용).
+  이름만 있는 인덱스이며, 각 라운드의 서술 원문은 `.claude/audit-archive/covered-detail.md`에 있다.
+  **Explore에는 이름만 주입한다** — 서술까지 넣으면 매 라운드 40KB+가 딸려간다.
+- `## Uncovered` 섹션 → **첫 번째 `- [ ]` 항목**을 대상으로 선택 (우선순위 정렬은 파일 작성 시점에 이미 적용됨)
 
-대상이 비어있으면 사용자에게 "Uncovered 0개 — audit 완료" 알림 후 종료.
+**`- [ ]`가 0건이면 종료하지 말고 큐를 재생성한다:**
+
+```
+python -X utf8 .claude/scripts/audit_candidates.py --emit-md
+```
+
+출력 상위 15건을 `## Uncovered`에 Edit으로 기록한 뒤 1순위로 진행한다.
+이 스크립트는 Covered/아카이브에 이름이 없는 `.cs`를 프레임 할당·미캐싱 조회·
+구독 해제 누락·싱글턴 참조로 채점해 후보를 낸다(하드코딩 목록이 없어 stale해지지 않음).
+
+스크립트가 후보 0건을 반환할 때만 "미검토 영역 없음 — audit 완료"를 보고하고 종료한다.
+
+> 큐를 비운 채 두면 `audit_flow_inject`와 `audit_reminder` 훅이 함께 침묵해
+> 자동 플로우 전체가 멈춘다. 2026-05-27 ~ 2026-07-17 사이에 실제로 그렇게 멈춰 있었다.
 
 ### Step 2. Explore 위임
 
