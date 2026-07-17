@@ -67,8 +67,17 @@ namespace InsectGame.UI
 
         private void OnDisable()
         {
-            // 안전 해제 (CaptureChoiceUI 관례) — 파괴/비활성 시 스택 잔존 방지
-            ModalUIRegistry.Unregister(this);
+            // Unregister만 하면 isOpen이 true로 남아 다시 켰을 때 "열린 것으로 아는데
+            // 레지스트리엔 없는" 상태가 된다. 그러면 (a) HandleEscape가 이 모달을 무시해
+            // ESC가 frozen만 풀고 Update가 즉시 재프리즈 → ESC 영구 무력화, (b)
+            // IsAnyOpen()이 false라 WorldInteractionController의 재진입 가드가 뚫려
+            // 이전 currentNpc를 EndTalk 없이 덮어써 그 주민이 Talking에 갇힌다
+            // (VillagerNpc.CanTalk가 영구 false → 다시는 대화 불가).
+            //
+            // 옛 주석은 CaptureChoiceUI 관례를 인용했으나 그건 이 프로젝트가 이미 P1으로
+            // 두 번 폐기한 방식이다(CharacterOutfitUI/RegionMapUI 라운드). 현재 표준은
+            // 상태까지 되돌리는 것 — CloseModal이 그 일을 전부 한다.
+            CloseModal();
         }
 
         private void Update()

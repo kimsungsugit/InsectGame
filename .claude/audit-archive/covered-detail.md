@@ -335,6 +335,95 @@ GetWeightedRandom/GetWeightedRandomWithRareBoost 4곳 foreach에 `if (data == nu
 
 진짜 P0/P1 회귀 없음. GetAllSets()는 OutfitBonusProvider.AutoWire에서 1회만 호출되어 allSets 필드에 캐시(매 프레임 호출 거짓양성). 12개 세트 정적 데이터 정합성 시각 review 결과 정상: requiredItemIds 중복/null 없음, partialThreshold ≤ requiredItemIds.Length 모두 만족(set_wizard threshold=2 items=4), partial/full Bonus 모두 정의, setColor 시각용 OK. GetAllSets static readonly 필드화는 변경 risky(P2 보류). Editor 시점 검증 도구는 별도 디자인 작업. Covered 이동만.
 
+### NpcManager (P1:1 + 튜닝 프로필 동반 수정, 2026-07-17)
+
+**P1 — 스폰 캡이 앵커 수보다 작아 뒤쪽 리전 NPC가 통째로 누락.** `SyncSpawns`는 앵커를
+앞에서부터 잘라 쓰는데, `VillageBuilder`는 본마을(주민 8)을 먼저 넣고 전초기지를 리전
+순서(meadow/pond/forest/swamp/mountain/garden/ruins)로 뒤에 붙인다. 캡이 10이면 인덱스
+10~13이 버려져 **swamp·mountain·garden·ruins 전초기지 4곳에 오두막·모닥불·통나무 의자는
+지어지는데 주민이 영구히 0명**이 된다. 잡기 아이도 캡 6 대비 앵커 7이라 mountain 몫이 누락.
+실측: 주민 앵커 14(본마을 8 + 전초기지 6), 아이 앵커 7(meadow 2 + KidSpots 5).
+도달 경로는 `PlaySceneBootstrap:518` → `SpawnFromAnchors`로 **매 세션 1회 예외 없이** 실행.
+수정: `villagerCount` 10 → 14, `catcherKidCount` 6 → 7.
+
+**동반 수정 — `GameplayTuningProfile`의 기본값도 10/6이었다.** 지금은 `Resources`에 프로필
+에셋이 없어 `GameplayTuningApplier`의 `Resources.Load`가 null → `Apply()`가 조기 return하므로
+`ApplyTuning`이 죽은 경로다(그래서 SerializeField 기본값이 그대로 살아 있었다). 하지만
+`NpcManager:131-132`가 프로필 값으로 덮어쓰는 구조라, **누군가 프로필 에셋을 만드는 순간
+같은 버그가 재발**한다. 프로필 기본값도 14/7로 올려 근원을 막았다.
+
+**검증 후 clean**: 좌표 이중 합산 없음(`CreateNpcObject`가 `SetParent(transform, false)` 후
+월드 position 대입, `WorldTerrainBuilder`가 전 리전 평탄화라 c.y=0), 예약 누수 없음
+(`TryReserveInsect` 진입점 1개에 대해 `EnterGiveUp`/`ResolveCatch`/`OnDisable`이 전 이탈
+경로를 덮고 5초 sweep이 백스톱, 풀 재사용 ABA도 거리·레어도 재검증으로 차단), 중복 스폰
+없음(호출부 1곳, RegionChanged 구독 자체가 없음 — NPC는 부팅 시 전 리전분을 한 번에 만들고
+영구 유지하는 설계), Update 힙 할당 없음(`DeadReservation`은 캡처 없는 static 델리게이트).
+
+**미처리 P2**: `ApplyTuning` 자체가 죽은 경로(프로필 에셋 부재 — spawner/captureController도
+동일 영향), `TickAI`는 거리 무관인데 `TickMovement`가 40m 컷이라 40~60m 대역의 아이가
+예약만 점유하다 5초 타임아웃 반복, `total == 0` 조기 return이 예약 sweep을 건너뜀,
+`hasPlayer &&` 단축평가로 playerTransform이 null이면 40m 컬링이 통째로 무효화,
+라운드로빈이 비활성 슬롯에 틱 예산 낭비.
+
+### VillageBuilder (P1:2, P2:1, 2026-07-17)
+
+**가설 반증 먼저** — `RegionTerrainBuilder`에서 21곳을 고쳤던 **c.y 이중 합산은 이 파일에
+없다**. `Polar()`가 `center + new Vector3(cos*d, 0f, sin*d)`로 Y를 0만 더하고, `FacingRoot`는
+`SetParent(parent, true)` 후 월드 position을 대입해 부모 재합산이 없다. 게다가
+`WorldTerrainBuilder.GetRegionElevation`이 이제 전 리전을 0으로 평탄화해 c.y=0이다.
+
+대신 **"지면을 Y=0으로 가정한" 다른 계열**이 나왔다.
+
+**P1 — 광장이 리전 평면과 같은 평면이라 사라짐.** Plaza는 Cylinder(메시 높이 2)라
+`scale.y=0.05` → 반높이 0.05, `localPos.y=0.03` ⇒ 상면 **0.08**. 그런데
+`PlaySceneBootstrap:1265`가 `Region_{id}` Plane을 **정확히 Y=0.08**에 둔다. 둘 다 Standard
+불투명이라 지름 16m 원반 전체가 z-fighting하거나 뒤에 그려져 통째로 소실된다. 랜덤 없이
+상수 산술로 두 값이 일치하고, 광장은 상점·훈련소·가챠 상호작용이 모인 허브라 마을 체류
+내내 100% 가시. 수정: `y` 0.03 → 0.10(상면 0.15 — `RegionTerrainBuilder`의 SteppingStone과
+동일한 여유).
+
+**P1 — 상점만 지붕이 없어 간판이 허공에 뜸.** Shop Wall은 `y=1.9, scale.y=3.8` ⇒ 상단 3.80,
+간판 plate 하단은 4.10 → **0.30m 공백**. 9개 건물 중 상점만 `Roof` 프리미티브가 없어 벽 큐브
+윗면이 그대로 노출돼 있었다(House는 RoofR/L/Ridge, 훈련소는 Roof, 오두막은 Roof1~3).
+훈련소는 Roof 상단 3.50 = 간판 하단 3.50으로 **정확히 밀착**하는 게 작성자 관례다.
+수정: `Roof`(y=3.95, height 0.3) 추가 → 하단 3.80 = 벽 상단, 상단 4.10 = 간판 하단으로 양쪽 밀착.
+
+**P2 동반 수정** — TentCamp `GroundMat`도 같은 원인(상면 0.055 < 0.08)으로 리전 평면에
+매몰돼 있었다. `y` 0.03 → 0.12.
+
+**검증 후 clean**: 콜라이더(`keepCollider:true` 8곳 전부 Cube→BoxCollider라 MeshCollider 잔존
+0, 가챠 육각벽은 광장 방향 1면을 생략해 입구 개방, 상호작용 3곳 모두 벽 바깥이라 도달 가능),
+중복 생성 없음(`Build()`는 Bootstrap `Awake` 1회 경로), Update/OnGUI 자체가 없음,
+이벤트/싱글턴 없음, NPC 앵커 순서가 `NpcManager` 계약과 일치.
+
+**미처리 P2**: 가챠 간판이 Roof1을 0.2m 관통, `ChooseOutpostPosition`의 회피 탐색이 주석과
+달리 리전 게이트웨이 각도를 재검사하지 않음, `Build()` 멱등 가드 없음(현재 도달 불가),
+`TargetDummy` 2개가 동일 부모에 같은 이름.
+
+### NpcDialogueUI (P1:1, 2026-07-17)
+
+**7연속으로 나온 모달 소프트락 패턴이 여기엔 없다.** 각 가설을 반증했다: `GetLines`가 항상
+정확히 3개를 반환해(폴백 배열이 전부 non-empty + `Mod` 가드) `OnGUI`의 빈 배열 분기가 도달
+불가이고, `Show()`가 null npc를 isOpen 설정 **전에** early-return하므로 `IsOpen ⟺ 그릴 조건`이
+성립한다. 대화 상대 소멸도 처리돼 있다 — `NpcManager`가 실제로 `SetActive(false)`로 주민을
+끄지만 `Update:78`이 `activeInHierarchy`를 잡아 `CloseModal`로 정리한다. 대상은 인덱스가 아닌
+**직접 참조**라 오배송 계열도 해당 없음. `GUI.enabled`는 이 파일에서 단 한 번도 쓰지 않아
+"닫기가 죽는" 패턴도 없다. `IsAnyOpen()` 가드 부재는 자신이 모달이므로 **정상**이다.
+
+**P1 — `OnDisable`이 `Unregister`만 하고 `isOpen`을 되돌리지 않음(latent).** 다시 켜면
+"열린 것으로 아는데 레지스트리엔 없는" 상태가 되어 (a) `HandleEscape`가 이 모달을 무시 →
+ESC가 frozen만 풀고 `Update:86-87`이 즉시 재프리즈 → **ESC 영구 무력화**, (b) `IsAnyOpen()`이
+false라 `WorldInteractionController`의 재진입 가드가 뚫려 이전 `currentNpc`를 `EndTalk` 없이
+덮어씀 → `VillagerNpc.CanTalk`가 영구 false → **그 주민과 다시는 대화 불가**.
+현재 이 GO를 끄는 코드가 없어 latent이지만, 수정 비용이 1줄이고 `CloseModal`이 이미 완전한
+정리를 한다. 옛 주석이 인용하던 `CaptureChoiceUI` 관례는 이 프로젝트가 **이미 P1으로 두 번
+폐기한 방식**이다(CharacterOutfitUI/RegionMapUI 라운드).
+
+**미처리 P2**: `$"{lineIndex + 1}/{lines.Length}"`가 OnGUI 매 패스 힙 할당(대화 중에만),
+`GUI.depth` 미설정(최하위 모달이라 의도대로지만 관례상 명시 권장), 이름 라벨 폭이 진행표시
+영역 침범, 재프리즈 루프가 `AutoUnfreeze(20s)` 최후 안전망을 무력화(향후 isOpen-stale 버그를
+"20초 후 회복"에서 "영구"로 승격시키는 구조적 취약점).
+
 ### QuickAccessBarUI (P0:1, 2026-07-17)
 
 **P0 — 핫키 경로에 모달 가드가 없어 채팅·친구코드 입력이 망가짐.** 이 파일은 그동안

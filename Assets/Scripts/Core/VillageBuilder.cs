@@ -143,9 +143,13 @@ namespace InsectGame.Core
             Color wood = new Color(0.45f, 0.3f, 0.16f);
             Color roofRed = new Color(0.62f, 0.24f, 0.18f);
 
-            // 광장 플레인 — 걸어다니는 바닥 장식이므로 콜라이더 제거
+            // 광장 플레인 — 걸어다니는 바닥 장식이므로 콜라이더 제거.
+            // y는 리전 평면(Region_{id}, PlaySceneBootstrap이 Y=0.08에 배치)보다 확실히 위여야 한다.
+            // 옛 0.03은 실린더 반높이 0.05를 더해 상면이 정확히 0.08 — 리전 평면과 같은 평면이라
+            // 지름 16m 원반 전체가 z-fighting하거나 뒤에 그려져 통째로 사라졌다.
+            // RegionTerrainBuilder의 SteppingStone(상면 0.15)과 같은 여유를 준다.
             Prim(PrimitiveType.Cylinder, "Plaza", root,
-                new Vector3(0f, 0.03f, 0f), Vector3.zero, new Vector3(16f, 0.05f, 16f), dirt);
+                new Vector3(0f, 0.10f, 0f), Vector3.zero, new Vector3(16f, 0.05f, 16f), dirt);
 
             Transform well = Child(root, "Well", Vector3.zero);
             // 우물 벽 — 건물 벽이 아니므로 규칙에 따라 콜라이더 제거
@@ -218,11 +222,17 @@ namespace InsectGame.Core
             Transform shop = FacingRoot("Shop", root, pos, villageCenter);
 
             Color wall = new Color(0.82f, 0.70f, 0.50f);
+            Color roof = new Color(0.62f, 0.24f, 0.18f);
             Color awningRed = new Color(0.85f, 0.20f, 0.20f);
             Color awningWhite = new Color(0.95f, 0.93f, 0.88f);
 
             Prim(PrimitiveType.Cube, "Wall", shop,
                 new Vector3(0f, 1.9f, 0f), Vector3.zero, new Vector3(6f, 3.8f, 5f), wall, keepCollider: true);
+            // 지붕 — 9개 건물 중 상점만 빠져 있었다. 벽 큐브 윗면이 그대로 노출되고,
+            // 아래 간판(하단 4.10)이 벽 상단(3.80) 위 0.3m 허공에 떠 보였다.
+            // 상단을 4.10으로 맞춰 간판과 밀착시킨다(훈련소의 Roof 상단 = 간판 하단 관례와 동일).
+            Prim(PrimitiveType.Cube, "Roof", shop,
+                new Vector3(0f, 3.95f, 0f), Vector3.zero, new Vector3(6.6f, 0.3f, 5.6f), roof);
             Prim(PrimitiveType.Cube, "Door", shop,
                 new Vector3(0f, 1.1f, 2.56f), Vector3.zero, new Vector3(1.3f, 2.2f, 0.12f), new Color(0.25f, 0.16f, 0.10f));
             Prim(PrimitiveType.Cube, "WindowL", shop,
@@ -696,8 +706,10 @@ namespace InsectGame.Core
                 Prim(PrimitiveType.Cube, $"Stake_{i}", hut,
                     new Vector3(x, 0.2f, z), new Vector3(0f, 0f, (i % 2 == 0) ? 15f : -15f), new Vector3(0.12f, 0.45f, 0.12f), pole);
             }
+            // Plaza와 같은 이유로 y를 올린다 — 옛 0.03은 상면이 0.055라 리전 평면(Y=0.08)에
+            // 완전히 묻혀 보이지 않았다.
             Prim(PrimitiveType.Cube, "GroundMat", hut,
-                new Vector3(0f, 0.03f, 0f), Vector3.zero, new Vector3(2.8f, 0.05f, 2.2f), new Color(0.50f, 0.40f, 0.30f));
+                new Vector3(0f, 0.12f, 0f), Vector3.zero, new Vector3(2.8f, 0.05f, 2.2f), new Color(0.50f, 0.40f, 0.30f));
             Prim(PrimitiveType.Cube, "Crate", hut,
                 new Vector3(2.4f, 0.35f, -0.6f), new Vector3(0f, 20f, 0f), new Vector3(0.7f, 0.7f, 0.7f), new Color(0.48f, 0.36f, 0.22f));
         }
