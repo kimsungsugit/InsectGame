@@ -62,7 +62,8 @@ if not trigger:
 # 변경 파일 경로 short (가독성)
 short = file_path
 try:
-    short = os.path.relpath(file_path, "C:/Project/곤충게임").replace("\\", "/")
+    root = os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
+    short = os.path.relpath(file_path, root).replace("\\", "/")
 except Exception:
     pass
 

@@ -18,10 +18,12 @@ tool_name = d.get("tool_name", "")
 tool_input = d.get("tool_input", {})
 f = tool_input.get("file_path", "")
 
+# 줄 수는 하드코딩하지 않는다 — 파일이 자라면 반드시 stale해지고, 그 숫자가
+# 다시 문서로 복사돼 퍼진다. 실제 값은 아래에서 런타임에 센다.
 MONOLITHS = {
-    "PlaySceneBootstrap.cs": "4987줄 Bootstrap 모놀리스",
-    "BattleScreenUI.cs": "2950줄 배틀UI 모놀리스",
-    "RaidBattleUI.cs": "2875줄 레이드UI 모놀리스",
+    "PlaySceneBootstrap.cs": "Bootstrap 모놀리스",
+    "BattleScreenUI.cs": "배틀UI 모놀리스",
+    "RaidBattleUI.cs": "레이드UI 모놀리스",
 }
 
 target_name = None
@@ -54,6 +56,15 @@ if tool_name == "Edit":
 if not should_warn:
     print(json.dumps({"suppressOutput": True}))
     sys.exit(0)
+
+# 실제 줄 수를 여기서 센다. 이 훅이 모놀리스 줄 수의 단일 출처이며,
+# CLAUDE.md/rules는 숫자를 갖지 않고 이 경고를 참조한다.
+try:
+    with open(f, "r", encoding="utf-8", errors="replace") as fh:
+        loc = sum(1 for _ in fh)
+    target_desc = f"{loc}줄 {target_desc}"
+except Exception:
+    pass
 
 print(json.dumps({
     "hookSpecificOutput": {

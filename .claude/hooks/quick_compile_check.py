@@ -148,10 +148,18 @@ for name in used_assigns:
         continue
     if len(name) <= 1:
         continue
-    # 식별자가 파일 안에 2회 이상 등장하면 어딘가 선언되어 있을 가능성 매우 높음 — false positive 차단.
-    # (List<GameObject>, IEnumerator<T>, Dictionary<K,V> 등 declared 패턴이 못 잡는 케이스 보호.)
-    name_count = len(re.findall(r"\b" + re.escape(name) + r"\b", text))
-    if name_count >= 2:
+    # 선언 문맥(타입 토큰 뒤 식별자)이 파일 어디에도 없으면 진짜 미선언.
+    # 빈도 기반 가드(name_count >= 2)는 쓰지 않는다 — `timer += x`처럼 실제 미선언
+    # 변수도 초기화·증감으로 2회 이상 등장하는 게 보통이라 탐지력이 0이 됐었다.
+    # (declared 패턴이 못 잡는 List<GameObject>/Dictionary<K,V> 등은 아래 제네릭
+    #  분기가 커버한다.)
+    decl_hint = re.compile(
+        r"\b(?:var|int|uint|long|ulong|short|ushort|byte|sbyte|float|double|decimal|"
+        r"bool|string|char|object|"
+        r"[A-Z]\w*(?:<[^<>()]*>)?(?:\[\])?)\s+"
+        + re.escape(name) + r"\b\s*(?:=|;|,|\)|\bin\b)"
+    )
+    if decl_hint.search(cleaned):
         continue
     suspicious.append(name)
 
@@ -208,7 +216,8 @@ if not warnings:
 
 short = file_path
 try:
-    short = os.path.relpath(file_path, "C:/Project/곤충게임").replace("\\", "/")
+    root = os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
+    short = os.path.relpath(file_path, root).replace("\\", "/")
 except Exception:
     pass
 

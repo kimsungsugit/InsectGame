@@ -198,29 +198,36 @@ for m in lambda_subscribe_re.finditer(cleaned_changed):
     break
 
 # ── 4. 모놀리스 method 분해 제안 ──
-# 4000줄+ 파일에서 편집된 method 본문이 200줄+이면 분해 후보로 제안.
+# 2500줄+ 파일에서 편집된 method 본문이 200줄+이면 분해 후보로 제안.
+# 임계값 2500은 모놀리스 3종(RaidBattleUI/BattleScreenUI/PlaySceneBootstrap)을
+# 모두 포함하고 4위 파일(~2000줄)은 제외하는 경계다. 옛 4000은 Bootstrap
+# 하나만 걸러 warn_monolith가 규정한 3종과 어긋나 있었다.
 line_count = text.count("\n")
-if line_count > 4000:
-    # changed_text 안 method 시그니처 추출 후 본문 길이 확인
+if line_count > 2500:
+    # 시그니처 탐색과 중괄호 깊이 계산 모두 cleaned_full(주석·문자열 제거본)로 한다.
+    # raw text로 하면 주석이나 $"{value}" 보간 문자열 안의 { } 가 깊이를 깨뜨리고,
+    # 주석 속 유령 메서드 시그니처까지 매칭된다.
     method_sig_re = re.compile(
         r"(?:public|private|protected|internal|static|\s)+(?:void|IEnumerator|[\w<>]+)\s+"
         r"(\w+)\s*\([^)]*\)\s*\{"
     )
     long_methods = []
-    for m in method_sig_re.finditer(text):
+    for m in method_sig_re.finditer(cleaned_full):
         method_name = m.group(1)
+        if method_name not in changed_text:
+            continue  # 편집과 무관한 메서드는 비싼 중괄호 탐색 전에 거른다
         start = m.end()
         depth = 1
         i = start
-        while i < len(text) and depth > 0:
-            c = text[i]
+        while i < len(cleaned_full) and depth > 0:
+            c = cleaned_full[i]
             if c == "{":
                 depth += 1
             elif c == "}":
                 depth -= 1
             i += 1
-        body_lines = text[start:i].count("\n")
-        if body_lines > 200 and method_name in changed_text:
+        body_lines = cleaned_full[start:i].count("\n")
+        if body_lines > 200:
             long_methods.append((method_name, body_lines))
 
     if long_methods:
@@ -237,7 +244,8 @@ if not warnings:
 
 short = file_path
 try:
-    short = os.path.relpath(file_path, "C:/Project/곤충게임").replace("\\", "/")
+    root = os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
+    short = os.path.relpath(file_path, root).replace("\\", "/")
 except Exception:
     pass
 
