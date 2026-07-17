@@ -9,6 +9,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import game_facts  # noqa: E402
+from cs_strip import strip_cs  # noqa: E402  — 주석/문자열 제거 공용
 
 # Windows cp949 환경에서 유니코드 출력 보장
 if hasattr(sys.stdout, "reconfigure") and sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
@@ -36,14 +37,15 @@ THRESHOLD_P2W_GAP_RATIO_WARN = 5.0           # 프리미엄/베이직 가격 비
 def _load_facts():
     # import 시점에 돌아 main()의 예외 처리보다 이르므로 여기서 잡는다.
     try:
-        return game_facts.box_gem_prices(), game_facts.gem_packages()
+        return (game_facts.box_gem_prices(), game_facts.gem_packages(),
+                game_facts.team_max_slots())
     except game_facts.ExtractorBroken as e:
         print(f"추출기 고장: {e}\n가격을 코드에서 읽지 못했다 — 시뮬을 돌리지 않는다.",
               file=sys.stderr)
         sys.exit(2)
 
 
-GACHA_BOX_PRICES, CASH_GEM_PACKAGES = _load_facts()   # CASH_GEM_PACKAGES: [(KRW, gems), ...]
+GACHA_BOX_PRICES, CASH_GEM_PACKAGES, TEAM_MAX_SLOTS = _load_facts()   # CASH_GEM_PACKAGES: [(KRW, gems), ...]
 
 # Assets/Scripts/Data/InsectLevelCurve.cs (progression_sim과 동일)
 BASE_CANDY = 4
@@ -80,13 +82,8 @@ def candy_bottleneck_days(team_size: int, current_level: int,
     return total / daily_candy_income
 
 
-def gem_balance_after(days: int, gem_topup_per_week: float,
-                       gacha_per_week: int) -> int:
-    """N일 후 젬 잔고. 매주 충전 - 매주 가챠(silver 기준)."""
-    weeks = days / 7.0
-    income = gem_topup_per_week * weeks
-    spend = gacha_per_week * GACHA_BOX_PRICES["silver"] * weeks
-    return int(income - spend)
+# gem_balance_after는 삭제했다 — 동어반복(income − spend = topup×주 − gacha×silver×주)이라
+# FTP(topup=0)면 항상 음수를 "측정"했다. 젬 획득 경로 검사(gem_free_income_count)로 대체.
 
 
 def _scan_files(root: str = "Assets/Scripts", suffix: str = ".cs"):
@@ -124,6 +121,42 @@ def coin_income_count() -> int:
 
 def coin_spend_count() -> int:
     return _count_matches(r"\.SpendCoins\s*\(|\bwallet\.SpendCoins\s*\(")
+
+
+def gem_free_income_count() -> int:
+    """무료 젬 **양수 지급** 호출부. 유료 결제·차감·복원·치트는 제외.
+
+    예전엔 gem_balance_after가 `topup×주 − gacha×silver×주`로 잔고를 "계산"했다. 그건
+    동어반복이었다 — FTP(topup=0)면 무조건 음수가 나오고, 그 음수는 측정이 아니라 가정한
+    지출이 되돌아온 것이다. 젬은 음수가 될 수도 없다(SpendGems/PurchaseWithGems가 거절).
+    코인 데드 화폐를 faucet 유무로 잡았듯, 젬도 무료 수입원 유무로 본다.
+
+    단, `.AddGems(`를 그냥 세면 오탐이 쏟아진다(실측: 5건 전부 무료 수입 아님):
+      - `AddGems(-item.gemPrice)` / `AddGems(-price)` — 음수, 구매 차감
+      - `AddGems(diff)` — 클라우드 복원(동기화)
+      - `AddGems(99999 - Gems)` — 디버그 치트
+      - `// ...AddGems(-price)` — 주석
+    그래서 strip_cs로 주석을 지우고, 인자가 음수(`-`)거나 Gems·diff를 참조하면(복원·치트)
+    뺀다. CashShopManager(GrantGemPackage=유료 패키지 지급)도 통째로 제외.
+    이래도 grep 휴리스틱이라 완벽하진 않다 — 진짜 무료 지급이 늘면 수동 확인 권장.
+    """
+    total = 0
+    for path in _scan_files():
+        if "CashShopManager" in path:
+            continue
+        try:
+            with open(path, encoding="utf-8") as f:
+                src = strip_cs(f.read())
+        except (OSError, UnicodeDecodeError):
+            continue
+        for m in re.finditer(r"\.AddGems\s*\(([^)]*)\)", src):
+            arg = m.group(1).strip()
+            if arg.startswith("-"):
+                continue  # 차감 (구매)
+            if "Gems" in arg or "diff" in arg:
+                continue  # 복원(diff) / 치트(99999 - Gems)
+            total += 1
+    return total
 
 
 def candy_gem_exchange_count() -> int:
@@ -167,33 +200,26 @@ def evaluate_signals(args) -> list:
                     f"< {THRESHOLD_CANDY_BOTTLENECK_DAYS_FAIL:.1f}일",
                     f"{bottleneck:.1f}일", judge))
 
-    # 3. 젬 잔고 — 음수(부족)와 양수(과잉) 양방향 점검
-    profile = PROFILES.get(args.profile, PROFILES["ftp"])
-    gem_balance = gem_balance_after(args.days, profile["gem_topup_per_week"], args.gacha_per_week)
-    upper = GACHA_BOX_PRICES["gold"] * 4   # 골드 4회분 = 과잉 임계
-    if gem_balance < 0:
-        # 부족 — 충전 압박
-        judge = "FAIL" if gem_balance < -upper else "WARN"
-        signals.append((f"{args.days}일 후 젬 잔고 ({profile['label']})",
-                        f">= 0젬",
-                        f"{gem_balance:,}젬 (충전 부족 / 결제 압박)", judge))
-    elif gem_balance > upper:
-        # 과잉 — 지출 경로 부족
-        signals.append((f"{args.days}일 후 젬 잔고 ({profile['label']})",
-                        f"<= {upper:,}젬",
-                        f"{gem_balance:,}젬 (지출 경로 부족)", "WARN"))
+    # 3. 젬 획득 경로 — 코인과 대비. 젬은 하드 화폐라 유료 획득이 정상이다.
+    #    코인은 무료·유료 faucet 둘 다 0 + sink >0 이라 완전 데드(FAIL).
+    #    젬은 무료 faucet 0이어도 유료 패키지(CASH_GEM_PACKAGES)가 있으면 하드 화폐 설계 → PASS.
+    #    무료도 유료도 없을 때만 진짜 문제(WARN).
+    gem_faucet = gem_free_income_count()
+    has_paid = len(CASH_GEM_PACKAGES) > 0
+    if gem_faucet == 0 and not has_paid:
+        judge, note = "WARN", "젬 획득 경로 전무"
+    elif gem_faucet == 0:
+        judge, note = "PASS", "무료 없음 — 유료 패키지로만 획득(하드 화폐, 가챠 게임 관행)"
     else:
-        # 균형
-        signals.append((f"{args.days}일 후 젬 잔고 ({profile['label']})",
-                        f"0 ~ {upper:,}젬",
-                        f"{gem_balance:,}젬 (균형)", "PASS"))
+        judge, note = "PASS", f"무료 수입원 {gem_faucet}건"
+    signals.append(("젬 획득 경로", ">= 1 (무료 또는 유료)", note, judge))
 
-    # 4. 캔디↔젬 교환
+    # 4. 캔디↔젬 교환 — 부재 자체는 정상 설계(소프트→하드 전환은 가챠 게임 관행).
+    # "강제 결제 유도" 낙인은 미검증 가치판단이라 뺀다. 정보성으로만 남긴다.
     exchange = candy_gem_exchange_count()
-    judge = "WARN" if exchange == 0 else "PASS"
-    signals.append(("캔디↔젬 교환 경로", ">= 1",
-                    f"{exchange}건 (강제 결제 유도)" if exchange == 0 else f"{exchange}건",
-                    judge))
+    signals.append(("캔디↔젬 교환 경로 (정보)", "-",
+                    f"{exchange}건" + (" (없음 — 소프트↔하드 전환은 관행상 미제공)" if exchange == 0 else ""),
+                    "PASS"))
 
     # 5. P2W 격차 (의상 가격대비)
     p2w = p2w_outfit_gap()
@@ -233,7 +259,7 @@ def main():
                    help="일일 캔디 평균 수입. 지정 안 하면 captures/battles/raids에서 자동 계산")
     p.add_argument("--avg-candy-per-event", type=float, default=5.0,
                    help="이벤트(포획/전투/레이드 1회)당 평균 캔디 (기본 5)")
-    p.add_argument("--team-size", type=int, default=6)
+    p.add_argument("--team-size", type=int, default=TEAM_MAX_SLOTS)
     p.add_argument("--current-level", type=int, default=25,
                    help="병목 점검 시 곤충 레벨 (기본 25)")
     args = p.parse_args()
@@ -266,10 +292,12 @@ def main():
     print("## 코드 결함 점검")
     coin_in = coin_income_count()
     coin_out = coin_spend_count()
+    gem_free = gem_free_income_count()
     exch = candy_gem_exchange_count()
-    print(f"- AddCoins 호출부: {coin_in}건 (0이면 데드 화폐)")
+    print(f"- AddCoins 호출부: {coin_in}건 (0 + 지출>0이면 데드 화폐)")
     print(f"- SpendCoins 호출부: {coin_out}건")
-    print(f"- 캔디↔젬 교환: {exch}건 (0이면 강제 결제 유도)")
+    print(f"- 무료 젬 양수 지급: {gem_free}건 (유료 패키지·차감·복원·치트 제외)")
+    print(f"- 캔디↔젬 교환: {exch}건 (부재는 하드 화폐 관행 — 결함 아님)")
     print()
 
     print("## 위험 신호 표")

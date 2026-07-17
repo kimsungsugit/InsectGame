@@ -45,14 +45,14 @@ def _load_facts():
     try:
         tut = game_facts.tutorial_rewards()
         return (game_facts.rarity_multipliers(), tut["candy"], tut["exp"],
-                game_facts.raid_reward_mult())
+                game_facts.raid_reward_mult(), game_facts.team_max_slots())
     except game_facts.ExtractorBroken as e:
         print(f"추출기 고장: {e}\n게임 수치를 코드에서 읽지 못했다 — 시뮬을 돌리지 않는다.",
               file=sys.stderr)
         sys.exit(2)
 
 
-RARITY_MULT, TUTORIAL_CANDY_TOTAL, TUTORIAL_EXP_TOTAL, RAID_MULT = _load_facts()
+RARITY_MULT, TUTORIAL_CANDY_TOTAL, TUTORIAL_EXP_TOTAL, RAID_MULT, TEAM_MAX_SLOTS = _load_facts()
 
 
 def xp_to_next_level(level: int) -> int:
@@ -202,7 +202,8 @@ def main():
                    help="기본 곤충 1마리당 캔디 (배율 적용 전, 기본 3)")
     p.add_argument("--avg-battle-sec", type=float, default=30.0,
                    help="평균 전투 소요 시간 초 (기본 30)")
-    p.add_argument("--team-size", type=int, default=6, help="동시 육성 팀 크기 (기본 6)")
+    p.add_argument("--team-size", type=int, default=TEAM_MAX_SLOTS,
+                   help=f"동시 육성 팀 크기 (기본 = GameConstants.MaxTeamSlots = {TEAM_MAX_SLOTS})")
     args = p.parse_args()
 
     print(f"# progression-sim — Lv1 → Lv{args.target_level} ({args.rarity})\n")

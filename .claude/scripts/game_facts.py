@@ -37,6 +37,7 @@ PATHS = {
     "tutorial": "Assets/Scripts/Core/TutorialQuestManager.cs",
     "insect_entity": "Assets/Scripts/Spawning/InsectEntity.cs",
     "raid": "Assets/Scripts/Battle/RaidBattleController.cs",
+    "game_constants": "Assets/Scripts/Core/GameConstants.cs",
 }
 
 RARITIES = ("Common", "Uncommon", "Rare", "Epic", "Legendary")
@@ -261,6 +262,18 @@ def rarity_multipliers() -> dict:
             f"GetRarityMultiplier에서 {missing} 배율을 못 읽었다 — 분기 구조가 바뀌었는가?"
         )
     return out
+
+
+def team_max_slots() -> int:
+    """배틀 팀 최대 슬롯 수. 출처: GameConstants.Battle.MaxTeamSlots.
+
+    progression_sim이 이 값을 6으로 하드코딩해 "팀 6마리 캔디 비용 FAIL"을 냈는데,
+    실제는 5다(GameConstantsTests가 단언). 6마리는 게임에 존재하지 않는 팀이라 신호가
+    통째로 허수였다.
+    """
+    src = _read("game_constants")
+    m = _need(re.search(r"MaxTeamSlots\s*=\s*(\d+)", src), "MaxTeamSlots", "game_constants")
+    return int(m.group(1))
 
 
 def raid_reward_mult() -> float:
