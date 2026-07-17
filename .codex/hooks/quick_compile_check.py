@@ -42,6 +42,16 @@ try:
 except Exception:
     print(json.dumps({"suppressOutput": True}))
     sys.exit(0)
+# 최상위가 dict가 아니거나(null/배열) tool_input이 명시적 null이면 조용히 나간다.
+# d.get("k", {})는 키가 **없을 때만** {}를 주지 실제 null에는 null을 준다.
+if not isinstance(d, dict):
+    print(json.dumps({"suppressOutput": True}))
+    sys.exit(0)
+if not isinstance(d.get("tool_input"), dict):
+    d["tool_input"] = {}
+if not isinstance(d.get("tool_response"), dict):
+    d["tool_response"] = {}
+
 
 tool_input = d.get("tool_input", {})
 file_path = (

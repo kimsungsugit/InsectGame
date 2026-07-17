@@ -30,6 +30,16 @@ except Exception:
     # 발화 → 모델 작업 → Stop → 또 실패 → 또 발화로 루프가 성립하므로 침묵한다.
     print(json.dumps({"suppressOutput": True}))
     sys.exit(0)
+# 최상위가 dict가 아니거나(null/배열) tool_input이 명시적 null이면 조용히 나간다.
+# d.get("k", {})는 키가 **없을 때만** {}를 주지 실제 null에는 null을 준다.
+if not isinstance(d, dict):
+    print(json.dumps({"suppressOutput": True}))
+    sys.exit(0)
+if not isinstance(d.get("tool_input"), dict):
+    d["tool_input"] = {}
+if not isinstance(d.get("tool_response"), dict):
+    d["tool_response"] = {}
+
 
 # 무한 루프 차단 (필수): additionalContext를 주면 모델이 이어서 작업하고, 그 턴이
 # 끝나면 Stop이 또 발화한다. stop_hook_active는 "이미 Stop 훅에서 이어진 턴"을

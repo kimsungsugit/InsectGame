@@ -85,7 +85,7 @@ ID 기반 매칭 로직이 변경되었으면:
 ```
 === Round N 검증 결과 ===
 [PASS] 이벤트 구독: ...
-[WARN] null 가드: FileX.cs:42 — XX null 체크 누락
+[WARN] null 가드: FileX.cs — XX null 체크 누락
 [FAIL] 성능: FileY.cs Update에서 transform.Find 매 프레임
 [PASS] Bootstrap: ...
 [PASS] 세이브: 변경 없음

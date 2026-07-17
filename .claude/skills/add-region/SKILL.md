@@ -26,7 +26,7 @@ argument-hint: "<regionId> <displayName> <requiredLevel>"
 | subAreas[] | 서브에리어 배열 (선택) | { tundra_cave, tundra_glacier } |
 | environmentType | 서브에리어 환경 (기존 11종 권장) | cave/deep_forest/underwater/pond/fog/reeds/peak/flower_maze/greenhouse/temple/underground |
 
-⚠️ **environmentType은 기존 11종에서 선택 권장**. 신규 추가 시 `SubAreaWorldBuilder.cs:81-115` + `SubAreaEnvironment.GetProfileForType()` 양쪽에 분기 추가 필요.
+⚠️ **environmentType은 기존 11종에서 선택 권장**. 신규 추가 시 `SubAreaWorldBuilder.cs` + `SubAreaEnvironment.GetProfileForType()` 양쪽에 분기 추가 필요.
 
 ## Phase 2: 자동화 작업
 
@@ -47,8 +47,8 @@ new RegionData {
 ```
 
 ### 2-2. RegionManager switch 분기 추가 위치
-- `RegionManager.cs:170-181` GetNextRegionId()에 `case "<previousRegionId>": return "<regionId>";`
-- `RegionManager.cs:183-195` GetPreviousRegionId()에 `case "<regionId>": return "<previousRegionId>";`
+- `RegionManager.cs` GetNextRegionId()에 `case "<previousRegionId>": return "<regionId>";`
+- `RegionManager.cs` GetPreviousRegionId()에 `case "<regionId>": return "<previousRegionId>";`
 
 ### 2-3. BuildXxxTerrain() 시그니처
 ```csharp
@@ -66,11 +66,11 @@ private void Build<RegionId>Terrain()
 |---|---|---|---|
 | 1 | `RegionDefinitions.cs` CreateAll() RegionData 추가 | 리전 자체가 존재 안 함 | `Grep "regionId = \"<regionId>\"" Assets/Scripts/Core/RegionDefinitions.cs` |
 | 2 | RegionData 7필드 (insectIds, centerPosition, radius, requiredLevel, guardianInsectId, subAreas, environmentType) | 빈 맵 / 가디언 없음 / 잘못된 좌표 | RegionData 인스턴스 필드 사람 검토 |
-| 3 | `RegionManager.cs:170-181` GetNextRegionId() switch | 진입 후 다음 리전 해금 안 됨 | `Grep "case .*return \"<regionId>\"" Assets/Scripts/Core/RegionManager.cs` |
-| 4 | `RegionManager.cs:183-195` GetPreviousRegionId() switch | 가디언 좌표 계산 오류(시나리오 E) | `Grep "case \"<regionId>\":" Assets/Scripts/Core/RegionManager.cs` |
-| 5 | `RegionTerrainBuilder.cs:13-30` BuildAllRegions switch + Build`<리전>`Terrain() 메서드 | 지형 안 그려짐 → 평지 | `Grep "case \"<regionId>\":\|Build<RegionPascal>Terrain" Assets/Scripts/Core/RegionTerrainBuilder.cs` |
+| 3 | `RegionManager.cs` GetNextRegionId() switch | 진입 후 다음 리전 해금 안 됨 | `Grep "case .*return \"<regionId>\"" Assets/Scripts/Core/RegionManager.cs` |
+| 4 | `RegionManager.cs` GetPreviousRegionId() switch | 가디언 좌표 계산 오류(시나리오 E) | `Grep "case \"<regionId>\":" Assets/Scripts/Core/RegionManager.cs` |
+| 5 | `RegionTerrainBuilder.cs` BuildAllRegions switch + Build`<리전>`Terrain() 메서드 | 지형 안 그려짐 → 평지 | `Grep "case \"<regionId>\":\|Build<RegionPascal>Terrain" Assets/Scripts/Core/RegionTerrainBuilder.cs` |
 | 6 | SpawnPoint.regionId / regionInsectIds 할당 | 곤충 스폰 0마리 | `Grep "<regionId>" Assets/Scripts/Spawning Assets/Scripts/Core/PlaySceneBootstrap.cs` |
-| 7 | `RegionMapUI.cs:554-557` connections + `:670-683` GetRegionSymbol switch | 미니맵 길/심볼 표시 안 됨 → "???" | `Grep -c "<regionId>" Assets/Scripts/UI/RegionMapUI.cs` (≥ 2 요구) |
+| 7 | `RegionMapUI.cs` connections + `:670-683` GetRegionSymbol switch | 미니맵 길/심볼 표시 안 됨 → "???" | `Grep -c "<regionId>" Assets/Scripts/UI/RegionMapUI.cs` (≥ 2 요구) |
 | 8 | AudioManager.PlayBGMForRegion 리전별 BGM 키 | 무음 또는 이전 BGM 잔류 | `Grep "<regionId>" Assets/Scripts/Core/AudioManager.cs` |
 
 ## Phase 4: 비관적 시나리오 6개 (사전 점검)
@@ -82,7 +82,7 @@ private void Build<RegionId>Terrain()
 | **A. 스폰 0마리** | 진입했는데 잡을 곤충 없음 | `Grep "insectIds = new\[\]" RegionDefinitions.cs` 영역에서 `<regionId>` insectIds 길이 ≥ 1 + 모든 ID가 InsectDatabase에 존재 |
 | **B. 진입 불가 (dead-end)** | NextRegionId 무한 루프 또는 도달 불가 | `Grep "return \"<regionId>\"" Assets/Scripts/Core/RegionManager.cs` (1+ 있어야 어딘가에서 해금됨) |
 | **C. 빈 맵** | 시각적으로 황무지 | `Grep "case \"<regionId>\":\|Build<RegionPascal>Terrain" Assets/Scripts/Core/RegionTerrainBuilder.cs` 모두 매칭 |
-| **D. 서브에리어 깡통** | 서브에리어 진입했더니 빈 공간 | environmentType이 11종 중 하나여야 함. 신규 타입이면 `SubAreaWorldBuilder.cs:81-115` + `SubAreaEnvironment.cs:159-309`에 분기 추가됐는지 검증 |
+| **D. 서브에리어 깡통** | 서브에리어 진입했더니 빈 공간 | environmentType이 11종 중 하나여야 함. 신규 타입이면 `SubAreaWorldBuilder.cs` + `SubAreaEnvironment.cs`에 분기 추가됐는지 검증 |
 | **E. 가디언 좌표 오류** | 가디언이 맵 원점(0,0,0)과 리전 중점 사이에 잘못 스폰 | GetPreviousRegionId()에 `<regionId>` case 누락 시 `prevId == null` → fromCenter = Vector3.zero. Phase 3 #4 grep 통과 필수 |
 | **F. 세이브 오염** | 기존 PlayerPrefs(`InsectGame.UnlockedRegions` / `InsectGame.DefeatedGuardians`) 깨짐 | **기존 regionId 변경 절대 금지**. 새 ID만 추가 |
 

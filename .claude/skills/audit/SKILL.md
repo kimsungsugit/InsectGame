@@ -160,5 +160,5 @@ Stop hook 자동 발화: "audit 미검토 31개 — /audit으로 계속"
 - `.claude/hooks/audit_reminder.py` — Stop reminder
 - `.claude/hooks/scan_static_patterns.py` — 회귀 패턴 즉시 검출
 - `.claude/hooks/auto_verify_trigger.py` — 8항목 자동 권유
-- `.claude/skills/explore-standard.md` — Explore 가드
-- `.claude/skills/verify.md` — 8항목 검증 템플릿
+- `.claude/skills/explore-standard/SKILL.md` — Explore 가드
+- `.claude/skills/verify/SKILL.md` — 8항목 검증 템플릿

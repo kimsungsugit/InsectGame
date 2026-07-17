@@ -13,10 +13,26 @@ try:
 except Exception:
     print(json.dumps({"suppressOutput": True}))
     sys.exit(0)
+# 최상위가 dict가 아니거나(null/배열) tool_input이 명시적 null이면 조용히 나간다.
+# d.get("k", {})는 키가 **없을 때만** {}를 주지 실제 null에는 null을 준다.
+if not isinstance(d, dict):
+    print(json.dumps({"suppressOutput": True}))
+    sys.exit(0)
+if not isinstance(d.get("tool_input"), dict):
+    d["tool_input"] = {}
+if not isinstance(d.get("tool_response"), dict):
+    d["tool_response"] = {}
+
 
 tool_name = d.get("tool_name", "")
 tool_input = d.get("tool_input", {})
 f = tool_input.get("file_path", "")
+
+# file_path가 없으면 조용히 나간다. 7개 훅 중 여기만 가드가 없어
+# f.endswith()가 None/비문자열에서 터질 수 있었다(check_namespace엔 있다).
+if not f or not isinstance(f, str):
+    print(json.dumps({"suppressOutput": True}))
+    sys.exit(0)
 
 # 줄 수는 하드코딩하지 않는다 — 파일이 자라면 반드시 stale해지고, 그 숫자가
 # 다시 문서로 복사돼 퍼진다. 실제 값은 아래에서 런타임에 센다.

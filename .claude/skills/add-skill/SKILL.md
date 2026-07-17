@@ -64,11 +64,11 @@ Grep -c "\"<skillId>\"" Assets/Scripts
 
 | # | 파일:라인 | 추가할 분기 | 누락 시 증상 |
 |---|---|---|---|
-| 1 | `Assets/Scripts/Battle/InsectBattleController.cs:213-235` ApplySkill() switch | 새 case | 1v1 default 분기로 빠져 의도와 다른 처리 |
-| 2 | `Assets/Scripts/Battle/RaidBattleController.cs:113-142` UseSkill() if/else | 새 분기 | 레이드 보스 ATK DOWN 등으로 잘못 매칭 |
-| 3 | `Assets/Scripts/UI/BattleScreenUI.cs:1665-1672, 3049-3055` 타입문자열 + GetSkillColor | 표시 문자열 + 색상 | 효과 이름 빈 문자열, 색상 회색 |
-| 4 | `Assets/Scripts/Battle/BattleArenaController.cs:462-474` PlaySkillEffect() | 시각 이펙트 분기 | 이펙트 미재생 |
-| 5 | `Assets/Scripts/UI/RaidBattleUI.cs:1504-1511, 2855-2861` + `Assets/Scripts/UI/TrainingUI.cs:344-345, 537-538, 569-575` | 표시 문자열/색상 | 레이드/훈련 UI 누락 |
+| 1 | `Assets/Scripts/Battle/InsectBattleController.cs` ApplySkill() switch | 새 case | 1v1 default 분기로 빠져 의도와 다른 처리 |
+| 2 | `Assets/Scripts/Battle/RaidBattleController.cs` UseSkill() if/else | 새 분기 | 레이드 보스 ATK DOWN 등으로 잘못 매칭 |
+| 3 | `Assets/Scripts/UI/BattleScreenUI.cs, 3049-3055` 타입문자열 + GetSkillColor | 표시 문자열 + 색상 | 효과 이름 빈 문자열, 색상 회색 |
+| 4 | `Assets/Scripts/Battle/BattleArenaController.cs` PlaySkillEffect() | 시각 이펙트 분기 | 이펙트 미재생 |
+| 5 | `Assets/Scripts/UI/RaidBattleUI.cs, 2855-2861` + `Assets/Scripts/UI/TrainingUI.cs, 537-538, 569-575` | 표시 문자열/색상 | 레이드/훈련 UI 누락 |
 
 자동 검증 grep (예: `effectType=Heal`):
 ```bash

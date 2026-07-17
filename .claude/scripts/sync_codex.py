@@ -65,6 +65,47 @@ def sync(targets):
     return done
 
 
+def unregistered_hooks():
+    """.claude/settings.json에 등록됐지만 .codex/hooks.json에 없는 훅 목록.
+
+    pairs()는 .py 파일만 복사한다. 훅 **등록**은 못 옮긴다 — 두 파일의 형식이 달라서다
+    (.codex/hooks.json은 절대경로를 박은 별도 스키마). 그래서 신규 훅을 추가하면 .py는
+    자동으로 미러되는데 codex 쪽 등록은 사람이 손으로 해야 하고, 그 손이 다음 드리프트의
+    씨앗이다. 자동으로 못 고치면 최소한 시끄럽게 알린다.
+    """
+    def _load(p):
+        try:
+            with open(p, encoding="utf-8") as fh:
+                return json.load(fh)
+        except Exception:
+            return None
+
+    claude = _load(os.path.join(ROOT, ".claude", "settings.json"))
+    codex = _load(os.path.join(ROOT, ".codex", "hooks.json"))
+    if claude is None or codex is None:
+        return []
+
+    def _names(cfg):
+        found = set()
+        for entries in (cfg.get("hooks", {}) or {}).values():
+            for entry in entries:
+                for h in entry.get("hooks", []):
+                    cmd = h.get("command", "")
+                    for tok in cmd.replace("\\", "/").split():
+                        # 따옴표를 **먼저** 벗긴다. .codex/hooks.json은 절대경로를 작은따옴표로
+                        # 감싸므로("python -X utf8 'C:/…/warn_monolith.py'") 벗기기 전에
+                        # endswith(".py")를 보면 전부 놓친다.
+                        tok = tok.strip("'\"")
+                        if tok.endswith(".py"):
+                            found.add(os.path.basename(tok))
+        return found
+
+    missing = _names(claude) - _names(codex)
+    # scripts/ 의 것(sync_codex 자신 등)은 .codex가 자체 등록하지 않아도 무방하다.
+    hook_files = {os.path.basename(p) for p in glob(os.path.join(ROOT, ".claude", "hooks", "*.py"))}
+    return sorted(missing & hook_files)
+
+
 def main():
     argv = sys.argv[1:]
 
@@ -109,13 +150,21 @@ def main():
     targets = drifted()
 
     if "--check" in argv:
-        if not targets:
+        unreg = unregistered_hooks()
+        if not targets and not unreg:
             print("codex 미러 동기 상태 — 드리프트 없음")
             return 0
-        print(f"드리프트 {len(targets)}건:")
-        for src, dst in targets:
-            print(f"  {os.path.relpath(src, ROOT)}  ->  {os.path.relpath(dst, ROOT)}")
-        print("\n동기화: python -X utf8 .claude/scripts/sync_codex.py --write")
+        if targets:
+            print(f"파일 드리프트 {len(targets)}건:")
+            for src, dst in targets:
+                print(f"  {os.path.relpath(src, ROOT)}  ->  {os.path.relpath(dst, ROOT)}")
+            print("\n동기화: python -X utf8 .claude/scripts/sync_codex.py --write")
+        if unreg:
+            # .py는 자동 복사되지만 등록은 형식이 달라 못 옮긴다. 손으로 해야 하므로 알린다.
+            print(f"\n.codex/hooks.json 미등록 훅 {len(unreg)}건:")
+            for h in unreg:
+                print(f"  {h}  — .claude/settings.json엔 있으나 .codex/hooks.json엔 없다")
+            print("\n두 파일은 스키마가 달라 자동 복사가 불가하다. .codex/hooks.json에 직접 등록할 것.")
         return 1
 
     if "--write" in argv:

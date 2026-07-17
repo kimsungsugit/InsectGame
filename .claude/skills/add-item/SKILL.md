@@ -25,7 +25,7 @@ ItemData SO 생성 + 데이터베이스 등록 + 효과 분기 + 4가지 획득 
 
 ### capture (포획 미니게임 아이템)
 필드: `speedMultiplier`, `zoneSizeMultiplier`, `timeLimitMultiplier`, `captureBonus`, `spawnWeight`
-등록 위치: `Assets/Scripts/Core/PlaySceneBootstrap.cs:2953-2994` `CreateCaptureItems()` 배열 끝에 `CaptureItemData` 추가.
+등록 위치: `Assets/Scripts/Core/PlaySceneBootstrap.cs` `CreateCaptureItems()` 배열 끝에 `CaptureItemData` 추가.
 
 ### consumable (글로벌 효과 아이템)
 필드: `captureChanceBonus`, `expMultiplier`, `candyMultiplier`, `rareSpawnMultiplier`, `durationSeconds`
@@ -33,7 +33,7 @@ ItemData SO 생성 + 데이터베이스 등록 + 효과 분기 + 4가지 획득 
 효과 처리: `Assets/Scripts/Core/ItemEffectManager.cs` getter 메서드는 분기 없음 — 새 효과 타입이면 ItemData에 필드 추가 + getter 추가 + 사용처에서 호출.
 
 ### cash (캐시샵 판매 아이템)
-등록 위치: `Assets/Scripts/Core/CashShopManager.cs:44-65` `InitializeShopItems()` 배열에 `CashShopItem` 추가.
+등록 위치: `Assets/Scripts/Core/CashShopManager.cs` `InitializeShopItems()` 배열에 `CashShopItem` 추가.
 필드: `itemId = "shop_xxx"`, `rewardItemId = 실제 itemId`, `category`, `gemPrice`, `rewardCount`.
 
 ## Phase 3: 8개 등록 지점 (비관적 체크리스트)
@@ -41,13 +41,13 @@ ItemData SO 생성 + 데이터베이스 등록 + 효과 분기 + 4가지 획득 
 | # | 등록 지점 | itemType 적용 | 누락 시 증상 | grep 검증 |
 |---|---|---|---|---|
 | 1 | ItemData SO + ItemDatabase 등록 | 모두 | `FindById()` null → 효과 발동 안 함 | `Grep "<itemId>" Assets/Scripts/Data/ItemDatabase.cs` (Inspector 직렬화는 안내만) |
-| 2 | `PlaySceneBootstrap.cs:2953-2994` CreateCaptureItems() | capture | 미니게임 채집망 종류로 안 나옴 | `Grep "itemId = \"<itemId>\"" Assets/Scripts/Core/PlaySceneBootstrap.cs` |
-| 3 | `CashShopManager.cs:44-65` InitializeShopItems() | cash | 캐시샵에서 구매 불가 | `Grep "<itemId>" Assets/Scripts/Core/CashShopManager.cs` |
-| 4 | `PlaySceneBootstrap.cs:226-231` 초기 인벤토리 지급 | 선택 | 신규 유저 기본 지급 누락 | `Grep "AddItem.*\"<itemId>\"" Assets/Scripts/Core/PlaySceneBootstrap.cs` |
-| 5 | `ShopUIController.cs:15-16` itemIds[] / prices[] | 일반 샵 | 샵 슬롯에 안 보임 | **Inspector 직렬화 — 텍스트 안내** (아래 참조) |
+| 2 | `PlaySceneBootstrap.cs` CreateCaptureItems() | capture | 미니게임 채집망 종류로 안 나옴 | `Grep "itemId = \"<itemId>\"" Assets/Scripts/Core/PlaySceneBootstrap.cs` |
+| 3 | `CashShopManager.cs` InitializeShopItems() | cash | 캐시샵에서 구매 불가 | `Grep "<itemId>" Assets/Scripts/Core/CashShopManager.cs` |
+| 4 | `PlaySceneBootstrap.cs` 초기 인벤토리 지급 | 선택 | 신규 유저 기본 지급 누락 | `Grep "AddItem.*\"<itemId>\"" Assets/Scripts/Core/PlaySceneBootstrap.cs` |
+| 5 | `ShopUIController.cs` itemIds[] / prices[] | 일반 샵 | 샵 슬롯에 안 보임 | **Inspector 직렬화 — 텍스트 안내** (아래 참조) |
 | 6 | ItemData.rarityIcon 지정 | 모두 | UI 아이콘 회색 박스 | **Inspector 직렬화 — 텍스트 안내** |
 | 7 | ItemEffectManager 새 효과 분기 | consumable (신규 효과 시) | 사용해도 아무 일 없음 | `Grep "<itemId>\|new field name" Assets/Scripts/Core/ItemEffectManager.cs` |
-| 8 | `CaptureMinigameController.cs:47-71` StartMinigame 매개변수 | capture (신규 효과 시) | 미니게임 효과 미적용 | `Grep "<itemId>\|item\." Assets/Scripts/Capture/CaptureMinigameController.cs` |
+| 8 | `CaptureMinigameController.cs` StartMinigame 매개변수 | capture (신규 효과 시) | 미니게임 효과 미적용 | `Grep "<itemId>\|item\." Assets/Scripts/Capture/CaptureMinigameController.cs` |
 
 ⚠️ **Inspector 직렬화 필드 (#5, #6)**: `.prefab`/`.unity` grep은 false negative 위험으로 미실행. 다음 텍스트 안내로 마무리:
 - `Unity Editor → Project 창 → ShopUIController prefab 검색 → Inspector의 itemIds 배열에 "<itemId>" 추가, prices 배열에 가격 입력`
