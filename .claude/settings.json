@@ -109,6 +109,12 @@
             "command": "python -X utf8 .claude/hooks/scan_static_patterns.py",
             "timeout": 5,
             "statusMessage": "정적 회귀 패턴 스캔 중..."
+          },
+          {
+            "type": "command",
+            "command": "python -X utf8 .claude/scripts/sync_codex.py --hook",
+            "timeout": 5,
+            "statusMessage": "Codex 미러 동기화 중..."
           }
         ]
       }
