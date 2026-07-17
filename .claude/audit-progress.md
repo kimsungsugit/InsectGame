@@ -110,13 +110,28 @@
 가장 위가 다음 `/audit`에서 자동 선택됩니다.
 `- [ ]`가 0건이 되면 훅 2개가 함께 침묵해 자동 플로우가 멈추므로, 소진 시
 `audit_candidates.py --emit-md`로 채웁니다.
+- [ ] NpcDialogueUI (UI/NpcDialogueUI.cs, 183줄, score 24) — 프레임 할당 8
+- [ ] NpcManager (NPC/NpcManager.cs, 272줄, score 18) — 프레임 할당 6
+- [ ] CaptureItemPickup (Spawning/CaptureItemPickup.cs, 94줄, score 8) — 프레임 할당 2, 싱글턴 참조 2
+- [ ] CaptureItemSpawner (Spawning/CaptureItemSpawner.cs, 85줄, score 3) — 프레임 할당 1
+- [ ] CaptureProximityTrigger (Capture/CaptureProximityTrigger.cs, 100줄, score 0) — 표면 점검
+- [ ] CaptureTriggerOptionsUI (Capture/CaptureTriggerOptionsUI.cs, 127줄, score 0) — 표면 점검
+- [ ] ItemInventoryGridItem (Core/ItemInventoryGridItem.cs, 295줄, score 0) — 표면 점검
+- [ ] ItemRarityTuningUIController (Core/ItemRarityTuningUIController.cs, 102줄, score 0) — 표면 점검
+- [ ] PlayerProgressUIController (Core/PlayerProgressUIController.cs, 119줄, score 0) — 표면 점검
+- [ ] VillageBuilder (Core/VillageBuilder.cs, 815줄, score 0) — 표면 점검
+- [ ] InsectElement (Data/InsectElement.cs, 96줄, score 0) — 표면 점검
+- [ ] InsectExpansionDefinitions (Data/InsectExpansionDefinitions.cs, 146줄, score 0) — 표면 점검
+- [ ] InsectLoreService (Data/InsectLoreService.cs, 105줄, score 0) — 표면 점검
+- [ ] ItemRarityPalette (Data/ItemRarityPalette.cs, 135줄, score 0) — 표면 점검
+- [ ] CatcherKidNpc (NPC/CatcherKidNpc.cs, 388줄, score 0) — 표면 점검
+- [ ] NpcDialogueDatabase (NPC/NpcDialogueDatabase.cs, 167줄, score 0) — 표면 점검
+- [ ] NpcVisualBuilder (NPC/NpcVisualBuilder.cs, 304줄, score 0) — 표면 점검
+- [ ] NpcWalkAnimator (NPC/NpcWalkAnimator.cs, 106줄, score 0) — 표면 점검
+- [ ] VillagerNpc (NPC/VillagerNpc.cs, 210줄, score 0) — 표면 점검
+- [ ] PlayUIRefs (UI/PlayUIRefs.cs, 119줄, score 0) — 표면 점검
 
-- [ ] CaptureInputController (Capture/CaptureInputController.cs, 375줄, score 70) — 프레임 할당 23, 싱글턴 참조 1
-- [ ] MinimapUI (UI/MinimapUI.cs, 126줄, score 60) — 프레임 할당 19, 미캐싱 조회 1, 싱글턴 참조 1
-- [ ] NpcDialogueUI (UI/NpcDialogueUI.cs, 183줄, score 48) — 프레임 할당 16
-- [ ] WorldInteractionController (UI/WorldInteractionController.cs, 322줄, score 39) — 프레임 할당 13
-- [ ] VirtualJoystickUI (UI/VirtualJoystickUI.cs, 201줄, score 26) — 프레임 할당 8, 미캐싱 조회 1
-- [ ] ItemInventoryGridItem (Core/ItemInventoryGridItem.cs, 295줄, score 21) — 프레임 할당 7
+
 
 ## Round Log
 

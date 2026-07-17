@@ -90,10 +90,22 @@ cleaned_changed = strip_comments_and_strings(changed_text)
 # changed_text 안에 OnGUI 또는 Update 메서드가 있으면 그 본문에서 패턴 검색.
 # 또는 changed_text 자체가 OnGUI 본문의 일부일 수도 있으니 전체 파일의 OnGUI/Update 본문도 검사.
 
+# 매 프레임 **힙** 할당(= GC 압박)만 보고한다.
+#
+# new Color / new Rect / new Vector3 / new Quaternion 은 전부 struct라 스택에 잡히고
+# GC를 유발하지 않는다. 옛 목록엔 Color와 Rect가 있었는데, audit 라운드들이 그걸
+# 매번 "struct라 거짓양성"으로 기각해왔다(2026-07-17까지 6라운드 연속). 훅이 이미
+# 알려진 오탐을 반복 보고하면 진짜 경고까지 무시당하므로 목록에서 뺀다.
+#
+# 아래는 전부 class다 — 매 프레임 생성하면 실제로 GC가 돈다.
+# 한계: 문자열 보간 $"..."도 진짜 힙 할당이지만 cleaned_full이 문자열 리터럴을
+# 통째로 지우므로 이 방식으로는 검출할 수 없다(라운드에서 사람이 잡아야 함).
 perf_patterns = [
     (r"\bnew\s+GUIStyle\s*\(", "new GUIStyle"),
-    (r"\bnew\s+Color\s*\(", "new Color"),
-    (r"\bnew\s+Rect\s*\(", "new Rect"),
+    (r"\bnew\s+GUIContent\s*\(", "new GUIContent"),
+    (r"\bnew\s+Texture2D\s*\(", "new Texture2D"),
+    (r"\bnew\s+Material\s*\(", "new Material"),
+    (r"\bnew\s+(?:List|Dictionary|HashSet|Queue|Stack)\s*<", "new 컬렉션"),
 ]
 
 # changed_text가 OnGUI/Update 메서드 본문 안에 위치하는지 추정.

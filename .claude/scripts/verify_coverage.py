@@ -9,7 +9,6 @@ except Exception:
 agents = {
     "architect": [
         "Assets/Scripts/Core/PlaySceneBootstrap.cs",
-        "Assets/Scripts/Core/SceneAutoWire.cs",
         "Assets/Scripts/Core/PlaySceneAutoInit.cs",
         "Assets/Scripts/Core/AuthManager.cs",
         "Assets/Scripts/Core/FirebaseConfig.cs",

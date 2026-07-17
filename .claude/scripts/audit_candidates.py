@@ -73,7 +73,84 @@ def has_frame_method(cleaned):
     )
 
 
-def score_file(path):
+INIT_SIG = re.compile(r"\bvoid\s+(?:Awake|Start|OnEnable|AutoWire)\s*\([^)]*\)\s*\{")
+
+
+def strip_init_bodies(cleaned):
+    """Awake/Start/OnEnable/AutoWire 본문을 제거한다.
+
+    부트스트랩 시점의 조회는 이 프로젝트의 정상 패턴이다(AutoWire 캐싱). 그걸 빼지 않으면
+    초기화 전용 파일이 '미캐싱 조회'로 큐 최상위에 올라온다 — SceneAutoWire가 실제로 그렇게
+    올라왔고(106줄 전체가 Awake, 조회 40건) 라운드를 통째로 낭비시켰다.
+    """
+    while True:
+        m = INIT_SIG.search(cleaned)
+        if not m:
+            return cleaned
+        depth = 1
+        i = m.end()
+        while i < len(cleaned) and depth > 0:
+            c = cleaned[i]
+            if c == "{":
+                depth += 1
+            elif c == "}":
+                depth -= 1
+            i += 1
+        cleaned = cleaned[:m.start()] + cleaned[i:]
+
+
+def scene_script_guids(root):
+    """씬에 실제로 배치된 스크립트의 GUID 집합."""
+    guids = set()
+    for scene in glob(os.path.join(root, "Assets", "**", "*.unity"), recursive=True):
+        try:
+            with open(scene, "r", encoding="utf-8", errors="replace") as fh:
+                guids.update(re.findall(r"m_Script:.*?guid:\s*([0-9a-f]{32})", fh.read()))
+        except Exception:
+            pass
+    return guids
+
+
+def file_guid(cs_path):
+    try:
+        with open(cs_path + ".meta", "r", encoding="utf-8", errors="replace") as fh:
+            m = re.search(r"guid:\s*([0-9a-f]{32})", fh.read())
+            return m.group(1) if m else None
+    except Exception:
+        return None
+
+
+_ALL_CODE = None
+
+
+def code_mentions(stem, self_path):
+    """자기 자신 말고 다른 .cs가 이 클래스명을 언급하는가."""
+    global _ALL_CODE
+    if _ALL_CODE is None:
+        _ALL_CODE = {}
+        for dirpath, _d, filenames in os.walk(SCRIPTS_DIR):
+            for fn in filenames:
+                if not fn.endswith(".cs"):
+                    continue
+                p = os.path.join(dirpath, fn)
+                try:
+                    with open(p, "r", encoding="utf-8", errors="replace") as fh:
+                        _ALL_CODE[p] = fh.read()
+                except Exception:
+                    pass
+    # 경로는 반드시 정규화해서 비교한다. os.walk는 OS 구분자(Windows면 백슬래시)를 주는데
+    # 호출부가 슬래시 경로를 넘기면 자기 자신이 "다른 파일"로 잡혀 항상 True가 된다.
+    me = os.path.normcase(os.path.abspath(self_path))
+    needle = re.compile(r"\b" + re.escape(stem) + r"\b")
+    for p, body in _ALL_CODE.items():
+        if os.path.normcase(os.path.abspath(p)) == me:
+            continue
+        if needle.search(body):
+            return True
+    return False
+
+
+def score_file(path, scene_guids):
     try:
         with open(path, "r", encoding="utf-8", errors="replace") as fh:
             text = fh.read()
@@ -86,17 +163,32 @@ def score_file(path):
 
     cleaned = strip_cs(text)
 
-    # hot: 프레임 메서드를 가진 파일의 스타일/색 할당 총량.
+    # dead code 제외: MonoBehaviour인데 씬에 배치되지도, 다른 코드에서 언급되지도 않으면
+    # 실행 자체가 되지 않으므로 점검할 가치가 없다. SceneAutoWire가 이 필터가 없어서
+    # 큐 상위를 차지했다(조회 40건이 전부 실행되지 않는 Awake 안에 있었다).
+    if "MonoBehaviour" in cleaned:
+        guid = file_guid(path)
+        stem = os.path.splitext(os.path.basename(path))[0]
+        in_scene = guid is not None and guid in scene_guids
+        if not in_scene and not code_mentions(stem, path):
+            return None
+
+    # hot: 프레임 메서드를 가진 파일의 **힙** 할당 총량.
     # OnGUI 본문만 보면 안 된다 — 이 코드베이스의 OnGUI는 대개 DrawPanel() 같은
     # 하위 메서드로 위임하고, 과거 라운드가 실제로 잡아온 핫스팟도 그 하위
-    # 메서드들이었다(DrawInsectItem 등). 후보 발굴은 "열어볼 가치"를 재는 것이므로
-    # 다소 과대평가가 과소평가보다 낫다. 실제 판정은 Explore가 파일을 읽고 한다.
+    # 메서드들이었다(DrawInsectItem 등).
+    #
+    # new Color/Rect/Vector3는 **세지 않는다** — struct라 스택 할당이고 GC가 없다.
+    # 옛 채점은 이걸 세서 6라운드 연속 1위 근거가 전부 거짓양성이었다
+    # (WorldFieldMultiplayerUI 51, SubAreaEnvironment 46, AccountSettingsUI 37 …).
     hot = 0
     if has_frame_method(cleaned):
-        hot += len(re.findall(r"\bnew\s+(?:GUIStyle|GUIContent|Texture2D)\b", cleaned)) * 2
-        hot += len(re.findall(r"\bnew\s+(?:Color|Rect)\b", cleaned))
+        hot += len(re.findall(r"\bnew\s+(?:GUIStyle|GUIContent|Texture2D|Material)\b", cleaned)) * 2
+        hot += len(re.findall(r"\bnew\s+(?:List|Dictionary|HashSet)\s*<", cleaned))
 
-    find = len(re.findall(r"\bFindFirstObjectByType\b|\bFindObjectOfType\b|GameObject\.Find\b", cleaned))
+    # find: 초기화 본문(Awake/Start/OnEnable/AutoWire)을 뺀 나머지의 조회만 센다.
+    runtime = strip_init_bodies(cleaned)
+    find = len(re.findall(r"\bFindFirstObjectByType\b|\bFindObjectOfType\b|GameObject\.Find\b", runtime))
 
     subs = len(re.findall(r"\+=\s*(?:new\s+\w+\s*\()?\s*(?:On|Handle)\w+", cleaned))
     unsubs = len(re.findall(r"-=\s*(?:new\s+\w+\s*\()?\s*(?:On|Handle)\w+", cleaned))
@@ -139,6 +231,7 @@ def main():
             pass
 
     reviewed = read_reviewed_text()
+    scene_guids = scene_script_guids(ROOT)
 
     files = []
     for dirpath, _dirnames, filenames in os.walk(SCRIPTS_DIR):
@@ -151,8 +244,12 @@ def main():
         stem = os.path.splitext(os.path.basename(path))[0]
         if stem in reviewed:
             continue  # 이미 다룬 영역
-        r = score_file(path)
-        if r and r["score"] > 0:
+        # score가 0이어도 미검토 파일은 후보다. 채점은 **우선순위**를 매기는 도구이지
+        # clean 판정 도구가 아니다 — 실제로 2026-07-17 라운드들에서 채점 근거(struct 할당)는
+        # 매번 틀렸는데도 지목된 파일마다 진짜 P0/P1이 나왔다. 점수로 거르면 그런 파일을
+        # 통째로 놓친다. 제외는 dead code(score_file이 None 반환)만 한다.
+        r = score_file(path, scene_guids)
+        if r:
             r["stem"] = stem
             r["rel"] = os.path.relpath(path, SCRIPTS_DIR).replace("\\", "/")
             results.append(r)

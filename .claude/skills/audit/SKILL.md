@@ -30,6 +30,20 @@ python -X utf8 .claude/scripts/audit_candidates.py --emit-md
 이 스크립트는 Covered/아카이브에 이름이 없는 `.cs`를 프레임 할당·미캐싱 조회·
 구독 해제 누락·싱글턴 참조로 채점해 후보를 낸다(하드코딩 목록이 없어 stale해지지 않음).
 
+> **점수는 "열어볼 순서"이지 "무엇이 문제인지"가 아니다.**
+> 2026-07-17의 9개 라운드에서 채점 근거는 **매번 틀렸지만** 지목된 파일마다 진짜 P0/P1이
+> 나왔다. Explore에 "점수 근거를 확인하라"고 시키지 말고 **파일 자체를 보게** 하라.
+> 점수 0인 파일도 후보에 포함된다 — 점수로 clean을 판정하지 말 것.
+
+### Step 2 전에: 채점 근거를 그대로 믿지 말 것
+
+Explore 프롬프트에 "프레임 할당 N건" 같은 채점 수치를 **근거로 제시하지 마라.** 대신
+거짓양성 가드를 넣어라(아래는 실측으로 확인된 사실이다):
+- `new Color`/`new Rect`/`new Vector3`/`new Quaternion`은 **struct** — 스택 할당, GC 없음
+- `Awake`/`Start`/`OnEnable` 안의 조회는 부트스트랩 시점 1회라 **정상**
+- `stylesReady` 가드 + `InitStyles()` 안의 `new GUIStyle`/`MakeTex`는 1회만이라 **정상**
+- Unity는 **단일 스레드** — race condition 가설은 전부 거짓양성
+
 스크립트가 후보 0건을 반환할 때만 "미검토 영역 없음 — audit 완료"를 보고하고 종료한다.
 
 > 큐를 비운 채 두면 `audit_flow_inject`와 `audit_reminder` 훅이 함께 침묵해

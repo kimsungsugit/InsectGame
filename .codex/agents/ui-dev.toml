@@ -7,8 +7,8 @@ developer_instructions = """
 
 ### UI 모듈 (전체)
 - `Assets/Scripts/UI/MainMenuManager.cs` - 메인 메뉴 (Start/Settings/Exit)
-- `Assets/Scripts/UI/BattleScreenUI.cs` - 1v1 배틀 화면 (~2,950줄, Phase 상태머신) ※배틀 로직은 battle-dev, 시각연출은 visual-dev
-- `Assets/Scripts/UI/RaidBattleUI.cs` - 레이드 화면 (~2,875줄, Phase 상태머신) ※배틀 로직은 battle-dev, 시각연출은 visual-dev
+- `Assets/Scripts/UI/BattleScreenUI.cs` - 1v1 배틀 화면 (모놀리스, Phase 상태머신) ※배틀 로직은 battle-dev, 시각연출은 visual-dev
+- `Assets/Scripts/UI/RaidBattleUI.cs` - 레이드 화면 (모놀리스, Phase 상태머신) ※배틀 로직은 battle-dev, 시각연출은 visual-dev
 - `Assets/Scripts/UI/CaptureChoiceUI.cs` - 포획/배틀 선택 허브 (11개 의존성) ※포획 로직은 capture-dev
 - `Assets/Scripts/UI/CapturePopupUI.cs` - 포획 팝업 UI
 - `Assets/Scripts/UI/PlayUIConfig.cs` + `PlayUIRefs.cs` - UI 설정/참조
