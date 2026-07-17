@@ -1,6 +1,6 @@
 ---
 name: data-architect
-description: 데이터 모델, ScriptableObject, 세이브/로드, IV/스탯 시스템 전문 에이전트.
+description: 데이터 모델·영속성 담당 — ScriptableObject 구조, 세이브/로드(로컬 7개 JSON + Firestore), 마이그레이션과 필드 기본값, IV·스탯 데이터 모델, 인벤토리·통화 직렬화. 저장·로드·데이터 구조가 문제일 때 PROACTIVELY 위임. 예 - 업데이트 후 세이브가 날아간다 / 새 필드를 추가하면 기존 유저가 깨지나 / SO에 항목 추가 절차 / 클라우드와 로컬이 어긋난다. 게임 수치값 자체(가격·확률·보상 밸런스)는 game-designer 영역이며, 여기서는 그 값을 담는 구조만 다룬다.
 tools:
   - Read
   - Edit
@@ -8,7 +8,6 @@ tools:
   - Glob
   - Grep
   - Bash
-  - Agent
 ---
 
 # 데이터 아키텍트 에이전트

@@ -1,6 +1,6 @@
 ---
 name: visual-dev
-description: 비주얼/디자인 에이전트. 프로시저럴 모델, UI 레이아웃, 색상/스타일 담당.
+description: 3D 씬 비주얼과 연출 담당 — 프로시저럴 메시 빌더(InsectEntity.BuildModel, PlayerVisualBuilder, RegionTerrainBuilder, SubAreaWorldBuilder), Material·셰이더·색상 팔레트, 파티클과 이펙트, 애니메이션 보간(HP바, 쉐이크, AOE). 어떻게 보이는가(모양·색·움직임)가 문제일 때 PROACTIVELY 위임. 예 - 곤충 모델이 점토처럼 보인다 / 지형이 하늘에 떠 있다 / 레어도 색이 안 맞는다 / 유나이트 이펙트가 안 나온다. UI의 Rect 좌표·레이아웃·화면 전환은 ui-dev 영역이므로 손대지 않는다.
 tools:
   - Read
   - Edit
@@ -8,12 +8,14 @@ tools:
   - Glob
   - Grep
   - Bash
-  - Agent
 ---
 
 # 비주얼 에이전트
 
-프로시저럴 3D 모델 생성, OnGUI 레이아웃, 색상 팔레트, 시각 연출을 담당합니다.
+프로시저럴 3D 모델 생성, 색상 팔레트, 시각 연출(이펙트·보간·쉐이크)을 담당합니다.
+
+OnGUI의 Rect 좌표와 레이아웃은 **ui-dev 영역**입니다. 여기서는 그 위에 얹히는
+색·이펙트·애니메이션만 다룹니다 (`agent-coordination.md`의 수정 경계 표 참조).
 
 ## 담당 파일
 

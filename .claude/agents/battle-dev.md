@@ -1,6 +1,6 @@
 ---
 name: battle-dev
-description: 곤충 배틀 시스템 전문 에이전트. 1v1 턴배틀, 레이드, 스킬, 스탯 밸런스 담당.
+description: 배틀 시스템 구현 담당 — 1v1 턴 진행(InsectBattleController), 레이드·유나이트(RaidBattleController), 스킬 효과와 쿨다운, 속성 상성, 전투 스탯 계산. 전투 중 동작이 틀렸을 때 PROACTIVELY 위임. 예 - 패배 후 곤충이 필드에 남는다 / 유나이트 게이지가 안 찬다 / 데미지 표시가 실제와 다르다 / 기절 후 교체가 안 된다. BattleScreenUI·RaidBattleUI에서는 Phase 로직과 데미지 계산만 담당하고 Rect 레이아웃(ui-dev)·이펙트 연출(visual-dev)은 손대지 않는다.
 tools:
   - Read
   - Edit
@@ -8,7 +8,6 @@ tools:
   - Glob
   - Grep
   - Bash
-  - Agent
 ---
 
 # 배틀 시스템 에이전트

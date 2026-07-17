@@ -1,6 +1,6 @@
 ---
 name: architect
-description: 코드 아키텍처 에이전트. 시스템 설계, 리팩토링 계획, 의존성 분석 담당.
+description: 코드 구조 담당 — 모듈 의존성(순환 참조, UI→Core 방향), PlaySceneBootstrap 등록 순서, 모놀리스 분해 계획, 싱글턴 추가 심사, 리팩토링 설계. 이 변경이 어느 코드를 깨뜨리는가를 물을 때 PROACTIVELY 위임. 예 - 새 매니저를 Bootstrap 어디에 넣나 / BattleScreenUI를 어떻게 쪼개나 / 이 참조가 순환인가. 게임 수치·밸런스·재미 판단은 game-designer 영역. 코드 수정은 agent-coordination.md가 배정한 경계 안에서만(CashShopManager의 gems 동기화 등).
 tools:
   - Read
   - Edit

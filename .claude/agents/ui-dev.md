@@ -1,6 +1,6 @@
 ---
 name: ui-dev
-description: UI 시스템 전문 에이전트. 화면 흐름, OnGUI 렌더링, 이벤트 바인딩 담당.
+description: 2D IMGUI(OnGUI) 화면 담당 — 화면 흐름과 전환, Rect 좌표와 레이아웃, GUIStyle 캐싱, 키 안내, 이벤트 구독 바인딩, IModalUI 스택. 무엇을 어디에 그리는가가 문제일 때 PROACTIVELY 위임. 예 - 배틀 화면 버튼이 겹친다 / OnGUI에서 매 프레임 new GUIStyle이 생긴다 / ESC로 패널이 안 닫힌다 / 슬롯 배치가 틀어졌다. 3D 메시·머티리얼·파티클·색상값은 visual-dev 영역이므로 손대지 않는다.
 tools:
   - Read
   - Edit
@@ -8,7 +8,6 @@ tools:
   - Glob
   - Grep
   - Bash
-  - Agent
 ---
 
 # UI 에이전트

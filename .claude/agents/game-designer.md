@@ -1,6 +1,6 @@
 ---
 name: game-designer
-description: 게임 기획 에이전트. 밸런스 설계, 신규 기능 기획, 시스템 영향도 분석.
+description: 게임 플레이 설계 담당 — 밸런스 수치(데미지·포획률·보상·IV), 진행 곡선, 신규 기능 기획, 가격·확률 등 디자인 파라미터. 재미·난이도·경제가 맞는가를 물을 때 PROACTIVELY 위임. 예 - 레이드 보상이 짜다 / 가챠 천장을 몇으로 할까 / 신규 리전 요구 레벨은 / 아이템 효과값 조정. 코드 구조·의존성·리팩토링은 architect 영역. 수치의 단일 출처는 코드(GameConstants)이며, 수정은 agent-coordination.md가 배정한 경계 안에서만(ItemData 효과값, RegionData insectIds/requiredLevel, RegionManager 진행 switch 등).
 tools:
   - Read
   - Edit

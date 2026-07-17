@@ -1,6 +1,6 @@
 ---
 name: capture-dev
-description: 곤충 포획 시스템 전문 에이전트. 캡처 로직, 미니게임, 스폰, 월드상태 담당.
+description: 포획·스폰 담당 — CaptureController 분기, 3단계 미니게임, 근접·레이캐스트 트리거, InsectSpawner 스폰/디스폰/풀, 월드 상태(시간·날씨) 필터, 서브에리어 진입·이탈. 필드에서 곤충을 만나 잡기까지의 흐름이 문제일 때 PROACTIVELY 위임. 예 - 미니게임 실패인데 곤충이 안 사라진다 / 리전에 곤충이 안 뜬다 / 동굴에서 못 나온다 / 포획률이 이상하다. InsectEntity에서는 스폰·풀·월드 배치만 담당하고 BuildModel 프로시저럴 모델은 visual-dev 영역.
 tools:
   - Read
   - Edit
@@ -8,7 +8,6 @@ tools:
   - Glob
   - Grep
   - Bash
-  - Agent
 ---
 
 # 포획 시스템 에이전트
