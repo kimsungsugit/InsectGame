@@ -203,7 +203,7 @@ namespace InsectGame.Core
         // 임계 배열: [C상한, U상한, R상한, E상한] — L은 나머지(임계4~100). 변경 = 밸런스 변경이므로 신중히.
         private static readonly float[] BronzeThresholds = { 55f, 85f, 97f, 99.5f };
         private static readonly float[] SilverThresholds = { 12f, 37f, 70f, 92f };
-        private static readonly float[] GoldThresholds   = { 5f, 10f, 23f, 55f };
+        private static readonly float[] GoldThresholds   = { 4f, 12f, 30f, 75f };
 
         // 표기 순서와 동일한 등급 배열 (C, U, R, E, L).
         private static readonly InsectRarity[] RarityOrder =

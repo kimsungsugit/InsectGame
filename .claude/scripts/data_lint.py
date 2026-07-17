@@ -343,16 +343,28 @@ def evaluate_signals() -> list:
     probs = extract_gacha_probabilities()
     for box, thresholds in probs.items():
         # 추출 실패 분기는 없다 — extract_gacha_probabilities()가 ExtractorBroken으로 죽는다.
-        last = thresholds[-1]
-        legendary_pct = 100 - last
-        # Legendary 확률은 양수이고 정렬되어 있어야 정상
+        epic_pct = thresholds[-1] - thresholds[-2]
+        legendary_pct = 100 - thresholds[-1]
         is_sorted = thresholds == sorted(thresholds) and len(thresholds) >= 4
-        judge = "PASS" if (legendary_pct > 0 and is_sorted) else "FAIL"
+        # 서열 규칙: 최고 레어도(전설)가 차상위(에픽)보다 흔하면 안 된다.
+        # 봉우리형은 허용한다 — 실버는 Rare 봉우리(L8 ≤ E22)라 정상이다. 하지만 전설이
+        # 에픽을 넘으면 등급 서열이 뒤집힌 것이다. 골드 {5,10,23,55}가 L45 > E32로
+        # 이 규칙을 어겼는데(전설이 커먼의 9배), 옛 검사는 "단조증가 + L>0"만 봐서
+        # 통과시켰다. 45% 오타가 3개월 방치된 이유가 이 구멍이었다.
+        legendary_le_epic = legendary_pct <= epic_pct + 1e-6
+        ok = legendary_pct > 0 and is_sorted and legendary_le_epic
+        note = ""
+        if not is_sorted:
+            note = " — 임계값 단조증가 아님"
+        elif legendary_pct <= 0:
+            note = " — Legendary 0%"
+        elif not legendary_le_epic:
+            note = f" — 전설({legendary_pct:.1f}%) > 에픽({epic_pct:.1f}%) 서열 역전"
         signals.append((
-            f"Gacha {box} 누적 확률 분포 (Legendary={legendary_pct:.2f}%)",
-            "임계값 단조증가 + Legendary > 0",
-            f"임계값 {thresholds}, Legendary {legendary_pct:.2f}%",
-            judge
+            f"Gacha {box} 등급 분포 (L={legendary_pct:.1f}% E={epic_pct:.1f}%)",
+            "단조증가 + Legendary > 0 + 전설 ≤ 에픽",
+            f"임계값 {thresholds}{note or ' — 정상'}",
+            "PASS" if ok else "FAIL"
         ))
 
     # 8. CashShop UI 표시 가격 ↔ Manager gemPrice 정합성
