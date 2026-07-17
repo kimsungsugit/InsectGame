@@ -6,7 +6,24 @@ description: 테스트 프레임워크, 컨벤션, 필수 기준
 
 ## 프레임워크
 - NUnit (`using NUnit.Framework`)
-- EditMode 테스트 위치: `Assets/Tests/EditMode/`
+- 테스트 파일 위치: `Assets/Tests/EditMode/`
+
+## 러너는 PlayMode다 (폴더 이름에 속지 말 것)
+
+폴더 이름은 `EditMode`지만 **EditMode 러너로는 0건이 잡힌다.** 이 프로젝트엔
+`.asmdef`가 하나도 없어서 테스트가 별도 에디터 테스트 어셈블리가 아니라
+런타임 어셈블리(`Assembly-CSharp`)로 컴파일되고, EditMode 러너는 그걸 보지 못한다.
+
+```
+-testPlatform PlayMode -testFilter InsectGame.Tests
+```
+
+`-testPlatform EditMode`를 쓰면 **0건을 실행하고 "성공"이라 보고한다.** 실행 개수를
+반드시 확인할 것 — 현재 `[Test]`는 38개다. 0건 보고는 통과가 아니라 실패다.
+
+EditMode 러너를 되살리려면 `Assets/Scripts`·`Assets/Editor`·`Assets/Tests`에 asmdef를
+도입해야 한다(asmdef는 `Assembly-CSharp`를 참조할 수 없어 게임 코드 쪽도 함께 필요).
+출시 후 별건.
 
 ## 컨벤션
 - 클래스: `[TestFixture]` 어트리뷰트
@@ -28,6 +45,7 @@ description: 테스트 프레임워크, 컨벤션, 필수 기준
 - **새 시스템 추가**: 핵심 로직에 대한 단위 테스트 (UI 제외)
 
 ## 테스트 제외 대상
-- OnGUI 렌더링 코드 (IMGUI는 EditMode 테스트 불가)
-- MonoBehaviour 생명주기 의존 로직 (PlayMode 테스트 필요)
+- OnGUI 렌더링 코드 (IMGUI는 렌더 루프 없이 검증 불가)
+- MonoBehaviour 생명주기 의존 로직 (`[UnityTest]` + `yield`가 필요. 현재 38개는 전부
+  씬 없이 도는 순수 로직 `[Test]`다)
 - 외부 서비스 호출 (Firebase, Firestore)
