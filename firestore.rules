@@ -1,0 +1,56 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isOwner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    // 일반 세이브는 본인만 접근할 수 있다. 보석 증가는 Admin SDK를 사용하는
+    // verifyGooglePlayPurchase 함수만 수행하며, 클라이언트는 동일 값 유지/차감만 가능하다.
+    match /users/{uid} {
+      allow read, delete: if isOwner(uid);
+      allow create: if isOwner(uid)
+        && (!('gems' in request.resource.data) || request.resource.data.gems == 0);
+      allow update: if isOwner(uid)
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['gems'])
+          || request.resource.data.gems <= resource.data.gems);
+    }
+
+    // 구매 토큰 원문은 저장하지 않고 SHA-256 문서 ID만 사용한다.
+    // 이 원장은 클라이언트에서 읽거나 쓸 수 없다.
+    match /iapPurchases/{purchaseHash} {
+      allow read, write: if false;
+    }
+
+    // 친구 관계, 매칭, 전투 결과 및 레이팅은 socialPvpApi(Admin SDK)만 변경한다.
+    // 클라이언트의 직접 조작으로 승패나 등급을 위조할 수 없도록 모두 차단한다.
+    match /socialProfiles/{document=**} {
+      allow read, write: if false;
+    }
+    match /friendRequests/{document=**} {
+      allow read, write: if false;
+    }
+    match /pvpChallenges/{document=**} {
+      allow read, write: if false;
+    }
+    match /pvpQueue/{document=**} {
+      allow read, write: if false;
+    }
+    match /pvpMatches/{document=**} {
+      allow read, write: if false;
+    }
+    match /socialBlocks/{document=**} {
+      allow read, write: if false;
+    }
+    match /worldInvites/{document=**} {
+      allow read, write: if false;
+    }
+
+    // 5인 필드의 입장 정원, 위치, 채팅은 socialPvpApi(Admin SDK)가 검증한다.
+    // 클라이언트 직접 쓰기를 막아 정원 우회, 위치 조작 대화, 차단 우회를 방지한다.
+    match /worlds/{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

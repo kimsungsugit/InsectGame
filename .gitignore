@@ -78,5 +78,12 @@ TestResults/
 __pycache__/
 *.pyc
 
+# 카카오톡으로 주고받은 기기 테스트 스크린샷 — 저장소에 둘 이유 없음
+KakaoTalk_*.jpg
+KakaoTalk_*.png
+
+# 임시 작업 디렉토리
+/.utmp/
+
 # Codex 미러 실행 로그
 /.codex/*.log
