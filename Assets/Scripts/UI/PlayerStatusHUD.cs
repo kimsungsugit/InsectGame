@@ -30,9 +30,13 @@ namespace InsectGame.UI
         private GUIStyle toggleStyle;
         private GUIStyle alertNameStyle;
         private GUIStyle alertDescStyle;
+        private GUIStyle tabLabelStyle;
+        private GUIStyle tabNumStyle;
+        private GUIStyle tabHintStyle;
         private bool stylesInitialized;
 
         private bool expanded = true;
+        private bool mobileLayoutInitialized;
         private float xpBarAnim;
         private float toggleAnim = 1f;
 
@@ -69,6 +73,15 @@ namespace InsectGame.UI
 
         private void OnEnable()
         {
+            if (!mobileLayoutInitialized)
+            {
+                mobileLayoutInitialized = true;
+                if (UIScale.IsMobileLayout)
+                {
+                    expanded = false;
+                    toggleAnim = 0f;
+                }
+            }
             if (regionManager != null && !subscribedSubArea)
             {
                 regionManager.SubAreaChanged += OnSubAreaEntered;
@@ -130,45 +143,65 @@ namespace InsectGame.UI
             float panelW = 480f;
             float panelH = 540f;
             float margin = 20f;
-            float slideX = Mathf.Lerp(-panelW + 50, 0, toggleAnim);
             // 세이프 에어리어(노치/상태바) 안쪽으로 — 가상 좌표라 픽셀 인셋을 Scale로 변환.
-            float px = margin + slideX + SafeArea.Left / UIScale.Scale;
+            float safeL = SafeArea.Left / UIScale.Scale;
             float py = margin + SafeArea.Top / UIScale.Scale;
 
-            GUI.color = PanelBgCol;
-            GUI.DrawTexture(new Rect(px, py, panelW, panelH), Texture2D.whiteTexture);
+            // 닫힘 상태에서는 패널을 화면 밖으로 '완전히' 밀어 잘린 숫자가 새어 보이지 않게 한다.
+            // (기존엔 50px 띠만 남겨 우측 정렬된 스탯 값이 잘린 채 노출돼 깨져 보였음 — 가로/세로 공통 버그)
+            float openX = margin + safeL;
+            float closedX = -(panelW + 40f);
+            float px = Mathf.Lerp(closedX, openX, toggleAnim);
 
-            GUI.color = PanelAccentBlueCol;
-            GUI.DrawTexture(new Rect(px, py, panelW, 4), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(px, py + panelH - 3, panelW, 3), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(px, py, 3, panelH), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(px + panelW - 3, py, 3, panelH), Texture2D.whiteTexture);
+            // 닫힘 탭 — 패널이 닫혀 있을수록(toggleAnim↓) 진하게. 좌측 가장자리에 떠 재확장 진입점이자
+            // 레벨 요약을 보여 준다. 패널보다 먼저 그려 펼칠 때 들어오는 패널이 자연스럽게 덮도록 한다.
+            Rect tabRect = DrawCollapsedTab(safeL, py, 1f - toggleAnim);
 
-            GUI.color = Color.white;
+            Rect panelToggleRect = default;
+            bool panelVisible = toggleAnim > 0.001f;
+            if (panelVisible)
+            {
+                GUI.color = PanelBgCol;
+                GUI.DrawTexture(new Rect(px, py, panelW, panelH), Texture2D.whiteTexture);
 
-            float cy = py + 16;
+                GUI.color = PanelAccentBlueCol;
+                GUI.DrawTexture(new Rect(px, py, panelW, 4), Texture2D.whiteTexture);
+                GUI.DrawTexture(new Rect(px, py + panelH - 3, panelW, 3), Texture2D.whiteTexture);
+                GUI.DrawTexture(new Rect(px, py, 3, panelH), Texture2D.whiteTexture);
+                GUI.DrawTexture(new Rect(px + panelW - 3, py, 3, panelH), Texture2D.whiteTexture);
 
-            DrawLevelSection(px, cy, panelW);
-            cy += 135;
+                GUI.color = Color.white;
 
-            DrawResourceSection(px, cy, panelW);
-            cy += 160;
+                float cy = py + 16;
 
-            DrawCollectionSection(px, cy, panelW);
-            cy += 85;
+                DrawLevelSection(px, cy, panelW);
+                cy += 135;
 
-            DrawRegionSection(px, cy, panelW);
+                DrawResourceSection(px, cy, panelW);
+                cy += 160;
 
-            Rect toggleRect = new Rect(px + panelW - 46, py + 8, 38, 38);
-            GUI.color = PanelDividerCol;
-            GUI.DrawTexture(toggleRect, Texture2D.whiteTexture);
-            GUI.color = Color.white;
-            GUI.Label(toggleRect, expanded ? "◀" : "▶", toggleStyle);
+                DrawCollectionSection(px, cy, panelW);
+                cy += 85;
 
+                DrawRegionSection(px, cy, panelW);
+
+                float toggleSize = UIScale.IsMobileLayout ? 58f : 38f;
+                panelToggleRect = new Rect(px + panelW - toggleSize - 8f, py + 8f, toggleSize, toggleSize);
+                GUI.color = PanelDividerCol;
+                GUI.DrawTexture(panelToggleRect, Texture2D.whiteTexture);
+                GUI.color = Color.white;
+                GUI.Label(panelToggleRect, "◀", toggleStyle);
+            }
+
+            // 입력 — 패널 ◀(그려질 때)와 닫힘 탭(펼침 전)을 모두 활성화해
+            // 애니메이션 구간에서 '보이는 버튼이 잠깐 무반응'하는 사각지대를 없앤다.
+            // 탭은 toggleAnim<0.5에서만 받아 펼침 상태의 좌상단(레벨 뱃지) 오탭을 막는다.
             Event evt = Event.current;
             if (evt != null && evt.type == EventType.MouseDown && evt.button == 0)
             {
-                if (toggleRect.Contains(evt.mousePosition))
+                bool hitPanel = panelVisible && panelToggleRect.Contains(evt.mousePosition);
+                bool hitTab = toggleAnim < 0.5f && tabRect.Contains(evt.mousePosition);
+                if (hitPanel || hitTab)
                 {
                     expanded = !expanded;
                     evt.Use();
@@ -394,6 +427,53 @@ namespace InsectGame.UI
             { fontSize = 30, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             alertDescStyle = new GUIStyle(GUI.skin.label)
             { fontSize = 18, alignment = TextAnchor.MiddleCenter };
+
+            // 닫힘 탭 전용 스타일 (textColor는 흰색 기반 — 알파는 GUI.color로 곱해 페이드)
+            tabLabelStyle = new GUIStyle(GUI.skin.label)
+            { fontSize = 13, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            tabLabelStyle.normal.textColor = new Color(0.5f, 0.7f, 1f);
+            tabNumStyle = new GUIStyle(GUI.skin.label)
+            { fontSize = 30, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            tabNumStyle.normal.textColor = Color.white;
+            tabHintStyle = new GUIStyle(GUI.skin.label)
+            { fontSize = 26, alignment = TextAnchor.MiddleCenter };
+            tabHintStyle.normal.textColor = new Color(0.6f, 0.7f, 0.9f);
+        }
+
+        // OnGUI Rect 캐싱 회피용 — 닫힘 탭은 좌표가 safeL/py에만 의존해 매 프레임 new Rect를 만들지만
+        // 닫힘 상태에서만 그려지고 항목 수가 적어 영향 미미. 패널/탭 모두 IMGUI 관용 패턴 유지.
+        private Rect DrawCollapsedTab(float safeL, float py, float strength)
+        {
+            float tabW = UIScale.IsMobileLayout ? 72f : 54f;
+            float tabH = 134f;
+            float tabX = safeL + 6f;
+            float tabY = py;
+            Rect rect = new Rect(tabX, tabY, tabW, tabH);
+
+            float a = Mathf.Clamp01(strength);
+            if (a <= 0.001f) return rect; // 완전히 열림 — 탭은 그리지 않음
+
+            // 배경 + accent (알파는 strength로 페이드)
+            GUI.color = new Color(PanelBgCol.r, PanelBgCol.g, PanelBgCol.b, PanelBgCol.a * a);
+            GUI.DrawTexture(rect, Texture2D.whiteTexture);
+            GUI.color = new Color(PanelAccentBlueCol.r, PanelAccentBlueCol.g, PanelAccentBlueCol.b, a);
+            GUI.DrawTexture(new Rect(tabX, tabY, tabW, 3), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(tabX + tabW - 3, tabY, 3, tabH), Texture2D.whiteTexture);
+
+            // LV 뱃지 (닫힘 상태에서도 레벨 요약 표시)
+            GUI.color = new Color(1f, 1f, 1f, a);
+            GUI.Label(new Rect(tabX, tabY + 12, tabW, 18), "LV", tabLabelStyle);
+            GUI.Label(new Rect(tabX, tabY + 28, tabW, 36), progress.Level.ToString(), tabNumStyle);
+
+            GUI.color = new Color(PanelDividerCol.r, PanelDividerCol.g, PanelDividerCol.b, a);
+            GUI.DrawTexture(new Rect(tabX + 12, tabY + 74, tabW - 24, 2), Texture2D.whiteTexture);
+
+            // ▶ 펼치기 안내
+            GUI.color = new Color(1f, 1f, 1f, a);
+            GUI.Label(new Rect(tabX, tabY + 84, tabW, 40), "▶", tabHintStyle);
+
+            GUI.color = Color.white;
+            return rect;
         }
 
         private void DrawSubAreaAlert()

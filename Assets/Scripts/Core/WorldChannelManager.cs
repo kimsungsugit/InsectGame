@@ -14,7 +14,7 @@ namespace InsectGame.Core
         public string displayName;
         public int playerCount;
         public int maxPlayers;
-        public List<WorldPlayer> players;
+        public List<WorldPlayer> players = new List<WorldPlayer>();
     }
 
     [Serializable]
@@ -23,32 +23,102 @@ namespace InsectGame.Core
         public string uid;
         public string displayName;
         public int level;
-        public long joinedAt;
+        public float x;
+        public float y;
+        public float z;
+        public float facing;
+        public long joinedAtMs;
+        public long lastSeenAtMs;
+        public bool blocked;
+
+        public Vector3 Position => new Vector3(x, y, z);
     }
 
+    [Serializable]
+    public class WorldChatMessage
+    {
+        public string messageId;
+        public string fromUid;
+        public string toUid;
+        public string displayName;
+        public string message;
+        public long sentAtMs;
+    }
+
+    [Serializable]
+    public class WorldInviteSnapshot
+    {
+        public string inviteId;
+        public string fromUid;
+        public string displayName;
+        public string worldId;
+        public string worldName;
+        public long createdAtMs;
+    }
+
+    [Serializable]
+    internal class WorldApiRequest
+    {
+        public string action;
+        public string worldId;
+        public string displayName;
+        public int level;
+        public float x;
+        public float y;
+        public float z;
+        public float facing;
+        public string targetUid;
+        public string friendUid;
+        public string message;
+        public string inviteId;
+        public bool accept;
+    }
+
+    [Serializable]
+    internal class WorldApiResponse
+    {
+        public bool success;
+        public string error;
+        public string worldId;
+        public WorldInstance world;
+        public WorldInstance[] worlds;
+        public WorldChatMessage[] messages;
+        public WorldInviteSnapshot[] invites;
+    }
+
+    /// <summary>
+    /// Cloud Function 트랜잭션을 사용하는 5인 필드 세션 클라이언트입니다.
+    /// 위치/채팅/초대/차단/필드 대전을 하나의 인증 API 경로로 동기화합니다.
+    /// </summary>
     public class WorldChannelManager : MonoBehaviour
     {
         public static WorldChannelManager Instance { get; private set; }
 
-        public const int MaxPlayersPerWorld = 10;
+        public const int MaxPlayersPerWorld = 5;
+        private const float SyncInterval = 1.0f;
 
         public WorldInstance CurrentWorld { get; private set; }
-        public List<WorldInstance> AvailableWorlds { get; private set; }
+        public List<WorldInstance> AvailableWorlds { get; private set; } = new List<WorldInstance>();
+        public IReadOnlyList<WorldChatMessage> Messages => messages;
+        public IReadOnlyList<WorldInviteSnapshot> Invites => invites;
         public bool IsJoined => CurrentWorld != null;
+        public bool IsBusy { get; private set; }
 
         public event Action WorldJoined;
         public event Action WorldLeft;
         public event Action<List<WorldInstance>> WorldListUpdated;
+        public event Action<WorldInstance> WorldStateUpdated;
+        public event Action<IReadOnlyList<WorldChatMessage>> MessagesUpdated;
+        public event Action<IReadOnlyList<WorldInviteSnapshot>> InvitesUpdated;
+        public event Action<string> ActionCompleted;
         public event Action<string> ErrorOccurred;
 
-        private float refreshTimer;
-        private const float RefreshInterval = 30f;
-        private const float PresenceInterval = 60f;
-        private float presenceTimer;
-
-        private const string WorldsCollection = "worlds";
-
-        // ── Lifecycle ──
+        private readonly List<WorldChatMessage> messages = new List<WorldChatMessage>();
+        private readonly List<WorldInviteSnapshot> invites = new List<WorldInviteSnapshot>();
+        private PlayerMovement localPlayer;
+        private float syncTimer;
+        private float lobbyRefreshTimer;
+        private bool syncInFlight;
 
         private void Awake()
         {
@@ -58,96 +128,6 @@ namespace InsectGame.Core
                 return;
             }
             Instance = this;
-            AvailableWorlds = new List<WorldInstance>();
-        }
-
-        private static bool IsFirebaseReady()
-        {
-            return FirebaseConfig.IsConfigured
-                && AuthManager.Instance != null
-                && AuthManager.Instance.IsLoggedIn
-                && !AuthManager.Instance.IsMasterAccount;
-        }
-
-        // 코루틴 중복 실행 차단 — 네트워크 지연으로 코루틴이 RefreshInterval(30s)/PresenceInterval 초과 시
-        // Update가 매 프레임 새 코루틴 시작 → CurrentWorld 동시 접근/PATCH race. 진행 중 플래그로 차단.
-        private bool isRefreshingWorld;
-        private bool isUpdatingPresence;
-
-        private void Update()
-        {
-            if (!IsFirebaseReady()) return;
-            if (CurrentWorld == null) return;
-
-            refreshTimer += Time.deltaTime;
-            if (refreshTimer >= RefreshInterval && !isRefreshingWorld)
-            {
-                refreshTimer = 0f;
-                StartCoroutine(RefreshCurrentWorldGuarded());
-            }
-
-            presenceTimer += Time.deltaTime;
-            if (presenceTimer >= PresenceInterval && !isUpdatingPresence)
-            {
-                presenceTimer = 0f;
-                StartCoroutine(UpdatePresenceGuarded());
-            }
-        }
-
-        private System.Collections.IEnumerator RefreshCurrentWorldGuarded()
-        {
-            isRefreshingWorld = true;
-            yield return RefreshCurrentWorldCoroutine();
-            isRefreshingWorld = false;
-        }
-
-        private System.Collections.IEnumerator UpdatePresenceGuarded()
-        {
-            isUpdatingPresence = true;
-            yield return UpdatePresenceCoroutine();
-            isUpdatingPresence = false;
-        }
-
-        private void OnApplicationQuit()
-        {
-            BestEffortLeaveWorld();
-        }
-
-        // 모바일 백그라운드 진입 시에도 best-effort 퇴장 (앱 강제 종료 대비)
-        private void OnApplicationPause(bool pauseStatus)
-        {
-            if (pauseStatus) BestEffortLeaveWorld();
-        }
-
-        // OnApplicationQuit은 비동기 코루틴 완료 보장 안 됨 → 동기 polling으로 best-effort.
-        // Fire-and-forget: 메인 스레드 블록 없음 (이전엔 Thread.Sleep 폴링으로 최대 500ms 블록 → Android ANR 위험).
-        // 단점: 일부 케이스에서 요청 송신 전 앱 종료 → currentPlayers 즉시 감소 안 됨.
-        // 보완: Firestore 측 lastSeenAt 기반 서버 cleanup으로 결국 정리됨 (UX 우선 trade-off).
-        private void BestEffortLeaveWorld()
-        {
-            if (CurrentWorld == null || AuthManager.Instance == null) return;
-
-            string url = $"{FirebaseConfig.FirestoreBaseUrl}/{WorldsCollection}/{CurrentWorld.worldId}";
-            CurrentWorld.players.RemoveAll(p => p.uid == AuthManager.Instance.UserId);
-            CurrentWorld.playerCount = CurrentWorld.players.Count;
-            string json = BuildWorldDocument(CurrentWorld.worldId, CurrentWorld.displayName, CurrentWorld.maxPlayers, CurrentWorld.players);
-
-            try
-            {
-                UnityWebRequest req = new UnityWebRequest(url, "PATCH");
-                byte[] body = Encoding.UTF8.GetBytes(json);
-                req.uploadHandler = new UploadHandlerRaw(body);
-                req.downloadHandler = new DownloadHandlerBuffer();
-                req.SetRequestHeader("Content-Type", "application/json");
-                req.SetRequestHeader("Authorization", $"Bearer {AuthManager.Instance.IdToken}");
-
-                // SendWebRequest는 비동기 — 호출만 하고 결과 폴링 안 함. Dispose는 OS가 정리.
-                req.SendWebRequest();
-            }
-            catch (System.Exception e)
-            {
-                Debug.LogWarning($"[WorldChannel] best-effort leave 실패: {e.Message}");
-            }
         }
 
         private void OnDestroy()
@@ -155,509 +135,376 @@ namespace InsectGame.Core
             if (Instance == this) Instance = null;
         }
 
-        // ── Public API ──
+        private void Update()
+        {
+            if (!IsFirebaseReady()) return;
+            if (!IsJoined)
+            {
+                lobbyRefreshTimer += Time.unscaledDeltaTime;
+                if (lobbyRefreshTimer >= 5f && !IsBusy)
+                {
+                    lobbyRefreshTimer = 0f;
+                    StartCoroutine(RefreshWorldListRoutine());
+                }
+                return;
+            }
+            // syncInFlight뿐 아니라 IsBusy(join/leave/chat 진행 중)도 가드 — leave in-flight 중
+            // sync가 시작돼 leave 응답 뒤 stale sync 응답이 월드를 되살리는 재진입을 차단.
+            if (syncInFlight || IsBusy) return;
+            syncTimer += Time.unscaledDeltaTime;
+            if (syncTimer < SyncInterval) return;
+            syncTimer = 0f;
+            StartCoroutine(SyncWorldRoutine());
+        }
+
+        private void OnApplicationPause(bool paused)
+        {
+            if (paused) BestEffortLeaveWorld();
+        }
+
+        private void OnApplicationQuit()
+        {
+            BestEffortLeaveWorld();
+        }
 
         public void RefreshWorldList()
         {
-            if (!IsFirebaseReady()) return;
-            StartCoroutine(FetchWorldListCoroutine());
+            if (!CanStartRequest()) return;
+            StartCoroutine(RefreshWorldListRoutine());
         }
 
         public void AutoJoinWorld()
         {
-            if (!IsFirebaseReady()) return;
-            StartCoroutine(AutoJoinCoroutine());
+            if (!CanStartRequest()) return;
+            StartCoroutine(JoinWorldRoutine(string.Empty));
         }
 
         public void JoinWorld(string worldId)
         {
-            if (!IsFirebaseReady()) return;
-            StartCoroutine(JoinWorldCoroutine(worldId));
+            if (!CanStartRequest() || string.IsNullOrWhiteSpace(worldId)) return;
+            StartCoroutine(JoinWorldRoutine(worldId.Trim()));
         }
 
         public void LeaveWorld()
         {
-            if (!IsFirebaseReady()) return;
-            StartCoroutine(LeaveWorldCoroutine());
+            if (!CanStartRequest() || CurrentWorld == null) return;
+            StartCoroutine(LeaveWorldRoutine());
         }
 
-        // ── Fetch World List ──
-
-        private IEnumerator FetchWorldListCoroutine()
+        public void SendPrivateChat(string targetUid, string message)
         {
-            string url = $"{FirebaseConfig.FirestoreBaseUrl}/{WorldsCollection}";
-
-            using (UnityWebRequest req = UnityWebRequest.Get(url))
+            if (!CanStartRequest() || CurrentWorld == null) return;
+            string text = (message ?? string.Empty).Trim();
+            if (text.Length == 0) return;
+            StartCoroutine(MutationRoutine(new WorldApiRequest
             {
-                req.SetRequestHeader("Authorization", $"Bearer {AuthManager.Instance.IdToken}");
-                yield return req.SendWebRequest();
+                action = "sendWorldChat",
+                targetUid = targetUid,
+                message = text.Length > 80 ? text.Substring(0, 80) : text,
+            }, "메시지를 보냈습니다."));
+        }
 
-                if (req.result == UnityWebRequest.Result.Success)
+        public void ChallengePlayer(string targetUid)
+        {
+            if (!CanStartRequest() || CurrentWorld == null) return;
+            StartCoroutine(MutationRoutine(new WorldApiRequest
+            {
+                action = "challengeWorldPlayer", targetUid = targetUid,
+            }, "대전 신청을 보냈습니다."));
+        }
+
+        public void InviteFriend(string friendUid)
+        {
+            if (!CanStartRequest() || CurrentWorld == null) return;
+            StartCoroutine(MutationRoutine(new WorldApiRequest
+            {
+                action = "inviteFriendToWorld", friendUid = friendUid,
+            }, "같은 필드로 초대했습니다."));
+        }
+
+        public void RespondInvite(string inviteId, bool accept)
+        {
+            if (!CanStartRequest()) return;
+            StartCoroutine(RespondInviteRoutine(inviteId, accept));
+        }
+
+        public void BlockPlayer(string targetUid)
+        {
+            if (!CanStartRequest()) return;
+            StartCoroutine(MutationRoutine(new WorldApiRequest
+            {
+                action = "blockUser", targetUid = targetUid,
+            }, "사용자를 차단했습니다."));
+        }
+
+        public void UnblockPlayer(string targetUid)
+        {
+            if (!CanStartRequest()) return;
+            StartCoroutine(MutationRoutine(new WorldApiRequest
+            {
+                action = "unblockUser", targetUid = targetUid,
+            }, "차단을 해제했습니다."));
+        }
+
+        private IEnumerator RefreshWorldListRoutine()
+        {
+            IsBusy = true;
+            try
+            {
+                WorldApiResponse response = null;
+                yield return SendRequest(new WorldApiRequest { action = "listWorlds" }, value => response = value);
+                if (response != null && response.success)
                 {
-                    AvailableWorlds = ParseWorldList(req.downloadHandler.text);
+                    AvailableWorlds = response.worlds != null
+                        ? new List<WorldInstance>(response.worlds)
+                        : new List<WorldInstance>();
+                    ApplyInvites(response.invites);
                     WorldListUpdated?.Invoke(AvailableWorlds);
                 }
-                else
-                {
-                    Debug.LogWarning($"[WorldChannel] 월드 목록 조회 실패: {req.error}");
-                    ErrorOccurred?.Invoke("월드 목록 조회 실패");
-                }
             }
+            finally { IsBusy = false; } // 이벤트 핸들러 예외/코루틴 중단 시에도 반드시 복구
         }
 
-        // ── Auto Join ──
-
-        private IEnumerator AutoJoinCoroutine()
+        private IEnumerator JoinWorldRoutine(string worldId)
         {
-            yield return FetchWorldListCoroutine();
-
-            WorldInstance target = null;
-            foreach (var world in AvailableWorlds)
+            IsBusy = true;
+            try
             {
-                if (world.playerCount < world.maxPlayers)
+                CacheLocalPlayer();
+                Vector3 position = localPlayer != null ? localPlayer.transform.position : Vector3.zero;
+                WorldApiResponse response = null;
+                yield return SendRequest(new WorldApiRequest
                 {
-                    target = world;
-                    break;
-                }
-            }
-
-            if (target == null)
-            {
-                yield return CreateNewWorldCoroutine();
-                if (AvailableWorlds.Count > 0)
-                {
-                    target = AvailableWorlds[AvailableWorlds.Count - 1];
-                }
-            }
-
-            if (target != null)
-            {
-                yield return JoinWorldCoroutine(target.worldId);
-            }
-        }
-
-        // ── Create New World ──
-
-        private IEnumerator CreateNewWorldCoroutine()
-        {
-            int nextNum = AvailableWorlds.Count + 1;
-            string worldId = $"world_{nextNum:D3}";
-            string displayName = $"\uc6d4\ub4dc {nextNum}";
-
-            string json = BuildWorldDocument(worldId, displayName, MaxPlayersPerWorld, new List<WorldPlayer>());
-            string url = $"{FirebaseConfig.FirestoreBaseUrl}/{WorldsCollection}/{worldId}";
-
-            using (UnityWebRequest req = new UnityWebRequest(url, "PATCH"))
-            {
-                byte[] bodyRaw = Encoding.UTF8.GetBytes(json);
-                req.uploadHandler = new UploadHandlerRaw(bodyRaw);
-                req.downloadHandler = new DownloadHandlerBuffer();
-                req.SetRequestHeader("Content-Type", "application/json");
-                req.SetRequestHeader("Authorization", $"Bearer {AuthManager.Instance.IdToken}");
-
-                yield return req.SendWebRequest();
-
-                if (req.result == UnityWebRequest.Result.Success)
-                {
-                    WorldInstance newWorld = new WorldInstance
-                    {
-                        worldId = worldId,
-                        displayName = displayName,
-                        playerCount = 0,
-                        maxPlayers = MaxPlayersPerWorld,
-                        players = new List<WorldPlayer>()
-                    };
-                    AvailableWorlds.Add(newWorld);
-                    Debug.Log($"[WorldChannel] \uc0c8 \uc6d4\ub4dc \uc0dd\uc131: {displayName}");
-                }
-                else
-                {
-                    Debug.LogWarning($"[WorldChannel] \uc6d4\ub4dc \uc0dd\uc131 \uc2e4\ud328: {req.error}");
-                    ErrorOccurred?.Invoke($"\uc6d4\ub4dc \uc0dd\uc131 \uc2e4\ud328: {req.error}");
-                }
-            }
-        }
-
-        // ── Join World ──
-
-        private IEnumerator JoinWorldCoroutine(string worldId)
-        {
-            if (CurrentWorld != null)
-            {
-                yield return LeaveWorldCoroutine();
-            }
-
-            string url = $"{FirebaseConfig.FirestoreBaseUrl}/{WorldsCollection}/{worldId}";
-
-            using (UnityWebRequest getReq = UnityWebRequest.Get(url))
-            {
-                getReq.SetRequestHeader("Authorization", $"Bearer {AuthManager.Instance.IdToken}");
-                yield return getReq.SendWebRequest();
-
-                if (getReq.result != UnityWebRequest.Result.Success)
-                {
-                    ErrorOccurred?.Invoke("\uc6d4\ub4dc \uc870\ud68c \uc2e4\ud328");
-                    yield break;
-                }
-
-                WorldInstance world = ParseSingleWorld(getReq.downloadHandler.text, worldId);
-                if (world == null || world.playerCount >= world.maxPlayers)
-                {
-                    ErrorOccurred?.Invoke("\uc6d4\ub4dc\uac00 \uac00\ub4dd \ucc3c\uc2b5\ub2c8\ub2e4.");
-                    yield break;
-                }
-
-                WorldPlayer me = new WorldPlayer
-                {
-                    uid = AuthManager.Instance.UserId,
+                    action = "joinWorld",
+                    worldId = worldId,
                     displayName = AuthManager.Instance.DisplayName,
                     level = PlayerPrefs.GetInt("player_level", 1),
-                    joinedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
-                };
-
-                if (world.players == null) world.players = new List<WorldPlayer>();
-                world.players.RemoveAll(p => p.uid == me.uid);
-                world.players.Add(me);
-                world.playerCount = world.players.Count;
-
-                string updateJson = BuildWorldDocument(worldId, world.displayName, world.maxPlayers, world.players);
-
-                using (UnityWebRequest patchReq = new UnityWebRequest(url, "PATCH"))
+                    x = position.x,
+                    y = position.y,
+                    z = position.z,
+                    facing = localPlayer != null ? localPlayer.transform.eulerAngles.y : 0f,
+                }, value => response = value);
+                if (response != null && response.success && response.world != null)
                 {
-                    byte[] bodyRaw = Encoding.UTF8.GetBytes(updateJson);
-                    patchReq.uploadHandler = new UploadHandlerRaw(bodyRaw);
-                    patchReq.downloadHandler = new DownloadHandlerBuffer();
-                    patchReq.SetRequestHeader("Content-Type", "application/json");
-                    patchReq.SetRequestHeader("Authorization", $"Bearer {AuthManager.Instance.IdToken}");
-
-                    yield return patchReq.SendWebRequest();
-
-                    if (patchReq.result == UnityWebRequest.Result.Success)
-                    {
-                        CurrentWorld = world;
-                        PlayerPrefs.SetString("InsectGame.CurrentWorldId", worldId);
-                        PlayerPrefs.Save();
-                        refreshTimer = 0f;
-                        presenceTimer = 0f;
-                        WorldJoined?.Invoke();
-                        Debug.Log($"[WorldChannel] {world.displayName} \ucc38\uac00 \uc644\ub8cc ({world.playerCount}/{world.maxPlayers})");
-                    }
-                    else
-                    {
-                        ErrorOccurred?.Invoke("\uc6d4\ub4dc \ucc38\uac00 \uc2e4\ud328");
-                    }
+                    CurrentWorld = response.world;
+                    PlayerPrefs.SetString("InsectGame.CurrentWorldId", CurrentWorld.worldId);
+                    PlayerPrefs.Save();
+                    ApplyRealtimeResponse(response);
+                    syncTimer = 0f;
+                    WorldJoined?.Invoke();
                 }
             }
+            finally { IsBusy = false; }
         }
 
-        // ── Leave World ──
+        private IEnumerator LeaveWorldRoutine()
+        {
+            IsBusy = true;
+            try
+            {
+                string worldId = CurrentWorld.worldId;
+                WorldApiResponse response = null;
+                yield return SendRequest(new WorldApiRequest { action = "leaveWorld", worldId = worldId },
+                    value => response = value);
+                if (response != null && response.success) ClearWorldState();
+            }
+            finally { IsBusy = false; }
+        }
 
-        private IEnumerator LeaveWorldCoroutine()
+        private IEnumerator SyncWorldRoutine()
         {
             if (CurrentWorld == null) yield break;
-
-            string url = $"{FirebaseConfig.FirestoreBaseUrl}/{WorldsCollection}/{CurrentWorld.worldId}";
-
-            CurrentWorld.players.RemoveAll(p => p.uid == AuthManager.Instance.UserId);
-            CurrentWorld.playerCount = CurrentWorld.players.Count;
-
-            string json = BuildWorldDocument(CurrentWorld.worldId, CurrentWorld.displayName, CurrentWorld.maxPlayers, CurrentWorld.players);
-
-            using (UnityWebRequest req = new UnityWebRequest(url, "PATCH"))
+            syncInFlight = true;
+            try
             {
-                byte[] bodyRaw = Encoding.UTF8.GetBytes(json);
-                req.uploadHandler = new UploadHandlerRaw(bodyRaw);
-                req.downloadHandler = new DownloadHandlerBuffer();
-                req.SetRequestHeader("Content-Type", "application/json");
-                req.SetRequestHeader("Authorization", $"Bearer {AuthManager.Instance.IdToken}");
-
-                yield return req.SendWebRequest();
+                CacheLocalPlayer();
+                Vector3 position = localPlayer != null ? localPlayer.transform.position : Vector3.zero;
+                WorldApiResponse response = null;
+                yield return SendRequest(new WorldApiRequest
+                {
+                    action = "syncWorld",
+                    worldId = CurrentWorld.worldId,
+                    level = PlayerPrefs.GetInt("player_level", 1),
+                    x = position.x,
+                    y = position.y,
+                    z = position.z,
+                    facing = localPlayer != null ? localPlayer.transform.eulerAngles.y : 0f,
+                }, value => response = value, false);
+                if (response != null && response.success)
+                {
+                    // sync in-flight 도중 leave/clear가 완료(CurrentWorld=null)됐으면 stale 응답으로
+                    // 월드를 되살리지 않는다 — '나가기 눌렀는데 다시 입장' 재진입 차단. (finally가 플래그 복구)
+                    if (CurrentWorld == null) yield break;
+                    if (response.world == null) ClearWorldState();
+                    else ApplyRealtimeResponse(response);
+                }
             }
+            finally { syncInFlight = false; }
+        }
 
-            string leftWorldName = CurrentWorld.displayName;
+        private IEnumerator MutationRoutine(WorldApiRequest request, string successMessage)
+        {
+            IsBusy = true;
+            try
+            {
+                WorldApiResponse response = null;
+                yield return SendRequest(request, value => response = value);
+                if (response != null && response.success)
+                {
+                    ActionCompleted?.Invoke(successMessage);
+                    syncTimer = SyncInterval;
+                    SocialPvpManager.Instance?.RefreshAll();
+                }
+            }
+            finally { IsBusy = false; }
+        }
+
+        private IEnumerator RespondInviteRoutine(string inviteId, bool accept)
+        {
+            IsBusy = true;
+            WorldApiResponse response = null;
+            string joinWorldId = null;
+            try
+            {
+                yield return SendRequest(new WorldApiRequest
+                {
+                    action = "respondWorldInvite", inviteId = inviteId, accept = accept,
+                }, value => response = value);
+                if (response != null && response.success)
+                {
+                    if (accept && !string.IsNullOrEmpty(response.worldId)) joinWorldId = response.worldId;
+                    else syncTimer = SyncInterval;
+                }
+            }
+            finally { IsBusy = false; } // JoinWorldRoutine이 자체 IsBusy를 다시 잡도록 먼저 복구
+            if (!string.IsNullOrEmpty(joinWorldId))
+                yield return JoinWorldRoutine(joinWorldId);
+        }
+
+        private void ApplyRealtimeResponse(WorldApiResponse response)
+        {
+            CurrentWorld = response.world;
+            messages.Clear();
+            if (response.messages != null) messages.AddRange(response.messages);
+            invites.Clear();
+            if (response.invites != null) invites.AddRange(response.invites);
+            WorldStateUpdated?.Invoke(CurrentWorld);
+            MessagesUpdated?.Invoke(messages);
+            InvitesUpdated?.Invoke(invites);
+        }
+
+        private void ApplyInvites(WorldInviteSnapshot[] updated)
+        {
+            invites.Clear();
+            if (updated != null) invites.AddRange(updated);
+            InvitesUpdated?.Invoke(invites);
+        }
+
+        private void ClearWorldState()
+        {
             CurrentWorld = null;
+            messages.Clear();
+            invites.Clear(); // 퇴장 후 이전 월드 초대 잔존 표시 차단
             PlayerPrefs.DeleteKey("InsectGame.CurrentWorldId");
             WorldLeft?.Invoke();
-            Debug.Log($"[WorldChannel] {leftWorldName} \ud1f4\uc7a5 \uc644\ub8cc");
+            InvitesUpdated?.Invoke(invites);
         }
 
-        // ── Refresh Current World (member list update) ──
-
-        private IEnumerator RefreshCurrentWorldCoroutine()
+        private void CacheLocalPlayer()
         {
-            if (CurrentWorld == null) yield break;
+            if (localPlayer == null) localPlayer = FindFirstObjectByType<PlayerMovement>();
+        }
 
-            string url = $"{FirebaseConfig.FirestoreBaseUrl}/{WorldsCollection}/{CurrentWorld.worldId}";
+        private bool CanStartRequest()
+        {
+            if (IsBusy) return false;
+            if (IsFirebaseReady()) return true;
+            ErrorOccurred?.Invoke("온라인 필드 서버가 준비되지 않았거나 로그인이 필요합니다.");
+            return false;
+        }
 
-            using (UnityWebRequest req = UnityWebRequest.Get(url))
+        private static bool IsFirebaseReady()
+        {
+            return FirebaseConfig.IsSocialPvpConfigured
+                && AuthManager.Instance != null
+                && AuthManager.Instance.IsLoggedIn
+                && !AuthManager.Instance.IsMasterAccount
+                && !string.IsNullOrEmpty(AuthManager.Instance.IdToken);
+        }
+
+        private IEnumerator SendRequest(WorldApiRequest payload, Action<WorldApiResponse> onComplete,
+            bool reportError = true, bool allowRetry = true)
+        {
+            string json = JsonUtility.ToJson(payload);
+            using (UnityWebRequest request = new UnityWebRequest(FirebaseConfig.SocialPvpApiUrl, "POST"))
             {
-                req.SetRequestHeader("Authorization", $"Bearer {AuthManager.Instance.IdToken}");
-                yield return req.SendWebRequest();
+                request.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(json));
+                request.downloadHandler = new DownloadHandlerBuffer();
+                request.SetRequestHeader("Content-Type", "application/json");
+                request.SetRequestHeader("Authorization", "Bearer " + AuthManager.Instance.IdToken);
+                // 무한 대기 차단 — half-open 연결/서버 무응답 시 SendWebRequest가 영원히 yield하면
+                // IsBusy/syncInFlight가 영구 true로 고정돼 모든 월드 기능(나가기/새로고침/동기/채팅)이 소프트락.
+                request.timeout = 12;
+                yield return request.SendWebRequest();
 
-                if (req.result == UnityWebRequest.Result.Success)
+                if (request.responseCode == 401 && allowRetry)
                 {
-                    WorldInstance updated = ParseSingleWorld(req.downloadHandler.text, CurrentWorld.worldId);
-                    if (updated != null)
+                    bool refreshed = false;
+                    yield return AuthManager.Instance.TryRefreshTokenForRetry(value => refreshed = value);
+                    if (refreshed)
                     {
-                        CurrentWorld = updated;
-
-                        // 180초 이상 하트비트 없는 플레이어는 비활성으로 간주
-                        long now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-                        CurrentWorld.players.RemoveAll(p => (now - p.joinedAt) > 180 && p.uid != AuthManager.Instance.UserId);
-                        CurrentWorld.playerCount = CurrentWorld.players.Count;
-                    }
-                }
-            }
-        }
-
-        // ── Heartbeat (presence update) ──
-
-        private IEnumerator UpdatePresenceCoroutine()
-        {
-            if (CurrentWorld == null) yield break;
-
-            foreach (var p in CurrentWorld.players)
-            {
-                if (p.uid == AuthManager.Instance.UserId)
-                {
-                    p.joinedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-                    p.level = PlayerPrefs.GetInt("player_level", 1);
-                    break;
-                }
-            }
-
-            string url = $"{FirebaseConfig.FirestoreBaseUrl}/{WorldsCollection}/{CurrentWorld.worldId}";
-            string json = BuildWorldDocument(CurrentWorld.worldId, CurrentWorld.displayName, CurrentWorld.maxPlayers, CurrentWorld.players);
-
-            using (UnityWebRequest req = new UnityWebRequest(url, "PATCH"))
-            {
-                byte[] bodyRaw = Encoding.UTF8.GetBytes(json);
-                req.uploadHandler = new UploadHandlerRaw(bodyRaw);
-                req.downloadHandler = new DownloadHandlerBuffer();
-                req.SetRequestHeader("Content-Type", "application/json");
-                req.SetRequestHeader("Authorization", $"Bearer {AuthManager.Instance.IdToken}");
-                yield return req.SendWebRequest();
-            }
-        }
-
-        // ── Firestore JSON Builder ──
-
-        private string BuildWorldDocument(string worldId, string displayName, int maxPlayers, List<WorldPlayer> players)
-        {
-            StringBuilder sb = new StringBuilder();
-            sb.Append("{\"fields\":{");
-            sb.Append($"\"worldId\":{{\"stringValue\":\"{EscapeJson(worldId)}\"}},");
-            sb.Append($"\"displayName\":{{\"stringValue\":\"{EscapeJson(displayName)}\"}},");
-            sb.Append($"\"maxPlayers\":{{\"integerValue\":\"{maxPlayers}\"}},");
-            sb.Append($"\"playerCount\":{{\"integerValue\":\"{players.Count}\"}},");
-
-            sb.Append("\"players\":{\"arrayValue\":{\"values\":[");
-            for (int i = 0; i < players.Count; i++)
-            {
-                if (i > 0) sb.Append(",");
-                sb.Append("{\"mapValue\":{\"fields\":{");
-                sb.Append($"\"uid\":{{\"stringValue\":\"{EscapeJson(players[i].uid)}\"}},");
-                sb.Append($"\"displayName\":{{\"stringValue\":\"{EscapeJson(players[i].displayName)}\"}},");
-                sb.Append($"\"level\":{{\"integerValue\":\"{players[i].level}\"}},");
-                sb.Append($"\"joinedAt\":{{\"integerValue\":\"{players[i].joinedAt}\"}}");
-                sb.Append("}}}");
-            }
-            sb.Append("]}}");
-
-            sb.Append("}}");
-            return sb.ToString();
-        }
-
-        private string EscapeJson(string s)
-        {
-            if (string.IsNullOrEmpty(s)) return "";
-            return s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n");
-        }
-
-        // ── Firestore JSON Parsers ──
-
-        private List<WorldInstance> ParseWorldList(string responseJson)
-        {
-            var result = new List<WorldInstance>();
-            if (string.IsNullOrEmpty(responseJson)) return result;
-
-            // Firestore list response: {"documents":[{...},{...},...]}
-            // 각 문서에서 worldId를 추출하여 ParseSingleWorld로 파싱
-            int searchStart = 0;
-            while (true)
-            {
-                int docStart = responseJson.IndexOf("\"fields\"", searchStart, StringComparison.Ordinal);
-                if (docStart < 0) break;
-
-                // 이 문서의 범위를 찾기: "fields" 앞의 { 부터 매칭되는 } 까지
-                int braceStart = responseJson.LastIndexOf('{', docStart);
-                if (braceStart < 0) break;
-
-                int braceEnd = FindMatchingBrace(responseJson, braceStart);
-                if (braceEnd < 0) break;
-
-                string docJson = responseJson.Substring(braceStart, braceEnd - braceStart + 1);
-
-                string worldId = ExtractStringValue(docJson, "worldId");
-                if (!string.IsNullOrEmpty(worldId))
-                {
-                    WorldInstance world = ParseSingleWorld(docJson, worldId);
-                    if (world != null)
-                    {
-                        result.Add(world);
+                        yield return SendRequest(payload, onComplete, reportError, false);
+                        yield break;
                     }
                 }
 
-                searchStart = braceEnd + 1;
-            }
-
-            return result;
-        }
-
-        private WorldInstance ParseSingleWorld(string documentJson, string worldId)
-        {
-            if (string.IsNullOrEmpty(documentJson)) return null;
-
-            WorldInstance world = new WorldInstance
-            {
-                worldId = worldId,
-                displayName = ExtractStringValue(documentJson, "displayName") ?? worldId,
-                maxPlayers = ExtractIntValue(documentJson, "maxPlayers", MaxPlayersPerWorld),
-                playerCount = ExtractIntValue(documentJson, "playerCount", 0),
-                players = new List<WorldPlayer>()
-            };
-
-            // players 배열 파싱
-            int playersStart = documentJson.IndexOf("\"players\"", StringComparison.Ordinal);
-            if (playersStart >= 0)
-            {
-                int arrayStart = documentJson.IndexOf("\"values\"", playersStart, StringComparison.Ordinal);
-                if (arrayStart >= 0)
+                WorldApiResponse response = null;
+                if (!string.IsNullOrEmpty(request.downloadHandler.text))
                 {
-                    int bracketStart = documentJson.IndexOf('[', arrayStart);
-                    if (bracketStart >= 0)
-                    {
-                        int bracketEnd = FindMatchingBracket(documentJson, bracketStart);
-                        if (bracketEnd >= 0)
-                        {
-                            string arrayJson = documentJson.Substring(bracketStart, bracketEnd - bracketStart + 1);
-                            world.players = ParsePlayerArray(arrayJson);
-                            world.playerCount = world.players.Count;
-                        }
-                    }
+                    try { response = JsonUtility.FromJson<WorldApiResponse>(request.downloadHandler.text); }
+                    catch (Exception e) { Debug.LogWarning("[WorldChannel] 응답 파싱 실패: " + e.Message); }
                 }
-            }
-
-            return world;
-        }
-
-        private List<WorldPlayer> ParsePlayerArray(string arrayJson)
-        {
-            var players = new List<WorldPlayer>();
-            int searchStart = 0;
-
-            while (true)
-            {
-                int mapStart = arrayJson.IndexOf("\"mapValue\"", searchStart, StringComparison.Ordinal);
-                if (mapStart < 0) break;
-
-                int fieldsStart = arrayJson.IndexOf("\"fields\"", mapStart, StringComparison.Ordinal);
-                if (fieldsStart < 0) break;
-
-                int braceStart = arrayJson.IndexOf('{', fieldsStart + 8);
-                if (braceStart < 0) break;
-
-                int braceEnd = FindMatchingBrace(arrayJson, braceStart);
-                if (braceEnd < 0) break;
-
-                string playerJson = arrayJson.Substring(braceStart, braceEnd - braceStart + 1);
-
-                WorldPlayer player = new WorldPlayer
+                if (reportError && (request.result != UnityWebRequest.Result.Success
+                    || response == null || !response.success))
                 {
-                    uid = ExtractStringValue(playerJson, "uid") ?? "",
-                    displayName = ExtractStringValue(playerJson, "displayName") ?? "",
-                    level = ExtractIntValue(playerJson, "level", 1),
-                    joinedAt = ExtractLongValue(playerJson, "joinedAt", 0)
-                };
-
-                if (!string.IsNullOrEmpty(player.uid))
-                {
-                    players.Add(player);
+                    string error = response != null ? response.error : request.error;
+                    ErrorOccurred?.Invoke(ToUserMessage(error));
                 }
-
-                searchStart = braceEnd + 1;
+                onComplete?.Invoke(response);
             }
-
-            return players;
         }
 
-        // ── JSON Extraction Helpers ──
-
-        private string ExtractStringValue(string json, string fieldName)
+        private void BestEffortLeaveWorld()
         {
-            string pattern = $"\"{fieldName}\":{{\"stringValue\":\"";
-            int idx = json.IndexOf(pattern, StringComparison.Ordinal);
-            if (idx < 0) return null;
-
-            int valueStart = idx + pattern.Length;
-            int valueEnd = json.IndexOf('"', valueStart);
-            if (valueEnd < 0) return null;
-
-            return json.Substring(valueStart, valueEnd - valueStart);
-        }
-
-        private int ExtractIntValue(string json, string fieldName, int defaultValue)
-        {
-            string pattern = $"\"{fieldName}\":{{\"integerValue\":\"";
-            int idx = json.IndexOf(pattern, StringComparison.Ordinal);
-            if (idx < 0) return defaultValue;
-
-            int valueStart = idx + pattern.Length;
-            int valueEnd = json.IndexOf('"', valueStart);
-            if (valueEnd < 0) return defaultValue;
-
-            string valueStr = json.Substring(valueStart, valueEnd - valueStart);
-            if (int.TryParse(valueStr, out int result)) return result;
-            return defaultValue;
-        }
-
-        private long ExtractLongValue(string json, string fieldName, long defaultValue)
-        {
-            string pattern = $"\"{fieldName}\":{{\"integerValue\":\"";
-            int idx = json.IndexOf(pattern, StringComparison.Ordinal);
-            if (idx < 0) return defaultValue;
-
-            int valueStart = idx + pattern.Length;
-            int valueEnd = json.IndexOf('"', valueStart);
-            if (valueEnd < 0) return defaultValue;
-
-            string valueStr = json.Substring(valueStart, valueEnd - valueStart);
-            if (long.TryParse(valueStr, out long result)) return result;
-            return defaultValue;
-        }
-
-        private int FindMatchingBrace(string json, int openIndex)
-        {
-            int depth = 0;
-            for (int i = openIndex; i < json.Length; i++)
+            if (CurrentWorld == null || !IsFirebaseReady()) return;
+            try
             {
-                if (json[i] == '{') depth++;
-                else if (json[i] == '}') depth--;
-                if (depth == 0) return i;
+                var payload = new WorldApiRequest { action = "leaveWorld", worldId = CurrentWorld.worldId };
+                var request = new UnityWebRequest(FirebaseConfig.SocialPvpApiUrl, "POST");
+                request.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(JsonUtility.ToJson(payload)));
+                request.downloadHandler = new DownloadHandlerBuffer();
+                request.SetRequestHeader("Content-Type", "application/json");
+                request.SetRequestHeader("Authorization", "Bearer " + AuthManager.Instance.IdToken);
+                request.SendWebRequest();
             }
-            return -1;
+            catch (Exception e)
+            {
+                Debug.LogWarning("[WorldChannel] 퇴장 요청 실패: " + e.Message);
+            }
         }
 
-        private int FindMatchingBracket(string json, int openIndex)
+        private static string ToUserMessage(string error)
         {
-            int depth = 0;
-            for (int i = openIndex; i < json.Length; i++)
+            switch (error)
             {
-                if (json[i] == '[') depth++;
-                else if (json[i] == ']') depth--;
-                if (depth == 0) return i;
+                case "world_full": return "필드 정원이 5명으로 가득 찼습니다.";
+                case "user_blocked": return "차단 관계인 사용자와는 상호작용할 수 없습니다.";
+                case "player_not_nearby": return "상대가 상호작용 거리 밖에 있습니다.";
+                case "team_must_have_three": return "대전하려면 곤충 3마리 팀이 필요합니다.";
+                case "not_friends": return "친구만 같은 필드로 초대할 수 있습니다.";
+                case "unauthenticated": return "로그인이 만료되었습니다.";
+                default: return string.IsNullOrEmpty(error) ? "온라인 필드 요청에 실패했습니다." : error;
             }
-            return -1;
         }
     }
 }

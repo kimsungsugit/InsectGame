@@ -40,22 +40,22 @@ namespace InsectGame.Core
 
         private float GetRegionElevation(string regionId)
         {
-            // 상승 리전(forest/ruins/mountain)은 0으로 평탄화 — 복원 금지.
-            // 이유: ApplyElevation이 Region_{id} 지면 평면을 Y=4/8/12로 끌어올리면
-            // 그 불투명 collider 평면이 카메라(0,12,-8)와 Y=0의 플레이어 사이를 가려
-            // 캐릭터가 안 보이는 회귀가 발생한다(사용자 반복 보고). PlayerMovement는
-            // 아래방향 2유닛 raycast로만 지면을 따라가 4~8유닛 단차를 못 올라 Y=0에 갇히고,
-            // CameraFollower.ResolveObstruction은 Region_ 평면을 차폐 검사에서 제외해
-            // 보정도 못 한다. 이 고도는 리전 판정(ContainsPoint=XZ만)·스폰(player.y 추종)에
-            // 영향 0인 순수 장식이었으므로 평탄화가 근본 해결. 함몰 리전(pond/swamp)은
-            // 평면이 플레이어 아래라 차폐가 없어 보존한다.
+            // 전 리전 0으로 평탄화 — 복원 금지.
+            // 상승 리전(forest/ruins/mountain, was 4/8/12): 불투명 Region_ 평면이 카메라와
+            // 플레이어 사이를 가려 캐릭터가 안 보이는 회귀(사용자 반복 보고) + PlayerMovement
+            // 2유닛 raycast가 단차를 못 올라 Y=0에 갇힘 → 평탄화가 근본 해결.
+            // 함몰 리전(pond/swamp, was -3/-2): 베이스 Ground 평면(Y=0, 전역 불투명)이 위를
+            // 덮어 리전 평면·호수·부두·갈대 등 모든 소품이 지면 아래 묻혀 비가시가 되고,
+            // 플레이어는 Y=0 베이스 지면 위를 걸어 함몰 연출 자체가 성립하지 않았다.
+            // 고도는 리전 판정(ContainsPoint=XZ만)·스폰(player.y 추종)에 영향 0인 순수
+            // 장식이므로 동일하게 평탄화한다.
             switch (regionId)
             {
                 case "meadow": return 0f;
-                case "pond": return -3f;
+                case "pond": return 0f;      // was -3f — 베이스 지면에 묻혀 소품 전체 비가시
                 case "garden": return 0f;
                 case "forest": return 0f;   // was 4f — 차폐 회귀로 평탄화
-                case "swamp": return -2f;
+                case "swamp": return 0f;     // was -2f — 베이스 지면에 묻혀 소품 전체 비가시
                 case "mountain": return 0f;  // was 12f — 차폐 회귀로 평탄화
                 case "ruins": return 0f;     // was 8f — 차폐 회귀로 평탄화
                 default: return 0f;
@@ -66,12 +66,13 @@ namespace InsectGame.Core
         {
             Material slopeMat = CreateMat(new Color(0.3f, 0.42f, 0.2f));
 
-            CreateSlope("Slope_Meadow_Pond", GetCenter(regions, "meadow"), GetCenter(regions, "pond"), 0f, -3f, 5f, slopeMat);
+            // pond/swamp 평탄화(GetRegionElevation=0)에 맞춰 0→0. 옛 0→-3/-2 램프는 지면 아래로 꺼지는 잔재가 됨.
+            CreateSlope("Slope_Meadow_Pond", GetCenter(regions, "meadow"), GetCenter(regions, "pond"), 0f, 0f, 5f, slopeMat);
             // forest 평탄화(GetRegionElevation=0)에 맞춰 0→0. 옛 0→4 램프는 허공으로 솟구치는 잔재가 됨.
             CreateSlope("Slope_Meadow_Forest", GetCenter(regions, "meadow"), GetCenter(regions, "forest"), 0f, 0f, 6f, slopeMat);
 
             Material swampSlope = CreateMat(new Color(0.25f, 0.35f, 0.18f));
-            CreateSlope("Slope_Meadow_Swamp", GetCenter(regions, "meadow"), GetCenter(regions, "swamp"), 0f, -2f, 5f, swampSlope);
+            CreateSlope("Slope_Meadow_Swamp", GetCenter(regions, "meadow"), GetCenter(regions, "swamp"), 0f, 0f, 5f, swampSlope);
 
             Material stoneSlope = CreateMat(new Color(0.4f, 0.38f, 0.35f));
             // mountain·ruins 평탄화에 맞춰 0→0. 옛 12→8 램프는 평지 위 공중에 떠 있게 됨.
@@ -312,7 +313,8 @@ namespace InsectGame.Core
         private void BuildMapBoundary()
         {
             Material boundaryMat = CreateMat(new Color(0.3f, 0.35f, 0.25f));
-            float mapSize = 300f;
+            // WorldScale 1.5 확장 후 최원점(ruins z=277.5) + 전초기지 여유분 커버.
+            float mapSize = 320f;
             float wallHeight = 15f;
 
             string[] names = { "Boundary_N", "Boundary_S", "Boundary_E", "Boundary_W" };

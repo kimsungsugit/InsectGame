@@ -54,8 +54,13 @@ namespace InsectGame.UI
 
             InitStyles();
 
-            float sw = Screen.width;
-            float sh = Screen.height;
+            // 옛 CharacterViewerUI는 UIScale 미적용 + Screen 픽셀 직접 사용이라 고DPI 모바일에서 글씨·패널이
+            // 작게 렌더링됐다(사용자 보고). UIScale.Begin으로 1080 기준 가상 캔버스에 그려 절대 픽셀값(fontSize
+            // 등)이 정규화되게 한다. 캐릭터 모델 스케일은 min(sw,sh) 비례라 실질 크기 불변.
+            UIScale.Begin();
+
+            float sw = UIScale.VirtualScreenWidth;
+            float sh = UIScale.VirtualScreenHeight;
 
             // 반투명 어둡게 덮기
             GUI.color = new Color(0f, 0f, 0f, 0.65f);
@@ -68,9 +73,9 @@ namespace InsectGame.UI
             float charScale = Mathf.Min(sw, sh) * 0.0028f;
             DrawCharacterModel(charCx, charCy, charScale);
 
-            // 오른쪽 버튼 패널
-            float panelW = 220f;
-            float panelH = 420f;
+            // 오른쪽 버튼 패널 — 글씨 확대에 맞춰 패널·버튼도 확대(220×420 → 320×520).
+            float panelW = 320f;
+            float panelH = 520f;
             float panelX = sw - panelW - 40f;
             float panelY = (sh - panelH) * 0.5f;
 
@@ -79,9 +84,9 @@ namespace InsectGame.UI
             GUI.color = Color.white;
 
             float btnW = panelW - 20f;
-            float btnH = 38f;
+            float btnH = 50f;
             float btnX = panelX;
-            float curY = panelY + 10f;
+            float curY = panelY + 14f;
 
             // 보석 구매
             if (GUI.Button(new Rect(btnX, curY, btnW, btnH), "보석 구매", buttonStyle))
@@ -143,15 +148,15 @@ namespace InsectGame.UI
             curY += 12f;
 
             // 캐릭터 정보
-            GUI.Label(new Rect(btnX, curY, btnW, 24f), "캐릭터 정보", titleStyle);
-            curY += 28f;
+            GUI.Label(new Rect(btnX, curY, btnW, 30f), "캐릭터 정보", titleStyle);
+            curY += 36f;
 
             // 참조 캐싱 (첫 열림 시 1회)
             if (cachedProgress == null) cachedProgress = FindFirstObjectByType<PlayerProgressController>();
             if (cachedCandyInv == null) cachedCandyInv = FindFirstObjectByType<PlayerCandyInventory>();
             if (cachedCurrencyWallet == null) cachedCurrencyWallet = FindFirstObjectByType<PlayerCurrencyWallet>();
 
-            string charName = PlayerPrefs.GetString("InsectGame.Character.Name", "탐험가");
+            string charName = PlayerPrefs.GetString(InsectGame.Core.SaveScope.PrefsKey("InsectGame.Character.Name"), "탐험가");
             int level = cachedProgress != null ? cachedProgress.Level : 1;
             int xp = cachedProgress != null ? cachedProgress.CurrentXp : 0;
             int xpNext = cachedProgress != null ? cachedProgress.XpToNextLevel : 1;
@@ -161,11 +166,11 @@ namespace InsectGame.UI
             int coins = cachedCurrencyWallet != null ? cachedCurrencyWallet.Coins : 0;
 
             // 이름 + Lv 행
-            GUI.Label(new Rect(btnX, curY, btnW, 22f), $"{charName}  Lv.{level}", infoStyle);
-            curY += 26f;
+            GUI.Label(new Rect(btnX, curY, btnW, 28f), $"{charName}  Lv.{level}", infoStyle);
+            curY += 32f;
 
             // EXP 바
-            float barH = 22f;
+            float barH = 28f;
             GUI.color = new Color(0.08f, 0.08f, 0.12f, 1f);
             GUI.DrawTexture(new Rect(btnX, curY, btnW, barH), Texture2D.whiteTexture);
             float xpRatio = xpNext > 0 ? Mathf.Clamp01((float)xp / xpNext) : 0f;
@@ -180,17 +185,20 @@ namespace InsectGame.UI
             curY += barH + 10f;
 
             // 재화 박스 3개 (캔디/코인/보석)
-            float resRowH = 36f;
+            float resRowH = 54f;
             float resW = (btnW - 12f) / 3f;
             DrawResourceRow(btnX, curY, resW, resRowH, "캔디", candies, new Color(1f, 0.7f, 0.85f));
             DrawResourceRow(btnX + resW + 6f, curY, resW, resRowH, "코인", coins, new Color(1f, 0.85f, 0.3f));
             DrawResourceRow(btnX + (resW + 6f) * 2f, curY, resW, resRowH, "보석", gems, new Color(0.4f, 0.7f, 1f));
 
             // 닫기 버튼 (우하단)
-            if (GUI.Button(new Rect(sw - 70f, sh - 60f, 50f, 36f), "X", closeStyle))
+            float closeSize = UIScale.IsMobileLayout ? 58f : 50f;
+            if (GUI.Button(new Rect(sw - closeSize - 20f, sh - closeSize - 20f, closeSize, closeSize), "X", closeStyle))
             {
                 CloseModal();
             }
+
+            UIScale.End();
         }
 
         private void DrawCharacterModel(float cx, float cy, float scale)
@@ -238,9 +246,9 @@ namespace InsectGame.UI
 
             GUI.color = Color.white;
             labelStyle.normal.textColor = new Color(accent.r * 0.8f, accent.g * 0.8f, accent.b * 0.8f);
-            GUI.Label(new Rect(x + 6, y + 2, w - 12, 16), label, labelStyle);
+            GUI.Label(new Rect(x + 6, y + 6, w - 12, 20), label, labelStyle);
             statValueStyle.normal.textColor = accent;
-            GUI.Label(new Rect(x + 6, y + 14, w - 12, 20), value.ToString(), statValueStyle);
+            GUI.Label(new Rect(x + 6, y + 28, w - 12, 24), value.ToString(), statValueStyle);
         }
 
         private void InitStyles()
@@ -252,12 +260,12 @@ namespace InsectGame.UI
             panelStyle.normal.background = MakeTex(1, 1, new Color(0.08f, 0.08f, 0.15f, 0.92f));
 
             titleStyle = new GUIStyle(GUI.skin.label);
-            titleStyle.fontSize = 18;
+            titleStyle.fontSize = 24;
             titleStyle.fontStyle = FontStyle.Bold;
             titleStyle.normal.textColor = new Color(0.9f, 0.85f, 0.6f);
 
             buttonStyle = new GUIStyle(GUI.skin.button);
-            buttonStyle.fontSize = 16;
+            buttonStyle.fontSize = 22;
             buttonStyle.fontStyle = FontStyle.Bold;
             buttonStyle.normal.textColor = Color.white;
             buttonStyle.normal.background = MakeTex(1, 1, new Color(0.2f, 0.3f, 0.55f, 0.9f));
@@ -265,27 +273,27 @@ namespace InsectGame.UI
             buttonStyle.active.background = MakeTex(1, 1, new Color(0.15f, 0.2f, 0.4f, 0.9f));
 
             labelStyle = new GUIStyle(GUI.skin.label);
-            labelStyle.fontSize = 14;
+            labelStyle.fontSize = 18;
             labelStyle.normal.textColor = new Color(0.7f, 0.7f, 0.75f);
 
             infoStyle = new GUIStyle(GUI.skin.label);
-            infoStyle.fontSize = 16;
+            infoStyle.fontSize = 22;
             infoStyle.normal.textColor = new Color(0.85f, 0.85f, 0.9f);
 
             closeStyle = new GUIStyle(GUI.skin.button);
-            closeStyle.fontSize = 18;
+            closeStyle.fontSize = 26;
             closeStyle.fontStyle = FontStyle.Bold;
             closeStyle.normal.textColor = new Color(1f, 0.4f, 0.4f);
             closeStyle.normal.background = MakeTex(1, 1, new Color(0.15f, 0.1f, 0.1f, 0.85f));
             closeStyle.hover.background = MakeTex(1, 1, new Color(0.3f, 0.1f, 0.1f, 0.9f));
 
             statValueStyle = new GUIStyle(GUI.skin.label);
-            statValueStyle.fontSize = 16;
+            statValueStyle.fontSize = 22;
             statValueStyle.fontStyle = FontStyle.Bold;
             statValueStyle.alignment = TextAnchor.MiddleRight;
 
             xpBarTextStyle = new GUIStyle(GUI.skin.label);
-            xpBarTextStyle.fontSize = 13;
+            xpBarTextStyle.fontSize = 17;
             xpBarTextStyle.fontStyle = FontStyle.Bold;
             xpBarTextStyle.alignment = TextAnchor.MiddleCenter;
             xpBarTextStyle.normal.textColor = Color.white;

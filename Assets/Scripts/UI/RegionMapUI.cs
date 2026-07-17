@@ -97,62 +97,62 @@ namespace InsectGame.UI
             mapStylesReady = true;
 
             mapErrStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 22, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            { fontSize = 28, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
 
             mapTitleStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 34, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            { fontSize = 44, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             mapTitleStyleCache.normal.textColor = Color.white;
 
-            mapCloseStyleCache = new GUIStyle(GUI.skin.button) { fontSize = 28, fontStyle = FontStyle.Bold };
+            mapCloseStyleCache = new GUIStyle(GUI.skin.button) { fontSize = 36, fontStyle = FontStyle.Bold };
 
-            mapNoDataStyleCache = new GUIStyle(GUI.skin.label) { fontSize = 28, alignment = TextAnchor.MiddleCenter };
+            mapNoDataStyleCache = new GUIStyle(GUI.skin.label) { fontSize = 36, alignment = TextAnchor.MiddleCenter };
             mapNoDataStyleCache.normal.textColor = MapNoDataCol;
 
-            mapLvStyleCache = new GUIStyle(GUI.skin.label) { fontSize = 26, alignment = TextAnchor.MiddleCenter };
+            mapLvStyleCache = new GUIStyle(GUI.skin.label) { fontSize = 34, alignment = TextAnchor.MiddleCenter };
             mapLvStyleCache.normal.textColor = MapLvCol;
 
             // 리전 마커/디테일 — textColor 분기/alpha 동적이라 매 호출 갱신
             regionNameStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 22, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            { fontSize = 28, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             regionDiffStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 18, alignment = TextAnchor.MiddleCenter };
+            { fontSize = 23, alignment = TextAnchor.MiddleCenter };
             regionSubNameStyleCache = new GUIStyle(GUI.skin.label)
             { fontSize = 18, alignment = TextAnchor.MiddleCenter };
             regionInvisibleStyleCache = new GUIStyle();
             regionRaidLabelStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 16, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            { fontSize = 18, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
 
             nsStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 28, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            curStyleCache = new GUIStyle(GUI.skin.label) { fontSize = 24, alignment = TextAnchor.MiddleCenter };
+            { fontSize = 36, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            curStyleCache = new GUIStyle(GUI.skin.label) { fontSize = 31, alignment = TextAnchor.MiddleCenter };
             diffSStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 22, alignment = TextAnchor.MiddleCenter };
+            { fontSize = 28, alignment = TextAnchor.MiddleCenter };
             csStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 22, alignment = TextAnchor.MiddleCenter };
-            btnStyleCache = new GUIStyle(GUI.skin.button) { fontSize = 24 };
+            { fontSize = 28, alignment = TextAnchor.MiddleCenter };
+            btnStyleCache = new GUIStyle(GUI.skin.button) { fontSize = 31 };
 
             detailTitleStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 32, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            { fontSize = 41, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             detailTitleStyleCache.normal.textColor = Color.white;
-            detailBackStyleCache = new GUIStyle(GUI.skin.button) { fontSize = 26, fontStyle = FontStyle.Bold };
-            detailCloseStyleCache = new GUIStyle(GUI.skin.button) { fontSize = 28, fontStyle = FontStyle.Bold };
+            detailBackStyleCache = new GUIStyle(GUI.skin.button) { fontSize = 34, fontStyle = FontStyle.Bold };
+            detailCloseStyleCache = new GUIStyle(GUI.skin.button) { fontSize = 36, fontStyle = FontStyle.Bold };
             detailDescStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 22, alignment = TextAnchor.MiddleCenter, wordWrap = true };
+            { fontSize = 28, alignment = TextAnchor.MiddleCenter, wordWrap = true };
             detailSummaryStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 24, alignment = TextAnchor.MiddleCenter };
+            { fontSize = 31, alignment = TextAnchor.MiddleCenter };
             detailNoInsectStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 24, fontStyle = FontStyle.Italic, alignment = TextAnchor.MiddleCenter };
+            { fontSize = 31, fontStyle = FontStyle.Italic, alignment = TextAnchor.MiddleCenter };
 
             dexNameStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 26, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
-            dexInfoStyleCache = new GUIStyle(GUI.skin.label) { fontSize = 26 };
+            { fontSize = 34, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
+            dexInfoStyleCache = new GUIStyle(GUI.skin.label) { fontSize = 34 };
             dexCheckStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 24, alignment = TextAnchor.MiddleRight };
+            { fontSize = 31, alignment = TextAnchor.MiddleRight };
             dexUnknownStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 26, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
+            { fontSize = 34, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
             dexHiddenNameStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 26, alignment = TextAnchor.MiddleLeft };
-            dexNotCaughtStyleCache = new GUIStyle(GUI.skin.label) { fontSize = 26 };
+            { fontSize = 34, alignment = TextAnchor.MiddleLeft };
+            dexNotCaughtStyleCache = new GUIStyle(GUI.skin.label) { fontSize = 34 };
 
             symStyleCache = new GUIStyle(GUI.skin.label)
             { fontSize = 18, alignment = TextAnchor.MiddleCenter };
@@ -201,8 +201,8 @@ namespace InsectGame.UI
 
             float sw = UIScale.VirtualScreenWidth;
             float sh = UIScale.VirtualScreenHeight;
-            float bw = 700f;
-            float bh = 80f;
+            float bw = 860f;
+            float bh = 96f;
             float bx = (sw - bw) * 0.5f;
             float by = sh * 0.7f;
 
@@ -225,8 +225,9 @@ namespace InsectGame.UI
         {
             InitMapStyles();
 
-            float panelW = 1060f;
-            float panelH = 900f;
+            float panelW = Mathf.Min(1060f, UIScale.ContentWidth(18f));
+            float panelH = Mathf.Min(960f,
+                UIScale.VirtualScreenHeight - UIScale.VirtualSafeTop - UIScale.VirtualSafeBottom - 36f);
             float px = (UIScale.VirtualScreenWidth - panelW) / 2f;
             float py = (UIScale.VirtualScreenHeight - panelH) / 2f;
 
@@ -234,29 +235,29 @@ namespace InsectGame.UI
             GUI.DrawTexture(new Rect(px, py, panelW, panelH), Texture2D.whiteTexture);
 
             GUI.color = new Color(0.15f, 0.18f, 0.25f);
-            GUI.DrawTexture(new Rect(px, py, panelW, 70), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(px, py, panelW, 84), Texture2D.whiteTexture);
 
             GUI.color = Color.white;
-            GUI.Label(new Rect(px, py + 10, panelW - 60, 50), "WORLD MAP", mapTitleStyleCache);
+            GUI.Label(new Rect(px, py + 14, panelW - 72, 58), "WORLD MAP", mapTitleStyleCache);
 
-            if (GUI.Button(new Rect(px + panelW - 60, py + 10, 50, 50), "X", mapCloseStyleCache))
+            if (GUI.Button(new Rect(px + panelW - 72, py + 12, 60, 60), "X", mapCloseStyleCache))
             {
                 CloseModal();
             }
 
             if (regionManager == null || regionManager.Regions == null)
             {
-                GUI.Label(new Rect(px, py + 40, panelW, panelH - 40), "No regions available", mapNoDataStyleCache);
+                GUI.Label(new Rect(px, py + 84, panelW, panelH - 84), "No regions available", mapNoDataStyleCache);
                 return;
             }
 
             int playerLv = progress != null ? progress.Level : 1;
-            GUI.Label(new Rect(px, py + 72, panelW, 36), $"Player Level: {playerLv}", mapLvStyleCache);
+            GUI.Label(new Rect(px, py + 92, panelW, 44), $"Player Level: {playerLv}", mapLvStyleCache);
 
             float mapX = px + 30;
-            float mapY = py + 116;
+            float mapY = py + 144;
             float mapW = panelW - 60;
-            float mapH = panelH - 126;
+            float mapH = panelH - 154;
 
             GUI.color = new Color(0.08f, 0.1f, 0.15f, 0.8f);
             GUI.DrawTexture(new Rect(mapX, mapY, mapW, mapH), Texture2D.whiteTexture);
@@ -390,7 +391,7 @@ namespace InsectGame.UI
 
                 regionNameStyleCache.normal.textColor = Color.white;
                 GUI.color = Color.white;
-                GUI.Label(new Rect(cx - 90, cy - 16, 180, 34), r.displayName, regionNameStyleCache);
+                GUI.Label(new Rect(cx - 110, cy - 19, 220, 38), r.displayName, regionNameStyleCache);
 
                 string diffLabel;
                 Color diffColor;
@@ -399,7 +400,7 @@ namespace InsectGame.UI
                 else { diffLabel = "어려움"; diffColor = new Color(1f, 0.4f, 0.3f); }
 
                 regionDiffStyleCache.normal.textColor = diffColor;
-                GUI.Label(new Rect(cx - 60, cy + 14, 120, 28), $"난이도: {diffLabel}", regionDiffStyleCache);
+                GUI.Label(new Rect(cx - 80, cy + 22, 160, 34), $"난이도: {diffLabel}", regionDiffStyleCache);
 
                 // 서브에리어 점 표시 + 클릭 시 텔레포트
                 if (r.subAreas != null)
@@ -426,10 +427,10 @@ namespace InsectGame.UI
                         GUI.DrawTexture(new Rect(scx - sCr, scy - sCr, sCr * 2, 1), Texture2D.whiteTexture);
                         GUI.DrawTexture(new Rect(scx - sCr, scy + sCr - 1, sCr * 2, 1), Texture2D.whiteTexture);
 
-                        regionSubNameStyleCache.fontSize = 14;
+                        regionSubNameStyleCache.fontSize = 18;
                         regionSubNameStyleCache.normal.textColor = new Color(0.9f, 0.9f, 0.9f, 0.8f);
                         GUI.color = Color.white;
-                        GUI.Label(new Rect(scx - 50, scy + sCr + 1, 100, 16), sub.displayName, regionSubNameStyleCache);
+                        GUI.Label(new Rect(scx - 60, scy + sCr + 2, 120, 24), sub.displayName, regionSubNameStyleCache);
 
                         // 클릭 핫존: 점 위 투명 버튼으로 텔레포트 트리거
                         float hot = Mathf.Max(sCr, 14f);
@@ -482,10 +483,10 @@ namespace InsectGame.UI
                 GUI.color = new Color(raidCol.r, raidCol.g, raidCol.b, pulse);
                 GUI.DrawTexture(new Rect(rpx - 6, rpy - 6, 12, 12), Texture2D.whiteTexture);
                 // 이름
-                regionRaidLabelStyleCache.fontSize = 14;
+                regionRaidLabelStyleCache.fontSize = 18;
                 regionRaidLabelStyleCache.normal.textColor = raidCol;
                 GUI.color = Color.white;
-                GUI.Label(new Rect(rpx - 50, rpy + 10, 100, 18), marker.name, regionRaidLabelStyleCache);
+                GUI.Label(new Rect(rpx - 60, rpy + 12, 120, 24), marker.name, regionRaidLabelStyleCache);
             }
 
             float cardY = miniY + miniH + 10;
@@ -499,7 +500,7 @@ namespace InsectGame.UI
             if (accessible.Length == 0) return;
 
             float cardW = (w - 10 * (accessible.Length - 1)) / Mathf.Max(accessible.Length, 1);
-            cardW = Mathf.Min(cardW, 290);
+            cardW = Mathf.Min(cardW, 320);
 
             for (int i = 0; i < accessible.Length; i++)
             {
@@ -521,12 +522,12 @@ namespace InsectGame.UI
 
                 nsStyleCache.normal.textColor = r.themeColor;
                 GUI.color = Color.white;
-                GUI.Label(new Rect(cx, y + 12, cardW, 32), r.displayName, nsStyleCache);
+                GUI.Label(new Rect(cx, y + 14, cardW, 46), r.displayName, nsStyleCache);
 
                 if (isCurrent)
                 {
                     curStyleCache.normal.textColor = new Color(0.5f, 1f, 0.5f);
-                    GUI.Label(new Rect(cx, y + 44, cardW, 32), "현재 위치", curStyleCache);
+                    GUI.Label(new Rect(cx, y + 66, cardW, 40), "현재 위치", curStyleCache);
                 }
 
                 string diffLabel;
@@ -535,24 +536,29 @@ namespace InsectGame.UI
                 else if (r.requiredLevel <= 5) { diffLabel = "보통"; diffColor = new Color(0.9f, 0.8f, 0.3f); }
                 else { diffLabel = "어려움"; diffColor = new Color(1f, 0.4f, 0.3f); }
                 diffSStyleCache.normal.textColor = diffColor;
-                float diffY = isCurrent ? y + 72 : y + 44;
-                GUI.Label(new Rect(cx, diffY, cardW, 28), $"난이도: {diffLabel}", diffSStyleCache);
+                float diffY = isCurrent ? y + 112 : y + 66;
+                GUI.Label(new Rect(cx, diffY, cardW, 36), $"난이도: {diffLabel}", diffSStyleCache);
 
                 int total = r.insectIds != null ? r.insectIds.Length : 0;
                 int caught = CountCaught(r);
+
+                float dexButtonH = UIScale.IsMobileLayout ? 64f : 50f;
+                float dexBtnTop = y + h - dexButtonH - 12f;
+                float barW = cardW - 30;
+                float barY = dexBtnTop - 24f;
+
                 csStyleCache.normal.textColor = new Color(0.7f, 0.7f, 0.7f);
-                GUI.Label(new Rect(cx, y + h - 72, cardW, 32), $"{caught}/{total}", csStyleCache);
+                GUI.Label(new Rect(cx, barY - 46f, cardW, 40), $"{caught}/{total}", csStyleCache);
 
                 float bar = total > 0 ? (float)caught / total : 0;
-                float barW = cardW - 30;
                 GUI.color = new Color(0.15f, 0.15f, 0.2f);
-                GUI.DrawTexture(new Rect(cx + 10, y + h - 36, barW, 12), Texture2D.whiteTexture);
+                GUI.DrawTexture(new Rect(cx + 10, barY, barW, 14), Texture2D.whiteTexture);
                 GUI.color = new Color(0.3f, 0.8f, 0.3f);
-                GUI.DrawTexture(new Rect(cx + 10, y + h - 36, barW * bar, 12), Texture2D.whiteTexture);
+                GUI.DrawTexture(new Rect(cx + 10, barY, barW * bar, 14), Texture2D.whiteTexture);
 
                 GUI.backgroundColor = new Color(0.2f, 0.3f, 0.5f);
                 GUI.color = Color.white;
-                if (GUI.Button(new Rect(cx + 5, y + h - 38 + 20, cardW - 10, 38), "도감", btnStyleCache))
+                if (GUI.Button(new Rect(cx + 5, dexBtnTop, cardW - 10, dexButtonH), "도감", btnStyleCache))
                     selectedRegionId = r.regionId;
                 GUI.backgroundColor = Color.white;
             }
@@ -567,8 +573,9 @@ namespace InsectGame.UI
             RegionData region = regionManager.GetRegionById(selectedRegionId);
             if (region == null) { selectedRegionId = null; return; }
 
-            float panelW = 1060f;
-            float panelH = 900f;
+            float panelW = Mathf.Min(1060f, UIScale.ContentWidth(18f));
+            float panelH = Mathf.Min(960f,
+                UIScale.VirtualScreenHeight - UIScale.VirtualSafeTop - UIScale.VirtualSafeBottom - 36f);
             float px = (UIScale.VirtualScreenWidth - panelW) / 2f;
             float py = (UIScale.VirtualScreenHeight - panelH) / 2f;
 
@@ -576,18 +583,18 @@ namespace InsectGame.UI
             GUI.DrawTexture(new Rect(px, py, panelW, panelH), Texture2D.whiteTexture);
 
             GUI.color = new Color(region.themeColor.r * 0.3f, region.themeColor.g * 0.3f, region.themeColor.b * 0.3f, 1f);
-            GUI.DrawTexture(new Rect(px, py, panelW, 70), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(px, py, panelW, 84), Texture2D.whiteTexture);
             GUI.color = region.themeColor;
-            GUI.DrawTexture(new Rect(px, py + 70, panelW, 5), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(px, py + 84, panelW, 5), Texture2D.whiteTexture);
 
             detailTitleStyleCache.normal.textColor = region.themeColor;
             GUI.color = Color.white;
-            GUI.Label(new Rect(px + 140, py + 10, panelW - 280, 50), $"{region.displayName} Dex", detailTitleStyleCache);
+            GUI.Label(new Rect(px + 150, py + 14, panelW - 300, 58), $"{region.displayName} Dex", detailTitleStyleCache);
 
-            if (GUI.Button(new Rect(px + 12, py + 12, 120, 46), "< Back", detailBackStyleCache))
+            if (GUI.Button(new Rect(px + 14, py + 10f, 160f, UIScale.IsMobileLayout ? 64f : 52f), "< Back", detailBackStyleCache))
                 selectedRegionId = null;
 
-            if (GUI.Button(new Rect(px + panelW - 60, py + 12, 50, 46), "X", detailCloseStyleCache))
+            if (GUI.Button(new Rect(px + panelW - 76f, py + 10f, 64f, UIScale.IsMobileLayout ? 64f : 52f), "X", detailCloseStyleCache))
             {
                 CloseModal();
             }
@@ -595,37 +602,37 @@ namespace InsectGame.UI
             if (!string.IsNullOrEmpty(region.description))
             {
                 detailDescStyleCache.normal.textColor = new Color(0.6f, 0.6f, 0.6f);
-                GUI.Label(new Rect(px + 30, py + 78, panelW - 60, 34), region.description, detailDescStyleCache);
+                GUI.Label(new Rect(px + 30, py + 96, panelW - 60, 42), region.description, detailDescStyleCache);
             }
 
             int total = region.insectIds != null ? region.insectIds.Length : 0;
             int caught = CountCaught(region);
             detailSummaryStyleCache.normal.textColor = new Color(0.7f, 0.85f, 1f);
-            GUI.Label(new Rect(px, py + 118, panelW, 36), $"Captured: {caught} / {total}", detailSummaryStyleCache);
+            GUI.Label(new Rect(px, py + 146, panelW, 44), $"Captured: {caught} / {total}", detailSummaryStyleCache);
 
             float barX = px + panelW * 0.2f;
             float barW = panelW * 0.6f;
-            float barY = py + 160;
+            float barY = py + 198;
             GUI.color = new Color(0.15f, 0.15f, 0.2f);
-            GUI.DrawTexture(new Rect(barX, barY, barW, 16), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(barX, barY, barW, 18), Texture2D.whiteTexture);
             float fill = total > 0 ? (float)caught / total : 0;
             GUI.color = region.themeColor;
-            GUI.DrawTexture(new Rect(barX, barY, barW * fill, 16), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(barX, barY, barW * fill, 18), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
-            float listY = py + 186;
-            float listH = panelH - 196;
+            float listY = py + 232;
+            float listH = panelH - 242;
             Rect listArea = new Rect(px + 15, listY, panelW - 30, listH);
 
             if (region.insectIds == null || region.insectIds.Length == 0)
             {
-                detailNoInsectStyleCache.fontSize = 15;
+                detailNoInsectStyleCache.fontSize = 20;
                 detailNoInsectStyleCache.normal.textColor = new Color(0.5f, 0.5f, 0.5f);
                 GUI.Label(listArea, "No insects registered", detailNoInsectStyleCache);
                 return;
             }
 
-            float itemH = 120f;
+            float itemH = 140f;
             float totalListH = region.insectIds.Length * itemH;
             Rect viewRect = new Rect(0, 0, listArea.width - 20, totalListH);
 
@@ -655,16 +662,16 @@ namespace InsectGame.UI
 
                 dexNameStyleCache.normal.textColor = rarityCol;
                 GUI.color = Color.white;
-                GUI.Label(new Rect(rect.x + 110, rect.y + 14, rect.width - 140, 36), data.displayName, dexNameStyleCache);
+                GUI.Label(new Rect(rect.x + 120, rect.y + 18, rect.width - 200, 46), data.displayName, dexNameStyleCache);
 
                 dexInfoStyleCache.normal.textColor = new Color(0.6f, 0.6f, 0.6f);
-                GUI.Label(new Rect(rect.x + 110, rect.y + 50, rect.width - 140, 34),
+                GUI.Label(new Rect(rect.x + 120, rect.y + 68, rect.width - 200, 42),
                     $"{data.rarity}  |  CP {PlayerInsectCombatPower.CalculateBasePreview(data, data.minLevel)}", dexInfoStyleCache);
 
-                dexCheckStyleCache.fontSize = 32;
+                dexCheckStyleCache.fontSize = 41;
                 dexCheckStyleCache.fontStyle = FontStyle.Bold;
                 dexCheckStyleCache.normal.textColor = new Color(0.3f, 1f, 0.5f);
-                GUI.Label(new Rect(rect.x + rect.width - 60, rect.y + 18, 50, 50), "V", dexCheckStyleCache);
+                GUI.Label(new Rect(rect.x + rect.width - 72, rect.y + 22, 60, 60), "V", dexCheckStyleCache);
             }
             else
             {
@@ -672,21 +679,21 @@ namespace InsectGame.UI
                 GUI.DrawTexture(new Rect(rect.x, rect.y, 6, rect.height), Texture2D.whiteTexture);
 
                 GUI.color = new Color(0.2f, 0.2f, 0.2f, 0.5f);
-                GUI.DrawTexture(new Rect(rect.x + 24, rect.y + rect.height / 2f - 30, 60, 60), Texture2D.whiteTexture);
+                GUI.DrawTexture(new Rect(rect.x + 24, rect.y + rect.height / 2f - 34, 68, 68), Texture2D.whiteTexture);
 
-                dexUnknownStyleCache.fontSize = 38;
+                dexUnknownStyleCache.fontSize = 49;
                 dexUnknownStyleCache.alignment = TextAnchor.MiddleCenter;
                 dexUnknownStyleCache.normal.textColor = new Color(0.35f, 0.35f, 0.35f);
                 GUI.color = Color.white;
-                GUI.Label(new Rect(rect.x + 24, rect.y + rect.height / 2f - 30, 60, 60), "?", dexUnknownStyleCache);
+                GUI.Label(new Rect(rect.x + 24, rect.y + rect.height / 2f - 34, 68, 68), "?", dexUnknownStyleCache);
 
                 dexHiddenNameStyleCache.fontStyle = FontStyle.Italic;
                 dexHiddenNameStyleCache.normal.textColor = new Color(0.4f, 0.4f, 0.4f);
                 string displayHint = data != null ? new string('?', data.displayName.Length) : "???";
-                GUI.Label(new Rect(rect.x + 110, rect.y + 22, rect.width - 140, 36), displayHint, dexHiddenNameStyleCache);
+                GUI.Label(new Rect(rect.x + 120, rect.y + 26, rect.width - 200, 46), displayHint, dexHiddenNameStyleCache);
 
                 dexNotCaughtStyleCache.normal.textColor = new Color(0.35f, 0.35f, 0.35f);
-                GUI.Label(new Rect(rect.x + 110, rect.y + 58, rect.width - 140, 34), "아직 포획하지 않음", dexNotCaughtStyleCache);
+                GUI.Label(new Rect(rect.x + 120, rect.y + 74, rect.width - 200, 42), "아직 포획하지 않음", dexNotCaughtStyleCache);
             }
         }
 
@@ -808,13 +815,13 @@ namespace InsectGame.UI
                 float rr = (r.radius / Mathf.Max(wW, wH)) * Mathf.Min(mW, mH);
                 rr = Mathf.Max(rr, 20f);
 
-                symStyleCache.fontSize = 14;
+                symStyleCache.fontSize = 18;
                 symStyleCache.normal.textColor = new Color(1f, 1f, 1f, 0.4f);
                 GUI.color = Color.white;
 
                 string sym = GetRegionSymbol(r.regionId);
                 if (!string.IsNullOrEmpty(sym))
-                    GUI.Label(new Rect(rc.x - 30, rc.y + rr * 0.3f, 60, 18), sym, symStyleCache);
+                    GUI.Label(new Rect(rc.x - 40, rc.y + rr * 0.3f, 80, 24), sym, symStyleCache);
             }
 
             GUI.color = Color.white;

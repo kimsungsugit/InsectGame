@@ -108,6 +108,12 @@ namespace InsectGame.Dex
             previewCam.Render();
             previewCam.targetTexture = null;
 
+            // 모델 인스턴스 머티리얼 정리 — InsectEntity가 파트마다 머티리얼을 만드는데 GO 파괴로는
+            // 해제되지 않아 렌더(회전/선택/이로치 토글)마다 수십 개씩 누수. 자식 렌더러 인스턴스 해제.
+            Renderer[] rends = modelGo.GetComponentsInChildren<Renderer>(true);
+            for (int i = 0; i < rends.Length; i++)
+                if (rends[i] != null && rends[i].sharedMaterial != null) Destroy(rends[i].material);
+
             Destroy(modelGo);
         }
 

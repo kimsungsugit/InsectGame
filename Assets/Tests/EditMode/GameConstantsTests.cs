@@ -1,5 +1,7 @@
+#if UNITY_EDITOR
 using NUnit.Framework;
 using InsectGame.Core;
+using InsectGame.Data;
 
 namespace InsectGame.Tests
 {
@@ -52,6 +54,42 @@ namespace InsectGame.Tests
         }
 
         [Test]
+        public void Player_MaxLearnedSkills_Is4()
+        {
+            Assert.AreEqual(4, GameConstants.Player.MaxLearnedSkills);
+        }
+
+        [Test]
+        public void TypeChart_LeafIsStrongAgainstWater()
+        {
+            Assert.AreEqual(1.5f,
+                InsectTypeChart.GetEffectiveness(InsectElement.Leaf, InsectElement.Water, InsectElement.None),
+                0.001f);
+        }
+
+        [Test]
+        public void TypeChart_WaterResistsMetalAttack()
+        {
+            Assert.Less(
+                InsectTypeChart.GetEffectiveness(InsectElement.Metal, InsectElement.Water, InsectElement.None),
+                1f);
+        }
+
+        [Test]
+        public void PlayerInsect_FifthSkillRequiresReplacement()
+        {
+            PlayerInsectData insect = new PlayerInsectData();
+            Assert.IsTrue(insect.LearnSkill("s1"));
+            Assert.IsTrue(insect.LearnSkill("s2"));
+            Assert.IsTrue(insect.LearnSkill("s3"));
+            Assert.IsTrue(insect.LearnSkill("s4"));
+            Assert.IsFalse(insect.LearnSkill("s5"));
+            Assert.IsTrue(insect.ReplaceSkill("s1", "s5"));
+            Assert.IsTrue(insect.HasLearnedSkill("s5"));
+            Assert.IsFalse(insect.HasLearnedSkill("s1"));
+        }
+
+        [Test]
         public void Battle_MaxTeamSlots_Is5()
         {
             Assert.AreEqual(5, GameConstants.Battle.MaxTeamSlots);
@@ -77,3 +115,4 @@ namespace InsectGame.Tests
         }
     }
 }
+#endif

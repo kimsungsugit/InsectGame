@@ -395,8 +395,43 @@ namespace InsectGame.UI
                 AudioManager.Instance.PlaySFX(playerWon ? SfxType.Victory : SfxType.Defeat);
                 AudioManager.Instance.PlayBGM(playerWon ? BgmType.Victory : BgmType.Defeat);
             }
-            if (playerWon && TutorialQuestManager.Instance != null)
-                TutorialQuestManager.Instance.NotifyRaidCompleted();
+            if (playerWon)
+            {
+                if (TutorialQuestManager.Instance != null)
+                    TutorialQuestManager.Instance.NotifyRaidCompleted();
+                CheckRaidGuardianDefeat();
+            }
+        }
+
+        private RegionManager cachedRegionMgr;
+
+        // 레이드 승리로 Epic/Legendary 수문장을 처치한 경우에도 다음 리전을 해금한다.
+        // (1v1은 BattleScreenUI.CheckGuardianDefeat가 처리하지만, CaptureChoiceUI가 Epic/Legendary는
+        //  [B] 1v1을 숨기고 [R] 레이드만 제공하므로 4개 수문장이 레이드 전용 → 격파 등록 누락 = 진행 차단.)
+        private void CheckRaidGuardianDefeat()
+        {
+            if (raidController == null || raidController.BossStats == null
+                || raidController.BossStats.Data == null) return;
+            if (cachedRegionMgr == null) cachedRegionMgr = FindFirstObjectByType<RegionManager>();
+            RegionManager regionMgr = cachedRegionMgr;
+            if (regionMgr == null || regionMgr.Regions == null) return;
+
+            // 보스 종/레벨은 시작 스냅샷(BossStats) — 디스폰/풀 재사용된 라이브 BossEntity 회피.
+            string bossId = raidController.BossStats.Data.insectId;
+            int bossLevel = raidController.BossStats.Level;
+            foreach (var region in regionMgr.Regions)
+            {
+                if (string.IsNullOrEmpty(region.guardianInsectId)) continue;
+                if (region.guardianInsectId != bossId) continue;
+                if (regionMgr.IsGuardianDefeated(region.regionId)) continue;
+                if (bossLevel >= region.guardianLevel - 2)
+                {
+                    regionMgr.DefeatGuardian(region.regionId);
+                    Debug.Log($"[Guardian] {region.displayName} 수문장 격파(레이드)! 다음 지역 해금됨");
+                    if (TutorialQuestManager.Instance != null)
+                        TutorialQuestManager.Instance.NotifyGuardianDefeated();
+                }
+            }
         }
 
         private void Update()
@@ -1533,8 +1568,9 @@ namespace InsectGame.UI
 
         private void DrawInsectSelector()
         {
+            bool mobile = UIScale.IsMobileLayout;
             float panelW = UIScale.VirtualScreenWidth;
-            float panelH = 200f;
+            float panelH = mobile ? 380f : 200f;
             float safeBottom = SafeArea.Bottom / UIScale.Scale; // 제스처바 위로
             float panelY = UIScale.VirtualScreenHeight - panelH - safeBottom;
 
@@ -1544,12 +1580,14 @@ namespace InsectGame.UI
             GUI.DrawTexture(new Rect(0, panelY, panelW, 4), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
-            GUI.Label(new Rect(30, panelY + 10, 600, 32), "공격할 곤충을 선택하세요 [1-5]:", insectSelHeaderStyleCache);
+            GUI.Label(new Rect(30, panelY + 10, panelW - 60f, 32),
+                mobile ? "공격할 곤충을 선택하세요" : "공격할 곤충을 선택하세요 [1-5]:", insectSelHeaderStyleCache);
 
             int count = raidController.TeamStats != null ? raidController.TeamStats.Length : 0;
-            float btnW = Mathf.Min(240, (panelW - 60) / Mathf.Max(count, 1));
-            float btnH = 120f;
-            float btnY = panelY + 52;
+            float btnW = mobile ? (panelW - 84f) / 3f : Mathf.Min(240, (panelW - 60) / Mathf.Max(count, 1));
+            float btnH = mobile ? 136f : 120f;
+            float baseBtnY = panelY + 52f;
+            float btnY = baseBtnY;
             float startX = 30;
 
             for (int i = 0; i < count; i++)
@@ -1557,7 +1595,10 @@ namespace InsectGame.UI
                 var stats = raidController.TeamStats[i];
                 if (stats == null) continue;
                 bool alive = stats.CurrentHp > 0;
-                float bx = startX + i * (btnW + 12);
+                float bx = mobile
+                    ? startX + (i % 3) * (btnW + 12f)
+                    : startX + i * (btnW + 12f);
+                if (mobile) btnY = baseBtnY + (i / 3) * (btnH + 12f);
 
                 Color bgCol = alive ? new Color(0.08f, 0.10f, 0.20f) : new Color(0.06f, 0.04f, 0.04f);
                 if (i == selectedSlot && alive) bgCol = new Color(0.12f, 0.15f, 0.30f);
@@ -1573,11 +1614,14 @@ namespace InsectGame.UI
                     GUI.DrawTexture(new Rect(bx + btnW - 2, btnY, 2, btnH), Texture2D.whiteTexture);
                 }
 
-                insectSelKeyStyleCache.normal.textColor = alive ? new Color(1f, 0.85f, 0.3f) : new Color(0.4f, 0.4f, 0.4f);
-                GUI.color = alive ? new Color(0.15f, 0.12f, 0.05f) : new Color(0.06f, 0.06f, 0.06f);
-                GUI.DrawTexture(new Rect(bx + 8, btnY + 8, 32, 32), Texture2D.whiteTexture);
-                GUI.color = Color.white;
-                GUI.Label(new Rect(bx + 8, btnY + 8, 32, 32), $"{i + 1}", insectSelKeyStyleCache);
+                if (!mobile)
+                {
+                    insectSelKeyStyleCache.normal.textColor = alive ? new Color(1f, 0.85f, 0.3f) : new Color(0.4f, 0.4f, 0.4f);
+                    GUI.color = alive ? new Color(0.15f, 0.12f, 0.05f) : new Color(0.06f, 0.06f, 0.06f);
+                    GUI.DrawTexture(new Rect(bx + 8, btnY + 8, 32, 32), Texture2D.whiteTexture);
+                    GUI.color = Color.white;
+                    GUI.Label(new Rect(bx + 8, btnY + 8, 32, 32), $"{i + 1}", insectSelKeyStyleCache);
+                }
 
                 insectSelNameStyleCache.normal.textColor = alive ? Color.white : new Color(0.35f, 0.35f, 0.35f);
                 GUI.Label(new Rect(bx + 8, btnY + 44, btnW - 16, 26), stats.Data.displayName, insectSelNameStyleCache);
@@ -1602,7 +1646,9 @@ namespace InsectGame.UI
             }
             insectBtnCount = count;
 
-            DrawUniteButton(startX + count * (btnW + 12) + 20, btnY, btnH);
+            float uniteX = mobile ? startX + 2f * (btnW + 12f) : startX + count * (btnW + 12f) + 20f;
+            float uniteY = mobile ? baseBtnY + btnH + 12f : baseBtnY;
+            DrawUniteButton(uniteX, uniteY, btnH);
         }
 
         private void DrawSkillSelector()
@@ -1614,8 +1660,9 @@ namespace InsectGame.UI
             var cooldowns = raidController.TeamCooldowns != null && selectedSlot < raidController.TeamCooldowns.Length
                 ? raidController.TeamCooldowns[selectedSlot] : null;
 
+            bool mobile = UIScale.IsMobileLayout;
             float panelW = UIScale.VirtualScreenWidth;
-            float panelH = 280f;
+            float panelH = mobile ? 580f : 280f;
             float safeBottom = SafeArea.Bottom / UIScale.Scale; // 제스처바 위로
             float panelY = UIScale.VirtualScreenHeight - panelH - safeBottom;
 
@@ -1625,13 +1672,15 @@ namespace InsectGame.UI
             GUI.DrawTexture(new Rect(0, panelY, panelW, 4), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
-            GUI.Label(new Rect(30, panelY + 10, 700, 32),
-                $"{stats.Data.displayName}의 스킬 [Q/W/E/R]  |  ESC: 돌아가기", skillSelHeaderStyleCache);
+            GUI.Label(new Rect(30, panelY + 10, panelW - 60f, 32),
+                mobile ? $"{stats.Data.displayName}의 기술을 선택하세요"
+                    : $"{stats.Data.displayName}의 스킬 [Q/W/E/R]  |  ESC: 돌아가기", skillSelHeaderStyleCache);
 
             int count = skills != null ? Mathf.Min(skills.Length, 4) : 0;
-            float btnW = Mathf.Min(300, (panelW - 80) / Mathf.Max(count, 1));
+            float btnW = mobile ? (panelW - 76f) * 0.5f : Mathf.Min(300, (panelW - 80) / Mathf.Max(count, 1));
             float btnH = 180f;
-            float btnY = panelY + 52;
+            float baseBtnY = panelY + 52f;
+            float btnY = baseBtnY;
             float startX = 30;
             string[] keyLabels = { "Q", "W", "E", "R" };
 
@@ -1640,7 +1689,10 @@ namespace InsectGame.UI
                 var skill = skills[i];
                 if (skill == null) continue;
 
-                float bx = startX + i * (btnW + 14);
+                float bx = mobile
+                    ? startX + (i % 2) * (btnW + 14f)
+                    : startX + i * (btnW + 14f);
+                if (mobile) btnY = baseBtnY + (i / 2) * (btnH + 14f);
                 int cd = cooldowns != null && i < cooldowns.Length ? cooldowns[i] : 0;
                 bool canUse = cd <= 0;
 
@@ -1672,12 +1724,15 @@ namespace InsectGame.UI
                 GUI.color = new Color(skillCol.r, skillCol.g, skillCol.b, canUse ? 0.85f : 0.25f);
                 GUI.DrawTexture(new Rect(bx + 12, btnY + 12, iconSize, iconSize), Texture2D.whiteTexture);
 
-                float pulse = 0.5f + Mathf.Sin(Time.time * 3f) * 0.15f;
-                skillSelKeyStyleCache.normal.textColor = canUse ? new Color(1f, 0.85f, 0.3f, pulse + 0.5f) : new Color(0.35f, 0.35f, 0.35f);
-                GUI.color = canUse ? new Color(0.15f, 0.12f, 0.05f) : new Color(0.06f, 0.06f, 0.06f);
-                GUI.DrawTexture(new Rect(bx + btnW - 46, btnY + 10, 36, 36), Texture2D.whiteTexture);
-                GUI.color = Color.white;
-                GUI.Label(new Rect(bx + btnW - 46, btnY + 10, 36, 36), keyLabels[i], skillSelKeyStyleCache);
+                if (!mobile)
+                {
+                    float pulse = 0.5f + Mathf.Sin(Time.time * 3f) * 0.15f;
+                    skillSelKeyStyleCache.normal.textColor = canUse ? new Color(1f, 0.85f, 0.3f, pulse + 0.5f) : new Color(0.35f, 0.35f, 0.35f);
+                    GUI.color = canUse ? new Color(0.15f, 0.12f, 0.05f) : new Color(0.06f, 0.06f, 0.06f);
+                    GUI.DrawTexture(new Rect(bx + btnW - 46, btnY + 10, 36, 36), Texture2D.whiteTexture);
+                    GUI.color = Color.white;
+                    GUI.Label(new Rect(bx + btnW - 46, btnY + 10, 36, 36), keyLabels[i], skillSelKeyStyleCache);
+                }
 
                 skillSelNameStyleCache.normal.textColor = canUse ? Color.white : new Color(0.4f, 0.4f, 0.4f);
                 GUI.Label(new Rect(bx + 12, btnY + 52, btnW - 24, 30), skill.displayName, skillSelNameStyleCache);
@@ -1721,7 +1776,10 @@ namespace InsectGame.UI
                 GUI.Label(new Rect(0, btnY, panelW, btnH), "스킬 없음", skillSelNoSkillStyleCache);
             }
 
-            DrawUniteButton(startX + count * (btnW + 14) + 20, btnY, btnH);
+            if (mobile)
+                DrawUniteButton(startX, baseBtnY + 2f * (btnH + 14f), 90f);
+            else
+                DrawUniteButton(startX + count * (btnW + 14) + 20, baseBtnY, btnH);
         }
 
         private void DrawAttackEffects()
@@ -2088,7 +2146,8 @@ namespace InsectGame.UI
                 return;
             }
 
-            float bw = 160f;
+            bool mobile = UIScale.IsMobileLayout;
+            float bw = mobile ? (UIScale.VirtualScreenWidth - 84f) / 3f : 160f;
             float bh = Mathf.Min(h, 120f);
             float by = y + (h - bh) / 2f;
 
@@ -2112,7 +2171,7 @@ namespace InsectGame.UI
             GUI.Label(new Rect(x, by + 8, bw, 28), "★ 합체공격 ★", uniteBtnLabelStyleCache);
 
             uniteBtnKeyHintStyleCache.normal.textColor = new Color(1f, 0.8f, 0.3f, pulse);
-            GUI.Label(new Rect(x, by + 38, bw, 22), "[F] 또는 클릭", uniteBtnKeyHintStyleCache);
+            GUI.Label(new Rect(x, by + 38, bw, 22), mobile ? "탭하여 사용" : "[F] 또는 클릭", uniteBtnKeyHintStyleCache);
 
             uniteBtnRect = new Rect(x, by, bw, bh);
         }
@@ -2167,12 +2226,18 @@ namespace InsectGame.UI
 
             uniteGaugeLabelStyleCache.normal.textColor = ready ? new Color(1f, 0.95f, 0.4f) : new Color(0.7f, 0.7f, 0.8f);
             GUI.color = Color.white;
-            GUI.Label(new Rect(bx, by, barW, barH), ready ? "★ 합체공격 준비! [F] ★" : $"합체 게이지  {Mathf.RoundToInt(gauge)}/{Mathf.RoundToInt(max)}", uniteGaugeLabelStyleCache);
+            GUI.Label(new Rect(bx, by, barW, barH),
+                ready
+                    ? (UIScale.IsMobileLayout ? "★ 합체공격 준비! ★" : "★ 합체공격 준비! [F] ★")
+                    : $"합체 게이지  {Mathf.RoundToInt(gauge)}/{Mathf.RoundToInt(max)}",
+                uniteGaugeLabelStyleCache);
 
             if (ready)
             {
                 uniteGaugeHintStyleCache.normal.textColor = new Color(1f, 0.8f, 0.3f, Mathf.Sin(Time.time * 3f) * 0.3f + 0.7f);
-                GUI.Label(new Rect(bx, by + barH + 2, barW, 22), "F키를 눌러 전체 곤충이 동시 공격!", uniteGaugeHintStyleCache);
+                GUI.Label(new Rect(bx, by + barH + 2, barW, 22),
+                    UIScale.IsMobileLayout ? "합체공격 버튼을 눌러 동시 공격!" : "F키를 눌러 전체 곤충이 동시 공격!",
+                    uniteGaugeHintStyleCache);
             }
         }
 

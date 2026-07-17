@@ -33,6 +33,15 @@ namespace InsectGame.Core
             saveDebounceTimer = 0f;
         }
 
+        // 즉시 저장(디바운스 우회) — 포획처럼 직후 앱 백그라운드 전환 시 CloudSave가 stale 파일을 읽어
+        // 마지막 변경이 클라우드에서 누락되면 안 되는 경우에 사용.
+        private void SaveNow()
+        {
+            saveDirty = false;
+            saveDebounceTimer = 0f;
+            if (saveData != null) Save(saveData);
+        }
+
         private void Update()
         {
             if (!saveDirty) return;
@@ -135,7 +144,9 @@ namespace InsectGame.Core
             EnsureLevelSkills(data, insect);
             lookup[data.instanceId] = data;
             saveData.insects.Add(data);
-            MarkDirty();
+            // 포획은 디바운스 없이 즉시 저장 — 직후 앱 백그라운드 전환 시 CloudSave가 stale player_insects를
+            // 읽어 마지막 포획이 클라우드에서 누락되던 것 차단. (빈번한 XP 변경은 계속 디바운스)
+            SaveNow();
             InsectUpdated?.Invoke(data);
             return data;
         }
@@ -438,6 +449,37 @@ namespace InsectGame.Core
                 changed = true;
             }
 
+            if (data.equippedSkillIds.Count > PlayerInsectData.MaxEquipSlots)
+            {
+                data.equippedSkillIds.RemoveRange(
+                    PlayerInsectData.MaxEquipSlots,
+                    data.equippedSkillIds.Count - PlayerInsectData.MaxEquipSlots);
+                changed = true;
+            }
+
+            // 옛 세이브(최대 12개)는 장착 중인 기술을 우선 보존해 새 4개 제한으로 이관한다.
+            if (data.learnedSkillIds.Count > PlayerInsectData.MaxLearnedSkills)
+            {
+                List<string> limited = new List<string>(PlayerInsectData.MaxLearnedSkills);
+                foreach (string equipped in data.equippedSkillIds)
+                {
+                    if (!string.IsNullOrEmpty(equipped)
+                        && data.learnedSkillIds.Contains(equipped)
+                        && !limited.Contains(equipped)
+                        && limited.Count < PlayerInsectData.MaxLearnedSkills)
+                        limited.Add(equipped);
+                }
+                foreach (string learned in data.learnedSkillIds)
+                {
+                    if (!string.IsNullOrEmpty(learned)
+                        && !limited.Contains(learned)
+                        && limited.Count < PlayerInsectData.MaxLearnedSkills)
+                        limited.Add(learned);
+                }
+                data.learnedSkillIds = limited;
+                changed = true;
+            }
+
             if (insect != null && insect.learnset != null)
             {
                 foreach (InsectLearnableSkill learnable in insect.learnset)
@@ -545,7 +587,7 @@ namespace InsectGame.Core
 
         private string GetPath()
         {
-            return System.IO.Path.Combine(Application.persistentDataPath, GameConstants.SaveFiles.PlayerInsects);
+            return SaveScope.FilePath(GameConstants.SaveFiles.PlayerInsects);
         }
 
         public void ForceSave()

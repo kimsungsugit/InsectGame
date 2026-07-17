@@ -24,6 +24,7 @@ namespace InsectGame.Battle
         private InsectBattleStats playerStats;
         private InsectBattleStats enemyStats;
         private InsectEntity enemyEntity;
+        private bool enemyShinyAtStart; // 시작 시점 스냅샷 — 도주/풀 재사용된 라이브 참조로 보상 오등록 방지
         private InsectSkill[] playerOverrideSkills;
         private int[] playerCooldowns;
         private int enemyCooldown;
@@ -49,6 +50,10 @@ namespace InsectGame.Battle
             playerStats = new InsectBattleStats(playerInsect, playerLevel, playerPid);
             enemyStats = new InsectBattleStats(enemy.Data, enemy.Level);
             enemyEntity = enemy;
+            enemyShinyAtStart = enemy.IsShiny;
+            // 배틀 동안 야생 엔티티가 도주(patience 소진)→Despawn→풀 재사용되어 종료 시 엉뚱한
+            // 곤충이 포획/디스폰되는 보상 무결성 손상을 차단. (미니게임/선택 UI는 이미 SetEngaged)
+            enemy.SetEngaged(true);
             playerOverrideSkills = ResolvePlayerSkills(playerInsect, equippedSkills, playerPid);
             int skillCount = playerOverrideSkills != null ? playerOverrideSkills.Length : (playerInsect.skills != null ? playerInsect.skills.Length : 0);
             playerCooldowns = new int[skillCount];
@@ -257,9 +262,20 @@ namespace InsectGame.Battle
                     break;
                 default:
                     int baseDamage = skill.power;
-                    int damage = GetDamage(attacker, baseDamage);
+                    float effectiveness = InsectTypeChart.GetEffectiveness(
+                        skill.element,
+                        defender.Data != null ? defender.Data.primaryType : InsectElement.None,
+                        defender.Data != null ? defender.Data.secondaryType : InsectElement.None);
+                    float sameTypeBonus = attacker.Data != null
+                        ? InsectTypeChart.GetSameTypeBonus(skill.element, attacker.Data.primaryType, attacker.Data.secondaryType)
+                        : 1f;
+                    int damage = Mathf.Max(1, Mathf.RoundToInt(GetDamage(attacker, baseDamage) * effectiveness * sameTypeBonus));
                     defender.ApplyDamage(damage, attacker.Attack, defender.Defense);
                     TryPlayHitFlash(defenderIsPlayer);
+                    if (effectiveness > 1.05f)
+                        TryPlayEffectText("효과가 굉장했다!", new Color(1f, 0.55f, 0.2f));
+                    else if (effectiveness < 0.95f)
+                        TryPlayEffectText("효과가 별로인 듯하다...", new Color(0.55f, 0.65f, 0.8f));
                     break;
             }
         }
@@ -379,10 +395,20 @@ namespace InsectGame.Battle
             bool playerWon = enemyStats.CurrentHp <= 0 && playerStats.CurrentHp > 0;
             if (playerWon && enemyEntity != null)
             {
-                int candy = InsectRewardCalculator.GetCandyReward(enemyEntity.Data);
-                int exp = InsectRewardCalculator.GetExpReward(enemyEntity.Data);
-                int itemCount = InsectRewardCalculator.GetItemRewardCount(enemyEntity.Data);
-                string itemId = enemyEntity.Data.itemRewardId;
+                // 보상은 시작 시점 스냅샷(enemyStats)에서 — SetEngaged로 도주를 막았지만,
+                // 라이브 enemyEntity 대신 스냅샷을 써 이중 안전(엉뚱한 종/레벨/이로치 등록 방지).
+                InsectData enemyData = enemyStats.Data;
+                int enemyLevel = enemyStats.Level;
+                int itemCount = InsectRewardCalculator.GetItemRewardCount(enemyData);
+                string itemId = enemyData.itemRewardId;
+
+                // EXP/캔디 부스터(아이템·아웃핏) 배율 — 포획 경로(CaptureController)와 동일 항목만 적용.
+                float candyMultiplier = (itemEffects != null ? itemEffects.GetCandyMultiplier() : 1f)
+                                       * (outfitBonus != null ? outfitBonus.GetCandyMultiplier() : 1f);
+                float expMultiplier = (itemEffects != null ? itemEffects.GetExpMultiplier() : 1f)
+                                     * (outfitBonus != null ? outfitBonus.GetExpMultiplier() : 1f);
+                int candy = Mathf.RoundToInt(InsectRewardCalculator.GetCandyReward(enemyData) * candyMultiplier);
+                int exp = Mathf.RoundToInt(InsectRewardCalculator.GetExpReward(enemyData) * expMultiplier);
 
                 candyInventory?.AddCandy(candy);
                 playerProgress?.GainXp(exp);
@@ -391,16 +417,15 @@ namespace InsectGame.Battle
                     itemInventory?.AddItem(itemId, itemCount);
                 }
 
-                bool entityShiny = enemyEntity != null && enemyEntity.IsShiny;
                 if (playerCollection != null)
-                    playerCollection.AddCapturedInsect(enemyEntity.Data.insectId, enemyEntity.Level, entityShiny);
+                    playerCollection.AddCapturedInsect(enemyData.insectId, enemyLevel, enemyShinyAtStart);
                 else
-                    Debug.LogError("[Battle] playerCollection null — 캡처 보상 손실: " + enemyEntity.Data.insectId);
+                    Debug.LogError("[Battle] playerCollection null — 캡처 보상 손실: " + enemyData.insectId);
 
                 if (dexController != null)
                 {
-                    dexController.RegisterEncounter(enemyEntity.Data.insectId);
-                    dexController.RegisterCapture(enemyEntity.Data.insectId);
+                    dexController.RegisterEncounter(enemyData.insectId);
+                    dexController.RegisterCapture(enemyData.insectId);
                 }
 
                 lastCandyReward = candy;
@@ -515,6 +540,13 @@ namespace InsectGame.Battle
         public void AutoWire(OutfitBonusProvider bonus)
         {
             if (outfitBonus == null) outfitBonus = bonus;
+        }
+
+        private ItemEffectManager itemEffects;
+
+        public void AutoWire(ItemEffectManager effects)
+        {
+            if (itemEffects == null) itemEffects = effects;
         }
 
         public void SwapPlayerInsect(InsectData newInsect, int newLevel, InsectSkill[] equippedSkills = null, Core.PlayerInsectData playerPid = null)

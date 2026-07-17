@@ -100,8 +100,9 @@ namespace InsectGame.Dex
             { fontSize = 36, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             missingQStyleCache.normal.textColor = UnknownQCol;
 
+            // 이름은 폭 제약(260px에 8글자 곤충명 존재)으로 36 유지 — 확대 시 잘림. 서브(등급 라벨)는 폭 여유로 확대.
             listNameStyleCache = new GUIStyle(GUI.skin.label) { fontSize = 36, fontStyle = FontStyle.Bold };
-            listSubStyleCache = new GUIStyle(GUI.skin.label) { fontSize = 28 };
+            listSubStyleCache = new GUIStyle(GUI.skin.label) { fontSize = 32 };
 
             checkStyleCache = new GUIStyle(GUI.skin.label)
             { fontSize = 28, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
@@ -149,24 +150,24 @@ namespace InsectGame.Dex
             descSCache = new GUIStyle(GUI.skin.label) { fontSize = 34, wordWrap = true };
             descSCache.normal.textColor = DescCol;
 
-            ownedNameCache = new GUIStyle(GUI.skin.label) { fontSize = 38, fontStyle = FontStyle.Bold };
-            ownedInfoCache = new GUIStyle(GUI.skin.label) { fontSize = 32 };
+            ownedNameCache = new GUIStyle(GUI.skin.label) { fontSize = 42, fontStyle = FontStyle.Bold };
+            ownedInfoCache = new GUIStyle(GUI.skin.label) { fontSize = 34 };
             ownedInfoCache.normal.textColor = InfoCol;
-            ownedStCache = new GUIStyle(GUI.skin.label) { fontSize = 28 };
+            ownedStCache = new GUIStyle(GUI.skin.label) { fontSize = 34 };
             ownedStCache.normal.textColor = StCol;
             ownedGrCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 52, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            ownedPctCache = new GUIStyle(GUI.skin.label) { fontSize = 28, alignment = TextAnchor.MiddleCenter };
+            { fontSize = 56, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            ownedPctCache = new GUIStyle(GUI.skin.label) { fontSize = 32, alignment = TextAnchor.MiddleCenter };
 
             headerSCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 42, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            { fontSize = 50, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             headerSCache.normal.textColor = HeaderCol;
 
-            itemNameCache = new GUIStyle(GUI.skin.label) { fontSize = 38, fontStyle = FontStyle.Bold };
-            itemDescCache = new GUIStyle(GUI.skin.label) { fontSize = 30 };
+            itemNameCache = new GUIStyle(GUI.skin.label) { fontSize = 44, fontStyle = FontStyle.Bold };
+            itemDescCache = new GUIStyle(GUI.skin.label) { fontSize = 36 };
             itemDescCache.normal.textColor = ItemDescCol;
             itemCountCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 48, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleRight };
+            { fontSize = 54, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleRight };
 
             noSelectionCache = new GUIStyle(GUI.skin.label)
             { fontSize = 42, alignment = TextAnchor.MiddleCenter, wordWrap = true };
@@ -218,7 +219,7 @@ namespace InsectGame.Dex
         {
             float rowH = 80f;
             float targetY = selectedIndex * rowH;
-            float viewH = Screen.height - 120;
+            float viewH = UIScale.VirtualScreenHeight - (UIScale.IsMobileLayout ? 180f : 120f);
             if (targetY < listScroll.y) listScroll.y = targetY;
             else if (targetY + rowH > listScroll.y + viewH) listScroll.y = targetY + rowH - viewH;
         }
@@ -246,15 +247,16 @@ namespace InsectGame.Dex
 
             InitDexStyles();
             GUI.depth = -10;
+            UIScale.Begin();
 
             GUI.color = DexBgColor;
-            GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(0, 0, UIScale.VirtualScreenWidth, UIScale.VirtualScreenHeight), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
             DrawTopBar();
 
-            float contentY = 120f;
-            float contentH = Screen.height - contentY;
+            float contentY = UIScale.IsMobileLayout ? 180f : 120f;
+            float contentH = UIScale.VirtualScreenHeight - contentY;
 
             if (currentTab == 0)
                 DrawPokedex(contentY, contentH);
@@ -262,12 +264,17 @@ namespace InsectGame.Dex
                 DrawOwnedInsects(contentY, contentH);
             else if (currentTab == 2)
                 DrawItems(contentY, contentH);
+
+            UIScale.End();
         }
 
         private void DrawTopBar()
         {
+            bool mobile = UIScale.IsMobileLayout;
+            float sw = UIScale.VirtualScreenWidth;
+            float topBarH = mobile ? 174f : 114f;
             GUI.color = TopBarBg;
-            GUI.DrawTexture(new Rect(0, 0, Screen.width, 114), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(0, 0, sw, topBarH), Texture2D.whiteTexture);
 
             int total = database.insects.Count;
             int discovered = 0, captured = 0;
@@ -279,34 +286,38 @@ namespace InsectGame.Dex
             }
 
             GUI.color = Color.white;
-            GUI.Label(new Rect(20, 10, 500, 60), "곤충 도감", titleStyleCache);
-            GUI.Label(new Rect(320, 16, 500, 50),
+            GUI.Label(new Rect(20, 10, mobile ? 350f : 500f, 60), "곤충 도감", titleStyleCache);
+            GUI.Label(new Rect(mobile ? 350f : 320f, 16, mobile ? 490f : 500f, 50),
                 $"발견 {discovered}/{total}   포획 {captured}/{total}", countStyleCache);
 
-            float tabX = Screen.width / 2f - tabNames.Length * 120f;
+            float tabW = mobile ? (sw - 40f) / tabNames.Length : 230f;
+            float tabGap = mobile ? 0f : 10f;
+            float tabX = mobile ? 20f : sw / 2f - tabNames.Length * 120f;
+            float tabY = mobile ? 94f : 66f;
+            float tabH = mobile ? 68f : 42f;
             for (int i = 0; i < tabNames.Length; i++)
             {
                 bool active = currentTab == i;
                 tabStyleCache.fontStyle = active ? FontStyle.Bold : FontStyle.Normal;
                 GUI.backgroundColor = active ? TabActiveBg : TabInactiveBg;
-                if (GUI.Button(new Rect(tabX + i * 240, 66, 230, 42), tabNames[i], tabStyleCache))
+                if (GUI.Button(new Rect(tabX + i * (tabW + tabGap), tabY, tabW, tabH), tabNames[i], tabStyleCache))
                 { currentTab = i; listScroll = Vector2.zero; selectedIndex = -1; }
             }
             GUI.backgroundColor = Color.white;
 
-            if (GUI.Button(new Rect(Screen.width - 180, 10, 168, 50), "닫기 [N]", closeStyleCache))
+            if (GUI.Button(new Rect(sw - 180, 10, 168, mobile ? 68f : 50f), mobile ? "닫기" : "닫기 [N]", closeStyleCache))
                 CloseModal();
 
             GUI.color = TitleLineCol;
-            GUI.DrawTexture(new Rect(0, 112, Screen.width, 3), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(0, topBarH - 2f, sw, 3), Texture2D.whiteTexture);
             GUI.color = Color.white;
         }
 
         private void DrawPokedex(float y, float h)
         {
-            float listW = 500f;
+            float listW = UIScale.IsMobileLayout ? 420f : 500f;
             float detailX = listW + 10;
-            float detailW = Screen.width - detailX - 10;
+            float detailW = UIScale.VirtualScreenWidth - detailX - 10;
 
             GUI.color = ListBg;
             GUI.DrawTexture(new Rect(0, y, listW, h), Texture2D.whiteTexture);
@@ -346,7 +357,7 @@ namespace InsectGame.Dex
                 }
 
                 GUI.color = Color.white;
-                GUI.Label(new Rect(10, ry + 4, 72, 20), $"#{i + 1:D3}", numStyleCache);
+                GUI.Label(new Rect(10, ry + 4, 72, 30), $"#{i + 1:D3}", numStyleCache);
 
                 float iconCx = 62, iconCy = ry + rowH / 2f;
                 if (found)
@@ -379,12 +390,12 @@ namespace InsectGame.Dex
                 if (found)
                 {
                     listSubStyleCache.normal.textColor = SubCol;
-                    GUI.Label(new Rect(88, ry + 44, 240, 30), ins.rarity.ToString(), listSubStyleCache);
+                    GUI.Label(new Rect(88, ry + 44, 250, 34), ins.rarity.ToString(), listSubStyleCache);
                 }
                 else
                 {
                     listSubStyleCache.normal.textColor = SubMissingCol;
-                    GUI.Label(new Rect(88, ry + 44, 240, 30), "미발견", listSubStyleCache);
+                    GUI.Label(new Rect(88, ry + 44, 250, 34), "미발견", listSubStyleCache);
                 }
 
                 if (caught)
@@ -470,7 +481,8 @@ namespace InsectGame.Dex
                     previewAngle += 30f;
                 // 이로치(색다른 모습) 토글 — 박스 상단 중앙
                 GUI.backgroundColor = previewShiny ? new Color(1f, 0.85f, 0.2f) : new Color(0.32f, 0.32f, 0.38f);
-                if (GUI.Button(new Rect(boxX + previewSz / 2f - 90f, boxY + 6f, 180f, 40f), previewShiny ? "★ 색다른 모습" : "✦ 일반 / 색다른"))
+                float variantButtonH = UIScale.IsMobileLayout ? 60f : 40f;
+                if (GUI.Button(new Rect(boxX + previewSz / 2f - 100f, boxY + 6f, 200f, variantButtonH), previewShiny ? "★ 색다른 모습" : "✦ 일반 / 색다른"))
                     previewShiny = !previewShiny;
                 GUI.backgroundColor = Color.white;
                 if (ownsShiny)
@@ -625,11 +637,12 @@ namespace InsectGame.Dex
                 return;
             }
 
-            float panelW = Mathf.Min(Screen.width - 40, 900);
-            float px = (Screen.width - panelW) / 2f;
-            int cols = Mathf.Max(1, Mathf.FloorToInt(panelW / 260f));
+            float panelW = Mathf.Min(UIScale.VirtualScreenWidth - 40, 900);
+            float px = (UIScale.VirtualScreenWidth - panelW) / 2f;
+            // 폰트 확대에 맞춰 카드를 크게(열 수 감소) — 이름/스탯 표시 폭 확보. 스크롤뷰가 세로 흡수.
+            int cols = Mathf.Max(1, Mathf.FloorToInt(panelW / 330f));
             float cardW = (panelW - (cols - 1) * 10) / cols;
-            float cardH = 140f;
+            float cardH = 170f;
             int rows = Mathf.CeilToInt((float)owned.Count / cols);
             float totalH = rows * (cardH + 8);
 
@@ -671,29 +684,32 @@ namespace InsectGame.Dex
             if (data != null)
             {
                 Color ic = UITheme.Instance.GetInsectColor(data.insectId, data.rarity);
-                DrawTinyInsect(x + 40, y + h / 2f + 4, 26f, data.insectId, ic);
+                DrawTinyInsect(x + 42, y + h / 2f + 4, 30f, data.insectId, ic);
             }
 
             string name = data != null ? data.displayName : pid.insectId;
             ownedNameCache.normal.textColor = rc;
-            GUI.Label(new Rect(x + 76, y + 8, w - 150, 44), name, ownedNameCache);
+            // 이름 폭은 우측 등급 컬럼(x+w-90) 앞까지로 제한 — 겹침 방지.
+            GUI.Label(new Rect(x + 80, y + 12, w - 176, 52), name, ownedNameCache);
 
             string rStr = data != null ? data.rarity.ToString() : "?";
-            GUI.Label(new Rect(x + 76, y + 52, w - 90, 36),
-                $"Lv.{pid.level}  |  {rStr}  |  IV {pid.IVPercent * 100:0}%", ownedInfoCache);
+            // IV%는 우하단(x+w-90, y+82)과 아래 IV 상세줄에 이미 표시되므로 중간줄에선 생략 —
+            // 폰트 확대(→34) + 좁은 폭(w-176≈269px)에 "Lv | 등급 | IV%"를 넣으면 뒤가 잘리던 회귀 차단.
+            GUI.Label(new Rect(x + 80, y + 70, w - 176, 40),
+                $"Lv.{pid.level}  |  {rStr}", ownedInfoCache);
 
-            GUI.Label(new Rect(x + 76, y + 88, w - 90, 30),
+            GUI.Label(new Rect(x + 80, y + 118, w - 40, 40),
                 $"HP:{pid.ivHp}  ATK:{pid.ivAtk}  DEF:{pid.ivDef}", ownedStCache);
 
             Color gc = UITheme.Instance.GetGradeColor(pid.Grade);
             ownedGrCache.normal.textColor = gc;
-            GUI.Label(new Rect(x + w - 80, y + 8, 70, 60), CapturePopupUI.GetGradeLabel(pid.Grade), ownedGrCache);
+            GUI.Label(new Rect(x + w - 90, y + 12, 80, 64), CapturePopupUI.GetGradeLabel(pid.Grade), ownedGrCache);
 
             // grade 색의 alpha만 변경 — 매 호출 new Color 회귀 차단
             Color pctCol = gc;
             pctCol.a = 0.7f;
             ownedPctCache.normal.textColor = pctCol;
-            GUI.Label(new Rect(x + w - 80, y + 68, 70, 30), $"{pid.IVPercent * 100:0}%", ownedPctCache);
+            GUI.Label(new Rect(x + w - 90, y + 82, 80, 36), $"{pid.IVPercent * 100:0}%", ownedPctCache);
         }
 
         private void DrawItems(float y, float h)
@@ -711,13 +727,14 @@ namespace InsectGame.Dex
                 return;
             }
 
-            float panelW = Mathf.Min(Screen.width - 40, 700);
-            float px = (Screen.width - panelW) / 2f;
+            float panelW = Mathf.Min(UIScale.VirtualScreenWidth - 40, 700);
+            float px = (UIScale.VirtualScreenWidth - panelW) / 2f;
 
-            GUI.Label(new Rect(px, y + 10, panelW, 50), "보유 아이템", headerSCache);
+            GUI.Label(new Rect(px, y + 10, panelW, 58), "보유 아이템", headerSCache);
 
-            float iy = y + 52;
-            float itemH = 120f;
+            // 최대 6종(스크롤뷰 없음) — 폰트 확대해도 가로 폰(높이 1080, y=180) 예산 900px 내.
+            float iy = y + 62;
+            float itemH = 130f;
 
             foreach (PlayerItemRecord rec in snapshot.items)
             {
@@ -736,24 +753,25 @@ namespace InsectGame.Dex
             GUI.DrawTexture(new Rect(x, y, w, h), Texture2D.whiteTexture);
             GUI.color = itemCol;
             GUI.DrawTexture(new Rect(x, y, 4, h), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(x + 20, y + h / 2f - 24, 48, 48), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(x + 20, y + h / 2f - 28, 56, 56), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
             string displayName = GetItemDisplayName(rec.itemId);
             string desc = GetItemDescription(rec.itemId);
 
+            // 이름/설명 폭은 우측 수량 컬럼(x+w-180) 앞까지로 제한 — 겹침 방지.
             itemNameCache.normal.textColor = itemCol;
-            GUI.Label(new Rect(x + 66, y + 12, w - 200, 46), displayName, itemNameCache);
+            GUI.Label(new Rect(x + 90, y + 14, w - 280, 52), displayName, itemNameCache);
 
-            GUI.Label(new Rect(x + 66, y + 60, w - 200, 36), desc, itemDescCache);
+            GUI.Label(new Rect(x + 90, y + 72, w - 280, 40), desc, itemDescCache);
 
             itemCountCache.normal.textColor = rec.count > 0 ? ItemCountGood : ItemCountBad;
-            GUI.Label(new Rect(x + w - 160, y + 10, 140, 80), $"x{rec.count}", itemCountCache);
+            GUI.Label(new Rect(x + w - 180, y + 16, 160, 90), $"x{rec.count}", itemCountCache);
         }
 
         private void DrawCentered(float y, float h, string text)
         {
-            GUI.Label(new Rect(0, y, Screen.width, h), text, centeredCache);
+            GUI.Label(new Rect(0, y, UIScale.VirtualScreenWidth, h), text, centeredCache);
         }
 
         private void DrawTinyInsect(float cx, float cy, float size, string id, Color col)

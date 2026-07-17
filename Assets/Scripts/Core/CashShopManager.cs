@@ -115,8 +115,8 @@ namespace InsectGame.Core
             // 실결제 모듈이 준비됐으면 스토어 결제 → 완료 콜백에서만 지급(영수증 검증은 공급자).
             if (purchaseProvider != null && purchaseProvider.IsReady)
             {
-                // 실결제 시작. 실제 지급은 ProcessPurchase(권위, 재시작 재전달 안전)에서 product 기준.
-                // 콜백은 실패 로깅만 — 여기서 지급하면 ProcessPurchase와 이중 지급.
+                // 공급자가 Google Play 영수증 서버 검증과 권위 잔액 반영까지 처리한다.
+                // 콜백은 실패 로깅만 — 클라이언트에서 rewardCount를 더하면 중복 지급 위험.
                 purchaseProvider.Purchase(item.itemId, success =>
                 {
                     if (!success) Debug.LogWarning("[CashShop] 결제 실패/취소: " + item.itemId);
@@ -148,16 +148,34 @@ namespace InsectGame.Core
             return item.priceKRW.ToString("N0") + "원"; // 예: 2,000원
         }
 
-        // 결제 완료(ProcessPurchase) 권위 지급 — product ID로 보석 패키지를 찾아 지급.
-        // 앱 재시작 후 미완료 결제가 재전달돼도 콜백 유실과 무관하게 지급(결제 후 미지급 방지).
-        public void GrantGemPackageByProductId(string productId)
+        /// <summary>
+        /// 서버가 Google Play 구매 토큰을 검증하고 Firestore에서 원자적으로 계산한 잔액을 반영한다.
+        /// 클라이언트가 rewardCount를 직접 더하지 않아 재전달/재시작 시 중복 지급되지 않는다.
+        /// </summary>
+        public bool ApplyVerifiedGemBalance(string productId, int verifiedBalance)
         {
             CashShopItem item = GetItem(productId);
-            if (item != null && item.priceKRW > 0 && item.itemId.StartsWith("gem_"))
-                GrantGemPackage(item);
+            if (item == null || item.priceKRW <= 0 || !item.itemId.StartsWith("gem_"))
+                return false;
+
+            int safeBalance = Mathf.Max(0, verifiedBalance);
+            if (wallet != null)
+            {
+                wallet.SetGems(safeBalance);
+                gems = wallet.Gems;
+            }
+            else
+            {
+                gems = safeBalance;
+                SaveGems();
+            }
+
+            GemsChanged?.Invoke();
+            ItemPurchased?.Invoke(item);
+            return true;
         }
 
-        // 보석 패키지 지급(결제 성공 또는 개발 빌드). 결제 손실 방지를 위해 즉시 클라우드 저장.
+        // 에디터/개발 빌드 전용 가상 지급. 릴리스 실결제는 ApplyVerifiedGemBalance만 사용한다.
         private void GrantGemPackage(CashShopItem item)
         {
             AddGems(item.rewardCount);

@@ -87,6 +87,13 @@ namespace InsectGame.Core
             return true;
         }
 
+        // 로그인/계정 전환 후 계정별 파일에서 재로드 — 부트 시 전역(UserId=null) 로드분 교정.
+        public void ReloadFromDisk()
+        {
+            data = Load();
+            CurrencyChanged?.Invoke(data);
+        }
+
         private void Save()
         {
             // data null 가드 — 빈 파일 쓰기 + 구독자에게 null 전파 차단.
@@ -117,7 +124,7 @@ namespace InsectGame.Core
 
         private string GetPath()
         {
-            return Path.Combine(Application.persistentDataPath, GameConstants.SaveFiles.PlayerCurrency);
+            return SaveScope.FilePath(GameConstants.SaveFiles.PlayerCurrency);
         }
     }
 }

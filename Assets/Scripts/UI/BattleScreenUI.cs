@@ -100,6 +100,7 @@ namespace InsectGame.UI
 
         private int lastDamageToPlayer;
         private string lastSkillName;
+        private InsectElement lastSkillElement = InsectElement.Bug;
 
         private int savedEnemyHp;
         private int savedPlayerHp;
@@ -477,13 +478,14 @@ namespace InsectGame.UI
             InsectSkill[] curSkills = battleController.GetPlayerSkills();
             InsectSkill skill = curSkills != null && index < curSkills.Length ? curSkills[index] : null;
             lastSkillName = skill != null ? skill.displayName : "공격";
+            lastSkillElement = skill != null ? skill.element : playerStats.Data.primaryType;
             actionText = $"{playerStats.Data.displayName}의 {lastSkillName}!";
             actionTimer = 1.5f;
             SnapshotHp();
 
             if (arena != null && arena.IsActive)
             {
-                InsectElement elem = (playerStats != null && playerStats.Data != null) ? playerStats.Data.primaryType : InsectElement.Bug;
+                InsectElement elem = lastSkillElement;
                 SkillEffectType effectType = (skill != null) ? skill.effectType : SkillEffectType.Damage;
                 arena.PlaySkillEffect(true, elem, effectType);
             }
@@ -497,6 +499,7 @@ namespace InsectGame.UI
             if (AudioManager.Instance != null) AudioManager.Instance.PlaySFX(SfxType.Attack);
             turnNumber++;
             lastSkillName = "기본 공격";
+            lastSkillElement = (playerStats != null && playerStats.Data != null) ? playerStats.Data.primaryType : InsectElement.Bug;
             actionText = $"{playerStats.Data.displayName}의 기본 공격!";
             actionTimer = 1.5f;
             SnapshotHp();
@@ -1717,7 +1720,8 @@ namespace InsectGame.UI
             if (playerStats == null || playerStats.Data == null) return;
 
             float sw = UIScale.VirtualScreenWidth;
-            float panelH = 320f;
+            bool mobile = UIScale.IsMobileLayout;
+            float panelH = mobile ? 610f : 320f;
             // 제스처바(하단 세이프 인셋) 위로 버튼을 올림. 배경은 바닥까지 채워 빈틈 방지.
             float safeBottom = SafeArea.Bottom / UIScale.Scale;
             float panelY = UIScale.VirtualScreenHeight - panelH - safeBottom;
@@ -1731,20 +1735,23 @@ namespace InsectGame.UI
             GUI.DrawTexture(new Rect(0, panelY + 4, sw, 2), Texture2D.whiteTexture);
 
             GUI.color = Color.white;
-            GUI.Label(new Rect(30, panelY + 12, 600, 36),
-                "스킬을 선택하세요  (숫자키 1~4 또는 클릭)", skillHeaderCache);
+            GUI.Label(new Rect(30, panelY + 12, sw - 60f, 36),
+                mobile ? "사용할 기술을 선택하세요" : "스킬을 선택하세요  (숫자키 1~4 또는 클릭)", skillHeaderCache);
 
             InsectSkill[] skills = battleController != null ? battleController.GetPlayerSkills() : playerStats.Data.skills;
             int[] cooldowns = battleController != null ? battleController.GetPlayerCooldowns() : new int[0];
             int count = skills != null ? Mathf.Min(skills.Length, 4) : 0;
             skillBtnCount = count;
 
-            float extraW = 200f;
+            float extraW = mobile ? (sw - 76f) * 0.5f : 200f;
             float gap = 16f;
             float availW = sw - 40f - extraW - 30f;
-            float btnW = Mathf.Max(220, Mathf.Min(320, (availW - gap * Mathf.Max(count - 1, 0)) / Mathf.Max(count, 1)));
+            float btnW = mobile
+                ? (sw - 76f) * 0.5f
+                : Mathf.Max(220, Mathf.Min(320, (availW - gap * Mathf.Max(count - 1, 0)) / Mathf.Max(count, 1)));
             float btnH = 200f;
-            float btnY = panelY + 58;
+            float baseBtnY = panelY + 58f;
+            float btnY = baseBtnY;
             float startX = 30;
 
             float pulse = 0.5f + Mathf.Sin(Time.time * 3f) * 0.15f;
@@ -1754,7 +1761,10 @@ namespace InsectGame.UI
                 InsectSkill skill = skills[i];
                 if (skill == null) continue;
 
-                float bx = startX + i * (btnW + gap);
+                float bx = mobile
+                    ? startX + (i % 2) * (btnW + gap)
+                    : startX + i * (btnW + gap);
+                if (mobile) btnY = baseBtnY + (i / 2) * (btnH + gap);
                 int cd = i < cooldowns.Length ? cooldowns[i] : 0;
                 bool canUse = cd <= 0;
 
@@ -1779,7 +1789,7 @@ namespace InsectGame.UI
                 GUI.color = bgCol;
                 GUI.DrawTexture(new Rect(bx, btnY, btnW, btnH), Texture2D.whiteTexture);
 
-                Color borderCol = GetSkillColor(skill.effectType);
+                Color borderCol = GetElementColor(skill.element);
                 if (canUse)
                 {
                     GUI.color = isHovered ? Color.white : borderCol;
@@ -1794,7 +1804,7 @@ namespace InsectGame.UI
                     GUI.DrawTexture(new Rect(bx, btnY, btnW, 2), Texture2D.whiteTexture);
                 }
 
-                Color skillIconCol = GetSkillColor(skill.effectType);
+                Color skillIconCol = GetElementColor(skill.element);
                 float iconSize = 36f;
                 float iconX = bx + 14;
                 float iconY = btnY + 14;
@@ -1816,20 +1826,24 @@ namespace InsectGame.UI
                     GUI.DrawTexture(new Rect(iconX + 10, iconY + 10, iconSize - 20, iconSize - 20), Texture2D.whiteTexture);
                 }
 
-                skillKeyNumCache.normal.textColor = canUse
-                    ? new Color(1f, 0.85f, 0.3f, pulse + 0.5f)
-                    : new Color(0.35f, 0.35f, 0.35f);
-                GUI.color = canUse ? new Color(0.15f, 0.12f, 0.05f) : new Color(0.08f, 0.08f, 0.08f);
-                GUI.DrawTexture(new Rect(bx + btnW - 48, btnY + 10, 38, 38), Texture2D.whiteTexture);
-                GUI.color = Color.white;
-                GUI.Label(new Rect(bx + btnW - 48, btnY + 10, 38, 38), $"{i + 1}", skillKeyNumCache);
+                if (!mobile)
+                {
+                    skillKeyNumCache.normal.textColor = canUse
+                        ? new Color(1f, 0.85f, 0.3f, pulse + 0.5f)
+                        : new Color(0.35f, 0.35f, 0.35f);
+                    GUI.color = canUse ? new Color(0.15f, 0.12f, 0.05f) : new Color(0.08f, 0.08f, 0.08f);
+                    GUI.DrawTexture(new Rect(bx + btnW - 48, btnY + 10, 38, 38), Texture2D.whiteTexture);
+                    GUI.color = Color.white;
+                    GUI.Label(new Rect(bx + btnW - 48, btnY + 10, 38, 38), $"{i + 1}", skillKeyNumCache);
+                }
 
                 skillNameStyleCache.normal.textColor = canUse ? Color.white : new Color(0.4f, 0.4f, 0.4f);
                 GUI.Label(new Rect(bx + 14, btnY + 58, btnW - 28, 34), skill.displayName, skillNameStyleCache);
 
                 skillTypeLabelCache.normal.textColor = canUse ? skillIconCol : new Color(0.3f, 0.3f, 0.3f);
-                string typeStr = skill.effectType == SkillEffectType.Damage ? "공격 스킬" :
-                                 skill.effectType == SkillEffectType.BuffAttack ? "버프 스킬" : "디버프 스킬";
+                string actionType = skill.effectType == SkillEffectType.Damage ? "공격" :
+                                    skill.effectType == SkillEffectType.BuffAttack ? "버프" : "디버프";
+                string typeStr = $"{InsectTypeChart.GetDisplayName(skill.element)} 타입 · {actionType}";
                 GUI.Label(new Rect(bx + 14, btnY + 96, btnW - 28, 26), typeStr, skillTypeLabelCache);
 
                 skillInfoStyleCache.normal.textColor = canUse ? new Color(0.9f, 0.85f, 0.65f) : new Color(0.3f, 0.3f, 0.3f);
@@ -1857,7 +1871,8 @@ namespace InsectGame.UI
                 }
             }
 
-            float extraX = startX + count * (btnW + gap) + 24;
+            btnY = mobile ? baseBtnY + 2f * (btnH + gap) + 2f : baseBtnY;
+            float extraX = mobile ? startX : startX + count * (btnW + gap) + 24;
             float extraBtnH = 80f;
 
             {
@@ -1873,26 +1888,27 @@ namespace InsectGame.UI
                 GUI.DrawTexture(new Rect(extraX + extraW - 2, btnY, 2, extraBtnH), Texture2D.whiteTexture);
                 GUI.color = Color.white;
 
-                GUI.Label(new Rect(extraX, btnY + 8, extraW, 32), "[F] 기본 공격", skillFKeyCache);
+                GUI.Label(new Rect(extraX, btnY + 8, extraW, 32), mobile ? "기본 공격" : "[F] 기본 공격", skillFKeyCache);
                 GUI.Label(new Rect(extraX, btnY + 44, extraW, 26), "쿨다운 없음", skillFInfoCache);
             }
 
             {
-                float escY = btnY + extraBtnH + 12;
-                escapeRect = new Rect(extraX, escY, extraW, extraBtnH);
+                float escapeX = mobile ? extraX + extraW + gap : extraX;
+                float escY = mobile ? btnY : btnY + extraBtnH + 12;
+                escapeRect = new Rect(escapeX, escY, extraW, extraBtnH);
                 Vector2 mouseGui2 = UIScale.VirtualMousePosition;
                 bool hov2 = escapeRect.Contains(mouseGui2);
 
                 GUI.color = hov2 ? new Color(0.22f, 0.10f, 0.10f) : new Color(0.12f, 0.08f, 0.08f);
                 GUI.DrawTexture(escapeRect, Texture2D.whiteTexture);
                 GUI.color = new Color(0.7f, 0.3f, 0.3f);
-                GUI.DrawTexture(new Rect(extraX, escY, extraW, 4), Texture2D.whiteTexture);
-                GUI.DrawTexture(new Rect(extraX, escY, 2, extraBtnH), Texture2D.whiteTexture);
-                GUI.DrawTexture(new Rect(extraX + extraW - 2, escY, 2, extraBtnH), Texture2D.whiteTexture);
+                GUI.DrawTexture(new Rect(escapeX, escY, extraW, 4), Texture2D.whiteTexture);
+                GUI.DrawTexture(new Rect(escapeX, escY, 2, extraBtnH), Texture2D.whiteTexture);
+                GUI.DrawTexture(new Rect(escapeX + extraW - 2, escY, 2, extraBtnH), Texture2D.whiteTexture);
                 GUI.color = Color.white;
 
-                GUI.Label(new Rect(extraX, escY + 8, extraW, 32), "[ESC] 도망가기", skillEscStyleCache);
-                GUI.Label(new Rect(extraX, escY + 44, extraW, 26), "확률적 성공", skillEscInfoCache);
+                GUI.Label(new Rect(escapeX, escY + 8, extraW, 32), mobile ? "도망가기" : "[ESC] 도망가기", skillEscStyleCache);
+                GUI.Label(new Rect(escapeX, escY + 44, extraW, 26), "확률적 성공", skillEscInfoCache);
             }
         }
 
@@ -1900,6 +1916,8 @@ namespace InsectGame.UI
         {
             switch (element)
             {
+                case InsectElement.None: return new Color(0.65f, 0.65f, 0.68f);
+                case InsectElement.Bug: return new Color(0.62f, 0.8f, 0.25f);
                 case InsectElement.Poison: return new Color(0.6f, 0.2f, 0.8f);
                 case InsectElement.Water: return new Color(0.2f, 0.5f, 1f);
                 case InsectElement.Leaf: return new Color(0.2f, 0.85f, 0.3f);
@@ -1989,7 +2007,9 @@ namespace InsectGame.UI
 
             // Element-based color
             InsectBattleStats atkStats = isPlayerAttack ? playerStats : enemyStats;
-            InsectElement element = (atkStats != null && atkStats.Data != null) ? atkStats.Data.primaryType : InsectElement.Bug;
+            InsectElement element = isPlayerAttack
+                ? lastSkillElement
+                : (atkStats != null && atkStats.Data != null ? atkStats.Data.primaryType : InsectElement.Bug);
             Color elemCol = GetElementColor(element);
 
             // Buff/Debuff effect: dmg == 0 with a skill name means buff or debuff
@@ -2957,9 +2977,13 @@ namespace InsectGame.UI
             GUI.color = Color.white;
             string faintedName = playerStats != null && playerStats.Data != null ? playerStats.Data.displayName : "곤충";
             GUI.Label(new Rect(0, panelY + 10, panelW, 38),
-                $"{faintedName}이(가) 쓰러졌다! 다음 곤충을 선택하세요 (숫자키 1~5 또는 클릭)", swapHeaderCache);
+                UIScale.IsMobileLayout
+                    ? $"{faintedName}이(가) 쓰러졌다! 다음 곤충을 선택하세요"
+                    : $"{faintedName}이(가) 쓰러졌다! 다음 곤충을 선택하세요 (숫자키 1~5 또는 클릭)",
+                swapHeaderCache);
 
-            float btnW = 240f;
+            bool mobile = UIScale.IsMobileLayout;
+            float btnW = mobile ? (panelW - 80f) / BattleTeamManager.MaxSlots : 240f;
             float btnH = 240f;
             float btnY = panelY + 56;
             float totalW = BattleTeamManager.MaxSlots * (btnW + 14) - 14;
@@ -3013,11 +3037,14 @@ namespace InsectGame.UI
                     GUI.DrawTexture(new Rect(bx + btnW - 2, btnY, 2, btnH), Texture2D.whiteTexture);
                 }
 
-                swapKeyStyleCache.normal.textColor = available ? new Color(1f, 0.85f, 0.3f) : new Color(0.3f, 0.3f, 0.3f);
-                GUI.color = available ? new Color(0.15f, 0.12f, 0.05f) : new Color(0.06f, 0.06f, 0.06f);
-                GUI.DrawTexture(new Rect(bx + 8, btnY + 8, 36, 36), Texture2D.whiteTexture);
-                GUI.color = Color.white;
-                GUI.Label(new Rect(bx + 8, btnY + 8, 36, 36), $"{i + 1}", swapKeyStyleCache);
+                if (!mobile)
+                {
+                    swapKeyStyleCache.normal.textColor = available ? new Color(1f, 0.85f, 0.3f) : new Color(0.3f, 0.3f, 0.3f);
+                    GUI.color = available ? new Color(0.15f, 0.12f, 0.05f) : new Color(0.06f, 0.06f, 0.06f);
+                    GUI.DrawTexture(new Rect(bx + 8, btnY + 8, 36, 36), Texture2D.whiteTexture);
+                    GUI.color = Color.white;
+                    GUI.Label(new Rect(bx + 8, btnY + 8, 36, 36), $"{i + 1}", swapKeyStyleCache);
+                }
 
                 if (isEmpty || data == null)
                 {

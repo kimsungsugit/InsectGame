@@ -17,8 +17,8 @@ namespace InsectGame.Core
 
         public event System.Action OutfitChanged;
 
-        private const string EquipKey = "InsectGame.Equipped";
-        private const string OwnedKey = "InsectGame.OwnedOutfits";
+        private static string EquipKey => SaveScope.PrefsKey("InsectGame.Equipped");
+        private static string OwnedKey => SaveScope.PrefsKey("InsectGame.OwnedOutfits");
 
         private void Awake()
         {

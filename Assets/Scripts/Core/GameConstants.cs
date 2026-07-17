@@ -37,6 +37,8 @@ namespace InsectGame.Core
             public const string QuestProgress = "InsectGame.QuestProgress";
             public const string QuestCompleted = "InsectGame.QuestCompleted";
             public const string ActiveQuest = "InsectGame.ActiveQuest";
+            // 완료됐지만 아직 퀘스트 창에서 확인 안 한 퀘스트 id 목록 — 퀵바 배지 카운터용.
+            public const string QuestUnseen = "InsectGame.QuestUnseen";
             public const string TutorialHidden = "InsectGame.TutorialHidden";
             public const string LastSubAreaId = "InsectGame.SubArea.LastEntered";
         }
@@ -45,7 +47,7 @@ namespace InsectGame.Core
         public static class Player
         {
             public const int MaxEquipSlots = 4;
-            public const int MaxLearnedSkills = 12;
+            public const int MaxLearnedSkills = 4;
             public const int MaxIV = 15;
             public const float AutoUnfreezeTime = 20f;
         }

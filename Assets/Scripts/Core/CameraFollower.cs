@@ -24,6 +24,11 @@ namespace InsectGame.Core
         // SphereCastNonAlloc 버퍼 — 매 LateUpdate RaycastHit[] 할당 회피.
         private readonly RaycastHit[] obstructionBuffer = new RaycastHit[16];
 
+        // 화면 종횡비 기반 FOV 보정 캐시 — 자동회전(가로↔세로) 시 재계산.
+        private Camera cam;
+        private int lastScreenW = -1;
+        private int lastScreenH = -1;
+
         private bool battleMode;
         private Vector3 battlePos;
         private Quaternion battleRot;
@@ -107,6 +112,7 @@ namespace InsectGame.Core
 
         private void LateUpdate()
         {
+            ApplyAspectFov();
             if (target == null) return;
 
             Vector3 finalPos;
@@ -167,6 +173,30 @@ namespace InsectGame.Core
 
             transform.position = finalPos;
             transform.rotation = finalRot;
+        }
+
+        // 화면 종횡비에 맞춰 수직 FOV 보정. 세로(좁고 긴 화면)는 기본 60°,
+        // 가로(와이드)는 줌인해 캐릭터가 작게 보이는 현상 방지. 수직 FOV를 고정하면
+        // 가로 화면에서 피사체가 프레임의 작은 일부만 차지하는 문제가 생긴다.
+        // 자동회전으로 종횡비가 바뀔 때마다(해상도 변화 감지) 1회만 재계산.
+        private void ApplyAspectFov()
+        {
+            if (cam == null) cam = GetComponent<Camera>();
+            if (cam == null) return;
+            if (Screen.width == lastScreenW && Screen.height == lastScreenH) return;
+            lastScreenW = Screen.width;
+            lastScreenH = Screen.height;
+
+            if (Screen.height >= Screen.width)
+            {
+                cam.fieldOfView = 60f; // 세로: 기준값(현재 정상)
+            }
+            else
+            {
+                // 가로: 넓어질수록 줌인. 32~60° 범위로 클램프해 과도한 줌 방지.
+                float aspect = (float)Screen.width / Mathf.Max(1, Screen.height);
+                cam.fieldOfView = Mathf.Clamp(60f / Mathf.Sqrt(aspect), 32f, 60f);
+            }
         }
 
         // 카메라 방향 SphereCast로 큰 정적 scenery 차단 검출 후 카메라 거리 단축.

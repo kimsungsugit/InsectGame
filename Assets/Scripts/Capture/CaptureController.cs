@@ -8,10 +8,10 @@ namespace InsectGame.Capture
 {
     public class CaptureController : MonoBehaviour
     {
-        [Range(0f, 1f)] [SerializeField] private float baseSuccessChance = 0.6f;
+        [Range(0f, 1f)] [SerializeField] private float baseSuccessChance = 0.35f;
         [Range(0f, 0.5f)] [SerializeField] private float rarityPenaltyStep = 0.08f;
-        [Range(0f, 1f)] [SerializeField] private float difficultyPenaltyScale = 0.4f;
-        [Range(0f, 0.3f)] [SerializeField] private float perfectTimingBonus = 0.15f;
+        [Range(0f, 1f)] [SerializeField] private float difficultyPenaltyScale = 0.45f;
+        [Range(0f, 0.3f)] [SerializeField] private float perfectTimingBonus = 0.1f;
         [Range(0f, 0.5f)] [SerializeField] private float timingWindow = 0.15f;
         [Header("Level Modifier")]
         [SerializeField] private float playerLevelBonusStep = 0.02f;

@@ -35,7 +35,7 @@ namespace InsectGame.Dex
 
         private static string GetPath()
         {
-            return Path.Combine(Application.persistentDataPath, GameConstants.SaveFiles.DexSave);
+            return InsectGame.Core.SaveScope.FilePath(GameConstants.SaveFiles.DexSave);
         }
     }
 }

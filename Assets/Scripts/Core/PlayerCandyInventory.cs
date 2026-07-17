@@ -45,6 +45,13 @@ namespace InsectGame.Core
             CandyChanged?.Invoke(data.candies);
         }
 
+        // 로그인/계정 전환 후 계정별 파일에서 재로드 — 부트 시 전역(UserId=null) 로드분 교정.
+        public void ReloadFromDisk()
+        {
+            data = Load();
+            CandyChanged?.Invoke(Candies);
+        }
+
         public bool SpendCandy(int amount)
         {
             if (amount <= 0 || data == null || data.candies < amount)
@@ -88,7 +95,7 @@ namespace InsectGame.Core
 
         private string GetPath()
         {
-            return Path.Combine(Application.persistentDataPath, GameConstants.SaveFiles.PlayerCandies);
+            return SaveScope.FilePath(GameConstants.SaveFiles.PlayerCandies);
         }
     }
 }

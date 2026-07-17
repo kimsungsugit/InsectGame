@@ -47,6 +47,7 @@ namespace InsectGame.Battle
         public int[] UniteSlotDamages { get; private set; }
 
         private int bossCooldown;
+        private bool bossShinyAtStart; // 시작 시점 스냅샷 — 도주/풀 재사용된 라이브 보스 참조로 이로치 오등록 방지
 
         public void StartRaid(InsectEntity bossEntity,
             InsectData[] teamInsects, int[] teamLevels,
@@ -55,6 +56,10 @@ namespace InsectGame.Battle
             if (bossEntity == null || bossEntity.Data == null) return;
 
             BossEntity = bossEntity;
+            bossShinyAtStart = bossEntity.IsShiny;
+            // 레이드 동안 보스(야생 엔티티)가 도주→Despawn→풀 재사용되어 종료 시 무관 곤충이
+            // 등록/Despawn되는 보상 무결성 손상 차단. (1v1 StartBattle과 동일)
+            bossEntity.SetEngaged(true);
             InsectData bd = bossEntity.Data;
 
             InsectBattleStats rawBoss = new InsectBattleStats(bd, bossEntity.Level);
@@ -134,10 +139,23 @@ namespace InsectGame.Battle
 
             if (skill.effectType == SkillEffectType.Damage)
             {
+                float effectiveness = InsectTypeChart.GetEffectiveness(
+                    skill.element,
+                    BossStats.Data != null ? BossStats.Data.primaryType : InsectElement.None,
+                    BossStats.Data != null ? BossStats.Data.secondaryType : InsectElement.None);
+                float sameTypeBonus = attacker.Data != null
+                    ? InsectTypeChart.GetSameTypeBonus(skill.element, attacker.Data.primaryType, attacker.Data.secondaryType)
+                    : 1f;
+                damage = Mathf.Max(1, Mathf.RoundToInt(damage * effectiveness * sameTypeBonus));
+                int hpBefore = BossStats.CurrentHp;
                 BossStats.ApplyDamage(damage, attacker.Attack, BossStats.Defense);
-                LastDamageToBoss = Mathf.Max(1, Mathf.RoundToInt(damage * (attacker.Attack / (float)Mathf.Max(1, BossStats.Defense))));
+                LastDamageToBoss = Mathf.Max(1, hpBefore - BossStats.CurrentHp);
                 LastActionText = $"{attacker.Data.displayName}의 {skill.displayName}!";
                 TryPlayBossHitFlash();
+                if (effectiveness > 1.05f)
+                    TryPlayEffectText("효과가 굉장했다!", new Color(1f, 0.55f, 0.2f));
+                else if (effectiveness < 0.95f)
+                    TryPlayEffectText("효과가 별로인 듯하다...", new Color(0.55f, 0.65f, 0.8f));
             }
             else if (skill.effectType == SkillEffectType.BuffAttack)
             {
@@ -214,12 +232,36 @@ namespace InsectGame.Battle
                 if (alive.Count > 0)
                 {
                     int target = alive[UnityEngine.Random.Range(0, alive.Count)];
+                    InsectSkill signature = GetUnlockedBossSignature(bd, BossStats.Level);
+                    int singleTargetDamage = bossDmg;
+                    float effectiveness = 1f;
+                    if (signature != null)
+                    {
+                        effectiveness = InsectTypeChart.GetEffectiveness(
+                            signature.element,
+                            TeamStats[target].Data != null ? TeamStats[target].Data.primaryType : InsectElement.None,
+                            TeamStats[target].Data != null ? TeamStats[target].Data.secondaryType : InsectElement.None);
+                        float sameTypeBonus = InsectTypeChart.GetSameTypeBonus(
+                            signature.element, bd.primaryType, bd.secondaryType);
+                        singleTargetDamage = Mathf.Max(1, Mathf.RoundToInt(
+                            (signature.power + BossStats.Level * 2) * bossMult * effectiveness * sameTypeBonus));
+                        TryPlayEffectText($"전용기 · {signature.displayName}!", BattleArenaController.GetUIElementColor(signature.element));
+                    }
+
                     bool wasAlive = TeamStats[target].CurrentHp > 0;
-                    TeamStats[target].ApplyDamage(bossDmg, BossStats.Attack, TeamStats[target].Defense);
-                    LastDamageToTeam = Mathf.Max(1, Mathf.RoundToInt(bossDmg * (BossStats.Attack / (float)Mathf.Max(1, TeamStats[target].Defense))));
+                    int hpBefore = TeamStats[target].CurrentHp;
+                    TeamStats[target].ApplyDamage(singleTargetDamage, BossStats.Attack, TeamStats[target].Defense);
+                    LastDamageToTeam = Mathf.Max(1, hpBefore - TeamStats[target].CurrentHp);
                     LastHitSlot = target;
-                    LastActionText += $"\n{bd.displayName}이(가) {TeamStats[target].Data.displayName}을(를) 공격!";
+                    LastActionText += signature != null
+                        ? $"\n{bd.displayName}의 {signature.displayName}!"
+                        : $"\n{bd.displayName}이(가) {TeamStats[target].Data.displayName}을(를) 공격!";
                     UniteGauge = Mathf.Min(UniteGauge + 10f, UniteGaugeMax);
+
+                    if (signature != null && effectiveness > 1.05f)
+                        TryPlayEffectText("효과가 굉장했다!", new Color(1f, 0.55f, 0.2f));
+                    else if (signature != null && effectiveness < 0.95f)
+                        TryPlayEffectText("효과가 별로인 듯하다...", new Color(0.55f, 0.65f, 0.8f));
 
                     TryPlayTeamHitFlash(target);
                     if (wasAlive && TeamStats[target].CurrentHp <= 0)
@@ -236,6 +278,20 @@ namespace InsectGame.Battle
                 int next = FindFirstAlive();
                 if (next >= 0) ActiveSlot = next;
             }
+        }
+
+        private static InsectSkill GetUnlockedBossSignature(InsectData data, int level)
+        {
+            if (data == null || data.learnset == null) return null;
+            foreach (InsectLearnableSkill learnable in data.learnset)
+            {
+                if (learnable != null
+                    && learnable.skill != null
+                    && learnable.skill.isSignatureSkill
+                    && learnable.learnLevel <= level)
+                    return learnable.skill;
+            }
+            return null;
         }
 
         private void TickCooldowns()
@@ -277,8 +333,14 @@ namespace InsectGame.Battle
             InsectData bd = BossStats.Data;
             int candyBase = InsectRewardCalculator.GetCandyReward(bd);
             int expBase = InsectRewardCalculator.GetExpReward(bd);
-            RewardCandy = candyBase * 3;
-            RewardExp = expBase * 3;
+            // EXP/캔디 부스터(아이템·아웃핏) 배율 — 포획 경로(CaptureController)와 동일 항목만 적용.
+            // 레이드 ×3 보너스 위에 부스터를 곱하고, 표기/지급이 같도록 곱한 최종값을 저장.
+            float candyMultiplier = (itemEffects != null ? itemEffects.GetCandyMultiplier() : 1f)
+                                   * (outfitBonus != null ? outfitBonus.GetCandyMultiplier() : 1f);
+            float expMultiplier = (itemEffects != null ? itemEffects.GetExpMultiplier() : 1f)
+                                 * (outfitBonus != null ? outfitBonus.GetExpMultiplier() : 1f);
+            RewardCandy = Mathf.RoundToInt(candyBase * 3 * candyMultiplier);
+            RewardExp = Mathf.RoundToInt(expBase * 3 * expMultiplier);
 
             if (candyInventory != null) candyInventory.AddCandy(RewardCandy);
             if (playerProgress != null) playerProgress.GainXp(RewardExp);
@@ -292,8 +354,8 @@ namespace InsectGame.Battle
                 // playerCollection 가드 분리 — null이어도 보스 Despawn은 항상 보장
                 if (playerCollection != null)
                 {
-                    bool bossShiny = BossEntity.IsShiny;
-                    playerCollection.AddCapturedInsect(bd.insectId, BossEntity.Level, bossShiny);
+                    // 레벨/이로치는 시작 스냅샷(BossStats.Level/bossShinyAtStart) — 라이브 참조 회피
+                    playerCollection.AddCapturedInsect(bd.insectId, BossStats.Level, bossShinyAtStart);
                 }
                 BossEntity.Despawn();
             }
@@ -381,6 +443,20 @@ namespace InsectGame.Battle
         public void AutoWire(BattleArenaController a)
         {
             if (arena == null) arena = a;
+        }
+
+        private ItemEffectManager itemEffects;
+
+        public void AutoWire(ItemEffectManager effects)
+        {
+            if (itemEffects == null) itemEffects = effects;
+        }
+
+        private OutfitBonusProvider outfitBonus;
+
+        public void AutoWire(OutfitBonusProvider bonus)
+        {
+            if (outfitBonus == null) outfitBonus = bonus;
         }
 
         // ── 액션 헬퍼 (BattleArenaController 시각 코루틴 wrapper) ──

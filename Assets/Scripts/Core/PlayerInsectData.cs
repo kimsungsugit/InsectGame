@@ -94,7 +94,8 @@ namespace InsectGame.Core
         {
             float roll = UnityEngine.Random.value;
             roll = UnityEngine.Mathf.Pow(roll, power); // 높은 power → 낮은 IV에 편중
-            return (int)(roll * (MaxIV + 1));
+            // Random.value는 1.0 포함 가능 → roll*16=16으로 IV=16(0~15 불변식 위반). MaxIV로 클램프.
+            return UnityEngine.Mathf.Min(MaxIV, (int)(roll * (MaxIV + 1)));
         }
 
         public bool HasLearnedSkill(string skillId)
@@ -141,8 +142,14 @@ namespace InsectGame.Core
         public bool EquipSkill(string skillId, int slot)
         {
             if (slot < 0 || slot >= MaxEquipSlots) return false;
+            if (!string.IsNullOrEmpty(skillId) && !HasLearnedSkill(skillId)) return false;
             if (equippedSkillIds == null) equippedSkillIds = new List<string>();
             while (equippedSkillIds.Count < MaxEquipSlots) equippedSkillIds.Add("");
+            if (!string.IsNullOrEmpty(skillId))
+            {
+                for (int i = 0; i < equippedSkillIds.Count; i++)
+                    if (i != slot && equippedSkillIds[i] == skillId) return false;
+            }
             equippedSkillIds[slot] = skillId ?? "";
             return true;
         }

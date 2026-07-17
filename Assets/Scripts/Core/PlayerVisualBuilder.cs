@@ -176,7 +176,7 @@ namespace InsectGame.Core
             toolRingMat = MakeMaterial(new Color(0.95f, 0.92f, 0.88f));     // 잠자리채 망
             accessoryMat = MakeMaterial(new Color(0.1f, 0.1f, 0.1f));       // 악세서리
 
-            int gender = PlayerPrefs.GetInt("InsectGame.Character.Gender", 0);
+            int gender = PlayerPrefs.GetInt(SaveScope.PrefsKey("InsectGame.Character.Gender"), 0);
 
             // 미리보기(CharacterPortraitRenderer)는 직사각형 몸통 (bodyW=42, bodyH=62, X:Y≈0.68).
             // 옛 Capsule은 위아래 반구로 통처럼 둥글어 미리보기 대비 뚱뚱하게 보임 → Cube로 변경.
@@ -264,8 +264,8 @@ namespace InsectGame.Core
             BuildEars(headPivot, skinMat);
 
             // ── 머리카락 ──
-            int hairStyle = PlayerPrefs.GetInt("InsectGame.Character.HairStyle", 0);
-            int hairColorIdx = PlayerPrefs.GetInt("InsectGame.Character.HairColor", 0);
+            int hairStyle = PlayerPrefs.GetInt(SaveScope.PrefsKey("InsectGame.Character.HairStyle"), 0);
+            int hairColorIdx = PlayerPrefs.GetInt(SaveScope.PrefsKey("InsectGame.Character.HairColor"), 0);
             Color[] hairColors = {
                 new Color(0.12f, 0.08f, 0.05f),
                 new Color(0.35f, 0.2f, 0.1f),
@@ -462,7 +462,7 @@ namespace InsectGame.Core
             hlR.GetComponent<MeshRenderer>().material = hlMat;
             Object.Destroy(hlR.GetComponent<Collider>());
 
-            int faceType = PlayerPrefs.GetInt("InsectGame.Character.FaceType", 0);
+            int faceType = PlayerPrefs.GetInt(SaveScope.PrefsKey("InsectGame.Character.FaceType"), 0);
             Material browMat = MakeMaterial(new Color(0.2f, 0.15f, 0.1f));
             GameObject browL = GameObject.CreatePrimitive(PrimitiveType.Cube);
             browL.name = "BrowL";

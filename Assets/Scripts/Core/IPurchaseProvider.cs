@@ -13,7 +13,7 @@ namespace InsectGame.Core
         bool IsReady { get; }
 
         /// <summary>productId 구매를 시작. 완료 시 onComplete(success) 콜백.
-        /// success=true일 때만 CashShopManager가 재화를 지급(영수증 검증은 공급자 책임).</summary>
+        /// success=true는 공급자가 서버 검증과 지급까지 완료했음을 뜻한다.</summary>
         void Purchase(string productId, Action<bool> onComplete);
 
         /// <summary>스토어의 현지화 가격 문자열(예: "₩2,000", "$1.99"). 미지원/미준비면 null.

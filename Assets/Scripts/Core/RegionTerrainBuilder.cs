@@ -200,10 +200,11 @@ namespace InsectGame.Core
             Material pathMat = Mat(new Color(0.55f, 0.48f, 0.32f));
             Material stoneMat = Mat(new Color(0.5f, 0.48f, 0.42f));
 
-            // 완만한 언덕 5개 (걸어 올라갈 수 있는 경사)
-            for (int i = 0; i < 5; i++)
+            // 완만한 언덕 (걸어 올라갈 수 있는 경사) — 면적 비례 개수 (설계 반경 50)
+            int hillCount = ScaleCount(5, rad, 50f);
+            for (int i = 0; i < hillCount; i++)
             {
-                float a = i * Mathf.PI * 2f / 5f + 0.3f;
+                float a = i * Mathf.PI * 2f / hillCount + 0.3f;
                 float d = rad * Random.Range(0.25f, 0.55f);
                 Vector3 pos = c + new Vector3(Mathf.Cos(a) * d, 0f, Mathf.Sin(a) * d);
                 float hs = Random.Range(4f, 8f);
@@ -233,6 +234,74 @@ namespace InsectGame.Core
             // 돌담길 (리전 내 메인 경로)
             CreateInternalPath(c, c + new Vector3(rad * 0.7f, 0f, 0f), 2f, pathMat, stoneMat);
             CreateInternalPath(c, c + new Vector3(0f, 0f, rad * 0.7f), 2f, pathMat, stoneMat);
+
+            // 랜덤 소품의 본 마을 부지(서남서 0.45R, 반경 18m) 회피 기준 — 상수는 VillageBuilder가 단일 출처
+            Vector3 villageCenter = VillageBuilder.GetMainVillageCenter(c, rad);
+            float villageAvoidSq = VillageBuilder.MainVillageFootprintRadius * VillageBuilder.MainVillageFootprintRadius;
+
+            // 건초더미 (원기둥 몸통 + 구 지붕) — 신규 장식
+            Material hayMat = Mat(new Color(0.78f, 0.68f, 0.35f));
+            int hayCount = ScaleCount(3, rad, 50f);
+            for (int i = 0; i < hayCount; i++)
+            {
+                Vector3 pos = RandomSpotAvoiding(c, rad, villageCenter, villageAvoidSq);
+
+                GameObject body = Prim(PrimitiveType.Cylinder, $"Scenery_MeadowHaystack_{i}");
+                body.transform.position = pos + new Vector3(0f, 0.4f, 0f);
+                body.transform.localScale = new Vector3(1.2f, 0.4f, 1.2f);
+                Apply(body, hayMat);
+                Destroy(body.GetComponent<Collider>());
+
+                GameObject top = Prim(PrimitiveType.Sphere, $"Scenery_MeadowHaystackTop_{i}");
+                top.transform.position = pos + new Vector3(0f, 0.9f, 0f);
+                top.transform.localScale = new Vector3(1.2f, 0.7f, 1.2f);
+                Apply(top, hayMat);
+                Destroy(top.GetComponent<Collider>());
+            }
+
+            // 들꽃 무리 — 색색 작은 구 클러스터 (신규 장식)
+            Material[] flowerMats =
+            {
+                Mat(new Color(0.95f, 0.4f, 0.5f)),
+                Mat(new Color(0.95f, 0.85f, 0.3f)),
+                Mat(new Color(0.6f, 0.5f, 0.9f)),
+                Mat(new Color(0.95f, 0.95f, 0.9f))
+            };
+            int flowerClusterCount = ScaleCount(6, rad, 50f);
+            for (int i = 0; i < flowerClusterCount; i++)
+            {
+                Vector3 clusterCenter = RandomSpotAvoiding(c, rad, villageCenter, villageAvoidSq);
+                int blooms = Random.Range(4, 7);
+                for (int j = 0; j < blooms; j++)
+                {
+                    Vector3 off = new Vector3(Random.Range(-1f, 1f), 0f, Random.Range(-1f, 1f));
+                    GameObject bloom = Prim(PrimitiveType.Sphere, $"Scenery_MeadowFlower_{i}_{j}");
+                    float fs = Random.Range(0.12f, 0.22f);
+                    bloom.transform.position = clusterCenter + off + new Vector3(0f, fs * 0.5f + 0.05f, 0f);
+                    bloom.transform.localScale = new Vector3(fs, fs, fs);
+                    Apply(bloom, flowerMats[(i + j) % flowerMats.Length]);
+                    Destroy(bloom.GetComponent<Collider>());
+                }
+            }
+        }
+
+        // 리전 내 랜덤 배치(0.2R~0.75R)에서 회피 원(마을 부지 등)을 피해 지점을 뽑는다.
+        // 5회 리샘플 후에도 실패하면 회피 원 가장자리 바깥으로 밀어낸다.
+        private static Vector3 RandomSpotAvoiding(Vector3 c, float rad, Vector3 avoidCenter, float avoidSq)
+        {
+            Vector3 pos = c;
+            for (int attempt = 0; attempt < 5; attempt++)
+            {
+                float a = Random.Range(0f, Mathf.PI * 2f);
+                float d = rad * Random.Range(0.2f, 0.75f);
+                pos = c + new Vector3(Mathf.Cos(a) * d, 0f, Mathf.Sin(a) * d);
+                if ((pos - avoidCenter).sqrMagnitude >= avoidSq) return pos;
+            }
+
+            Vector3 away = pos - avoidCenter;
+            away.y = 0f;
+            if (away.sqrMagnitude < 0.01f) away = Vector3.right;
+            return avoidCenter + away.normalized * (Mathf.Sqrt(avoidSq) + 2f);
         }
 
         // ======= 연못: 큰 호수 + 데크/부두 + 갈대 =======
@@ -267,8 +336,9 @@ namespace InsectGame.Core
                 Destroy(post.GetComponent<Collider>());
             }
 
-            // 갈대 군락
-            for (int i = 0; i < 20; i++)
+            // 갈대 군락 — 면적 비례 개수 (설계 반경 45)
+            int reedCount = ScaleCount(20, rad, 45f);
+            for (int i = 0; i < reedCount; i++)
             {
                 float a = Random.Range(0f, Mathf.PI * 2f);
                 float d = rad * Random.Range(0.2f, 0.35f);
@@ -282,17 +352,60 @@ namespace InsectGame.Core
                 Destroy(reed.GetComponent<Collider>());
             }
 
-            // 징검다리
+            // 징검다리 — 선형 소품이라 개수와 함께 span도 반경 비례로 연장 (겹침 방지)
             Material stepMat = Mat(new Color(0.5f, 0.48f, 0.42f));
-            for (int i = 0; i < 6; i++)
+            int stoneCount = ScaleCount(6, rad, 45f);
+            float stoneSpan = 8f * (rad / 45f);
+            for (int i = 0; i < stoneCount; i++)
             {
-                float t = (float)i / 6f;
-                Vector3 pos = c + new Vector3(3f + t * 8f,0.1f, 2f + Mathf.Sin(t * 3f) * 2f);
+                float t = (float)i / stoneCount;
+                Vector3 pos = c + new Vector3(3f + t * stoneSpan, 0.1f, 2f + Mathf.Sin(t * 3f) * 2f);
                 GameObject step = Prim(PrimitiveType.Cylinder, $"Scenery_SteppingStone_{i}");
                 step.transform.position = pos;
                 step.transform.localScale = new Vector3(0.5f, 0.05f, 0.5f);
                 Apply(step, stepMat);
                 Destroy(step.GetComponent<Collider>());
+            }
+
+            // 수련잎 — 호수 수면 위 납작 원반 (신규 장식, 호수가 리전 중심이라 예외적으로 중심부 배치)
+            Material lilyMat = Mat(new Color(0.2f, 0.55f, 0.25f));
+            int lilyCount = ScaleCount(5, rad, 45f);
+            float lakeR = rad * 0.05f; // Scenery_Lake 반경 (scale x = rad*0.1 = 지름)
+            for (int i = 0; i < lilyCount; i++)
+            {
+                float a = Random.Range(0f, Mathf.PI * 2f);
+                float d = Random.Range(lakeR * 0.2f, lakeR * 0.85f);
+                Vector3 pos = c + new Vector3(3f + Mathf.Cos(a) * d, 0.07f, 2f + Mathf.Sin(a) * d);
+                GameObject pad = Prim(PrimitiveType.Cylinder, $"Scenery_LilyPad_{i}");
+                pad.transform.position = pos;
+                float ls = Random.Range(0.5f, 0.9f);
+                pad.transform.localScale = new Vector3(ls, 0.02f, ls);
+                Apply(pad, lilyMat);
+                Destroy(pad.GetComponent<Collider>());
+            }
+
+            // 부들 — 가는 줄기 + 갈색 이삭 (신규 장식)
+            Material cattailStemMat = Mat(new Color(0.35f, 0.45f, 0.2f));
+            Material cattailHeadMat = Mat(new Color(0.4f, 0.25f, 0.12f));
+            int cattailCount = ScaleCount(8, rad, 45f);
+            for (int i = 0; i < cattailCount; i++)
+            {
+                float a = Random.Range(0f, Mathf.PI * 2f);
+                float d = rad * Random.Range(0.2f, 0.75f);
+                Vector3 pos = c + new Vector3(Mathf.Cos(a) * d, 0f, Mathf.Sin(a) * d);
+
+                GameObject stem = Prim(PrimitiveType.Cylinder, $"Scenery_Cattail_{i}");
+                stem.transform.position = pos + new Vector3(0f, 0.8f, 0f);
+                stem.transform.localScale = new Vector3(0.05f, 0.8f, 0.05f);
+                stem.transform.rotation = Quaternion.Euler(Random.Range(-4f, 4f), 0f, Random.Range(-4f, 4f));
+                Apply(stem, cattailStemMat);
+                Destroy(stem.GetComponent<Collider>());
+
+                GameObject head = Prim(PrimitiveType.Cylinder, $"Scenery_CattailHead_{i}");
+                head.transform.position = pos + new Vector3(0f, 1.5f, 0f);
+                head.transform.localScale = new Vector3(0.12f, 0.25f, 0.12f);
+                Apply(head, cattailHeadMat);
+                Destroy(head.GetComponent<Collider>());
             }
         }
 
@@ -308,8 +421,10 @@ namespace InsectGame.Core
 
             // 나무 군락 — 사용자 추가 보고 "layer 층 전체가 위에 떠있어 캐릭터/곤충이 가려짐".
             // 이전 1.2~2.5 축소로도 부족 → treeH 0.8~1.5(낮은 관목)로 캐릭터 머리(2.2) 한참 아래로 강제.
-            // 25개 트리가 region 전역에 흩어져 모이면 "위쪽 layer" 인상 회피.
-            for (int i = 0; i < 25; i++)
+            // 트리가 region 전역에 흩어져 모이면 "위쪽 layer" 인상 회피.
+            // 면적 비례 개수 (설계 반경 55, 기준 25그루)
+            int treeCount = ScaleCount(25, rad, 55f);
+            for (int i = 0; i < treeCount; i++)
             {
                 float a = Random.Range(0f, Mathf.PI * 2f);
                 float d = Random.Range(5f, rad * 0.65f);
@@ -331,8 +446,9 @@ namespace InsectGame.Core
                 Destroy(leaf.GetComponent<Collider>());
             }
 
-            // 쓰러진 통나무 (장애물 + 분위기)
-            for (int i = 0; i < 4; i++)
+            // 쓰러진 통나무 (장애물 + 분위기) — 면적 비례
+            int logCount = ScaleCount(4, rad, 55f);
+            for (int i = 0; i < logCount; i++)
             {
                 float a = Random.Range(0f, Mathf.PI * 2f);
                 float d = Random.Range(8f, rad * 0.5f);
@@ -345,8 +461,9 @@ namespace InsectGame.Core
                 Apply(log, logMat);
             }
 
-            // 이끼 낀 바위
-            for (int i = 0; i < 6; i++)
+            // 이끼 낀 바위 — 면적 비례
+            int forestRockCount = ScaleCount(6, rad, 55f);
+            for (int i = 0; i < forestRockCount; i++)
             {
                 float a = Random.Range(0f, Mathf.PI * 2f);
                 float d = Random.Range(5f, rad * 0.6f);
@@ -361,6 +478,53 @@ namespace InsectGame.Core
 
             // 오솔길
             CreateInternalPath(c + new Vector3(-rad * 0.5f, 0f, 0f), c + new Vector3(rad * 0.5f, 0f, 0f), 1.5f, pathMat, logMat);
+
+            // 버섯 링 — 갓+기둥 조합 원형 배치 (신규 장식)
+            Material mushStemMat = Mat(new Color(0.85f, 0.8f, 0.7f));
+            Material mushCapMat = Mat(new Color(0.7f, 0.25f, 0.2f));
+            int ringCount = ScaleCount(2, rad, 55f);
+            for (int i = 0; i < ringCount; i++)
+            {
+                float a = Random.Range(0f, Mathf.PI * 2f);
+                float d = rad * Random.Range(0.2f, 0.75f);
+                Vector3 ringCenter = c + new Vector3(Mathf.Cos(a) * d, 0f, Mathf.Sin(a) * d);
+                int mushrooms = 6;
+                float ringR = Random.Range(1.2f, 1.8f);
+                for (int j = 0; j < mushrooms; j++)
+                {
+                    float ma = j * Mathf.PI * 2f / mushrooms;
+                    Vector3 mpos = ringCenter + new Vector3(Mathf.Cos(ma) * ringR, 0f, Mathf.Sin(ma) * ringR);
+
+                    GameObject mstem = Prim(PrimitiveType.Cylinder, $"Scenery_MushroomStem_{i}_{j}");
+                    mstem.transform.position = mpos + new Vector3(0f, 0.12f, 0f);
+                    mstem.transform.localScale = new Vector3(0.08f, 0.12f, 0.08f);
+                    Apply(mstem, mushStemMat);
+                    Destroy(mstem.GetComponent<Collider>());
+
+                    GameObject mcap = Prim(PrimitiveType.Sphere, $"Scenery_MushroomCap_{i}_{j}");
+                    mcap.transform.position = mpos + new Vector3(0f, 0.26f, 0f);
+                    mcap.transform.localScale = new Vector3(0.28f, 0.16f, 0.28f);
+                    Apply(mcap, mushCapMat);
+                    Destroy(mcap.GetComponent<Collider>());
+                }
+            }
+
+            // 그루터기 (신규 장식)
+            Material stumpMat = Mat(new Color(0.4f, 0.28f, 0.15f));
+            int stumpCount = ScaleCount(4, rad, 55f);
+            for (int i = 0; i < stumpCount; i++)
+            {
+                float a = Random.Range(0f, Mathf.PI * 2f);
+                float d = rad * Random.Range(0.2f, 0.75f);
+                Vector3 pos = c + new Vector3(Mathf.Cos(a) * d, 0f, Mathf.Sin(a) * d);
+
+                GameObject stump = Prim(PrimitiveType.Cylinder, $"Scenery_Stump_{i}");
+                float sh = Random.Range(0.25f, 0.45f);
+                stump.transform.position = pos + new Vector3(0f, sh * 0.5f, 0f);
+                stump.transform.localScale = new Vector3(0.5f, sh * 0.5f, 0.5f);
+                Apply(stump, stumpMat);
+                Destroy(stump.GetComponent<Collider>());
+            }
         }
 
         // ======= 늪: 수렁 + 고목 + 안개 =======
@@ -371,8 +535,9 @@ namespace InsectGame.Core
             SetTransparent(waterMat);
             Material deadWoodMat = Mat(new Color(0.3f, 0.22f, 0.15f));
 
-            // 수렁 (진흙 + 물 웅덩이)
-            for (int i = 0; i < 8; i++)
+            // 수렁 (진흙 + 물 웅덩이) — 면적 비례 개수 (설계 반경 45)
+            int poolCount = ScaleCount(8, rad, 45f);
+            for (int i = 0; i < poolCount; i++)
             {
                 float a = Random.Range(0f, Mathf.PI * 2f);
                 float d = Random.Range(3f, rad * 0.55f);
@@ -386,8 +551,9 @@ namespace InsectGame.Core
                 Destroy(pool.GetComponent<Collider>());
             }
 
-            // 고목 (죽은 나무)
-            for (int i = 0; i < 8; i++)
+            // 고목 (죽은 나무) — 면적 비례
+            int deadTreeCount = ScaleCount(8, rad, 45f);
+            for (int i = 0; i < deadTreeCount; i++)
             {
                 float a = Random.Range(0f, Mathf.PI * 2f);
                 float d = Random.Range(5f, rad * 0.6f);
@@ -405,9 +571,11 @@ namespace InsectGame.Core
             Material stepMat = Mat(new Color(0.45f, 0.4f, 0.35f));
             Vector3 pathStart = c + new Vector3(-rad * 0.4f, 0f,0f);
             Vector3 pathEnd = c + new Vector3(rad * 0.4f, 0f,0f);
-            for (int i = 0; i < 10; i++)
+            // 시작/끝이 rad 비례라 span은 자동 연장 — 개수만 면적 비례로 보강
+            int stepCount = ScaleCount(10, rad, 45f);
+            for (int i = 0; i < stepCount; i++)
             {
-                float t = (float)i / 10f;
+                float t = (float)i / stepCount;
                 Vector3 pos = Vector3.Lerp(pathStart, pathEnd, t);
                 pos.z += Mathf.Sin(t * Mathf.PI * 2f) * 3f;
 
@@ -416,6 +584,46 @@ namespace InsectGame.Core
                 step.transform.localScale = new Vector3(0.5f, 0.05f, 0.5f);
                 Apply(step, stepMat);
                 Destroy(step.GetComponent<Collider>());
+            }
+
+            // 맹그로브 뿌리 — 바깥으로 기울인 원기둥 다발 (신규 장식)
+            Material rootMat = Mat(new Color(0.28f, 0.2f, 0.12f));
+            int mangroveCount = ScaleCount(4, rad, 45f);
+            for (int i = 0; i < mangroveCount; i++)
+            {
+                float a = Random.Range(0f, Mathf.PI * 2f);
+                float d = rad * Random.Range(0.2f, 0.75f);
+                Vector3 clusterCenter = c + new Vector3(Mathf.Cos(a) * d, 0f, Mathf.Sin(a) * d);
+                int roots = 5;
+                for (int j = 0; j < roots; j++)
+                {
+                    float ra = j * Mathf.PI * 2f / roots + Random.Range(-0.3f, 0.3f);
+                    GameObject root = Prim(PrimitiveType.Cylinder, $"Scenery_MangroveRoot_{i}_{j}");
+                    float rh = Random.Range(0.6f, 1.1f);
+                    root.transform.position = clusterCenter + new Vector3(Mathf.Cos(ra) * 0.4f, rh * 0.4f, Mathf.Sin(ra) * 0.4f);
+                    root.transform.localScale = new Vector3(0.08f, rh * 0.5f, 0.08f);
+                    // 다발 중심에서 바깥 방향으로 기울임
+                    root.transform.rotation = Quaternion.Euler(Mathf.Sin(ra) * 25f, 0f, -Mathf.Cos(ra) * 25f);
+                    Apply(root, rootMat);
+                    Destroy(root.GetComponent<Collider>());
+                }
+            }
+
+            // 도깨비불 — 에미시브 느낌 밝은 구, 실시간 Light 컴포넌트 없음 (신규 장식)
+            Material wispMat = Mat(new Color(0.55f, 0.95f, 0.7f));
+            SetEmissive(wispMat, new Color(0.35f, 0.9f, 0.55f));
+            int wispCount = ScaleCount(5, rad, 45f);
+            for (int i = 0; i < wispCount; i++)
+            {
+                float a = Random.Range(0f, Mathf.PI * 2f);
+                float d = rad * Random.Range(0.2f, 0.75f);
+                Vector3 pos = c + new Vector3(Mathf.Cos(a) * d, Random.Range(0.8f, 1.6f), Mathf.Sin(a) * d);
+                GameObject wisp = Prim(PrimitiveType.Sphere, $"Scenery_Wisp_{i}");
+                wisp.transform.position = pos;
+                float ws = Random.Range(0.15f, 0.25f);
+                wisp.transform.localScale = new Vector3(ws, ws, ws);
+                Apply(wisp, wispMat);
+                Destroy(wisp.GetComponent<Collider>());
             }
         }
 
@@ -426,8 +634,9 @@ namespace InsectGame.Core
             Material snowMat = Mat(new Color(0.88f, 0.9f, 0.95f));
             Material pathMat = Mat(new Color(0.42f, 0.38f, 0.32f));
 
-            // 바위 절벽 (큰 바위)
-            for (int i = 0; i < 10; i++)
+            // 바위 절벽 (큰 바위) — 면적 비례 개수 (설계 반경 50)
+            int mtRockCount = ScaleCount(10, rad, 50f);
+            for (int i = 0; i < mtRockCount; i++)
             {
                 float a = Random.Range(0f, Mathf.PI * 2f);
                 float d = Random.Range(8f, rad * 0.6f);
@@ -440,8 +649,9 @@ namespace InsectGame.Core
                 Apply(rock, rockMat);
             }
 
-            // 눈 패치
-            for (int i = 0; i < 6; i++)
+            // 눈 패치 — 면적 비례
+            int snowCount = ScaleCount(6, rad, 50f);
+            for (int i = 0; i < snowCount; i++)
             {
                 float a = Random.Range(0f, Mathf.PI * 2f);
                 float d = Random.Range(5f, rad * 0.5f);
@@ -457,6 +667,56 @@ namespace InsectGame.Core
 
             // 계단길 (중심에서 바깥으로)
             CreateStairPath(c, c + new Vector3(rad * 0.5f, 0f, rad * 0.3f), 8, pathMat);
+
+            // 침엽수 — 원기둥 tier 스택으로 원뿔 실루엣 (Unity에 Cone 프리미티브 없음, 신규 장식)
+            // 총 높이 ~1.6m로 캐릭터 머리(2.2) 아래 유지 → "위쪽 layer" 인상 회피.
+            Material pineLeafMat = Mat(new Color(0.1f, 0.3f, 0.15f));
+            Material pineTrunkMat = Mat(new Color(0.3f, 0.2f, 0.1f));
+            int pineCount = ScaleCount(6, rad, 50f);
+            for (int i = 0; i < pineCount; i++)
+            {
+                float a = Random.Range(0f, Mathf.PI * 2f);
+                float d = rad * Random.Range(0.2f, 0.75f);
+                Vector3 pos = c + new Vector3(Mathf.Cos(a) * d, 0f, Mathf.Sin(a) * d);
+
+                GameObject pineTrunk = Prim(PrimitiveType.Cylinder, $"Scenery_Pine_{i}");
+                pineTrunk.transform.position = pos + new Vector3(0f, 0.25f, 0f);
+                pineTrunk.transform.localScale = new Vector3(0.15f, 0.25f, 0.15f);
+                Apply(pineTrunk, pineTrunkMat);
+                Destroy(pineTrunk.GetComponent<Collider>());
+
+                for (int j = 0; j < 3; j++)
+                {
+                    GameObject tier = Prim(PrimitiveType.Cylinder, $"Scenery_PineTier_{i}_{j}");
+                    float tw = 1.1f - j * 0.3f; // 위로 갈수록 지름 축소
+                    tier.transform.position = pos + new Vector3(0f, 0.6f + j * 0.4f, 0f);
+                    tier.transform.localScale = new Vector3(tw, 0.22f, tw);
+                    Apply(tier, pineLeafMat);
+                    Destroy(tier.GetComponent<Collider>());
+                }
+            }
+
+            // 낙석 더미 — 크기 다른 큐브/구 무더기 (신규 장식)
+            Material rubbleMat = Mat(new Color(0.5f, 0.47f, 0.43f));
+            int rockfallCount = ScaleCount(4, rad, 50f);
+            for (int i = 0; i < rockfallCount; i++)
+            {
+                float a = Random.Range(0f, Mathf.PI * 2f);
+                float d = rad * Random.Range(0.2f, 0.75f);
+                Vector3 pileCenter = c + new Vector3(Mathf.Cos(a) * d, 0f, Mathf.Sin(a) * d);
+                int pieces = Random.Range(4, 7);
+                for (int j = 0; j < pieces; j++)
+                {
+                    Vector3 off = new Vector3(Random.Range(-0.9f, 0.9f), 0f, Random.Range(-0.9f, 0.9f));
+                    float ps = Random.Range(0.25f, 0.7f);
+                    GameObject piece = Prim(j % 2 == 0 ? PrimitiveType.Cube : PrimitiveType.Sphere, $"Scenery_Rockfall_{i}_{j}");
+                    piece.transform.position = pileCenter + off + new Vector3(0f, ps * 0.35f, 0f);
+                    piece.transform.localScale = new Vector3(ps, ps * 0.7f, ps);
+                    piece.transform.rotation = Quaternion.Euler(Random.Range(0f, 25f), Random.Range(0f, 360f), Random.Range(0f, 25f));
+                    Apply(piece, rubbleMat);
+                    Destroy(piece.GetComponent<Collider>());
+                }
+            }
         }
 
         // ======= 꽃밭: 화단 + 아치 + 나비길 =======
@@ -498,6 +758,94 @@ namespace InsectGame.Core
 
             // 정원 길
             CreateInternalPath(c + new Vector3(0f, 0f, -rad * 0.5f), c + new Vector3(0f, 0f, rad * 0.5f), 2f, pathMat, stoneMat);
+
+            // 꽃 아치 — 반원 궤적 큐브 + 꽃 구 (신규 장식, 설계 반경 40 기준 면적 비례)
+            Material archFrameMat = Mat(new Color(0.75f, 0.72f, 0.68f));
+            Material archBloomMat = Mat(new Color(0.9f, 0.45f, 0.6f));
+            int flowerArchCount = ScaleCount(2, rad, 40f);
+            for (int i = 0; i < flowerArchCount; i++)
+            {
+                float a = Random.Range(0f, Mathf.PI * 2f);
+                float d = rad * Random.Range(0.3f, 0.7f);
+                Vector3 basePos = c + new Vector3(Mathf.Cos(a) * d, 0f, Mathf.Sin(a) * d);
+                Quaternion yawRot = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
+                int segs = 7;
+                float archR = 1.5f;
+                for (int j = 0; j < segs; j++)
+                {
+                    float t = (float)j / (segs - 1) * Mathf.PI; // 0~180° 반원
+                    Vector3 local = new Vector3(Mathf.Cos(t) * archR, Mathf.Sin(t) * archR, 0f);
+                    Vector3 pos = basePos + yawRot * local + new Vector3(0f, 0.15f, 0f);
+
+                    GameObject seg = Prim(PrimitiveType.Cube, $"Scenery_FlowerArch_{i}_{j}");
+                    seg.transform.position = pos;
+                    seg.transform.localScale = new Vector3(0.18f, 0.55f, 0.18f);
+                    seg.transform.rotation = yawRot * Quaternion.Euler(0f, 0f, t * Mathf.Rad2Deg); // 호 접선 방향
+                    Apply(seg, archFrameMat);
+                    Destroy(seg.GetComponent<Collider>());
+
+                    if (j % 2 == 1)
+                    {
+                        GameObject archBloom = Prim(PrimitiveType.Sphere, $"Scenery_FlowerArchBloom_{i}_{j}");
+                        archBloom.transform.position = pos + new Vector3(0f, 0.15f, 0f);
+                        archBloom.transform.localScale = new Vector3(0.22f, 0.22f, 0.22f);
+                        Apply(archBloom, archBloomMat);
+                        Destroy(archBloom.GetComponent<Collider>());
+                    }
+                }
+            }
+
+            // 화단 상자 — 테두리 큐브 + 흙 + 꽃 구 (신규 장식)
+            Material bedFrameMat = Mat(new Color(0.5f, 0.35f, 0.2f));
+            Material bedSoilMat = Mat(new Color(0.32f, 0.24f, 0.16f));
+            Material[] bedBloomMats =
+            {
+                Mat(new Color(0.95f, 0.5f, 0.55f)),
+                Mat(new Color(0.95f, 0.9f, 0.35f)),
+                Mat(new Color(0.95f, 0.95f, 0.95f))
+            };
+            int bedCount = ScaleCount(3, rad, 40f);
+            for (int i = 0; i < bedCount; i++)
+            {
+                float a = Random.Range(0f, Mathf.PI * 2f);
+                float d = rad * Random.Range(0.2f, 0.75f);
+                Vector3 pos = c + new Vector3(Mathf.Cos(a) * d, 0f, Mathf.Sin(a) * d);
+                Quaternion bedRot = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
+
+                GameObject soil = Prim(PrimitiveType.Cube, $"Scenery_FlowerBed_{i}");
+                soil.transform.position = pos + new Vector3(0f, 0.12f, 0f);
+                soil.transform.localScale = new Vector3(2.4f, 0.24f, 1.2f);
+                soil.transform.rotation = bedRot;
+                Apply(soil, bedSoilMat);
+                Destroy(soil.GetComponent<Collider>());
+
+                for (int side = 0; side < 4; side++)
+                {
+                    GameObject edge = Prim(PrimitiveType.Cube, $"Scenery_FlowerBedEdge_{i}_{side}");
+                    bool longSide = side < 2;
+                    Vector3 local = longSide
+                        ? new Vector3(0f, 0.18f, side == 0 ? 0.66f : -0.66f)
+                        : new Vector3(side == 2 ? 1.26f : -1.26f, 0.18f, 0f);
+                    edge.transform.position = pos + bedRot * local;
+                    edge.transform.localScale = longSide
+                        ? new Vector3(2.64f, 0.36f, 0.12f)
+                        : new Vector3(0.12f, 0.36f, 1.2f);
+                    edge.transform.rotation = bedRot;
+                    Apply(edge, bedFrameMat);
+                    Destroy(edge.GetComponent<Collider>());
+                }
+
+                for (int j = 0; j < 6; j++)
+                {
+                    Vector3 local = new Vector3(Random.Range(-1f, 1f), 0.3f, Random.Range(-0.4f, 0.4f));
+                    GameObject bedBloom = Prim(PrimitiveType.Sphere, $"Scenery_FlowerBedBloom_{i}_{j}");
+                    float fs = Random.Range(0.14f, 0.22f);
+                    bedBloom.transform.position = pos + bedRot * local;
+                    bedBloom.transform.localScale = new Vector3(fs, fs, fs);
+                    Apply(bedBloom, bedBloomMats[(i + j) % bedBloomMats.Length]);
+                    Destroy(bedBloom.GetComponent<Collider>());
+                }
+            }
         }
 
         // ======= 유적: 무너진 벽 + 기둥 + 계단 =======
@@ -509,7 +857,9 @@ namespace InsectGame.Core
             Material pathMat = Mat(new Color(0.38f, 0.35f, 0.3f));
 
             // 무너진 벽 — 사용자 추가 보고 "layer 층 전체 위에 떠있음". wh 0.3~0.8 잔해 수준.
-            for (int i = 0; i < 6; i++)
+            // 면적 비례 개수 (설계 반경 45)
+            int wallCount = ScaleCount(6, rad, 45f);
+            for (int i = 0; i < wallCount; i++)
             {
                 float a = Random.Range(0f, Mathf.PI * 2f);
                 float d = Random.Range(8f, rad * 0.5f);
@@ -525,9 +875,11 @@ namespace InsectGame.Core
             }
 
             // 기둥 (일부 무너진) — ph 0.7~1.3로 캐릭터 어깨 아래까지만. 옛 1~2도 layer 인상.
-            for (int i = 0; i < 8; i++)
+            // 원형 배치라 개수 늘려도 각도 균등 분배로 자연 분포
+            int pillarCount = ScaleCount(8, rad, 45f);
+            for (int i = 0; i < pillarCount; i++)
             {
-                float a = i * Mathf.PI * 2f / 8f;
+                float a = i * Mathf.PI * 2f / pillarCount;
                 float d = rad * 0.3f;
                 Vector3 pos = c + new Vector3(Mathf.Cos(a) * d, 0f,Mathf.Sin(a) * d);
                 bool fallen = Random.value > 0.6f;
@@ -551,8 +903,9 @@ namespace InsectGame.Core
             // 유적 계단
             CreateStairPath(c + new Vector3(0f, 0f, -rad * 0.3f), c, 6, pathMat);
 
-            // 이끼 바위
-            for (int i = 0; i < 5; i++)
+            // 이끼 바위 — 면적 비례
+            int mossRockCount = ScaleCount(5, rad, 45f);
+            for (int i = 0; i < mossRockCount; i++)
             {
                 float a = Random.Range(0f, Mathf.PI * 2f);
                 float d = Random.Range(4f, rad * 0.5f);
@@ -565,9 +918,71 @@ namespace InsectGame.Core
                 Apply(moss, mossRock);
                 Destroy(moss.GetComponent<Collider>());
             }
+
+            // 부서진 오벨리스크 — 기울어진 큐브 스택 (신규 장식, 총 높이 ~1.35m로 layer 인상 회피)
+            Material obeliskMat = Mat(new Color(0.42f, 0.4f, 0.36f));
+            int obeliskCount = ScaleCount(3, rad, 45f);
+            for (int i = 0; i < obeliskCount; i++)
+            {
+                float a = Random.Range(0f, Mathf.PI * 2f);
+                float d = rad * Random.Range(0.2f, 0.75f);
+                Vector3 pos = c + new Vector3(Mathf.Cos(a) * d, 0f, Mathf.Sin(a) * d);
+                float lean = Random.Range(4f, 12f);
+                float leanDir = Random.Range(0f, 360f);
+                for (int j = 0; j < 3; j++)
+                {
+                    GameObject block = Prim(PrimitiveType.Cube, $"Scenery_Obelisk_{i}_{j}");
+                    float bw = 0.8f - j * 0.2f; // 위로 갈수록 좁아짐
+                    const float bh = 0.45f;
+                    // 위 tier일수록 lean 방향으로 밀려 기운 실루엣
+                    Vector3 leanOff = Quaternion.Euler(0f, leanDir, 0f)
+                        * new Vector3(Mathf.Tan(lean * Mathf.Deg2Rad) * bh * j, 0f, 0f);
+                    block.transform.position = pos + leanOff + new Vector3(0f, bh * 0.5f + j * bh, 0f);
+                    block.transform.localScale = new Vector3(bw, bh, bw);
+                    block.transform.rotation = Quaternion.Euler(0f, leanDir, -lean);
+                    Apply(block, obeliskMat);
+                    Destroy(block.GetComponent<Collider>());
+                }
+            }
+
+            // 이끼 낀 석상 — 큐브 대좌 + 구 몸통/머리 추상 조형 (신규 장식)
+            Material statueMat = Mat(new Color(0.45f, 0.43f, 0.38f));
+            Material statueMossMat = Mat(new Color(0.32f, 0.42f, 0.25f));
+            int statueCount = ScaleCount(2, rad, 45f);
+            for (int i = 0; i < statueCount; i++)
+            {
+                float a = Random.Range(0f, Mathf.PI * 2f);
+                float d = rad * Random.Range(0.25f, 0.7f);
+                Vector3 pos = c + new Vector3(Mathf.Cos(a) * d, 0f, Mathf.Sin(a) * d);
+
+                GameObject pedestal = Prim(PrimitiveType.Cube, $"Scenery_Statue_{i}");
+                pedestal.transform.position = pos + new Vector3(0f, 0.25f, 0f);
+                pedestal.transform.localScale = new Vector3(0.9f, 0.5f, 0.9f);
+                Apply(pedestal, statueMat);
+                Destroy(pedestal.GetComponent<Collider>());
+
+                GameObject body = Prim(PrimitiveType.Sphere, $"Scenery_StatueBody_{i}");
+                body.transform.position = pos + new Vector3(0f, 0.85f, 0f);
+                body.transform.localScale = new Vector3(0.55f, 0.7f, 0.55f);
+                Apply(body, i % 2 == 0 ? statueMossMat : statueMat);
+                Destroy(body.GetComponent<Collider>());
+
+                GameObject head = Prim(PrimitiveType.Sphere, $"Scenery_StatueHead_{i}");
+                head.transform.position = pos + new Vector3(0f, 1.35f, 0f);
+                head.transform.localScale = new Vector3(0.32f, 0.32f, 0.32f);
+                Apply(head, statueMossMat);
+                Destroy(head.GetComponent<Collider>());
+            }
         }
 
         // ======= 공통 유틸 =======
+
+        // 소품 개수를 면적 비례로 유지 — designRadius는 소품 수치를 설계했던 스케일 1.0 기준 반경.
+        // WorldScale 확장으로 radius가 커져도 밀도(개수/면적)가 희석되지 않도록 보정.
+        private static int ScaleCount(int baseCount, float radius, float designRadius)
+        {
+            return Mathf.Max(baseCount, Mathf.RoundToInt(baseCount * (radius * radius) / (designRadius * designRadius)));
+        }
 
         private void CreateInternalPath(Vector3 from, Vector3 to, float width, Material pathMat, Material edgeMat)
         {
@@ -660,6 +1075,13 @@ namespace InsectGame.Core
             mat.SetInt("_ZWrite", 0);
             mat.EnableKeyword("_ALPHABLEND_ON");
             mat.renderQueue = 3000;
+        }
+
+        // 에미시브 느낌 — 실시간 Light 컴포넌트 없이 자체 발광 색상만 부여 (빌드 타임 1회).
+        private void SetEmissive(Material mat, Color emission)
+        {
+            mat.EnableKeyword("_EMISSION");
+            if (mat.HasProperty("_EmissionColor")) mat.SetColor("_EmissionColor", emission);
         }
     }
 }

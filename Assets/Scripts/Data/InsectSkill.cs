@@ -24,5 +24,7 @@ namespace InsectGame.Data
         public SkillEffectType effectType = SkillEffectType.Damage;
         [Range(0f, 1f)] public float effectValue = 0.2f;
         [Range(1, 5)] public int effectDurationTurns = 2;
+        [Range(0, 999)] public int trainingCost;
+        public bool isSignatureSkill;
     }
 }

@@ -43,7 +43,7 @@ namespace InsectGame.Core
 
         private static string GetPath()
         {
-            return Path.Combine(Application.persistentDataPath, GameConstants.SaveFiles.PlayerProgress);
+            return SaveScope.FilePath(GameConstants.SaveFiles.PlayerProgress);
         }
     }
 }

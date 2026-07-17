@@ -1,4 +1,5 @@
 using InsectGame.Data;
+using InsectGame.UI;
 using UnityEngine;
 using System.Collections.Generic;
 
@@ -13,6 +14,11 @@ namespace InsectGame.Core
         [SerializeField] private RegionManager regionManager;
         [SerializeField] private CameraFollower cameraFollower;
 
+        // 포획 모달/배틀/미니게임 중 [E]·F2·진입/퇴장 버튼이 SubArea 진입·이탈을 발화하지 않도록
+        // CaptureInputController.IsPlayerFrozen()과 동일한 신호로 가드. frozen은 미니게임/배틀/포획
+        // 모달이 모두 SetFrozen(true)를 거므로 단일 신호로 셋 다 커버. lazy FindFirstObjectByType 캐싱.
+        private PlayerMovement playerMovement;
+
         private GameObject subAreaRoot;
         private bool isInSubArea;
         private Vector3 savedPlayerPos;
@@ -23,10 +29,10 @@ namespace InsectGame.Core
         private float notifyTimer;
         private bool notifyIsEnter;
         private GUIStyle notifyStyleCache;
+        private GUIStyle entryExitButtonStyleCache;
         private static readonly Color NotifyEnterCol = new Color(0.3f, 0.85f, 0.5f);
         private static readonly Color NotifyExitCol = new Color(0.85f, 0.75f, 0.3f);
         private static readonly Color NotifyBgCol = new Color(0f, 0f, 0f, 0.78f);
-        private static readonly Color NotifyHintCol = new Color(0.7f, 0.75f, 0.85f);
 
         // Y=0 — 메인 월드 ground와 동일 평면. 옛 Y=0.5는 환경이 캐릭터로부터 위로 분리되어
         // "공중에 떠있는" 인상 회귀(사용자 명시 보고). 캐릭터 부유(Y=0.5 텔레포트 vs floor Y=0)는
@@ -61,6 +67,23 @@ namespace InsectGame.Core
 
         public bool IsInSubArea => isInSubArea;
 
+        // 포획 선택지(CaptureChoiceUI)·배틀·미니게임은 모두 PlayerMovement.SetFrozen(true)를 건다.
+        // CaptureInputController.IsPlayerFrozen()과 동일하게 frozen만으로 셋 다 가드한다.
+        private bool IsPlayerFrozen()
+        {
+            if (playerMovement == null)
+                playerMovement = FindFirstObjectByType<PlayerMovement>();
+            return playerMovement != null && playerMovement.IsFrozen;
+        }
+
+        // SubArea 진입/이탈을 막아야 하는 상태: 모달이 열려 있거나(포획 선택지·도감 등)
+        // 플레이어가 frozen(배틀·레이드·미니게임·포획 모달)일 때. 같은 [E] 입력이 SubArea 진입으로
+        // 새지 않게, 입력 처리·버튼 렌더 양쪽에서 이 신호로 차단한다.
+        private bool IsSubAreaActionBlocked()
+        {
+            return ModalUIRegistry.IsAnyOpen() || IsPlayerFrozen();
+        }
+
         public void AutoWire(RegionManager rm, CameraFollower cam)
         {
             if (regionManager != null)
@@ -80,11 +103,17 @@ namespace InsectGame.Core
         private void Update()
         {
             if (notifyTimer > 0f) notifyTimer -= Time.deltaTime;
+
+            // 모달/배틀/미니게임/포획 모달(frozen) 중에는 수동 진입·퇴장 입력을 막는다.
+            // CaptureInputController와 동일 신호 — 같은 [E]가 포획과 SubArea 진입에 동시 발화하던 충돌 차단.
+            // (Y 추락/25m 자동 이탈 등 비자발적 안전망은 아래에서 계속 동작.)
+            bool actionBlocked = IsSubAreaActionBlocked();
+
             // F2: SubArea 안일 때 수동 Exit 트리거 (자동 25m 이탈을 기다리지 않음)
-            if (isInSubArea && Input.GetKeyDown(KeyCode.F2)) RequestExit();
+            if (!actionBlocked && isInSubArea && Input.GetKeyDown(KeyCode.F2)) RequestExit();
 
             // [E]: 메인 월드에서 nearbySubArea 있으면 진입 트리거 (사용자 선택)
-            if (!isInSubArea && regionManager != null && regionManager.NearbySubArea != null
+            if (!actionBlocked && !isInSubArea && regionManager != null && regionManager.NearbySubArea != null
                 && Input.GetKeyDown(KeyCode.E))
             {
                 regionManager.RequestEnterSubArea();
@@ -113,24 +142,29 @@ namespace InsectGame.Core
             float dz = cachedPlayerTransform.position.z - SubAreaOrigin.z;
             if (dx * dx + dz * dz > 25f * 25f)
             {
-                ExitSubArea();
-                if (AudioManager.Instance != null)
-                    AudioManager.Instance.SetSubAreaActive(false);
+                // RequestExit로 통일 — 옛 ExitSubArea() 직접 호출은 RegionManager.currentSubArea를 정리하지
+                // 않아 걸어서 나가면 [E] 재진입 불가 + 메인월드 region 가드 비활성(상태 누수). RequestExit는
+                // ForceExitSubArea→SubAreaChanged(null)→OnSubAreaChanged→ExitSubArea(+오디오)까지 단일 경로.
+                RequestExit();
             }
         }
 
         private void OnGUI()
         {
+            // 모달/배틀/미니게임/포획 모달(frozen) 중에는 진입·퇴장 입력과 버튼을 모두 비활성.
+            // Update와 동일 신호로 OnGUI 백업 입력·GUI.Button 렌더 양쪽을 일관 차단한다.
+            bool actionBlocked = IsSubAreaActionBlocked();
+
             // F2 OnGUI Event 백업 (Input.GetKeyDown이 focus/IME 이슈로 놓칠 때)
             Event e = Event.current;
-            if (e != null && e.type == EventType.KeyDown && e.keyCode == KeyCode.F2 && isInSubArea)
+            if (!actionBlocked && e != null && e.type == EventType.KeyDown && e.keyCode == KeyCode.F2 && isInSubArea)
             {
                 RequestExit();
                 e.Use();
             }
             // [E] 진입 OnGUI Event 백업 — Update의 Input.GetKeyDown이 focus/IME로 놓칠 때 대비
             // (F2 퇴장과 동일 패턴). 사용자 보고 "E 눌러도 진입 안 됨"의 직접 원인.
-            if (e != null && e.type == EventType.KeyDown && e.keyCode == KeyCode.E
+            if (!actionBlocked && e != null && e.type == EventType.KeyDown && e.keyCode == KeyCode.E
                 && !isInSubArea && regionManager != null && regionManager.NearbySubArea != null)
             {
                 regionManager.RequestEnterSubArea();
@@ -162,36 +196,61 @@ namespace InsectGame.Core
                 GUI.Label(r, notifyText, notifyStyleCache);
             }
 
-            // SubArea 안 상시 안내 ("F2: 메인 월드로 나가기")
-            if (isInSubArea)
+            // 진입/퇴장 버튼은 모달/배틀/미니게임/포획 모달(frozen) 중에는 그리지도 입력받지도 않는다.
+            // 모달이 빈 SubArea 위에 뜨거나 frozen 상태에서 '들어가기' 클릭으로 순간이동하던 충돌 차단.
+            if (!actionBlocked)
             {
-                float w = 280f;
-                float h = 40f;
-                Rect r = new Rect(Screen.width - w - 20f, Screen.height - h - 20f, w, h);
-                GUI.color = NotifyBgCol;
-                GUI.DrawTexture(r, Texture2D.whiteTexture);
-                notifyStyleCache.normal.textColor = NotifyHintCol;
-                GUI.color = Color.white;
-                GUI.Label(r, "F2: 메인 월드로 나가기", notifyStyleCache);
-            }
-            // 메인 월드 + 영역 안 → 진입 안내 ([E] 키 또는 클릭)
-            else if (regionManager != null && regionManager.NearbySubArea != null)
-            {
-                SubAreaData sub = regionManager.NearbySubArea;
-                float w = 460f;
-                float h = 80f;
-                Rect r = new Rect((Screen.width - w) * 0.5f, Screen.height - h - 60f, w, h);
-                GUI.color = NotifyBgCol;
-                GUI.DrawTexture(r, Texture2D.whiteTexture);
-                notifyStyleCache.normal.textColor = NotifyEnterCol;
-                GUI.color = Color.white;
-                // 라벨 스타일 투명 버튼 — 마우스 클릭 진입 지원(키보드 외 입력 경로).
-                if (GUI.Button(r, $"[E] 또는 클릭: {GetSubAreaDisplayName(sub)} 진입", notifyStyleCache))
+                // 진입과 퇴장은 같은 고정 위치의 큰 버튼으로 제공한다.
+                if (isInSubArea)
                 {
-                    regionManager.RequestEnterSubArea();
+                    Rect r = GetEntryExitButtonRect();
+                    GUI.backgroundColor = NotifyExitCol;
+                    if (GUI.Button(r, "메인 월드로 나가기", GetEntryExitButtonStyle()))
+                        RequestExit();
+                    GUI.backgroundColor = Color.white;
+                }
+                // 메인 월드 + 영역 안 → 동일 위치에 큰 진입 버튼 표시
+                else if (regionManager != null && regionManager.NearbySubArea != null)
+                {
+                    SubAreaData sub = regionManager.NearbySubArea;
+                    Rect r = GetEntryExitButtonRect();
+                    GUI.backgroundColor = NotifyEnterCol;
+                    if (GUI.Button(r, $"{GetSubAreaDisplayName(sub)} 들어가기", GetEntryExitButtonStyle()))
+                    {
+                        regionManager.RequestEnterSubArea();
+                    }
+                    GUI.backgroundColor = Color.white;
                 }
             }
             GUI.color = Color.white;
+        }
+
+        private Rect GetEntryExitButtonRect()
+        {
+            float availableWidth = Screen.width - SafeArea.Left - SafeArea.Right - 40f;
+            float w = Mathf.Min(620f, availableWidth);
+            float h = 100f;
+            float x = (Screen.width - w) * 0.5f;
+            float y = Screen.height - SafeArea.Bottom - h - 44f;
+            return new Rect(x, y, w, h);
+        }
+
+        private GUIStyle GetEntryExitButtonStyle()
+        {
+            if (entryExitButtonStyleCache != null) return entryExitButtonStyleCache;
+
+            entryExitButtonStyleCache = new GUIStyle(GUI.skin.button)
+            {
+                fontSize = 30,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleCenter,
+                wordWrap = true,
+                padding = new RectOffset(18, 18, 12, 12)
+            };
+            entryExitButtonStyleCache.normal.textColor = Color.white;
+            entryExitButtonStyleCache.hover.textColor = Color.white;
+            entryExitButtonStyleCache.active.textColor = Color.white;
+            return entryExitButtonStyleCache;
         }
 
         private void OnSubAreaChanged(SubAreaData subArea)
@@ -339,6 +398,37 @@ namespace InsectGame.Core
             return origin + new Vector3(0f, 0.5f, 0f);
         }
 
+        // ExitSubArea 복귀 좌표용 — 지면 raycast 스냅 후 막혀 있으면 주변 빈 자리를 spiral 탐색.
+        // EnterSubArea의 FindSafeSpawnPosition과 대칭(이탈 측 충돌검사 부재로 산 바위에 박히던 비대칭 제거).
+        private static Vector3 FindClearGroundPositionNear(Vector3 desired)
+        {
+            Vector3 snapped = SnapToGroundY(desired);
+            if (IsSpawnPositionClear(snapped)) return snapped;
+
+            float[] radii = { 3f, 5f, 7f };
+            for (int r = 0; r < radii.Length; r++)
+            {
+                for (int dir = 0; dir < 8; dir++)
+                {
+                    float angle = dir * 45f * Mathf.Deg2Rad;
+                    Vector3 cand = SnapToGroundY(new Vector3(
+                        desired.x + Mathf.Sin(angle) * radii[r],
+                        desired.y,
+                        desired.z + Mathf.Cos(angle) * radii[r]));
+                    if (IsSpawnPositionClear(cand)) return cand;
+                }
+            }
+            return snapped; // 모두 막힘 — 최소한 지면엔 스냅(영구 박힘보다 나음)
+        }
+
+        // 위에서 아래로 raycast해 실제 지면 Y에 스냅(+0.5 여유). 히트 없으면 원 Y 유지.
+        private static Vector3 SnapToGroundY(Vector3 pos)
+        {
+            if (Physics.Raycast(new Vector3(pos.x, pos.y + 50f, pos.z), Vector3.down, out RaycastHit hit, 100f))
+                pos.y = hit.point.y + 0.5f;
+            return pos;
+        }
+
         private static bool IsSpawnPositionClear(Vector3 pos)
         {
             // 플레이어 캡슐(반경 ~0.4, 높이 ~1.4) 점유 영역과 정합. PlayerMovement.IsBlockedPosition과 동일 패턴.
@@ -389,6 +479,10 @@ namespace InsectGame.Core
                     dest = exited.centerPosition + dir * (exited.radius + 2f);
                     dest.y = savedPlayerPos.y;
                 }
+                // 진입(FindSafeSpawnPosition)과 대칭으로 지면 스냅 + 충돌 빈자리 보정. ShowMainWorld로
+                // 메인 콜라이더(산 바위 Scenery_MountainRock/경사 등)가 복원된 뒤라, dest가 그 안에 박히면
+                // PlayerMovement.IsBlockedPosition이 모든 이동을 막아 영구 갇힘 → 산에서 못 움직이던 원인.
+                dest = FindClearGroundPositionNear(dest);
                 player.transform.position = dest;
                 // 좌표 점프 후 카메라 baseline 리셋 + 일반 모드로 offset 복귀.
                 // SetSubAreaMode(false)가 내부적으로 ResetBaseline 호출하여 한 번에 처리.
@@ -453,8 +547,9 @@ namespace InsectGame.Core
         // ========== 동굴 ==========
         private void BuildCave(SubAreaData sub)
         {
-            Material wallMat = Mat(new Color(0.25f, 0.22f, 0.18f));
-            Material floorMat = Mat(new Color(0.15f, 0.13f, 0.1f));
+            // 어두운 머티리얼이 동굴이 새까매 보이던 핵심 원인 — 바닥/벽 밝기를 올려 환경광이 반사되게 한다.
+            Material wallMat = Mat(new Color(0.4f, 0.35f, 0.29f));
+            Material floorMat = Mat(new Color(0.32f, 0.28f, 0.22f));
             Material ceilingMat = Mat(new Color(0.1f, 0.08f, 0.06f));
             Material torchMat = Mat(new Color(1f, 0.7f, 0.2f));
             Material torchHandleMat = Mat(new Color(0.3f, 0.2f, 0.1f));
@@ -514,10 +609,11 @@ namespace InsectGame.Core
                 }
             }
 
-            // 포인트 라이트 (횃불에서)
-            CreatePointLight(new Vector3(0f, 3f, 0f), new Color(1f, 0.6f, 0.2f), 8f, 1.2f);
-            CreatePointLight(new Vector3(10f, 3f, 5f), new Color(1f, 0.6f, 0.2f), 6f, 0.8f);
-            CreatePointLight(new Vector3(-8f, 3f, -4f), new Color(1f, 0.6f, 0.2f), 6f, 0.8f);
+            // 포인트 라이트 (횃불에서) — 범위/세기 상향 + 중앙 상단 따뜻한 채움광으로 전체를 밝힌다.
+            CreatePointLight(new Vector3(0f, 3f, 0f), new Color(1f, 0.7f, 0.3f), 16f, 2.4f);
+            CreatePointLight(new Vector3(10f, 3f, 5f), new Color(1f, 0.7f, 0.3f), 13f, 1.8f);
+            CreatePointLight(new Vector3(-8f, 3f, -4f), new Color(1f, 0.7f, 0.3f), 13f, 1.8f);
+            CreatePointLight(new Vector3(0f, 9f, 0f), new Color(0.95f, 0.88f, 0.72f), 26f, 1.3f);
 
             // 외곽 벽 — 바닥(30 = ±15) 안쪽에 배치하여 벽-바닥 사이 빠짐 방지
             CreateBoundaryWalls(wallMat, 14f, 5f);
@@ -591,18 +687,26 @@ namespace InsectGame.Core
         // ========== 수중 ==========
         private void BuildUnderwater(SubAreaData sub)
         {
-            Material floorMat = Mat(new Color(0.1f, 0.15f, 0.25f));
+            // 바닥을 조금 밝게 — 옛 (0.1,0.15,0.25)는 파란 fog와 겹쳐 캐릭터 발밑이 새까매 대비 상실.
+            Material floorMat = Mat(new Color(0.16f, 0.22f, 0.33f));
             Material coralMat = Mat(new Color(0.8f, 0.3f, 0.4f));
             Material seaweedMat = Mat(new Color(0.1f, 0.4f, 0.15f));
-            Material waterMat = Mat(new Color(0.1f, 0.25f, 0.5f, 0.3f));
+            // 물 표면 alpha 0.3 → 0.16: 옛은 카메라-캐릭터 시선을 가로지르는 반투명 파란 막이 캐릭터를 덮어
+            // "연못/수중에서 캐릭터가 안 보임"의 직접 원인이었음(사용자 보고). 위치도 함께 올려 이중 방어.
+            Material waterMat = Mat(new Color(0.1f, 0.25f, 0.5f, 0.16f));
             SetTransparent(waterMat);
 
             CreateFloor(floorMat, 30f);
 
-            // 물 표면 (위에서 덮개)
+            // 물 표면 — 카메라(플레이어 Y0.5 + offset Y9 ≈ Y9.5) 위로 배치.
+            // 옛 Y=6은 카메라(Y9.5)→캐릭터(Y1.35) 시선(Y 1.35~9.5)을 정면으로 관통해 파란 반투명 막이
+            // 캐릭터 위를 덮었다. NoCollider라 카메라 회피(ResolveObstruction SphereCast)에도 안 걸려
+            // 그냥 뚫고 렌더만 가림. Y=13으로 올려 부감 카메라 frustum 밖(카메라보다 위)으로 빼내 캐릭터를
+            // 절대 가리지 않게 한다. 부감뷰 + Unity Plane 단면 특성상 이 면은 평상시 화면에 거의 안 보이며,
+            // 수중 분위기는 파란 fog(SubAreaEnvironment)와 기포로 표현된다.
             GameObject waterTop = Prim(PrimitiveType.Plane, "WaterSurface");
-            waterTop.transform.localPosition = new Vector3(0f, 6f, 0f);
-            waterTop.transform.localScale = new Vector3(4f, 1f, 4f);
+            waterTop.transform.localPosition = new Vector3(0f, 13f, 0f);
+            waterTop.transform.localScale = new Vector3(7f, 1f, 7f);
             Apply(waterTop, waterMat);
             NoCollider(waterTop);
 
@@ -646,7 +750,10 @@ namespace InsectGame.Core
                 NoCollider(bubble);
             }
 
-            CreatePointLight(new Vector3(0f, 5f, 0f), new Color(0.2f, 0.5f, 0.8f), 18f, 0.8f);
+            // 조명 강화 — 옛 파란 포인트라이트 1개(0.8)는 짙은 파란 fog와 겹쳐 캐릭터가 어둡게 묻힘.
+            // 상단 채움광(밝게) + 카메라측(캐릭터 정면) 채움광으로 캐릭터 가시성 확보.
+            CreatePointLight(new Vector3(0f, 6f, 0f), new Color(0.4f, 0.62f, 0.9f), 22f, 1.2f);
+            CreatePointLight(new Vector3(0f, 5f, -7f), new Color(0.5f, 0.7f, 0.95f), 16f, 1.0f);
             CreateBoundaryWalls(Mat(new Color(0.15f, 0.2f, 0.3f)), 14f, 6f);
         }
 

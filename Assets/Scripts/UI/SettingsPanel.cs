@@ -79,6 +79,13 @@ namespace InsectGame.UI
 
             ApplyVolume(masterVolumeParam, masterVol);
             ApplyVolume(sfxVolumeParam, sfxVol);
+            // 실제 사운드는 AudioManager가 masterVolume/sfxVolume 필드로 직접 믹싱(AudioMixer 미경유)하므로
+            // 믹서 적용만으로는 음량이 안 바뀐다 → AudioManager에도 동기화해야 슬라이더가 실제로 동작.
+            if (AudioManager.Instance != null)
+            {
+                AudioManager.Instance.SetMasterVolume(masterVol);
+                AudioManager.Instance.SetSFXVolume(sfxVol);
+            }
             QualitySettings.SetQualityLevel(quality, true);
         }
 
@@ -96,11 +103,13 @@ namespace InsectGame.UI
         private void OnMasterVolumeChanged(float value)
         {
             ApplyVolume(masterVolumeParam, value);
+            if (AudioManager.Instance != null) AudioManager.Instance.SetMasterVolume(value);
         }
 
         private void OnSfxVolumeChanged(float value)
         {
             ApplyVolume(sfxVolumeParam, value);
+            if (AudioManager.Instance != null) AudioManager.Instance.SetSFXVolume(value);
         }
 
         private void OnGraphicsChanged(int index)

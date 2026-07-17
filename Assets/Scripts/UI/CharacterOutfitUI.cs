@@ -97,6 +97,7 @@ namespace InsectGame.UI
         {
             if (stylesInitialized) return;
             stylesInitialized = true;
+            bool mobile = UIScale.IsMobileLayout;
 
             Texture2D panelTex = UIHelper.GetCachedTex(new Color(0.08f, 0.1f, 0.2f, 0.92f));
             Texture2D tabNormalTex = UIHelper.GetCachedTex(new Color(0.25f, 0.28f, 0.35f, 1f));
@@ -113,7 +114,7 @@ namespace InsectGame.UI
             tabNormalStyle = new GUIStyle(GUI.skin.button);
             tabNormalStyle.normal.background = tabNormalTex;
             tabNormalStyle.normal.textColor = Color.white;
-            tabNormalStyle.fontSize = 20;
+            tabNormalStyle.fontSize = mobile ? 26 : 24;
             tabNormalStyle.fontStyle = FontStyle.Bold;
             tabNormalStyle.alignment = TextAnchor.MiddleCenter;
 
@@ -140,14 +141,14 @@ namespace InsectGame.UI
             titleStyle.alignment = TextAnchor.MiddleLeft;
 
             labelStyle = new GUIStyle(GUI.skin.label);
-            labelStyle.fontSize = 18;
+            labelStyle.fontSize = 22;
             labelStyle.fontStyle = FontStyle.Bold;
             labelStyle.normal.textColor = Color.white;
             labelStyle.alignment = TextAnchor.MiddleCenter;
             labelStyle.wordWrap = true;
 
             coinStyle = new GUIStyle(GUI.skin.label);
-            coinStyle.fontSize = 22;
+            coinStyle.fontSize = 26;
             coinStyle.fontStyle = FontStyle.Bold;
             coinStyle.normal.textColor = new Color(1f, 0.84f, 0f, 1f);
             coinStyle.alignment = TextAnchor.MiddleLeft;
@@ -155,13 +156,13 @@ namespace InsectGame.UI
             buttonStyle = new GUIStyle(GUI.skin.button);
             buttonStyle.normal.background = btnTex;
             buttonStyle.normal.textColor = Color.white;
-            buttonStyle.fontSize = 16;
+            buttonStyle.fontSize = mobile ? 23 : 20;
             buttonStyle.fontStyle = FontStyle.Bold;
 
             closeStyle = new GUIStyle(GUI.skin.button);
             closeStyle.normal.background = closeTex;
             closeStyle.normal.textColor = Color.white;
-            closeStyle.fontSize = 16;
+            closeStyle.fontSize = mobile ? 24 : 20;
             closeStyle.fontStyle = FontStyle.Bold;
 
             bonusStyle = new GUIStyle(GUI.skin.label);
@@ -170,7 +171,7 @@ namespace InsectGame.UI
             bonusStyle.alignment = TextAnchor.MiddleCenter;
 
             setStyle = new GUIStyle(GUI.skin.label);
-            setStyle.fontSize = 11;
+            setStyle.fontSize = 13;
             setStyle.normal.textColor = new Color(0.6f, 0.6f, 0.7f);
             setStyle.alignment = TextAnchor.MiddleLeft;
             setStyle.wordWrap = true;
@@ -180,11 +181,11 @@ namespace InsectGame.UI
 
             // OnGUI 매 프레임 new GUIStyle 회귀 차단 — DrawPanel 캐릭터 아래 슬롯 정보 라벨용.
             infoStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 16, alignment = TextAnchor.MiddleLeft, wordWrap = true };
+            { fontSize = 19, alignment = TextAnchor.MiddleLeft, wordWrap = true };
             infoStyleCache.normal.textColor = InfoLabelCol;
 
             infoNameStyleCache = new GUIStyle(infoStyleCache)
-            { fontSize = 20, fontStyle = FontStyle.Bold };
+            { fontSize = 24, fontStyle = FontStyle.Bold };
             infoNameStyleCache.normal.textColor = Color.white;
         }
 
@@ -194,6 +195,10 @@ namespace InsectGame.UI
             float panelAlpha = UIHelper.AnimatePanelOpen(ref openFade, isOpen, ref wasOpen);
             if (!isOpen && panelAlpha <= 0.01f) return;
             if (outfitManager == null) return;
+
+            // 고DPI 세로 모바일에서 UI가 물리 픽셀로 그려져 과도하게 작아지던 근본 문제 해결 —
+            // 가상 캔버스(세로 1080x1920 / 가로 1920x1080) 좌표계로 통일. End()는 OnGUI 말미 1곳.
+            UIScale.Begin();
 
             GUI.color = new Color(1f, 1f, 1f, panelAlpha);
 
@@ -210,10 +215,11 @@ namespace InsectGame.UI
             if (Event.current.type == EventType.Repaint)
                 previewRotate += Time.deltaTime * 30f;
 
-            float panelW = Mathf.Min(1200f, Screen.width * 0.96f);
-            float panelH = Mathf.Min(820f, Screen.height * 0.95f);
-            float x = (Screen.width - panelW) * 0.5f;
-            float y = (Screen.height - panelH) * 0.5f;
+            float panelW = Mathf.Min(1200f, UIScale.VirtualScreenWidth * 0.96f);
+            float panelH = Mathf.Min(820f, UIScale.VirtualScreenHeight * 0.95f);
+            bool mobile = UIScale.IsMobileLayout;
+            float x = (UIScale.VirtualScreenWidth - panelW) * 0.5f;
+            float y = (UIScale.VirtualScreenHeight - panelH) * 0.5f;
             Rect panelRect = new Rect(x, y, panelW, panelH);
 
             GUI.Box(panelRect, "", panelStyle);
@@ -221,14 +227,15 @@ namespace InsectGame.UI
             // 제목 — UIHelper.CachedStyle로 1회 캐싱 (옛 매 OnGUI new GUIStyle 회귀 차단)
             GUIStyle bigTitle = UIHelper.CachedStyle("outfit_big_title", () =>
             {
-                GUIStyle s = new GUIStyle(GUI.skin.label) { fontSize = 30, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
+                GUIStyle s = new GUIStyle(GUI.skin.label) { fontSize = 36, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
                 s.normal.textColor = Color.white;
                 return s;
             });
-            GUI.Label(new Rect(x + 24, y + 14, 500, 44), "캐릭터 꾸미기", bigTitle);
+            GUI.Label(new Rect(x + 24, y + 14, 540, 50), "캐릭터 꾸미기", bigTitle);
 
             // 닫기 버튼
-            if (GUI.Button(new Rect(x + panelW - 56, y + 12, 44, 40), "X", closeStyle))
+            float closeSize = mobile ? 58f : 44f;
+            if (GUI.Button(new Rect(x + panelW - closeSize - 12f, y + 10f, closeSize, mobile ? 56f : 40f), "X", closeStyle))
             {
                 CloseModal();
             }
@@ -238,9 +245,11 @@ namespace InsectGame.UI
             float charAreaY = y + 70;
             float charAreaW = 360f;
             float charAreaH = panelH - 90;
-            GUI.color = new Color(0.04f, 0.06f, 0.12f, 0.6f * panelAlpha);
-            GUI.DrawTexture(new Rect(charAreaX, charAreaY, charAreaW, charAreaH), Texture2D.whiteTexture);
-            GUI.color = new Color(1f, 1f, 1f, panelAlpha);
+            if (!mobile)
+            {
+                GUI.color = new Color(0.04f, 0.06f, 0.12f, 0.6f * panelAlpha);
+                GUI.DrawTexture(new Rect(charAreaX, charAreaY, charAreaW, charAreaH), Texture2D.whiteTexture);
+                GUI.color = new Color(1f, 1f, 1f, panelAlpha);
 
             float charCx = charAreaX + charAreaW * 0.5f;
             float charCy = charAreaY + charAreaH * 0.45f;
@@ -254,20 +263,26 @@ namespace InsectGame.UI
             float infoY = charAreaY + charAreaH - 200f;
             OutfitItem cur = outfitManager.GetEquipped(selectedSlot);
             string curName = cur != null ? cur.displayName : "(없음)";
-            GUI.Label(new Rect(charAreaX + 16, infoY, charAreaW - 32, 30), $"현재 {slotLabels[(int)selectedSlot]}:", infoStyleCache);
-            GUI.Label(new Rect(charAreaX + 16, infoY + 28, charAreaW - 32, 32), curName, infoNameStyleCache);
+            GUI.Label(new Rect(charAreaX + 16, infoY, charAreaW - 32, 32), $"현재 {slotLabels[(int)selectedSlot]}:", infoStyleCache);
+                GUI.Label(new Rect(charAreaX + 16, infoY + 32, charAreaW - 32, 36), curName, infoNameStyleCache);
+            }
 
             // ── 슬롯 탭 (캐릭터 영역 우측) ──
-            float tabX = charAreaX + charAreaW + 20;
+            float tabX = mobile ? x + 20f : charAreaX + charAreaW + 20f;
             float tabY = y + 70;
-            float tabW = 140;
-            float tabH = 50;
-            float tabGap = 6;
+            float tabGap = 6f;
+            // 모바일 세로: 슬롯 8개를 4열 2행으로 배치. 옛 1행 8열은 tabW가 5열 기준이라
+            // 7·8번 탭(도구·악세서리)이 화면 밖으로 잘려 접근 불가였음. 데스크톱은 우측 세로 1열 유지.
+            int tabsPerRow = 4;
+            float tabW = mobile ? (panelW - 40f - tabGap * (tabsPerRow - 1)) / tabsPerRow : 140f;
+            float tabH = mobile ? 64f : 50f;
 
             OutfitSlot[] slots = (OutfitSlot[])System.Enum.GetValues(typeof(OutfitSlot));
             for (int i = 0; i < slots.Length; i++)
             {
-                Rect tabRect = new Rect(tabX, tabY + i * (tabH + tabGap), tabW, tabH);
+                Rect tabRect = mobile
+                    ? new Rect(tabX + (i % tabsPerRow) * (tabW + tabGap), tabY + (i / tabsPerRow) * (tabH + tabGap), tabW, tabH)
+                    : new Rect(tabX, tabY + i * (tabH + tabGap), tabW, tabH);
                 GUIStyle style = (slots[i] == selectedSlot) ? tabSelectedStyle : tabNormalStyle;
                 if (GUI.Button(tabRect, slotLabels[i], style))
                 {
@@ -277,7 +292,7 @@ namespace InsectGame.UI
             }
 
             // ── 세트 정보 패널 ──
-            if (bonusProvider != null)
+            if (bonusProvider != null && !mobile)
             {
                 float setY = tabY + slots.Length * (tabH + tabGap) + 8;
                 ActiveSetInfo[] activeSets = bonusProvider.GetActiveSets();
@@ -320,15 +335,18 @@ namespace InsectGame.UI
             }
 
             // ── 오른쪽 아이템 그리드 ──
-            float gridX = tabX + tabW + 20;
-            float gridY = y + 70;
-            float gridW = panelW - (gridX - x) - 20;
-            float gridH = panelH - 150;
+            // 모바일 그리드 시작 Y는 탭 2행 높이만큼 아래로, 하단은 보너스 요약(-76)·재화(-44)
+            // 라벨과 겹치지 않게 84px 여백을 남긴다.
+            int tabRows = mobile ? Mathf.CeilToInt(slots.Length / (float)tabsPerRow) : slots.Length;
+            float gridX = mobile ? x + 20f : tabX + tabW + 20f;
+            float gridY = mobile ? tabY + tabRows * (tabH + tabGap) + 12f : y + 70f;
+            float gridW = mobile ? panelW - 40f : panelW - (gridX - x) - 20f;
+            float gridH = mobile ? panelH - (gridY - y) - 84f : panelH - 150f;
 
             OutfitItem[] items = outfitManager.GetItemsForSlot(selectedSlot);
 
-            float cardW = 200f;
-            float cardH = 240f;
+            float cardW = mobile ? Mathf.Max(190f, (gridW - 38f) * 0.5f) : 200f;
+            float cardH = mobile ? 316f : 284f;
             float cardGap = 14f;
             int cols = Mathf.Max(1, Mathf.FloorToInt((gridW - 10) / (cardW + cardGap)));
             int rows = Mathf.CeilToInt((float)items.Length / cols);
@@ -400,7 +418,7 @@ namespace InsectGame.UI
                     GUI.DrawTexture(previewRect, UIHelper.GetCachedTex(new Color(0.15f, 0.15f, 0.15f, 0.5f)));
                     GUIStyle emptyStyle = UIHelper.CachedStyle("outfit_empty", () =>
                     {
-                        GUIStyle s = new GUIStyle(GUI.skin.label) { fontSize = 20, alignment = TextAnchor.MiddleCenter };
+                        GUIStyle s = new GUIStyle(GUI.skin.label) { fontSize = 24, alignment = TextAnchor.MiddleCenter };
                         s.normal.textColor = new Color(0.4f, 0.4f, 0.4f);
                         return s;
                     });
@@ -408,17 +426,17 @@ namespace InsectGame.UI
                 }
 
                 // 이름
-                Rect nameRect = new Rect(cx + 4, cy + 116, cardW - 8, 36);
+                Rect nameRect = new Rect(cx + 4, cy + 112, cardW - 8, 44);
                 GUI.Label(nameRect, item.displayName, labelStyle);
 
                 // 보너스 표시 — CachedStyle로 1회 캐싱 (카드 12개 × 30FPS = 360회/초 new GUIStyle 회귀 차단)
                 string bonusText = item.statBonus.GetPrimaryBonusText();
                 if (!string.IsNullOrEmpty(bonusText))
                 {
-                    Rect bonusRect = new Rect(cx + 4, cy + 152, cardW - 8, 22);
+                    Rect bonusRect = new Rect(cx + 4, cy + 158, cardW - 8, 24);
                     GUIStyle bigBonus = UIHelper.CachedStyle("outfit_big_bonus", () =>
                     {
-                        GUIStyle s = new GUIStyle(GUI.skin.label) { fontSize = 14, alignment = TextAnchor.MiddleCenter };
+                        GUIStyle s = new GUIStyle(GUI.skin.label) { fontSize = 17, alignment = TextAnchor.MiddleCenter };
                         s.normal.textColor = new Color(0.4f, 0.9f, 0.4f);
                         return s;
                     });
@@ -444,7 +462,8 @@ namespace InsectGame.UI
                 }
 
                 // 버튼 영역
-                Rect btnRect = new Rect(cx + 14, cy + cardH - 48, cardW - 28, 38);
+                float itemButtonH = mobile ? 56f : 42f;
+                Rect btnRect = new Rect(cx + 14, cy + cardH - itemButtonH - 12f, cardW - 28, itemButtonH);
 
                 if (owned)
                 {
@@ -487,11 +506,11 @@ namespace InsectGame.UI
                         GUI.backgroundColor = Color.white;
 
                         // 프리미엄 표시
-                        Rect premRect = new Rect(cx + 4, cy + 178, cardW - 8, 20);
+                        Rect premRect = new Rect(cx + 4, cy + 186, cardW - 8, 26);
                         GUIStyle premStyle = UIHelper.CachedStyle("outfit_prem", () =>
                         {
                             GUIStyle s = new GUIStyle(GUI.skin.label);
-                            s.fontSize = 14;
+                            s.fontSize = 17;
                             s.normal.textColor = new Color(0.9f, 0.7f, 1f);
                             s.alignment = TextAnchor.MiddleCenter;
                             return s;
@@ -515,11 +534,11 @@ namespace InsectGame.UI
                         GUI.Button(btnRect, "잠김", buttonStyle);
                         GUI.enabled = true;
 
-                        Rect hintRect = new Rect(cx + 4, cy + 178, cardW - 8, 24);
+                        Rect hintRect = new Rect(cx + 4, cy + 186, cardW - 8, 26);
                         GUIStyle hintStyle = UIHelper.CachedStyle("outfit_hint", () =>
                         {
                             GUIStyle s = new GUIStyle(GUI.skin.label);
-                            s.fontSize = 13;
+                            s.fontSize = 16;
                             s.normal.textColor = new Color(0.7f, 0.6f, 0.3f);
                             s.alignment = TextAnchor.MiddleCenter;
                             s.wordWrap = true;
@@ -548,7 +567,7 @@ namespace InsectGame.UI
                 tip = tip.TrimEnd('\n');
 
                 int lineCount = tip.Split('\n').Length;
-                float tipH = lineCount * 14 + 8;
+                float tipH = lineCount * 17 + 8;
                 Rect tipRect = new Rect(
                     hoveredCardScreenRect.x,
                     hoveredCardScreenRect.y - tipH - 4,
@@ -558,7 +577,7 @@ namespace InsectGame.UI
                 GUIStyle tipStyle = UIHelper.CachedStyle("outfit_tip", () =>
                 {
                     GUIStyle s = new GUIStyle(GUI.skin.label);
-                    s.fontSize = 10;
+                    s.fontSize = 12;
                     s.normal.textColor = new Color(0.7f, 0.95f, 0.7f);
                     s.alignment = TextAnchor.MiddleCenter;
                     s.wordWrap = true;
@@ -584,11 +603,11 @@ namespace InsectGame.UI
                     if (total.candyMultiplier > 0f) summary += $" 캔디+{total.candyMultiplier * 100f:0}%";
                     if (total.rareSpawnBonus > 0f) summary += $" 레어+{total.rareSpawnBonus * 100f:0}%";
 
-                    Rect summaryRect = new Rect(x + 24, y + panelH - 72, panelW - 48, 26);
+                    Rect summaryRect = new Rect(x + 24, y + panelH - 76, panelW - 48, 30);
                     GUIStyle summaryStyle = UIHelper.CachedStyle("outfit_summary", () =>
                     {
                         GUIStyle s = new GUIStyle(GUI.skin.label);
-                        s.fontSize = 16;
+                        s.fontSize = 19;
                         s.fontStyle = FontStyle.Bold;
                         s.normal.textColor = new Color(0.4f, 0.9f, 0.4f);
                         s.alignment = TextAnchor.MiddleLeft;
@@ -598,7 +617,7 @@ namespace InsectGame.UI
                 }
             }
 
-            Rect coinRect = new Rect(x + 24, y + panelH - 44, 800, 32);
+            Rect coinRect = new Rect(x + 24, y + panelH - 44, 820, 36);
             PlayerCurrencyWallet w = outfitManager.GetComponent<PlayerCurrencyWallet>() ??
                 FindFirstObjectByType<PlayerCurrencyWallet>();
             int coinCount = (w != null) ? w.Coins : 0;
@@ -607,6 +626,8 @@ namespace InsectGame.UI
 
             // GUI.color 복원
             GUI.color = Color.white;
+
+            UIScale.End();
         }
 
         private void CheckSetCompletion()

@@ -30,6 +30,16 @@ namespace InsectGame.Core
             if (dirty) PlayerProgressSaveService.Save(data);
         }
 
+        // 로그인/계정 전환 후 계정별 파일에서 재로드 — 부트 시 전역(UserId=null) 로드분 교정.
+        public void ReloadFromDisk()
+        {
+            data = PlayerProgressSaveService.Load();
+            if (data.level < 1) data.level = 1;
+            if (data.level > maxLevel) { data.level = maxLevel; data.currentXp = 0; }
+            if (data.currentXp < 0) data.currentXp = 0;
+            ProgressChanged?.Invoke(data);
+        }
+
         public void GainXp(int amount)
         {
             if (data == null || amount <= 0)

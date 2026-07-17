@@ -43,6 +43,7 @@ namespace InsectGame.Spawning
         public InsectData Data => data;
         public int Level => level;
         public bool IsShiny => shiny;
+        public bool CanBeEngaged => !forBattle && !engaged && alertState != 2 && !despawnedThisCycle;
         public SpawnPoint OwnerPoint => ownerPoint;
         public string RegionId => ownerPoint != null ? ownerPoint.regionId : string.Empty;
 
@@ -106,6 +107,16 @@ namespace InsectGame.Spawning
 
         private void ClearChildren()
         {
+            // 인스턴스 머티리얼 정리 — ApplyColorRaw가 파트마다 new Material을 .material로 할당하는데
+            // GameObject 파괴로는 머티리얼이 자동 해제되지 않아(수동 Destroy 필요) 풀 재사용/리스폰마다
+            // 수십 개씩 누수(장시간 탐험 시 모바일 OOM). .material 게터는 인스턴스만 반환/생성하므로
+            // 공유 에셋 머티리얼은 건드리지 않아 안전.
+            Renderer[] renderers = GetComponentsInChildren<Renderer>(true);
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                if (renderers[i] == null || renderers[i].transform == transform) continue;
+                if (renderers[i].sharedMaterial != null) DestroyImmediate(renderers[i].material);
+            }
             for (int i = transform.childCount - 1; i >= 0; i--)
                 DestroyImmediate(transform.GetChild(i).gameObject);
         }
@@ -286,6 +297,20 @@ namespace InsectGame.Spawning
         {
             engaged = value;
             if (value) { alertState = 1; patience = 2.6f; alertGraceTimer = 0.6f; }
+        }
+
+        public void ScareAway()
+        {
+            if (!CanBeEngaged) return;
+
+            UpdatePlayerTracking();
+            alertState = 2;
+            Vector3 away = cachedPlayer != null
+                ? transform.position - cachedPlayer.position
+                : transform.forward;
+            away.y = 0f;
+            fleeDir = away.sqrMagnitude > 0.01f ? away.normalized : Vector3.forward;
+            fleeTimer = 1.1f;
         }
 
         // 플레이어 위치/속도 추적 — 프레임당 1회만 계산(전 곤충 공유).

@@ -9,9 +9,16 @@ namespace InsectGame.Core
     /// </summary>
     public static class RegionDefinitions
     {
+        /// <summary>
+        /// 월드 좌표 스케일 — CreateAll()이 전 리전/서브에리어의 center(XZ)·radius에 일괄 적용.
+        /// 맵 크기 조정은 이 상수 하나만 변경 (아래 리터럴은 스케일 1.0 기준 원본 배치).
+        /// center와 radius를 같은 배율로 키워야 리전 간 겹침/게이트웨이 상대 기하가 보존된다.
+        /// </summary>
+        public const float WorldScale = 1.5f;
+
         public static RegionData[] CreateAll()
         {
-            return new RegionData[]
+            RegionData[] regions = new RegionData[]
             {
                 // ── 초원: Lv.1~10, 입문 지역, Common/Uncommon 위주 ──
                 new RegionData
@@ -27,7 +34,9 @@ namespace InsectGame.Core
                     {
                         "beetle_basic", "bee_worker", "cricket_field", "ant_soldier",
                         "grasshopper_green", "ladybug_seven", "caterpillar_green", "aphid_colony",
-                        "moth_brown", "beetle_dung"
+                        "moth_brown", "beetle_dung",
+                        // 확장 64종 — 초원 신규 4종 (C/U)
+                        "bee_bumble", "grasshopper_brown", "ladybug_harlequin", "antlion_pit"
                     },
                     guardianInsectId = "mantis_green",
                     guardianDisplayName = "초원의 수호자 사마귀",
@@ -73,7 +82,11 @@ namespace InsectGame.Core
                     insectIds = new[]
                     {
                         "dragonfly_lake", "water_strider_pond", "fly_house",
-                        "dragonfly_emperor"
+                        "dragonfly_emperor",
+                        // 확장 64종 — 연못 신규 9종 (C4/U3/R1/E1) + 습지와 공유 1종(fly_crane)
+                        "mosquito_tiger", "fly_hover", "water_strider_stream", "diving_beetle_striped",
+                        "damselfly_red", "dragonfly_scarlet", "diving_beetle_great",
+                        "dragonfly_jade", "firefly_marsh", "fly_crane"
                     },
                     guardianInsectId = "dragonfly_emperor",
                     guardianDisplayName = "연못의 파수꾼 왕잠자리",
@@ -87,7 +100,7 @@ namespace InsectGame.Core
                             description = "연못 깊숙한 곳 — 수중 곤충만이 살아남을 수 있습니다.",
                             centerPosition = new Vector3(105f, 0f, 25f),
                             radius = 10f,
-                            exclusiveInsectIds = new[] { "diving_beetle_deep", "diving_beetle_small" },
+                            exclusiveInsectIds = new[] { "diving_beetle_deep", "diving_beetle_small", "diving_beetle_king" },
                             minLevel = 8,
                             maxLevel = 16,
                             environmentType = "underwater"
@@ -120,7 +133,10 @@ namespace InsectGame.Core
                     {
                         "stag_beetle", "rhinoceros_beetle", "cicada_summer", "moth_night",
                         "mantis_green", "longhorn_beetle", "stick_insect_long", "beetle_longhorn_rosalia",
-                        "hornet_asian"
+                        "hornet_asian",
+                        // 확장 64종 — 숲 신규 5종 (U2/R2/E1)
+                        "beetle_longhorn_oak", "cricket_tree", "stag_beetle_saw",
+                        "mantis_bark", "rhinoceros_beetle_titan"
                     },
                     guardianInsectId = "beetle_hercules",
                     guardianDisplayName = "숲의 문지기 헤라클레스",
@@ -134,7 +150,7 @@ namespace InsectGame.Core
                             description = "빛이 닿지 않는 깊은 숲 — 유령 곤충과 거대 나방이 출현합니다.",
                             centerPosition = new Vector3(-90f, 0f, 95f),
                             radius = 14f,
-                            exclusiveInsectIds = new[] { "mantis_ghost", "leaf_insect_phantom", "atlas_moth_giant" },
+                            exclusiveInsectIds = new[] { "mantis_ghost", "leaf_insect_phantom", "atlas_moth_giant", "mantis_dead_leaf" },
                             minLevel = 18,
                             maxLevel = 28,
                             environmentType = "deep_forest"
@@ -166,7 +182,12 @@ namespace InsectGame.Core
                     insectIds = new[]
                     {
                         "centipede_common", "earwig_common", "mosquito_common", "pill_bug_garden",
-                        "damselfly_blue", "firefly_blue", "cicada_evening"
+                        "damselfly_blue", "firefly_blue", "cicada_evening",
+                        // 확장 64종 — 습지 신규 12종 (C5/U3/R2/E2) + 연못과 공유 1종(mosquito_tiger)
+                        "mosquito_swamp", "centipede_red", "earwig_swamp", "pill_bug_mud",
+                        "fly_crane", "dragonfly_swamp_hawker", "firefly_swamp", "spider_marsh",
+                        "mantis_swamp", "centipede_venom", "wasp_night", "spider_bog_widow",
+                        "mosquito_tiger"
                     },
                     guardianInsectId = "mantis_ghost",
                     guardianDisplayName = "습지의 유령 사마귀",
@@ -180,7 +201,7 @@ namespace InsectGame.Core
                             description = "짙은 안개가 시야를 가리는 곳 — 유령 곤충이 출몰합니다.",
                             centerPosition = new Vector3(-25f, 0f, -70f),
                             radius = 12f,
-                            exclusiveInsectIds = new[] { "mantis_ghost", "leaf_insect_phantom" },
+                            exclusiveInsectIds = new[] { "mantis_ghost", "leaf_insect_phantom", "mantis_mist" },
                             minLevel = 24,
                             maxLevel = 32,
                             environmentType = "fog"
@@ -212,7 +233,12 @@ namespace InsectGame.Core
                     insectIds = new[]
                     {
                         "hornet_asian", "beetle_longhorn_rosalia", "stick_insect_long",
-                        "katydid_leaf", "beetle_click", "spider_garden"
+                        "katydid_leaf", "beetle_click", "spider_garden",
+                        // 확장 64종 — 산 신규 12종 (C4/U3/R3/E1/L1)
+                        "grasshopper_rock", "cricket_stone", "pill_bug_rock", "ladybug_alpine",
+                        "beetle_longhorn_alpine", "cicada_mountain", "caterpillar_pine",
+                        "stag_beetle_mountain", "butterfly_apollo", "spider_cliff",
+                        "stag_beetle_iron", "cicada_ancient"
                     },
                     guardianInsectId = "atlas_moth_giant",
                     guardianDisplayName = "산의 거신 아틀라스나방",
@@ -226,7 +252,7 @@ namespace InsectGame.Core
                             description = "바람이 휘몰아치는 정상 — 전설급 곤충이 날아다닙니다.",
                             centerPosition = new Vector3(-130f, 0f, -20f),
                             radius = 12f,
-                            exclusiveInsectIds = new[] { "dragonfly_ancient", "butterfly_morpho" },
+                            exclusiveInsectIds = new[] { "dragonfly_ancient", "butterfly_morpho", "moth_comet" },
                             minLevel = 34,
                             maxLevel = 42,
                             environmentType = "peak"
@@ -259,11 +285,16 @@ namespace InsectGame.Core
                     {
                         "butterfly_azure", "butterfly_monarch", "butterfly_swallowtail",
                         "luna_moth_silver", "jewel_beetle_gold", "firefly_glow",
-                        "wasp_paper", "butterfly_cabbage"
+                        "wasp_paper", "butterfly_cabbage",
+                        // 확장 64종 — 꽃밭 신규 6종 (C1/U2/R2/E1)
+                        "aphid_rose", "bee_carpenter", "butterfly_peacock",
+                        "butterfly_glasswing", "moth_hummingbird", "bee_queen"
                     },
                     guardianInsectId = "butterfly_swallowtail",
                     guardianDisplayName = "꽃밭의 문지기 호랑나비",
-                    guardianLevel = 13,
+                    // 입장요구(18)·필드 레벨 대비 게이트가 되도록 상향. 옛 13은 입장레벨보다 낮아 역전(무의미한 게이트).
+                    // 이웃 진행(forest req12/guard28, swamp req20/guard37) 사이에 맞춰 33.
+                    guardianLevel = 33,
                     subAreas = new SubAreaData[]
                     {
                         new SubAreaData
@@ -305,7 +336,11 @@ namespace InsectGame.Core
                     insectIds = new[]
                     {
                         "mantis_orchid", "butterfly_alexandras", "beetle_golden_stag",
-                        "dragonfly_ancient", "butterfly_morpho"
+                        "dragonfly_ancient", "butterfly_morpho",
+                        // 확장 64종 — 고대 유적 신규 11종 (U1/R4/E3/L3)
+                        "cricket_tomb", "scarab_relic", "mantis_obsidian", "spider_tomb",
+                        "centipede_ruin", "jewel_beetle_azure", "moth_shadow", "wasp_gold",
+                        "scarab_pharaoh", "butterfly_midnight", "hornet_emperor"
                     },
                     guardianInsectId = null,
                     guardianDisplayName = null,
@@ -319,7 +354,7 @@ namespace InsectGame.Core
                             description = "유적 깊숙한 신전 — 필드 전설 곤충만이 출현합니다.",
                             centerPosition = new Vector3(5f, 0f, 150f),
                             radius = 12f,
-                            exclusiveInsectIds = new[] { "mantis_orchid", "butterfly_alexandras" },
+                            exclusiveInsectIds = new[] { "mantis_orchid", "butterfly_alexandras", "mantis_gold_temple" },
                             minLevel = 40,
                             maxLevel = 50,
                             environmentType = "temple"
@@ -339,6 +374,32 @@ namespace InsectGame.Core
                     }
                 }
             };
+
+            ApplyWorldScale(regions);
+            return regions;
+        }
+
+        private static void ApplyWorldScale(RegionData[] regions)
+        {
+            if (Mathf.Approximately(WorldScale, 1f)) return;
+
+            foreach (var region in regions)
+            {
+                region.centerPosition = ScaleXZ(region.centerPosition);
+                region.radius *= WorldScale;
+                if (region.subAreas == null) continue;
+
+                foreach (var sub in region.subAreas)
+                {
+                    sub.centerPosition = ScaleXZ(sub.centerPosition);
+                    sub.radius *= WorldScale;
+                }
+            }
+        }
+
+        private static Vector3 ScaleXZ(Vector3 p)
+        {
+            return new Vector3(p.x * WorldScale, p.y, p.z * WorldScale);
         }
     }
 }

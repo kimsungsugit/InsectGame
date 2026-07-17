@@ -164,7 +164,7 @@ namespace InsectGame.Core
 
         private string GetPath()
         {
-            return System.IO.Path.Combine(Application.persistentDataPath, GameConstants.SaveFiles.BattleTeam);
+            return SaveScope.FilePath(GameConstants.SaveFiles.BattleTeam);
         }
     }
 }

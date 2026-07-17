@@ -34,6 +34,9 @@ namespace InsectGame.Core
         public int rewardExp = 0;
         public string rewardItemId;
         public int rewardItemCount = 0;
+        public string rewardInsectId;
+        public string rewardInsectDisplayName;
+        public int rewardInsectLevel = 1;
         public string prerequisiteQuestId;
     }
 }

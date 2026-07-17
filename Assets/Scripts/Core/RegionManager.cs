@@ -24,8 +24,8 @@ namespace InsectGame.Core
         private float lastExitedAtTime;
         private const float SubAreaReentryCooldown = 1.5f;
 
-        private const string UnlockKey = "InsectGame.UnlockedRegions";
-        private const string GuardianKey = "InsectGame.DefeatedGuardians";
+        private static string UnlockKey => SaveScope.PrefsKey("InsectGame.UnlockedRegions");
+        private static string GuardianKey => SaveScope.PrefsKey("InsectGame.DefeatedGuardians");
 
         public RegionData[] Regions => regions;
         public RegionData CurrentRegion => currentRegion;

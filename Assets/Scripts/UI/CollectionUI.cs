@@ -95,47 +95,47 @@ namespace InsectGame.UI
         private void InitDetailStyles()
         {
             if (detailStylesReady) return;
-            panelTitleStyle = new GUIStyle(GUI.skin.label) { fontSize = 40, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            panelTitleStyle = new GUIStyle(GUI.skin.label) { fontSize = 48, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             panelTitleStyle.normal.textColor = Color.white;
-            panelCloseStyle = new GUIStyle(GUI.skin.button) { fontSize = 34, fontStyle = FontStyle.Bold };
-            panelTabActiveStyle = new GUIStyle(GUI.skin.button) { fontSize = 30, fontStyle = FontStyle.Bold };
-            panelTabInactiveStyle = new GUIStyle(GUI.skin.button) { fontSize = 30, fontStyle = FontStyle.Normal };
-            detailBackStyle = new GUIStyle(GUI.skin.button) { fontSize = 28, fontStyle = FontStyle.Bold };
-            detailNameStyle = new GUIStyle(GUI.skin.label) { fontSize = 42, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            detailRarityStyle = new GUIStyle(GUI.skin.label) { fontSize = 28, alignment = TextAnchor.MiddleCenter };
-            detailGradeDispStyle = new GUIStyle(GUI.skin.label) { fontSize = 56, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            detailGradePercStyle = new GUIStyle(GUI.skin.label) { fontSize = 28, alignment = TextAnchor.MiddleCenter };
-            detailDescStyle = new GUIStyle(GUI.skin.label) { fontSize = 26, wordWrap = true };
+            panelCloseStyle = new GUIStyle(GUI.skin.button) { fontSize = 40, fontStyle = FontStyle.Bold };
+            panelTabActiveStyle = new GUIStyle(GUI.skin.button) { fontSize = 34, fontStyle = FontStyle.Bold };
+            panelTabInactiveStyle = new GUIStyle(GUI.skin.button) { fontSize = 34, fontStyle = FontStyle.Normal };
+            detailBackStyle = new GUIStyle(GUI.skin.button) { fontSize = 32, fontStyle = FontStyle.Bold };
+            detailNameStyle = new GUIStyle(GUI.skin.label) { fontSize = 48, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            detailRarityStyle = new GUIStyle(GUI.skin.label) { fontSize = 34, alignment = TextAnchor.MiddleCenter };
+            detailGradeDispStyle = new GUIStyle(GUI.skin.label) { fontSize = 62, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            detailGradePercStyle = new GUIStyle(GUI.skin.label) { fontSize = 32, alignment = TextAnchor.MiddleCenter };
+            detailDescStyle = new GUIStyle(GUI.skin.label) { fontSize = 32, wordWrap = true };
             detailDescStyle.normal.textColor = DescGrayCol;
-            detailHintStyle = new GUIStyle(GUI.skin.label) { fontSize = 26, fontStyle = FontStyle.Italic };
+            detailHintStyle = new GUIStyle(GUI.skin.label) { fontSize = 32, fontStyle = FontStyle.Italic };
             detailHintStyle.normal.textColor = HintGreenCol;
-            statsLabelStyle = new GUIStyle(GUI.skin.label) { fontSize = 32 };
+            statsLabelStyle = new GUIStyle(GUI.skin.label) { fontSize = 38 };
             statsLabelStyle.normal.textColor = StatsLabelCol;
-            statsValueStyle = new GUIStyle(GUI.skin.label) { fontSize = 32, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleRight };
+            statsValueStyle = new GUIStyle(GUI.skin.label) { fontSize = 38, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleRight };
             statsValueStyle.normal.textColor = Color.white;
             statsCandyValStyle = new GUIStyle(statsValueStyle);
             statsCandyValStyle.normal.textColor = CandyValCol;
-            luLvLabelStyle = new GUIStyle(GUI.skin.label) { fontSize = 16, fontStyle = FontStyle.Bold };
+            luLvLabelStyle = new GUIStyle(GUI.skin.label) { fontSize = 21, fontStyle = FontStyle.Bold };
             luLvLabelStyle.normal.textColor = LuLabelBlueCol;
-            luLvNumStyle = new GUIStyle(GUI.skin.label) { fontSize = 36, fontStyle = FontStyle.Bold };
+            luLvNumStyle = new GUIStyle(GUI.skin.label) { fontSize = 42, fontStyle = FontStyle.Bold };
             luLvNumStyle.normal.textColor = Color.white;
-            luXpLabelStyle = new GUIStyle(GUI.skin.label) { fontSize = 14 };
+            luXpLabelStyle = new GUIStyle(GUI.skin.label) { fontSize = 18 };
             luXpLabelStyle.normal.textColor = LuXpLabelCol;
-            luXpValStyle = new GUIStyle(GUI.skin.label) { fontSize = 12, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            luXpValStyle = new GUIStyle(GUI.skin.label) { fontSize = 17, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             luXpValStyle.normal.textColor = LuXpValCol;
-            luMaxLvStyle = new GUIStyle(GUI.skin.label) { fontSize = 13, alignment = TextAnchor.MiddleRight };
+            luMaxLvStyle = new GUIStyle(GUI.skin.label) { fontSize = 18, alignment = TextAnchor.MiddleRight };
             luMaxLvStyle.normal.textColor = LuMaxLvCol;
-            luBtnStyle = new GUIStyle(GUI.skin.button) { fontSize = 22, fontStyle = FontStyle.Bold };
-            luCandyInfoStyle = new GUIStyle(GUI.skin.label) { fontSize = 14, alignment = TextAnchor.MiddleCenter };
-            luMsgStyle = new GUIStyle(GUI.skin.label) { fontSize = 24, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            barLabelStyle = new GUIStyle(GUI.skin.label) { fontSize = 28, fontStyle = FontStyle.Bold };
+            luBtnStyle = new GUIStyle(GUI.skin.button) { fontSize = 28, fontStyle = FontStyle.Bold };
+            luCandyInfoStyle = new GUIStyle(GUI.skin.label) { fontSize = 18, alignment = TextAnchor.MiddleCenter };
+            luMsgStyle = new GUIStyle(GUI.skin.label) { fontSize = 30, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            barLabelStyle = new GUIStyle(GUI.skin.label) { fontSize = 34, fontStyle = FontStyle.Bold };
             barLabelStyle.normal.textColor = BarLabelGrayCol;
-            barIvStyle = new GUIStyle(GUI.skin.label) { fontSize = 26, fontStyle = FontStyle.Bold };
-            barTotalStyle = new GUIStyle(GUI.skin.label) { fontSize = 26, alignment = TextAnchor.MiddleRight };
+            barIvStyle = new GUIStyle(GUI.skin.label) { fontSize = 32, fontStyle = FontStyle.Bold };
+            barTotalStyle = new GUIStyle(GUI.skin.label) { fontSize = 32, alignment = TextAnchor.MiddleRight };
             barTotalStyle.normal.textColor = BarTotalLightCol;
-            barIvLabelStyle = new GUIStyle(GUI.skin.label) { fontSize = 22 };
+            barIvLabelStyle = new GUIStyle(GUI.skin.label) { fontSize = 27 };
             barIvLabelStyle.normal.textColor = BarIvLabelGrayCol;
-            centeredLabelStyle = new GUIStyle(GUI.skin.label) { fontSize = 22, alignment = TextAnchor.MiddleCenter, wordWrap = true };
+            centeredLabelStyle = new GUIStyle(GUI.skin.label) { fontSize = 28, alignment = TextAnchor.MiddleCenter, wordWrap = true };
             detailStylesReady = true;
         }
 
@@ -146,13 +146,13 @@ namespace InsectGame.UI
         private void InitItemStyles()
         {
             if (itemStylesReady) return;
-            itemNameStyle = new GUIStyle(GUI.skin.label) { fontSize = 32, fontStyle = FontStyle.Bold };
-            itemInfoStyle = new GUIStyle(GUI.skin.label) { fontSize = 26 };
+            itemNameStyle = new GUIStyle(GUI.skin.label) { fontSize = 38, fontStyle = FontStyle.Bold };
+            itemInfoStyle = new GUIStyle(GUI.skin.label) { fontSize = 32 };
             itemInfoStyle.normal.textColor = ItemInfoGrayCol;
-            itemGradeStyle = new GUIStyle(GUI.skin.label) { fontSize = 40, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleRight };
-            itemStatMiniStyle = new GUIStyle(GUI.skin.label) { fontSize = 22, alignment = TextAnchor.MiddleRight };
+            itemGradeStyle = new GUIStyle(GUI.skin.label) { fontSize = 46, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleRight };
+            itemStatMiniStyle = new GUIStyle(GUI.skin.label) { fontSize = 27, alignment = TextAnchor.MiddleRight };
             itemStatMiniStyle.normal.textColor = ItemStatGrayCol;
-            itemViewStyle = new GUIStyle(GUI.skin.button) { fontSize = 26 };
+            itemViewStyle = new GUIStyle(GUI.skin.button) { fontSize = 31 };
             itemStylesReady = true;
         }
 
@@ -225,8 +225,8 @@ namespace InsectGame.UI
         private void DrawPanel()
         {
             InitDetailStyles();
-            float panelW = 900f;
-            float panelH = 820f;
+            float panelW = 1000f;
+            float panelH = 1000f;
             float panelX = UIScale.VirtualScreenWidth - panelW - 24f;
             float panelY = 24f;
 
@@ -234,31 +234,31 @@ namespace InsectGame.UI
             GUI.DrawTexture(new Rect(panelX, panelY, panelW, panelH), Texture2D.whiteTexture);
 
             GUI.color = PanelHeaderCol;
-            GUI.DrawTexture(new Rect(panelX, panelY, panelW, 72), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(panelX, panelY, panelW, 88), Texture2D.whiteTexture);
 
             GUI.color = Color.white;
-            GUI.Label(new Rect(panelX, panelY + 12, panelW - 70, 50), "컬렉션", panelTitleStyle);
+            GUI.Label(new Rect(panelX, panelY + 16, panelW - 84, 58), "컬렉션", panelTitleStyle);
 
-            if (GUI.Button(new Rect(panelX + panelW - 60, panelY + 12, 50, 50), "X", panelCloseStyle))
+            if (GUI.Button(new Rect(panelX + panelW - 72, panelY + 16, 56, 56), "X", panelCloseStyle))
             {
                 CloseModal();
             }
 
-            float tabY = panelY + 80;
+            float tabY = panelY + 98;
             for (int i = 0; i < tabNames.Length; i++)
             {
-                float tabX = panelX + i * 260 + 20;
+                float tabX = panelX + i * 300 + 24;
                 bool active = selectedTab == i;
                 GUI.backgroundColor = active ? TabActiveBgCol : TabInactiveBgCol;
-                if (GUI.Button(new Rect(tabX, tabY, 240, 56), tabNames[i], active ? panelTabActiveStyle : panelTabInactiveStyle))
+                if (GUI.Button(new Rect(tabX, tabY, 280, 64), tabNames[i], active ? panelTabActiveStyle : panelTabInactiveStyle))
                     selectedTab = i;
             }
             GUI.backgroundColor = Color.white;
             GUI.color = Color.white;
 
-            float contentY = tabY + 66;
-            float contentH = panelH - (contentY - panelY) - 14;
-            Rect contentRect = new Rect(panelX + 16, contentY, panelW - 32, contentH);
+            float contentY = tabY + 78;
+            float contentH = panelH - (contentY - panelY) - 16;
+            Rect contentRect = new Rect(panelX + 18, contentY, panelW - 36, contentH);
 
             if (selectedTab == 0)
                 DrawInsectList(contentRect);
@@ -277,13 +277,15 @@ namespace InsectGame.UI
             List<PlayerInsectData> owned = GetCachedOwned();
             if (owned == null || owned.Count == 0)
             {
-                DrawCenteredLabel(area, "아직 포획한 곤충이 없습니다!\n곤충에 가까이 가서 E키를 누르세요", NoInsectCol);
+                DrawCenteredLabel(area, UIScale.IsMobileLayout
+                    ? "아직 포획한 곤충이 없습니다!\n곤충에 가까이 가서 포획 버튼을 누르세요"
+                    : "아직 포획한 곤충이 없습니다!\n곤충에 가까이 가서 E키를 누르세요", NoInsectCol);
                 return;
             }
 
             InitItemStyles();
 
-            float itemH = 130f;
+            float itemH = 168f;
             float totalH = owned.Count * itemH;
             Rect viewRect = new Rect(0, 0, area.width - 24, totalH);
 
@@ -311,31 +313,32 @@ namespace InsectGame.UI
             UIHelper.DrawRarityBorder(rect, rarityTier, Time.time);
 
             if (data != null)
-                CapturePopupUI.DrawTypedInsectPortrait(rect.x + 60, rect.y + rect.height / 2f + 2, data.insectId, data.rarity, 1f);
+                CapturePopupUI.DrawTypedInsectPortrait(rect.x + 72, rect.y + rect.height / 2f + 2, data.insectId, data.rarity, 1f);
 
             string displayName = GetOwnedDisplayName(pid, data);
             // 캐시 스타일 + textColor만 동적 갱신 (BattleScreenUI 패턴, owned.Count×5 GUIStyle/프레임 회피).
             itemNameStyle.normal.textColor = rarityColor;
             GUI.color = Color.white;
-            GUI.Label(new Rect(rect.x + 110, rect.y + 10, rect.width - 260, 40), displayName, itemNameStyle);
+            GUI.Label(new Rect(rect.x + 138, rect.y + 12, rect.width - 320, 48), displayName, itemNameStyle);
 
             string rarityStr = data != null ? data.rarity.ToString() : "?";
-            GUI.Label(new Rect(rect.x + 110, rect.y + 52, rect.width - 140, 32),
+            GUI.Label(new Rect(rect.x + 138, rect.y + 66, rect.width - 320, 40),
                 $"Lv.{pid.level}  |  {rarityStr}  |  IV: {pid.IVPercent * 100:0}%", itemInfoStyle);
 
             string gradeStr = CapturePopupUI.GetGradeLabel(pid.Grade);
             Color gradeCol = UITheme.Instance.GetGradeColor(pid.Grade);
             itemGradeStyle.normal.textColor = gradeCol;
-            GUI.Label(new Rect(rect.x + rect.width - 140, rect.y + 8, 120, 42), gradeStr, itemGradeStyle);
+            GUI.Label(new Rect(rect.x + rect.width - 170, rect.y + 12, 150, 54), gradeStr, itemGradeStyle);
 
             if (data != null)
             {
-                GUI.Label(new Rect(rect.x + rect.width - 200, rect.y + 50, 180, 28),
+                GUI.Label(new Rect(rect.x + 138, rect.y + 112, rect.width - 320, 34),
                     $"HP:{pid.ivHp} ATK:{pid.ivAtk} DEF:{pid.ivDef}", itemStatMiniStyle);
             }
 
             GUI.backgroundColor = ItemViewBlueCol;
-            if (GUI.Button(new Rect(rect.x + rect.width - 130, rect.y + rect.height - 50, 120, 44), "상세", itemViewStyle))
+            float detailButtonH = UIScale.IsMobileLayout ? 64f : 52f;
+            if (GUI.Button(new Rect(rect.x + rect.width - 172f, rect.y + rect.height - detailButtonH - 8f, 156f, detailButtonH), "상세", itemViewStyle))
                 clicked = true;
             GUI.backgroundColor = Color.white;
 
@@ -353,8 +356,8 @@ namespace InsectGame.UI
 
             InitDetailStyles();
 
-            float panelW = 900f;
-            float panelH = 820f;
+            float panelW = 1000f;
+            float panelH = 1000f;
             float panelX = UIScale.VirtualScreenWidth - panelW - 24f;
             float panelY = 24f;
 
@@ -370,23 +373,23 @@ namespace InsectGame.UI
             if (detailRarityTier >= 3)
                 UIHelper.DrawRarityGlow(detailRect, rarityCol, detailRarityTier >= 4 ? 0.6f : 0.3f, Time.time);
 
-            if (GUI.Button(new Rect(panelX + 14, panelY + 14, 130, 50), "< 뒤로", detailBackStyle))
+            if (GUI.Button(new Rect(panelX + 16, panelY + 16, 150, 60), "< 뒤로", detailBackStyle))
                 selectedInstanceId = null;
 
-            if (GUI.Button(new Rect(panelX + panelW - 60, panelY + 14, 50, 50), "X", panelCloseStyle))
+            if (GUI.Button(new Rect(panelX + panelW - 72, panelY + 16, 56, 56), "X", panelCloseStyle))
             {
                 CloseModal();
             }
 
             float portraitCx = panelX + panelW / 2f;
-            float portraitCy = panelY + 140;
+            float portraitCy = panelY + 168;
 
             // 동적 색상(rarityCol scaled)은 struct stack 할당, GC 영향 없음 (BattleArenaController 판단 일관).
             GUI.color = new Color(rarityCol.r * 0.15f, rarityCol.g * 0.15f, rarityCol.b * 0.15f, 0.6f);
-            GUI.DrawTexture(new Rect(portraitCx - 80, portraitCy - 80, 160, 160), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(portraitCx - 90, portraitCy - 90, 180, 180), Texture2D.whiteTexture);
 
             GUI.color = new Color(rarityCol.r, rarityCol.g, rarityCol.b, 0.2f);
-            GUI.DrawTexture(new Rect(portraitCx - 75, portraitCy - 75, 150, 150), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(portraitCx - 84, portraitCy - 84, 168, 168), Texture2D.whiteTexture);
 
             InsectRarity rarity = data != null ? data.rarity : InsectRarity.Common;
             string insId = data != null ? data.insectId : pid.insectId;
@@ -396,54 +399,58 @@ namespace InsectGame.UI
             // 캐시 스타일 + textColor만 동적 갱신.
             detailNameStyle.normal.textColor = rarityCol;
             GUI.color = Color.white;
-            GUI.Label(new Rect(panelX, panelY + 230, panelW, 50), displayName, detailNameStyle);
+            GUI.Label(new Rect(panelX, panelY + 278, panelW, 60), displayName, detailNameStyle);
 
             detailRarityStyle.normal.textColor = new Color(rarityCol.r, rarityCol.g, rarityCol.b, 0.8f);
-            GUI.Label(new Rect(panelX, panelY + 280, panelW, 34),
-                data != null ? data.rarity.ToString() : "Unknown", detailRarityStyle);
+            string elementLabel = data != null
+                ? InsectTypeChart.GetDisplayName(data.primaryType)
+                    + (data.secondaryType != InsectElement.None ? "/" + InsectTypeChart.GetDisplayName(data.secondaryType) : "")
+                : "타입 미상";
+            GUI.Label(new Rect(panelX, panelY + 340, panelW, 42),
+                data != null ? $"{data.rarity} · {elementLabel} 타입" : "Unknown", detailRarityStyle);
 
             Color gradeCol = UITheme.Instance.GetGradeColor(pid.Grade);
             string gradeLabel = CapturePopupUI.GetGradeLabel(pid.Grade);
 
             detailGradeDispStyle.normal.textColor = gradeCol;
-            GUI.Label(new Rect(panelX + panelW - 130, panelY + 224, 100, 68), gradeLabel, detailGradeDispStyle);
+            GUI.Label(new Rect(panelX + panelW - 172, panelY + 268, 150, 82), gradeLabel, detailGradeDispStyle);
 
             detailGradePercStyle.normal.textColor = new Color(gradeCol.r, gradeCol.g, gradeCol.b, 0.7f);
-            GUI.Label(new Rect(panelX + panelW - 130, panelY + 290, 100, 30),
+            GUI.Label(new Rect(panelX + panelW - 172, panelY + 348, 150, 36),
                 $"{pid.IVPercent * 100:0}%", detailGradePercStyle);
 
-            float statY = panelY + 330;
+            float statY = panelY + 398;
 
-            DrawLevelUpSection(panelX + 30, statY, panelW - 60, pid, data);
+            DrawLevelUpSection(panelX + 34, statY, panelW - 68, pid, data);
 
-            float statBlockY = statY + 130;
-            float statBlockH = 210f;
+            float statBlockY = statY + 168;
+            float statBlockH = 264f;
             GUI.color = StatBlockBgCol;
-            GUI.DrawTexture(new Rect(panelX + 30, statBlockY, panelW - 60, statBlockH), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(panelX + 34, statBlockY, panelW - 68, statBlockH), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
-            float sx = panelX + 46;
-            float sw = panelW - 92;
+            float sx = panelX + 52;
+            float sw = panelW - 104;
 
-            float barY = statBlockY + 16;
+            float barY = statBlockY + 18;
             int bHp = data != null ? data.baseHp : 50;
             int bAtk = data != null ? data.baseAtk : 20;
             int bDef = data != null ? data.baseDef : 15;
 
             DrawStatBar(sx, barY, sw, "HP", pid.ivHp, pid.GetTotalHp(bHp), bHp);
-            DrawStatBar(sx, barY + 60, sw, "ATK", pid.ivAtk, pid.GetTotalAtk(bAtk), bAtk);
-            DrawStatBar(sx, barY + 120, sw, "DEF", pid.ivDef, pid.GetTotalDef(bDef), bDef);
+            DrawStatBar(sx, barY + 78, sw, "ATK", pid.ivAtk, pid.GetTotalAtk(bAtk), bAtk);
+            DrawStatBar(sx, barY + 156, sw, "DEF", pid.ivDef, pid.GetTotalDef(bDef), bDef);
 
             if (data != null && !string.IsNullOrEmpty(data.description))
             {
-                float descY = statBlockY + statBlockH + 14;
-                GUI.Label(new Rect(panelX + 36, descY, panelW - 72, 80), data.description, detailDescStyle);
+                float descY = statBlockY + statBlockH + 16;
+                GUI.Label(new Rect(panelX + 40, descY, panelW - 80, 84), data.description, detailDescStyle);
             }
 
             if (data != null && !string.IsNullOrEmpty(data.habitatHint))
             {
-                float hintY = statBlockY + statBlockH + 86;
-                GUI.Label(new Rect(panelX + 36, hintY, panelW - 72, 32),
+                float hintY = statBlockY + statBlockH + 108;
+                GUI.Label(new Rect(panelX + 40, hintY, panelW - 80, 40),
                     $"서식지: {data.habitatHint}", detailHintStyle);
             }
         }
@@ -453,7 +460,7 @@ namespace InsectGame.UI
             InitDetailStyles();
 
             float y = area.y + 20;
-            float rowH = 60f;
+            float rowH = 74f;
             float lw = area.width * 0.6f;
             float vw = area.width * 0.35f;
 
@@ -492,13 +499,13 @@ namespace InsectGame.UI
         {
             InitDetailStyles();
             GUI.color = LuBgCol;
-            GUI.DrawTexture(new Rect(x, y, w, 120), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(x, y, w, 150), Texture2D.whiteTexture);
             GUI.color = LuAccentBlueCol;
-            GUI.DrawTexture(new Rect(x, y, w, 3), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(x, y, w, 4), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
-            GUI.Label(new Rect(x + 14, y + 8, 100, 20), "LEVEL", luLvLabelStyle);
-            GUI.Label(new Rect(x + 14, y + 28, 80, 44), pid.level.ToString(), luLvNumStyle);
+            GUI.Label(new Rect(x + 16, y + 10, 130, 26), "LEVEL", luLvLabelStyle);
+            GUI.Label(new Rect(x + 16, y + 38, 104, 54), pid.level.ToString(), luLvNumStyle);
 
             int maxLv = insectCollection != null ? insectCollection.GetMaxLevel(pid.insectId) : 50;
             int candyCost = insectCollection != null ? insectCollection.GetCandyCostForLevel(pid.insectId, pid.level) : (4 + (pid.level - 1) * 2);
@@ -506,12 +513,12 @@ namespace InsectGame.UI
             int xpNeeded = insectCollection != null ? insectCollection.GetXpToNextLevel(pid.insectId, pid.level) : (20 + (pid.level - 1) * 8);
             float xpRatio = xpNeeded > 0 ? Mathf.Clamp01((float)pid.currentXp / xpNeeded) : 1f;
 
-            float barX = x + 100;
-            float barW = w - 280;
-            float barH = 18f;
-            float barY2 = y + 34;
+            float barX = x + 128;
+            float barW = w - 350;
+            float barH = 24f;
+            float barY2 = y + 46;
 
-            GUI.Label(new Rect(barX, y + 14, barW, 18), isMaxLevel ? "MAX LEVEL" : "경험치 (EXP)", luXpLabelStyle);
+            GUI.Label(new Rect(barX, y + 16, barW, 24), isMaxLevel ? "MAX LEVEL" : "경험치 (EXP)", luXpLabelStyle);
 
             GUI.color = LuBarBgCol;
             GUI.DrawTexture(new Rect(barX, barY2, barW, barH), Texture2D.whiteTexture);
@@ -528,12 +535,12 @@ namespace InsectGame.UI
             GUI.Label(new Rect(barX, barY2, barW, barH),
                 isMaxLevel ? "MAX" : $"{pid.currentXp} / {xpNeeded}", luXpValStyle);
 
-            GUI.Label(new Rect(barX, barY2 + barH + 2, barW, 16), $"최대 Lv.{maxLv}", luMaxLvStyle);
+            GUI.Label(new Rect(barX, barY2 + barH + 4, barW, 24), $"최대 Lv.{maxLv}", luMaxLvStyle);
 
-            float btnX = x + w - 168;
-            float btnY2 = y + 14;
-            float btnW2 = 154f;
-            float btnH2 = 56f;
+            float btnX = x + w - 200;
+            float btnY2 = y + 16;
+            float btnW2 = 184f;
+            float btnH2 = 64f;
 
             int currentCandy = candyInventory != null ? candyInventory.Candies : 0;
             bool canAfford = currentCandy >= candyCost && !isMaxLevel;
@@ -541,7 +548,7 @@ namespace InsectGame.UI
             GUI.backgroundColor = canAfford ? LuBtnGreenCol : LuBtnDisabledCol;
             GUI.enabled = canAfford;
             if (GUI.Button(new Rect(btnX, btnY2, btnW2, btnH2),
-                isMaxLevel ? "MAX" : $"레벨업\n<size=16>캔디 {candyCost}</size>", luBtnStyle))
+                isMaxLevel ? "MAX" : $"레벨업\n<size=21>캔디 {candyCost}</size>", luBtnStyle))
             {
                 if (insectCollection != null && insectCollection.TryLevelUpWithCandyByInstance(pid.instanceId))
                 {
@@ -561,7 +568,7 @@ namespace InsectGame.UI
 
             // luCandyInfoStyle textColor 동적 갱신 (canAfford 따라).
             luCandyInfoStyle.normal.textColor = canAfford ? LuCandyOkCol : LuCandyLowCol;
-            GUI.Label(new Rect(btnX, btnY2 + btnH2 + 2, btnW2, 18),
+            GUI.Label(new Rect(btnX, btnY2 + btnH2 + 4, btnW2, 24),
                 $"보유: {currentCandy} 캔디", luCandyInfoStyle);
 
             if (levelUpMsgTimer > 0)
@@ -573,19 +580,19 @@ namespace InsectGame.UI
                 luMsgStyle.normal.textColor = success
                     ? new Color(0.3f, 1f, 0.5f, alpha)
                     : new Color(1f, 0.4f, 0.3f, alpha);
-                GUI.Label(new Rect(x, y + 90, w, 30), levelUpMsg, luMsgStyle);
+                GUI.Label(new Rect(x, y + 114, w, 34), levelUpMsg, luMsgStyle);
             }
         }
 
         private void DrawStatBar(float x, float y, float w, string label, int iv, int total, int baseStat)
         {
             InitDetailStyles();
-            GUI.Label(new Rect(x, y, 80, 32), label, barLabelStyle);
+            GUI.Label(new Rect(x, y, 90, 40), label, barLabelStyle);
 
-            float barX = x + 90;
-            float barW = w - 240;
-            float barH = 24f;
-            float barY2 = y + 4;
+            float barX = x + 100;
+            float barW = w - 270;
+            float barH = 28f;
+            float barY2 = y + 6;
 
             GUI.color = BarBgCol;
             GUI.DrawTexture(new Rect(barX, barY2, barW, barH), Texture2D.whiteTexture);
@@ -598,11 +605,11 @@ namespace InsectGame.UI
 
             // barIvStyle textColor 동적 갱신 (barCol 따라).
             barIvStyle.normal.textColor = barCol;
-            GUI.Label(new Rect(barX + barW + 8, y, 56, 30), $"{iv}", barIvStyle);
+            GUI.Label(new Rect(barX + barW + 10, y, 66, 40), $"{iv}", barIvStyle);
 
-            GUI.Label(new Rect(x + w - 80, y, 80, 30), $"{total}", barTotalStyle);
+            GUI.Label(new Rect(x + w - 90, y, 90, 40), $"{total}", barTotalStyle);
 
-            GUI.Label(new Rect(x, y + 32, w, 24),
+            GUI.Label(new Rect(x, y + 44, w, 34),
                 $"기본 {baseStat} + IV {iv} + Lv 보너스", barIvLabelStyle);
         }
 

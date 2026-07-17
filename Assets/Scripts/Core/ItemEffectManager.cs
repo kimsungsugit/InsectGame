@@ -49,7 +49,7 @@ namespace InsectGame.Core
         public bool ActivateItemById(string itemId)
         {
             EnsureDatabase();
-
+            if (itemDatabase == null) return false;
             ItemData item = itemDatabase.FindById(itemId);
             return ActivateItem(item);
         }
@@ -92,6 +92,8 @@ namespace InsectGame.Core
             if (itemDatabase == null)
             {
                 itemDatabase = Resources.Load<ItemDatabase>("ItemDatabase");
+                if (itemDatabase == null)
+                    itemDatabase = ItemDatabase.CreateRuntimeDefault();
             }
         }
     }

@@ -18,7 +18,7 @@ namespace InsectGame.Core
         public List<PlayerItemRecord> items = new List<PlayerItemRecord>();
     }
 
-    public class PlayerItemInventory : MonoBehaviour
+    public class PlayerItemInventory : MonoBehaviour, ICloudReloadable
     {
         private PlayerItemSave save;
         private readonly Dictionary<string, PlayerItemRecord> lookup = new Dictionary<string, PlayerItemRecord>();
@@ -126,6 +126,35 @@ namespace InsectGame.Core
             return new PlayerItemSave { items = new List<PlayerItemRecord>(save.items) };
         }
 
+        // 클라우드 로드(다른 기기/계정 전환) 후 계정별 파일을 다시 읽어 인메모리 갱신.
+        public void ReloadFromDisk()
+        {
+            save = Load();
+            lookup.Clear();
+            if (save != null && save.items != null)
+            {
+                for (int i = save.items.Count - 1; i >= 0; i--)
+                {
+                    PlayerItemRecord record = save.items[i];
+                    if (record == null || string.IsNullOrEmpty(record.itemId))
+                    {
+                        save.items.RemoveAt(i);
+                        continue;
+                    }
+                    if (lookup.TryGetValue(record.itemId, out PlayerItemRecord existing))
+                    {
+                        existing.count += record.count;
+                        save.items.RemoveAt(i);
+                    }
+                    else
+                    {
+                        lookup[record.itemId] = record;
+                    }
+                }
+            }
+            ItemsChanged?.Invoke(save);
+        }
+
         private PlayerItemSave Load()
         {
             string path = GetPath();
@@ -156,7 +185,7 @@ namespace InsectGame.Core
 
         private string GetPath()
         {
-            return Path.Combine(Application.persistentDataPath, GameConstants.SaveFiles.PlayerItems);
+            return SaveScope.FilePath(GameConstants.SaveFiles.PlayerItems);
         }
     }
 }

@@ -141,12 +141,14 @@ namespace InsectGame.UI
                 evt.Use();
             }
 
+            UIScale.Begin();
             if (showTeamSelect)
                 DrawTeamSelect();
             else if (showItemSelect)
                 DrawItemSelect();
             else
                 DrawChoice();
+            UIScale.End();
         }
 
         private bool IsRaidTarget()
@@ -162,8 +164,8 @@ namespace InsectGame.UI
             bool isRaid = IsRaidTarget();
             float panelW = isRaid ? 760f : 760f;
             float panelH = isRaid ? 560f : 480f;
-            float px = (Screen.width - panelW) / 2f;
-            float py = (Screen.height - panelH) / 2f;
+            float px = (UIScale.VirtualScreenWidth - panelW) / 2f;
+            float py = (UIScale.VirtualScreenHeight - panelH) / 2f;
 
             GUI.color = new Color(0.04f, 0.06f, 0.1f, 0.95f);
             GUI.DrawTexture(new Rect(px, py, panelW, panelH), Texture2D.whiteTexture);
@@ -216,7 +218,8 @@ namespace InsectGame.UI
                 bool hasFullTeam = teamManager != null && teamManager.FilledSlots >= 5;
                 GUI.backgroundColor = hasFullTeam ? new Color(0.7f, 0.2f, 0.05f) : new Color(0.3f, 0.3f, 0.3f);
                 GUI.enabled = hasFullTeam;
-                if (GUI.Button(new Rect(raidBtnX, raidBtnY, raidBtnW, raidBtnH), "레이드 시작 [R]", btnStyle))
+                string raidButtonText = UIScale.IsMobileLayout ? "레이드 시작" : "레이드 시작 [R]";
+                if (GUI.Button(new Rect(raidBtnX, raidBtnY, raidBtnW, raidBtnH), raidButtonText, btnStyle))
                 {
                     StartRaidBattle();
                 }
@@ -229,7 +232,9 @@ namespace InsectGame.UI
                     raidReq.normal.textColor = new Color(1f, 0.4f, 0.15f);
                     int filled = teamManager != null ? teamManager.FilledSlots : 0;
                     GUI.Label(new Rect(raidBtnX, raidBtnY + raidBtnH + 8, raidBtnW, 34),
-                        $"팀 편성 필요 ({filled}/5)  T키로 편성", raidReq);
+                        UIScale.IsMobileLayout
+                            ? $"팀 편성 필요 ({filled}/5) · 메뉴에서 배틀팀 편성"
+                            : $"팀 편성 필요 ({filled}/5)  T키로 편성", raidReq);
                 }
             }
             else
@@ -243,7 +248,8 @@ namespace InsectGame.UI
                 bool hasAnyNet = HasAnyCaptureItem();
                 GUI.backgroundColor = hasAnyNet ? new Color(0.2f, 0.5f, 0.3f) : new Color(0.3f, 0.3f, 0.3f);
                 GUI.enabled = hasAnyNet;
-                if (GUI.Button(new Rect(leftX, btnY, btnW, btnH), "미니게임 [E]", btnStyle))
+                string minigameText = UIScale.IsMobileLayout ? "미니게임 포획" : "미니게임 [E]";
+                if (GUI.Button(new Rect(leftX, btnY, btnW, btnH), minigameText, btnStyle))
                 {
                     showItemSelect = true;
                 }
@@ -261,7 +267,8 @@ namespace InsectGame.UI
                 bool hasTeam = teamManager != null && teamManager.HasAnyInsect();
                 GUI.backgroundColor = hasTeam ? new Color(0.5f, 0.2f, 0.2f) : new Color(0.3f, 0.3f, 0.3f);
                 GUI.enabled = hasTeam;
-                if (GUI.Button(new Rect(leftX + btnW + gap, btnY, btnW, btnH), "배틀 [B]", btnStyle))
+                string battleText = UIScale.IsMobileLayout ? "배틀" : "배틀 [B]";
+                if (GUI.Button(new Rect(leftX + btnW + gap, btnY, btnW, btnH), battleText, btnStyle))
                 {
                     showTeamSelect = true;
                 }
@@ -273,13 +280,17 @@ namespace InsectGame.UI
                     { fontSize = 24, alignment = TextAnchor.MiddleCenter };
                     hintStyle.normal.textColor = new Color(0.5f, 0.4f, 0.3f);
                     GUI.Label(new Rect(leftX + btnW + gap, btnY + btnH + 6, btnW, 30),
-                        "T키로 팀 편성", hintStyle);
+                        UIScale.IsMobileLayout ? "메뉴에서 배틀팀 편성" : "T키로 팀 편성", hintStyle);
                 }
             }
 
             GUI.backgroundColor = new Color(0.3f, 0.3f, 0.35f);
             GUIStyle cancelStyle = new GUIStyle(GUI.skin.button) { fontSize = 26, fontStyle = FontStyle.Bold };
-            if (GUI.Button(new Rect(px + panelW / 2f - 70, py + panelH - 70, 140, 50), "취소 [ESC]", cancelStyle))
+            float cancelW = UIScale.IsMobileLayout ? 190f : 140f;
+            float cancelH = UIScale.IsMobileLayout ? 60f : 50f;
+            string cancelText = UIScale.IsMobileLayout ? "취소" : "취소 [ESC]";
+            if (GUI.Button(new Rect(px + panelW / 2f - cancelW / 2f, py + panelH - cancelH - 18f,
+                cancelW, cancelH), cancelText, cancelStyle))
                 Hide();
             GUI.backgroundColor = Color.white;
         }
@@ -290,8 +301,8 @@ namespace InsectGame.UI
 
             float panelW = 800f;
             float panelH = 120 + captureItems.Length * 160;
-            float px = (Screen.width - panelW) / 2f;
-            float py = (Screen.height - panelH) / 2f;
+            float px = (UIScale.VirtualScreenWidth - panelW) / 2f;
+            float py = (UIScale.VirtualScreenHeight - panelH) / 2f;
 
             GUI.color = new Color(0.04f, 0.06f, 0.1f, 0.95f);
             GUI.DrawTexture(new Rect(px, py, panelW, panelH), Texture2D.whiteTexture);
@@ -367,7 +378,8 @@ namespace InsectGame.UI
             }
 
             GUIStyle backBtn = new GUIStyle(GUI.skin.button) { fontSize = 24, fontStyle = FontStyle.Bold };
-            if (GUI.Button(new Rect(px + panelW / 2f - 70, py + panelH - 60, 140, 46), "< 뒤로", backBtn))
+            float backH = UIScale.IsMobileLayout ? 60f : 46f;
+            if (GUI.Button(new Rect(px + panelW / 2f - 90f, py + panelH - backH - 10f, 180f, backH), "< 뒤로", backBtn))
                 showItemSelect = false;
         }
 
@@ -411,8 +423,8 @@ namespace InsectGame.UI
         {
             float panelW = 820f;
             float panelH = 720f;
-            float px = (Screen.width - panelW) / 2f;
-            float py = (Screen.height - panelH) / 2f;
+            float px = (UIScale.VirtualScreenWidth - panelW) / 2f;
+            float py = (UIScale.VirtualScreenHeight - panelH) / 2f;
 
             GUI.color = new Color(0.04f, 0.06f, 0.1f, 0.95f);
             GUI.DrawTexture(new Rect(px, py, panelW, panelH), Texture2D.whiteTexture);
@@ -442,7 +454,8 @@ namespace InsectGame.UI
             }
 
             GUIStyle backStyle = new GUIStyle(GUI.skin.button) { fontSize = 24, fontStyle = FontStyle.Bold };
-            if (GUI.Button(new Rect(px + panelW / 2f - 70, py + panelH - 60, 140, 46), "< 뒤로", backStyle))
+            float backH = UIScale.IsMobileLayout ? 60f : 46f;
+            if (GUI.Button(new Rect(px + panelW / 2f - 90f, py + panelH - backH - 10f, 180f, backH), "< 뒤로", backStyle))
                 showTeamSelect = false;
         }
 

@@ -57,9 +57,25 @@ namespace InsectGame.UI
         }
 
         // 좌하단 사분면만 활성화 영역 — 상단 HUD/퀘스트, 중앙 하단 퀵바와 충돌 회피.
+        // 좌/하단 세이프 에어리어(노치/제스처바)는 제외 — OS 제스처에 먹히는 데드존에서 시작 방지.
         private bool InZone(Vector2 p)
         {
-            return p.x < Screen.width * 0.5f && p.y < Screen.height * 0.5f;
+            return p.x > SafeArea.Left && p.y > SafeArea.Bottom
+                && p.x < Screen.width * 0.5f && p.y < Screen.height * 0.5f;
+        }
+
+        // 베이스 원이 화면(세이프 에어리어) 안에 완전히 들어오도록 원점을 클램프 — 가장자리에서 눌러도
+        // 노브/베이스가 화면 밖으로 잘려 그려지지 않게 한다. (좌표는 Y-up 스크린 픽셀)
+        private Vector2 ClampOriginToSafe(Vector2 p)
+        {
+            float r = BaseRadius;
+            float minX = SafeArea.Left + r;
+            float maxX = Screen.width - SafeArea.Right - r;
+            float minY = SafeArea.Bottom + r;
+            float maxY = Screen.height - SafeArea.Top - r;
+            p.x = Mathf.Clamp(p.x, minX, Mathf.Max(minX, maxX));
+            p.y = Mathf.Clamp(p.y, minY, Mathf.Max(minY, maxY));
+            return p;
         }
 
         private void TryBegin()
@@ -70,7 +86,7 @@ namespace InsectGame.UI
                 if (t.phase == TouchPhase.Began && InZone(t.position))
                 {
                     activeFinger = t.fingerId;
-                    originScreen = knobScreen = t.position;
+                    originScreen = knobScreen = ClampOriginToSafe(t.position);
                     active = true;
                     return;
                 }
@@ -83,7 +99,7 @@ namespace InsectGame.UI
                 if (InZone(m))
                 {
                     activeFinger = -2;
-                    originScreen = knobScreen = m;
+                    originScreen = knobScreen = ClampOriginToSafe(m);
                     active = true;
                 }
             }

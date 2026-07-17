@@ -136,6 +136,12 @@ namespace InsectGame.Core
             }
         }
 
+        public void ConfigureCatalog(string[] ids, int[] itemPrices)
+        {
+            itemIds = ids ?? new string[0];
+            prices = itemPrices ?? new int[0];
+        }
+
         public void AutoWire(PlayerItemInventory inv, ItemDatabase db, PlayerCurrencyWallet walletRef)
         {
             if (inventory == null)

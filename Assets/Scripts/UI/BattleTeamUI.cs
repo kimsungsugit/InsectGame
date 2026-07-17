@@ -49,33 +49,33 @@ namespace InsectGame.UI
             if (teamStylesInit) return;
             teamStylesInit = true;
 
-            teamTitleCache = new GUIStyle(GUI.skin.label) { fontSize = 34, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            teamTitleCache = new GUIStyle(GUI.skin.label) { fontSize = 44, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             teamTitleCache.normal.textColor = TitleCol;
-            teamCloseCache = new GUIStyle(GUI.skin.button) { fontSize = 28, fontStyle = FontStyle.Bold };
-            teamSubCache = new GUIStyle(GUI.skin.label) { fontSize = 28, alignment = TextAnchor.MiddleCenter };
+            teamCloseCache = new GUIStyle(GUI.skin.button) { fontSize = 36, fontStyle = FontStyle.Bold };
+            teamSubCache = new GUIStyle(GUI.skin.label) { fontSize = 36, alignment = TextAnchor.MiddleCenter };
             teamSubCache.normal.textColor = SubCol;
 
-            slotNumCache = new GUIStyle(GUI.skin.label) { fontSize = 36, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            slotNumCache = new GUIStyle(GUI.skin.label) { fontSize = 47, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             slotNumCache.normal.textColor = NumCol;
-            slotNameCache = new GUIStyle(GUI.skin.label) { fontSize = 26, fontStyle = FontStyle.Bold };
-            slotInfoCache = new GUIStyle(GUI.skin.label) { fontSize = 24 };
+            slotNameCache = new GUIStyle(GUI.skin.label) { fontSize = 34, fontStyle = FontStyle.Bold };
+            slotInfoCache = new GUIStyle(GUI.skin.label) { fontSize = 31 };
             slotInfoCache.normal.textColor = InfoCol;
-            slotRemoveCache = new GUIStyle(GUI.skin.button) { fontSize = 24 };
-            slotEmptyCache = new GUIStyle(GUI.skin.label) { fontSize = 40, alignment = TextAnchor.MiddleCenter };
+            slotRemoveCache = new GUIStyle(GUI.skin.button) { fontSize = 31 };
+            slotEmptyCache = new GUIStyle(GUI.skin.label) { fontSize = 52, alignment = TextAnchor.MiddleCenter };
             slotEmptyCache.normal.textColor = EmptyCol;
-            slotAddCache = new GUIStyle(GUI.skin.button) { fontSize = 26 };
-            slotHintCache = new GUIStyle(GUI.skin.label) { fontSize = 26 };
+            slotAddCache = new GUIStyle(GUI.skin.button) { fontSize = 34 };
+            slotHintCache = new GUIStyle(GUI.skin.label) { fontSize = 34 };
             slotHintCache.normal.textColor = HintCol;
 
-            pickerTitleCache = new GUIStyle(GUI.skin.label) { fontSize = 30, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            pickerTitleCache = new GUIStyle(GUI.skin.label) { fontSize = 39, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             pickerTitleCache.normal.textColor = Color.white;
-            pickerBackCache = new GUIStyle(GUI.skin.button) { fontSize = 24, fontStyle = FontStyle.Bold };
-            pickerNameCache = new GUIStyle(GUI.skin.label) { fontSize = 24, fontStyle = FontStyle.Bold };
-            pickerInfoCache = new GUIStyle(GUI.skin.label) { fontSize = 24 };
+            pickerBackCache = new GUIStyle(GUI.skin.button) { fontSize = 31, fontStyle = FontStyle.Bold };
+            pickerNameCache = new GUIStyle(GUI.skin.label) { fontSize = 31, fontStyle = FontStyle.Bold };
+            pickerInfoCache = new GUIStyle(GUI.skin.label) { fontSize = 31 };
             pickerInfoCache.normal.textColor = PickerInfoCol;
-            pickerTagCache = new GUIStyle(GUI.skin.label) { fontSize = 24, alignment = TextAnchor.MiddleRight };
+            pickerTagCache = new GUIStyle(GUI.skin.label) { fontSize = 31, alignment = TextAnchor.MiddleRight };
             pickerTagCache.normal.textColor = TagCol;
-            pickerBtnCache = new GUIStyle(GUI.skin.button) { fontSize = 24 };
+            pickerBtnCache = new GUIStyle(GUI.skin.button) { fontSize = 31 };
         }
 
         public bool IsOpen => isOpen;
@@ -111,8 +111,8 @@ namespace InsectGame.UI
 
         private void DrawTeamPanel()
         {
-            float panelW = 840f;
-            float panelH = 800f;
+            float panelW = 960f;
+            float panelH = 940f;
             float px = (UIScale.VirtualScreenWidth - panelW) / 2f;
             float py = (UIScale.VirtualScreenHeight - panelH) / 2f;
 
@@ -120,27 +120,28 @@ namespace InsectGame.UI
             GUI.DrawTexture(new Rect(px, py, panelW, panelH), Texture2D.whiteTexture);
 
             GUI.color = HeaderBg;
-            GUI.DrawTexture(new Rect(px, py, panelW, 70), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(px, py, panelW, 84), Texture2D.whiteTexture);
             GUI.color = HeaderLine;
-            GUI.DrawTexture(new Rect(px, py + 70, panelW, 5), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(px, py + 84, panelW, 5), Texture2D.whiteTexture);
 
             GUI.color = Color.white;
-            GUI.Label(new Rect(px, py + 10, panelW - 60, 50), "BATTLE TEAM", teamTitleCache);
+            GUI.Label(new Rect(px, py + 14, panelW - 72, 58), "BATTLE TEAM", teamTitleCache);
 
-            if (GUI.Button(new Rect(px + panelW - 55, py + 12, 50, 46), "X", teamCloseCache))
+            float closeH = UIScale.IsMobileLayout ? 64f : 52f;
+            if (GUI.Button(new Rect(px + panelW - 80f, py + 10f, 70f, closeH), "X", teamCloseCache))
             {
                 CloseModal();
             }
 
-            GUI.Label(new Rect(px, py + 76, panelW, 36),
+            GUI.Label(new Rect(px, py + 94, panelW, 42),
                 $"배틀용 곤충을 최대 {BattleTeamManager.MaxSlots}마리 선택하세요", teamSubCache);
 
-            float slotY = py + 120;
-            float slotH = 110f;
+            float slotY = py + 146;
+            float slotH = UIScale.IsMobileLayout ? 148f : 128f;
 
             for (int i = 0; i < BattleTeamManager.MaxSlots; i++)
             {
-                DrawSlot(px + 15, slotY + i * (slotH + 4), panelW - 30, slotH, i);
+                DrawSlot(px + 18, slotY + i * (slotH + 6), panelW - 36, slotH, i);
             }
         }
 
@@ -153,7 +154,7 @@ namespace InsectGame.UI
             GUI.DrawTexture(new Rect(x, y, w, h), Texture2D.whiteTexture);
 
             GUI.color = Color.white;
-            GUI.Label(new Rect(x, y, 56, h), $"{index + 1}", slotNumCache);
+            GUI.Label(new Rect(x, y, 64, h), $"{index + 1}", slotNumCache);
 
             if (hasInsect)
             {
@@ -170,44 +171,46 @@ namespace InsectGame.UI
 
                     slotNameCache.normal.textColor = rarityCol;
                     GUI.color = Color.white;
-                    GUI.Label(new Rect(x + 130, y + 12, w - 260, 36), GetOwnedDisplayName(pid, data), slotNameCache);
+                    GUI.Label(new Rect(x + 150, y + 16, w - 330, 46), GetOwnedDisplayName(pid, data), slotNameCache);
 
                     int lv = pid != null ? pid.level : 1;
                     int cp = PlayerInsectCombatPower.Calculate(data, pid);
-                    GUI.Label(new Rect(x + 130, y + 48, w - 260, 30),
+                    GUI.Label(new Rect(x + 150, y + 64, w - 330, 42),
                         $"Lv.{lv}  |  {data.rarity}  |  CP {cp}", slotInfoCache);
                 }
 
                 GUI.backgroundColor = RemoveBg;
-                if (GUI.Button(new Rect(x + w - 140, y + 10, 120, 42), "제거", slotRemoveCache))
+                float actionH = UIScale.IsMobileLayout ? 60f : 50f;
+                if (GUI.Button(new Rect(x + w - 168, y + 10f, 150, actionH), "제거", slotRemoveCache))
                     teamManager?.RemoveSlot(index);
 
                 GUI.backgroundColor = ChangeBg;
-                if (GUI.Button(new Rect(x + w - 140, y + 56, 120, 42), "변경", slotRemoveCache))
+                if (GUI.Button(new Rect(x + w - 168, y + h - actionH - 10f, 150, actionH), "변경", slotRemoveCache))
                     selectingSlot = index;
                 GUI.backgroundColor = Color.white;
             }
             else
             {
                 GUI.color = EmptyBoxCol;
-                GUI.DrawTexture(new Rect(x + 60, y + h / 2f - 25, 50, 50), Texture2D.whiteTexture);
+                GUI.DrawTexture(new Rect(x + 64, y + h / 2f - 32, 64, 64), Texture2D.whiteTexture);
 
                 GUI.color = Color.white;
-                GUI.Label(new Rect(x + 60, y + h / 2f - 25, 50, 50), "+", slotEmptyCache);
+                GUI.Label(new Rect(x + 64, y + h / 2f - 32, 64, 64), "+", slotEmptyCache);
 
                 GUI.backgroundColor = AddBg;
-                if (GUI.Button(new Rect(x + w - 150, y + h / 2f - 22, 130, 46), "선택", slotAddCache))
+                float selectH = UIScale.IsMobileLayout ? 64f : 52f;
+                if (GUI.Button(new Rect(x + w - 170, y + h / 2f - selectH * 0.5f, 150, selectH), "선택", slotAddCache))
                     selectingSlot = index;
                 GUI.backgroundColor = Color.white;
 
-                GUI.Label(new Rect(x + 130, y + h / 2f - 16, w - 260, 34), "빈 슬롯", slotHintCache);
+                GUI.Label(new Rect(x + 150, y + h / 2f - 21, w - 330, 42), "빈 슬롯", slotHintCache);
             }
         }
 
         private void DrawInsectPicker()
         {
-            float panelW = 840f;
-            float panelH = 800f;
+            float panelW = 960f;
+            float panelH = 940f;
             float px = (UIScale.VirtualScreenWidth - panelW) / 2f;
             float py = (UIScale.VirtualScreenHeight - panelH) / 2f;
 
@@ -215,21 +218,21 @@ namespace InsectGame.UI
             GUI.DrawTexture(new Rect(px, py, panelW, panelH), Texture2D.whiteTexture);
 
             GUI.color = PickerHeaderBg;
-            GUI.DrawTexture(new Rect(px, py, panelW, 70), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(px, py, panelW, 84), Texture2D.whiteTexture);
 
             GUI.color = Color.white;
-            GUI.Label(new Rect(px + 120, py + 10, panelW - 240, 50),
+            GUI.Label(new Rect(px + 130, py + 14, panelW - 260, 58),
                 $"Select Insect for Slot {selectingSlot + 1}", pickerTitleCache);
 
-            if (GUI.Button(new Rect(px + 12, py + 12, 110, 46), "< Back", pickerBackCache))
+            if (GUI.Button(new Rect(px + 14, py + 10f, 150f, UIScale.IsMobileLayout ? 64f : 52f), "< Back", pickerBackCache))
                 selectingSlot = -1;
 
             if (collection == null) return;
 
             List<PlayerInsectData> owned = collection.GetAllOwned();
-            float listY = py + 80;
-            float listH = panelH - 90;
-            float itemH = 96f;
+            float listY = py + 96;
+            float listH = panelH - 106;
+            float itemH = UIScale.IsMobileLayout ? 132f : 116f;
             float totalH = owned.Count * itemH;
             Rect viewRect = new Rect(0, 0, panelW - 40, totalH);
             Rect listArea = new Rect(px + 10, listY, panelW - 20, listH);
@@ -263,21 +266,22 @@ namespace InsectGame.UI
 
                 pickerNameCache.normal.textColor = alreadyInTeam ? DimNameCol : rarityCol;
                 GUI.color = Color.white;
-                GUI.Label(new Rect(rect.x + 90, rect.y + 10, rect.width - 220, 32), GetOwnedDisplayName(pid, data), pickerNameCache);
+                GUI.Label(new Rect(rect.x + 100, rect.y + 14, rect.width - 280, 42), GetOwnedDisplayName(pid, data), pickerNameCache);
 
                 int cp = PlayerInsectCombatPower.Calculate(data, pid);
-                GUI.Label(new Rect(rect.x + 90, rect.y + 42, rect.width - 220, 30),
+                GUI.Label(new Rect(rect.x + 100, rect.y + 62, rect.width - 280, 40),
                     $"Lv.{pid.level}  |  CP {cp}", pickerInfoCache);
             }
 
             if (alreadyInTeam)
             {
-                GUI.Label(new Rect(rect.x + rect.width - 170, rect.y + rect.height / 2f - 9, 160, 30), "팀에 있음", pickerTagCache);
+                GUI.Label(new Rect(rect.x + rect.width - 200, rect.y + rect.height / 2f - 21, 190, 42), "팀에 있음", pickerTagCache);
             }
             else
             {
                 GUI.backgroundColor = BtnBg;
-                if (GUI.Button(new Rect(rect.x + rect.width - 140, rect.y + rect.height / 2f - 13, 120, 46), "선택", pickerBtnCache))
+                float selectH = UIScale.IsMobileLayout ? 64f : 52f;
+                if (GUI.Button(new Rect(rect.x + rect.width - 170, rect.y + rect.height / 2f - selectH * 0.5f, 150, selectH), "선택", pickerBtnCache))
                 {
                     if (teamManager != null)
                     {

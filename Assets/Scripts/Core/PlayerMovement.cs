@@ -53,8 +53,28 @@ namespace InsectGame.Core
         private bool toolBaseCached;
         private float footstepTimer;
         private float bodyBaseY = float.NaN;
+        // 잡기 액션 — 탭 시 오른팔/도구를 한 방향으로 크게 휘둘렀다 복귀(sin 아크).
+        private float catchSwingTimer;
+        private const float CatchSwingDuration = 0.42f;
+        private const float CatchSwingMaxDeg = 72f;
+        private float stuckTimer; // 끼임(embedded) 자동탈출용 — 이동 시도 중 콜라이더 박힘 지속시간
 
         public bool IsFrozen => frozen;
+
+        // 잡기 버튼 탭 시 캐릭터가 도구를 휙 휘두르는 1회성 액션. CaptureInputController가 호출.
+        public void PlayCatchSwing()
+        {
+            catchSwingTimer = CatchSwingDuration;
+        }
+
+        // 잡기 대상(곤충) 방향으로 캐릭터를 수평 회전(Y만) — 스윙이 곤충을 향하도록.
+        public void FaceTowards(Vector3 worldPos)
+        {
+            Vector3 dir = worldPos - transform.position;
+            dir.y = 0f;
+            if (dir.sqrMagnitude > 0.0004f)
+                transform.rotation = Quaternion.LookRotation(dir.normalized, Vector3.up);
+        }
 
         public void SetFrozen(bool value)
         {
@@ -156,6 +176,20 @@ namespace InsectGame.Core
                 }
             }
 
+            // OnGUI KeyDown 래치(guiKey*)는 KeyUp 이벤트를 놓치면 켜진 채 stuck된다 — 에디터 Game뷰가
+            // 포커스를 잃으면(다른 창 클릭 등) 키를 떼도 KeyUp이 안 와서 guiKeyW/guiKeyD 등이 true로 남아
+            // 입력 없이 캐릭터가 자동 이동한다(사용자 보고: 오른쪽 위로 계속 감). 실제 물리 키가 안 눌린
+            // 래치를 매 프레임 정리 — 포커스 복귀 시 Input.GetKey=false면 래치도 해제해 유령 이동을 차단.
+            // (포커스가 있으면 Input.GetKey가 진실이라 백업 손실 없음. 포커스가 없으면 OnGUI 자체가 안 돎.)
+            if (!Input.GetKey(KeyCode.W)) guiKeyW = false;
+            if (!Input.GetKey(KeyCode.A)) guiKeyA = false;
+            if (!Input.GetKey(KeyCode.S)) guiKeyS = false;
+            if (!Input.GetKey(KeyCode.D)) guiKeyD = false;
+            if (!Input.GetKey(KeyCode.UpArrow)) guiKeyUp = false;
+            if (!Input.GetKey(KeyCode.DownArrow)) guiKeyDown = false;
+            if (!Input.GetKey(KeyCode.LeftArrow)) guiKeyLeft = false;
+            if (!Input.GetKey(KeyCode.RightArrow)) guiKeyRight = false;
+
             float h = 0f;
             float v = 0f;
 
@@ -182,7 +216,10 @@ namespace InsectGame.Core
                 bool pointerOverUI = EventSystem.current != null && EventSystem.current.IsPointerOverGameObject();
                 // OnGUI 모달 열려있으면 마우스 클릭 흡수 (캐릭터 이동 차단)
                 bool anyModalOpen = InsectGame.UI.ModalUIRegistry.IsAnyOpen();
-                if (!pointerOverUI && !anyModalOpen)
+                // IMGUI 필드 버튼(잡기 등) 위 탭은 월드 클릭-이동으로 오인하지 않는다 — uGUI EventSystem은
+                // IMGUI 버튼을 모르므로 pointerOverUI가 false라, 버튼 탭이 캐릭터를 화면 밖으로 걷게 했음.
+                bool overFieldHud = InsectGame.UI.FieldHudInput.IsScreenPointOverHud(Input.mousePosition);
+                if (!pointerOverUI && !anyModalOpen && !overFieldHud)
                 {
                     Ray ray = Camera.main.ScreenPointToRay(mousePos);
 
@@ -289,6 +326,24 @@ namespace InsectGame.Core
                 movingToClick = false;
             }
 
+            // 모바일 끼임 안전망 — 현재 위치 자체가 콜라이더 안(embedded)인데 이동 시도가 계속되면 자동 탈출.
+            // (벽을 향해 걷는 경우는 현재 위치가 clear라 트리거 안 됨 — 박힘만 감지.) 모바일엔 F9 키가 없어
+            // SubArea 이탈 박힘 등에서 복구수단이 없던 것을 보완(IsBlockedPosition은 본인 콜라이더 제외).
+            if (hasMovement && regionManager != null && IsBlockedPosition(transform.position))
+            {
+                stuckTimer += Time.deltaTime;
+                if (stuckTimer >= 1.5f)
+                {
+                    stuckTimer = 0f;
+                    UnstickToSafePosition();
+                    move = Vector3.zero; // 텔레포트했으니 이번 프레임 이동 적용 안 함
+                }
+            }
+            else
+            {
+                stuckTimer = 0f;
+            }
+
             transform.position += move;
 
             // 걷기 애니메이션
@@ -314,6 +369,8 @@ namespace InsectGame.Core
 
             if (blockedMsgTimer > 0f)
                 blockedMsgTimer -= Time.deltaTime;
+            if (catchSwingTimer > 0f)
+                catchSwingTimer -= Time.deltaTime;
         }
 
         private void OnGUI()
@@ -355,17 +412,9 @@ namespace InsectGame.Core
 
             InitStyles();
 
-            if (!hasReceivedInput && !frozen)
-            {
-                float w = 500f;
-                float h = 80f;
-                Rect rect = new Rect((Screen.width - w) / 2f, Screen.height * 0.4f, w, h);
-
-                GUI.color = HintBgCol;
-                GUI.DrawTexture(rect, Texture2D.whiteTexture);
-                GUI.color = Color.white;
-                GUI.Label(rect, "좌하단 조이스틱 또는 화면 터치로 이동하세요", hintStyle);
-            }
+            // 이동 안내 오버레이 제거(요청) — 로그인 화면에도 표시되던 문제를 함께 해결.
+            // PlayerMovement.OnGUI가 상태 무관하게 그려 로그인 중에도 노출됐음.
+            // 필요 시 이 블록을 복원하면 됨.
 
             if (frozen)
             {
@@ -422,15 +471,23 @@ namespace InsectGame.Core
             // Z 회전 6°는 PlayerVisualBuilder의 ArmL/R 초기 각도와 동기 (14° V자 어색함 차단).
             if (cachedArmL == null) cachedArmL = transform.Find("ArmL");
             if (cachedArmR == null) cachedArmR = transform.Find("ArmR");
+            // 오른팔/도구 X 회전 — 기본은 walk swing(-swingDeg), 잡기 액션 중엔 큰 sin 아크로 오버라이드.
+            float rightArmDeg = -swingDeg;
+            if (catchSwingTimer > 0f)
+            {
+                float cp = 1f - Mathf.Clamp01(catchSwingTimer / CatchSwingDuration); // 0→1
+                rightArmDeg = Mathf.Sin(cp * Mathf.PI) * CatchSwingMaxDeg;           // 0→peak→0, 휙 휘두름
+            }
             // Z=0 수직 자세 — 옛 ±6° V자 회전이 사용자 보고 "어깨 언밸런스" 원인. swing은 X축만.
             if (cachedArmL != null) cachedArmL.localRotation = Quaternion.Euler(swingDeg, 0f, 0f);
-            if (cachedArmR != null) cachedArmR.localRotation = Quaternion.Euler(-swingDeg, 0f, 0f);
+            if (cachedArmR != null) cachedArmR.localRotation = Quaternion.Euler(rightArmDeg, 0f, 0f);
 
             // 도구 = 오른팔과 동일 X swing. walking=false면 swing=0이라 ApplyToolShape이 갓 설정한
             // 좌표가 그대로 base로 캐싱됨 → 도구 변경 후에도 멈춤 1프레임에 자동 재동기.
             if (cachedNetHandle == null) cachedNetHandle = transform.Find("NetHandle");
             if (cachedNetRing == null) cachedNetRing = transform.Find("NetRing");
-            if (!walking && cachedNetHandle != null && cachedNetRing != null)
+            // 잡기 스윙 중엔 base 재캐싱 금지 — 안 그러면 스윙된 회전이 base로 누적돼 도구가 드리프트.
+            if (!walking && catchSwingTimer <= 0f && cachedNetHandle != null && cachedNetRing != null)
             {
                 netHandleBaseRot = cachedNetHandle.localRotation;
                 netRingBaseRot = cachedNetRing.localRotation;
@@ -439,9 +496,9 @@ namespace InsectGame.Core
             if (toolBaseCached)
             {
                 if (cachedNetHandle != null)
-                    cachedNetHandle.localRotation = Quaternion.Euler(-swingDeg, 0f, 0f) * netHandleBaseRot;
+                    cachedNetHandle.localRotation = Quaternion.Euler(rightArmDeg, 0f, 0f) * netHandleBaseRot;
                 if (cachedNetRing != null)
-                    cachedNetRing.localRotation = Quaternion.Euler(-swingDeg, 0f, 0f) * netRingBaseRot;
+                    cachedNetRing.localRotation = Quaternion.Euler(rightArmDeg, 0f, 0f) * netRingBaseRot;
             }
 
             // 다리 흔들기 (팔과 반대) — LegPivot 회전 시 Leg+Boot 모두 함께 전파.

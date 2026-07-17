@@ -304,11 +304,11 @@ namespace InsectGame.UI
 
         private static void RefreshCache()
         {
-            cache.gender = PlayerPrefs.GetInt("InsectGame.Character.Gender", 0);
-            cache.skinIdx = PlayerPrefs.GetInt("InsectGame.Character.SkinColor", 0);
-            cache.hairColorIdx = PlayerPrefs.GetInt("InsectGame.Character.HairColor", 0);
-            cache.hairStyle = PlayerPrefs.GetInt("InsectGame.Character.HairStyle", 0);
-            cache.faceType = PlayerPrefs.GetInt("InsectGame.Character.FaceType", 0);
+            cache.gender = PlayerPrefs.GetInt(InsectGame.Core.SaveScope.PrefsKey("InsectGame.Character.Gender"), 0);
+            cache.skinIdx = PlayerPrefs.GetInt(InsectGame.Core.SaveScope.PrefsKey("InsectGame.Character.SkinColor"), 0);
+            cache.hairColorIdx = PlayerPrefs.GetInt(InsectGame.Core.SaveScope.PrefsKey("InsectGame.Character.HairColor"), 0);
+            cache.hairStyle = PlayerPrefs.GetInt(InsectGame.Core.SaveScope.PrefsKey("InsectGame.Character.HairStyle"), 0);
+            cache.faceType = PlayerPrefs.GetInt(InsectGame.Core.SaveScope.PrefsKey("InsectGame.Character.FaceType"), 0);
 
             CharacterOutfitManager mgr = CharacterOutfitManager.Instance;
             cache.topCol = GetEquipColor(mgr, OutfitSlot.Top, new Color(0.98f, 0.96f, 0.92f));
@@ -506,7 +506,7 @@ namespace InsectGame.UI
             CharacterOutfitManager mgr, string hatId, string bagId, string toolId, string accId = "")
         {
             // 공용 비례 헬퍼 — Draw와 자동 동기
-            int gender = PlayerPrefs.GetInt("InsectGame.Character.Gender", 0);
+            int gender = PlayerPrefs.GetInt(InsectGame.Core.SaveScope.PrefsKey("InsectGame.Character.Gender"), 0);
             Proportions p = CalculateProportions(cy, scale, gender);
             float s = p.s;
             float headW = p.headW, headH = p.headH, neckH = p.neckH;

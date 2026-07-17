@@ -73,6 +73,7 @@ namespace InsectGame.UI
                 phase = LobbyPhase.Hidden;
                 PlayerMovement pm = FindFirstObjectByType<PlayerMovement>();
                 if (pm != null) pm.SetFrozen(false);
+                TutorialQuestManager.Instance?.BeginTutorialForCurrentAccount();
                 return;
             }
 
@@ -138,6 +139,7 @@ namespace InsectGame.UI
             // 월드 입장 후 플레이어 이동 해금
             PlayerMovement pm = FindFirstObjectByType<PlayerMovement>();
             if (pm != null) pm.SetFrozen(false);
+            TutorialQuestManager.Instance?.BeginTutorialForCurrentAccount();
         }
 
         private void OnWorldLeft()
@@ -174,6 +176,7 @@ namespace InsectGame.UI
             if (phase == LobbyPhase.Hidden) return;
 
             InitStyles();
+            UIScale.Begin();
 
             switch (phase)
             {
@@ -187,6 +190,7 @@ namespace InsectGame.UI
                     DrawInWorldPanel();
                     break;
             }
+            UIScale.End();
         }
 
         // ── WorldSelect Panel ──
@@ -194,12 +198,17 @@ namespace InsectGame.UI
         private void DrawWorldSelectPanel()
         {
             // 배경 오버레이
-            GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), UIHelper.GetCachedTex(BgOverlayCol));
+            float sw = UIScale.VirtualScreenWidth;
+            float sh = UIScale.VirtualScreenHeight;
+            bool mobile = UIScale.IsMobileLayout;
+            GUI.DrawTexture(new Rect(0, 0, sw, sh), UIHelper.GetCachedTex(BgOverlayCol));
 
-            float pw = 600f;
-            float ph = Mathf.Min(500f, Screen.height - SafeArea.Top - SafeArea.Bottom);
-            float px = (Screen.width - pw) * 0.5f;
-            float py = SafeArea.Top + (Screen.height - SafeArea.Top - SafeArea.Bottom - ph) * 0.5f;
+            float pw = mobile ? Mathf.Min(900f, UIScale.ContentWidth(30f)) : 600f;
+            float ph = Mathf.Min(mobile ? 760f : 500f,
+                sh - UIScale.VirtualSafeTop - UIScale.VirtualSafeBottom - 30f);
+            float px = (sw - pw) * 0.5f;
+            float py = UIScale.VirtualSafeTop
+                + (sh - UIScale.VirtualSafeTop - UIScale.VirtualSafeBottom - ph) * 0.5f;
 
             GUI.Box(new Rect(px, py, pw, ph), "", panelStyle);
 
@@ -212,15 +221,16 @@ namespace InsectGame.UI
             cy += 50f;
 
             // 월드 목록 스크롤
-            float listH = ph - 180f;
+            float rowStride = mobile ? 92f : 74f;
+            float listH = ph - (mobile ? 235f : 180f);
             Rect listArea = new Rect(cx, cy, innerW, listH);
-            float contentH = Mathf.Max(listH, cachedWorlds.Count * 74f);
+            float contentH = Mathf.Max(listH, cachedWorlds.Count * rowStride);
 
             worldScrollPos = GUI.BeginScrollView(listArea, worldScrollPos, new Rect(0, 0, innerW - 20f, contentH));
 
             for (int i = 0; i < cachedWorlds.Count; i++)
             {
-                DrawWorldRow(0, i * 74f, innerW - 20f, 68f, cachedWorlds[i]);
+                DrawWorldRow(0, i * rowStride, innerW - 20f, mobile ? 84f : 68f, cachedWorlds[i]);
             }
 
             if (cachedWorlds.Count == 0)
@@ -233,29 +243,27 @@ namespace InsectGame.UI
 
             // 버튼 행
             float btnW = (innerW - 10f) * 0.5f;
+            float actionH = mobile ? 60f : 40f;
 
-            if (GUI.Button(new Rect(cx, cy, btnW, 40f), "\uc790\ub3d9 \uc785\uc7a5", btnGreenStyle))
+            if (GUI.Button(new Rect(cx, cy, btnW, actionH), "\uc790\ub3d9 \uc785\uc7a5", btnGreenStyle))
             {
                 phase = LobbyPhase.Joining;
                 if (manager != null) manager.AutoJoinWorld();
             }
 
-            if (GUI.Button(new Rect(cx + btnW + 10f, cy, btnW, 40f), "\uc0c8\ub85c\uace0\uce68", btnBlueStyle))
+            if (GUI.Button(new Rect(cx + btnW + 10f, cy, btnW, actionH), "\uc0c8\ub85c\uace0\uce68", btnBlueStyle))
             {
                 if (manager != null) manager.RefreshWorldList();
             }
-            cy += 48f;
+            cy += actionH + 10f;
 
-            // 오프라인 시작 (마스터 계정만)
-            bool isMaster = AuthManager.Instance != null && AuthManager.Instance.IsMasterAccount;
-            if (isMaster)
+            // 서버 배포 전이나 네트워크 장애 시에도 싱글플레이 진입을 보장합니다.
+            if (GUI.Button(new Rect(cx, cy, innerW, mobile ? 56f : 32f), "오프라인으로 혼자 탐험", btnGrayStyle))
             {
-                if (GUI.Button(new Rect(cx, cy, innerW, 32f), "로컬 모드 (마스터 전용)", btnGrayStyle))
-                {
-                    phase = LobbyPhase.Hidden;
-                    PlayerMovement pm = FindFirstObjectByType<PlayerMovement>();
-                    if (pm != null) pm.SetFrozen(false);
-                }
+                phase = LobbyPhase.Hidden;
+                PlayerMovement pm = FindFirstObjectByType<PlayerMovement>();
+                if (pm != null) pm.SetFrozen(false);
+                TutorialQuestManager.Instance?.BeginTutorialForCurrentAccount();
             }
 
             // 에러 메시지
@@ -268,6 +276,7 @@ namespace InsectGame.UI
 
         private void DrawWorldRow(float x, float y, float w, float h, WorldInstance world)
         {
+            bool mobile = UIScale.IsMobileLayout;
             bool isFull = world.playerCount >= world.maxPlayers;
             float ratio = (world.maxPlayers > 0) ? (float)world.playerCount / world.maxPlayers : 0f;
 
@@ -276,13 +285,13 @@ namespace InsectGame.UI
             GUI.DrawTexture(new Rect(x, y, w, h), UIHelper.GetCachedTex(rowColor));
 
             // 월드 이름
-            GUI.Label(new Rect(x + 12f, y + 6f, 200f, 24f), world.displayName, subtitleStyle);
+            GUI.Label(new Rect(x + 12f, y + 6f, mobile ? 280f : 200f, mobile ? 34f : 24f), world.displayName, subtitleStyle);
 
             // 인원 바
             float barX = x + 12f;
-            float barY = y + 34f;
-            float barW = w - 130f;
-            float barH = 18f;
+            float barY = y + (mobile ? 48f : 34f);
+            float barW = w - (mobile ? 165f : 130f);
+            float barH = mobile ? 24f : 18f;
 
             GUI.DrawTexture(new Rect(barX, barY, barW, barH), UIHelper.GetCachedTex(BarBgCol));
 
@@ -293,10 +302,12 @@ namespace InsectGame.UI
             GUI.Label(new Rect(barX, barY - 1f, barW, barH), $"  {world.playerCount}/{world.maxPlayers}", labelStyle);
 
             // 입장 버튼
-            float btnX = x + w - 100f;
-            float btnY = y + 14f;
+            float btnW = mobile ? 128f : 88f;
+            float btnX = x + w - btnW - 12f;
+            float btnH = mobile ? 56f : 36f;
+            float btnY = y + (h - btnH) * 0.5f;
             GUI.enabled = !isFull;
-            if (GUI.Button(new Rect(btnX, btnY, 88f, 36f), isFull ? "\uac00\ub4dd \ucc3c" : "\uc785\uc7a5", isFull ? btnRedStyle : btnGreenStyle))
+            if (GUI.Button(new Rect(btnX, btnY, btnW, btnH), isFull ? "\uac00\ub4dd \ucc3c" : "\uc785\uc7a5", isFull ? btnRedStyle : btnGreenStyle))
             {
                 if (!isFull && manager != null)
                 {
@@ -311,12 +322,15 @@ namespace InsectGame.UI
 
         private void DrawJoiningPanel()
         {
-            GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), UIHelper.GetCachedTex(BgOverlayCol));
+            float sw = UIScale.VirtualScreenWidth;
+            float sh = UIScale.VirtualScreenHeight;
+            GUI.DrawTexture(new Rect(0, 0, sw, sh), UIHelper.GetCachedTex(BgOverlayCol));
 
-            float pw = 300f;
-            float ph = 150f;
-            float px = (Screen.width - pw) * 0.5f;
-            float py = SafeArea.Top + (Screen.height - SafeArea.Top - SafeArea.Bottom - ph) * 0.5f;
+            float pw = UIScale.IsMobileLayout ? 600f : 300f;
+            float ph = UIScale.IsMobileLayout ? 220f : 150f;
+            float px = (sw - pw) * 0.5f;
+            float py = UIScale.VirtualSafeTop
+                + (sh - UIScale.VirtualSafeTop - UIScale.VirtualSafeBottom - ph) * 0.5f;
 
             GUI.Box(new Rect(px, py, pw, ph), "", panelStyle);
             GUI.Label(new Rect(px, py + 40f, pw, 40f), "\uc6d4\ub4dc \uc811\uc18d \uc911...", subtitleStyle);
@@ -330,10 +344,15 @@ namespace InsectGame.UI
 
             WorldInstance cw = WorldChannelManager.Instance.CurrentWorld;
 
-            float pw = 350f;
-            float ph = 400f;
-            float px = Screen.width - pw - 20f;
-            float py = 20f;
+            bool mobile = UIScale.IsMobileLayout;
+            float pw = mobile ? Mathf.Min(850f, UIScale.ContentWidth(24f)) : 350f;
+            float ph = mobile
+                ? Mathf.Min(620f, UIScale.VirtualScreenHeight - UIScale.VirtualSafeTop - UIScale.VirtualSafeBottom - 24f)
+                : 400f;
+            float px = mobile
+                ? (UIScale.VirtualScreenWidth - pw) * 0.5f
+                : UIScale.VirtualScreenWidth - UIScale.VirtualSafeRight - pw - 20f;
+            float py = UIScale.VirtualSafeTop + 20f;
 
             GUI.Box(new Rect(px, py, pw, ph), "", panelStyle);
 
@@ -351,7 +370,8 @@ namespace InsectGame.UI
 
             // 플레이어 목록
             float listH = ph - 120f;
-            float contentH = Mathf.Max(listH, (cw.players != null ? cw.players.Count : 0) * 34f);
+            float rowStride = mobile ? 58f : 34f;
+            float contentH = Mathf.Max(listH, (cw.players != null ? cw.players.Count : 0) * rowStride);
 
             playerScrollPos = GUI.BeginScrollView(new Rect(cx, cy, innerW, listH), playerScrollPos, new Rect(0, 0, innerW - 16f, contentH));
 
@@ -363,17 +383,17 @@ namespace InsectGame.UI
                 {
                     WorldPlayer p = cw.players[i];
                     bool isMe = p.uid == myUid;
-                    float rowY = i * 34f;
+                    float rowY = i * rowStride;
 
                     if (isMe)
                     {
-                        GUI.DrawTexture(new Rect(0, rowY, innerW - 16f, 30f), UIHelper.GetCachedTex(MeRowBgCol));
+                        GUI.DrawTexture(new Rect(0, rowY, innerW - 16f, mobile ? 52f : 30f), UIHelper.GetCachedTex(MeRowBgCol));
                     }
 
                     string prefix = isMe ? "\u2605 " : "  ";
                     string displayText = $"{prefix}{p.displayName}  Lv.{p.level}";
                     GUIStyle rowStyle = isMe ? playerMeStyle : playerRowStyle;
-                    GUI.Label(new Rect(4f, rowY + 4f, innerW - 24f, 24f), displayText, rowStyle);
+                    GUI.Label(new Rect(4f, rowY + 4f, innerW - 24f, mobile ? 44f : 24f), displayText, rowStyle);
                 }
             }
 
@@ -381,7 +401,7 @@ namespace InsectGame.UI
             cy += listH + 8f;
 
             // 월드 나가기 버튼
-            if (GUI.Button(new Rect(cx, cy, innerW, 34f), "\uc6d4\ub4dc \ub098\uac00\uae30", btnRedStyle))
+            if (GUI.Button(new Rect(cx, cy, innerW, mobile ? 60f : 34f), "\uc6d4\ub4dc \ub098\uac00\uae30", btnRedStyle))
             {
                 if (manager != null) manager.LeaveWorld();
             }
@@ -399,24 +419,26 @@ namespace InsectGame.UI
             panelStyle.normal.background = panelTex;
 
             titleStyle = new GUIStyle(GUI.skin.label);
-            titleStyle.fontSize = 28;
+            bool mobile = UIScale.IsMobileLayout;
+
+            titleStyle.fontSize = mobile ? 38 : 28;
             titleStyle.fontStyle = FontStyle.Bold;
             titleStyle.normal.textColor = new Color(1f, 0.84f, 0f, 1f);
             titleStyle.alignment = TextAnchor.MiddleCenter;
 
             subtitleStyle = new GUIStyle(GUI.skin.label);
-            subtitleStyle.fontSize = 20;
+            subtitleStyle.fontSize = mobile ? 27 : 20;
             subtitleStyle.fontStyle = FontStyle.Bold;
             subtitleStyle.normal.textColor = Color.white;
             subtitleStyle.alignment = TextAnchor.MiddleCenter;
 
             labelStyle = new GUIStyle(GUI.skin.label);
-            labelStyle.fontSize = 14;
+            labelStyle.fontSize = mobile ? 20 : 14;
             labelStyle.normal.textColor = new Color(0.85f, 0.85f, 0.9f, 1f);
             labelStyle.alignment = TextAnchor.MiddleCenter;
 
             errorStyle = new GUIStyle(GUI.skin.label);
-            errorStyle.fontSize = 14;
+            errorStyle.fontSize = mobile ? 20 : 14;
             errorStyle.normal.textColor = new Color(1f, 0.3f, 0.3f, 1f);
             errorStyle.alignment = TextAnchor.MiddleCenter;
             errorStyle.wordWrap = true;
@@ -437,17 +459,18 @@ namespace InsectGame.UI
                 return s;
             }
 
-            btnGreenStyle = MakeBtnStyle(new Color(0.15f, 0.55f, 0.15f, 1f));
-            btnBlueStyle = MakeBtnStyle(new Color(0.2f, 0.35f, 0.7f, 1f));
-            btnGrayStyle = MakeBtnStyle(new Color(0.35f, 0.35f, 0.38f, 1f), 14);
-            btnRedStyle = MakeBtnStyle(new Color(0.6f, 0.15f, 0.15f, 1f), 15);
+            int actionFont = mobile ? 24 : 18;
+            btnGreenStyle = MakeBtnStyle(new Color(0.15f, 0.55f, 0.15f, 1f), actionFont);
+            btnBlueStyle = MakeBtnStyle(new Color(0.2f, 0.35f, 0.7f, 1f), actionFont);
+            btnGrayStyle = MakeBtnStyle(new Color(0.35f, 0.35f, 0.38f, 1f), mobile ? 21 : 14);
+            btnRedStyle = MakeBtnStyle(new Color(0.6f, 0.15f, 0.15f, 1f), mobile ? 22 : 15);
 
             playerRowStyle = new GUIStyle(GUI.skin.label);
-            playerRowStyle.fontSize = 15;
+            playerRowStyle.fontSize = mobile ? 22 : 15;
             playerRowStyle.normal.textColor = new Color(0.85f, 0.88f, 0.9f, 1f);
 
             playerMeStyle = new GUIStyle(GUI.skin.label);
-            playerMeStyle.fontSize = 15;
+            playerMeStyle.fontSize = mobile ? 22 : 15;
             playerMeStyle.fontStyle = FontStyle.Bold;
             playerMeStyle.normal.textColor = new Color(1f, 0.84f, 0f, 1f);
         }

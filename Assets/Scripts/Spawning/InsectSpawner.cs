@@ -15,17 +15,24 @@ namespace InsectGame.Spawning
 
         [Header("Spawn Settings")]
         [SerializeField] private GameObject defaultPrefab;
-        [SerializeField] private float spawnIntervalSeconds = 600f; // 10분
-        [SerializeField] private int maxActiveTotal = 20;
-        [SerializeField] private int prewarmPoolSize = 8;
-        [SerializeField] private int initialSpawnCount = 5;
-        [SerializeField] private int maxActivePerRegion = 5;
+        // 메인 필드 곤충이 너무 적던 문제 — 동시/리전/초기 수를 늘리고 스폰 간격을 단축.
+        // 맵 1.5배(면적 2.25배) 확장에 맞춰 상한 재상향 (18/12/7 → 32/20/10).
+        [SerializeField] private float spawnIntervalSeconds = 5f;
+        [SerializeField] private int maxActiveTotal = 32;
+        [SerializeField] private int prewarmPoolSize = 32;
+        [SerializeField] private int initialSpawnCount = 20;
+        [SerializeField] private int maxActivePerRegion = 10;
+        [SerializeField] private int subAreaActiveCount = 2;
+        [SerializeField] private float subAreaRespawnSeconds = 45f;
 
         private float spawnTimer;
         private float cleanupTimer;
         private float relocateTimer;
         private float subAreaRespawnTimer;
         private readonly List<InsectEntity> activeInsects = new List<InsectEntity>();
+
+        /// <summary>현재 활성 곤충 목록(읽기 전용) — NPC 등 외부 시스템이 FindObjectsByType 없이 소비.</summary>
+        public IReadOnlyList<InsectEntity> ActiveInsects => activeInsects;
         private SimpleObjectPool pool;
         private bool poolInitialized;
         private string debugStatus = "초기화 대기";
@@ -156,10 +163,10 @@ namespace InsectGame.Spawning
                 CleanupDeadEntities();
                 if (currentSubArea.exclusiveInsectIds != null
                     && currentSubArea.exclusiveInsectIds.Length > 0
-                    && activeInsects.Count < 2)
+                    && activeInsects.Count < 1)
                 {
                     subAreaRespawnTimer += Time.deltaTime;
-                    if (subAreaRespawnTimer >= 4f)
+                    if (subAreaRespawnTimer >= subAreaRespawnSeconds)
                     {
                         subAreaRespawnTimer = 0f;
                         SpawnSubAreaInsects(currentSubArea);
@@ -191,13 +198,6 @@ namespace InsectGame.Spawning
                 return;
             }
 
-            string underpopulatedRegion = GetUnderpopulatedRegionId();
-            if (!string.IsNullOrEmpty(underpopulatedRegion))
-            {
-                TrySpawn(underpopulatedRegion);
-                return;
-            }
-
             spawnTimer += Time.deltaTime;
             if (spawnTimer < spawnIntervalSeconds)
             {
@@ -206,7 +206,8 @@ namespace InsectGame.Spawning
             }
 
             spawnTimer = 0f;
-            TrySpawn();
+            string underpopulatedRegion = GetUnderpopulatedRegionId();
+            TrySpawn(underpopulatedRegion);
         }
 
         private void TrySpawn()
@@ -329,6 +330,7 @@ namespace InsectGame.Spawning
             }
 
             HashSet<string> seededRegions = new HashSet<string>();
+            int spawnCount = Mathf.Clamp(initialSpawnCount, 0, maxActiveTotal);
             if (maxActivePerRegion > 0)
             {
                 foreach (SpawnPoint point in spawnPoints)
@@ -338,7 +340,7 @@ namespace InsectGame.Spawning
                         continue;
                     }
 
-                    if (activeInsects.Count >= maxActiveTotal)
+                    if (activeInsects.Count >= spawnCount)
                     {
                         break;
                     }
@@ -347,7 +349,6 @@ namespace InsectGame.Spawning
                 }
             }
 
-            int spawnCount = Mathf.Clamp(initialSpawnCount, 0, maxActiveTotal);
             int attempts = 0;
             int maxAttempts = Mathf.Max(spawnCount * 2, spawnPoints.Length * 6);
             while (activeInsects.Count < spawnCount && attempts < maxAttempts)
@@ -371,9 +372,15 @@ namespace InsectGame.Spawning
 
         // OnGUI GUIStyle 캐싱 — 옛 매 프레임 new GUIStyle 회귀 차단
         private GUIStyle debugStyleCache;
+        // 렌더 진단 캐시 — 매 프레임 Find 비용 회피 위해 1초마다 갱신.
+        private float nextDiagRefresh;
+        private string renderDiagCache = "(측정 중)";
+        // 프리미티브 빌트인 메시 null 프로브 — 1회만 실행. Plane 메시가 null이면 회색필드+MeshCollider 에러 확정.
+        private string primProbeCache;
 
         private void OnGUI()
         {
+#if DEVELOPMENT_BUILD || UNITY_EDITOR
             if (debugStyleCache == null)
             {
                 debugStyleCache = new GUIStyle(GUI.skin.box)
@@ -381,14 +388,89 @@ namespace InsectGame.Spawning
                 debugStyleCache.normal.textColor = Color.white;
             }
 
-            float y = Screen.height - 80;
+            // 회색 필드 원인 추적용 렌더 진단 — 셰이더/라이트강도/fog/카메라클립/지형머티리얼.
+            // 프리미티브 빌트인 메시 1회 프로브 — Plane 메시가 NULL이면 지형 안보임+MeshCollider 에러 확정.
+            if (primProbeCache == null)
+            {
+                System.Text.StringBuilder sb = new System.Text.StringBuilder("Prim ");
+                PrimitiveType[] types = { PrimitiveType.Plane, PrimitiveType.Quad, PrimitiveType.Cube, PrimitiveType.Sphere, PrimitiveType.Cylinder, PrimitiveType.Capsule };
+                string[] tn = { "Pl", "Qd", "Cb", "Sp", "Cy", "Cp" };
+                for (int i = 0; i < types.Length; i++)
+                {
+                    GameObject probe = null;
+                    bool meshOk = false;
+                    try
+                    {
+                        probe = GameObject.CreatePrimitive(types[i]);
+                        MeshFilter pmf = probe.GetComponent<MeshFilter>();
+                        meshOk = pmf != null && pmf.sharedMesh != null && pmf.sharedMesh.vertexCount > 0;
+                    }
+                    catch { meshOk = false; }
+                    finally { if (probe != null) Destroy(probe); }
+                    sb.Append(tn[i]).Append(meshOk ? "=OK " : "=NULL ");
+                }
+                primProbeCache = sb.ToString();
+                Debug.Log("[InsectSpawner] 프리미티브 메시 프로브 → " + primProbeCache);
+            }
+
+            if (Time.unscaledTime >= nextDiagRefresh)
+            {
+                nextDiagRefresh = Time.unscaledTime + 1f;
+                bool stdNull = Shader.Find("Standard") == null;
+                Light[] lightsArr = FindObjectsByType<Light>(FindObjectsSortMode.None);
+                MeshRenderer[] rendsArr = FindObjectsByType<MeshRenderer>(FindObjectsSortMode.None);
+                int onRends = 0;
+                for (int i = 0; i < rendsArr.Length; i++)
+                    if (rendsArr[i].enabled && rendsArr[i].gameObject.activeInHierarchy) onRends++;
+                string lightInfo = lightsArr.Length > 0
+                    ? $"{lightsArr[0].type}I{lightsArr[0].intensity:0.0}dir{lightsArr[0].transform.forward.y:0.00}"
+                    : "none";
+                Camera mc = Camera.main;
+                string camInfo = mc != null
+                    ? $"fov{mc.fieldOfView:0} clip{mc.nearClipPlane:0.0}-{mc.farClipPlane:0} y{mc.transform.position.y:0.0} rx{mc.transform.eulerAngles.x:0}"
+                    : "null";
+                string groundInfo;
+                GameObject g = GameObject.Find("Ground");
+                if (g == null) groundInfo = "noObj";
+                else
+                {
+                    MeshRenderer gr = g.GetComponent<MeshRenderer>();
+                    MeshFilter gmf = g.GetComponent<MeshFilter>();
+                    string meshState = (gmf == null || gmf.sharedMesh == null) ? "MESHNULL" : $"v{gmf.sharedMesh.vertexCount}";
+                    if (gr == null || gr.sharedMaterial == null) groundInfo = $"noMat {meshState}";
+                    else groundInfo = $"{meshState} {gr.sharedMaterial.shader.name} c{ColHex(gr.sharedMaterial.color)}";
+                }
+                // 스카이박스 셰이더가 회색 출처일 수 있어 셰이더명 노출. 앰비언트 색도(검정이면 전체 어두움).
+                string skyInfo = RenderSettings.skybox != null
+                    ? $"{(RenderSettings.skybox.shader != null ? RenderSettings.skybox.shader.name : "noShader")}"
+                    : "null";
+                renderDiagCache =
+                    $"Std:{(stdNull ? "NULL" : "OK")} Light:{lightInfo} Amb:{RenderSettings.ambientMode}/{ColHex(RenderSettings.ambientLight)}\n" +
+                    $"Fog:{(RenderSettings.fog ? RenderSettings.fogMode.ToString() : "off")} Cam:{camInfo}\n" +
+                    $"Rend:{rendsArr.Length}(on{onRends}) Grd:{groundInfo}\n" +
+                    $"Sky:{skyInfo} {primProbeCache}";
+            }
+
+            float y = Screen.height - 190;
             string info = $"[스포너] {debugStatus}\n" +
                           $"DB:{database != null} | 프리팹:{defaultPrefab != null} | 풀:{pool != null} | " +
-                          $"SP:{spawnPoints?.Length ?? 0} | 활성:{activeInsects.Count}/{maxActiveTotal}";
-            GUI.Box(new Rect(10, y, 600, 70), info, debugStyleCache);
+                          $"SP:{spawnPoints?.Length ?? 0} | 활성:{activeInsects.Count}/{maxActiveTotal}\n" +
+                          $"[렌더] {renderDiagCache}";
+            GUI.Box(new Rect(10, y, 780, 174), info, debugStyleCache);
 
+            // 테스트용 튜토리얼 리셋 버튼 (개발빌드 전용).
+            if (GUI.Button(new Rect(660, y, 170, 50), "튜토리얼 리셋"))
+            {
+                TutorialQuestManager.Instance?.RestartTutorialForTesting();
+            }
+#endif
         }
 
+
+#if DEVELOPMENT_BUILD || UNITY_EDITOR
+        private static string ColHex(Color c) =>
+            $"{Mathf.RoundToInt(Mathf.Clamp01(c.r) * 255):X2}{Mathf.RoundToInt(Mathf.Clamp01(c.g) * 255):X2}{Mathf.RoundToInt(Mathf.Clamp01(c.b) * 255):X2}";
+#endif
 
         private SpawnPoint GetAvailableSpawnPoint(string preferredRegionId = null)
         {
@@ -397,13 +479,21 @@ namespace InsectGame.Spawning
                 return null;
             }
 
+            // 60m 디스폰 밖 포인트에서의 스폰은 5초 내 정리되는 낭비(churn) — 55m 안쪽만 사용.
+            // (리전 링이 정적으로 유지되면서 원거리 포인트가 상시 존재하게 된 데 대한 방어)
+            Transform player = GetPlayerTransform();
+            bool useDistanceGate = player != null;
+            Vector3 playerPos = useDistanceGate ? player.position : Vector3.zero;
+            const float maxSpawnDistSq = 55f * 55f;
+
             if (!string.IsNullOrEmpty(preferredRegionId))
             {
                 int preferredStart = Random.Range(0, spawnPoints.Length);
                 for (int i = 0; i < spawnPoints.Length; i++)
                 {
                     SpawnPoint point = spawnPoints[(preferredStart + i) % spawnPoints.Length];
-                    if (point != null && point.CanSpawn && point.regionId == preferredRegionId)
+                    if (point != null && point.CanSpawn && point.regionId == preferredRegionId
+                        && (!useDistanceGate || (point.transform.position - playerPos).sqrMagnitude <= maxSpawnDistSq))
                     {
                         return point;
                     }
@@ -414,7 +504,8 @@ namespace InsectGame.Spawning
             for (int i = 0; i < spawnPoints.Length; i++)
             {
                 SpawnPoint point = spawnPoints[(startIndex + i) % spawnPoints.Length];
-                if (point != null && point.CanSpawn)
+                if (point != null && point.CanSpawn
+                    && (!useDistanceGate || (point.transform.position - playerPos).sqrMagnitude <= maxSpawnDistSq))
                 {
                     return point;
                 }
@@ -530,19 +621,48 @@ namespace InsectGame.Spawning
             }
         }
 
+        // EnsureSpawnPoints가 배치한 리전 링 원위치 스냅샷 — 리전 이탈 시 복귀용
+        private Vector3[] spawnPointHomes;
+
         private void RelocateSpawnPoints()
         {
             Transform player = GetPlayerTransform();
             if (player == null || spawnPoints == null) return;
 
+            if (spawnPointHomes == null || spawnPointHomes.Length != spawnPoints.Length)
+            {
+                spawnPointHomes = new Vector3[spawnPoints.Length];
+                for (int i = 0; i < spawnPoints.Length; i++)
+                {
+                    if (spawnPoints[i] != null) spawnPointHomes[i] = spawnPoints[i].transform.position;
+                }
+            }
+
+            string playerRegionId = regionManager != null && regionManager.CurrentRegion != null
+                ? regionManager.CurrentRegion.regionId
+                : null;
+
+            // 현재 리전 라벨의 포인트만 플레이어 주변으로 당기고, 나머지는 링 원위치 유지.
+            // (옛: 전 포인트를 무조건 플레이어 나선(10+i*3m)으로 → 배열 앞쪽(초원/연못) 라벨만
+            //  60m 디스폰 안에 남아, 어느 리전에 가도 초원/연못 곤충만 체감되는 문제)
+            int localIndex = 0;
             for (int i = 0; i < spawnPoints.Length; i++)
             {
                 if (spawnPoints[i] == null) continue;
                 if (!spawnPoints[i].CanSpawn) spawnPoints[i].ResetCount();
-                float angle = Mathf.PI * 2f * i / spawnPoints.Length;
-                float dist = 10f + i * 3f;
-                Vector3 pos = player.position + new Vector3(Mathf.Cos(angle) * dist, 0f, Mathf.Sin(angle) * dist);
-                spawnPoints[i].transform.position = pos;
+
+                if (playerRegionId != null && spawnPoints[i].regionId == playerRegionId)
+                {
+                    float angle = localIndex * 2.399963f;          // 황금각 — 포인트 수 무관 고른 방위
+                    float dist = 10f + (localIndex % 12) * 3f;      // 10~43m (60m 디스폰 안쪽)
+                    spawnPoints[i].transform.position = player.position
+                        + new Vector3(Mathf.Cos(angle) * dist, 0f, Mathf.Sin(angle) * dist);
+                    localIndex++;
+                }
+                else
+                {
+                    spawnPoints[i].transform.position = spawnPointHomes[i];
+                }
             }
         }
 
@@ -723,7 +843,7 @@ namespace InsectGame.Spawning
             Transform pTrans = GetPlayerTransform();
             if (pTrans != null) anchor = pTrans.position;
 
-            int spawnCount = Mathf.Min(subArea.exclusiveInsectIds.Length + 2, 5);
+            int spawnCount = Mathf.Min(subArea.exclusiveInsectIds.Length + 1, subAreaActiveCount);
             for (int i = 0; i < spawnCount; i++)
             {
                 string insectId = subArea.exclusiveInsectIds[i % subArea.exclusiveInsectIds.Length];
@@ -761,6 +881,10 @@ namespace InsectGame.Spawning
 
             spawnIntervalSeconds = Mathf.Max(1f, profile.spawnIntervalSeconds);
             maxActiveTotal = Mathf.Max(1, profile.maxActiveTotal);
+            initialSpawnCount = Mathf.Clamp(profile.initialSpawnCount, 1, maxActiveTotal);
+            maxActivePerRegion = Mathf.Max(1, profile.maxActivePerRegion);
+            subAreaActiveCount = Mathf.Max(1, profile.subAreaActiveCount);
+            subAreaRespawnSeconds = Mathf.Max(5f, profile.subAreaRespawnSeconds);
         }
     }
 }
