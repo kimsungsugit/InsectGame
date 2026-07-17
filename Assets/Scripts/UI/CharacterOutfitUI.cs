@@ -57,6 +57,9 @@ namespace InsectGame.UI
         private GUIStyle infoNameStyleCache;
         private bool stylesInitialized;
 
+        // 매 OnGUI 프레임 FindFirstObjectByType 회귀 차단 — 첫 조회 1회만.
+        private PlayerCurrencyWallet walletCache;
+
         private static readonly Color InfoLabelCol = new Color(0.85f, 0.9f, 1f);
 
         public void Toggle()
@@ -618,9 +621,10 @@ namespace InsectGame.UI
             }
 
             Rect coinRect = new Rect(x + 24, y + panelH - 44, 820, 36);
-            PlayerCurrencyWallet w = outfitManager.GetComponent<PlayerCurrencyWallet>() ??
-                FindFirstObjectByType<PlayerCurrencyWallet>();
-            int coinCount = (w != null) ? w.Coins : 0;
+            if (walletCache == null)
+                walletCache = outfitManager.GetComponent<PlayerCurrencyWallet>() ??
+                    FindFirstObjectByType<PlayerCurrencyWallet>();
+            int coinCount = (walletCache != null) ? walletCache.Coins : 0;
             int gemCount = CashShopManager.Instance != null ? CashShopManager.Instance.Gems : 0;
             GUI.Label(coinRect, $"보유 캔디: 🍬{coinCount}    보석: 💎{gemCount}", coinStyle);
 
