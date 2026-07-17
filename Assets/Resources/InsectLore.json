@@ -511,6 +511,518 @@
       "habitatHint": "랜덤 상자 전용 — 별이 쏟아지는 밤하늘의 정수를 담은 최상위 곤충",
       "spritePath": "Sprites/Insects/gacha_celestial_beetle",
       "rewardCoins": 150
+    },
+    {
+      "insectId": "bee_bumble",
+      "displayName": "호박벌",
+      "description": "통통한 몸에 보송보송한 털옷을 입은 붕붕이 꿀벌 친구예요. 몸이 무거워 보여도 힘찬 날갯짓으로 이 꽃 저 꽃을 부지런히 오가며, 추운 날에도 몸을 부르르 떨어 열을 내서 가장 먼저 꽃밭에 출근한답니다.",
+      "habitatHint": "선선한 아침 낮, 클로버와 들꽃이 핀 풀밭",
+      "spritePath": "Sprites/Insects/bee_bumble",
+      "rewardCoins": 8
+    },
+    {
+      "insectId": "grasshopper_brown",
+      "displayName": "팥중이",
+      "description": "마른 풀과 흙바닥을 쏙 빼닮은 갈색 옷의 메뚜기예요. 가만히 있으면 낙엽인지 벌레인지 구별하기 어렵다가, 발소리가 나면 '타닥' 소리와 함께 저 멀리 튀어 달아난답니다.",
+      "habitatHint": "햇볕 마른 낮, 흙길과 마른 풀밭",
+      "spritePath": "Sprites/Insects/grasshopper_brown",
+      "rewardCoins": 6
+    },
+    {
+      "insectId": "ladybug_harlequin",
+      "displayName": "남생이무당벌레",
+      "description": "친구마다 등껍질 무늬가 제각각이라 같은 종인데도 전부 다르게 생긴 신기한 무당벌레예요. 점이 두 개인 친구도, 열아홉 개인 친구도 있어서 무늬 수집하는 재미가 쏠쏠하답니다.",
+      "habitatHint": "따뜻한 낮, 진딧물이 모인 나무와 풀줄기",
+      "spritePath": "Sprites/Insects/ladybug_harlequin",
+      "rewardCoins": 12
+    },
+    {
+      "insectId": "antlion_pit",
+      "displayName": "개미귀신",
+      "description": "부드러운 모래에 깔때기 모양 함정을 파고 바닥에 숨어 기다리는 꾀돌이 사냥꾼이에요. 개미가 미끄러져 굴러떨어지면 모래를 흩뿌려 더 못 올라가게 한 뒤 큰턱으로 낚아챈답니다. 자라면 잠자리를 닮은 명주잠자리가 돼요!",
+      "habitatHint": "비를 피한 마른 낮, 처마 밑 고운 모래땅",
+      "spritePath": "Sprites/Insects/antlion_pit",
+      "rewardCoins": 15
+    },
+    {
+      "insectId": "mosquito_tiger",
+      "displayName": "흰줄숲모기",
+      "description": "까만 몸에 하얀 줄무늬가 호랑이처럼 선명한 재빠른 모기예요. 다른 모기와 달리 한낮에도 활발히 날아다니고, 워낙 몸놀림이 빨라 손뼉으로 잡기가 여간 어려운 게 아니랍니다.",
+      "habitatHint": "무더운 한낮, 물가 수풀과 그늘진 덤불",
+      "spritePath": "Sprites/Insects/mosquito_tiger",
+      "rewardCoins": 4
+    },
+    {
+      "insectId": "fly_hover",
+      "displayName": "꽃등에",
+      "description": "노란 줄무늬 때문에 벌인 줄 알았는데 사실은 침이 없는 순한 파리예요. 공중에서 헬리콥터처럼 딱 멈춰 떠 있다가 순식간에 옆으로 슝 이동하는 비행 실력이 일품이랍니다.",
+      "habitatHint": "맑은 낮, 꽃이 핀 물가 풀밭",
+      "spritePath": "Sprites/Insects/fly_hover",
+      "rewardCoins": 5
+    },
+    {
+      "insectId": "water_strider_stream",
+      "displayName": "애소금쟁이",
+      "description": "여울처럼 살살 흐르는 물 위에서도 미끄러지지 않고 스케이트를 타는 작은 소금쟁이예요. 다리 끝 잔털이 물을 밀어내는 덕분에 물살을 거슬러 제자리를 지키는 재주가 뛰어나답니다.",
+      "habitatHint": "바람 잔잔한 낮, 얕게 흐르는 시냇물 수면",
+      "spritePath": "Sprites/Insects/water_strider_stream",
+      "rewardCoins": 6
+    },
+    {
+      "insectId": "diving_beetle_striped",
+      "displayName": "줄무늬물방개",
+      "description": "매끈한 등판에 노란 줄무늬가 시원하게 뻗은 헤엄 선수예요. 노처럼 생긴 뒷다리를 한 번 저을 때마다 몸이 쭉쭉 나아가고, 물풀 사이를 요리조리 누비며 작은 물벌레를 사냥한답니다.",
+      "habitatHint": "낮 시간, 물풀이 우거진 얕은 연못가",
+      "spritePath": "Sprites/Insects/diving_beetle_striped",
+      "rewardCoins": 8
+    },
+    {
+      "insectId": "damselfly_red",
+      "displayName": "붉은실잠자리",
+      "description": "실처럼 가느다란 새빨간 몸이 갈대 끝에서 살랑이는 예쁜 실잠자리예요. 쉴 때는 날개 네 장을 등 위로 가지런히 접고, 물가 위를 하늘하늘 날며 작은 날벌레를 잡아먹는답니다.",
+      "habitatHint": "맑은 한낮, 붉게 물든 노을빛 연못 가장자리",
+      "spritePath": "Sprites/Insects/damselfly_red",
+      "rewardCoins": 13
+    },
+    {
+      "insectId": "dragonfly_scarlet",
+      "displayName": "고추잠자리",
+      "description": "잘 익은 고추처럼 온몸이 새빨간 가을 하늘의 단골손님이에요. 사실 어릴 땐 노르스름한 색이었다가 어른 수컷이 되면서 점점 빨갛게 물든답니다. 무리를 지어 노을 진 하늘을 맴도는 모습이 장관이에요!",
+      "habitatHint": "선선한 가을 낮, 연못 위와 노을 지는 들판 하늘",
+      "spritePath": "Sprites/Insects/dragonfly_scarlet",
+      "rewardCoins": 14
+    },
+    {
+      "insectId": "diving_beetle_great",
+      "displayName": "왕물방개",
+      "description": "연못 물속의 헤엄 대장으로 불리는 크고 늠름한 물방개예요. 반질반질한 초록빛 몸으로 물살을 가르며, 올챙이나 작은 물고기도 겁 없이 사냥하는 물속 최상위 사냥꾼이랍니다.",
+      "habitatHint": "낮이든 밤이든, 물풀 우거진 깊은 연못 속",
+      "spritePath": "Sprites/Insects/diving_beetle_great",
+      "rewardCoins": 16
+    },
+    {
+      "insectId": "dragonfly_jade",
+      "displayName": "비취잠자리",
+      "description": "온몸이 비취 보석처럼 맑은 초록빛으로 반짝이는 귀한 잠자리예요. 잔잔한 수면 위를 스치듯 날면 초록 빛줄기가 물 위에 어리는데, 그 모습이 어찌나 고운지 한참을 바라보게 된답니다.",
+      "habitatHint": "햇살 좋은 한낮, 거울처럼 잔잔한 연못 수면 위",
+      "spritePath": "Sprites/Insects/dragonfly_jade",
+      "rewardCoins": 26
+    },
+    {
+      "insectId": "firefly_marsh",
+      "displayName": "늪반딧불이",
+      "description": "물안개 낀 얕은 물가에 창백한 불빛을 흩뿌리며 나는 신비한 반딧불이에요. 안개 속에서 깜빡이는 빛이 여러 개로 번져 보여서, 옛사람들은 물의 정령이 등불을 든 것이라 믿었답니다.",
+      "habitatHint": "물안개 피는 깊은 밤, 갈대 우거진 물가",
+      "spritePath": "Sprites/Insects/firefly_marsh",
+      "rewardCoins": 42
+    },
+    {
+      "insectId": "beetle_longhorn_oak",
+      "displayName": "참나무하늘소",
+      "description": "제 몸보다 긴 더듬이로 참나무 껍질을 톡톡 두드리며 걸어 다니는 멋쟁이 하늘소예요. 오래된 참나무 숲을 좋아해서, 이 친구가 보이면 근처에 아주 나이 많은 나무가 있다는 뜻이랍니다.",
+      "habitatHint": "여름 해 질 녘, 오래된 참나무 줄기",
+      "spritePath": "Sprites/Insects/beetle_longhorn_oak",
+      "rewardCoins": 15
+    },
+    {
+      "insectId": "cricket_tree",
+      "displayName": "청솔귀뚜라미",
+      "description": "땅이 아니라 나무 위에서 사는 연둣빛 귀뚜라미예요. 밤이 되면 높은 가지에서 '리리리' 하고 유리구슬 구르는 듯 맑은 소리로 노래하는데, 소리는 가까이 들려도 모습을 찾기는 쉽지 않답니다.",
+      "habitatHint": "따뜻한 여름밤, 숲 나뭇가지와 잎 사이",
+      "spritePath": "Sprites/Insects/cricket_tree",
+      "rewardCoins": 12
+    },
+    {
+      "insectId": "stag_beetle_saw",
+      "displayName": "톱사슴벌레",
+      "description": "톱니가 촘촘히 돋은 큰턱이 진짜 톱을 닮은 사슴벌레예요. 구부러진 턱으로 라이벌을 걸어 넘기는 씨름 솜씨가 뛰어나고, 참나무 수액이 흐르는 자리를 두고 밤마다 힘겨루기를 벌인답니다.",
+      "habitatHint": "무더운 여름밤, 수액 흐르는 참나무 줄기",
+      "spritePath": "Sprites/Insects/stag_beetle_saw",
+      "rewardCoins": 25
+    },
+    {
+      "insectId": "mantis_bark",
+      "displayName": "나무껍질사마귀",
+      "description": "나무껍질과 똑같은 얼룩무늬 몸으로 줄기에 납작 붙어 있는 위장의 달인이에요. 이끼 낀 껍질인 줄 알고 지나가던 벌레가 코앞에 오면, 그제야 번개처럼 앞다리를 뻗어 낚아챈답니다.",
+      "habitatHint": "흐린 낮, 이끼 낀 오래된 나무 줄기",
+      "spritePath": "Sprites/Insects/mantis_bark",
+      "rewardCoins": 24
+    },
+    {
+      "insectId": "rhinoceros_beetle_titan",
+      "displayName": "타이탄장수풍뎅이",
+      "description": "보통 장수풍뎅이보다 훨씬 크고 묵직한, 숲의 거인 같은 풍뎅이예요. 거대한 뿔로 굵은 나뭇가지도 밀어 넘어뜨릴 만큼 힘이 세서, 숲의 곤충들이 길을 비켜 줄 정도랍니다.",
+      "habitatHint": "습한 한밤중, 깊은 숲 큰 나무 밑동",
+      "spritePath": "Sprites/Insects/rhinoceros_beetle_titan",
+      "rewardCoins": 50
+    },
+    {
+      "insectId": "aphid_rose",
+      "displayName": "장미진딧물",
+      "description": "장미 꽃봉오리에 옹기종기 붙어 달콤한 즙을 빨아 먹는 아주 작은 곤충이에요. 정원사에게는 골칫거리지만, 무당벌레와 꽃등에에게는 더없이 좋은 먹잇감이 되어 꽃밭의 먹이사슬을 이어 준답니다.",
+      "habitatHint": "포근한 봄낮, 장미 꽃봉오리와 새순",
+      "spritePath": "Sprites/Insects/aphid_rose",
+      "rewardCoins": 3
+    },
+    {
+      "insectId": "bee_carpenter",
+      "displayName": "어리호박벌",
+      "description": "까맣고 커다란 몸으로 붕붕 묵직한 소리를 내며 나는 목수 벌이에요. 강한 턱으로 오래된 나무 기둥에 동그란 구멍을 파서 집을 짓는 솜씨가 진짜 목수 못지않답니다.",
+      "habitatHint": "맑은 낮, 나무 울타리와 등나무 꽃 주변",
+      "spritePath": "Sprites/Insects/bee_carpenter",
+      "rewardCoins": 14
+    },
+    {
+      "insectId": "butterfly_peacock",
+      "displayName": "공작나비",
+      "description": "날개마다 공작새 깃털 같은 커다란 눈알 무늬가 그려진 화려한 나비예요. 새가 다가오면 날개를 활짝 펼쳐 네 개의 눈을 번쩍 보여 주는데, 깜짝 놀란 새가 도망갈 만큼 효과 만점이랍니다.",
+      "habitatHint": "따뜻한 낮, 꽃이 흐드러진 정원 담장가",
+      "spritePath": "Sprites/Insects/butterfly_peacock",
+      "rewardCoins": 17
+    },
+    {
+      "insectId": "butterfly_glasswing",
+      "displayName": "유리날개나비",
+      "description": "날개가 유리처럼 투명해서 뒤에 있는 꽃이 그대로 비쳐 보이는 신기한 나비예요. 날개에 빛을 반사하는 비늘가루가 거의 없어서, 날고 있어도 눈에 잘 띄지 않는 숨바꼭질의 달인이랍니다.",
+      "habitatHint": "빛이 부드러운 아침, 그늘진 꽃밭 사이",
+      "spritePath": "Sprites/Insects/butterfly_glasswing",
+      "rewardCoins": 30
+    },
+    {
+      "insectId": "moth_hummingbird",
+      "displayName": "꼬리박각시",
+      "description": "벌새처럼 공중에 딱 멈춰 떠서 긴 대롱 입으로 꿀을 빠는 낮나방이에요. 1초에 수십 번의 날갯짓으로 정지 비행을 하는 모습이 새 같아서, 진짜 벌새로 착각하는 사람이 많답니다.",
+      "habitatHint": "해 질 무렵, 나팔꽃과 분꽃이 핀 화단",
+      "spritePath": "Sprites/Insects/moth_hummingbird",
+      "rewardCoins": 28
+    },
+    {
+      "insectId": "bee_queen",
+      "displayName": "여왕벌",
+      "description": "수만 마리 벌 가족을 이끄는 벌집의 주인님이에요. 일벌보다 훨씬 크고 늘씬한 몸으로 평생 알 낳는 일에 전념하고, 충직한 일벌들이 사방에서 호위하며 로열젤리를 바친답니다.",
+      "habitatHint": "화창한 초여름 낮, 꽃밭 벌집 근처",
+      "spritePath": "Sprites/Insects/bee_queen",
+      "rewardCoins": 48
+    },
+    {
+      "insectId": "mosquito_swamp",
+      "displayName": "늪모기",
+      "description": "해 질 무렵 늪 위로 구름처럼 떼 지어 피어오르는 모기예요. 고인 물이 많은 습지는 모기에게 최고의 놀이터라서, 안개인 줄 알았던 것이 사실 모기떼인 경우도 있답니다.",
+      "habitatHint": "후텁지근한 해 질 녘, 물이 고인 늪가",
+      "spritePath": "Sprites/Insects/mosquito_swamp",
+      "rewardCoins": 4
+    },
+    {
+      "insectId": "centipede_red",
+      "displayName": "붉은지네",
+      "description": "썩은 통나무 사이를 새빨간 몸으로 물결치듯 누비는 습지의 사냥꾼이에요. 눈에 확 띄는 붉은색은 '나는 위험하니 건드리지 마'라는 경고장이라, 새들도 함부로 쪼지 못한답니다.",
+      "habitatHint": "축축한 밤, 쓰러진 통나무와 젖은 낙엽 밑",
+      "spritePath": "Sprites/Insects/centipede_red",
+      "rewardCoins": 8
+    },
+    {
+      "insectId": "earwig_swamp",
+      "displayName": "늪집게벌레",
+      "description": "물에 잠긴 나무껍질 밑에 꽁무니 집게를 숨기고 사는 축축한 곳의 친구예요. 습한 곳일수록 기운이 나는 성격이라, 늪가의 젖은 나무 밑은 이 친구에게 최고의 안식처랍니다.",
+      "habitatHint": "눅눅한 밤, 물가에 쓰러진 나무껍질 아래",
+      "spritePath": "Sprites/Insects/earwig_swamp",
+      "rewardCoins": 7
+    },
+    {
+      "insectId": "pill_bug_mud",
+      "displayName": "진흙공벌레",
+      "description": "온몸에 진흙 갑옷을 두르고 뒹구는 늪지대의 공벌레예요. 위험을 느끼면 흙투성이 공으로 데구르르 말려서, 눈앞에서 사라진 듯 진흙 바닥과 하나가 되어 버린답니다.",
+      "habitatHint": "시간을 가리지 않고, 질퍽한 진흙 바닥과 돌 틈",
+      "spritePath": "Sprites/Insects/pill_bug_mud",
+      "rewardCoins": 5
+    },
+    {
+      "insectId": "fly_crane",
+      "displayName": "각다귀",
+      "description": "모기를 크게 늘려 놓은 것 같지만 물지 않는 순둥이 곤충이에요. 대나무처럼 가늘고 긴 다리로 휘청휘청 나는 모습이 우스꽝스럽고, 다리가 하나 떨어져도 아무렇지 않게 날아다닌답니다.",
+      "habitatHint": "습한 저녁, 이끼 낀 물가 풀숲",
+      "spritePath": "Sprites/Insects/fly_crane",
+      "rewardCoins": 4
+    },
+    {
+      "insectId": "dragonfly_swamp_hawker",
+      "displayName": "늪잠자리",
+      "description": "안개 낀 늪 위를 순찰하듯 오가며 방심한 날벌레를 낚아채는 사냥꾼이에요. 짙은 안개 속에서도 커다란 겹눈으로 먹잇감의 움직임을 놓치지 않는 늪지대 하늘의 파수꾼이랍니다.",
+      "habitatHint": "안개 낀 이른 아침, 늪 수면 위",
+      "spritePath": "Sprites/Insects/dragonfly_swamp_hawker",
+      "rewardCoins": 16
+    },
+    {
+      "insectId": "firefly_swamp",
+      "displayName": "습지반딧불이",
+      "description": "여느 반딧불이와 달리 으스스한 초록빛을 내는 습지의 도깨비불이에요. 어둠 속에서 홀로 깜빡이는 초록 불빛을 따라가면 늪 깊은 곳에 다다른다고 해서, 길잡이가 아니라 길잃이 불빛이라 불린답니다.",
+      "habitatHint": "칠흑 같은 밤, 안개 자욱한 늪 한가운데",
+      "spritePath": "Sprites/Insects/firefly_swamp",
+      "rewardCoins": 18
+    },
+    {
+      "insectId": "spider_marsh",
+      "displayName": "습지늑대거미",
+      "description": "갈대 사이에 낮게 그물을 치고 밤을 기다리는 습지의 사냥꾼이에요. 물 위를 잠깐 달릴 수도 있어서, 그물을 벗어난 먹잇감도 수면 위로 쫓아가 붙잡는 집요한 추격자랍니다.",
+      "habitatHint": "이슬 맺힌 밤, 갈대숲 사이 낮은 거미줄",
+      "spritePath": "Sprites/Insects/spider_marsh",
+      "rewardCoins": 15
+    },
+    {
+      "insectId": "mantis_swamp",
+      "displayName": "습지사마귀",
+      "description": "얕은 물에 다리를 담근 채 미동도 없이 먹잇감을 기다리는 끈기의 사냥꾼이에요. 흙탕물과 같은 거무스름한 몸빛 덕분에, 물을 마시러 온 벌레들은 코앞의 낫을 전혀 알아채지 못한답니다.",
+      "habitatHint": "흐린 낮, 얕은 물웅덩이와 젖은 수풀",
+      "spritePath": "Sprites/Insects/mantis_swamp",
+      "rewardCoins": 26
+    },
+    {
+      "insectId": "centipede_venom",
+      "displayName": "독지네",
+      "description": "머리 앞의 독 발톱에 강한 독을 품은 습지의 무법자예요. 한 번 물리면 큰 벌레도 금세 움직임이 굳어 버릴 정도라, 늪의 곤충들이 가장 마주치기 싫어하는 상대랍니다.",
+      "habitatHint": "습한 밤, 늪가 바위 틈과 썩은 나무 속",
+      "spritePath": "Sprites/Insects/centipede_venom",
+      "rewardCoins": 24
+    },
+    {
+      "insectId": "wasp_night",
+      "displayName": "밤말벌",
+      "description": "칠흑 같은 밤에만 소리 없이 사냥을 나서는 검은 말벌이에요. 낮의 말벌과 달리 날갯소리를 거의 내지 않아, 늪의 곤충들은 이 친구를 '어둠 그 자체'라고 부르며 두려워한답니다.",
+      "habitatHint": "달도 없는 깊은 밤, 늪 위 어두운 하늘",
+      "spritePath": "Sprites/Insects/wasp_night",
+      "rewardCoins": 46
+    },
+    {
+      "insectId": "spider_bog_widow",
+      "displayName": "늪과부거미",
+      "description": "검은 물 아래 숨어 수면에 닿는 것을 끌어당기는 무시무시한 거미예요. 배에 공기 방울을 두르고 물속에서도 숨을 쉬며, 넉넉한 독으로 자기보다 큰 먹잇감도 제압한답니다.",
+      "habitatHint": "고요한 밤, 검게 고인 늪 물가",
+      "spritePath": "Sprites/Insects/spider_bog_widow",
+      "rewardCoins": 44
+    },
+    {
+      "insectId": "grasshopper_rock",
+      "displayName": "바위메뚜기",
+      "description": "잿빛 몸으로 바위에 붙으면 감쪽같이 사라지는 산의 점프 선수예요. 튼튼한 뒷다리로 바위에서 바위로 폴짝폴짝 건너뛰는데, 그 도약력은 평지 메뚜기보다 한 수 위랍니다.",
+      "habitatHint": "햇볕 따가운 낮, 볕에 달궈진 너덜바위 지대",
+      "spritePath": "Sprites/Insects/grasshopper_rock",
+      "rewardCoins": 7
+    },
+    {
+      "insectId": "cricket_stone",
+      "displayName": "돌귀뚜라미",
+      "description": "돌 틈에 숨어 살며 해 질 녘이면 골짜기에 울음소리를 메아리로 울리는 귀뚜라미예요. 바위산의 찬 공기에도 끄떡없는 강인한 몸을 지녀, 높은 산에서도 씩씩하게 노래한답니다.",
+      "habitatHint": "해 질 녘, 산비탈 돌무더기 틈새",
+      "spritePath": "Sprites/Insects/cricket_stone",
+      "rewardCoins": 7
+    },
+    {
+      "insectId": "pill_bug_rock",
+      "displayName": "바위공벌레",
+      "description": "잔돌이 굴러떨어져도 끄떡없는 단단한 갑옷을 두른 산악 공벌레예요. 몸을 말면 진짜 조약돌과 구별이 안 될 만큼 똑같아서, 산새들도 번번이 속아 넘어간답니다.",
+      "habitatHint": "시간을 가리지 않고, 산길 바위 밑과 자갈 틈",
+      "spritePath": "Sprites/Insects/pill_bug_rock",
+      "rewardCoins": 6
+    },
+    {
+      "insectId": "ladybug_alpine",
+      "displayName": "고산무당벌레",
+      "description": "높은 산의 찬 바람 속에서도 씩씩하게 사는 강인한 무당벌레예요. 겨울이 오면 수백 마리가 바위 밑에 모여 서로 몸을 붙이고 온기를 나누며 봄을 기다린답니다.",
+      "habitatHint": "맑은 낮, 볕 드는 산등성이 바위 위",
+      "spritePath": "Sprites/Insects/ladybug_alpine",
+      "rewardCoins": 8
+    },
+    {
+      "insectId": "beetle_longhorn_alpine",
+      "displayName": "고산하늘소",
+      "description": "나무가 자라지 못하는 높은 곳에서도 살아가는 푸른 잿빛 하늘소예요. 살을 에는 산바람을 견디는 단단한 몸과 긴 더듬이로, 바위 틈에 자란 작은 관목 사이를 늠름하게 오간답니다.",
+      "habitatHint": "바람 부는 낮, 수풀 성긴 높은 산비탈",
+      "spritePath": "Sprites/Insects/beetle_longhorn_alpine",
+      "rewardCoins": 16
+    },
+    {
+      "insectId": "cicada_mountain",
+      "displayName": "깽깽매미",
+      "description": "'깽깽깽' 하는 우렁찬 울음이 절벽 사이에 메아리치는 산의 매미예요. 서늘한 높은 산을 좋아해서 평지에서는 만나기 어렵고, 소리는 온 산에 울려도 모습 찾기는 하늘의 별 따기랍니다.",
+      "habitatHint": "한여름 맑은 낮, 높은 산 침엽수 줄기",
+      "spritePath": "Sprites/Insects/cicada_mountain",
+      "rewardCoins": 13
+    },
+    {
+      "insectId": "caterpillar_pine",
+      "displayName": "송충이",
+      "description": "소나무 가지를 따라 형제들과 코가 꼬리에 닿을 듯 한 줄로 행진하는 애벌레예요. 온몸의 억센 털은 천적을 막는 방패라서 새들도 함부로 삼키지 못하고, 솔잎을 야금야금 먹으며 자란답니다.",
+      "habitatHint": "봄부터 여름 낮, 솔잎 무성한 소나무 가지",
+      "spritePath": "Sprites/Insects/caterpillar_pine",
+      "rewardCoins": 10
+    },
+    {
+      "insectId": "stag_beetle_mountain",
+      "displayName": "홍다리사슴벌레",
+      "description": "바람 몰아치는 산등성이에서 힘겨루기를 벌이는 산악 사슴벌레예요. 허벅지가 붉게 물든 튼튼한 다리로 바위도 단단히 붙잡아, 세찬 산바람에도 밀려나지 않고 씨름을 이어간답니다.",
+      "habitatHint": "여름밤, 산 중턱 참나무와 물푸레나무 줄기",
+      "spritePath": "Sprites/Insects/stag_beetle_mountain",
+      "rewardCoins": 28
+    },
+    {
+      "insectId": "butterfly_apollo",
+      "displayName": "아폴로모시나비",
+      "description": "한지처럼 반투명한 하얀 날개에 붉은 눈알 무늬가 점점이 박힌 고산의 귀족 나비예요. 눈 덮인 산꼭대기 근처의 꽃밭에서만 사는 까다로운 친구라, 만나려면 높은 산을 올라야 한답니다.",
+      "habitatHint": "맑은 여름 한낮, 높은 산 바위틈 꽃밭",
+      "spritePath": "Sprites/Insects/butterfly_apollo",
+      "rewardCoins": 32
+    },
+    {
+      "insectId": "spider_cliff",
+      "displayName": "절벽거미",
+      "description": "아찔한 바위 절벽에 거미줄 닻을 내리고 사는 간 큰 거미예요. 강풍에도 끊어지지 않는 튼튼한 줄을 짜는 재주가 있어, 절벽을 오르내리는 밧줄 장인이라 불린답니다.",
+      "habitatHint": "바람 자는 아침, 깎아지른 바위 절벽 틈",
+      "spritePath": "Sprites/Insects/spider_cliff",
+      "rewardCoins": 26
+    },
+    {
+      "insectId": "stag_beetle_iron",
+      "displayName": "강철사슴벌레",
+      "description": "쇳빛으로 번들거리는 큰턱이 바위도 움푹 파이게 한다는 전설의 씨름꾼이에요. 험한 바위산에서 단련된 갑옷 같은 몸은 어지간한 공격에는 흠집 하나 나지 않는답니다.",
+      "habitatHint": "달 밝은 밤, 산 정상 부근 고사목 줄기",
+      "spritePath": "Sprites/Insects/stag_beetle_iron",
+      "rewardCoins": 52
+    },
+    {
+      "insectId": "cicada_ancient",
+      "displayName": "태고매미",
+      "description": "수십 년, 어쩌면 그보다 훨씬 오래 땅속에서 잠들었다가 깨어난다는 전설의 매미예요. 이 매미의 첫 울음소리를 들은 사람에게는 아주 큰 행운이 찾아온다는 이야기가 산마을에 전해진답니다.",
+      "habitatHint": "산안개 걷히는 새벽, 아주 오래된 거목 줄기",
+      "spritePath": "Sprites/Insects/cicada_ancient",
+      "rewardCoins": 100
+    },
+    {
+      "insectId": "cricket_tomb",
+      "displayName": "무덤귀뚜라미",
+      "description": "무너진 돌기둥 사이, 아무도 없는 어둠 속에서 홀로 노래하는 귀뚜라미예요. 텅 빈 유적의 복도에 울려 퍼지는 그 소리가 옛 문명을 그리워하는 자장가처럼 들린다고 한답니다.",
+      "habitatHint": "고요한 밤, 유적의 무너진 돌담 틈",
+      "spritePath": "Sprites/Insects/cricket_tomb",
+      "rewardCoins": 14
+    },
+    {
+      "insectId": "scarab_relic",
+      "displayName": "유물풍뎅이",
+      "description": "등껍질에 새겨진 무늬가 유적 벽화의 문양과 꼭 닮은 신비한 풍뎅이예요. 옛사람들이 이 풍뎅이를 본떠 벽화를 그린 것인지, 풍뎅이가 벽화를 닮아 간 것인지는 아무도 모른답니다.",
+      "habitatHint": "해 질 무렵, 벽화가 남은 유적 돌바닥",
+      "spritePath": "Sprites/Insects/scarab_relic",
+      "rewardCoins": 30
+    },
+    {
+      "insectId": "mantis_obsidian",
+      "displayName": "흑요석사마귀",
+      "description": "잘 갈린 흑요석처럼 검게 번뜩이는 낫을 지닌 유적의 검객이에요. 어둠에 녹아든 채 기둥 뒤에서 기다리다가, 달빛이 낫에 반짝 스치는 순간이 곧 사냥의 순간이랍니다.",
+      "habitatHint": "달빛 스미는 밤, 검은 돌기둥 그늘",
+      "spritePath": "Sprites/Insects/mantis_obsidian",
+      "rewardCoins": 32
+    },
+    {
+      "insectId": "spider_tomb",
+      "displayName": "무덤거미",
+      "description": "잊혀진 문 위에 먼지 쌓인 거미줄을 드리우는 유적의 문지기예요. 수백 년 동안 아무도 열지 않은 문일수록 좋아해서, 이 거미의 줄이 온전하다면 그 문은 그동안 누구도 지나지 않았다는 뜻이랍니다.",
+      "habitatHint": "시간이 멈춘 어둠 속, 봉인된 석문 위",
+      "spritePath": "Sprites/Insects/spider_tomb",
+      "rewardCoins": 28
+    },
+    {
+      "insectId": "centipede_ruin",
+      "displayName": "폐허지네",
+      "description": "금이 간 돌벽 틈을 미끄러지듯 누비는 폐허의 그림자예요. 무너진 돌 더미 아래의 미로 같은 틈새가 이 친구의 사냥터라서, 유적 어디에나 있지만 어디서도 쉽게 보이지 않는답니다.",
+      "habitatHint": "어두운 밤, 무너진 석벽의 갈라진 틈",
+      "spritePath": "Sprites/Insects/centipede_ruin",
+      "rewardCoins": 26
+    },
+    {
+      "insectId": "jewel_beetle_azure",
+      "displayName": "청람비단벌레",
+      "description": "쓰러진 돌기둥 사이에서 사파이어처럼 빛나는 살아 있는 보석이에요. 깊고 푸른 광택은 보는 각도마다 하늘색에서 남색으로 변해서, 유적을 찾는 모험가들이 보물로 착각하곤 한답니다.",
+      "habitatHint": "빛줄기 스미는 낮, 무너진 돌기둥 사이",
+      "spritePath": "Sprites/Insects/jewel_beetle_azure",
+      "rewardCoins": 50
+    },
+    {
+      "insectId": "moth_shadow",
+      "displayName": "그림자나방",
+      "description": "횃불 하나 없는 캄캄한 회랑을 소리 없이 누비는 어둠의 나방이에요. 날개가 빛을 거의 삼켜 버려서 어둠 속에서는 윤곽조차 보이지 않고, 스쳐 지나간 바람결로만 존재를 알 수 있답니다.",
+      "habitatHint": "칠흑 같은 밤, 유적 지하 회랑",
+      "spritePath": "Sprites/Insects/moth_shadow",
+      "rewardCoins": 46
+    },
+    {
+      "insectId": "wasp_gold",
+      "displayName": "황금말벌",
+      "description": "도금한 갑옷처럼 번쩍이는 몸으로 유적의 보물창고를 지키는 말벌이에요. 황금빛 갑옷은 보기에만 좋은 게 아니라 실제로도 아주 단단해서, 보물에 손대려는 침입자는 혼쭐이 난답니다.",
+      "habitatHint": "금빛 노을 지는 저녁, 보물창고 터 주변",
+      "spritePath": "Sprites/Insects/wasp_gold",
+      "rewardCoins": 55
+    },
+    {
+      "insectId": "scarab_pharaoh",
+      "displayName": "파라오풍뎅이",
+      "description": "먼 옛날 태양을 하늘 저편으로 굴렸다고 전해지는 전설의 성스러운 풍뎅이예요. 등껍질에 태양 문양이 금빛으로 새겨져 있어, 옛 왕들은 이 풍뎅이를 왕관보다 귀한 보물로 모셨답니다.",
+      "habitatHint": "동이 트는 새벽, 제단 위 첫 햇살이 닿는 자리",
+      "spritePath": "Sprites/Insects/scarab_pharaoh",
+      "rewardCoins": 120
+    },
+    {
+      "insectId": "butterfly_midnight",
+      "displayName": "그믐황후나비",
+      "description": "달빛이 제단에 닿는 자정에만 모습을 드러낸다는 밤의 황후예요. 깊은 남색 날개에는 별가루 같은 은빛 점이 흩뿌려져 있어, 날아오르면 밤하늘 한 조각이 움직이는 것처럼 보인답니다.",
+      "habitatHint": "달빛 밝은 자정, 고대 제단 위",
+      "spritePath": "Sprites/Insects/butterfly_midnight",
+      "rewardCoins": 110
+    },
+    {
+      "insectId": "hornet_emperor",
+      "displayName": "황제말벌",
+      "description": "폐허의 하늘을 다스리는 말벌들의 황제예요. 날갯소리만으로 다른 곤충들이 몸을 숨길 만큼 위엄이 넘치고, 한 번 정한 영역은 그 어떤 침입자에게도 내주지 않는답니다.",
+      "habitatHint": "구름 낀 낮, 유적 첨탑 꼭대기 하늘",
+      "spritePath": "Sprites/Insects/hornet_emperor",
+      "rewardCoins": 105
+    },
+    {
+      "insectId": "diving_beetle_king",
+      "displayName": "대왕물방개",
+      "description": "연못에서 가장 깊고 어두운 물속을 다스리는 물방개의 왕이에요. 왕관처럼 도드라진 금빛 테두리를 두른 등껍질을 자랑하며, 깊은 물의 먹이사슬 맨 꼭대기에 군림한답니다.",
+      "habitatHint": "빛이 겨우 닿는 낮, 연못 가장 깊은 바닥",
+      "spritePath": "Sprites/Insects/diving_beetle_king",
+      "rewardCoins": 24
+    },
+    {
+      "insectId": "mantis_dead_leaf",
+      "displayName": "낙엽사마귀",
+      "description": "말라 바스라진 낙엽과 구별이 불가능한 깊은 숲의 암살자예요. 바람이 불면 진짜 낙엽처럼 흔들리는 연기까지 완벽해서, 발밑의 낙엽이 갑자기 낫을 휘두르기 전까지는 아무도 눈치채지 못한답니다.",
+      "habitatHint": "바람 부는 흐린 낮, 깊은 숲 낙엽 더미",
+      "spritePath": "Sprites/Insects/mantis_dead_leaf",
+      "rewardCoins": 46
+    },
+    {
+      "insectId": "mantis_mist",
+      "displayName": "안개사마귀",
+      "description": "짙은 안개 속에 반쯤 잠긴 채 어른거리는 습지의 환영이에요. 뿌연 잿빛 몸이 안개와 한 몸처럼 섞여서, 보였다 싶으면 사라지고 사라졌다 싶으면 어느새 코앞에 와 있답니다.",
+      "habitatHint": "안개가 가장 짙은 새벽, 습지 한가운데",
+      "spritePath": "Sprites/Insects/mantis_mist",
+      "rewardCoins": 48
+    },
+    {
+      "insectId": "moth_comet",
+      "displayName": "혜성나방",
+      "description": "긴 꼬리 두 가닥을 혜성처럼 끌며 산꼭대기 하늘을 가르는 전설의 나방이에요. 달빛을 받으면 노란 날개와 꼬리가 빛줄기처럼 반짝여서, 밤하늘에 진짜 혜성이 떨어지는 줄 알았다는 사람이 많답니다.",
+      "habitatHint": "별이 쏟아지는 밤, 바람 부는 산 정상 하늘",
+      "spritePath": "Sprites/Insects/moth_comet",
+      "rewardCoins": 110
+    },
+    {
+      "insectId": "mantis_gold_temple",
+      "displayName": "황금신전사마귀",
+      "description": "황금 갑옷을 두르고 신전 가장 깊은 곳을 지킨다는 전설의 수호자예요. 천 년 동안 미동도 없이 제단 곁을 지키다가, 신전을 어지럽히는 자가 나타나면 그제야 황금 낫을 든다고 전해진답니다.",
+      "habitatHint": "정적이 감도는 한낮, 신전 가장 깊은 제단 곁",
+      "spritePath": "Sprites/Insects/mantis_gold_temple",
+      "rewardCoins": 130
     }
   ]
 }
