@@ -261,15 +261,17 @@ namespace InsectGame.UI
             root.transform.position = player.Position;
 
             Color color = Color.HSVToRGB(Mathf.Abs(StableHash(player.uid) % 1000) / 1000f, 0.58f, 0.95f);
+            // 빌드에서 셰이더가 스트리핑되면 Find가 둘 다 null을 낼 수 있는데, new Material(null)은
+            // 예외라 아바타 생성 자체가 실패한다. null이면 프리미티브 기본 머티리얼에 색만 입힌다.
             Shader shader = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
-            var material = new Material(shader) { color = color };
+            Material material = shader != null ? new Material(shader) { color = color } : null;
 
             GameObject body = GameObject.CreatePrimitive(PrimitiveType.Capsule);
             body.name = "Body";
             body.transform.SetParent(root.transform, false);
             body.transform.localPosition = new Vector3(0f, 0.95f, 0f);
             body.transform.localScale = new Vector3(0.62f, 0.78f, 0.62f);
-            body.GetComponent<Renderer>().sharedMaterial = material;
+            ApplyAvatarMaterial(body, material, color);
             DisableCollider(body);
 
             GameObject head = GameObject.CreatePrimitive(PrimitiveType.Sphere);
@@ -277,7 +279,7 @@ namespace InsectGame.UI
             head.transform.SetParent(root.transform, false);
             head.transform.localPosition = new Vector3(0f, 2.05f, 0f);
             head.transform.localScale = Vector3.one * 0.68f;
-            head.GetComponent<Renderer>().sharedMaterial = material;
+            ApplyAvatarMaterial(head, material, color);
             DisableCollider(head);
 
             var labelObject = new GameObject("NameLabel");
@@ -293,6 +295,18 @@ namespace InsectGame.UI
             var avatar = new RemoteAvatar { root = root, material = material, state = player };
             UpdateAvatarLabel(avatar, player);
             return avatar;
+        }
+
+        /// <summary>
+        /// 공용 머티리얼을 입힌다. 셰이더 스트리핑으로 material이 null이면 프리미티브 기본
+        /// 머티리얼 인스턴스에 색만 입혀 최소한 보이게 한다(인스턴스는 GameObject와 함께 정리).
+        /// </summary>
+        private static void ApplyAvatarMaterial(GameObject gameObject, Material material, Color color)
+        {
+            Renderer renderer = gameObject.GetComponent<Renderer>();
+            if (renderer == null) return;
+            if (material != null) renderer.sharedMaterial = material;
+            else renderer.material.color = color;
         }
 
         private static void DisableCollider(GameObject gameObject)
@@ -557,9 +571,13 @@ namespace InsectGame.UI
             {
                 fontSize = 17, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter
             };
+            // Color * float는 알파까지 곱한다 — 그대로 쓰면 눌림 상태(0.82)가 반투명해진다.
+            // 명도만 조절하고 알파는 보존한다.
             style.normal.background = UIHelper.GetCachedTex(color);
-            style.hover.background = UIHelper.GetCachedTex(color * 1.12f);
-            style.active.background = UIHelper.GetCachedTex(color * 0.82f);
+            style.hover.background = UIHelper.GetCachedTex(
+                new Color(color.r * 1.12f, color.g * 1.12f, color.b * 1.12f, color.a));
+            style.active.background = UIHelper.GetCachedTex(
+                new Color(color.r * 0.82f, color.g * 0.82f, color.b * 0.82f, color.a));
             style.normal.textColor = Color.white;
             style.hover.textColor = Color.white;
             style.active.textColor = Color.white;
