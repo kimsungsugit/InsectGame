@@ -50,7 +50,11 @@ except Exception:
     print(json.dumps({"suppressOutput": True}))
     sys.exit(0)
 
-m = re.search(r"##\s+Uncovered.*?\n(.*?)(?=\n##\s|\Z)", text, re.DOTALL)
+# 줄 시작(^) 앵커 필수 — 앵커가 없으면 본문이나 헤더가 `## Uncovered`를 인용만 해도
+# 그 지점이 첫 매칭이 되어 엉뚱한 구간을 세고 카운트 0으로 침묵한다.
+m = re.search(
+    r"^##\s+Uncovered.*?\n(.*?)(?=\n^##\s|\Z)", text, re.DOTALL | re.MULTILINE
+)
 if not m:
     print(json.dumps({"suppressOutput": True}))
     sys.exit(0)
