@@ -1,7 +1,6 @@
 ---
 name: verify
 description: 기능 구현 후 코드 품질 검증을 3회 반복 루프로 실행합니다
-user_invocable: true
 ---
 
 # 구현 후 코드 검증 (3회 반복 루프)

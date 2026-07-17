@@ -1,8 +1,7 @@
 ---
 name: save-migration
 description: 세이브 데이터 구조 변경 시 호환성을 검증하고 마이그레이션 코드를 생성합니다
-user_invocable: true
-args: "<변경된 세이브 클래스명 또는 파일명>"
+argument-hint: "<변경된 세이브 클래스명 또는 파일명>"
 ---
 
 # 세이브 마이그레이션

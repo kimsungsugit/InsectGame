@@ -1,8 +1,7 @@
 ---
 name: add-insect
 description: 새 곤충 종을 데이터베이스에 추가합니다
-user_invocable: true
-args: "<곤충이름> <레어도> <속성>"
+argument-hint: "<곤충이름> <레어도> <속성>"
 ---
 
 # 새 곤충 추가

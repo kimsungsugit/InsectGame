@@ -1,8 +1,7 @@
 ---
 name: economy-sim
 description: 캔디/젬/코인 수입·지출 균형을 일·주 단위로 시뮬레이션해 데드 화폐, 병목, P2W 격차를 자동 검출합니다
-user_invocable: true
-args: "[--days=14] [--profile=ftp|mid|whale] [--gacha-per-week=2] [--captures-per-day=20] [--battles-per-day=10] [--raids-per-week=3] [--avg-candy-per-event=5] [--daily-candy-income=auto] [--team-size=6] [--current-level=25]"
+argument-hint: "[--days=14] [--profile=ftp|mid|whale] [--gacha-per-week=2] [--captures-per-day=20] [--battles-per-day=10] [--raids-per-week=3] [--avg-candy-per-event=5] [--daily-candy-income=auto] [--team-size=6] [--current-level=25]"
 ---
 
 # 경제 균형 시뮬

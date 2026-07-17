@@ -1,7 +1,6 @@
 ---
 name: audit
 description: 미검토 영역 1개 자동 탐색·개선. "문제점 분석 및 개선해" 수동 요청 부담 제거.
-user_invocable: true
 ---
 
 # Audit — 자동 영역 탐색·개선

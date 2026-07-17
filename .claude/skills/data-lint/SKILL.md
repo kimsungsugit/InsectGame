@@ -1,8 +1,7 @@
 ---
 name: data-lint
 description: 코드 내 하드코딩된 ID(리전/아이템/가챠) 정의·참조 정합성을 자동 검증하고 dead code, 누락 ID, 중복 정의를 검출합니다
-user_invocable: true
-args: "[--detail]"
+argument-hint: "[--detail]"
 ---
 
 # 데이터 정합성 자동 검증

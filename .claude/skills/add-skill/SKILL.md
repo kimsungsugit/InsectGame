@@ -1,8 +1,7 @@
 ---
 name: add-skill
 description: 새 스킬을 InsectSkill DB에 추가하고 6개 등록 지점 누락을 강제 검증합니다
-user_invocable: true
-args: "<skillId> <effectType: Damage|BuffAttack|DebuffAttack|새타입> <element>"
+argument-hint: "<skillId> <effectType: Damage|BuffAttack|DebuffAttack|새타입> <element>"
 ---
 
 # 새 스킬 추가

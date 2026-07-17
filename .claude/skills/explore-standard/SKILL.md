@@ -1,7 +1,7 @@
 ---
 name: explore-standard
 description: Explore 위임 시 거짓양성을 줄이기 위한 표준 가드/보고 형식
-user_invocable: false
+user-invocable: false
 ---
 
 # Explore 표준 가드

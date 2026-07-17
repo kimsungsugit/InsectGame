@@ -1,8 +1,7 @@
 ---
 name: design-doc
 description: 새 기능의 게임 디자인 문서를 작성합니다
-user_invocable: true
-args: "<기능명>"
+argument-hint: "<기능명>"
 ---
 
 # 게임 디자인 문서 작성

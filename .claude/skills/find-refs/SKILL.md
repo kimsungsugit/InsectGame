@@ -1,8 +1,7 @@
 ---
 name: find-refs
 description: 클래스/메서드의 참조를 프로젝트 전체에서 검색합니다
-user_invocable: true
-args: "<검색할 심볼명>"
+argument-hint: "<검색할 심볼명>"
 ---
 
 # 참조 검색

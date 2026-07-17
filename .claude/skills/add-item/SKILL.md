@@ -1,8 +1,7 @@
 ---
 name: add-item
 description: 새 아이템을 추가하고 8개 등록 지점 + 4경로 획득 가능성을 강제 검증합니다
-user_invocable: true
-args: "<itemId> <itemType: capture|consumable|cash> <rarity>"
+argument-hint: "<itemId> <itemType: capture|consumable|cash> <rarity>"
 ---
 
 # 새 아이템 추가

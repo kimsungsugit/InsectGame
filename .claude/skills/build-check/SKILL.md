@@ -1,7 +1,6 @@
 ---
 name: build-check
 description: C# 스크립트의 컴파일 오류를 검사합니다 (정적 점검 + Unity CLI fallback)
-user_invocable: true
 ---
 
 # 빌드 검사

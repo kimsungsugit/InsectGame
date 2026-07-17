@@ -1,8 +1,7 @@
 ---
 name: balance-sim
 description: 배틀/포획/레이드 단발 시뮬 (한 시점의 수치)
-user_invocable: true
-args: "<시스템> -- 예: battle, capture, raid"
+argument-hint: "<시스템> -- 예: battle, capture, raid"
 ---
 
 # 밸런스 시뮬레이션

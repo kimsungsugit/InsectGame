@@ -1,8 +1,7 @@
 ---
 name: impact-analysis
 description: 코드 변경의 시스템 영향도를 분석합니다
-user_invocable: true
-args: "<변경대상 파일 또는 클래스명>"
+argument-hint: "<변경대상 파일 또는 클래스명>"
 ---
 
 # 영향도 분석

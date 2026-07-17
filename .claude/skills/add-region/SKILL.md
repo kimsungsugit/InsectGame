@@ -1,8 +1,7 @@
 ---
 name: add-region
 description: 새 리전을 추가하고 19개 항목(필수 8 + 시나리오 6 + 선택 5) 누락을 강제 검증합니다
-user_invocable: true
-args: "<regionId> <displayName> <requiredLevel>"
+argument-hint: "<regionId> <displayName> <requiredLevel>"
 ---
 
 # 새 리전 추가

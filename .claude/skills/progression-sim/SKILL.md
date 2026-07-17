@@ -1,8 +1,7 @@
 ---
 name: progression-sim
 description: Lv1→50 장기 진행 곡선과 캔디/EXP 수급 데드존을 시뮬레이션하고 비관적 위험 신호를 자동 적재합니다
-user_invocable: true
-args: "[--target-level=50] [--rarity=Common|Uncommon|Rare|Epic|Legendary] [--base-xp=8] [--base-candy=3] [--avg-battle-sec=30] [--team-size=6]"
+argument-hint: "[--target-level=50] [--rarity=Common|Uncommon|Rare|Epic|Legendary] [--base-xp=8] [--base-candy=3] [--avg-battle-sec=30] [--team-size=6]"
 ---
 
 # Lv1→50 진행 시뮬

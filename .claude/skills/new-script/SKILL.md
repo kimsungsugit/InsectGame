@@ -1,8 +1,7 @@
 ---
 name: new-script
 description: Unity C# 스크립트를 프로젝트 컨벤션에 맞게 생성합니다
-user_invocable: true
-args: "<ModuleName> <ScriptName> -- 예: Core PlayerHealth"
+argument-hint: "<ModuleName> <ScriptName> -- 예: Core PlayerHealth"
 ---
 
 # 새 C# 스크립트 생성

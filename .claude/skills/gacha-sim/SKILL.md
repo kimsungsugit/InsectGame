@@ -1,8 +1,7 @@
 ---
 name: gacha-sim
 description: 가챠 박스 기댓값/천장/픽업률을 몬테카를로(10000회)로 분포까지 검증하고 UI-코드 가격·확률 정합성을 자동 점검합니다
-user_invocable: true
-args: "[--box=bronze|silver|gold|all] [--pulls=100] [--trials=10000] [--seed=42]"
+argument-hint: "[--box=bronze|silver|gold|all] [--pulls=100] [--trials=10000] [--seed=42]"
 ---
 
 # 가챠 박스 시뮬

@@ -1,7 +1,6 @@
 ---
 name: test
 description: Unity EditMode 테스트를 실행합니다
-user_invocable: true
 ---
 
 # Unity EditMode 테스트 실행
