@@ -52,11 +52,31 @@ TestResults/
 
 # 비밀 설정(자격 증명) — 소스/원격에 커밋 금지. 각 환경에서 직접 생성.
 # 형식: master_config.json={ "id": "...", "password": "..." }
-#       firebase_config.json={ "apiKey": "...", "projectId": "..." }
+#       firebase_config.json={ "apiKey": "...", "projectId": "...", "googleWebClientId": "..." }
 /[Aa]ssets/[Rr]esources/master_config.json
 /[Aa]ssets/[Rr]esources/master_config.json.meta
 /[Aa]ssets/[Rr]esources/firebase_config.json
 /[Aa]ssets/[Rr]esources/firebase_config.json.meta
+/[Aa]ssets/google-services.json
+/[Aa]ssets/google-services.json.meta
 
 # Duplicate Unity project
 /[Mm]y [Pp]roject/
+
+# Firebase Functions generated/local files
+/functions/node_modules/
+/functions/.runtimeconfig.json
+/firebase-debug.log
+/firestore-debug.log
+/.codex/tools/
+
+# 에셋 백업 사본 — Resources 내 스테일 .bak이 커밋/로드 대상과 혼동되지 않게
+*.bak
+*.bak.meta
+
+# Python 캐시 — .claude/.codex 훅·스크립트 실행 시 생성
+__pycache__/
+*.pyc
+
+# Codex 미러 실행 로그
+/.codex/*.log
