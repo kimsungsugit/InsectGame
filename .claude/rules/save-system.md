@@ -1,12 +1,5 @@
 ---
-trigger: glob
-globs:
-  - "Assets/Scripts/Core/PlayerProgress*.cs"
-  - "Assets/Scripts/Core/CloudSaveManager.cs"
-  - "Assets/Scripts/Core/Player*Inventory.cs"
-  - "Assets/Scripts/Core/PlayerCurrencyWallet.cs"
-  - "Assets/Scripts/Dex/DexSave*.cs"
-  - "Assets/Scripts/Core/BattleTeamManager.cs"
+description: 로컬 7개 JSON·Firestore 세이브 구조와 필드 추가·마이그레이션 규칙 (세이브 관련 파일 수정 시 필독)
 ---
 
 # 세이브 시스템 규칙
@@ -34,4 +27,8 @@ globs:
 ## 수정 규칙
 - 새 세이브 필드 추가 시 기본값 필수
 - GameSaveData에 클라우드 필드 추가 시 Firestore 포맷도 수정
-- 기존 데이터 호환성 유지 (JsonUtility는 누락 필드 무시)
+- 기존 데이터 호환성 유지: **JsonUtility는 JSON에 없는 필드를 건드리지 않으므로
+  C# 필드의 초기값이 그대로 남는다.** 따라서 새 필드는 반드시 의미 있는 기본값을
+  갖도록 선언할 것. (옛 문서에 "누락 필드 무시" / "기본값으로 채움" 두 표현이
+  갈라져 있었으나 동작은 이 한 가지다.)
+- 기존 세이브 구조를 바꾼다면 마이그레이션 경로를 먼저 설계할 것

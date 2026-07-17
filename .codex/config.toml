@@ -1,0 +1,5 @@
+[shell_environment_policy]
+inherit = "core"
+
+[shell_environment_policy.set]
+UNITY_EDITOR_PATH = "D:/Unity/Unity Hub/6000.3.10f1/Editor/Unity.exe"

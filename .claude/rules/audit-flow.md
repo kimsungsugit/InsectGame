@@ -1,3 +1,7 @@
+---
+description: audit 자동 실행 트리거·금지 조건·거부 처리
+---
+
 # Audit 자동 플로우 규칙
 
 `.claude/audit-progress.md`의 Uncovered 영역을 매 작업 흐름에 자연스럽게 포함시키는 규칙.

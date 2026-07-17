@@ -1,0 +1,70 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python -X utf8 'C:\\Project\\곤충게임\\.codex\\hooks\\warn_monolith.py'",
+            "timeout": 5,
+            "statusMessage": "모놀리스 파일 확인 중..."
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python -X utf8 'C:\\Project\\곤충게임\\.codex\\hooks\\check_namespace.py'",
+            "timeout": 5,
+            "statusMessage": "C# 네임스페이스 검증 중..."
+          },
+          {
+            "type": "command",
+            "command": "python -X utf8 'C:\\Project\\곤충게임\\.codex\\hooks\\auto_verify_trigger.py'",
+            "timeout": 5,
+            "statusMessage": "변경 크기 분석 중..."
+          },
+          {
+            "type": "command",
+            "command": "python -X utf8 'C:\\Project\\곤충게임\\.codex\\hooks\\quick_compile_check.py'",
+            "timeout": 5,
+            "statusMessage": "빠른 컴파일 점검 중..."
+          },
+          {
+            "type": "command",
+            "command": "python -X utf8 'C:\\Project\\곤충게임\\.codex\\hooks\\scan_static_patterns.py'",
+            "timeout": 5,
+            "statusMessage": "정적 회귀 패턴 스캔 중..."
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python -X utf8 'C:\\Project\\곤충게임\\.codex\\hooks\\audit_flow_inject.py'",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python -X utf8 'C:\\Project\\곤충게임\\.codex\\hooks\\audit_reminder.py'",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

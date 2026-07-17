@@ -1,8 +1,5 @@
 ---
-trigger: glob
-globs:
-  - "Assets/Scripts/Data/**/*.cs"
-  - "Assets/Resources/**"
+description: ScriptableObject 생성 규칙, Database 패턴, 세이브 직렬화 분리 (Data/ 및 Resources/ 수정 시 필독)
 ---
 
 # ScriptableObject 규칙
