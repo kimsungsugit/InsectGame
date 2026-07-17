@@ -1,7 +1,7 @@
 {
   "language": "korean",
   "env": {
-    "UNITY_EDITOR_PATH": "C:/Program Files/Unity/Hub/Editor/6000.3.10f1/Editor/Unity.exe"
+    "UNITY_EDITOR_PATH": "D:/Unity/Unity Hub/6000.3.10f1/Editor/Unity.exe"
   },
   "permissions": {
     "defaultMode": "acceptEdits",
@@ -49,18 +49,13 @@
       "Agent",
       "WebFetch",
       "WebSearch",
-      "NotebookEdit",
-      "mcp__*"
+      "NotebookEdit"
     ],
     "deny": [
       "Edit(*.meta)",
-      "Write(*.meta)",
       "Edit(Library/**)",
-      "Write(Library/**)",
       "Edit(Logs/**)",
-      "Write(Logs/**)",
       "Edit(UserSettings/**)",
-      "Write(UserSettings/**)",
       "Bash(rm:*)",
       "Bash(git push --force *)",
       "Bash(git push -f *)",
