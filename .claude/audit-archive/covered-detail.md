@@ -335,6 +335,45 @@ GetWeightedRandom/GetWeightedRandomWithRareBoost 4곳 foreach에 `if (data == nu
 
 진짜 P0/P1 회귀 없음. GetAllSets()는 OutfitBonusProvider.AutoWire에서 1회만 호출되어 allSets 필드에 캐시(매 프레임 호출 거짓양성). 12개 세트 정적 데이터 정합성 시각 review 결과 정상: requiredItemIds 중복/null 없음, partialThreshold ≤ requiredItemIds.Length 모두 만족(set_wizard threshold=2 items=4), partial/full Bonus 모두 정의, setColor 시각용 OK. GetAllSets static readonly 필드화는 변경 risky(P2 보류). Editor 시점 검증 도구는 별도 디자인 작업. Covered 이동만.
 
+### SubAreaEnvironment (P1:1, 2026-07-17)
+
+**P1 — `cameraBg` 파이프라인 전체가 무동작.** 11개 프리셋이 동굴 `(0.1, 0.08, 0.06)`,
+수중 `(0.1, 0.2, 0.34)` 같은 어두운 배경을 정의하고 `ApplyLerp`가 매 전환 프레임
+`mainCamera.backgroundColor`에 보간해 넣지만, **Unity는 `clearFlags`가 `Skybox`면
+`backgroundColor`를 무시한다.** `PlaySceneBootstrap:565`가 카메라를 `Skybox`로 고정하고
+코드베이스 어디에도 되돌리는 곳이 없어(전체 `clearFlags` writer는 그 1곳과 별개 프리뷰
+카메라뿐), 서브지역 배경색이 **한 번도 렌더된 적이 없다**.
+
+그 결과 동굴·수중·신전에서 의도한 어둠 대신 밝은 하늘색이 그대로 보였다. `BuildCave`만
+천장이 있고(그마저 `NoCollider` 큐브 1개) `BuildUnderwater`/`BuildTemple`/`BuildDeepForest`/
+`BuildReeds` 등은 천장이 아예 없어 하늘이 확실히 노출된다. **Unity 내장 fog는 skybox에
+적용되지 않으므로** 작성자가 정밀 튜닝한 fog로도 가릴 수 없었다 — 파일 주석의
+"너무 어두워 안 보임" 개선 의도와 정면으로 어긋나 있었다.
+
+수정: `defaultClearFlags`를 `CaptureDefaults`에서 캡처하고, `OnSubAreaChanged`에서
+서브지역 진입 시 `SolidColor` / 메인 복귀 시 원래 플래그로 전환(`ambientMode`를
+Skybox↔Flat로 전환하는 기존 패턴과 동일한 이유·동일한 자리). `defaultCameraBg`에
+빠져 있던 필드 초기자도 형제 필드와 맞춰 추가.
+
+전환 자연스러움 확인: `PlaySceneBootstrap:566`이 `backgroundColor`를 하늘색
+`(0.5, 0.8, 1)`로 설정해두므로, 진입 첫 프레임의 solid 색이 skybox 하늘색과 사실상
+같아 깜빡임이 없고 이후 0.5초간 어두운색으로 페이드된다. 이탈은 즉시 Skybox 복원으로
+기존 동작과 동일.
+
+**자동 채점 46건은 전부 거짓양성**이었다 — `EnvironmentProfile`이 **struct**라 11개 프리셋의
+`new Color`/`new Quaternion.Euler`/`new EnvironmentProfile`이 모두 스택 할당이고, `Update()`는
+전환 0.5초 동안만 돌며 그 경로에 힙 할당이 0건이다. 미캐싱 조회 1건도 `initialized` 래치로
+Start에서 1회만 실행된다. 진입/이탈 정합도 clean — 구독 순서상 `RestoreLastSubArea`가
+`Start()` 전에 발화해도 `if (!initialized) CaptureDefaults()`가 서브지역 빌드 전 메인 필드
+상태를 정확히 캡처한다. 좌표/갇힘 로직은 이 파일에 없다(전부 `SubAreaWorldBuilder` 소유).
+
+**미처리 P2 4건**(전부 현재 도달 불가로 격하, 잠재 위험으로만 기록): `fogMode`가
+`CaptureDefaults`에 없어 씬 원래 값이 영구 덮어써짐(이탈 시 `fog=false` 강제라 무해),
+`OnEnable` 재구독 부재(`HideMainWorld`가 `"SubArea_"` 언더스코어 prefix만 끄므로 이 오브젝트는
+비활성화되지 않음), `FindFirstObjectByType<Light>`에 `Directional` 필터 없음
+(`PlaySceneBootstrap:592`는 같은 호출에 가드가 있는데 여기만 없음 — Start 시점엔 월드
+Directional Light가 하나뿐이라 현재 정상 바인딩).
+
 ### AccountLinkUI (P1:3, P2:2, 2026-07-17)
 
 **P1 — 처리 중 "닫기"가 죽어 해제 불가 모달.** `GUI.enabled = !isProcessing`이 "연동하기"와
