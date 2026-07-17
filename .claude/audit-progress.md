@@ -98,6 +98,9 @@
 - [x] UIHelper 텍스처 캐시 오버플로 (P1:1, 2026-07-17)
 - [x] AccountLinkUI (P1:3, P2:2, 2026-07-17)
 - [x] SubAreaEnvironment (P1:1, 2026-07-17)
+- [x] AccountSettingsUI (P0:1, P1:2, 2026-07-17)
+- [x] SaveConflictUI (P0:1, P1 보류, 2026-07-17)
+- [x] KeyGuideHUD (P1:2, 2026-07-17)
 
 ## Uncovered (우선순위순)
 
@@ -105,9 +108,6 @@
 `- [ ]`가 0건이 되면 훅 2개가 함께 침묵해 자동 플로우가 멈추므로, 소진 시
 `audit_candidates.py --emit-md`로 채웁니다.
 
-- [ ] KeyGuideHUD (UI/KeyGuideHUD.cs, 234줄, score 138) — 프레임 할당 46
-- [ ] AccountSettingsUI (UI/AccountSettingsUI.cs, 236줄, score 122) — 프레임 할당 37, 싱글턴 참조 11
-- [ ] SaveConflictUI (UI/SaveConflictUI.cs, 188줄, score 117) — 프레임 할당 37, 싱글턴 참조 6
 - [ ] SocialPvpUI (UI/SocialPvpUI.cs, 433줄, score 104) — 프레임 할당 34, 싱글턴 참조 2
 - [ ] QuickAccessBarUI (UI/QuickAccessBarUI.cs, 345줄, score 98) — 프레임 할당 32, 싱글턴 참조 2
 - [ ] SceneAutoWire (Core/SceneAutoWire.cs, 106줄, score 80) — 미캐싱 조회 40
@@ -130,3 +130,4 @@
 - 2026-07-17: **P2 처리 라운드** (사용자 명시 요청) — WorldFieldMultiplayerUI P2:2 + **UIHelper 횡단 P1:1**. (a) UIHelper 텍스처 캐시 오버플로: `DrawRarityBorder`가 pulse로 RGB를, `DrawRarityGlow`가 breathe로 alpha를 연속 변조한 색을 `GetCachedTex`에 넣어 프레임마다 새 Color32 키가 쌓였고, 256 초과 시 텍스처를 전부 Destroy하면서 각 UI가 필드로 들고 있는 `GUIStyle.normal.background`는 무효화하지 못해(`stylesReady` 가드로 재생성 안 됨) **해당 UI 배경이 영구 손상**될 수 있었다. 동적 색을 빌트인 whiteTexture + `GUI.color` 곱셈(`DrawTinted`)으로 전환해 캐시에서 제거하고, 오버플로 시 Destroy도 없앴다. **GUI.color는 대입이 아니라 곱셈** — AccountLinkUI:124/AccountSettingsUI:105가 딤 오버레이로 이미 설정하므로 대입하면 페이드가 사라진다(검증으로 확인). (b) `Shader.Find` 둘 다 null이면 `new Material(null)` 예외 → 프리미티브 기본 머티리얼 폴백(`ApplyAvatarMaterial`). (c) `color * k`가 알파까지 곱해 눌림 버튼이 반투명 → RGB만 조절. **미처리 P2 2건**: DrawInvitePopup 모달 미등록(초대 팝업이 플레이 중 입력을 막아야 하는지는 게임 디자인 판단이라 보류), 메시지 8개 보관 대비 5개 렌더(h 계산이 min(190)으로 클램프돼 실질 영향 없음).
 - 2026-07-17: AccountLinkUI — P1:3, P2:2 처리. **P1**: (a) 처리 중 "닫기"가 `GUI.enabled=!isProcessing` 블록에 함께 덮여 죽은 코드였고(`GUI.enabled=false`면 Button은 항상 false) `LinkEmailCoroutine`에 타임아웃도 없어, 네트워크가 물리면 전체화면 딤 모달에 갇혔다(탈출구 ESC뿐 — 모바일 복구 불가). 닫기를 블록 밖으로 빼고 **AuthManager의 UnityWebRequest 7곳 전부에 timeout=15 추가**(코드베이스에서 타임아웃을 걸던 곳은 WorldChannelManager 12초 하나뿐이었고 로그인·회원가입·토큰갱신·연동이 전부 무한 대기였다). (b) 배지에 `IsAnyOpen()` 가드가 없어 전체화면 모달 위에 그려지고 클릭을 가로챘다(MinimapUI:52/QuickAccessBarUI:113 관례 위반) + `GUI.depth` 미설정 → 가드 추가 + DrawForm에 depth -20. (c) `isProcessing` 리셋 경로가 `OnLinkCompleted` 하나뿐이라 요청 중 GO 토글 시 영구 비활성 → OnEnable 초기화. **P2**: 닉네임 무검증으로 빈 값이면 `DisplayName = email`이 되어 **이메일이 공개 표시명으로 노출** → Submit 검증 추가. 버튼 눌림 알파 곱셈 → RGB만. **Explore 거짓양성 제외**: MakeTex 11개는 stylesReady로 1회만(WorldLobbyUI 라운드가 이미 동일 판정), 이벤트 짝/Bootstrap 등록/싱글턴 8건 가드 정상, 연동은 uid 보존이라 세이브 유실 벡터 없음. 검증: Unity PlayMode 38/38, error CS 0건.
 - 2026-07-17: SubAreaEnvironment — P1:1 처리. **cameraBg 파이프라인 전체가 무동작이었다**: 11개 프리셋이 동굴(0.1,0.08,0.06)·수중(0.1,0.2,0.34) 같은 어두운 배경을 정의하고 ApplyLerp가 매 전환 프레임 `mainCamera.backgroundColor`에 보간해 넣지만, Unity는 clearFlags가 Skybox면 backgroundColor를 무시한다. PlaySceneBootstrap:565가 카메라를 Skybox로 고정하고 되돌리는 코드가 코드베이스에 없어 서브지역 배경색이 한 번도 렌더된 적이 없었다. 동굴 말고는 천장이 없어 하늘이 노출되고, 내장 fog는 skybox에 적용되지 않아 정밀 튜닝한 fog로도 가릴 수 없었다(파일 주석의 "너무 어두워 안 보임" 개선 의도와 정면 배치). 수정: defaultClearFlags를 CaptureDefaults에서 캡처하고 OnSubAreaChanged에서 진입 시 SolidColor / 복귀 시 원래 플래그로 전환 — ambientMode를 Skybox↔Flat로 전환하는 기존 패턴과 동일한 이유·동일한 자리. PlaySceneBootstrap:566이 backgroundColor를 하늘색(0.5,0.8,1)으로 설정해두므로 진입 첫 프레임 깜빡임 없이 0.5초 페이드된다(확인). **자동 채점 46건은 전부 거짓양성** — EnvironmentProfile이 struct라 프리셋의 new Color/Quaternion이 스택 할당이고 Update는 전환 0.5초만 도는 데다 힙 할당 0건, 미캐싱 조회 1건도 initialized 래치로 Start 1회. 진입/이탈 정합·좌표/갇힘 로직도 clean(후자는 SubAreaWorldBuilder 소유). **미처리 P2 4건**(전부 현재 도달 불가로 격하, 잠재 위험 기록): fogMode 미복원, OnEnable 재구독 부재, FindFirstObjectByType<Light>에 Directional 필터 없음(PlaySceneBootstrap:592는 같은 호출에 가드 있음), defaultCameraBg 초기자(이번에 함께 추가). 검증: Unity PlayMode 38/38, error CS 0건.
+- 2026-07-17: **3라운드 병렬** (AccountSettingsUI / SaveConflictUI / KeyGuideHUD) — P0:2, P1:4 처리. **AccountSettingsUI P0**: 게스트 로그아웃이 확인 0단계로 계정을 영구 소실시켰다 — 게스트는 refresh token이 유일한 재진입 수단인데 Logout()이 그걸 지우고 익명 재로그인은 매번 새 uid를 발급하므로 곤충·레벨·재화가 인증 불가능한 uid에 묶여 고아화된다(파일은 users/<uid>/에 남지만 접근 불가). 같은 파일 163줄이 "앱 삭제 시 데이터 복구 불가"라고 경고해놓고 124줄에서 동일 피해 버튼을 무방비 제공했고, 파괴가 의도인 계정 삭제는 2단계 확인을 받는데 이쪽만 없는 **안전장치 역전** 상태였다 → confirmLogout 단계 신설(게스트만). P1:2는 AccountLinkUI와 동일 패턴(취소 죽은 코드 + processing 리셋 부재 → 계정 삭제 영구 불가, IsAnyOpen 가드 + depth 없음). **SaveConflictUI P0**: 로컬 카드의 "마지막 저장"이 실은 마지막 클라우드 푸시 시각이라, 충돌 분기(cloud > local)의 전제상 **100% 로컬이 더 오래된 것으로 표시**되고 오프라인 진행 기기는 "기록 없음"으로 나와 플레이어가 최신 로컬을 버리도록 유도됐다(선택 시 DeleteLocalFile 하드 삭제, AtomicFileWriter의 File.Replace도 백업 미생성) → 세이브 파일 7개 mtime 최신값을 쓰는 ComputeLocalSaveUnix() 신설, OnConflict에서 1회 캐시(OnGUI 파일 I/O 회피). P1(2단계 확인/백업)은 P0로 오도가 제거됐고 UX 판단이라 보류. **KeyGuideHUD P1:2**: 컬렉션 안내가 TAB인데 실제 키는 C(Tab은 미니게임 confirm/로비 토글에 쓰임 — 안내대로 누르면 엉뚱한 동작), 모달 가드/depth 부재로 패널이 모달 위 오버드로(단 Button이 없어 클릭은 미탈취라 P1). **채점 반증**: AccountSettingsUI 싱글턴 11건 전건 가드 정상, 프레임 할당은 4라운드 연속 전부 struct 거짓양성. 검증: Unity PlayMode 38/38, error CS 0건.

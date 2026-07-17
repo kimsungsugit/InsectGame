@@ -13,10 +13,20 @@ namespace InsectGame.UI
     {
         private bool open;
         private bool confirmDelete;
+        // 게스트 로그아웃은 계정 삭제와 사실상 같은 결과라 별도 확인 단계를 둔다.
+        private bool confirmLogout;
         private bool processing;
 
         public bool IsOpen => open;
-        public void CloseModal() { confirmDelete = false; SetOpen(false); }
+        public void CloseModal()
+        {
+            confirmDelete = false;
+            confirmLogout = false;
+            // 삭제 요청 중 창이 닫혔다가 다시 열리면 processing이 true로 남아
+            // "삭제 중..."과 "취소"가 모두 비활성인 상태로 굳는다.
+            processing = false;
+            SetOpen(false);
+        }
 
         // 모달 등록/해제 — 열려있는 동안 플레이어 이동(조이스틱/클릭) 차단 + ESC로 닫기.
         private void SetOpen(bool v)
@@ -81,6 +91,14 @@ namespace InsectGame.UI
                 DrawMessage();
                 return;
             }
+            // 다른 모달이 열려 있으면 "계정" 버튼을 숨긴다(자기 자신은 제외).
+            // 안 그러면 전체화면 모달 위에 버튼이 그려지고 클릭을 가로챈다
+            // (MinimapUI:52, QuickAccessBarUI:113과 동일 관례).
+            if (!open && ModalUIRegistry.IsAnyOpen())
+            {
+                DrawMessage();
+                return;
+            }
             EnsureStyles();
             if (open) DrawPanel();
             else DrawOpenButton();
@@ -95,6 +113,8 @@ namespace InsectGame.UI
             if (GUI.Button(new Rect(x, y, w, h), "계정", openBtnStyle))
             {
                 confirmDelete = false;
+                confirmLogout = false;
+                processing = false;
                 message = "";
                 SetOpen(true);
             }
@@ -102,12 +122,15 @@ namespace InsectGame.UI
 
         private void DrawPanel()
         {
+            // IMGUI는 depth로 렌더 순서를 정한다. 기본 0이면 DexScreenUI(-10) 같은 패널
+            // 아래에 깔리면서도 모달로 등록돼 "안 보이는데 입력만 먹는" 상태가 된다.
+            GUI.depth = -20;
             GUI.color = new Color(0f, 0f, 0f, 0.55f);
             GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
             float pw = Mathf.Min(660f, Screen.width * 0.88f);
-            float ph = confirmDelete ? 440f : 380f;
+            float ph = (confirmDelete || confirmLogout) ? 440f : 380f;
             float px = (Screen.width - pw) * 0.5f;
             float py = (Screen.height - ph) * 0.5f;
             GUI.Box(new Rect(px, py, pw, ph), "", panelStyle);
@@ -119,12 +142,17 @@ namespace InsectGame.UI
             float cw = pw - 80f;
             float y = py + 162f;
 
-            if (!confirmDelete)
+            if (!confirmDelete && !confirmLogout)
             {
                 if (GUI.Button(new Rect(cx, y, cw, 56f), "로그아웃", btnGrayStyle))
                 {
-                    if (AuthManager.Instance != null) AuthManager.Instance.Logout();
-                    ReloadScene();
+                    // 게스트는 refresh token이 유일한 재진입 수단이다. 로그아웃하면 그 토큰이
+                    // 지워지는데 익명 재로그인은 매번 새 uid를 발급하므로, 기존 데이터에
+                    // 영영 접근할 수 없다(세이브 파일은 users/<uid>/에 남지만 고아가 된다).
+                    // 파괴가 의도인 계정 삭제조차 2단계 확인을 받는데 이쪽만 무방비였다.
+                    // 정식 계정은 이메일로 다시 들어올 수 있으므로 즉시 로그아웃한다.
+                    if (IsGuestAccount()) confirmLogout = true;
+                    else LogoutAndReload();
                 }
                 y += 68f;
                 if (GUI.Button(new Rect(cx, y, cw, 56f), "계정 삭제", btnRedStyle))
@@ -135,13 +163,28 @@ namespace InsectGame.UI
                 if (GUI.Button(new Rect(cx, y, cw, 50f), "닫기", btnDarkStyle))
                     SetOpen(false);
             }
+            else if (confirmLogout)
+            {
+                GUI.Label(new Rect(cx, y, cw, 88f),
+                    "게스트 계정은 로그아웃하면 다시 들어올 수 없습니다.\n" +
+                    "곤충·레벨·재화가 모두 사라지며 되돌릴 수 없습니다.\n" +
+                    "먼저 '정식 계정으로 전환'을 권장합니다.",
+                    infoStyle);
+                y += 104f;
+                if (GUI.Button(new Rect(cx, y, cw, 56f), "그래도 로그아웃", btnRedStyle))
+                    LogoutAndReload();
+                y += 68f;
+                if (GUI.Button(new Rect(cx, y, cw, 50f), "취소", btnDarkStyle))
+                    confirmLogout = false;
+            }
             else
             {
                 GUI.Label(new Rect(cx, y, cw, 88f),
                     "정말 계정을 삭제할까요?\n모든 진행 데이터(곤충·레벨·재화)가 영구 삭제되며 되돌릴 수 없습니다.",
                     infoStyle);
                 y += 104f;
-                GUI.enabled = !processing;
+                bool prevEnabled = GUI.enabled;
+                GUI.enabled = prevEnabled && !processing;
                 if (GUI.Button(new Rect(cx, y, cw, 56f), processing ? "삭제 중..." : "영구 삭제", btnRedStyle))
                 {
                     processing = true;
@@ -149,10 +192,30 @@ namespace InsectGame.UI
                     if (AuthManager.Instance != null) AuthManager.Instance.DeleteAccount();
                 }
                 y += 68f;
+
+                // 취소는 처리 중에도 반드시 눌려야 한다. 옛 코드는 위 GUI.enabled 블록이 이
+                // 버튼까지 덮어 `confirmDelete = false`가 실행될 수 없었고
+                // (GUI.enabled=false면 Button은 항상 false), Instance가 null이거나 응답
+                // 이벤트를 놓치면 "삭제 중..."에서 영영 빠져나올 수 없었다 — 계정 삭제가
+                // 앱 재시작 전까지 불가능해지는 건 스토어 정책 위반이기도 하다.
+                GUI.enabled = prevEnabled;
                 if (GUI.Button(new Rect(cx, y, cw, 50f), "취소", btnDarkStyle))
+                {
                     confirmDelete = false;
-                GUI.enabled = true;
+                    processing = false;
+                }
             }
+        }
+
+        private static bool IsGuestAccount()
+        {
+            return AuthManager.Instance != null && AuthManager.Instance.IsGuest;
+        }
+
+        private void LogoutAndReload()
+        {
+            if (AuthManager.Instance != null) AuthManager.Instance.Logout();
+            ReloadScene();
         }
 
         private static string AccountLabel()

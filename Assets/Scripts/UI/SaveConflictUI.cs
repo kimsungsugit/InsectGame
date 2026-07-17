@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using InsectGame.Core;
 using UnityEngine;
 
@@ -13,6 +14,8 @@ namespace InsectGame.UI
     {
         private bool visible;
         private SaveConflictInfo info;
+        // 충돌 발생 시 1회 계산해 캐시한다. OnGUI에서 파일 I/O를 하면 매 프레임 디스크를 읽는다.
+        private long localSaveUnix;
 
         // 모달로 등록해 뒤 화면 이동/클릭 차단. 단 충돌은 반드시 선택해야 하므로 ESC(CloseModal)는 무시.
         public bool IsOpen => visible;
@@ -38,7 +41,50 @@ namespace InsectGame.UI
         {
             info = conflictInfo;
             visible = true;
+            localSaveUnix = ComputeLocalSaveUnix();
             ModalUIRegistry.Register(this);
+        }
+
+        /// <summary>
+        /// 로컬 세이브 파일들의 마지막 수정 시각 중 최신값(Unix 초).
+        /// </summary>
+        /// <remarks>
+        /// 요약의 lastSaveUnix(PlayerPrefs LastSaveTs)는 "마지막 클라우드 푸시 성공" 시각이지
+        /// 로컬 저장 시각이 아니다. 충돌 프롬프트 자체가 `클라우드 ts > 로컬 ts`일 때만 뜨므로
+        /// 그 값을 그대로 보여주면 로컬이 **항상** 더 오래된 것처럼 표시되고, 오프라인으로만
+        /// 진행한 기기는 0이라 "기록 없음"으로 나온다 — 실제로는 그 로컬에 최신 진행이 있는데도
+        /// 플레이어가 클라우드를 고르게 유도되고, 그러면 로컬 파일이 복구 불가로 삭제된다.
+        /// </remarks>
+        private static long ComputeLocalSaveUnix()
+        {
+            string[] files =
+            {
+                GameConstants.SaveFiles.PlayerProgress,
+                GameConstants.SaveFiles.PlayerInsects,
+                GameConstants.SaveFiles.PlayerCandies,
+                GameConstants.SaveFiles.PlayerCurrency,
+                GameConstants.SaveFiles.PlayerItems,
+                GameConstants.SaveFiles.BattleTeam,
+                GameConstants.SaveFiles.DexSave,
+            };
+
+            long newest = 0;
+            foreach (string file in files)
+            {
+                try
+                {
+                    string path = SaveScope.FilePath(file);
+                    if (!File.Exists(path)) continue;
+                    long ts = new DateTimeOffset(File.GetLastWriteTimeUtc(path), TimeSpan.Zero)
+                        .ToUnixTimeSeconds();
+                    if (ts > newest) newest = ts;
+                }
+                catch
+                {
+                    // 개별 파일 접근 실패는 무시하고 나머지로 판단한다.
+                }
+            }
+            return newest;
         }
 
         private void OnGUI()
@@ -71,8 +117,10 @@ namespace InsectGame.UI
             float leftX = px + 40f;
             float rightX = px + pw - 40f - cardW;
 
-            DrawCard(new Rect(leftX, cardY, cardW, cardH), "이 기기", info.local, new Color(0.18f, 0.32f, 0.5f));
-            DrawCard(new Rect(rightX, cardY, cardW, cardH), "클라우드", info.cloud, new Color(0.2f, 0.42f, 0.24f));
+            DrawCard(new Rect(leftX, cardY, cardW, cardH), "이 기기", info.local,
+                new Color(0.18f, 0.32f, 0.5f), true);
+            DrawCard(new Rect(rightX, cardY, cardW, cardH), "클라우드", info.cloud,
+                new Color(0.2f, 0.42f, 0.24f), false);
 
             float btnY = cardY + cardH + 24f;
             float btnH = 64f;
@@ -90,7 +138,7 @@ namespace InsectGame.UI
                 CloudSaveManager.Instance.ResolveConflict(useCloud);
         }
 
-        private void DrawCard(Rect rect, string title, SaveSummary s, Color accent)
+        private void DrawCard(Rect rect, string title, SaveSummary s, Color accent, bool isLocal)
         {
             GUI.color = new Color(0.1f, 0.11f, 0.16f, 0.95f);
             GUI.DrawTexture(rect, Texture2D.whiteTexture);
@@ -110,7 +158,9 @@ namespace InsectGame.UI
             DrawRow(x, ref y, w, "곤충", s.insectCount + "마리");
             DrawRow(x, ref y, w, "캔디", s.candies.ToString());
             DrawRow(x, ref y, w, "코인", s.coins.ToString());
-            DrawRow(x, ref y, w, "마지막 저장", FormatTime(s.lastSaveUnix));
+            // 로컬은 요약의 lastSaveUnix(= 마지막 클라우드 푸시 시각) 대신 실제 파일 mtime을 쓴다.
+            // ComputeLocalSaveUnix 주석 참조.
+            DrawRow(x, ref y, w, "마지막 저장", FormatTime(isLocal ? localSaveUnix : s.lastSaveUnix));
         }
 
         private void DrawRow(float x, ref float y, float w, string label, string value)

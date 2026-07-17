@@ -335,6 +335,77 @@ GetWeightedRandom/GetWeightedRandomWithRareBoost 4곳 foreach에 `if (data == nu
 
 진짜 P0/P1 회귀 없음. GetAllSets()는 OutfitBonusProvider.AutoWire에서 1회만 호출되어 allSets 필드에 캐시(매 프레임 호출 거짓양성). 12개 세트 정적 데이터 정합성 시각 review 결과 정상: requiredItemIds 중복/null 없음, partialThreshold ≤ requiredItemIds.Length 모두 만족(set_wizard threshold=2 items=4), partial/full Bonus 모두 정의, setColor 시각용 OK. GetAllSets static readonly 필드화는 변경 risky(P2 보류). Editor 시점 검증 도구는 별도 디자인 작업. Covered 이동만.
 
+### AccountSettingsUI (P0:1, P1:2, 2026-07-17)
+
+**P0 — 게스트 로그아웃이 계정을 영구 소실시킴(확인 0단계).** 게스트(익명)는 refresh token이
+유일한 재진입 수단인데 `Logout()` → `ClearAuth()`가 `TokenKey`/`UidKey`를 `PlayerPrefs`에서
+지운다. 이메일이 없어 재로그인이 불가능하고 `LoginAsGuest()`는 매번 새 uid를 발급하므로,
+곤충·레벨·재화가 인증 불가능한 uid에 묶여 **영구 고아화**된다(`SaveScope`가 `users/<uid>/`로
+스코핑하므로 파일은 디스크에 남지만 접근 경로가 사라진다 — "삭제"도 "복구 가능"도 아닌 최악).
+결정적 정황 둘: 같은 파일 163줄이 *"게스트 (이메일 미연동) / 앱 삭제 시 데이터 복구 불가"*라고
+직접 경고해놓고 124줄에서 동일한 피해를 주는 원클릭 버튼을 제공했고, **안전장치가 역전**돼
+있었다 — 파괴가 의도인 계정 삭제는 2단계 확인 + 명시 경고를 받는데 게스트 로그아웃은 무방비.
+수정: `confirmLogout` 단계 신설. `IsGuestAccount()`일 때만 경고 화면("다시 들어올 수 없습니다 /
+먼저 정식 계정 전환 권장")을 거치고, 정식 계정은 이메일로 재로그인 가능하므로 즉시 로그아웃.
+
+**P1 — `GUI.enabled = !processing`이 "취소"까지 덮음 + `processing` 리셋 경로 부재.**
+AccountLinkUI와 문법적으로 동일한 구조의 버그. `confirmDelete = false`가 실행 불가능한 죽은
+코드였고, `Instance`가 null이거나 삭제 in-flight 중 GameObject가 토글돼 `AccountDeleted`를
+놓치면 "삭제 중..."과 "취소"가 모두 비활성인 채로 굳어 **앱 재시작 전까지 계정 삭제가
+불가능**해졌다(스토어 정책 위반 소지). 수정: `prevEnabled` 보존/복원으로 취소를 블록 밖으로 빼고,
+`CloseModal()`/`DrawOpenButton()`에 `processing = false` 추가.
+
+**P1 — `IsAnyOpen()` 가드 + `GUI.depth` 둘 다 없음.** 다른 전체화면 모달 위에 116×46 "계정"
+버튼이 계속 그려지고 클릭을 가로챘다. 수정: `OnGUI`에 `if (!open && ModalUIRegistry.IsAnyOpen())`
+가드(자기 자신 제외), `DrawPanel`에 `GUI.depth = -20`.
+
+**채점 근거 반증**: 싱글턴 11건은 **전건 정상**(각 호출부에 가드 존재) — 채점 1위 근거가 무효였다.
+프레임 할당 37건도 전부 `new Rect`/`new Color` struct.
+
+### SaveConflictUI (P0:1, P1 보류, 2026-07-17)
+
+**P0 — 로컬 카드의 "마지막 저장"이 항상 더 오래된 것처럼 표시돼 최신 로컬을 버리게 유도.**
+요약의 `lastSaveUnix`는 `PlayerPrefs["InsectGame.LastSaveTs"]` = **마지막 클라우드 푸시 성공**
+시각이지 로컬 저장 시각이 아니다. 그런데 충돌 분기 자체가 `클라우드 ts > 로컬 ts`일 때만
+발화하므로 **모든 충돌 프롬프트에서 100% 로컬이 더 오래된 것으로 렌더**된다. 오프라인으로만
+진행해 푸시 이력이 없는 기기는 `localTs == 0` → **"기록 없음"**으로 표시되는데, 정작 그 로컬에는
+실제 진행이 있다(`HasMeaningfulLocalProgress`가 그걸 보장해야 프롬프트가 뜬다). 여기에 "선택하지
+않은 쪽은 덮어쓰여집니다" 문구가 겹쳐 플레이어가 클라우드를 고르면 `ResolveConflict(true)` →
+`ApplyResolved(forceReplace:true)` → `DeleteLocalFile`이 곤충/팀/도감/아이템을 **복구 불가로 삭제**한다.
+수정: 실제 세이브 파일 7개의 `File.GetLastWriteTimeUtc` 중 최신값을 쓰는 `ComputeLocalSaveUnix()`
+신설. `OnConflict`에서 1회만 계산해 캐시한다(OnGUI에서 파일 I/O를 하면 매 프레임 디스크를 읽음).
+`DrawCard`에 `isLocal` 파라미터를 추가해 로컬 카드만 이 값을 쓴다.
+
+**P1 보류 — 확인 단계·백업·취소 경로 부재.** 동일 크기 64px 버튼 2개가 나란히 있고 한 번의 탭이
+즉시 확정되며, `CloseModal()`은 의도된 no-op이라 탈출구가 없다. 삭제가 복구 불가임도 확인됐다 —
+`AtomicFileWriter`의 `File.Replace(temp, path, null)`은 3번째 인자가 null이라 백업본을 남기지 않고
+`DeleteLocalFile`은 하드 삭제다. **P0 수정으로 오도(誤導)는 제거됐으므로**, 2단계 확인 추가는
+UX 디자인 판단이라 사용자 결정에 맡긴다.
+
+**확인 결과 정상**: `GUI.depth = -50`으로 프로젝트 최전면이라 `IsAnyOpen()` 가드 부재가 맞다.
+`IsOpen`(visible) ↔ 그릴 조건(`visible && info != null`)이 일치해 1라운드의 빈 화면 소프트락은
+재현되지 않는다. 중복 클릭은 `ResolveConflict`가 `pendingCloudData`를 먼저 비우고 null이면
+return해 멱등. 선택 전 자동저장 끼어들기도 `SaveToCloud()`의 조기 반환 가드로 차단됨.
+
+### KeyGuideHUD (P1:2, 2026-07-17)
+
+**P1 — 키 안내가 실제 바인딩과 어긋남.** 컬렉션을 `TAB`으로 안내했으나 실제 키는 **C**다
+(`QuickAccessBarUI:58,74,97`). `KeyCode.Tab` 전수 검색 결과 컬렉션 바인딩은 존재하지 않고,
+Tab이 실제로 하는 일은 미니게임 confirm(`CaptureMinigameController:250`)과 로비 오버레이
+토글(`WorldLobbyUI:121`)이며 IMGUI에선 포커스 이동 키다 — 안내대로 누르면 엉뚱한 게 동작했다.
+나머지 8행(WASD/E/ESC/1~4/T/G/N/M)은 코드와 일치 확인. 과거 F11→F9 변경과 같은 계열.
+
+**P1 — 모달 가드 누락 + `GUI.depth` 미설정.** 외부에서 이 컴포넌트를 끄는 코드가 없어 OnGUI가
+무조건 매 프레임 돌고, depth 0이라 depth를 안 거는 전체화면 모달들(CollectionUI/TrainingUI/
+RegionMapUI 등)과 렌더 순서가 미정의였다 — 불투명 패널 3개가 모달 위로 튀어나올 수 있다.
+수정: `UIScale.Begin()` **앞에** `if (ModalUIRegistry.IsAnyOpen()) return;`(Begin/End 균형 유지,
+MinimapUI:52 관례). 단 이 파일은 `GUI.Button`이 없고 Label/DrawTexture만 써서 **클릭은 가로채지
+않으므로** 시각적 오버드로만 발생 → P0이 아닌 P1.
+
+**미처리 P2 3건**: `OnDisable`에서 `battleActive` 미리셋(재활성 시 "1~4 스킬" 행 잔존),
+비활성 상태 `AutoWire` 시 중복 구독 가능(핸들러가 멱등이라 현재 무해), 안내가 QuickAccessBar
+핫키 10개 중 5개만 표시(의도적 축약일 수 있음).
+
 ### SubAreaEnvironment (P1:1, 2026-07-17)
 
 **P1 — `cameraBg` 파이프라인 전체가 무동작.** 11개 프리셋이 동굴 `(0.1, 0.08, 0.06)`,

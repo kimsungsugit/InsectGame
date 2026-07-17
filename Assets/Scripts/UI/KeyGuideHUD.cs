@@ -75,11 +75,17 @@ namespace InsectGame.UI
 
         private void OnGUI()
         {
+            // 모달이 열려 있으면 HUD를 숨긴다. depth를 안 거는 전체화면 모달(CollectionUI,
+            // TrainingUI, RegionMapUI 등)과 렌더 순서가 미정의라 패널 위로 튀어나올 수 있다.
+            // UIScale.Begin() 전에 return해야 Begin/End 균형이 유지된다(MinimapUI:52 관례).
+            if (ModalUIRegistry.IsAnyOpen()) return;
+
             UIScale.Begin();
             InitStyles();
-            DrawKeyGuide();
+            // 휴대폰에서는 키보드 조작표를 숨기고 화면 버튼/조이스틱만 사용합니다.
+            if (!UIScale.IsMobileLayout) DrawKeyGuide();
             DrawCurrentRegion();
-            DrawCaptureItems();
+            if (!UIScale.IsMobileLayout) DrawCaptureItems();
             UIScale.End();
         }
 
@@ -115,7 +121,10 @@ namespace InsectGame.UI
             DrawKeyRow(x, ref y, lineH, "T", "배틀 팀", keyStyle, descStyle);
             DrawKeyRow(x, ref y, lineH, "G", "훈련", keyStyle, descStyle);
             DrawKeyRow(x, ref y, lineH, "N", "도감", keyStyle, descStyle);
-            DrawKeyRow(x, ref y, lineH, "TAB", "컬렉션", keyStyle, descStyle);
+            // 컬렉션 실제 바인딩은 C다(QuickAccessBarUI:58,74,97). TAB은 이 게임에서
+            // 미니게임 확인/로비 오버레이 토글이고 IMGUI에선 포커스 이동 키다 —
+            // 안내대로 누르면 컬렉션이 아니라 엉뚱한 동작을 했다.
+            DrawKeyRow(x, ref y, lineH, "C", "컬렉션", keyStyle, descStyle);
             DrawKeyRow(x, ref y, lineH, "M", "지도", keyStyle, descStyle);
         }
 
@@ -139,17 +148,20 @@ namespace InsectGame.UI
             string regionName = current != null ? current.displayName : "Wild";
             Color regionCol = current != null ? current.themeColor : new Color(0.5f, 0.5f, 0.5f);
 
-            float w = 520f;
-            float h = 80f;
-            float x = (UIScale.VirtualScreenWidth - w) / 2f;
-            float y = 14f;
+            float w = UIScale.IsMobileLayout ? 430f : 520f;
+            float h = UIScale.IsMobileLayout ? 64f : 80f;
+            // 진짜 화면 중앙이 아니라 '세이프 에어리어 중앙'으로 — 가로 비대칭 노치 보정.
+            float safeL = UIScale.VirtualSafeLeft;
+            float safeR = UIScale.VirtualSafeRight;
+            float x = safeL + (UIScale.VirtualScreenWidth - safeL - safeR - w) / 2f;
+            float y = UIScale.VirtualSafeTop + 14f;
 
             GUI.color = new Color(0, 0, 0, 0.6f);
             GUI.DrawTexture(new Rect(x, y, w, h), Texture2D.whiteTexture);
             GUI.color = regionCol;
             GUI.DrawTexture(new Rect(x, y + h - 5, w, 5), Texture2D.whiteTexture);
 
-            hintStyle.fontSize = 44;
+            hintStyle.fontSize = UIScale.IsMobileLayout ? 32 : 44;
             hintStyle.alignment = TextAnchor.MiddleCenter;
             hintStyle.normal.textColor = regionCol;
             GUI.color = Color.white;
