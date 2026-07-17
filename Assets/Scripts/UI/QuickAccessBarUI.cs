@@ -68,16 +68,16 @@ namespace InsectGame.UI
         {
             if (IsInputBlocked()) return;
 
-            if (Input.GetKeyDown(KeyCode.N)) OnClick(0);
-            if (Input.GetKeyDown(KeyCode.T)) OnClick(1);
-            if (Input.GetKeyDown(KeyCode.G)) OnClick(2);
-            if (Input.GetKeyDown(KeyCode.C)) OnClick(3);
-            if (Input.GetKeyDown(KeyCode.Q)) OnClick(4);
-            if (Input.GetKeyDown(KeyCode.M)) OnClick(5);
-            if (Input.GetKeyDown(KeyCode.V)) OnClick(6);
-            if (Input.GetKeyDown(KeyCode.P)) OnClick(7);
-            if (Input.GetKeyDown(KeyCode.F4)) OnClick(8);
-            if (Input.GetKeyDown(KeyCode.F6)) OnClick(9);
+            if (Input.GetKeyDown(KeyCode.N)) TryHotkey(0);
+            if (Input.GetKeyDown(KeyCode.T)) TryHotkey(1);
+            if (Input.GetKeyDown(KeyCode.G)) TryHotkey(2);
+            if (Input.GetKeyDown(KeyCode.C)) TryHotkey(3);
+            if (Input.GetKeyDown(KeyCode.Q)) TryHotkey(4);
+            if (Input.GetKeyDown(KeyCode.M)) TryHotkey(5);
+            if (Input.GetKeyDown(KeyCode.V)) TryHotkey(6);
+            if (Input.GetKeyDown(KeyCode.P)) TryHotkey(7);
+            if (Input.GetKeyDown(KeyCode.F4)) TryHotkey(8);
+            if (Input.GetKeyDown(KeyCode.F6)) TryHotkey(9);
         }
 
         private void OnGUI()
@@ -88,19 +88,21 @@ namespace InsectGame.UI
             Event e = Event.current;
             if (e != null && e.type == EventType.KeyDown)
             {
+                // handled를 TryHotkey의 반환값으로 받는다. 모달 때문에 무시된 키를
+                // e.Use()로 소비하면 그 모달의 텍스트필드가 글자를 못 받는다.
                 bool handled = false;
                 switch (e.keyCode)
                 {
-                    case KeyCode.N: OnClick(0); handled = true; break;
-                    case KeyCode.T: OnClick(1); handled = true; break;
-                    case KeyCode.G: OnClick(2); handled = true; break;
-                    case KeyCode.C: OnClick(3); handled = true; break;
-                    case KeyCode.Q: OnClick(4); handled = true; break;
-                    case KeyCode.M: OnClick(5); handled = true; break;
-                    case KeyCode.V: OnClick(6); handled = true; break;
-                    case KeyCode.P: OnClick(7); handled = true; break;
-                    case KeyCode.F4: OnClick(8); handled = true; break;
-                    case KeyCode.F6: OnClick(9); handled = true; break;
+                    case KeyCode.N: handled = TryHotkey(0); break;
+                    case KeyCode.T: handled = TryHotkey(1); break;
+                    case KeyCode.G: handled = TryHotkey(2); break;
+                    case KeyCode.C: handled = TryHotkey(3); break;
+                    case KeyCode.Q: handled = TryHotkey(4); break;
+                    case KeyCode.M: handled = TryHotkey(5); break;
+                    case KeyCode.V: handled = TryHotkey(6); break;
+                    case KeyCode.P: handled = TryHotkey(7); break;
+                    case KeyCode.F4: handled = TryHotkey(8); break;
+                    case KeyCode.F6: handled = TryHotkey(9); break;
                 }
                 if (handled) e.Use();
             }
@@ -283,6 +285,27 @@ namespace InsectGame.UI
             if (raidScreen != null && raidScreen.IsRaidActive) return true;
             if (playerMovement != null && playerMovement.IsFrozen) return true;
             return false;
+        }
+
+        /// <summary>
+        /// 핫키로 index를 토글한다. 다른 화면이 열려 있으면 무시하고 false를 반환한다 —
+        /// 호출부가 이벤트를 소비하지 않아야 그 화면의 텍스트필드가 글자를 받는다.
+        /// 지금 열려 있는 화면 자신의 키는 통과시켜 같은 키로 닫는 토글을 유지한다.
+        /// </summary>
+        /// <remarks>
+        /// IsInputBlocked는 battle/raid/frozen만 본다. "모든 모달이 SetFrozen을 거니
+        /// frozen 하나로 커버된다"는 전제가 깨져 있었다 — SocialPvpUI와
+        /// WorldFieldMultiplayerUI는 모달로 등록하면서 SetFrozen을 부르지 않는다.
+        /// 그래서 친구코드·채팅 입력에 N/T/G/C/Q/M/V/P를 치면 글자마다 화면이 토글되고,
+        /// OnGUI의 e.Use()가 그 글자를 삼켜 입력조차 되지 않았다.
+        /// (렌더 경로는 이 가드를 쓰면 안 된다 — 데스크톱 바가 통째로 사라지고
+        ///  active 하이라이트 설계가 죽는다.)
+        /// </remarks>
+        private bool TryHotkey(int index)
+        {
+            if (ModalUIRegistry.IsAnyOpen() && !IsActive(index)) return false;
+            OnClick(index);
+            return true;
         }
 
         private void OnClick(int index)

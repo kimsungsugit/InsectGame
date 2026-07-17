@@ -14,6 +14,15 @@ namespace InsectGame.UI
         private bool isOpen;
         private string friendCodeInput = string.Empty;
         private Vector2 scroll;
+
+        // 매치 상태 전이 감지용 — OnStateChanged가 폴링마다 호출되므로 edge를 직접 기억한다.
+        private string lastMatchId = string.Empty;
+        private string lastMatchStatus = string.Empty;
+
+        // 팀 유효성 캐시 — HasValidTeam이 비싸서 매 OnGUI 호출하면 안 된다(RefreshTeamState 참조).
+        private bool teamReady;
+        private string teamReason = string.Empty;
+        private float nextTeamCheck;
         private GUIStyle titleStyle;
         private GUIStyle sectionStyle;
         private GUIStyle cardStyle;
@@ -64,8 +73,42 @@ namespace InsectGame.UI
 
         private void OnStateChanged()
         {
-            if (manager != null && manager.CurrentMatch != null
-                && manager.CurrentMatch.status == "active") page = Page.Battle;
+            // "새로 active가 된 순간"에만 배틀 탭으로 보낸다.
+            // 옛 코드는 level-trigger라 매치 중 폴링(2.5초)마다 page를 Battle로 되돌렸고,
+            // 그동안 친구/랭크 탭에 머무를 수 없었다(친구 요청 수락·랭킹 확인 불가).
+            PvpMatchState match = manager != null ? manager.CurrentMatch : null;
+            string id = match != null ? match.matchId : string.Empty;
+            string status = match != null ? match.status : string.Empty;
+
+            bool becameActive = status == "active"
+                && (id != lastMatchId || lastMatchStatus != "active");
+
+            lastMatchId = id;
+            lastMatchStatus = status;
+
+            if (becameActive) page = Page.Battle;
+        }
+
+        /// <summary>
+        /// 팀 유효성을 0.5초 간격으로만 재계산해 캐시한다.
+        /// </summary>
+        /// <remarks>
+        /// HasValidTeam은 BuildTeamSnapshot을 돌려 List·배열을 여러 개 할당하고(전부 class라
+        /// 진짜 힙 할당이다) 팀이 미완성이면 예외까지 던진다(스택 트레이스 캡처).
+        /// OnGUI는 프레임당 Layout+Repaint로 두 번 이상 호출되므로 매 호출 재계산은 낭비다.
+        /// 팀 편성은 이 화면 밖에서 바뀌므로 0.5초 지연은 체감되지 않는다.
+        /// </remarks>
+        private void RefreshTeamState()
+        {
+            if (manager == null)
+            {
+                teamReady = false;
+                teamReason = "프로필 동기화 필요";
+                return;
+            }
+            if (Time.unscaledTime < nextTeamCheck) return;
+            nextTeamCheck = Time.unscaledTime + 0.5f;
+            teamReady = manager.HasValidTeam(out teamReason);
         }
 
         private void EnsureStyles()
@@ -269,17 +312,22 @@ namespace InsectGame.UI
             }
             else GUILayout.Label("프로필 동기화 필요", centeredStyle, GUILayout.Height(70f));
             GUILayout.Space(8f);
-            string reason;
-            bool teamReady = manager.HasValidTeam(out reason);
-            GUILayout.Label(teamReady ? "3:3 팀 준비 완료" : reason, centeredStyle);
-            GUI.enabled = !manager.IsBusy && teamReady;
+            RefreshTeamState();
+            GUILayout.Label(teamReady ? "3:3 팀 준비 완료" : teamReason, centeredStyle);
             if (state.queued)
             {
+                // 취소는 팀 상태와 무관해야 한다(CancelQueue는 팀을 쓰지 않는다).
+                // 옛 코드는 `GUI.enabled = !IsBusy && teamReady`가 이 버튼까지 덮어,
+                // 큐 대기 중 곤충을 방출하거나 편성을 풀면 teamReady=false가 되면서
+                // 취소가 죽었다. queued는 서버 권위값이라 재접속해도 유지되므로
+                // 큐에서 영영 빠져나올 수 없었다.
+                GUI.enabled = !manager.IsBusy;
                 GUI.backgroundColor = new Color(0.65f, 0.25f, 0.2f);
                 if (GUILayout.Button("매칭 취소", buttonStyle, GUILayout.Height(60f))) manager.CancelQueue();
             }
             else
             {
+                GUI.enabled = !manager.IsBusy && teamReady;
                 GUI.backgroundColor = new Color(0.2f, 0.55f, 0.85f);
                 if (GUILayout.Button("등급별 3:3 매칭 시작", buttonStyle, GUILayout.Height(60f))) manager.QueueRanked();
             }

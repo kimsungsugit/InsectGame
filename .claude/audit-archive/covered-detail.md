@@ -335,6 +335,89 @@ GetWeightedRandom/GetWeightedRandomWithRareBoost 4곳 foreach에 `if (data == nu
 
 진짜 P0/P1 회귀 없음. GetAllSets()는 OutfitBonusProvider.AutoWire에서 1회만 호출되어 allSets 필드에 캐시(매 프레임 호출 거짓양성). 12개 세트 정적 데이터 정합성 시각 review 결과 정상: requiredItemIds 중복/null 없음, partialThreshold ≤ requiredItemIds.Length 모두 만족(set_wizard threshold=2 items=4), partial/full Bonus 모두 정의, setColor 시각용 OK. GetAllSets static readonly 필드화는 변경 risky(P2 보류). Editor 시점 검증 도구는 별도 디자인 작업. Covered 이동만.
 
+### QuickAccessBarUI (P0:1, 2026-07-17)
+
+**P0 — 핫키 경로에 모달 가드가 없어 채팅·친구코드 입력이 망가짐.** 이 파일은 그동안
+*모달 가드 관례의 근거*로 인용돼왔는데(`:113`의 `IsAnyOpen()`), 정작 그 가드는 **모바일 렌더
+경로에만** 있었다. 핫키 경로(Update, OnGUI KeyDown)는 `IsInputBlocked()`만 거치는데 그건
+battle/raid/frozen 셋만 본다. 코드 주석의 전제 — *"모든 모달이 SetFrozen을 거니 frozen 하나로
+커버된다"* — 가 깨져 있었다: `SocialPvpUI`(:53)와 `WorldFieldMultiplayerUI`(:422)는 모달로
+등록하면서 `SetFrozen`을 부르지 않는다(전역 grep 확인).
+
+증상 두 가지: (1) 친구코드(12자)·채팅(80자) 입력에 N/T/G/C/Q/M/V/P를 타이핑하면 **글자마다
+화면이 토글**된다(`Input.GetKeyDown`은 IMGUI 키보드 포커스와 무관). (2) 반대로 OnGUI의
+`e.Use()`가 같은 키를 전역 소비해 **두 텍스트필드가 그 8글자를 입력조차 받지 못한다**.
+프로젝트의 다른 입력 게이트(WorldInteractionController:115, VirtualJoystickUI:37,
+CaptureInputController:62/92, SubAreaWorldBuilder:84)는 예외 없이 `IsAnyOpen() || IsFrozen`
+쌍을 쓰는데 이 파일만 절반이 빠져 있었다.
+
+수정: `TryHotkey(index) → bool` 신설. `IsAnyOpen() && !IsActive(index)`면 무시하고 **false를
+반환해 `e.Use()`를 막는다**(그래야 텍스트필드가 글자를 받는다). 열린 화면 자신의 키는
+통과시켜 "N으로 도감 닫기" 토글을 유지한다.
+**렌더 경로에는 이 가드를 넣지 않았다** — `IsInputBlocked()`에 `IsAnyOpen()`을 통째로 넣으면
+OnGUI가 조기 return해 데스크톱 바가 사라지고 active 하이라이트 설계가 죽는다(회귀).
+
+**점검 결과 clean**: 핫키 문자열 10개가 KeyCode와 1:1 일치(KeyGuideHUD류 불일치 없음),
+`buttons[0..9]` ↔ `OnClick` switch ↔ `IsActive` switch 3자 일치, RaidBattleUI의 Q 중복은
+`IsRaidActive`로 차단됨, Update/OnGUI 이중 처리는 `lastToggleFrame`이 막음.
+
+**미처리 P2**: `mobileMenuOpen`이 true가 되는 곳이 없어 IModalUI 구현 전체가 사문(2탭 메뉴가
+제거된 잔재), `DrawMobileQuickBar`의 active 분기 도달 불가, `:148`의 `$"{label}\n<size=14>..."`는
+버튼 10개 × 프레임당 다중 패스로 **자동 채점 32건 중 유일한 실제 힙 할당**(ButtonDef 캐시 권장).
+
+### SocialPvpUI (P0:1, P1:2, 2026-07-17)
+
+**P0 — `GUI.enabled`가 "매칭 취소"까지 덮어 큐에서 못 빠져나옴.** `GUI.enabled = !IsBusy &&
+teamReady`가 취소 버튼에도 걸려, 큐 대기 중 곤충을 방출하거나 편성을 풀면
+(`BuildTeamSnapshot` throw → `teamReady=false`) 취소가 죽는다. `CancelQueue()`는 팀을 쓰지도
+않는다. **`state.queued`는 서버 권위값이라 재접속해도 유지되므로 영구 감금**이다.
+AccountLinkUI·AccountSettingsUI에 이어 **세 번째로 확인된 동일 패턴**. 수정: 취소 분기는
+`GUI.enabled = !IsBusy`만 적용.
+
+**P1 — 매치 중 2.5초마다 탭이 배틀로 튕김.** `OnStateChanged`가 level-trigger라
+`status=="active"`이면 **매번** `page = Page.Battle`로 되돌렸는데, 매치 중에는 폴링이
+2.5초 간격으로 `StateChanged`를 발화한다 → 친구/랭크 탭에 머무를 수 없어 친구 요청 수락이나
+랭킹 확인이 불가능했다. 수정: `lastMatchId`/`lastMatchStatus`로 edge-trigger화해 "새로 active가
+된 순간"에만 1회 전환.
+
+**P1 — `HasValidTeam`을 OnGUI 이벤트마다 호출.** `BuildTeamSnapshot`이 매번 `List<string>`,
+`List<PvpInsectSnapshot>`, 곤충당 `List<PvpSkillSnapshot>`+`ToArray()` 등을 할당하고(**전부
+class라 진짜 힙 할당** — 자동 채점이 잡은 struct와 다르다), 팀이 미완성이면 **예외까지 매
+이벤트 반복해 던진다**(스택 트레이스 캡처). 랭크 탭은 매칭 대기 중 계속 켜두는 화면이고
+OnGUI는 프레임당 2회 이상 호출된다. 수정: `RefreshTeamState()`로 0.5초 스로틀 캐싱.
+
+**점검 결과 clean**: 모달 정합(`IsOpen` ↔ 그릴 조건 일치, Register/Unregister 짝),
+**대상 고정도 정상** — `ChallengeFriend(friend.uid)`, `RespondChallenge(challenge.challengeId)` 등
+전부 foreach + id 고정이라 WorldFieldMultiplayerUI의 인덱스 오배송 계열이 없다.
+
+**미처리 P2**: `SocialPvpManager:404`의 `&& match.match != null` 때문에 **`CurrentMatch`가 절대
+null로 돌아가지 않아** 첫 매치 종료 후 "배틀 ●" 표시와 종료 화면이 영구 잔류(닫기 버튼도 없음),
+`AuthManager.Instance == null`이면 uid=""로 **내 팀이 상대 팀 자리에** 그려짐, 무승부/공백
+winnerUid 미처리로 오탐 "승리", 액션 버튼이 폴링 중(IsBusy) 클릭을 조용히 무시.
+
+### SceneAutoWire (clean — dead code 확인, 2026-07-17)
+
+**P0/P1 0건.** 채점이 이 파일을 상위로 올린 "미캐싱 조회 40건"은 **이중으로 거짓양성**이었다.
+① 40건 전부 `Awake()` 하나에만 있다(파일 106줄이 통째로 `Awake()`이고 Update/OnGUI/코루틴이
+없다) → 인스턴스당 최대 1회. ② 더 결정적으로 **이 컴포넌트는 어디에도 붙어 있지 않다** —
+GUID 참조 0건, 유일한 씬의 MonoBehaviour는 `PlaySceneBootstrap` 하나뿐, `AddComponent` 0건,
+런타임 진입점(`PlaySceneAutoInit`)도 Bootstrap만 생성한다. **`Awake()`는 절대 실행되지 않으므로
+런타임 비용은 정확히 0**이다.
+
+즉 **파일 전체가 dead code**다. 모든 배선(`worldState.AutoWire`, `spawner.AutoWire`,
+`capture.AutoWire` 등)이 `PlaySceneBootstrap:165-235`에 동일하게 재구현돼 있고, Bootstrap이
+이 파일을 완전히 흡수·대체했다.
+
+**미처리 P2(보고만)**: ① 파일 삭제 권고 — 참조가 0건이라 무위험이고, 방치하면 **누군가 이
+컴포넌트를 GameObject에 붙이는 순간 Bootstrap과 이중 배선되는 잠복 지뢰**다. ② 삭제 시
+`.claude/scripts/verify_coverage.py:12`, `.claude/agents/architect.md:20`,
+`.codex/agents/architect.toml:10`이 이 파일을 **활성 아키텍처 파일로 등재 중**이라 3곳 동반 정리
+필요. ③ `:54`가 엔트리 프리팹 자리에 `null` 하드코딩(방치의 방증).
+
+**채점기 개선 후보**: "미캐싱 조회"가 이 파일을 1위로 올린 원인은 (a) `Awake` 스코프 미판별,
+(b) 씬/GUID 참조 여부 미확인이다. 두 필터가 없으면 dead code와 부트스트랩 파일이 계속 상위를
+점유한다. "프레임 할당"과 동일한 실패 모드(실행 컨텍스트를 보지 않고 구문만 셈).
+
 ### AccountSettingsUI (P0:1, P1:2, 2026-07-17)
 
 **P0 — 게스트 로그아웃이 계정을 영구 소실시킴(확인 0단계).** 게스트(익명)는 refresh token이
