@@ -1,9 +1,12 @@
 {
   "dependencies": {
-    "com.unity.test-framework": "1.4.5",
-    "com.unity.textmeshpro": "3.2.0-pre.12",
-    "com.unity.ugui": "2.0.0",
+    "com.unity.microsoft.gdk": "1.6.0",
+    "com.unity.microsoft.gdk.tools": "1.6.0",
     "com.unity.multiplayer.center": "1.0.1",
+    "com.unity.purchasing": "5.3.1",
+    "com.unity.test-framework": "1.6.0",
+    "com.unity.textmeshpro": "5.0.0",
+    "com.unity.ugui": "2.0.0",
     "com.unity.modules.accessibility": "1.0.0",
     "com.unity.modules.ai": "1.0.0",
     "com.unity.modules.androidjni": "1.0.0",
