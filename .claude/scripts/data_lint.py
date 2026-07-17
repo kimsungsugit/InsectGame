@@ -24,9 +24,24 @@ UNITY_CALLBACKS = {
     "OnDrawGizmos", "OnDrawGizmosSelected", "OnValidate", "Reset",
 }
 
+class ExtractorBroken(Exception):
+    """추출기가 기대한 심볼을 코드에서 찾지 못했다 — 데이터 결함이 아니라 검증기 자신의 고장.
+
+    빈 값을 반환하고 계속 가면 고장이 "정의 없음"으로 둔갑해 멀쩡한 데이터를 FAIL로
+    보고한다. 실제로 그렇게 됐다: 리전 정의가 PlaySceneBootstrap에서 RegionDefinitions.cs로
+    옮겨간 뒤 이 스크립트는 리전 7개 전부를 "정의 없는데 참조"로 거짓 FAIL 처리했고,
+    가챠 확률은 조용한 WARN으로 묻혔다. 아무도 안 고쳤다 — 검증기가 늘 빨간불이면
+    빨간불에 의미가 없어지기 때문이다.
+
+    파서는 앞으로도 리팩터링을 따라가지 못한다. 그건 막을 수 없다. 막을 수 있는 건
+    썩는 것이 아니라 **썩으면서 거짓말하는 것**이다. 그래서 여기서 죽는다.
+    """
+
+
 # === 데이터 소스 경로 ===
 PATHS = {
     "bootstrap": "Assets/Scripts/Core/PlaySceneBootstrap.cs",
+    "region_defs": "Assets/Scripts/Core/RegionDefinitions.cs",
     "region_mgr": "Assets/Scripts/Core/RegionManager.cs",
     "region_terrain": "Assets/Scripts/Core/RegionTerrainBuilder.cs",
     "region_map_ui": "Assets/Scripts/UI/RegionMapUI.cs",
@@ -74,18 +89,30 @@ def _strip_comments(content: str) -> str:
 
 # ===== 추출기 =====
 
-def extract_region_ids(scope: str = "expanded") -> set:
-    """CreateRegions() 또는 CreateExpandedRegions() 안의 regionId 추출. 다음 메서드 정의까지."""
-    content = _read_clean(PATHS["bootstrap"])
-    method_name = "CreateRegions" if scope == "legacy" else "CreateExpandedRegions"
+def extract_region_ids() -> set:
+    """RegionDefinitions.CreateAll() 안의 regionId 추출. 다음 메서드 정의까지.
+
+    이전엔 PlaySceneBootstrap의 CreateRegions()/CreateExpandedRegions()를 팠다. 두 메서드는
+    이제 코드베이스에 0곳이다 — 정의가 RegionDefinitions.cs로 분리됐다.
+    """
+    content = _read_clean(PATHS["region_defs"])
+    if not content:
+        raise ExtractorBroken(f"{PATHS['region_defs']}를 읽을 수 없음 — 파일이 옮겨갔는가?")
     pattern = re.compile(
-        rf"{method_name}\s*\(\)\s*\{{(.*?)(?=\n\s*(?:private|public)\s+(?:static\s+)?[\w\.\[\]<>]+\s+\w+\s*\()",
+        r"CreateAll\s*\(\)\s*\{(.*?)(?=\n\s*(?:private|public)\s+(?:static\s+)?[\w\.\[\]<>]+\s+\w+\s*\()",
         re.DOTALL
     )
     m = pattern.search(content)
     if not m:
-        return set()
-    return set(re.findall(r'regionId\s*=\s*"(\w+)"', m.group(1)))
+        raise ExtractorBroken(
+            f"{PATHS['region_defs']}에서 CreateAll() 본체를 찾지 못함 — 메서드가 개명/이동했는가?"
+        )
+    ids = set(re.findall(r'regionId\s*=\s*"(\w+)"', m.group(1)))
+    if not ids:
+        raise ExtractorBroken(
+            "CreateAll() 본체에서 regionId를 하나도 못 찾음 — 정의 문법이 바뀌었는가?"
+        )
+    return ids
 
 
 def extract_region_refs() -> dict:
@@ -220,25 +247,35 @@ def extract_gacha_pools() -> dict:
 
 
 def extract_gacha_probabilities() -> dict:
-    """GetBronzeRarity / Silver / Gold 메서드 본체를 다음 메서드 정의 전까지로 분리 추출."""
+    """Bronze/Silver/GoldThresholds 배열에서 누적 임계값 추출.
+
+    이전엔 Get{box}Rarity() 메서드 본체의 `roll < Xf` 리터럴을 셌다. 그 메서드들은 이제
+    expression-body 한 줄(`=> GetRarityByThresholds(roll, BronzeThresholds)`)이라 본체에
+    리터럴이 없다 — 확률이 상수 배열로 분리됐다(GachaBoxManager.cs 주석: "분기 로직과 UI
+    확률 표기가 같은 출처를 쓰도록 상수로 분리"). 그래서 추출이 조용히 실패했고 확률
+    검증 3건이 "추출 실패" WARN으로 묻혔다.
+
+    반환: {"Bronze": [55.0, 85.0, 97.0, 99.5], ...} — 누적 임계값 [C상한, U상한, R상한, E상한].
+    Legendary는 나머지(100 - 마지막).
+    """
     content = _read_clean(PATHS["gacha_mgr"])
+    if not content:
+        raise ExtractorBroken(f"{PATHS['gacha_mgr']}를 읽을 수 없음 — 파일이 옮겨갔는가?")
     results = {}
     for box in ["Bronze", "Silver", "Gold"]:
-        # 메서드 시그니처부터 다음 메서드 정의 전까지 본체 추출
-        pattern = re.compile(
-            rf'Get{box}Rarity\s*\([^)]*\)\s*\{{(.*?)(?=\n\s*(?:private|public)\s+(?:static\s+)?[\w\.\[\]<>]+\s+\w+\s*\()',
-            re.DOTALL
+        m = re.search(
+            rf'{box}Thresholds\s*=\s*\{{([^}}]*)\}}', content
         )
-        m = pattern.search(content)
         if not m:
-            results[box] = None
-            continue
-        # 첫 return InsectRarity.Legendary까지의 임계값만
-        body = m.group(1)
-        legendary_idx = body.find("return InsectRarity.Legendary")
-        if legendary_idx >= 0:
-            body = body[:legendary_idx]
-        thresholds = [float(x) for x in re.findall(r'roll\s*<\s*([\d.]+)f', body)]
+            raise ExtractorBroken(
+                f"{PATHS['gacha_mgr']}에서 {box}Thresholds 배열을 찾지 못함 — 개명/이동했는가?"
+            )
+        thresholds = [float(x) for x in re.findall(r'([\d.]+)f', m.group(1))]
+        if len(thresholds) != 4:
+            raise ExtractorBroken(
+                f"{box}Thresholds에서 임계값 4개를 기대했으나 {len(thresholds)}개 추출 "
+                f"({thresholds}) — 배열 구조가 바뀌었는가?"
+            )
         results[box] = thresholds
     return results
 
@@ -249,15 +286,14 @@ def evaluate_signals() -> list:
     signals = []
 
     # 1. 리전 정의 vs 참조 정합성
-    expanded = extract_region_ids("expanded")
-    legacy = extract_region_ids("legacy")
+    defined = extract_region_ids()
     refs = extract_region_refs()
     all_refs = set()
     for v in refs.values():
         all_refs.update(v)
 
-    missing = all_refs - expanded
-    orphan = expanded - all_refs
+    missing = all_refs - defined
+    orphan = defined - all_refs
     judge = "FAIL" if missing else "PASS"
     signals.append((
         "리전 참조 정합성 (정의 없는데 참조)",
@@ -274,15 +310,9 @@ def evaluate_signals() -> list:
         judge
     ))
 
-    # 2. 리전 중복 정의 (Legacy vs Expanded)
-    duplicates = expanded & legacy
-    judge = "WARN" if duplicates else "PASS"
-    signals.append((
-        "리전 중복 정의 (CreateRegions vs CreateExpandedRegions)",
-        "0건 중복",
-        f"{len(duplicates)}건 중복 ({sorted(duplicates)})" if duplicates else "0건",
-        judge
-    ))
+    # 2. (삭제) 리전 중복 정의 — CreateRegions vs CreateExpandedRegions 이분법은 없어졌다.
+    #    정의는 RegionDefinitions.CreateAll() 하나뿐이라 중복될 곳이 없다. 두 메서드가
+    #    코드에서 사라진 뒤로 이 검사는 빈 집합 ∩ 빈 집합 = PASS만 찍는 공허한 통과였다.
 
     # 3. dead method 일반 검출 (PlaySceneBootstrap의 private 메서드 중 참조 0건)
     dead_methods = detect_dead_methods()
@@ -345,10 +375,8 @@ def evaluate_signals() -> list:
     # 7. Gacha 확률 합 100% 검증 — 마지막 임계값과 100 사이 격차가 Legendary 확률(>0)이어야 정상
     probs = extract_gacha_probabilities()
     for box, thresholds in probs.items():
-        if thresholds is None:
-            signals.append((f"Gacha {box} 확률 합", "100%", "추출 실패", "WARN"))
-            continue
-        last = thresholds[-1] if thresholds else 0
+        # 추출 실패 분기는 없다 — extract_gacha_probabilities()가 ExtractorBroken으로 죽는다.
+        last = thresholds[-1]
         legendary_pct = 100 - last
         # Legendary 확률은 양수이고 정렬되어 있어야 정상
         is_sorted = thresholds == sorted(thresholds) and len(thresholds) >= 4
@@ -387,8 +415,8 @@ def evaluate_signals() -> list:
         if box_name is None:
             continue
         thresholds = probs.get(box_name)
-        if thresholds is None or len(thresholds) < 4:
-            continue
+        if thresholds is None:
+            continue  # UI에만 있고 Manager에 없는 박스 — 아래 가격 검사가 잡는다
         # 누적 임계값 → 단계별 확률
         code_rates = {}
         prev = 0.0
@@ -437,14 +465,12 @@ def main():
 
     if args.detail:
         print("## 추출된 데이터셋")
-        expanded = extract_region_ids("expanded")
-        legacy = extract_region_ids("legacy")
+        defined = extract_region_ids()
         refs = extract_region_refs()
         shop_items, reward_items = extract_cashshop_items()
         capture_items = extract_capture_items()
         gacha = extract_gacha_pools()
-        print(f"- CreateExpandedRegions regionId: {sorted(expanded)}")
-        print(f"- CreateRegions regionId (legacy): {sorted(legacy)}")
+        print(f"- RegionDefinitions.CreateAll() regionId: {sorted(defined)}")
         for src, ids in refs.items():
             print(f"- {src} 참조: {sorted(ids)}")
         print(f"- CashShop itemIds: {sorted(shop_items)}")
@@ -461,7 +487,8 @@ def main():
 
     print("## 가정 / 한계")
     print("- 코드 내 하드코딩된 ID만 검증. ScriptableObject(.asset) 직렬화는 미지원")
-    print("- 정규식 기반 추출 — 코드 포맷 변경 시 false negative 가능")
+    print("- 정규식 기반 추출 — 코드 포맷이 바뀌면 추출기가 깨진다. 단 조용히 깨지진")
+    print("  않는다: 기대 심볼을 못 찾으면 ExtractorBroken으로 죽고 exit 2를 낸다")
     print("- InsectDatabase의 insectId는 .asset 파일에 있어 미검증 (후속 작업)")
     print("- Inspector 직렬화 필드(예: ShopUIController.itemIds[])는 grep 미지원")
 
@@ -470,4 +497,12 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    # 종료 코드: 0=이상 없음, 1=데이터 FAIL(진짜 결함), 2=추출기 고장(검증기 자신의 문제).
+    # 1과 2를 가르는 게 핵심이다. 섞으면 "늘 빨간불"이 되어 아무도 안 본다.
+    try:
+        sys.exit(main())
+    except ExtractorBroken as e:
+        print(f"\n## 추출기 고장\n\n**{e}**\n")
+        print("데이터 결함이 아니라 이 스크립트가 코드를 못 따라간 것이다.")
+        print("검증 결과는 신뢰할 수 없다 — 추출기를 먼저 고칠 것.")
+        sys.exit(2)

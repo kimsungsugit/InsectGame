@@ -30,9 +30,9 @@ argument-hint: "<regionId> <displayName> <requiredLevel>"
 
 ## Phase 2: 자동화 작업
 
-### 2-1. RegionData 코드 스니펫 (CreateExpandedRegions 끝에 추가)
+### 2-1. RegionData 코드 스니펫 (RegionDefinitions.CreateAll() 끝에 추가)
 ```csharp
-// PlaySceneBootstrap.cs CreateExpandedRegions() 끝
+// RegionDefinitions.cs CreateAll() 끝
 new RegionData {
     regionId = "<regionId>",
     displayName = "<displayName>",
@@ -64,7 +64,7 @@ private void Build<RegionId>Terrain()
 
 | # | 등록 지점 | 누락 시 증상 | grep 검증 |
 |---|---|---|---|
-| 1 | `PlaySceneBootstrap.cs` CreateExpandedRegions() RegionData 추가 | 리전 자체가 존재 안 함 | `Grep "regionId = \"<regionId>\"" Assets/Scripts/Core/PlaySceneBootstrap.cs` |
+| 1 | `RegionDefinitions.cs` CreateAll() RegionData 추가 | 리전 자체가 존재 안 함 | `Grep "regionId = \"<regionId>\"" Assets/Scripts/Core/RegionDefinitions.cs` |
 | 2 | RegionData 7필드 (insectIds, centerPosition, radius, requiredLevel, guardianInsectId, subAreas, environmentType) | 빈 맵 / 가디언 없음 / 잘못된 좌표 | RegionData 인스턴스 필드 사람 검토 |
 | 3 | `RegionManager.cs:170-181` GetNextRegionId() switch | 진입 후 다음 리전 해금 안 됨 | `Grep "case .*return \"<regionId>\"" Assets/Scripts/Core/RegionManager.cs` |
 | 4 | `RegionManager.cs:183-195` GetPreviousRegionId() switch | 가디언 좌표 계산 오류(시나리오 E) | `Grep "case \"<regionId>\":" Assets/Scripts/Core/RegionManager.cs` |
@@ -79,7 +79,7 @@ private void Build<RegionId>Terrain()
 
 | 시나리오 | 증상 | 검증 grep |
 |---|---|---|
-| **A. 스폰 0마리** | 진입했는데 잡을 곤충 없음 | `Grep "insectIds = new\[\]" PlaySceneBootstrap.cs` 영역에서 `<regionId>` insectIds 길이 ≥ 1 + 모든 ID가 InsectDatabase에 존재 |
+| **A. 스폰 0마리** | 진입했는데 잡을 곤충 없음 | `Grep "insectIds = new\[\]" RegionDefinitions.cs` 영역에서 `<regionId>` insectIds 길이 ≥ 1 + 모든 ID가 InsectDatabase에 존재 |
 | **B. 진입 불가 (dead-end)** | NextRegionId 무한 루프 또는 도달 불가 | `Grep "return \"<regionId>\"" Assets/Scripts/Core/RegionManager.cs` (1+ 있어야 어딘가에서 해금됨) |
 | **C. 빈 맵** | 시각적으로 황무지 | `Grep "case \"<regionId>\":\|Build<RegionPascal>Terrain" Assets/Scripts/Core/RegionTerrainBuilder.cs` 모두 매칭 |
 | **D. 서브에리어 깡통** | 서브에리어 진입했더니 빈 공간 | environmentType이 11종 중 하나여야 함. 신규 타입이면 `SubAreaWorldBuilder.cs:81-115` + `SubAreaEnvironment.cs:159-309`에 분기 추가됐는지 검증 |
@@ -100,7 +100,7 @@ private void Build<RegionId>Terrain()
 
 ```bash
 # 필수 8개
-Grep "regionId = \"tundra\"" Assets/Scripts/Core/PlaySceneBootstrap.cs
+Grep "regionId = \"tundra\"" Assets/Scripts/Core/RegionDefinitions.cs
 Grep "case .*return \"tundra\"" Assets/Scripts/Core/RegionManager.cs
 Grep "case \"tundra\":" Assets/Scripts/Core/RegionManager.cs
 Grep "case \"tundra\":\|BuildTundraTerrain" Assets/Scripts/Core/RegionTerrainBuilder.cs
@@ -112,7 +112,7 @@ Grep "tundra" Assets/Scripts/Core/AudioManager.cs
 Grep "ice_beetle\|frost_moth" Assets/Scripts/Data Assets/Scripts/Core   # insectIds 모두 존재 확인
 
 # 시나리오 D (서브에리어)
-Grep "environmentType = \"<envType>\"" Assets/Scripts/Core/PlaySceneBootstrap.cs   # 11종에 포함되는지
+Grep "environmentType = \"<envType>\"" Assets/Scripts/Core/RegionDefinitions.cs   # 11종에 포함되는지
 
 # 시나리오 F (세이브)
 Grep "tundra" "$env:APPDATA\..\LocalLow\<Company>\InsectGame"   # PlayerPrefs 잔존 확인 (선택)
@@ -152,7 +152,7 @@ Grep "tundra" "$env:APPDATA\..\LocalLow\<Company>\InsectGame"   # PlayerPrefs �
 /verify
 ```
 특히 다음 항목 직격:
-- 항목 4 (Bootstrap 등록: RegionData가 CreateExpandedRegions에 들어갔는지)
+- 항목 4 (Bootstrap 등록: RegionData가 RegionDefinitions.CreateAll()에 들어갔는지)
 - 항목 5 (세이브 호환성: PlayerPrefs 영향)
 - 항목 8 (데이터 매칭 무결성: regionId↔switch 5곳, insectIds↔InsectDatabase)
 
