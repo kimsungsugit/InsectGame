@@ -41,14 +41,9 @@ SCRIPTS_DIR = os.path.join(ROOT, "Assets", "Scripts")
 MIN_LOC = 80  # 이보다 작은 파일은 audit 라운드를 열 만한 표면이 없다
 
 
-def strip_cs(s):
-    """주석·문자열 제거. { } 나 new Color가 주석/리터럴 안에서 오탐되는 걸 막는다."""
-    s = re.sub(r"//[^\n]*", "", s)
-    s = re.sub(r"/\*[\s\S]*?\*/", "", s)
-    s = re.sub(r"'(?:\\.|[^'\\])'", "", s)
-    s = re.sub(r'"(?:\\.|[^"\\])*"', "", s)
-    s = re.sub(r'@"(?:[^"]|"")*"', "", s)
-    return s
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from cs_strip import strip_cs  # noqa: E402,F401  — 주석/문자열 제거는 cs_strip이 소유
+
 
 
 def read_reviewed_text():

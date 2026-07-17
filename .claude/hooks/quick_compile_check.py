@@ -18,6 +18,24 @@ try:
 except Exception:
     pass
 
+# 공용 C# 전처리기. 이 파일은 .codex/hooks/로도 무변환 복사되므로 __file__ 기준 상대경로가
+# 양쪽에서 성립해야 한다 — .claude/hooks/ 와 .codex/hooks/ 둘 다 루트 2단계 아래다.
+sys.path.insert(
+    0,
+    os.path.join(
+        os.environ.get("CLAUDE_PROJECT_DIR")
+        or os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        ".claude", "scripts",
+    ),
+)
+try:
+    from cs_strip import strip_cs
+except ImportError:
+    # 전처리기를 못 찾으면 침묵한다. 원시 텍스트로 검사하면 주석·문자열 안의 중괄호까지
+    # 세어 오탐이 쏟아진다 — 조용한 오탐보다 검사를 거르는 편이 낫다.
+    print(json.dumps({"suppressOutput": True}))
+    sys.exit(0)
+
 raw = sys.stdin.read()
 try:
     d = json.loads(raw)
@@ -42,6 +60,13 @@ if not os.path.exists(file_path):
 
 warnings = []
 
+# C# 타입 토큰: 내장 타입 또는 대문자로 시작하는 사용자 타입(제네릭·배열 포함).
+TYPE_TOKEN = (
+    r"\b(?:var|int|uint|long|ulong|short|ushort|byte|sbyte|float|double|decimal|"
+    r"bool|string|char|object|"
+    r"[A-Z]\w*(?:<[^<>()]*>)?(?:\[\])?)"
+)
+
 try:
     with open(file_path, "r", encoding="utf-8") as fh:
         text = fh.read()
@@ -50,17 +75,10 @@ except Exception:
     sys.exit(0)
 
 # 1. 중괄호 매칭 — 문자열/주석/char literal 제외 후 카운트 (false positive 차단)
-cleaned = text
-# // 한 줄 주석 제거
-cleaned = re.sub(r"//[^\n]*", "", cleaned)
-# /* ... */ 블록 주석 제거
-cleaned = re.sub(r"/\*[\s\S]*?\*/", "", cleaned)
-# char literal '{', '}' 제거 (verbatim, interpolated 포함은 아님)
-cleaned = re.sub(r"'(?:\\.|[^'\\])'", "", cleaned)
-# string literal "..." 제거 (이스케이프 처리)
-cleaned = re.sub(r'"(?:\\.|[^"\\])*"', "", cleaned)
-# verbatim string @"..." 제거
-cleaned = re.sub(r'@"(?:[^"]|"")*"', "", cleaned)
+# 예전엔 여기서 주석을 문자열보다 먼저 지웠다. "https://..."의 //가 주석으로 오인돼
+# 닫는 따옴표가 사라지고 뒤이은 문자열 규칙이 진짜 코드를 중괄호째 삼켰다.
+# cs_strip이 단일 패스로 처리한다 — 먼저 열리는 쪽이 이긴다.
+cleaned = strip_cs(text)
 
 opens = cleaned.count("{")
 closes = cleaned.count("}")
@@ -153,13 +171,19 @@ for name in used_assigns:
     # 변수도 초기화·증감으로 2회 이상 등장하는 게 보통이라 탐지력이 0이 됐었다.
     # (declared 패턴이 못 잡는 List<GameObject>/Dictionary<K,V> 등은 아래 제네릭
     #  분기가 커버한다.)
-    decl_hint = re.compile(
-        r"\b(?:var|int|uint|long|ulong|short|ushort|byte|sbyte|float|double|decimal|"
-        r"bool|string|char|object|"
-        r"[A-Z]\w*(?:<[^<>()]*>)?(?:\[\])?)\s+"
-        + re.escape(name) + r"\b\s*(?:=|;|,|\)|\bin\b)"
-    )
-    if decl_hint.search(cleaned):
+    if re.compile(TYPE_TOKEN + r"\s+" + re.escape(name) + r"\b\s*(?:=|;|,|\)|\bin\b)").search(cleaned):
+        continue
+    # 다중 선언자: `int discovered = 0, captured = 0;`의 둘째 이후는 앞에 타입이 아니라
+    # 콤마가 온다. 위 패턴만으로는 captured를 미선언으로 오탐한다(DexScreenUI.cs,
+    # RegionMapUI.cs 등 8개 파일에서 실제 발화했다). 선언문 안에 있는지로 판정한다.
+    # `[^;\n]*`가 세미콜론·줄바꿈을 못 넘으므로 다른 문장까지 번지지 않고,
+    # name 뒤에 =/,/; 를 요구하므로 `Foo(captured)` 같은 단순 사용은 걸리지 않는다.
+    if re.compile(
+        r"^[^\S\n]*(?:\[[^\]]+\][^\S\n]*)*"
+        r"(?:(?:public|private|protected|internal|static|readonly|const)\s+)*"
+        + TYPE_TOKEN + r"\s+\w+[^;\n]*\b" + re.escape(name) + r"\b\s*(?:=|,|;)",
+        re.MULTILINE,
+    ).search(cleaned):
         continue
     suspicious.append(name)
 
@@ -198,17 +222,19 @@ using_re = re.compile(r"^\s*using\s+([\w.]+)\s*;", re.MULTILINE)
 usings = set(using_re.findall(text))
 
 for token, ns in needs_using.items():
-    if token in text and ns not in usings:
-        # System은 보통 빠져있어도 .NET implicit가 해결. 그러나 명시적 검증 위해 경고만 추가.
-        # 다만 token이 주석/문자열에만 있을 수도 → 짧은 단순 검사: 코드 내 식별자 패턴인지
-        # 100% 정확 어려움. P2 수준이므로 단일 사용처로 false positive 줄임.
-        # 일단 확실한 케이스(IEnumerator, List<)만 보고
-        if token in ("IEnumerator", "List<", "Dictionary<", "HashSet<"):
-            # using이 부분 매치 (e.g., System.Collections.Generic > System.Collections) 허용
-            if any(u.startswith(ns) for u in usings):
-                continue
-            warnings.append(f"using 누락 의심: {token} 사용 — `using {ns};` 필요")
-            break  # 한 번에 1개만 보고
+    # 확실한 케이스만 본다. 나머지는 오탐 위험 대비 이득이 없다.
+    if token not in ("IEnumerator", "List<", "Dictionary<", "HashSet<"):
+        continue
+    # using이 부분 매치 (System.Collections.Generic ⊃ System.Collections) 허용
+    if any(u.startswith(ns) for u in usings):
+        continue
+    # cleaned를 본다 — 원시 text를 보면 주석·문자열 안의 토큰까지 센다.
+    # 앞에 `.`이 붙은 완전 수식(System.Collections.Generic.List<>)은 using이 필요 없다.
+    # 그걸 무시해서 RegionTerrainBuilder.cs·CharacterOutfitUI.cs가 오탐됐었다.
+    if not re.search(r"(?<![.\w])" + re.escape(token), cleaned):
+        continue
+    warnings.append(f"using 누락 의심: {token} 사용 — `using {ns};` 필요")
+    break  # 한 번에 1개만 보고
 
 if not warnings:
     print(json.dumps({"suppressOutput": True}))

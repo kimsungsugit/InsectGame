@@ -17,6 +17,23 @@ try:
 except Exception:
     pass
 
+# 공용 C# 전처리기. 이 파일은 .codex/hooks/로도 무변환 복사되므로 __file__ 기준 상대경로가
+# 양쪽에서 성립해야 한다 — .claude/hooks/ 와 .codex/hooks/ 둘 다 루트 2단계 아래다.
+sys.path.insert(
+    0,
+    os.path.join(
+        os.environ.get("CLAUDE_PROJECT_DIR")
+        or os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        ".claude", "scripts",
+    ),
+)
+try:
+    from cs_strip import strip_cs
+except ImportError:
+    # 전처리기를 못 찾으면 침묵. 원시 텍스트로 스캔하면 주석·문자열 안 패턴까지 잡는다.
+    print(json.dumps({"suppressOutput": True}))
+    sys.exit(0)
+
 raw = sys.stdin.read()
 try:
     d = json.loads(raw)
@@ -50,14 +67,12 @@ changed_text = tool_input.get("new_string", "") or tool_input.get("content", "")
 
 warnings = []
 
-# 주석/문자열 제거 헬퍼 (quick_compile_check와 동일)
-def strip_comments_and_strings(s):
-    s = re.sub(r"//[^\n]*", "", s)
-    s = re.sub(r"/\*[\s\S]*?\*/", "", s)
-    s = re.sub(r"'(?:\\.|[^'\\])'", "", s)
-    s = re.sub(r'"(?:\\.|[^"\\])*"', "", s)
-    s = re.sub(r'@"(?:[^"]|"")*"', "", s)
-    return s
+# 주석/문자열 제거는 cs_strip이 소유한다. 예전엔 여기 사본이 있었고 주석을 문자열보다
+# 먼저 지웠다 — "https://..."의 //가 주석으로 오인돼 닫는 따옴표가 사라지고, 뒤이은
+# 문자열 규칙이 진짜 코드를 중괄호째 삼켰다. 그러면 extract_method_body의 중괄호 매칭이
+# 어긋나 엉뚱한 메서드까지 "OnGUI 본문"으로 잡힌다(CharacterOutfitUI에서 InitStyles의
+# new GUIStyle이 OnGUI 것으로 오보고됐다).
+strip_comments_and_strings = strip_cs
 
 # 메서드 본문 영역 추출 — `private void OnGUI()` ~ 매칭 닫는 `}`
 def extract_method_body(text_cleaned, method_name_pattern):
@@ -115,6 +130,99 @@ perf_patterns = [
 
 frame_methods = ["OnGUI", "Update", "LateUpdate", "FixedUpdate"]
 
+
+def null_guard_spans(body):
+    """매 프레임 실행되지 않는 구간 목록 — 여기 있는 할당/조회는 경고 대상이 아니다.
+
+    두 종류를 덮는다:
+
+    1. `if (x == null) { ... }` — lazy 캐싱. 이 훅이 **권장하는 바로 그 패턴**인데
+       정작 그 안의 `new GUIStyle`을 "매 프레임 할당"으로 경고하고 있었다. 프레임 메서드
+       안 매칭 30건 중 21건(70%)이 이 가드 뒤였다 — RegionManager는 주석에 "매 프레임
+       GameObject.Find 회귀 차단"이라 써둔 자리에서 발화했다. 가드 안은 첫 호출 1회만 돈다.
+
+    2. `if (GUI.Button(...)) { ... }` — IMGUI 클릭 핸들러. OnGUI 안에 있지만 **클릭한
+       프레임에만** 실행된다. CharacterViewerUI가 버튼 콜백에서 FindFirstObjectByType을
+       부르는 걸 매 프레임 조회로 오보고했다. GUILayout.Button / RepeatButton도 같다.
+
+    3. `UIHelper.CachedStyle("key", () => { ... })` — 캐시 팩토리 람다. UIHelper.cs의
+       CachedStyle은 캐시 미스일 때만 factory()를 부르므로 키당 1회 실행이다. 이 훅이
+       경고 문구에서 "UIHelper.CachedStyle 패턴 참고"라고 **권장하면서** 정작 그 사용을
+       매 프레임 할당으로 신고하고 있었다(CharacterOutfitUI).
+
+    4. `#if DEVELOPMENT_BUILD || UNITY_EDITOR` — 출시 빌드에서 스트립되는 진단 코드.
+       이 훅은 **출시 성능 회귀**를 잡으려고 있으므로 배포되지 않는 코드는 대상이 아니다.
+       InsectSpawner의 OnGUI는 통째로 이 안에 있는 렌더 진단 오버레이다.
+       (`Assets/Editor/`의 에디터 전용 스크립트와는 별개 얘기다 — 여기선 런타임 스크립트
+       안에 조건부로 낀 진단 블록만 뺀다.)
+    """
+    guard_re = re.compile(
+        r"==\s*null|(?:GUI|GUILayout)\.(?:Button|RepeatButton)\s*\("
+    )
+    spans = []
+    for m in re.finditer(r"\bif\s*\(", body):
+        # 조건절은 중첩 괄호를 가질 수 있다: if (GUI.Button(new Rect(...), "x")).
+        # 깊이로 읽어야 닫는 괄호를 정확히 찾는다.
+        i, depth = m.end(), 1
+        while i < len(body) and depth:
+            if body[i] == "(":
+                depth += 1
+            elif body[i] == ")":
+                depth -= 1
+            i += 1
+        if depth:
+            continue
+        if not guard_re.search(body[m.end():i - 1]):
+            continue
+        j = i
+        while j < len(body) and body[j].isspace():
+            j += 1
+        if j < len(body) and body[j] == "{":
+            d, k = 0, j
+            while k < len(body):
+                if body[k] == "{":
+                    d += 1
+                elif body[k] == "}":
+                    d -= 1
+                    if d == 0:
+                        break
+                k += 1
+            spans.append((m.start(), min(k + 1, len(body))))
+        else:
+            k = body.find(";", j)
+            spans.append((m.start(), (k + 1) if k >= 0 else len(body)))
+    # `cache ??= new GUIStyle(...)` — lazy 캐싱의 축약형. 문장 끝까지 가드로 본다.
+    for m in re.finditer(r"\?\?=", body):
+        k = body.find(";", m.end())
+        spans.append((m.start(), (k + 1) if k >= 0 else len(body)))
+    # `UIHelper.CachedStyle("key", () => { ... })` — 팩토리 람다는 캐시 미스 때만 돈다.
+    # `() =>` 부터 그 블록의 닫는 중괄호까지가 가드 구간.
+    for m in re.finditer(r"Cached\w*\s*\([^;{]*?\(\s*\)\s*=>\s*\{", body):
+        d, k = 0, body.rfind("{", m.start(), m.end())
+        while k < len(body):
+            if body[k] == "{":
+                d += 1
+            elif body[k] == "}":
+                d -= 1
+                if d == 0:
+                    break
+            k += 1
+        spans.append((m.start(), min(k + 1, len(body))))
+    # `#if DEVELOPMENT_BUILD || UNITY_EDITOR ... #endif` — 출시 빌드에서 스트립되는 진단 코드.
+    for m in re.finditer(r"^[^\S\n]*#if\b[^\n]*\b(?:DEVELOPMENT_BUILD|UNITY_EDITOR)\b", body, re.M):
+        e = re.search(r"^[^\S\n]*#endif\b", body[m.end():], re.M)
+        spans.append((m.start(), m.end() + e.end() if e else len(body)))
+    return spans
+
+
+def unguarded_hit(pat, body):
+    """가드 밖에서 pat이 매칭되면 True. 가드 안에만 있으면 False."""
+    spans = null_guard_spans(body)
+    return any(
+        not any(s <= m.start() < e for s, e in spans) for m in re.finditer(pat, body)
+    )
+
+
 # 전략: 전체 파일의 frame method 본문을 추출 후, 그 본문에 changed_text가 포함되거나 일부 겹치면 검사
 # 단순화: 전체 파일의 frame method 본문에서 패턴 검색하되, changed_text에도 같은 패턴이 있어야 보고
 perf_warnings_set = set()
@@ -122,9 +230,9 @@ for method in frame_methods:
     bodies = extract_method_body(cleaned_full, r"\b" + method + r"\b")
     for body in bodies:
         for pat, label in perf_patterns:
-            if re.search(pat, body):
+            if unguarded_hit(pat, body):
                 # changed_text에도 같은 패턴이 있는지 확인 (false positive 차단)
-                if re.search(pat, cleaned_changed):
+                if unguarded_hit(pat, cleaned_changed):
                     perf_warnings_set.add((method, label))
 
 for method, label in sorted(perf_warnings_set):
@@ -149,9 +257,9 @@ for method in frame_methods:
     bodies = extract_method_body(cleaned_full, r"\b" + method + r"\b")
     for body in bodies:
         for pat, label in lookup_patterns:
-            if re.search(pat, body):
-                if re.search(pat, cleaned_changed):
-                    lookup_warnings_set.add((method, label))
+            # 할당 패턴과 같은 이유로 null 가드 안은 제외 — 그게 권장하는 캐싱이다.
+            if unguarded_hit(pat, body) and unguarded_hit(pat, cleaned_changed):
+                lookup_warnings_set.add((method, label))
 
 for method, label in sorted(lookup_warnings_set):
     warnings.append(
@@ -189,9 +297,20 @@ for m in method_subscribe_re.finditer(cleaned_changed):
     last_handler = handler_name.split(".")[-1]
     if not last_handler[0].isupper():
         continue
-    # 짝 -= 검색 (전체 파일)
-    unsub_pat = re.escape(event_name) + r"\s*-=\s*" + re.escape(handler_name)
-    if not re.search(unsub_pat, cleaned_full):
+    # 짝 -= 검색 (전체 파일).
+    # 수신자까지 통째로 매칭하면 안 된다 — 구독과 해제의 수신자 표기가 다른 게 정상이다.
+    # 예: PlayerMovement는 `mgr.OutfitChanged += X`로 구독하고
+    #     `CharacterOutfitManager.Instance.OutfitChanged -= X`로 해제한다.
+    #     둘은 같은 이벤트인데 문자열이 달라 전수 3건이 전부 오탐이었다.
+    # 이벤트·핸들러 모두 마지막 세그먼트로 비교한다.
+    unsub_pat = (
+        r"(?:^|[^\w.])(?:[\w\.\[\]\(\)]+\.)?"
+        + re.escape(last_segment)
+        + r"\s*-=\s*(?:[\w\.]+\.)?"
+        + re.escape(last_handler)
+        + r"\b"
+    )
+    if not re.search(unsub_pat, cleaned_full, re.MULTILINE):
         warnings.append(
             f"이벤트 구독 `{event_name} += {handler_name}` 짝 `-=` 누락 — "
             f"OnDisable/OnDestroy에서 해제 권장 (메모리 누수 + 죽은 ref 호출 방지)"
