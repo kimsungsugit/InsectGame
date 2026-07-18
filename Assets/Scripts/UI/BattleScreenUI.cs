@@ -403,16 +403,17 @@ namespace InsectGame.UI
 
         private void Update()
         {
-            // timeScale 아비터 — 히트스톱(0.05) > 크리티컬 슬로모(0.4) > 정상(1). 요청자는 만료 시각만 갱신.
-            // 우리가 늦춘 범위(0.001~0.99)일 때만 복원 → 외부 pause(timeScale=0) 등을 덮지 않음.
-            float uNow = Time.unscaledTime;
-            if (uNow < hitstopUntil) Time.timeScale = 0.05f;
-            else if (uNow < critUntil) Time.timeScale = 0.4f;
-            else if (Time.timeScale < 0.99f && Time.timeScale > 0.001f) Time.timeScale = 1f;
             if (screenFlashTimer > 0f) screenFlashTimer -= Time.unscaledDeltaTime;
             if (comboDisplayTimer > 0f) comboDisplayTimer -= Time.unscaledDeltaTime;
 
             if (phase == Phase.None) return;
+
+            // timeScale 아비터 (배틀 중에만 실행 — 비배틀 프레임에 외부 timeScale 미간섭).
+            // 히트스톱(0.05) > 크리티컬 슬로모(0.4) > 정상(1). 우리가 늦춘 범위(0.001~0.99)일 때만 복원.
+            float uNow = Time.unscaledTime;
+            if (uNow < hitstopUntil) Time.timeScale = 0.05f;
+            else if (uNow < critUntil) Time.timeScale = 0.4f;
+            else if (Time.timeScale < 0.99f && Time.timeScale > 0.001f) Time.timeScale = 1f;
 
             phaseTimer += Time.deltaTime;
             introTimer += Time.deltaTime;

@@ -1987,6 +1987,10 @@ namespace InsectGame.Battle
             // 진행 중인 Faint/HitFlash/스킬 코루틴이 destroyed GameObject에 접근하지 않도록 우선 정지.
             StopAllCoroutines();
             isActive = false;
+            // StopAllCoroutines가 SkillAttackCoroutine을 종료점 도달 전에 죽이면 playingSkill이 true로
+            // 고착 → 다음 배틀 PhaseAnimDone이 2s 상한까지 지연. 강제 리셋으로 차단.
+            playingSkill = false;
+            bossAttackTargetSlot = -1;
             if (arenaRoot != null)
             {
                 Destroy(arenaRoot);
