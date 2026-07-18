@@ -58,6 +58,47 @@ BattleWin, SubAreaEnter, Immediate. `param`은 그 타입의 대상 ID:
 비트가 트리거를 못 받아 영영 안 열린다. 새 이벤트 소스가 필요하면 그 이벤트를 발화하는
 시스템(RegionManager/BattleController 등)에서 이벤트를 노출하고 StoryDirector가 구독해야 한다.
 
+## 발화 함정 — 기존 trigger.type에서도 밟는다 (실측)
+
+Phase 2가 "기존 7종이면 JSON 1곳만"이라 해도, **어느 트리거를 고르고 대사를 어떻게 쓰는지**가
+발화 정확성을 가른다. 아래 넷은 story_lint가 못 잡는 런타임 함정이다(전부 코드 실측).
+
+### 1. 스파인은 재발화 트리거로 — QuestComplete-게이트는 기존 유저를 정지시킨다
+
+`QuestComplete`는 그 퀘스트가 **완료되는 순간 딱 한 번** 발화한다(`StoryDirector.OnQuestCompleted`).
+**이미 그 퀘스트를 끝낸 세이브에는 영영 다시 안 온다.** 따라서 리전 진행의 **스파인(주 서사
+체인)을 tutorial `QuestComplete`에 걸면, 튜토리얼을 마친 기존 유저는 그 뒤 캠페인 전체를 못
+본다** — 스파인이 그 지점에서 영구 정지한다.
+
+- **스파인**: `RegionEnter`/`SubAreaEnter`/`BattleWin`/`CaptureInsect`/`LevelReach` 같은
+  **재발화 트리거**로 걸고, prereq 체인의 뿌리는 `Immediate` 비트(전원 발화)에 둔다.
+- **`QuestComplete`**: 놓쳐도 캠페인이 안 끊기는 **선택 플레이버 비트**에만. 신규 유저용
+  튜토리얼 통합 연출엔 좋지만, 뒤 비트가 이걸 prereq로 삼으면 안 된다.
+
+(실제로 겪음: pond 스파인 오프너가 `q_guardian1` 완료에 걸려, 가디언을 이미 잡은 유저는
+ch1_intro 다음이 통째로 잠겼다. 게이트를 `ch1_intro`(Immediate)로 재배선해 해결.)
+
+### 2. `order` 필드는 발화 순서에 안 쓰인다 — 순서는 prereq로만
+
+`StoryService.AllBeats()`는 `Dictionary.Values`를 반환한다(삽입순 보장 없음). 엔진은 매
+이벤트에서 **적격(미열람·prereq충족·param일치) 비트 중 처음 하나만** 발화한다. `order`는 순수
+문서용 메타라 **발화 순서를 결정하지 않는다.** 순서가 중요하면 `prerequisiteBeatId`로 엮어라.
+
+### 3. 무param 트리거(BattleWin / 빈 CaptureInsect)는 동시 적격 시 순서 비결정
+
+`QuestComplete`/`RegionEnter`/`SubAreaEnter`는 **param으로 특정 비트만** 무니 충돌이 없다.
+그러나 `BattleWin`(param 강제 공백)과 **param 빈 `CaptureInsect`**(아무 포획)는 대상이 없어,
+prereq가 동시에 충족된 비트가 여럿이면 **어느 게 먼저 발화할지 위 Dictionary 순서에 달렸다**(비결정).
+정지는 아니다(oneShot+prereq라 결국 다 발화). 하지만 순서가 뒤바뀔 수 있으니, 같은 무param
+트리거 비트는 **서로 다른 prereq(예: 각 리전 reach 비트)로 한 번에 하나만 적격**이 되게 배치하라.
+
+### 4. `CaptureInsect`는 포획뿐 아니라 레벨업에도 발화 — 대사를 범용으로
+
+`CaptureInsect`의 소스 `PlayerInsectCollection.InsectUpdated`는 **포획 + 캔디 레벨업** 양쪽에서
+발화한다(`InsectUpdated?.Invoke` 3곳: 포획 1 + 레벨업/수정 2). 따라서 param 빈 `CaptureInsect`
+비트가 **레벨업 순간에 열릴 수 있다.** 대사를 "방금 그 포획은…"처럼 특정 행동에 못박지 말고
+"네 수집이 늘 때마다…"처럼 **범용으로** 써라.
+
 ## Phase 3: 검증 — 반드시 실행
 
 ```
