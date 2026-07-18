@@ -207,8 +207,17 @@ namespace InsectGame.UI
             {
                 npcName = currentNpc != null ? currentNpc.DisplayName : "주민";
             }
-            GUI.Label(new Rect(px + 28f, py + 16f, panelW - 56f, 34f), npcName, nameStyle);
-            GUI.Label(new Rect(px + 28f, py + 56f, panelW - 56f, 88f),
+            // 스토리 모드 + 아는 화자면 좌측에 포트레이트, 텍스트는 그만큼 우측으로 민다.
+            float textX = px + 28f;
+            float textW = panelW - 56f;
+            if (storyMode && currentBeat != null)
+            {
+                float off = DrawStoryPortrait(px, py, panelH, currentBeat.speakerNpcId);
+                textX += off;
+                textW -= off;
+            }
+            GUI.Label(new Rect(textX, py + 16f, textW, 34f), npcName, nameStyle);
+            GUI.Label(new Rect(textX, py + 56f, textW, 88f),
                 lines[Mathf.Clamp(lineIndex, 0, lines.Length - 1)], lineStyle);
 
             // 진행 표시 (n/총)
@@ -230,6 +239,53 @@ namespace InsectGame.UI
                 CloseModal();
 
             UIScale.End();
+        }
+
+        // 스토리 화자(어르신/라온/세라) 좌측 포트레이트 — CharacterPortraitRenderer 재사용.
+        // 반환: 그린 포트레이트 폭 오프셋(0이면 아는 화자 아님 → 포트레이트 없음).
+        private float DrawStoryPortrait(float px, float py, float panelH, string speakerNpcId)
+        {
+            if (!GetStoryPortrait(speakerNpcId, out int gender, out int skinIdx, out int hairIdx,
+                    out int hairStyle, out int faceType, out Color top, out Color hat))
+                return 0f;
+
+            float box = panelH - 24f;
+            float boxX = px + 14f;
+            float boxY = py + 12f;
+
+            GUI.color = new Color(0.12f, 0.1f, 0.06f, 0.9f);
+            GUI.DrawTexture(new Rect(boxX, boxY, box, box), panelTex);
+            GUI.color = new Color(1f, 0.85f, 0.45f, 0.5f);
+            GUI.DrawTexture(new Rect(boxX, boxY, box, 3f), panelTex);
+            GUI.color = Color.white;
+
+            float scale = box / 150f;
+            Color bottom = new Color(0.18f, 0.22f, 0.28f);
+            Color shoe = new Color(0.2f, 0.12f, 0.06f);
+            CharacterPortraitRenderer.Draw(boxX + box * 0.5f, boxY + box * 0.52f, scale,
+                gender, skinIdx, hairIdx, hairStyle, faceType, top, bottom, shoe, hat, 0f, false);
+
+            return box + 22f;
+        }
+
+        private static bool GetStoryPortrait(string id, out int gender, out int skinIdx, out int hairIdx,
+            out int hairStyle, out int faceType, out Color top, out Color hat)
+        {
+            switch (id)
+            {
+                case "catcher_rival": // 라온 — 밝은 주황 상의, 캡, 미소
+                    gender = 0; skinIdx = 2; hairIdx = 1; hairStyle = 0; faceType = 1;
+                    top = new Color(1f, 0.55f, 0.3f); hat = new Color(1f, 0.65f, 0.2f); return true;
+                case "ruins_scholar": // 세라 — 보라 상의, 올림머리, 모자 없음
+                    gender = 1; skinIdx = 0; hairIdx = 4; hairStyle = 3; faceType = 0;
+                    top = new Color(0.6f, 0.45f, 0.7f); hat = new Color(0f, 0f, 0f, 0f); return true;
+                case "village_elder": // 마을 어르신 — 따뜻한 상의, 모자, 밝은 머리
+                    gender = 0; skinIdx = 1; hairIdx = 2; hairStyle = 0; faceType = 0;
+                    top = new Color(0.85f, 0.7f, 0.4f); hat = new Color(0.55f, 0.35f, 0.25f); return true;
+                default:
+                    gender = 0; skinIdx = 0; hairIdx = 0; hairStyle = 0; faceType = 0;
+                    top = Color.white; hat = new Color(0f, 0f, 0f, 0f); return false;
+            }
         }
 
         private void EnsureStyles()
