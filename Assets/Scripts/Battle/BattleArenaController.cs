@@ -34,6 +34,10 @@ namespace InsectGame.Battle
         private const float BossInsectScale = 1.85f;    // 레이드 보스 (기존 2.5)
         private const float TeamInsectScale = 0.8f;     // 레이드 팀원 (기존 1.0)
 
+        // 스킬 연출 코루틴 진행 여부 — UI 페이즈 전이를 연출 길이에 맞춰 게이팅(BattleScreenUI.PhaseAnimDone).
+        private bool playingSkill;
+        public bool IsPlayingSkill => playingSkill;
+
         public bool IsActive => isActive;
         public Vector3 ArenaCenter => arenaCenter;
         public Vector3 PlayerModelPos => playerBattlePos;
@@ -498,6 +502,22 @@ namespace InsectGame.Battle
 
         // ===== 3D Skill Effect System =====
 
+        // 근접/원거리 판정 — 물리·근거리 속성(흙/금속/벌레/무속성)은 러시, 나머지 투사체 속성은 원거리 발사.
+        // 스킬 데이터에 별도 필드 없이 element로 파생(데이터 무변경). BattleScreenUI/RaidBattleUI가 호출.
+        public static bool IsMeleeElement(InsectElement element)
+        {
+            switch (element)
+            {
+                case InsectElement.Earth:
+                case InsectElement.Metal:
+                case InsectElement.Bug:
+                case InsectElement.None:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
         public void PlaySkillEffect(bool isPlayerAttacking, InsectElement element, SkillEffectType effectType, System.Action onImpact = null)
         {
             PlaySkillEffect(isPlayerAttacking, element, effectType, onImpact, false);
@@ -522,6 +542,7 @@ namespace InsectGame.Battle
                 return;
             }
 
+            playingSkill = true;
             StartCoroutine(SkillAttackCoroutine(isPlayerAttacking, element, onImpact, isMelee));
         }
 
@@ -532,7 +553,7 @@ namespace InsectGame.Battle
                 attacker = teamModels[selectedTeamIndex];
 
             GameObject target = isPlayerAttacking ? (bossModel ?? enemyModel) : playerModel;
-            if (attacker == null || target == null) { onImpact?.Invoke(); yield break; }
+            if (attacker == null || target == null) { onImpact?.Invoke(); playingSkill = false; yield break; }
 
             Vector3 startPos = attacker.transform.position;
             Vector3 targetPos = target.transform.position;
@@ -580,6 +601,7 @@ namespace InsectGame.Battle
                     yield return null;
                 }
                 attacker.transform.position = startPos;
+                playingSkill = false;
                 yield break;
             }
 
@@ -622,6 +644,7 @@ namespace InsectGame.Battle
                 AudioManager.Instance.PlaySFX(SfxType.Hit);
 
             yield return new WaitForSeconds(0.4f);
+            playingSkill = false;
         }
 
         private GameObject CreateElementProjectile(InsectElement element, Color color)

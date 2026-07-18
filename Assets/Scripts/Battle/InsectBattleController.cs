@@ -28,6 +28,9 @@ namespace InsectGame.Battle
         public event Action<InsectBattleStats, InsectBattleStats> BattleUpdated;
         public event Action PlayerFainted;
 
+        // 적이 직전 턴에 사용한 스킬(null=기본공격/쿨다운) — UI가 EnemyAttack 페이즈 연출에 사용.
+        public InsectSkill LastEnemySkill { get; private set; }
+
         private InsectBattleStats playerStats;
         private InsectBattleStats enemyStats;
         private InsectEntity enemyEntity;
@@ -302,6 +305,7 @@ namespace InsectGame.Battle
                 enemySkill = null;
             }
 
+            LastEnemySkill = enemySkill;   // UI가 EnemyAttack 연출(속성·근접여부)에 사용
             ApplySkill(enemyStats, playerStats, enemySkill, false);
             if (enemySkill != null)
             {

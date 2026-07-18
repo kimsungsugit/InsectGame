@@ -118,6 +118,14 @@ namespace InsectGame.UI
         // 칩바(ghost) — displayHp보다 느리게 따라와 최근 피해량을 잔상으로 표시(Phase 1 저즈).
         private float chipPlayerHp;
         private float chipEnemyHp;
+        // HP 리빌(P2) — displayHp는 CurrentHp가 아니라 이 값을 향해 tween. 아레나 연출 임팩트 순간 갱신해
+        // HP 감소를 타격과 정렬. 아레나 없으면(2D 폴백) Update에서 즉시 CurrentHp로.
+        private float revealPlayerHp;
+        private float revealEnemyHp;
+        // 종료 지연(P2) — 마지막 공격 연출이 결과화면보다 먼저 보이도록. OnBattleEnded가 세팅, 페이즈 머신이 소비.
+        private bool pendingResult;
+        // 기절 교체 지연(P2) — 적의 치명타 연출이 끝난 뒤 교체창으로. OnPlayerFainted가 세팅.
+        private bool pendingSwap;
 
         private int turnNumber;
 
@@ -162,18 +170,19 @@ namespace InsectGame.UI
             if (playerStats != null && playerStats.PlayerData != null)
                 faintedInsectIds.Add(playerStats.PlayerData.instanceId);
 
+            // 적의 치명타로 기절한 경우, 공격 연출(PlayerAttack/EnemyAttack) 중이면 연출이 끝난 뒤
+            // 교체창/결과화면으로(적 킬블로가 먼저 보이게). 그 외엔 즉시.
+            bool midAttack = phase == Phase.PlayerAttack || phase == Phase.EnemyAttack;
             if (HasAvailableTeamMember())
             {
-                phase = Phase.SwapSelect;
-                phaseTimer = 0f;
-                swapMessageTimer = 0f;
+                if (midAttack) pendingSwap = true;
+                else EnterSwapSelect();
             }
             else
             {
                 lastWon = false;
-                resultShown = true;
-                resultTimer = 0f;
-                phase = Phase.Result;
+                if (midAttack) pendingResult = true;   // EnterResult가 패배 SFX/BGM까지 처리
+                else EnterResult();
             }
         }
 
@@ -203,6 +212,10 @@ namespace InsectGame.UI
                 displayEnemyHp = enemy.CurrentHp;
                 chipPlayerHp = player.CurrentHp;
                 chipEnemyHp = enemy.CurrentHp;
+                revealPlayerHp = player.CurrentHp;
+                revealEnemyHp = enemy.CurrentHp;
+                pendingResult = false;
+                pendingSwap = false;
                 turnNumber = 0;
                 phase = Phase.Intro;
                 introTimer = 0f;
@@ -240,6 +253,7 @@ namespace InsectGame.UI
                 enemyStats = enemy;
                 displayPlayerHp = player.CurrentHp;
                 chipPlayerHp = player.CurrentHp;
+                revealPlayerHp = player.CurrentHp;
                 if (player.PlayerData != null) currentInsectId = player.PlayerData.instanceId;
                 phase = Phase.PlayerTurn;
                 phaseTimer = 0f;
@@ -293,20 +307,19 @@ namespace InsectGame.UI
         private void OnBattleEnded(bool playerWon)
         {
             lastWon = playerWon;
-            resultShown = true;
-            resultTimer = 0f;
-            phase = Phase.Result;
-            if (AudioManager.Instance != null)
-            {
-                AudioManager.Instance.PlaySFX(playerWon ? SfxType.Victory : SfxType.Defeat);
-                AudioManager.Instance.PlayBGM(playerWon ? BgmType.Victory : BgmType.Defeat);
-            }
             // 튜토리얼/서브 배틀 진행은 TutorialQuestManager가 battleController.BattleEnded를 직접
             // 구독(OnBattleEnded)해 처리한다 — 여기서 또 NotifyBattleWon을 부르면 1승이 +2로 이중 카운트.
 
             // 수문장 격파 체크
             if (playerWon)
                 CheckGuardianDefeat();
+
+            // 킬블로 연출 스포일 방지 — 공격 페이즈 중이면 연출이 끝난 뒤 결과화면으로(페이즈 머신이 EnterResult).
+            // 그 외(도주 등 즉시 종료)엔 곧바로 결과화면. 승패 SFX/BGM은 EnterResult에서(연출 도중 스포일 방지).
+            if (phase == Phase.PlayerAttack || phase == Phase.EnemyAttack)
+                pendingResult = true;
+            else
+                EnterResult();
         }
 
         private void CheckGuardianDefeat()
@@ -338,6 +351,52 @@ namespace InsectGame.UI
             }
         }
 
+        // 공격 페이즈 종료 판정 — 아레나(3D)면 연출 코루틴 완료 + 최소 바닥(0.3s), 상한 2s 안전망.
+        // 아레나 없으면(2D 폴백) 기존 고정 0.8s 유지(2D 애니가 phaseTimer/0.8 기준이라 잘리면 안 됨).
+        private bool PhaseAnimDone()
+        {
+            if (arena == null || !arena.IsActive) return phaseTimer > 0.8f;
+            if (phaseTimer > 2f) return true;
+            if (phaseTimer < 0.3f) return false;
+            return !arena.IsPlayingSkill;
+        }
+
+        // EnemyAttack 페이즈 진입 시 적 공격 연출 발동 — 적이 쓴 스킬 속성/근접여부로 러시·투사체·쉐이크.
+        private void TriggerEnemyAttackEffect()
+        {
+            if (arena == null || !arena.IsActive || battleController == null) return;
+            InsectSkill es = battleController.LastEnemySkill;
+            InsectElement elem = es != null ? es.element
+                : (enemyStats != null && enemyStats.Data != null ? enemyStats.Data.primaryType : InsectElement.Bug);
+            SkillEffectType eff = es != null ? es.effectType : SkillEffectType.Damage;
+            arena.PlaySkillEffect(false, elem, eff,
+                () => { if (playerStats != null) revealPlayerHp = playerStats.CurrentHp; },
+                BattleArenaController.IsMeleeElement(elem));
+        }
+
+        // 적 치명타 연출이 끝난 뒤 교체창 진입.
+        private void EnterSwapSelect()
+        {
+            phase = Phase.SwapSelect;
+            phaseTimer = 0f;
+            swapMessageTimer = 0f;
+            pendingSwap = false;
+        }
+
+        // 마지막 공격 연출이 끝난 뒤 결과화면 진입 — 승패 SFX/BGM도 여기서(연출 도중 스포일 방지).
+        private void EnterResult()
+        {
+            phase = Phase.Result;
+            resultShown = true;
+            resultTimer = 0f;
+            pendingResult = false;
+            if (AudioManager.Instance != null)
+            {
+                AudioManager.Instance.PlaySFX(lastWon ? SfxType.Victory : SfxType.Defeat);
+                AudioManager.Instance.PlayBGM(lastWon ? BgmType.Victory : BgmType.Defeat);
+            }
+        }
+
         private void Update()
         {
             // 슬로우모션 처리 (unscaled로 타이머 감소)
@@ -359,11 +418,18 @@ namespace InsectGame.UI
             if (enemyShake > 0) enemyShake -= Time.deltaTime;
             if (resultShown) resultTimer += Time.deltaTime;
 
+            // 아레나(3D) 없으면 즉시 리빌(기존 2D 동작 보존). 아레나 있으면 연출 임팩트 onImpact에서 리빌.
+            if (arena == null || !arena.IsActive)
+            {
+                if (playerStats != null) revealPlayerHp = playerStats.CurrentHp;
+                if (enemyStats != null) revealEnemyHp = enemyStats.CurrentHp;
+            }
+
             float hpSpeed = 60f * Time.deltaTime;
             if (playerStats != null)
-                displayPlayerHp = Mathf.MoveTowards(displayPlayerHp, playerStats.CurrentHp, hpSpeed);
+                displayPlayerHp = Mathf.MoveTowards(displayPlayerHp, revealPlayerHp, hpSpeed);
             if (enemyStats != null)
-                displayEnemyHp = Mathf.MoveTowards(displayEnemyHp, enemyStats.CurrentHp, hpSpeed);
+                displayEnemyHp = Mathf.MoveTowards(displayEnemyHp, revealEnemyHp, hpSpeed);
 
             // 칩바 — 실제 fill(displayHp)보다 느리게 감소해 최근 피해 잔상. 회복 시엔 스냅.
             float chipSpeed = 22f * Time.deltaTime;
@@ -445,24 +511,31 @@ namespace InsectGame.UI
                 }
             }
 
-            if (phase == Phase.PlayerAttack && phaseTimer > 0.8f)
+            if (phase == Phase.PlayerAttack && PhaseAnimDone())
             {
+                if (enemyStats != null) revealEnemyHp = enemyStats.CurrentHp;   // 연출 종료 시 최종 동기(보증)
                 if (lastDamageToPlayer > 0)
                 {
                     playerShake = 0.4f;
                     phase = Phase.EnemyAttack;
                     phaseTimer = 0f;
+                    TriggerEnemyAttackEffect();   // 적 공격 연출 발동(러시/투사체/임팩트/쉐이크)
                 }
-                else if (!resultShown)
+                else if (pendingSwap) EnterSwapSelect();
+                else if (pendingResult) EnterResult();
+                else
                 {
                     phase = Phase.PlayerTurn;
                     phaseTimer = 0f;
                 }
             }
 
-            if (phase == Phase.EnemyAttack && phaseTimer > 0.8f)
+            if (phase == Phase.EnemyAttack && PhaseAnimDone())
             {
-                if (!resultShown)
+                if (playerStats != null) revealPlayerHp = playerStats.CurrentHp;   // 연출 종료 시 최종 동기(보증)
+                if (pendingSwap) EnterSwapSelect();
+                else if (pendingResult) EnterResult();
+                else
                 {
                     phase = Phase.PlayerTurn;
                     phaseTimer = 0f;
@@ -500,7 +573,9 @@ namespace InsectGame.UI
             {
                 InsectElement elem = lastSkillElement;
                 SkillEffectType effectType = (skill != null) ? skill.effectType : SkillEffectType.Damage;
-                arena.PlaySkillEffect(true, elem, effectType);
+                arena.PlaySkillEffect(true, elem, effectType,
+                    () => { if (enemyStats != null) revealEnemyHp = enemyStats.CurrentHp; },
+                    BattleArenaController.IsMeleeElement(elem));
             }
 
             battleController.UseSkill(index);
@@ -520,7 +595,9 @@ namespace InsectGame.UI
             if (arena != null && arena.IsActive)
             {
                 InsectElement elem = (playerStats != null && playerStats.Data != null) ? playerStats.Data.primaryType : InsectElement.Bug;
-                arena.PlaySkillEffect(true, elem, SkillEffectType.Damage);
+                arena.PlaySkillEffect(true, elem, SkillEffectType.Damage,
+                    () => { if (enemyStats != null) revealEnemyHp = enemyStats.CurrentHp; },
+                    BattleArenaController.IsMeleeElement(elem));
             }
 
             battleController.UseBasicAttack();
