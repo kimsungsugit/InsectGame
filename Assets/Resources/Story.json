@@ -205,6 +205,7 @@
       "order": 8,
       "prerequisiteBeatId": "ch1_reach_pond",
       "trigger": { "type": "CaptureInsect", "param": "" },
+      "requiredRegionId": "pond",
       "speakerNpcId": "catcher_rival",
       "lines": [
         { "speaker": "라온", "text": "물가 곤충들은 초원 애들이랑 또 다르지? 근데 여기도 예전 같지 않아 — 수가 확 줄었어." },
@@ -302,6 +303,7 @@
       "order": 11,
       "prerequisiteBeatId": "ch3_reach_forest",
       "trigger": { "type": "BattleWin", "param": "" },
+      "requiredRegionId": "forest",
       "speakerNpcId": "ruins_scholar",
       "lines": [
         { "speaker": "세라", "text": "방금 그 전투… 쓰러진 곤충이 사라지기 직전, 빛의 결이 유적 쪽으로 흘렀어요. 봤나요?" },
@@ -351,6 +353,7 @@
       "order": 13,
       "prerequisiteBeatId": "ch4_reach_swamp",
       "trigger": { "type": "BattleWin", "param": "" },
+      "requiredRegionId": "swamp",
       "speakerNpcId": "ruins_scholar",
       "lines": [
         { "speaker": "세라", "text": "방금 그 아이, 쓰러지며 사라지는 속도가 초원 때보다 훨씬 빨랐어요. 봉인의 금이 그만큼 벌어졌다는 뜻이에요." },
@@ -376,6 +379,7 @@
       "order": 14,
       "prerequisiteBeatId": "ch4_reach_swamp",
       "trigger": { "type": "CaptureInsect", "param": "" },
+      "requiredRegionId": "swamp",
       "speakerNpcId": "catcher_rival",
       "lines": [
         { "speaker": "라온", "text": "예전엔 너랑 경쟁만 하려 했는데… 이젠 아니야. 이 일은 혼자 될 게 아니더라." },
@@ -449,6 +453,7 @@
       "order": 17,
       "prerequisiteBeatId": "ch5_reach_mountain",
       "trigger": { "type": "CaptureInsect", "param": "" },
+      "requiredRegionId": "mountain",
       "speakerNpcId": "ruins_scholar",
       "lines": [
         { "speaker": "세라", "text": "당신이 한 생명씩 도감에 더할 때마다, 나는 조금씩 믿게 돼요 — 이 세계가 아직 늦지 않았다고." },
@@ -498,6 +503,7 @@
       "order": 19,
       "prerequisiteBeatId": "ch6_reach_ruins",
       "trigger": { "type": "BattleWin", "param": "" },
+      "requiredRegionId": "ruins",
       "speakerNpcId": "village_elder",
       "lines": [
         { "speaker": "마을 어르신", "text": "유적 안에선 한 걸음 한 걸음이 무겁구나. 방금 그 싸움에서도 공기가 떨리는 걸 느꼈어." },

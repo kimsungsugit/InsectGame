@@ -146,6 +146,30 @@ def evaluate_signals() -> list:
                     else f"0건 (사용 트리거 {len(used)}종 전부 배선됨)",
                     "FAIL" if unwired else "PASS"))
 
+    # 7. requiredRegionId 정합 — 채워진 값은 리전 존재(FAIL), 무param 트리거 무가드는 권고(WARN).
+    #    무param CaptureInsect(param 공백)/BattleWin은 위치 무관 발화라 requiredRegionId로 리전을
+    #    잠그지 않으면 '늦발화 얼룩'(엉뚱한 리전에서 옛 비트 발화)에 취약(StoryDirector
+    #    RegionGateSatisfied가 게이트). requiredRegionId 오타는 런타임엔 조용히 미발화 → 여기서 잡는다.
+    #    region_ids는 검사 3에서 계산한 것을 재사용(game_facts 변경 불필요).
+    bad_region = []
+    unguarded = []
+    for b in beats:
+        rr = b.get("requiredRegionId") or ""
+        t = b.get("trigger") or {}
+        ttype, param = t.get("type"), (t.get("param") or "")
+        if rr and rr not in region_ids:
+            bad_region.append(f"{b['beatId']}:requiredRegion({rr})")
+        paramless = ttype == "BattleWin" or (ttype == "CaptureInsect" and not param)
+        if paramless and not rr:
+            unguarded.append(b["beatId"])
+    if bad_region:
+        judge7, val7 = "FAIL", f"{len(bad_region)}건 미존재 ({bad_region})"
+    elif unguarded:
+        judge7, val7 = "WARN", f"{len(unguarded)}건 무가드 권고 ({unguarded})"
+    else:
+        judge7, val7 = "PASS", "0건 (requiredRegion 실존·무param 전부 가드)"
+    signals.append(("requiredRegionId 정합 (리전 게이트)", "0건 미존재·무가드", val7, judge7))
+
     return signals
 
 

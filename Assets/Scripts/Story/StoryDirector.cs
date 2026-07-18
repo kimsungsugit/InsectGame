@@ -204,12 +204,26 @@ namespace InsectGame.Story
                         break;
                 }
 
+                // 리전 게이트 — requiredRegionId가 채워진 비트는 현재 리전 일치 시에만 발화.
+                matches = matches && RegionGateSatisfied(beat);
+
                 if (matches)
                 {
                     FireBeat(beat);
                     return;
                 }
             }
+        }
+
+        // requiredRegionId가 채워진 비트는 현재 리전이 일치할 때만 발화(비면 무제약).
+        // 무param CaptureInsect/BattleWin의 잘못된 리전 늦발화(발화 얼룩)를 차단.
+        // regionManager는 AutoWire된 참조 — CurrentRegion(RegionManager.cs) 재사용.
+        private bool RegionGateSatisfied(StoryBeat beat)
+        {
+            if (beat == null || string.IsNullOrEmpty(beat.requiredRegionId)) return true;
+            string current = regionManager != null && regionManager.CurrentRegion != null
+                ? regionManager.CurrentRegion.regionId : null;
+            return beat.requiredRegionId == current;
         }
 
         private bool PrerequisiteSatisfied(StoryBeat beat)

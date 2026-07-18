@@ -13,6 +13,10 @@ namespace InsectGame.Story
         public int order;
         // 선행 비트(옵션). 비면 무조건 충족. 채워지면 그 비트를 이미 열람해야 발화.
         public string prerequisiteBeatId;
+        // 리전 잠금(옵션). 채워지면 현재 리전이 이 ID일 때만 발화. 무param CaptureInsect/BattleWin의
+        // 늦발화 얼룩(엉뚱한 리전에서 옛 비트가 뜨는 것) 차단. 비면 무제약 — JsonUtility 누락 필드는
+        // 기본값(null)이라 기존 비트 전부 호환. story_lint 검사 7이 대상 존재·무가드 권고를 검증.
+        public string requiredRegionId;
         public StoryTrigger trigger;
         // 이름/초상만 참조(대사는 lines[]에 저작). NpcDialogueDatabase 앰비언트와 분리.
         public string speakerNpcId;
