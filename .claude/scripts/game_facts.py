@@ -50,6 +50,7 @@ PATHS = {
     "story_json": "Assets/Resources/Story.json",
     "story_director": "Assets/Scripts/Story/StoryDirector.cs",
     "item_db": "Assets/Scripts/Data/ItemDatabase.cs",
+    "village_builder": "Assets/Scripts/Core/VillageBuilder.cs",
 }
 
 RARITIES = ("Common", "Uncommon", "Rare", "Epic", "Legendary")
@@ -564,6 +565,18 @@ def story_trigger_wiring() -> dict:
     for const, ttype in consts.items():
         out[ttype] = (const in in_switch, const in fired)
     return out
+
+
+def story_npc_ids() -> set:
+    """월드에 배치된 스토리 NPC ID 집합 — NpcTalk 트리거 param 검증용.
+
+    출처: VillageBuilder의 storyNpcId = "..." 앵커. 여기에 없는 NPC를 NpcTalk param으로
+    쓰면 그 NPC가 월드에 없어 비트가 영영 발화하지 않는다(조용한 미발화). story_lint가 잡는다.
+    """
+    ids = set(re.findall(r'storyNpcId\s*=\s*"(\w+)"', _read("village_builder")))
+    if not ids:
+        raise ExtractorBroken('VillageBuilder에서 storyNpcId를 하나도 못 읽었다 — 배치 형태가 바뀌었는가?')
+    return ids
 
 
 def dialogue_region_keys() -> set:

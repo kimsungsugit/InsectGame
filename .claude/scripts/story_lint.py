@@ -71,6 +71,7 @@ def evaluate_signals() -> list:
     region_ids = {r[0] for r in game_facts.region_pools()}
     quest_ids = {q["questId"] for q in game_facts.quest_defs()}
     insect_ids = game_facts.all_insect_ids()
+    npc_ids = game_facts.story_npc_ids()
     bad_target = []
     for b in beats:
         t = b.get("trigger") or {}
@@ -89,6 +90,8 @@ def evaluate_signals() -> list:
             bad_target.append(f"{b['beatId']}:CaptureInsect({param})")
         elif ttype == "LevelReach" and not param.isdigit():
             bad_target.append(f"{b['beatId']}:LevelReach({param}=비정수)")
+        elif ttype == "NpcTalk" and param not in npc_ids:
+            bad_target.append(f"{b['beatId']}:NpcTalk({param}=월드 미배치)")
     signals.append(("트리거 param 대상 존재", "0건 미존재",
                     f"{len(bad_target)}건 ({bad_target})" if bad_target else "0건",
                     "FAIL" if bad_target else "PASS"))
