@@ -23,6 +23,7 @@ namespace InsectGame.Core
             public const string PlayerItems = "player_items.json";
             public const string BattleTeam = "battle_team.json";
             public const string DexSave = "dex_save.json";
+            public const string StoryProgress = "story_progress.json";
         }
 
         // ── PlayerPrefs 키 ──

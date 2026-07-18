@@ -392,6 +392,9 @@ namespace InsectGame.Core
                     AuthManager.ScopedKey(GameConstants.PrefsKeys.QuestCompleted), ""),
                 activeQuest = PlayerPrefs.GetString(
                     AuthManager.ScopedKey(GameConstants.PrefsKeys.ActiveQuest), ""),
+                // 스토리 진행은 story_progress.json 파일(StoryDirector 저작) — 퀘스트와 달리 파일 기반이라
+                // dexData/playerItems처럼 LoadLocalFile로 수집(계정별 SaveScope 경로).
+                storyProgress = LoadLocalFile(GameConstants.SaveFiles.StoryProgress),
                 // 캐릭터 외형(LoginUI가 PlayerPrefs "InsectGame.Character.*"에 저장) — 옛은 클라우드
                 // 미수집이라 다른 기기 접속 시 외형(피부/머리/표정/성별) 전부 초기화됐음.
                 charCreated = PlayerPrefs.GetInt(SaveScope.PrefsKey("InsectGame.Character.Created"), 0),
@@ -506,6 +509,8 @@ namespace InsectGame.Core
             ApplyCloudFile(GameConstants.SaveFiles.BattleTeam, data.battleTeam, forceReplace);
             ApplyCloudFile(GameConstants.SaveFiles.DexSave, data.dexData, forceReplace);
             ApplyCloudFile(GameConstants.SaveFiles.PlayerItems, data.playerItems, forceReplace);
+            // 스토리 진행 파일 — dexData/playerItems와 동형. StoryDirector.ReloadFromDisk가 아래 reloadables 순회에서 인메모리 갱신.
+            ApplyCloudFile(GameConstants.SaveFiles.StoryProgress, data.storyProgress, forceReplace);
 
             // 파일/PlayerPrefs 갱신 후 인메모리 캐시 리로드 — 곤충/팀/도감/지역/의상 등이
             // 다른 기기 첫 로그인에서도 즉시 반영(앱 재시작 불필요).
@@ -618,6 +623,7 @@ namespace InsectGame.Core
             sb.Append(","); AppendStringField(sb, "questProgress", data.questProgress);
             sb.Append(","); AppendStringField(sb, "questCompleted", data.questCompleted);
             sb.Append(","); AppendStringField(sb, "activeQuest", data.activeQuest);
+            sb.Append(","); AppendStringField(sb, "storyProgress", data.storyProgress);
             sb.Append(","); AppendIntField(sb, "charCreated", data.charCreated);
             sb.Append(","); AppendStringField(sb, "charName", data.charName);
             sb.Append(","); AppendIntField(sb, "charSkin", data.charSkin);
@@ -658,6 +664,7 @@ namespace InsectGame.Core
             data.questProgress = ExtractStringValue(json, "questProgress");
             data.questCompleted = ExtractStringValue(json, "questCompleted");
             data.activeQuest = ExtractStringValue(json, "activeQuest");
+            data.storyProgress = ExtractStringValue(json, "storyProgress");
             // 캐릭터 외형 — 옛 문서엔 없을 수 있어 sentinel(-1)로 받아 ApplySaveData에서 로컬 보존.
             data.charCreated = ExtractIntValueOrDefault(json, "charCreated", 0);
             data.charName = ExtractStringValue(json, "charName");
@@ -815,6 +822,8 @@ namespace InsectGame.Core
         public string questProgress;
         public string questCompleted;
         public string activeQuest;
+        // 스토리 진행(seenBeatIds) — story_progress.json 내용. 파일 기반이라 수집/적용은 dexData와 동형.
+        public string storyProgress;
         // 캐릭터 외형 — int는 -1 sentinel(옛 클라우드 문서 누락 시 로컬 유지), charCreated만 0 기본.
         public int charCreated;
         public string charName;

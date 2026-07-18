@@ -26,11 +26,66 @@ namespace InsectGame.UI
         private Texture2D panelTex;
         private bool stylesInited;
 
+        // 스토리 비트 렌더 — StoryDirector.StoryBeatTriggered 구독. 기존 대화 모달 렌더 재사용.
+        private InsectGame.Story.StoryDirector storyDirector;
+        private InsectGame.Story.StoryBeat currentBeat;
+        private InsectGame.Story.StoryLine[] storyLines;
+        private bool storyMode;
+
         public bool IsOpen => isOpen;
 
         public void AutoWire(PlayerMovement player)
         {
             if (playerMovement == null) playerMovement = player;
+        }
+
+        // 스토리 지휘자 주입 — 비트 발화 구독. Bootstrap이 호출.
+        public void AutoWire(InsectGame.Story.StoryDirector director)
+        {
+            if (storyDirector == null && director != null)
+            {
+                storyDirector = director;
+                storyDirector.StoryBeatTriggered += OnStoryBeatTriggered;
+            }
+        }
+
+        private void OnDestroy()
+        {
+            if (storyDirector != null)
+                storyDirector.StoryBeatTriggered -= OnStoryBeatTriggered;
+        }
+
+        private void OnStoryBeatTriggered(InsectGame.Story.StoryBeat beat)
+        {
+            ShowStory(beat);
+        }
+
+        // 스토리 비트를 대화 모달로 렌더 — lines[]를 순차 표시(speaker는 라인별). 닫으면 CompleteBeat 콜백.
+        public void ShowStory(InsectGame.Story.StoryBeat beat)
+        {
+            if (beat == null) return;
+
+            // 대사 없음 — 표시 없이 즉시 완료(보상/seen 처리).
+            if (beat.lines == null || beat.lines.Count == 0)
+            {
+                if (storyDirector != null) storyDirector.CompleteBeat(beat.beatId);
+                return;
+            }
+
+            // 다른 모달(주민 대화)이 열려 있으면 정리 후 스토리로 전환.
+            if (isOpen) CloseModal();
+
+            currentBeat = beat;
+            storyMode = true;
+            storyLines = beat.lines.ToArray();
+            lines = new string[storyLines.Length];
+            for (int i = 0; i < storyLines.Length; i++)
+                lines[i] = storyLines[i] != null ? storyLines[i].text : "";
+            lineIndex = 0;
+            isOpen = true;
+            openedFrame = Time.frameCount;
+            ModalUIRegistry.Register(this);
+            if (playerMovement != null) playerMovement.SetFrozen(true);
         }
 
         /// <summary>대화 시작 — WorldInteractionController가 호출.</summary>
@@ -63,6 +118,17 @@ namespace InsectGame.UI
             if (currentNpc != null) currentNpc.EndTalk();
             currentNpc = null;
             lines = null;
+
+            // 스토리 비트였으면 완료 콜백(보상/seen). 상태를 먼저 비워 CompleteBeat 재진입에 안전.
+            if (storyMode)
+            {
+                InsectGame.Story.StoryBeat done = currentBeat;
+                storyMode = false;
+                currentBeat = null;
+                storyLines = null;
+                if (storyDirector != null && done != null)
+                    storyDirector.CompleteBeat(done.beatId);
+            }
         }
 
         private void OnDisable()
@@ -83,8 +149,8 @@ namespace InsectGame.UI
         private void Update()
         {
             if (!isOpen) return;
-            // 대화 상대가 사라짐(ApplyTuning 비활성화 등) — 안전 종료
-            if (currentNpc == null || !currentNpc.gameObject.activeInHierarchy)
+            // 대화 상대가 사라짐(ApplyTuning 비활성화 등) — 안전 종료. 스토리 모드는 NPC가 없으므로 스킵.
+            if (!storyMode && (currentNpc == null || !currentNpc.gameObject.activeInHierarchy))
             {
                 CloseModal();
                 return;
@@ -127,8 +193,20 @@ namespace InsectGame.UI
             GUI.DrawTexture(new Rect(px, py, panelW, panelH), panelTex);
             GUI.color = Color.white;
 
-            // 이름 + 대사
-            string npcName = currentNpc != null ? currentNpc.DisplayName : "주민";
+            // 이름 + 대사 — 스토리 모드는 라인별 speaker(없으면 비트 speakerNpcId), 아니면 NPC 이름.
+            string npcName;
+            if (storyMode)
+            {
+                InsectGame.Story.StoryLine sl = (storyLines != null
+                    && lineIndex >= 0 && lineIndex < storyLines.Length) ? storyLines[lineIndex] : null;
+                if (sl != null && !string.IsNullOrEmpty(sl.speaker)) npcName = sl.speaker;
+                else if (currentBeat != null && !string.IsNullOrEmpty(currentBeat.speakerNpcId)) npcName = currentBeat.speakerNpcId;
+                else npcName = "???";
+            }
+            else
+            {
+                npcName = currentNpc != null ? currentNpc.DisplayName : "주민";
+            }
             GUI.Label(new Rect(px + 28f, py + 16f, panelW - 56f, 34f), npcName, nameStyle);
             GUI.Label(new Rect(px + 28f, py + 56f, panelW - 56f, 88f),
                 lines[Mathf.Clamp(lineIndex, 0, lines.Length - 1)], lineStyle);

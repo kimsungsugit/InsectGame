@@ -462,6 +462,14 @@ namespace InsectGame.Core
             InsectGame.UI.TutorialQuestUI questUi = EnsureComponent<InsectGame.UI.TutorialQuestUI>("UI/TutorialQuestUI");
             questUi.AutoWire(questManager);
 
+            // 스토리 시스템 — 기존 이벤트(리전/배틀/서브에리어/퀘스트/진행/컬렉션)를 관찰해 비트 발화.
+            // 싱글턴 아님(AutoWire). 렌더는 NpcDialogueUI가 StoryBeatTriggered 구독(아래 마을/NPC 블록에서 배선).
+            InsectGame.Story.StoryDirector storyDirector =
+                EnsureComponent<InsectGame.Story.StoryDirector>("World/StoryDirector");
+            storyDirector.AutoWire(regionMgr, battleController, progress, insectCollection, questManager);
+            storyDirector.AutoWire(candyInventory, itemInventory);
+            cloudSave.RegisterReloadable(storyDirector);
+
             // 캐시 상점 + 가챠 시스템
             CashShopManager cashShop = EnsureComponent<CashShopManager>("World/CashShop");
             cashShop.AutoWire(wallet); // 보석 동기화 (PlayerCurrencyWallet ↔ CashShopManager)
@@ -512,6 +520,7 @@ namespace InsectGame.Core
                 InsectGame.UI.NpcDialogueUI npcDialogue =
                     EnsureComponent<InsectGame.UI.NpcDialogueUI>("UI/NpcDialogueUI");
                 npcDialogue.AutoWire(playerMov);
+                npcDialogue.AutoWire(storyDirector); // 스토리 비트 lines[] 모달 렌더 + 닫힘 시 완료 콜백
                 worldInteract.AutoWire(npcDialogue);
 
                 // 스폰은 배선 완료 후 (컬링 타깃/예약 시스템이 준비된 상태에서)

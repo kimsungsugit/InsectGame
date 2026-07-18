@@ -1,0 +1,76 @@
+{
+  "beats": [
+    {
+      "beatId": "ch1_intro",
+      "chapterId": "ch1",
+      "order": 0,
+      "prerequisiteBeatId": "",
+      "trigger": { "type": "Immediate", "param": "" },
+      "speakerNpcId": "village_elder",
+      "lines": [
+        { "speaker": "마을 어르신", "text": "오, 드디어 왔구나! 초원에 새로운 곤충 친구를 찾으러 온 게로군." },
+        { "speaker": "마을 어르신", "text": "풀밭을 돌아다니며 곤충에게 다가가 보렴. 자, 여행의 첫 선물이란다!" }
+      ],
+      "choices": [],
+      "onComplete": {
+        "rewardCandy": 5,
+        "rewardExp": 0,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
+      },
+      "oneShot": true
+    },
+    {
+      "beatId": "ch1_first_capture",
+      "chapterId": "ch1",
+      "order": 1,
+      "prerequisiteBeatId": "ch1_intro",
+      "trigger": { "type": "QuestComplete", "param": "q_approach" },
+      "speakerNpcId": "village_elder",
+      "lines": [
+        { "speaker": "마을 어르신", "text": "훌륭해! 첫 곤충을 잡았구나. 넌 정말 소질이 있어." },
+        { "speaker": "마을 어르신", "text": "이제 연못 너머에도 더 많은 친구들이 기다리고 있단다." }
+      ],
+      "choices": [],
+      "onComplete": {
+        "rewardCandy": 10,
+        "rewardExp": 15,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
+      },
+      "oneShot": true
+    },
+    {
+      "beatId": "ch1_reach_pond",
+      "chapterId": "ch1",
+      "order": 2,
+      "prerequisiteBeatId": "ch1_first_capture",
+      "trigger": { "type": "RegionEnter", "param": "pond" },
+      "speakerNpcId": "village_elder",
+      "lines": [
+        { "speaker": "마을 어르신", "text": "여기가 바로 연못이야. 물가엔 초원과는 전혀 다른 곤충들이 살지." },
+        { "speaker": "마을 어르신", "text": "조심히 살펴보렴. 여행의 다음 장이 시작되었단다." }
+      ],
+      "choices": [],
+      "onComplete": {
+        "rewardCandy": 0,
+        "rewardExp": 20,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
+      },
+      "oneShot": true
+    }
+  ]
+}
