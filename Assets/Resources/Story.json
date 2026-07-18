@@ -177,9 +177,9 @@
     },
     {
       "beatId": "ch1_reach_pond",
-      "chapterId": "ch1",
+      "chapterId": "ch2",
       "order": 7,
-      "prerequisiteBeatId": "ch1_guardian_win",
+      "prerequisiteBeatId": "ch1_intro",
       "trigger": { "type": "RegionEnter", "param": "pond" },
       "speakerNpcId": "village_elder",
       "lines": [
@@ -190,6 +190,54 @@
       "onComplete": {
         "rewardCandy": 10,
         "rewardExp": 25,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
+      },
+      "oneShot": true
+    },
+    {
+      "beatId": "ch2_water",
+      "chapterId": "ch2",
+      "order": 8,
+      "prerequisiteBeatId": "ch1_reach_pond",
+      "trigger": { "type": "CaptureInsect", "param": "" },
+      "speakerNpcId": "catcher_rival",
+      "lines": [
+        { "speaker": "라온", "text": "물가 곤충들은 초원 애들이랑 또 다르지? 근데 여기도 예전 같지 않아 — 수가 확 줄었어." },
+        { "speaker": "라온", "text": "그래도 네가 이렇게 하나씩 거둬들일 때마다, 뭔가 조금은 되돌아오는 기분이야. 계속하자." }
+      ],
+      "choices": [],
+      "onComplete": {
+        "rewardCandy": 12,
+        "rewardExp": 25,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
+      },
+      "oneShot": true
+    },
+    {
+      "beatId": "ch2_resolve",
+      "chapterId": "ch2",
+      "order": 9,
+      "prerequisiteBeatId": "ch1_reach_pond",
+      "trigger": { "type": "QuestComplete", "param": "q_complete" },
+      "speakerNpcId": "village_elder",
+      "lines": [
+        { "speaker": "마을 어르신", "text": "여기까지 오다니, 이제 내가 가르칠 건 다 가르쳤구나. 넌 어엿한 채집가야." },
+        { "speaker": "마을 어르신", "text": "허나 사라짐의 진짜 뿌리는 아직 저 너머에 있어. 숲으로, 또 그 너머로 나아가렴. 답은 고대 유적에 있을 게다." }
+      ],
+      "choices": [],
+      "onComplete": {
+        "rewardCandy": 20,
+        "rewardExp": 40,
         "rewardItemId": "",
         "rewardItemCount": 0,
         "rewardInsectId": "",
@@ -249,6 +297,30 @@
       "oneShot": true
     },
     {
+      "beatId": "ch3_battle_insight",
+      "chapterId": "ch3",
+      "order": 11,
+      "prerequisiteBeatId": "ch3_reach_forest",
+      "trigger": { "type": "BattleWin", "param": "" },
+      "speakerNpcId": "ruins_scholar",
+      "lines": [
+        { "speaker": "세라", "text": "방금 그 전투… 쓰러진 곤충이 사라지기 직전, 빛의 결이 유적 쪽으로 흘렀어요. 봤나요?" },
+        { "speaker": "세라", "text": "초원의 수문장도 그랬다죠. 우연이 아니에요 — 모든 곤충이 그 봉인과 이어져 있어요." }
+      ],
+      "choices": [],
+      "onComplete": {
+        "rewardCandy": 15,
+        "rewardExp": 30,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
+      },
+      "oneShot": true
+    },
+    {
       "beatId": "ch4_reach_swamp",
       "chapterId": "ch4",
       "order": 10,
@@ -264,6 +336,54 @@
       "onComplete": {
         "rewardCandy": 20,
         "rewardExp": 35,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
+      },
+      "oneShot": true
+    },
+    {
+      "beatId": "ch4_decay",
+      "chapterId": "ch4",
+      "order": 13,
+      "prerequisiteBeatId": "ch4_reach_swamp",
+      "trigger": { "type": "BattleWin", "param": "" },
+      "speakerNpcId": "ruins_scholar",
+      "lines": [
+        { "speaker": "세라", "text": "이 습지의 공기… 유적에서 새어나온 부패가 여기 가장 짙게 고여 있어요. 봉인의 균열이 그만큼 커졌다는 뜻이죠." },
+        { "speaker": "세라", "text": "이 땅을 지날수록 또렷이 느껴져요. 시간이 많지 않아요 — 서둘러야 해요." }
+      ],
+      "choices": [],
+      "onComplete": {
+        "rewardCandy": 20,
+        "rewardExp": 35,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
+      },
+      "oneShot": true
+    },
+    {
+      "beatId": "ch4_bond",
+      "chapterId": "ch4",
+      "order": 14,
+      "prerequisiteBeatId": "ch4_reach_swamp",
+      "trigger": { "type": "CaptureInsect", "param": "" },
+      "speakerNpcId": "catcher_rival",
+      "lines": [
+        { "speaker": "라온", "text": "예전엔 너랑 경쟁만 하려 했는데… 이젠 아니야. 이 일은 혼자 될 게 아니더라." },
+        { "speaker": "라온", "text": "네가 한 마리씩 거둘 때 나도 곁에서 거들게. 세라도 함께야. 우리 셋이면 유적까지 갈 수 있어." }
+      ],
+      "choices": [],
+      "onComplete": {
+        "rewardCandy": 22,
+        "rewardExp": 40,
         "rewardItemId": "",
         "rewardItemCount": 0,
         "rewardInsectId": "",
@@ -323,6 +443,30 @@
       "oneShot": true
     },
     {
+      "beatId": "ch5_thesis",
+      "chapterId": "ch5",
+      "order": 17,
+      "prerequisiteBeatId": "ch5_reach_mountain",
+      "trigger": { "type": "CaptureInsect", "param": "" },
+      "speakerNpcId": "ruins_scholar",
+      "lines": [
+        { "speaker": "세라", "text": "확실해졌어요. 당신이 곤충을 거둬 도감에 새길 때마다, 금 갔던 봉인이 실제로 되고정되고 있어요." },
+        { "speaker": "세라", "text": "당신의 수집이 곧 이 세계를 지탱하는 힘이에요. 정상만 넘으면… 유적이 바로 눈앞이에요." }
+      ],
+      "choices": [],
+      "onComplete": {
+        "rewardCandy": 22,
+        "rewardExp": 40,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
+      },
+      "oneShot": true
+    },
+    {
       "beatId": "ch6_reach_ruins",
       "chapterId": "ch6",
       "order": 13,
@@ -337,6 +481,30 @@
       "onComplete": {
         "rewardCandy": 30,
         "rewardExp": 50,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
+      },
+      "oneShot": true
+    },
+    {
+      "beatId": "ch6_approach",
+      "chapterId": "ch6",
+      "order": 19,
+      "prerequisiteBeatId": "ch6_reach_ruins",
+      "trigger": { "type": "BattleWin", "param": "" },
+      "speakerNpcId": "village_elder",
+      "lines": [
+        { "speaker": "마을 어르신", "text": "유적 안에선 한 걸음 한 걸음이 무겁구나. 방금 그 싸움에서도 공기가 떨리는 걸 느꼈어." },
+        { "speaker": "마을 어르신", "text": "두려워 말렴. 네가 여기까지 거둬 온 모든 생명이 널 지켜줄 게다. 진실은 바로 저 안쪽에 있어." }
+      ],
+      "choices": [],
+      "onComplete": {
+        "rewardCandy": 30,
+        "rewardExp": 60,
         "rewardItemId": "",
         "rewardItemCount": 0,
         "rewardInsectId": "",
