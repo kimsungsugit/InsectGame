@@ -29,11 +29,13 @@ description: 로컬 7개 JSON·Firestore 세이브 구조와 필드 추가·마�
 | QuestProgress | 퀘스트별 진행 카운트 | O |
 | QuestCompleted | 완료된 questId 집합 | O |
 | ActiveQuest | 현재 활성 questId | O |
+| QuestSideProgress | 서브 퀘스트별 진행 카운트 | O |
+| QuestSideRepeat | 서브 퀘스트별 반복 완료 횟수(목표 상승 티어) | O |
 | QuestUnseen | 미확인 완료 알림 | **X (로컬 전용)** |
 
 **주의:** QuestUnseen은 클라우드에 안 올라간다 — 기기 간 알림 상태가 다를 수 있다.
-퀘스트 세이브 필드를 늘리면 `CloudSaveManager` DTO(questProgress/questCompleted/activeQuest)와
-직렬화/파싱/업로드/복원 4곳을 함께 고쳐야 클라우드에 반영된다.
+퀘스트 세이브 필드를 늘리면 `CloudSaveManager` DTO(questProgress/questCompleted/activeQuest/
+questSideProgress/questSideRepeat)와 직렬화/파싱/업로드/복원 4곳을 함께 고쳐야 클라우드에 반영된다.
 
 ## 클라우드 세이브
 - Firestore REST API (PATCH /users/{userId})

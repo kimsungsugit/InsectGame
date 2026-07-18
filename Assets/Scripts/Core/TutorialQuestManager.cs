@@ -27,7 +27,7 @@ namespace InsectGame.Core
         private string activeQuestId;
         private bool tutorialSessionStarted;
 
-        // 서브 퀘스트 상태 — 로컬 전용(QuestUnseen처럼 클라우드 미동기). 스토리 questProgress(동기)와 분리.
+        // 서브 퀘스트 상태 — 클라우드 동기(CloudSaveManager DTO questSideProgress/questSideRepeat). 스토리 questProgress와 별개 키.
         private Dictionary<string, int> sideProgress = new Dictionary<string, int>();
         private Dictionary<string, int> sideRepeatCount = new Dictionary<string, int>();
 
