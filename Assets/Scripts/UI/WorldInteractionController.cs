@@ -204,6 +204,10 @@ namespace InsectGame.UI
 
             if (currentVillager != null)
             {
+                // 조우 연출 — 스토리 NPC가 플레이어를 향해 돌아본다(시선 맞춤).
+                if (currentVillager.IsStoryNpc && playerMovement != null)
+                    currentVillager.FacePlayer(playerMovement.transform);
+
                 // 스토리 NPC면 먼저 NpcTalk 스토리 발동 시도. 비트가 뜨면 NpcDialogueUI가 렌더,
                 // 아니면(이미 봤거나 일반 주민) 앰비언트 대사로 폴백.
                 bool storyFired = currentVillager.IsStoryNpc && storyDirector != null

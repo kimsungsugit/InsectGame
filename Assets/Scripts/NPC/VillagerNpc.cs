@@ -77,6 +77,13 @@ namespace InsectGame.NPC
             stateEndTime = Time.time + RandomRange(2f, 6f);
         }
 
+        /// <summary>플레이어를 향해 돌아봄(상태 변경 없음) — 스토리 NPC 조우 연출용.
+        /// 스토리 발동은 모달만 뜨고 Talking 상태로 안 넣으므로, 최소한 시선은 맞춘다.</summary>
+        public void FacePlayer(Transform player)
+        {
+            if (player != null) FaceTowards(player.position);
+        }
+
         /// <summary>상태 결정 틱 — NpcManager 라운드로빈(프레임당 최대 3명). 내부 0.3s 주기 자체 스로틀.</summary>
         public void TickAI(float time)
         {

@@ -202,6 +202,9 @@ namespace InsectGame.UI
                 if (sl != null && !string.IsNullOrEmpty(sl.speaker)) npcName = sl.speaker;
                 else if (currentBeat != null && !string.IsNullOrEmpty(currentBeat.speakerNpcId)) npcName = currentBeat.speakerNpcId;
                 else npcName = "???";
+                // 직접 다가가 말을 건 조우(NpcTalk)면 화자명에 플로리시 — 만남을 강조.
+                if (currentBeat != null && currentBeat.trigger != null && currentBeat.trigger.type == "NpcTalk")
+                    npcName = "✦ " + npcName;
             }
             else
             {
