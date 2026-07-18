@@ -397,8 +397,8 @@ namespace InsectGame.UI
             }
             if (playerWon)
             {
-                if (TutorialQuestManager.Instance != null)
-                    TutorialQuestManager.Instance.NotifyRaidCompleted();
+                // 레이드 진행은 TutorialQuestManager가 raidController.RaidEnded를 직접 구독(OnRaidEnded)해
+                // 처리 — 여기서 또 NotifyRaidCompleted를 부르면 1승이 +2로 이중 카운트(제거).
                 CheckRaidGuardianDefeat();
             }
         }

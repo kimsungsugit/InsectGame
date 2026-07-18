@@ -163,9 +163,7 @@ namespace InsectGame.Story
         public bool OnNpcTalked(string npcId)
         {
             if (string.IsNullOrEmpty(npcId)) return false;
-            string before = pendingBeatId;
-            EvaluateTriggers(TriggerNpcTalk, npcId);
-            return pendingBeatId != before && !string.IsNullOrEmpty(pendingBeatId);
+            return EvaluateTriggers(TriggerNpcTalk, npcId);   // 발화하면 true(대사 없는 비트도 정확)
         }
 
         // --- 중앙 트리거 평가 ---
@@ -173,9 +171,9 @@ namespace InsectGame.Story
         // triggerType의 미열람·prereq충족·param일치 비트를 찾아 하나만 발화(모달 클로버링 방지).
         // switch(triggerType)는 닫힌 enum — JSON이 쓰는 모든 trigger.type을 여기서 처리해야 한다.
         // 누락 시 그 타입 비트가 영영 발화하지 않음. story_lint 검사 6이 이 switch를 이벤트 구독과 교차검사.
-        private void EvaluateTriggers(string triggerType, string eventParam)
+        private bool EvaluateTriggers(string triggerType, string eventParam)
         {
-            if (string.IsNullOrEmpty(triggerType)) return;
+            if (string.IsNullOrEmpty(triggerType)) return false;
 
             foreach (StoryBeat beat in StoryService.AllBeats())
             {
@@ -225,9 +223,10 @@ namespace InsectGame.Story
                 if (matches)
                 {
                     FireBeat(beat);
-                    return;
+                    return true;
                 }
             }
+            return false;
         }
 
         // requiredRegionId가 채워진 비트는 현재 리전이 일치할 때만 발화(비면 무제약).

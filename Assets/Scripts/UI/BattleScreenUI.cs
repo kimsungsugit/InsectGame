@@ -295,8 +295,8 @@ namespace InsectGame.UI
                 AudioManager.Instance.PlaySFX(playerWon ? SfxType.Victory : SfxType.Defeat);
                 AudioManager.Instance.PlayBGM(playerWon ? BgmType.Victory : BgmType.Defeat);
             }
-            if (playerWon && TutorialQuestManager.Instance != null)
-                TutorialQuestManager.Instance.NotifyBattleWon();
+            // 튜토리얼/서브 배틀 진행은 TutorialQuestManager가 battleController.BattleEnded를 직접
+            // 구독(OnBattleEnded)해 처리한다 — 여기서 또 NotifyBattleWon을 부르면 1승이 +2로 이중 카운트.
 
             // 수문장 격파 체크
             if (playerWon)

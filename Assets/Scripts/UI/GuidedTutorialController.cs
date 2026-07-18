@@ -24,6 +24,7 @@ namespace InsectGame.UI
         private string activeGuidedQuestId;   // 현재 가이드 중인 questId (없으면 null)
         private string activeGuidedText;
         private float freezeTimer;            // 시작 지시 프리즈 남은 시간
+        private bool weFroze;                 // 우리가 프리즈를 걸었는가 — 남의 프리즈 오해제 방지
         private bool subscribed;
 
         public bool IsGuiding => !string.IsNullOrEmpty(activeGuidedQuestId);
@@ -82,6 +83,7 @@ namespace InsectGame.UI
             if (playerMovement != null && !playerMovement.IsFrozen && !ModalUIRegistry.IsAnyOpen())
             {
                 playerMovement.SetFrozen(true);
+                weFroze = true;
                 freezeTimer = 1.3f;
             }
         }
@@ -90,8 +92,19 @@ namespace InsectGame.UI
         {
             activeGuidedQuestId = null;
             activeGuidedText = null;
+            ReleaseOurFreeze();
+        }
+
+        // 우리가 건 시작 프리즈만 해제한다. 이미 만료됐거나(weFroze=false) 배틀 결과화면·모달이
+        // 프리즈를 인계한 상태면 건드리지 않는다 — SetFrozen은 refcount 없는 단순 bool이라 남의
+        // 프리즈를 풀면 배틀 결과 4초+·대사 도중 플레이어가 이동해 버린다(첫 배틀에서 실제 발생).
+        private void ReleaseOurFreeze()
+        {
             freezeTimer = 0f;
-            if (playerMovement != null && playerMovement.IsFrozen) playerMovement.SetFrozen(false);
+            if (!weFroze) return;
+            weFroze = false;
+            if (playerMovement != null && playerMovement.IsFrozen && !ModalUIRegistry.IsAnyOpen())
+                playerMovement.SetFrozen(false);
         }
 
         private void Update()
@@ -99,8 +112,7 @@ namespace InsectGame.UI
             if (freezeTimer > 0f)
             {
                 freezeTimer -= Time.deltaTime;
-                if (freezeTimer <= 0f && playerMovement != null && playerMovement.IsFrozen)
-                    playerMovement.SetFrozen(false);   // 지시 프리즈 자동 해제 → 행동 가능
+                if (freezeTimer <= 0f) ReleaseOurFreeze();   // 시작 지시 프리즈 자동 해제(우리 것만)
             }
         }
 

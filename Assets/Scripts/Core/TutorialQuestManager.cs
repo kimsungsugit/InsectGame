@@ -696,7 +696,9 @@ namespace InsectGame.Core
             unseenCompleted.Add(q.questId);
             QuestCompleted?.Invoke(q);
             SaveProgress();
-            if (CloudSaveManager.Instance != null) CloudSaveManager.Instance.SaveToCloud();
+            // 반복 서브는 잦아 즉시 클라우드 PATCH를 생략(120s 오토세이브에 위임 — API 폭주 차단).
+            // 비반복 서브(영구 완료)만 즉시 동기(다른 기기 재획득 방지).
+            if (!q.repeatable && CloudSaveManager.Instance != null) CloudSaveManager.Instance.SaveToCloud();
             // ActivateNextQuest 호출 안 함 — 서브는 스토리 체인과 무관.
         }
 
