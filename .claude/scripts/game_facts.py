@@ -41,6 +41,8 @@ PATHS = {
     "trainer_progress": "Assets/Scripts/Core/PlayerProgressController.cs",
     "insect_curve": "Assets/Scripts/Data/InsectLevelCurve.cs",
     "bootstrap": "Assets/Scripts/Core/PlaySceneBootstrap.cs",
+    "insect_expansion": "Assets/Scripts/Data/InsectExpansionDefinitions.cs",
+    "region_defs": "Assets/Scripts/Core/RegionDefinitions.cs",
 }
 
 RARITIES = ("Common", "Uncommon", "Rare", "Epic", "Legendary")
@@ -327,6 +329,52 @@ def battle_rewards_by_rarity() -> dict:
             f"switch(rarity)에서 {missing} 보상을 못 읽었다 ({len(cases)}개 case 추출) — 구조가 바뀌었는가?"
         )
     return out
+
+
+def field_roster() -> dict:
+    """{insectId: (rarity, spawnWeight)} — 필드 스폰되는 곤충 전체(weight>0).
+
+    출처: PlaySceneBootstrap.CreateStableInsect(id, name, InsectRarity.X, weight, ...) +
+    InsectExpansionDefinitions.new InsectSeed(id, name, InsectRarity.X, weight, ...).
+    가챠 전용(weight=0)은 필드 스폰이 없으므로 제외한다. InsectSpawner.GetWeightedRandom이
+    이 spawnWeight로 후보를 뽑으므로, 리전 내 실제 조우 등급 분포의 단일 출처다.
+    """
+    out = {}
+    for key, pat in (
+        ("bootstrap", r'CreateStableInsect\("([^"]+)",\s*"[^"]+",\s*InsectRarity\.(\w+),\s*([\d.]+)f'),
+        ("insect_expansion", r'new InsectSeed\("([^"]+)",\s*"[^"]+",\s*InsectRarity\.(\w+),\s*([\d.]+)f'),
+    ):
+        for _id, rarity, w in re.findall(pat, _read(key)):
+            weight = float(w)
+            if weight > 0:
+                out[_id] = (rarity, weight)
+    if not out:
+        raise ExtractorBroken(
+            "필드 곤충 로스터를 하나도 못 읽었다 (CreateStableInsect/InsectSeed) — 시그니처가 바뀌었는가?"
+        )
+    return out
+
+
+def region_pools() -> list:
+    """[(regionId, requiredLevel, [insectIds]), ...] — 리전별 메인필드 곤충 풀.
+
+    출처: RegionDefinitions.CreateAll()의 각 RegionData{ regionId, requiredLevel, insectIds }.
+    서브에리어(exclusiveInsectIds)는 선택적 고레벨 구역이라 제외 — 메인 진행 경로만 본다.
+    """
+    src = _read("region_defs")
+    pools = []
+    for m in re.finditer(
+        r'regionId = "(\w+)".*?requiredLevel = (\d+),\s*insectIds = new\[\]\s*\{(.*?)\}',
+        src, re.DOTALL,
+    ):
+        ids = re.findall(r'"([^"]+)"', m.group(3))
+        if ids:
+            pools.append((m.group(1), int(m.group(2)), ids))
+    if not pools:
+        raise ExtractorBroken(
+            "RegionDefinitions에서 리전 풀(regionId/requiredLevel/insectIds)을 못 읽었다 — 구조가 바뀌었는가?"
+        )
+    return pools
 
 
 def team_max_slots() -> int:

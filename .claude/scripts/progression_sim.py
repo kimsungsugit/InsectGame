@@ -29,6 +29,11 @@ if hasattr(sys.stdout, "reconfigure") and sys.stdout.encoding and sys.stdout.enc
 
 # === 임계값 (밸런스 휴리스틱 — 디자이너 조정 가능) ===
 # 근거: 평균 전투 30초 가정 시 4000전투 = 33시간. 곤충 1마리 육성 그라인딩 한계.
+# 이 임계값은 **현실 진행**(insect_candy_battles_realistic)에 적용한다 — 곤충 레벨이
+# 리전 진행과 동기화되면 비싼 후반 레벨(전체 캔디의 84%가 Lv36+)이 고레어 리전
+# income으로 벌린다. Common 고정 상한(insect_candy_battles)은 참고용이며 FAIL 트리거가
+# 아니다: 시뮬 자신이 그걸 "최악(순수 Common·배틀만)"이라 명시하면서 그걸로 FAIL을 내면
+# 검증기가 자기가 인정한 극단으로 거짓 경보를 울리는 셈이다.
 THRESHOLD_BATTLES_FAIL = 4000
 # 근거: 트레이너 곡선은 선형이라 후반/초반비가 완만해야 정상. 선형이 5배를 넘으면
 # 어딘가 지수가 섞인 것(이탈 구간). 곤충 캔디(지수)는 이 검사 대상이 아니다 — 지수가 설계다.
@@ -51,6 +56,8 @@ def _load_facts():
             "trainer": game_facts.trainer_xp_curve(),
             "candy_curve": game_facts.insect_candy_curve(),
             "battle": game_facts.battle_rewards_by_rarity(),
+            "roster": game_facts.field_roster(),
+            "regions": game_facts.region_pools(),
         }
     except game_facts.ExtractorBroken as e:
         print(f"추출기 고장: {e}\n게임 수치를 코드에서 읽지 못했다 — 시뮬을 돌리지 않는다.",
@@ -106,10 +113,63 @@ def insect_candy_battles(target: int, rarity: str) -> int:
     """곤충 1마리 target 레벨까지 캔디를 배틀+포획으로만 모을 때 전투 수.
 
     배틀 승리와 포획은 같은 GetCandyReward를 준다(둘 다 처치/포획당 1회). 레이드(×3)·
-    가챠·튜토리얼은 보너스라 여기 안 넣는다 — 최악(순수 전투) 상한을 본다.
+    가챠·튜토리얼은 보너스라 여기 안 넣는다 — 단일 등급 고정 상한(최악=Common)을 본다.
     """
     per = reward_per_battle(rarity)["candy"]
     return round(total_insect_candy(target) / per) if per else 0
+
+
+def _candy_of(rarity: str) -> int:
+    """적 1마리 처치/포획 캔디(정수) = base(등급별) * 등급배율. GetCandyReward와 동일 반올림."""
+    return int(F["battle"][rarity]["candy"] * MULT[rarity])
+
+
+def region_income_curve() -> list:
+    """[(requiredLevel, E[candy]/전투), ...] 오름차순 — 리전별 스폰가중 기대 캔디.
+
+    각 리전 insectIds를 spawnWeight로 가중해(InsectSpawner.GetWeightedRandom 그대로) 등급
+    분포를 구하고 전투당 기대 캔디를 낸다. 리전 진행에 따라 조우 등급이 오르므로 income도 오른다.
+    """
+    roster = F["roster"]          # {id: (rarity, weight)}
+    out = []
+    for _rid, req, ids in F["regions"]:
+        tot = 0.0
+        acc = 0.0
+        for iid in ids:
+            if iid in roster:
+                rar, w = roster[iid]
+                if w > 0:
+                    tot += w
+                    acc += w * _candy_of(rar)
+        if tot > 0:
+            out.append((req, acc / tot))
+    out.sort()
+    return out
+
+
+def insect_candy_battles_realistic(target: int) -> int:
+    """곤충 레벨이 리전 진행과 동기화된다는 가정의 현실적 전투 수.
+
+    곤충 레벨 L을 올릴 캔디를, 그 시점 플레이어가 있는 리전(requiredLevel<=L 중 최상위)의
+    기대 캔디로 나눠 누적한다. 캔디 비용이 지수라 후반 레벨(전체의 84%가 Lv36+)이
+    고레어 엔드리전 income으로 벌리므로 Common 고정보다 크게 낮다. 레이드×3·가챠·튜토리얼은
+    여전히 별도(추가 하향)라 이 값도 상한 성격이다.
+    """
+    income = region_income_curve()
+    if not income:
+        return 0
+
+    def income_at(level: int) -> float:
+        cur = income[0][1]
+        for req, e in income:
+            if level >= req:
+                cur = e
+        return cur
+
+    battles = 0.0
+    for level in range(1, target):
+        battles += insect_candy_cost(level) / income_at(level)
+    return round(battles)
 
 
 def trainer_curve_ratio(target: int) -> float:
@@ -144,14 +204,16 @@ def render_curve_table(target: int) -> str:
 
 def evaluate_signals(args) -> list:
     signals = []
-    r = args.rarity
 
-    # 1. 곤충 Lv50 캔디를 전투(배틀+포획)로만 모을 때 전투 수
-    ib = insect_candy_battles(args.target_level, r)
-    judge = "FAIL" if ib >= THRESHOLD_BATTLES_FAIL else "PASS"
-    signals.append((f"곤충 Lv{args.target_level} 캔디 전투 수 ({r} 적)",
+    # 1. 곤충 Lv50 캔디 전투 수 — 판정은 현실 진행(리전 동기화), 참고로 Common 고정 상한 병기.
+    #    Common 고정(ib_worst)은 시뮬 자신이 "최악"이라 부르는 값이라 FAIL 트리거로 쓰지 않는다.
+    ib_real = insect_candy_battles_realistic(args.target_level)
+    ib_worst = insect_candy_battles(args.target_level, "Common")
+    judge = "FAIL" if ib_real >= THRESHOLD_BATTLES_FAIL else "PASS"
+    signals.append((f"곤충 Lv{args.target_level} 캔디 전투 수 (현실 진행·리전 동기화)",
                     f"< {THRESHOLD_BATTLES_FAIL:,}",
-                    f"{ib:,}회 (배틀+포획만; 레이드×{F['raid_mult']:.0f}·가챠·튜토리얼 별도)", judge))
+                    f"{ib_real:,}회 (최악=Common 고정 {ib_worst:,}; 레이드×{F['raid_mult']:.0f}·가챠·튜토리얼 별도 하향)",
+                    judge))
 
     # 2. 팀 전체 동시 Lv50 캔디 비용 (MaxTeamSlots 반영)
     team_candy = total_insect_candy(args.target_level) * args.team_size
@@ -219,9 +281,17 @@ def main():
     print("## 핵심 지표")
     print(f"- 트레이너 Lv{args.target_level} 총 EXP: **{total_trainer_xp(args.target_level):,}** "
           f"→ 전투 **{trainer_battles(args.target_level, args.rarity):,}회** ({args.rarity} 적)")
-    print(f"- 곤충 1마리 Lv{args.target_level} 총 캔디: **{total_insect_candy(args.target_level):,}** "
-          f"→ 전투 **{insect_candy_battles(args.target_level, args.rarity):,}회** (배틀+포획)")
+    print(f"- 곤충 1마리 Lv{args.target_level} 총 캔디: **{total_insect_candy(args.target_level):,}**")
+    print(f"    · 현실 진행(리전 동기화): 전투 **{insect_candy_battles_realistic(args.target_level):,}회** ← 판정 대상")
+    print(f"    · 최악(Common 고정, 배틀+포획): 전투 **{insect_candy_battles(args.target_level, 'Common'):,}회** (참고 상한)")
     print(f"- 팀 {args.team_size}마리 캔디: **{total_insect_candy(args.target_level)*args.team_size:,}**")
+    print()
+
+    print("## 리전별 스폰가중 캔디 income (진행에 따라 상승)")
+    print("| requiredLevel | E[candy]/전투 |")
+    print("|----:|----:|")
+    for req, e in region_income_curve():
+        print(f"| {req} | {e:.2f} |")
     print()
 
     print("## 위험 신호 표")
@@ -229,9 +299,14 @@ def main():
     print()
 
     print("## 가정 / 한계")
-    print("- 곤충 캔디는 배틀+포획(같은 GetCandyReward)만 계산 — 레이드(×3)·가챠·튜토리얼은")
-    print("  보너스라 전투 수를 더 줄인다. 여기 수치는 순수 전투 상한(최악)이다.")
-    print("- 적 등급을 단일(--rarity)로 고정. 실제는 진행에 따라 등급 분포가 오른다.")
+    print("- 판정(신호1)은 **현실 진행**: 곤충 레벨 L의 캔디를 그 시점 리전(requiredLevel<=L 중")
+    print("  최상위)의 스폰가중 기대 캔디로 벌어들인다고 본다. 캔디 비용이 지수라 전체의 84%가")
+    print("  Lv36+에 몰리고, 그 구간은 고레어 엔드리전(예: 유적 ~7캔디/전투)에서 벌린다.")
+    print("- 캔디는 전역 단일 풀(PlayerCandyInventory)이라 종 무관하게 합산된다 — 종별 캔디 아님.")
+    print("- 레이드(×3, 예: Epic 30·Legendary 48캔디)·가챠 박스(5~50)·튜토리얼(336)은 별도라")
+    print("  현실 전투 수를 더 낮춘다. 현실 수치도 그 의미에서 상한이다.")
+    print("- 리전 income은 InsectSpawner.GetWeightedRandom(무아이템)과 동일하게 spawnWeight로")
+    print("  가중. 레어스폰 아이템/의상 보너스는 미반영(있으면 고레어↑ → income↑).")
     print("- 곤충별 candyReward는 PlaySceneBootstrap의 등급별 하드코딩을 읽는다"
           "(InsectDatabase .asset의 개체별 편차는 미반영).")
 
