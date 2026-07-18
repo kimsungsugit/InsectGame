@@ -35,6 +35,10 @@ tools:
 - `Assets/Scripts/Core/WorldStateProvider.cs` - WorldState(시간+날씨) 제공
 - `Assets/Scripts/Core/PlayerMovement.cs` - 플레이어 이동 (월드 탐험)
 - `Assets/Scripts/UI/CaptureChoiceUI.cs` - 포획/배틀/레이드 선택 허브 ※UI 레이아웃은 ui-dev
+- `Assets/Scripts/NPC/NpcManager.cs` - NPC 스폰/디스폰/배치
+- `Assets/Scripts/NPC/CatcherKidNpc.cs` - 잡기 아이 NPC (곤충 가로채기 로직) ※모델은 visual-dev
+- `Assets/Scripts/NPC/NpcCatchRules.cs` - NPC 곤충 가로채기 규칙
+- `Assets/Scripts/NPC/VillagerNpc.cs` - 마을 주민 NPC 개체/상호작용 ※모델은 visual-dev
 
 ## 핵심 공식
 

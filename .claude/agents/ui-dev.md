@@ -50,6 +50,7 @@ tools:
 - `Assets/Scripts/Core/ItemRarityTuningUIController.cs` - 레어도 튜닝 UI
 - `Assets/Scripts/Core/ItemInventoryGridItem.cs` - 그리드 아이템 위젯
 - `Assets/Scripts/Core/ShopUIController.cs` - 샵 UI 컨트롤러
+- `Assets/Scripts/UI/NpcDialogueUI.cs` - NPC 대화 모달 (레이아웃/렌더) ※대사 내용은 game-designer
 
 ### Editor
 - `Assets/Editor/PlayUIPrefabGenerator.cs` - UI 프리팹 자동 생성

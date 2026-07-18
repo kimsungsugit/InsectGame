@@ -18,6 +18,23 @@ description: 로컬 7개 JSON·Firestore 세이브 구조와 필드 추가·마�
 - battle_team.json (5슬롯 팀)
 - dex_save.json (도감 기록)
 
+## 퀘스트 세이브 (PlayerPrefs — JSON 아님)
+
+퀘스트 진행은 위 7개 JSON에 **없다.** `TutorialQuestManager`가 **PlayerPrefs 4키**로 저장한다
+(`GameConstants.cs`의 ProgressKey/CompletedKey/ActiveKey/UnseenKey). 계정 스코핑은
+`AuthManager.ScopedKey`.
+
+| PlayerPrefs 키 | 내용 | 클라우드 동기 |
+|---|---|---|
+| QuestProgress | 퀘스트별 진행 카운트 | O |
+| QuestCompleted | 완료된 questId 집합 | O |
+| ActiveQuest | 현재 활성 questId | O |
+| QuestUnseen | 미확인 완료 알림 | **X (로컬 전용)** |
+
+**주의:** QuestUnseen은 클라우드에 안 올라간다 — 기기 간 알림 상태가 다를 수 있다.
+퀘스트 세이브 필드를 늘리면 `CloudSaveManager` DTO(questProgress/questCompleted/activeQuest)와
+직렬화/파싱/업로드/복원 4곳을 함께 고쳐야 클라우드에 반영된다.
+
 ## 클라우드 세이브
 - Firestore REST API (PATCH /users/{userId})
 - 자동저장: 120초 간격

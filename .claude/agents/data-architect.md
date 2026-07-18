@@ -55,6 +55,7 @@ tools:
 - `Assets/Scripts/Dex/DexListUIPresetController.cs` - 도감 목록 프리셋
 - `Assets/Scripts/Dex/DexListItemUI.cs` - 도감 목록 아이템
 - `Assets/Scripts/Dex/RarityIconProvider.cs` - 레어도 아이콘
+- `Assets/Scripts/NPC/NpcDialogueDatabase.cs` - 대화 데이터 모델/RegionLines/생성 로직 ※대사 내용은 game-designer
 
 ## 세이브 파일 구조
 | 파일 | 내용 | 서비스 |

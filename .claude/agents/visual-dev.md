@@ -46,6 +46,9 @@ OnGUI의 Rect 좌표와 레이아웃은 **ui-dev 영역**입니다. 여기서는
 ### 시각 연출 참조 (주담당: ui-dev)
 - `Assets/Scripts/UI/BattleScreenUI.cs` - 배틀 시각 연출 부분 (쉐이크, HP바, 속성 이펙트)
 - `Assets/Scripts/UI/RaidBattleUI.cs` - 레이드 시각 연출 부분
+- `Assets/Scripts/NPC/NpcVisualBuilder.cs` - NPC 프로시저럴 모델 빌더
+- `Assets/Scripts/NPC/NpcWalkAnimator.cs` - NPC 걷기 애니메이션
+- `Assets/Scripts/Core/VillageBuilder.cs` - 마을 프로시저럴 지형/건물
 
 ## 현재 비주얼 시스템
 
