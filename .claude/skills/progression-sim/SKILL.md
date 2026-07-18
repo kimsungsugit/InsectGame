@@ -1,99 +1,98 @@
 ---
 name: progression-sim
-description: Lv1→50 장기 진행 곡선과 캔디/EXP 수급 데드존을 시뮬레이션하고 비관적 위험 신호를 자동 적재합니다
-argument-hint: "[--target-level=50] [--rarity=Common|Uncommon|Rare|Epic|Legendary] [--base-xp=8] [--base-candy=3] [--avg-battle-sec=30] [--team-size=6]"
+description: 이원 레벨(트레이너 EXP·선형 / 곤충 캔디·지수) 진행 곡선을 시뮬레이션하고 병목·격차를 검출합니다
+argument-hint: "[--target-level=50] [--rarity=Common|Uncommon|Rare|Epic|Legendary] [--avg-battle-sec=30] [--team-size=auto]"
 ---
 
-# Lv1→50 진행 시뮬
+# 진행 곡선 시뮬 — 이원 레벨
 
-곤충 레벨 곡선(`InsectLevelCurve.cs`), 보상 배율(`InsectRewardCalculator.cs`), 레이드 ×3(`RaidBattleController.cs`), 튜토리얼 보상 합(`TutorialQuestManager.cs`)을 결정론적으로 합산해 장기 진행 시 발생하는 데드존/병목/격차를 사전 검출합니다.
-**원칙: FAIL 1건이라도 있으면 PASS 보고 금지. 스크립트 종료 코드 1.**
+이 게임엔 **분리된 두 레벨 시스템**이 있다. 시뮬은 이걸 따로 모델링한다.
 
-## Phase 1: 입력 수집
+| 시스템 | 곡선 | 성장 재화 | 출처 |
+|---|---|---|---|
+| **트레이너 레벨** | 선형 `max(floor, base+(lv-1)*growth)` | 배틀/포획/레이드/튜토리얼 EXP | `PlayerProgressController` |
+| **곤충 레벨** | 지수 `base*1.14^(lv-1)` | 캔디만 (`TryLevelUpWithCandy`) | `InsectLevelCurve` |
 
-### 코드 자동 추출 (스크립트 상수)
-- `MAX_LEVEL = 50`, `BASE_XP=20, XP_GROWTH=1.12`, `BASE_CANDY=4, CANDY_GROWTH=1.14` (`InsectLevelCurve.cs`)
-수치 사본은 여기 없다 — `game_facts`가 실행 시점에 코드에서 읽는다.
+> **곤충 XP 곡선(`GetXpToNextLevel`, 20*1.12^)은 진행 경로가 아니다.** 곤충 XP 시스템
+> (`GainXp`/`currentXp`)은 코드·UI에 배선만 돼 있고 어떤 게임플레이도 곤충에 XP를 주지
+> 않는다(dead 배선). 옛 시뮬은 이 곡선을 진행 경로로 오인해 5개 신호가 전부 오탐이었다.
 
-- 등급별 보상 배율 ← `InsectRewardCalculator.GetRarityMultiplier()`
-- 레이드 보상 배율 ← `RaidBattleController`의 `RewardCandy`/`RewardExp` 계산식
-- 튜토리얼 보상 총합 ← `TutorialQuestManager`의 `rewardCandy`/`rewardExp` 대입 전량
+**원칙: FAIL 1건이라도 있으면 PASS 보고 금지. 종료 코드 1.**
 
-> 한때 튜토리얼 사본이 `261 / 500`이었다. 실제는 **336 / 475**다.
-> 추출 실패 시 exit 2 — 낡은 값으로 시뮬을 돌리지 않는다.
+## Phase 1: 입력 — 수치 사본은 여기 없다
 
-### 사용자 입력 (선택)
+전부 `game_facts`가 실행 시점에 코드에서 읽는다. 추출 실패 시 exit 2.
+
+| 사실 | 출처 |
+|---|---|
+| 트레이너 곡선 (base/growth/floor/max) | `PlayerProgressController.GetXpToNextLevel` |
+| 곤충 캔디 곡선 (base/growth) | `InsectLevelCurve.GetCandyCost` |
+| 등급별 전투 보상 (exp/candy base) | `PlaySceneBootstrap` switch(rarity) |
+| 등급 배율 | `InsectRewardCalculator.GetRarityMultiplier` |
+| 팀 최대 슬롯 | `GameConstants.Battle.MaxTeamSlots` |
+| 레이드 배율 | `RaidBattleController` RewardCandy 계산식 |
+| 튜토리얼 보상 | `TutorialQuestManager` |
+
+전투당 실제 보상 = 등급별 base × 등급 배율. 예: Legendary 캔디 = 6 × 2.8 = 16.8.
+
 | 인자 | 기본값 | 설명 |
 |---|---|---|
-| `--target-level` | 50 | 목표 곤충 레벨 |
-| `--rarity` | Common | 곤충 레어도 |
-| `--base-xp` | 8 | 기본 곤충 1마리당 EXP (배율 적용 전) |
-| `--base-candy` | 3 | 기본 곤충 1마리당 캔디 |
-| `--avg-battle-sec` | 30 | 평균 전투 소요 시간 (h 환산용) |
-| `--team-size` | 6 | 동시 육성 팀 크기 |
+| `--target-level` | 곤충 max(코드) | 목표 곤충 레벨 |
+| `--rarity` | Common | 주로 잡는 적 등급 (최악=Common, 최선=Legendary) |
+| `--avg-battle-sec` | 30 | 평균 전투 시간 |
+| `--team-size` | MaxTeamSlots(코드) | 동시 육성 팀 크기 |
 
-데이터 부족 영역(`--base-xp`, `--avg-battle-sec`)은 사용자 입력 의존. 정확도가 입력값에 묶임.
-
-## Phase 2: 시뮬 실행
+## Phase 2: 실행
 
 ```bash
-python .claude/scripts/progression_sim.py --target-level 50 --rarity Common
+python .claude/scripts/progression_sim.py --rarity Common     # 최악(전투당 캔디 최소)
+python .claude/scripts/progression_sim.py --rarity Rare       # 중간 시나리오
 ```
 
-옵션 조합 권장:
-- 베이스 라인: `--rarity Common`
-- 최단 경로: `--rarity Legendary --base-xp 8`
-- 후반 검증: `--target-level 50 --avg-battle-sec 45`
-
-## Phase 3: 출력 — 위험 신호 표 (FAIL/WARN/PASS)
-
-스크립트가 자동 출력. 7개 항목:
+## Phase 3: 위험 신호
 
 | 항목 | 임계값 | 의미 |
 |---|---|---|
-| 캔디만 경로 전투 수 | < 4,000 | 캔디만으로 Lv50 도달 시 4,000+ 전투면 동기 부족 |
-| Lv35-50 / Lv1-20 EXP 평균비 | <= 10x | 후반 데드존 (레벨업 1회당 시간이 초반의 10배 이상) |
-| Common vs Legendary 진행속도 격차 | < 2.0x | 레어도 편향 시 진행속도 차이 200%+ |
-| 튜토리얼 보상 / 전체 누적 | >= 5% | 튜토리얼이 전체 진행의 5% 미만이면 동기 부족 |
-| 훈련 EXP 기여 | > 0 | `TrainingManager`가 EXP 0 = 캔디 낭비 인식 |
-| 추정 플레이 시간 | < 80h | `--avg-battle-sec`이 반영. Lv50까지 80h+면 이탈 위험 |
-| 팀 동시 캔디 비용 | < 100,000 | `--team-size`가 반영. 6마리 동시 육성 비용 검증 |
+| 곤충 Lv50 캔디 전투 수 | < 4,000 | 곤충 1마리 캔디를 배틀+포획으로만 모을 때. 레이드·가챠·튜토리얼은 별도(더 빠름) |
+| 팀 N마리 캔디 비용 | < 100,000 | MaxTeamSlots 반영 |
+| 트레이너 EXP 후반/초반비 | <= 5x | 트레이너는 **선형**이라 완만해야 정상. 곤충 캔디(지수)는 이 검사 대상 아님 — 지수가 설계 |
+| 튜토리얼 캔디 / 곤충 Lv1→10 비용 | >= 5% | 초반 부양 강도. **엔드게임 단일 곤충 평생 캔디가 아니라 초반 대비** |
 
-## Phase 4: 비관적 권장사항 (FAIL/WARN별)
+곤충 캔디 전투 수는 등급에 따라 크게 다르다(Common 최악 ~8,700 / Rare ~2,900 / Legendary ~1,000).
+Common FAIL은 "Common 적만, 배틀+포획만"이라는 극단 시나리오다 — 실제는 등급 분포가 오르고
+레이드·가챠 캔디가 더해져 훨씬 빠르다.
 
-| 위험 신호 | 권장 조정 |
+## Phase 4: 권장 조정 (FAIL/WARN별)
+
+수치는 출력의 실측을 보고 정할 것 — 문서에 박아두면 썩는다.
+
+| 위험 신호 | 권장 조정 방향 |
 |---|---|
-| 캔디 전투 수 FAIL | `CANDY_GROWTH` 1.14 → 1.10 (Lv50 비용 17,495 → ~9,000) 또는 `MAX_LEVEL` 40 |
-| 데드존 WARN | `XP_GROWTH` 1.12 → 1.08 (후반 격차 완화) |
-| 레어도 격차 WARN | `RARITY_MULT[Legendary]` 2.8 → 2.0 (격차 200% → 150%) |
-| 튜토리얼 비중 WARN | TutorialQuestManager 보상 +5배 또는 신규 데일리 퀘스트 추가 |
-| 훈련 EXP 0 WARN | `TrainingManager.cs`에 expReward 필드 추가 검토 |
+| 곤충 캔디 전투 수 FAIL | `InsectLevelCurve` 캔디 성장률↓ 또는 max 레벨↓, 또는 캔디 소스 보강(포획 보너스 등) |
+| 팀 캔디 FAIL | 캔디 곡선 완화 또는 캔디 수급 상향 |
+| 트레이너 곡선비 WARN | `PlayerProgressController` growth 조정 (선형인데 비가 크면 floor/base 재검토) |
+| 튜토리얼 초반 부양 WARN | `TutorialQuestManager` 초반 캔디 보상 상향 |
 
-조정 후 재시뮬 → FAIL 0/WARN 최소화 확인.
+## Phase 5: 에이전트 위임
 
-## Phase 5: 에이전트 위임 가이드
-
-| 영역 | 주담당 | 부수 |
-|---|---|---|
-| `InsectLevelCurve.cs` 곡선 파라미터 변경 | data-architect | game-designer |
-| `InsectRewardCalculator.cs` 배율 변경 | game-designer | data-architect |
-| `RaidBattleController.cs` 레이드 배수 | battle-dev | game-designer |
-| `TutorialQuestManager.cs` 퀘스트 보상 | game-designer | — |
-| `TrainingManager.cs` EXP 추가 | game-designer | data-architect |
-
-코드 수정 후 → 사용자 메모리 룰에 따라 `/verify` 호출.
+| 영역 | 주담당 |
+|---|---|
+| `InsectLevelCurve` 곤충 캔디 곡선 | data-architect / game-designer |
+| `PlayerProgressController` 트레이너 곡선 | data-architect / game-designer |
+| `PlaySceneBootstrap` 등급별 보상 | game-designer |
+| `TutorialQuestManager` 보상 | game-designer |
 
 ## 가정 / 한계
 
-- IV(개체값) 미적용 — 실제 전투 시간 ±15% 편차
-- 평균 전투 시간/포획 시도가 사용자 입력 의존
-- 사용자 행동 균등 가정 (실제는 초반 폭주 후반 정체)
-- 이벤트/시즌 보상 미반영
-- 텔레메트리 수집 후 재검증 필수 — 시뮬은 디자인 의사결정 보조
+- 곤충 캔디는 배틀+포획(같은 GetCandyReward)만 계산 — 레이드(×3)·가챠·튜토리얼은 보너스라
+  실제 전투 수를 더 줄인다. 출력은 순수 전투 상한(최악)이다.
+- 적 등급을 단일(`--rarity`)로 고정. 실제는 진행에 따라 등급 분포가 오른다.
+- 곤충별 candyReward는 `PlaySceneBootstrap` 등급별 하드코딩을 읽는다(InsectDatabase .asset의
+  개체별 편차 미반영).
+- 텔레메트리 수집 후 재검증 필수 — 시뮬은 디자인 의사결정 보조.
 
 ## 관련 스킬
 
-- `/balance-sim battle` — 단일 전투 데미지 분포
 - `/economy-sim` — 통화 수입·지출 균형
 - `/gacha-sim` — 가챠 박스 기댓값
-- `/verify` — 코드 수정 후 8항목 검증
+- `/verify` — 코드 수정 후 검증

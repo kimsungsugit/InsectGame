@@ -38,6 +38,9 @@ PATHS = {
     "insect_entity": "Assets/Scripts/Spawning/InsectEntity.cs",
     "raid": "Assets/Scripts/Battle/RaidBattleController.cs",
     "game_constants": "Assets/Scripts/Core/GameConstants.cs",
+    "trainer_progress": "Assets/Scripts/Core/PlayerProgressController.cs",
+    "insect_curve": "Assets/Scripts/Data/InsectLevelCurve.cs",
+    "bootstrap": "Assets/Scripts/Core/PlaySceneBootstrap.cs",
 }
 
 RARITIES = ("Common", "Uncommon", "Rare", "Epic", "Legendary")
@@ -260,6 +263,68 @@ def rarity_multipliers() -> dict:
     if missing:
         raise ExtractorBroken(
             f"GetRarityMultiplier에서 {missing} 배율을 못 읽었다 — 분기 구조가 바뀌었는가?"
+        )
+    return out
+
+
+def trainer_xp_curve() -> dict:
+    """트레이너 레벨 EXP 곡선. 출처: PlayerProgressController.
+
+    선형: max(floor, base + (level-1)*growth). 배틀/포획/레이드/튜토리얼 EXP가 여기로 간다.
+    곤충 레벨(캔디, 지수)과는 별개 시스템이다 — progression_sim이 이 둘을 혼동했다.
+    """
+    src = _read("trainer_progress")
+    base = int(_need(re.search(r"baseXpToLevel\s*=\s*(\d+)", src), "baseXpToLevel", "trainer_progress").group(1))
+    growth = int(_need(re.search(r"xpGrowthPerLevel\s*=\s*(\d+)", src), "xpGrowthPerLevel", "trainer_progress").group(1))
+    maxlv = int(_need(re.search(r"maxLevel\s*=\s*(\d+)", src), "maxLevel", "trainer_progress").group(1))
+    # GetXpToNextLevel = Mathf.Max(floor, base + (level-1)*growth)
+    floor_m = re.search(r"Mathf\.Max\((\d+),\s*baseXpToLevel", src)
+    floor = int(floor_m.group(1)) if floor_m else 1
+    return {"base": base, "growth": growth, "floor": floor, "max": maxlv, "kind": "linear"}
+
+
+def insect_candy_curve() -> dict:
+    """곤충 레벨업 캔디 비용 곡선. 출처: InsectLevelCurve.GetCandyCost.
+
+    지수: baseCandyCost * growth^(level-1). 곤충은 이 캔디 경로로만 큰다
+    (TryLevelUpWithCandy). 곤충 XP 곡선(GetXpToNextLevel, 20*1.12^)은 배선만 돼 있고
+    게임플레이가 곤충에 XP를 주지 않아 미사용이다 — 진행 경로로 쓰면 안 된다.
+    """
+    src = _read("insect_curve")
+    base = int(_need(re.search(r"baseCandyCost\s*=\s*(\d+)", src), "baseCandyCost", "insect_curve").group(1))
+    # GetCandyCost 본체의 Mathf.Pow(1.14f, level - 1)
+    body = _need(re.search(r"GetCandyCost\s*\([^)]*\)\s*\{(.*?)\n\s{8}\}", src, re.DOTALL),
+                 "GetCandyCost() 본체", "insect_curve").group(1)
+    growth = float(_need(re.search(r"Pow\(\s*([\d.]+)f", body), "GetCandyCost의 성장률", "insect_curve").group(1))
+    maxlv = int(_need(re.search(r"maxLevel\s*=\s*(\d+)", src), "maxLevel", "insect_curve").group(1))
+    return {"base": base, "growth": growth, "max": maxlv, "kind": "exponential"}
+
+
+def battle_rewards_by_rarity() -> dict:
+    """등급별 전투/포획 보상 base(등급배율 적용 전). 출처: PlaySceneBootstrap switch(rarity).
+
+    실제 지급 = base * rarity_multiplier. 예: Legendary 캔디 = 6 * 2.8 = 16.8.
+    반환: {"Common": {"exp": 5, "candy": 2}, ...}
+    """
+    src = _read("bootstrap")
+    block = _need(
+        re.search(r"switch\s*\(\s*rarity\s*\)\s*\{(.*?)itemRewardCount", src, re.DOTALL),
+        "switch(rarity) 보상 블록", "bootstrap",
+    ).group(1)
+    out = {}
+    # 각 case (default=Legendary)의 expReward/candyReward를 순서대로 잡는다.
+    cases = re.findall(
+        r"(?:case\s+InsectRarity\.(\w+)|default)\s*:.*?expReward\s*=\s*(\d+).*?candyReward\s*=\s*(\d+)",
+        block, re.DOTALL,
+    )
+    order = ["Common", "Uncommon", "Rare", "Epic", "Legendary"]
+    for i, (name, exp, candy) in enumerate(cases):
+        key = name if name else (order[i] if i < len(order) else f"tier{i}")
+        out[key] = {"exp": int(exp), "candy": int(candy)}
+    missing = [r for r in RARITIES if r not in out]
+    if missing:
+        raise ExtractorBroken(
+            f"switch(rarity)에서 {missing} 보상을 못 읽었다 ({len(cases)}개 case 추출) — 구조가 바뀌었는가?"
         )
     return out
 
