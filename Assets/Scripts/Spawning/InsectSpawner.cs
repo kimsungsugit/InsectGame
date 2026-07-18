@@ -457,12 +457,7 @@ namespace InsectGame.Spawning
                           $"SP:{spawnPoints?.Length ?? 0} | 활성:{activeInsects.Count}/{maxActiveTotal}\n" +
                           $"[렌더] {renderDiagCache}";
             GUI.Box(new Rect(10, y, 780, 174), info, debugStyleCache);
-
-            // 테스트용 튜토리얼 리셋 버튼 (개발빌드 전용).
-            if (GUI.Button(new Rect(660, y, 170, 50), "튜토리얼 리셋"))
-            {
-                TutorialQuestManager.Instance?.RestartTutorialForTesting();
-            }
+            // 튜토리얼 리셋 버튼 제거(사용자 요청). 재테스트가 필요하면 세이브 삭제/마스터 계정으로.
 #endif
         }
 

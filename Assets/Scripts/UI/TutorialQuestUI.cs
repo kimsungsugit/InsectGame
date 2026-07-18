@@ -8,21 +8,37 @@ namespace InsectGame.UI
         [SerializeField] private TutorialQuestManager questManager;
 
         private bool detailOpen;
-        public bool IsOpen => detailOpen;
+        private bool activeDetailOpen;   // 칩 클릭 시 뜨는 활성 퀘스트 상세 팝업(중앙)
+        public bool IsOpen => detailOpen || activeDetailOpen;
         public void Toggle() { SetDetailOpen(!detailOpen); }
-        public void CloseModal() { SetDetailOpen(false); }
+        public void CloseModal() { detailOpen = false; activeDetailOpen = false; UpdateModalRegistration(); }
 
-        // 퀘스트 목록 팝업만 모달 등록(상시 패널/알림은 비모달). 열려있는 동안 이동 차단 + ESC로 닫기.
+        // 모달 등록 갱신 — 목록/활성 팝업 중 하나라도 열리면 등록(이동 차단 + ESC로 닫기).
+        private void UpdateModalRegistration()
+        {
+            if (detailOpen || activeDetailOpen) ModalUIRegistry.Register(this);
+            else ModalUIRegistry.Unregister(this);
+        }
+
+        // 칩 클릭 → 활성 퀘스트 상세 팝업(중앙). 목록 팝업과 상호 배타.
+        private void SetActiveDetailOpen(bool v)
+        {
+            activeDetailOpen = v;
+            if (v) detailOpen = false;
+            UpdateModalRegistration();
+        }
+
+        // 퀘스트 목록 팝업(퀵바). 열려있는 동안 이동 차단 + ESC로 닫기.
         private void SetDetailOpen(bool v)
         {
             detailOpen = v;
             if (v)
             {
-                ModalUIRegistry.Register(this);
+                activeDetailOpen = false;
                 // 완료 목록을 확인하는 순간 퀵바의 미확인 완료 배지를 0으로 리셋.
                 if (questManager != null) questManager.MarkQuestsSeen();
             }
-            else ModalUIRegistry.Unregister(this);
+            UpdateModalRegistration();
         }
 
         // 튜토리얼 표시 ON/OFF — 플레이 중 좌상단 패널·다음 단계 배너를 숨겨 방해 없이 진행.
@@ -254,14 +270,17 @@ namespace InsectGame.UI
             if (detailOpen)
                 DrawDetailPanel();
             else
+            {
                 DrawQuestPanel();
+                if (activeDetailOpen) DrawActiveQuestDetail();
+            }
             DrawCompletionNotification();
             DrawNewQuestNotification();
             UIScale.End();
         }
 
         // ------------------------------------------------------------------
-        // 1. Current Quest Panel (top-left, below PlayerStatusHUD)
+        // 1. Active Quest Chip (compact — 제목+진행바만, 클릭하면 중앙 상세 팝업)
         // ------------------------------------------------------------------
         private void DrawQuestPanel()
         {
@@ -269,31 +288,118 @@ namespace InsectGame.UI
 
             InitQuestPanelStyles();
 
-            // 숨김 상태: 작은 복원 버튼만. 패널과 같은 앵커(데스크톱 좌하단/모바일 미니맵 아래)에 배치.
+            float chipX = 20f + UIScale.VirtualSafeLeft;
+
+            // 숨김: 작은 복원 버튼만 (데스크톱 좌하단 / 모바일 미니맵 아래).
             if (tutorialHidden)
             {
-                float restoreW = UIScale.IsMobileLayout ? 230f : 172f;
-                float restoreH = UIScale.IsMobileLayout ? 54f : 38f;
-                float restoreY = UIScale.IsMobileLayout
+                float rW = UIScale.IsMobileLayout ? 230f : 172f;
+                float rH = UIScale.IsMobileLayout ? 54f : 38f;
+                float rY = UIScale.IsMobileLayout
                     ? UIScale.VirtualSafeTop + 406f
-                    : UIScale.VirtualScreenHeight - UIScale.VirtualSafeBottom - restoreH - 24f;
-                if (GUI.Button(new Rect(20f + UIScale.VirtualSafeLeft, restoreY, restoreW, restoreH), "▼ 퀘스트 보기", panelBtnStyleCache))
+                    : UIScale.VirtualScreenHeight - UIScale.VirtualSafeBottom - rH - 24f;
+                if (GUI.Button(new Rect(chipX, rY, rW, rH), "▼ 퀘스트 보기", panelBtnStyleCache))
                     SetTutorialHidden(false);
                 return;
             }
 
+            TutorialQuest act = questManager.ActiveQuest;
+            bool done = act == null && questManager.AllCompleted;
+            if (act == null && !done) return;
+
+            // 컴팩트 칩 — 제목+진행바만. 좌하단(조작법 제거로 빈 자리)/모바일은 미니맵 아래.
+            float chipW = UIScale.IsMobileLayout
+                ? Mathf.Min(500f, UIScale.VirtualScreenWidth - UIScale.VirtualSafeLeft - UIScale.VirtualSafeRight - 40f)
+                : 360f;
+            float cpad = 10f;
+            float ctitleH = 30f;
+            float cbarH = done ? 0f : 26f;
+            float chipH = cpad + ctitleH + cbarH + cpad;
+            float chipY = UIScale.IsMobileLayout
+                ? UIScale.VirtualSafeTop + 406f
+                : UIScale.VirtualScreenHeight - UIScale.VirtualSafeBottom - chipH - 24f;
+            Rect chipRect = new Rect(chipX, chipY, chipW, chipH);
+
+            // 배경 + 골드 상단 바
+            GUI.color = new Color(0.05f, 0.08f, 0.15f, 0.9f);
+            GUI.DrawTexture(chipRect, Texture2D.whiteTexture);
+            GUI.color = new Color(0.9f, 0.75f, 0.2f, 1f);
+            GUI.DrawTexture(new Rect(chipRect.x, chipRect.y, chipRect.width, 3f), Texture2D.whiteTexture);
+            GUI.color = Color.white;
+
+            // 숨기기 버튼(우상단)
+            float cClose = UIScale.IsMobileLayout ? 44f : 26f;
+            Rect cxRect = new Rect(chipRect.xMax - cClose - 6f, chipRect.y + 6f, cClose, cClose);
+            if (GUI.Button(cxRect, "X", panelBtnStyleCache))
+            {
+                SetTutorialHidden(true);
+                return;
+            }
+
+            if (done)
+            {
+                GUI.Label(chipRect, "✨ 모든 튜토리얼 완료!", doneStyleCache);
+                return;
+            }
+
+            float ax = chipRect.x + 12f;
+            float ay = chipRect.y + cpad;
+            float aw = chipRect.width - 24f;
+
+            // 제목 (X 버튼 폭 확보) — 누르면 중앙 상세 팝업
+            GUI.Label(new Rect(ax, ay, aw - cClose - 8f, ctitleH), "★ " + act.title, questTitleStyleCache);
+            ay += ctitleH;
+
+            // 진행 바
+            int ccur = questManager.ActiveProgress;
+            int ctgt = act.targetCount;
+            float cratio = ctgt > 0 ? Mathf.Clamp01((float)ccur / ctgt) : 0f;
+            float cbarW = aw - 66f;
+            GUI.color = new Color(0.12f, 0.12f, 0.18f, 1f);
+            GUI.DrawTexture(new Rect(ax, ay + 2f, cbarW, 18f), Texture2D.whiteTexture);
+            if (cratio > 0f)
+            {
+                GUI.color = new Color(0.2f, 0.75f, 0.3f, 1f);
+                GUI.DrawTexture(new Rect(ax, ay + 2f, cbarW * cratio, 18f), Texture2D.whiteTexture);
+            }
+            GUI.color = Color.white;
+            GUI.Label(new Rect(ax + cbarW + 8f, ay, 60f, 26f), ccur + "/" + ctgt, questProgStyleCache);
+
+            // 칩 클릭(우상단 X 제외) → 중앙 상세 팝업 열기
+            Event ce = Event.current;
+            if (ce != null && ce.type == EventType.MouseDown && ce.button == 0
+                && chipRect.Contains(ce.mousePosition) && !cxRect.Contains(ce.mousePosition))
+            {
+                SetActiveDetailOpen(true);
+                ce.Use();
+            }
+        }
+
+        // ------------------------------------------------------------------
+        // 1b. Active Quest Detail popup (center — 칩 클릭 시 열림)
+        // ------------------------------------------------------------------
+        private void DrawActiveQuestDetail()
+        {
+            if (questManager == null) return;
+
+            InitQuestPanelStyles();
+
             TutorialQuest active = questManager.ActiveQuest;
             bool allCompleted = active == null && questManager.AllCompleted;
-            if (active == null && !allCompleted) return;
+            if (active == null && !allCompleted) { SetActiveDetailOpen(false); return; }
 
-            // 위치·크기 동적 산출 — 좌상단은 PlayerStatusHUD(펼침 480x540)+미니맵(220@y170)과 겹쳐 회피.
-            // 데스크톱: 좌하단(조작법 제거로 빈 자리) / 모바일: 미니맵 아래(y=safeTop+406). 높이는 콘텐츠에 맞춤.
+            // 전체 화면 딤 (팝업 강조)
+            GUI.color = new Color(0f, 0f, 0f, 0.6f);
+            GUI.DrawTexture(new Rect(0f, 0f, UIScale.VirtualScreenWidth, UIScale.VirtualScreenHeight), Texture2D.whiteTexture);
+            GUI.color = Color.white;
+
+            // 중앙 배치 + 콘텐츠 높이 동적(설명/힌트 잘림 방지)
             float panelW = UIScale.IsMobileLayout
-                ? Mathf.Min(560f, UIScale.VirtualScreenWidth - UIScale.VirtualSafeLeft - UIScale.VirtualSafeRight - 40f)
-                : 460f;
-            float pad = 12f;
-            float wq = panelW - 24f;
-            float titleH = 34f;
+                ? Mathf.Min(600f, UIScale.VirtualScreenWidth - UIScale.VirtualSafeLeft - UIScale.VirtualSafeRight - 40f)
+                : 520f;
+            float pad = 16f;
+            float wq = panelW - 32f;
+            float titleH = 40f;
             float descH2 = 44f;
             float barBlockH = 0f;
             float hintH = 0f;
@@ -301,18 +407,16 @@ namespace InsectGame.UI
             {
                 descContentCache.text = active.description ?? "";
                 descH2 = Mathf.Max(30f, questDescStyleCache.CalcHeight(descContentCache, wq));
-                barBlockH = 30f;
+                barBlockH = 34f;
                 if (!string.IsNullOrEmpty(active.hint))
                 {
                     hintContentCache.text = active.hint;
-                    hintH = questHintStyleCache.CalcHeight(hintContentCache, wq - 28f) + 6f;
+                    hintH = questHintStyleCache.CalcHeight(hintContentCache, wq - 28f) + 8f;
                 }
             }
             float panelH = pad + titleH + descH2 + barBlockH + hintH + pad;
-            float panelX = 20f + UIScale.VirtualSafeLeft;
-            float panelY = UIScale.IsMobileLayout
-                ? UIScale.VirtualSafeTop + 406f
-                : UIScale.VirtualScreenHeight - UIScale.VirtualSafeBottom - panelH - 24f;
+            float panelX = (UIScale.VirtualScreenWidth - panelW) * 0.5f;
+            float panelY = (UIScale.VirtualScreenHeight - panelH) * 0.5f;
             Rect panelRect = new Rect(panelX, panelY, panelW, panelH);
 
             // Background
@@ -324,11 +428,11 @@ namespace InsectGame.UI
             GUI.DrawTexture(new Rect(panelRect.x, panelRect.y, panelRect.width, 3f), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
-            // 숨기기 버튼(우상단) — 누르면 패널·다음 단계 배너 끄고 방해 없이 플레이.
-            float closeSize = UIScale.IsMobileLayout ? 48f : 28f;
+            // 닫기 버튼(우상단) — 팝업만 닫음(칩은 그대로 유지).
+            float closeSize = UIScale.IsMobileLayout ? 48f : 34f;
             if (GUI.Button(new Rect(panelRect.xMax - closeSize - 6f, panelRect.y + 6f, closeSize, closeSize), "X", panelBtnStyleCache))
             {
-                SetTutorialHidden(true);
+                SetActiveDetailOpen(false);
                 return;
             }
 
