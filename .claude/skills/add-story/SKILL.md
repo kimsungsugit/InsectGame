@@ -22,6 +22,7 @@ FAIL 0을 확인한다.**
 {
   "beatId": "ch1_xxx", "chapterId": "ch1", "order": N,
   "prerequisiteBeatId": "앞 비트 또는 \"\"",
+  "requiredRegionId": "리전 ID 또는 \"\" (무param 트리거 리전 잠금)",
   "trigger": { "type": "RegionEnter", "param": "pond" },
   "speakerNpcId": "village_elder",
   "lines": [ { "speaker": "이름", "text": "대사" } ],
@@ -84,13 +85,20 @@ ch1_intro 다음이 통째로 잠겼다. 게이트를 `ch1_intro`(Immediate)로 
 이벤트에서 **적격(미열람·prereq충족·param일치) 비트 중 처음 하나만** 발화한다. `order`는 순수
 문서용 메타라 **발화 순서를 결정하지 않는다.** 순서가 중요하면 `prerequisiteBeatId`로 엮어라.
 
-### 3. 무param 트리거(BattleWin / 빈 CaptureInsect)는 동시 적격 시 순서 비결정
+### 3. 무param 트리거(BattleWin / 빈 CaptureInsect)는 리전을 못 실어 늦발화 얼룩 — `requiredRegionId`로 잠가라
 
-`QuestComplete`/`RegionEnter`/`SubAreaEnter`는 **param으로 특정 비트만** 무니 충돌이 없다.
-그러나 `BattleWin`(param 강제 공백)과 **param 빈 `CaptureInsect`**(아무 포획)는 대상이 없어,
-prereq가 동시에 충족된 비트가 여럿이면 **어느 게 먼저 발화할지 위 Dictionary 순서에 달렸다**(비결정).
-정지는 아니다(oneShot+prereq라 결국 다 발화). 하지만 순서가 뒤바뀔 수 있으니, 같은 무param
-트리거 비트는 **서로 다른 prereq(예: 각 리전 reach 비트)로 한 번에 하나만 적격**이 되게 배치하라.
+`QuestComplete`/`RegionEnter`/`SubAreaEnter`는 param으로 특정 대상만 무니 충돌이 없다. 그러나
+`BattleWin`(param 강제 공백)과 **param 빈 `CaptureInsect`**(아무 포획)는 위치 무관 발화라, prereq가
+누적형이면 **초원에서 안 잡고 습지로 간 유저에게 초원 비트가 습지에서 늦발화**한다(정지는 아니나
+문맥 어긋남).
+
+**해법(엔진 지원)**: 리전 플레이버 무param 비트엔 **`requiredRegionId`**를 채운다 — StoryDirector
+`RegionGateSatisfied`가 현재 리전과 대조해 그 리전에서만 발화. 비우면 글로벌(위치 무관)이라 얼룩에
+취약 → **story_lint 검사 7이 WARN**. 스킵 시 조용히 미발화하므로 **leaf 비트여야 안전**(어떤 비트의
+prereq도 아닐 것).
+
+**남는 순서 주의**: 같은 리전·같은 트리거의 무param 비트가 둘 이상이면 그들 사이 순서는 여전히
+Dictionary 비결정 — 그럴 땐 prereq로 한 번에 하나만 적격이 되게 엮어라.
 
 ### 4. `CaptureInsect`는 포획뿐 아니라 레벨업에도 발화 — 대사를 범용으로
 
@@ -105,10 +113,10 @@ prereq가 동시에 충족된 비트가 여럿이면 **어느 게 먼저 발화�
 python -X utf8 .claude/scripts/story_lint.py
 ```
 
-6검사가 전부 PASS여야 한다:
+7검사가 전부 PASS여야 한다(FAIL 0, WARN 0):
 - beatId 중복 / prerequisite 무결성(끊김·순환) / 트리거 param 대상 존재 /
   분기 도달성(choices.nextBeatId) / onComplete 보상·unlock ID 존재 /
-  **트리거 배선 정합(JSON↔StoryDirector)**
+  **트리거 배선 정합(JSON↔StoryDirector)** / **requiredRegionId 정합(리전 게이트)**
 
 특히 **트리거 배선 정합**이 FAIL이면 Phase 2의 StoryDirector 등록이 누락된 것 —
 "switch case 없음" / "이벤트 발화 지점 없음" 진단으로 해당 지점을 채운다.

@@ -19,6 +19,7 @@
 
 ```
 StoryBeat: beatId, chapterId, order, prerequisiteBeatId(옵션),
+  requiredRegionId(옵션, 무param 트리거 리전 잠금 — StoryDirector가 현재 리전과 대조),
   trigger { type(enum), param(string) },
   speakerNpcId(옵션),
   lines[] { speaker, text },
@@ -69,6 +70,8 @@ Director가 이벤트 구독; 매 이벤트에서 미열람·prereq충족·트�
 5. `onComplete` 보상 ID 존재 (data_lint 곤충/아이템 추출 공유) + `unlockQuestId`→퀘스트 존재
 6. **트리거 배선 정합** — q_team 회귀의 스토리 등가물: JSON이 쓰는 각 `trigger.type`이
    `StoryDirector` 평가 switch + 이벤트 구독에 존재하는지 교차검사. 누락 시 비트 영구 미발화
+7. **requiredRegionId 정합** — 채워진 값은 region_pools 존재(FAIL) + 무param 트리거
+   (BattleWin/빈 CaptureInsect) 무가드는 WARN(늦발화 얼룩 취약). `RegionGateSatisfied`가 게이트
 
 **add-story 스킬** 등록 지점: (1) `Story.json`에 비트 append, (2) **신규 trigger.type이면**
 StoryDirector 평가 case + 이벤트 구독 추가 — **비트를 영구 정지시킬 유일 지점(퀘스트 5지점의
