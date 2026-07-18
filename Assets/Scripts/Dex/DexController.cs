@@ -8,6 +8,8 @@ namespace InsectGame.Dex
     public class DexController : MonoBehaviour, InsectGame.Core.ICloudReloadable
     {
         [SerializeField] private InsectDatabase database;
+        // 도감 첫 발견 코인 보상 지급용 — InsectLoreEntry.rewardCoins를 실제 지급(DexDetailUI가 광고하는 값).
+        [SerializeField] private InsectGame.Core.PlayerCurrencyWallet wallet;
 
         private DexSaveData saveData;
         private readonly Dictionary<string, DexRecord> lookup = new Dictionary<string, DexRecord>();
@@ -28,6 +30,15 @@ namespace InsectGame.Dex
                 {
                     lookup[record.insectId] = record;
                 }
+            }
+        }
+
+        // 코인 지갑 주입 — 첫 발견 보상 지급용. Bootstrap이 호출.
+        public void AutoWire(InsectGame.Core.PlayerCurrencyWallet walletRef)
+        {
+            if (wallet == null)
+            {
+                wallet = walletRef;
             }
         }
 
@@ -100,7 +111,27 @@ namespace InsectGame.Dex
             record = new DexRecord(insectId);
             lookup[insectId] = record;
             saveData.records.Add(record);
+            // 첫 발견 = 레코드 최초 생성 시점. 여기서 딱 한 번 코인 보상을 지급한다.
+            // 재발견(이미 lookup에 존재)은 위에서 early-return되어 재지급 없음. Awake/ReloadFromDisk는
+            // saveData.records를 직접 순회해 lookup을 채우므로(GetOrCreateRecord 미경유) 로드 시 지급되지 않는다.
+            GrantFirstDiscoveryReward(insectId);
             return record;
+        }
+
+        // 도감 첫 발견 코인 보상 — InsectLoreEntry.rewardCoins를 실제 지급. DexDetailUI가 "보상: N 코인"으로
+        // 광고만 하던 값의 실현. 곤충당 1회(GetOrCreateRecord 생성 시점에서만 호출). 세이브는 AddCoins가 트리거.
+        private void GrantFirstDiscoveryReward(string insectId)
+        {
+            if (wallet == null)
+            {
+                return;
+            }
+
+            if (InsectLoreService.TryGetEntry(insectId, out InsectLoreEntry lore)
+                && lore != null && lore.rewardCoins > 0)
+            {
+                wallet.AddCoins(lore.rewardCoins);
+            }
         }
 
         private void SaveAndNotify()

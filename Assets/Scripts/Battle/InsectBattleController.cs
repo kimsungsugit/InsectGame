@@ -16,6 +16,13 @@ namespace InsectGame.Battle
         [SerializeField] private PlayerItemInventory itemInventory;
         [SerializeField] private Dex.DexController dexController;
         [SerializeField] private BattleArenaController arena;
+        // 배틀 승리 시 소량 코인 지급용 — 상점 코인결제·베이직 의상의 지속 수급원. Dex 첫 발견 보상은
+        // 곤충당 1회뿐이라 반복 소모품 구매를 지탱하지 못하므로 별개의 반복 faucet로 보강한다.
+        [SerializeField] private PlayerCurrencyWallet wallet;
+
+        // 배틀 승리 코인 보상(고정 소량). 근거: sim 기준 전투 10/일 × 승률 → 일 ~24코인 수준의 트리클로,
+        // 상점 소모품 재구매를 지탱하되 Dex faucet(생애 3958)·젬 경제를 압도하지 않는다.
+        private const int BattleVictoryCoins = 3;
 
         public event Action<bool> BattleEnded;
         public event Action<InsectBattleStats, InsectBattleStats> BattleUpdated;
@@ -412,6 +419,8 @@ namespace InsectGame.Battle
 
                 candyInventory?.AddCandy(candy);
                 playerProgress?.GainXp(exp);
+                // 승리 소량 코인 — 상점 코인결제/베이직 의상 지속 수급(반복 faucet). AddCoins가 세이브 트리거.
+                wallet?.AddCoins(BattleVictoryCoins);
                 if (!string.IsNullOrEmpty(itemId) && itemCount > 0)
                 {
                     itemInventory?.AddItem(itemId, itemCount);
@@ -528,6 +537,11 @@ namespace InsectGame.Battle
         public void AutoWire(Dex.DexController dex)
         {
             if (dexController == null) dexController = dex;
+        }
+
+        public void AutoWire(PlayerCurrencyWallet walletRef)
+        {
+            if (wallet == null) wallet = walletRef;
         }
 
         public void AutoWire(BattleArenaController a)

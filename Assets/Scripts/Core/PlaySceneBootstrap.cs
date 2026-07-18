@@ -204,6 +204,7 @@ namespace InsectGame.Core
             PlayerCandyInventory candyInventory = EnsureComponent<PlayerCandyInventory>("World/PlayerCandies");
             PlayerItemInventory itemInventory = EnsureComponent<PlayerItemInventory>("World/PlayerItems");
             PlayerCurrencyWallet wallet = EnsureComponent<PlayerCurrencyWallet>("World/PlayerCurrency");
+            dex.AutoWire(wallet); // 도감 첫 발견 시 InsectLoreEntry.rewardCoins 실지급(코인 발행 경로)
             // 클라우드 저장이 레벨/XP/캔디/코인을 실제 파일 시스템에서 읽고 쓰도록 연결
             // (옛 PlayerPrefs 미러와 어긋나 진행도가 클라우드에 동기화되지 않던 문제 수정).
             cloudSave.AutoWire(progress, candyInventory, wallet);
@@ -260,6 +261,7 @@ namespace InsectGame.Core
             battleController.AutoWire(dex);
             // EXP/캔디 부스터(아이템) 배율을 배틀 승리 보상에도 적용 — 포획 경로와 동일.
             battleController.AutoWire(itemEffects);
+            battleController.AutoWire(wallet); // 승리 시 소량 코인 지급(상점 코인결제 지속 수급)
             Battle.InsectBattleUIController battleUi = EnsureComponent<Battle.InsectBattleUIController>("Battle/BattleUI");
             battleUi.AutoWire(battleController, insectCollection);
 

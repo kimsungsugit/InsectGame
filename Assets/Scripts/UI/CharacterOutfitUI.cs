@@ -626,7 +626,7 @@ namespace InsectGame.UI
                     FindFirstObjectByType<PlayerCurrencyWallet>();
             int coinCount = (walletCache != null) ? walletCache.Coins : 0;
             int gemCount = CashShopManager.Instance != null ? CashShopManager.Instance.Gems : 0;
-            GUI.Label(coinRect, $"보유 캔디: 🍬{coinCount}    보석: 💎{gemCount}", coinStyle);
+            GUI.Label(coinRect, $"보유 코인: 🪙{coinCount}    보석: 💎{gemCount}", coinStyle);
 
             // GUI.color 복원
             GUI.color = Color.white;
