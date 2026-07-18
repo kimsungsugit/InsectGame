@@ -82,8 +82,8 @@ namespace InsectGame.UI
 
             UIScale.Begin();
             InitStyles();
-            // 휴대폰에서는 키보드 조작표를 숨기고 화면 버튼/조이스틱만 사용합니다.
-            if (!UIScale.IsMobileLayout) DrawKeyGuide();
+            // 조작법(키 안내표) 제거 — 사용자 요청으로 미표시. 퀘스트 추적은 TutorialQuestUI가 담당.
+            // (DrawKeyGuide/DrawKeyRow는 더 이상 호출하지 않음 — 후속 정리 대상, 참조는 유지돼 경고 없음.)
             DrawCurrentRegion();
             if (!UIScale.IsMobileLayout) DrawCaptureItems();
             UIScale.End();

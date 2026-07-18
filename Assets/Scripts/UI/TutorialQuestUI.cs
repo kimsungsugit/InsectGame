@@ -71,6 +71,10 @@ namespace InsectGame.UI
 
         private Vector2 detailScroll;
 
+        // 설명/힌트 동적 높이(CalcHeight) 계산용 — OnGUI 매 프레임 new GUIContent 회피.
+        private readonly GUIContent descContentCache = new GUIContent();
+        private readonly GUIContent hintContentCache = new GUIContent();
+
         // OnGUI 매 프레임 GUIStyle 생성 회귀 차단 — DrawQuestPanel은 매 프레임 호출되어 P0.
         // DrawCompletionNotification/DrawNewQuestNotification/DrawDetailPanel은 일시적 표시라 별도 라운드.
         private GUIStyle doneStyleCache;
@@ -265,21 +269,51 @@ namespace InsectGame.UI
 
             InitQuestPanelStyles();
 
-            // 숨김 상태: 작은 복원 버튼만 표시(게임 진행에 방해 없음). 완료 알림은 별도로 항상 표시됨.
+            // 숨김 상태: 작은 복원 버튼만. 패널과 같은 앵커(데스크톱 좌하단/모바일 미니맵 아래)에 배치.
             if (tutorialHidden)
             {
-                float restoreW = UIScale.IsMobileLayout ? 210f : 150f;
-                float restoreH = UIScale.IsMobileLayout ? 52f : 34f;
-                if (GUI.Button(new Rect(20f + UIScale.VirtualSafeLeft, 120f + UIScale.VirtualSafeTop, restoreW, restoreH), "▼ 퀘스트 보기", panelBtnStyleCache))
+                float restoreW = UIScale.IsMobileLayout ? 230f : 172f;
+                float restoreH = UIScale.IsMobileLayout ? 54f : 38f;
+                float restoreY = UIScale.IsMobileLayout
+                    ? UIScale.VirtualSafeTop + 406f
+                    : UIScale.VirtualScreenHeight - UIScale.VirtualSafeBottom - restoreH - 24f;
+                if (GUI.Button(new Rect(20f + UIScale.VirtualSafeLeft, restoreY, restoreW, restoreH), "▼ 퀘스트 보기", panelBtnStyleCache))
                     SetTutorialHidden(false);
                 return;
             }
 
+            TutorialQuest active = questManager.ActiveQuest;
+            bool allCompleted = active == null && questManager.AllCompleted;
+            if (active == null && !allCompleted) return;
+
+            // 위치·크기 동적 산출 — 좌상단은 PlayerStatusHUD(펼침 480x540)+미니맵(220@y170)과 겹쳐 회피.
+            // 데스크톱: 좌하단(조작법 제거로 빈 자리) / 모바일: 미니맵 아래(y=safeTop+406). 높이는 콘텐츠에 맞춤.
             float panelW = UIScale.IsMobileLayout
-                ? Mathf.Min(520f, UIScale.VirtualScreenWidth - UIScale.VirtualSafeLeft - UIScale.VirtualSafeRight - 40f)
-                : 400f;
-            float panelH = UIScale.IsMobileLayout ? 200f : 172f;
-            Rect panelRect = new Rect(20f + UIScale.VirtualSafeLeft, 120f + UIScale.VirtualSafeTop, panelW, panelH);
+                ? Mathf.Min(560f, UIScale.VirtualScreenWidth - UIScale.VirtualSafeLeft - UIScale.VirtualSafeRight - 40f)
+                : 460f;
+            float pad = 12f;
+            float wq = panelW - 24f;
+            float titleH = 34f;
+            float descH2 = 44f;
+            float barBlockH = 0f;
+            float hintH = 0f;
+            if (!allCompleted)
+            {
+                descContentCache.text = active.description ?? "";
+                descH2 = Mathf.Max(30f, questDescStyleCache.CalcHeight(descContentCache, wq));
+                barBlockH = 30f;
+                if (!string.IsNullOrEmpty(active.hint))
+                {
+                    hintContentCache.text = active.hint;
+                    hintH = questHintStyleCache.CalcHeight(hintContentCache, wq - 28f) + 6f;
+                }
+            }
+            float panelH = pad + titleH + descH2 + barBlockH + hintH + pad;
+            float panelX = 20f + UIScale.VirtualSafeLeft;
+            float panelY = UIScale.IsMobileLayout
+                ? UIScale.VirtualSafeTop + 406f
+                : UIScale.VirtualScreenHeight - UIScale.VirtualSafeBottom - panelH - 24f;
+            Rect panelRect = new Rect(panelX, panelY, panelW, panelH);
 
             // Background
             GUI.color = new Color(0.05f, 0.08f, 0.15f, 0.85f);
@@ -298,27 +332,23 @@ namespace InsectGame.UI
                 return;
             }
 
-            TutorialQuest active = questManager.ActiveQuest;
-
-            if (active == null && questManager.AllCompleted)
+            if (allCompleted)
             {
                 GUI.Label(panelRect, "\u2728 \ubaa8\ub4e0 \ud29c\ud1a0\ub9ac\uc5bc \uc644\ub8cc!", doneStyleCache);
                 return;
             }
 
-            if (active == null) return;
-
             float x = panelRect.x + 12f;
-            float y = panelRect.y + 8f;
+            float y = panelRect.y + pad;
             float w = panelRect.width - 24f;
 
             // Title \u2014 \uc6b0\uc0c1\ub2e8 \uc228\uae30\uae30 \ubc84\ud2bc\uacfc \uacb9\uce58\uc9c0 \uc54a\uac8c \ub108\ube44 \ucd95\uc18c.
             GUI.Label(new Rect(x, y, w - (UIScale.IsMobileLayout ? 64f : 34f), 34f), "\u2605 \ud018\uc2a4\ud2b8: " + active.title, questTitleStyleCache);
             y += 34f;
 
-            // Description
-            GUI.Label(new Rect(x, y, w, 44f), active.description, questDescStyleCache);
-            y += 44f;
+            // Description (동적 높이 — 긴 설명 잘림 방지)
+            GUI.Label(new Rect(x, y, w, descH2), active.description, questDescStyleCache);
+            y += descH2;
 
             // Progress bar
             int current = questManager.ActiveProgress;
@@ -342,14 +372,14 @@ namespace InsectGame.UI
             // Progress text
             GUI.color = Color.white;
             GUI.Label(new Rect(x + barW + 8f, y, 62f, barH + 8f), current + "/" + target, questProgStyleCache);
-            y += barH + 8f;
+            y += barBlockH;
 
             // Hint with pulsing alpha \u2014 base style \uce90\uc2dc + textColor\ub9cc \ub3d9\uc801 \uac31\uc2e0 (BattleScreenUI \ud328\ud134).
             if (!string.IsNullOrEmpty(active.hint))
             {
                 float hintAlpha = 0.4f + 0.4f * (0.5f + 0.5f * Mathf.Sin(hintPulse));
                 questHintStyleCache.normal.textColor = new Color(QuestHintBaseCol.r, QuestHintBaseCol.g, QuestHintBaseCol.b, hintAlpha);
-                GUI.Label(new Rect(x, y, w, 30f), "\ud83d\udca1 " + active.hint, questHintStyleCache);
+                GUI.Label(new Rect(x, y, w, hintH), "\ud83d\udca1 " + active.hint, questHintStyleCache);
             }
         }
 
