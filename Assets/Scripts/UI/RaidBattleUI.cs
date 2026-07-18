@@ -377,6 +377,10 @@ namespace InsectGame.UI
                 phase = Phase.UniteAttack;
                 phaseTimer = 0f;
                 uniteAnimTimer = 0f;
+                // 데드코드였던 팀 전원 러시 → 대폭발 연출 연결(~2.5s = UniteAttack 페이즈 길이와 정합).
+                // 폭발 클라이맥스에 카메라 쉐이크로 필살기 임팩트.
+                if (arena != null && arena.IsActive)
+                    arena.PlayUniteAttackAnimation(() => { if (cameraFollower != null) cameraFollower.Shake(0.5f, 0.6f); });
             }
             else
             {

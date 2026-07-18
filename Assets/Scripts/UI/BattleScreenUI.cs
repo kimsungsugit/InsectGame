@@ -35,7 +35,10 @@ namespace InsectGame.UI
         private bool lastWasCritical;
         private int comboCount;
         private float comboDisplayTimer;
-        private float slowMoTimer;
+        // timeScale 단일 아비터(P3) — 크리티컬 슬로모/히트스톱이 각자 timeScale에 직접 쓰면 서로의 복원이
+        // 상대를 취소(조기취소/영구 슬로모). 두 unscaled 만료 시각만 갱신하고 매 프레임 우선순위로 timeScale 결정.
+        private float hitstopUntil;   // 히트스톱(0.05) 만료 unscaledTime
+        private float critUntil;      // 크리티컬 슬로모(0.4) 만료 unscaledTime
         private float screenFlashTimer;
         private Color screenFlashColor;
 
@@ -162,7 +165,8 @@ namespace InsectGame.UI
             }
             // 슬로우모션 안전 복구 (예외/씬 전환 중 timeScale 잔존 방지)
             if (Time.timeScale < 0.99f) Time.timeScale = 1f;
-            slowMoTimer = 0f;
+            hitstopUntil = 0f;
+            critUntil = 0f;
         }
 
         private void OnPlayerFainted()
@@ -287,8 +291,7 @@ namespace InsectGame.UI
                 // 슬로우모션 + 화면 플래시 (크리티컬만)
                 if (lastWasCritical)
                 {
-                    slowMoTimer = 0.25f;
-                    Time.timeScale = 0.4f;
+                    critUntil = Time.unscaledTime + 0.25f;   // 아비터가 timeScale 적용
                     screenFlashTimer = 0.3f;
                     screenFlashColor = new Color(1f, 0.95f, 0.3f);
                     if (AudioManager.Instance != null) AudioManager.Instance.PlaySFX(SfxType.CriticalHit);
@@ -369,8 +372,9 @@ namespace InsectGame.UI
             InsectElement elem = es != null ? es.element
                 : (enemyStats != null && enemyStats.Data != null ? enemyStats.Data.primaryType : InsectElement.Bug);
             SkillEffectType eff = es != null ? es.effectType : SkillEffectType.Damage;
+            bool dealsDmg = eff == SkillEffectType.Damage;
             arena.PlaySkillEffect(false, elem, eff,
-                () => { if (playerStats != null) revealPlayerHp = playerStats.CurrentHp; },
+                () => { if (playerStats != null) revealPlayerHp = playerStats.CurrentHp; if (dealsDmg) hitstopUntil = Time.unscaledTime + 0.06f; },
                 BattleArenaController.IsMeleeElement(elem));
         }
 
@@ -399,12 +403,12 @@ namespace InsectGame.UI
 
         private void Update()
         {
-            // 슬로우모션 처리 (unscaled로 타이머 감소)
-            if (slowMoTimer > 0f)
-            {
-                slowMoTimer -= Time.unscaledDeltaTime;
-                if (slowMoTimer <= 0f) Time.timeScale = 1f;
-            }
+            // timeScale 아비터 — 히트스톱(0.05) > 크리티컬 슬로모(0.4) > 정상(1). 요청자는 만료 시각만 갱신.
+            // 우리가 늦춘 범위(0.001~0.99)일 때만 복원 → 외부 pause(timeScale=0) 등을 덮지 않음.
+            float uNow = Time.unscaledTime;
+            if (uNow < hitstopUntil) Time.timeScale = 0.05f;
+            else if (uNow < critUntil) Time.timeScale = 0.4f;
+            else if (Time.timeScale < 0.99f && Time.timeScale > 0.001f) Time.timeScale = 1f;
             if (screenFlashTimer > 0f) screenFlashTimer -= Time.unscaledDeltaTime;
             if (comboDisplayTimer > 0f) comboDisplayTimer -= Time.unscaledDeltaTime;
 
@@ -573,8 +577,9 @@ namespace InsectGame.UI
             {
                 InsectElement elem = lastSkillElement;
                 SkillEffectType effectType = (skill != null) ? skill.effectType : SkillEffectType.Damage;
+                bool dealsDmg = effectType == SkillEffectType.Damage;
                 arena.PlaySkillEffect(true, elem, effectType,
-                    () => { if (enemyStats != null) revealEnemyHp = enemyStats.CurrentHp; },
+                    () => { if (enemyStats != null) revealEnemyHp = enemyStats.CurrentHp; if (dealsDmg) hitstopUntil = Time.unscaledTime + 0.06f; },
                     BattleArenaController.IsMeleeElement(elem));
             }
 
@@ -596,7 +601,7 @@ namespace InsectGame.UI
             {
                 InsectElement elem = (playerStats != null && playerStats.Data != null) ? playerStats.Data.primaryType : InsectElement.Bug;
                 arena.PlaySkillEffect(true, elem, SkillEffectType.Damage,
-                    () => { if (enemyStats != null) revealEnemyHp = enemyStats.CurrentHp; },
+                    () => { if (enemyStats != null) revealEnemyHp = enemyStats.CurrentHp; hitstopUntil = Time.unscaledTime + 0.06f; },
                     BattleArenaController.IsMeleeElement(elem));
             }
 
@@ -3220,7 +3225,7 @@ namespace InsectGame.UI
                 if (arena != null)
                     arena.CleanupArena();
 
-                if (slowMoTimer > 0f) { Time.timeScale = 1f; slowMoTimer = 0f; }
+                Time.timeScale = 1f; hitstopUntil = 0f; critUntil = 0f;
                 comboCount = 0;
                 comboDisplayTimer = 0f;
 
@@ -3239,6 +3244,7 @@ namespace InsectGame.UI
             finally
             {
                 if (Time.timeScale != 1f) Time.timeScale = 1f;
+                hitstopUntil = 0f; critUntil = 0f;
                 if (cameraFollower != null) cameraFollower.ExitBattleMode();
                 if (playerMovement != null) playerMovement.SetFrozen(false);
             }
