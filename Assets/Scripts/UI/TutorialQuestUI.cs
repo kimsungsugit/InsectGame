@@ -6,6 +6,7 @@ namespace InsectGame.UI
     public class TutorialQuestUI : MonoBehaviour, IModalUI
     {
         [SerializeField] private TutorialQuestManager questManager;
+        private GuidedTutorialController guided;   // 강제 가이드 상태 조회(가이드 중 숨김 억제)
 
         private bool detailOpen;
         private bool activeDetailOpen;   // 칩 클릭 시 뜨는 활성 퀘스트 상세 팝업(중앙)
@@ -288,10 +289,11 @@ namespace InsectGame.UI
 
             InitQuestPanelStyles();
 
+            bool guideLock = guided != null && guided.IsGuiding;
             float chipX = 20f + UIScale.VirtualSafeLeft;
 
-            // 숨김: 작은 복원 버튼만 (데스크톱 좌하단 / 모바일 미니맵 아래).
-            if (tutorialHidden)
+            // 숨김: 작은 복원 버튼만. 단 강제 가이드 중엔 숨김 무시(칩 강제 표시).
+            if (tutorialHidden && !guideLock)
             {
                 float rW = UIScale.IsMobileLayout ? 230f : 172f;
                 float rH = UIScale.IsMobileLayout ? 54f : 38f;
@@ -327,10 +329,10 @@ namespace InsectGame.UI
             GUI.DrawTexture(new Rect(chipRect.x, chipRect.y, chipRect.width, 3f), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
-            // 숨기기 버튼(우상단)
+            // 숨기기 버튼(우상단) — 강제 가이드 중엔 숨김 불가(버튼 미표시).
             float cClose = UIScale.IsMobileLayout ? 44f : 26f;
             Rect cxRect = new Rect(chipRect.xMax - cClose - 6f, chipRect.y + 6f, cClose, cClose);
-            if (GUI.Button(cxRect, "X", panelBtnStyleCache))
+            if (!guideLock && GUI.Button(cxRect, "X", panelBtnStyleCache))
             {
                 SetTutorialHidden(true);
                 return;
@@ -791,6 +793,11 @@ namespace InsectGame.UI
                 questManager.QuestProgressUpdated += OnQuestProgressUpdated;
                 questManager.QuestCompleted += OnQuestCompleted;
             }
+        }
+
+        public void AutoWire(GuidedTutorialController guidedController)
+        {
+            if (guided == null) guided = guidedController;
         }
     }
 }

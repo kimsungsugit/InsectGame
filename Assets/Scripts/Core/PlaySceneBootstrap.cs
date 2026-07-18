@@ -462,6 +462,12 @@ namespace InsectGame.Core
             InsectGame.UI.TutorialQuestUI questUi = EnsureComponent<InsectGame.UI.TutorialQuestUI>("UI/TutorialQuestUI");
             questUi.AutoWire(questManager);
 
+            // 첫 몇 단계 강제 가이드 오버레이 — 지정 퀘스트 활성 시 코치 배너 + 시작 프리즈, 완료 전 숨김 억제.
+            InsectGame.UI.GuidedTutorialController guidedTutorial =
+                EnsureComponent<InsectGame.UI.GuidedTutorialController>("UI/GuidedTutorial");
+            guidedTutorial.AutoWire(questManager, playerMovement);
+            questUi.AutoWire(guidedTutorial);
+
             // 스토리 시스템 — 기존 이벤트(리전/배틀/서브에리어/퀘스트/진행/컬렉션)를 관찰해 비트 발화.
             // 싱글턴 아님(AutoWire). 렌더는 NpcDialogueUI가 StoryBeatTriggered 구독(아래 마을/NPC 블록에서 배선).
             InsectGame.Story.StoryDirector storyDirector =

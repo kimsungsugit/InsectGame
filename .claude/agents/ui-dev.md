@@ -34,6 +34,7 @@ tools:
 - `Assets/Scripts/UI/CharacterViewerUI.cs` - 캐릭터 뷰어
 - `Assets/Scripts/UI/QuickAccessBarUI.cs` - 퀵액세스 바
 - `Assets/Scripts/UI/TutorialQuestUI.cs` - 튜토리얼 퀘스트 UI
+- `Assets/Scripts/UI/GuidedTutorialController.cs` - 첫 몇 단계 강제 가이드 오버레이(코치 배너+시작 프리즈) ※퀘스트 이벤트는 TutorialQuestManager(Core)
 - `Assets/Scripts/UI/WorldLobbyUI.cs` - 월드 로비
 - `Assets/Scripts/UI/CharacterPortraitRenderer.cs` - 통합 캐릭터 포트레이트 렌더러
 - `Assets/Scripts/UI/UIHelper.cs` - UI 유틸리티
