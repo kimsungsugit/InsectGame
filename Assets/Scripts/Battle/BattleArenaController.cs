@@ -38,6 +38,10 @@ namespace InsectGame.Battle
         private bool playingSkill;
         public bool IsPlayingSkill => playingSkill;
 
+        // 레이드 보스 공격 시 대상 팀 슬롯(피격 슬롯) — RaidBattleUI가 BossAttack 연출 전 지정. -1이면 첫 유효 팀.
+        private int bossAttackTargetSlot = -1;
+        public void SetBossAttackTargetSlot(int slot) { bossAttackTargetSlot = slot; }
+
         public bool IsActive => isActive;
         public Vector3 ArenaCenter => arenaCenter;
         public Vector3 PlayerModelPos => playerBattlePos;
@@ -546,13 +550,27 @@ namespace InsectGame.Battle
             StartCoroutine(SkillAttackCoroutine(isPlayerAttacking, element, onImpact, isMelee));
         }
 
+        // 레이드 보스 공격 대상 팀 모델 — 지정 슬롯(피격) 우선, 없거나 파괴됐으면 첫 유효 팀 모델.
+        private GameObject ResolveBossTarget()
+        {
+            if (teamModels == null) return null;
+            if (bossAttackTargetSlot >= 0 && bossAttackTargetSlot < teamModels.Length && teamModels[bossAttackTargetSlot] != null)
+                return teamModels[bossAttackTargetSlot];
+            for (int i = 0; i < teamModels.Length; i++)
+                if (teamModels[i] != null) return teamModels[i];
+            return null;
+        }
+
         private IEnumerator SkillAttackCoroutine(bool isPlayerAttacking, InsectElement element, System.Action onImpact, bool isMelee)
         {
-            GameObject attacker = isPlayerAttacking ? playerModel : enemyModel;
+            GameObject attacker = isPlayerAttacking ? playerModel : (bossModel != null ? bossModel : enemyModel);
             if (isPlayerAttacking && teamModels != null && selectedTeamIndex >= 0 && selectedTeamIndex < teamModels.Length)
                 attacker = teamModels[selectedTeamIndex];
 
-            GameObject target = isPlayerAttacking ? (bossModel ?? enemyModel) : playerModel;
+            // 대상: 플레이어 공격→보스(1v1은 적), 적/보스 공격→플레이어(1v1) 또는 팀원(레이드).
+            GameObject target = isPlayerAttacking
+                ? (bossModel ?? enemyModel)
+                : (bossModel != null ? ResolveBossTarget() : playerModel);
             if (attacker == null || target == null) { onImpact?.Invoke(); playingSkill = false; yield break; }
 
             Vector3 startPos = attacker.transform.position;

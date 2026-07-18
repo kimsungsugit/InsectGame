@@ -20,6 +20,9 @@ namespace InsectGame.Battle
         public event Action RaidUpdated;
         public event Action<bool> RaidEnded;
 
+        // 보스가 직전 턴에 쓴 시그니처 스킬(null=기본/AOE) — UI가 BossAttack 페이즈 연출 속성에 사용.
+        public InsectSkill LastBossSkill { get; private set; }
+
         public InsectBattleStats BossStats { get; private set; }
         public InsectBattleStats[] TeamStats { get; private set; }
         public InsectData[] TeamData { get; private set; }
@@ -195,6 +198,7 @@ namespace InsectGame.Battle
         {
             bossCooldown--;
             bool aoe = bossCooldown <= 0;
+            LastBossSkill = null;   // 기본값(AOE·기본공격) — 단일 대상 시그니처면 아래에서 갱신
 
             InsectData bd = BossStats.Data;
             int bossBaseDmg = 10 + BossStats.Level * 2;
@@ -233,6 +237,7 @@ namespace InsectGame.Battle
                 {
                     int target = alive[UnityEngine.Random.Range(0, alive.Count)];
                     InsectSkill signature = GetUnlockedBossSignature(bd, BossStats.Level);
+                    LastBossSkill = signature;   // UI BossAttack 연출용(null이면 기본 속성)
                     int singleTargetDamage = bossDmg;
                     float effectiveness = 1f;
                     if (signature != null)

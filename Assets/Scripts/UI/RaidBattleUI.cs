@@ -579,6 +579,7 @@ namespace InsectGame.UI
                     {
                         phase = Phase.BossAttack;
                         phaseTimer = 0f;
+                        TriggerBossAttackEffect();   // 유나이트 후 보스 반격 연출
                     }
                     else if (!resultShown)
                     {
@@ -594,6 +595,7 @@ namespace InsectGame.UI
                 {
                     phase = Phase.BossAttack;
                     phaseTimer = 0f;
+                    TriggerBossAttackEffect();   // 보스 반격 연출(러시/투사체/임팩트/쉐이크)
                 }
                 else if (!resultShown)
                 {
@@ -644,11 +646,24 @@ namespace InsectGame.UI
                     if (raidController.TeamData != null && selectedSlot >= 0 && selectedSlot < raidController.TeamData.Length && raidController.TeamData[selectedSlot] != null)
                         elem = raidController.TeamData[selectedSlot].primaryType;
                     SkillEffectType effectType = (skill != null) ? skill.effectType : SkillEffectType.Damage;
-                    arena.PlaySkillEffect(true, elem, effectType);
+                    arena.PlaySkillEffect(true, elem, effectType, null, BattleArenaController.IsMeleeElement(elem));
                 }
 
                 raidController.UseSkill(index);
             }
+        }
+
+        // BossAttack 페이즈 진입 시 보스 공격 연출 발동 — 보스 시그니처 속성/근접여부로 러시·투사체·쉐이크.
+        // 대상 팀 슬롯(피격)을 아레나에 지정(AOE는 -1 → 첫 유효 팀 모델).
+        private void TriggerBossAttackEffect()
+        {
+            if (arena == null || !arena.IsActive || raidController == null) return;
+            InsectSkill bs = raidController.LastBossSkill;
+            InsectData bd = raidController.BossStats != null ? raidController.BossStats.Data : null;
+            InsectElement elem = bs != null ? bs.element : (bd != null ? bd.primaryType : InsectElement.Bug);
+            SkillEffectType eff = bs != null ? bs.effectType : SkillEffectType.Damage;
+            arena.SetBossAttackTargetSlot(lastHitSlot);
+            arena.PlaySkillEffect(false, elem, eff, null, BattleArenaController.IsMeleeElement(elem));
         }
 
         private void OnGUI()
