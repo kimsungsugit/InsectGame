@@ -27,6 +27,8 @@ GetGachaRates(boxId)로 "UI 표기 단일 출처"를 만들어놨다 — 코드�
 import os
 import re
 
+from cs_strip import strip_cs  # 주석/문자열 제거 — 배선 분석이 주석을 코드로 오인하지 않게
+
 BOXES = ("bronze", "silver", "gold")
 
 PATHS = {
@@ -43,6 +45,8 @@ PATHS = {
     "bootstrap": "Assets/Scripts/Core/PlaySceneBootstrap.cs",
     "insect_expansion": "Assets/Scripts/Data/InsectExpansionDefinitions.cs",
     "region_defs": "Assets/Scripts/Core/RegionDefinitions.cs",
+    "tutorial_data": "Assets/Scripts/Core/TutorialQuestData.cs",
+    "npc_dialogue": "Assets/Scripts/NPC/NpcDialogueDatabase.cs",
 }
 
 RARITIES = ("Common", "Uncommon", "Rare", "Epic", "Legendary")
@@ -353,6 +357,154 @@ def field_roster() -> dict:
             "필드 곤충 로스터를 하나도 못 읽었다 (CreateStableInsect/InsectSeed) — 시그니처가 바뀌었는가?"
         )
     return out
+
+
+def all_insect_ids() -> set:
+    """게임에 존재하는 모든 곤충 ID (필드 + 가챠 전용). 퀘스트 보상 곤충 검증용.
+
+    field_roster는 weight>0만 주므로 별개다 — 보상은 가챠 전용(weight 0) 곤충일 수도 있다.
+    """
+    ids = set()
+    for key, pat in (
+        ("bootstrap", r'CreateStableInsect\("([^"]+)"'),
+        ("insect_expansion", r'new InsectSeed\("([^"]+)"'),
+    ):
+        ids |= set(re.findall(pat, _read(key)))
+    block = re.search(r"gachaExclusives\s*=.*?\{(.*?)\n\s{8}\};", _read("gacha"), re.DOTALL)
+    if block:
+        ids |= set(re.findall(r'"(gacha_\w+)"', block.group(1)))
+    if not ids:
+        raise ExtractorBroken("곤충 ID를 하나도 못 읽었다 (CreateStableInsect/InsectSeed)")
+    return ids
+
+
+# ── 퀘스트 ──────────────────────────────────────────────────────────────────
+
+def quest_types_enum() -> list:
+    """QuestType enum 목록. 출처: TutorialQuestData.cs."""
+    src = _read("tutorial_data")
+    m = _need(re.search(r"enum\s+QuestType\s*\{([^}]*)\}", src), "QuestType enum", "tutorial_data")
+    return [
+        t.strip() for t in m.group(1).split(",")
+        if t.strip() and not t.strip().startswith("//")
+    ]
+
+
+def quest_defs() -> list:
+    """[{questId, type, prereq, reward_insect, reward_item, reward_item_count, target}, ...]
+
+    출처: TutorialQuestManager의 allQuests 배열. 각 `new TutorialQuest { ... }` 블록을 파싱한다.
+    블록 안에 중첩 중괄호가 없어(필드는 전부 리터럴) [^}]* 로 안전하게 자른다.
+    """
+    src = _read("tutorial")
+    arr = _need(
+        re.search(r"allQuests\s*=\s*new\s+TutorialQuest\[\]\s*\{(.*?)\n\s*\};", src, re.DOTALL),
+        "allQuests 배열", "tutorial",
+    )
+    out = []
+    for block in re.findall(r"new\s+TutorialQuest\s*\{([^}]*)\}", arr.group(1), re.DOTALL):
+        def s(name):
+            m = re.search(rf'{name}\s*=\s*"([^"]*)"', block)
+            return m.group(1) if m else None
+
+        def i(name):
+            m = re.search(rf"{name}\s*=\s*(\d+)", block)
+            return int(m.group(1)) if m else None
+
+        t = re.search(r"type\s*=\s*QuestType\.(\w+)", block)
+        out.append({
+            "questId": s("questId"),
+            "type": t.group(1) if t else None,
+            "prereq": s("prerequisiteQuestId"),
+            "reward_insect": s("rewardInsectId"),
+            "reward_item": s("rewardItemId"),
+            "reward_item_count": i("rewardItemCount"),
+            "target": i("targetCount"),
+        })
+    if not out:
+        raise ExtractorBroken("allQuests 배열에서 퀘스트를 하나도 못 읽었다 — 구조가 바뀌었는가?")
+    return out
+
+
+def quest_progress_wiring() -> dict:
+    """{QuestType: [(via, wired, detail), ...]} — 각 QuestType이 IncrementProgress에 닿는 경로들.
+
+    세 경로가 있다:
+      - 'update' : Update() 본문이 직접 처리 (Movement). 항상 wired.
+      - 'event'  : OnXxx() 핸들러가 NotifyAction(QuestType.Y). SubscribeEvents에 그 핸들러가
+                   += 로 등록됐는지가 wired. **q_team 회귀(핸들러는 있으나 미등록)를 잡는 지점.**
+      - 'notify' : 외부 Notify 메서드가 처리. wired=None — 게임플레이 호출부 존재는 quest_lint가
+                   코드베이스 grep으로 확인한다(game_facts는 단일 파일만 읽는다).
+
+    한 QuestType이 여러 경로를 가질 수 있다(예: Battle = 이벤트 + NotifyBattleWon). quest_lint는
+    경로 중 하나라도 reachable이면 통과로 본다.
+
+    주석을 제거하고 분석한다 — `// TeamChanged += OnTeamChanged`처럼 주석 처리된 구독을
+    등록으로 오인하면 q_team류 회귀(구독 누락)를 놓친다.
+    """
+    src = strip_cs(_read("tutorial"))
+
+    upd = re.search(r"void\s+Update\s*\(\)\s*\{(.*?)\n\s{8}\}", src, re.DOTALL)
+    update_types = set(re.findall(r"QuestType\.(\w+)", upd.group(1))) if upd else set()
+
+    # 이벤트 핸들러 On___ 이 NotifyAction(QuestType.X)를 부름 → {qtype: handler}.
+    # 핸들러가 `=> NotifyAction(...)` 한 줄이거나 `{ if (...) { NotifyAction(...) } }` 중첩
+    # 블록일 수 있어, 블록은 중괄호 깊이로 본문을 통째로 떠서 그 안의 NotifyAction을 찾는다.
+    # (옛 정규식 [^;{}]* 는 중첩 { 에서 멈춰 VisitRegion/VisitSubArea를 놓쳤다.)
+    handler_of = {}  # qtype -> handler name (On___)
+    for m in re.finditer(r"\b(On\w+)\s*\([^)]*\)\s*(?:=>\s*([^;]*);|\{)", src):
+        handler = m.group(1)
+        if m.group(2) is not None:
+            body = m.group(2)
+        else:
+            depth, i = 1, m.end()
+            while i < len(src) and depth:
+                if src[i] == "{":
+                    depth += 1
+                elif src[i] == "}":
+                    depth -= 1
+                i += 1
+            body = src[m.end():i]
+        for qt in re.findall(r"NotifyAction\(QuestType\.(\w+)\)", body):
+            handler_of[qt] = handler
+
+    sub = re.search(r"SubscribeEvents\s*\(\)\s*\{(.*?)\n\s{8}\}", src, re.DOTALL)
+    subscribed = set(re.findall(r"\+=\s*(On\w+)", sub.group(1))) if sub else set()
+
+    notify_of = {}  # qtype -> notify method name
+    for m in re.finditer(
+        r"public\s+void\s+(Notify\w+)\s*\([^)]*\)\s*\{(.*?)\n\s{8}\}", src, re.DOTALL
+    ):
+        name, body = m.group(1), m.group(2)
+        for qt in re.findall(r"QuestType\.(\w+)", body):
+            notify_of.setdefault(qt, name)
+
+    out = {}
+    for qt in update_types | set(handler_of) | set(notify_of):
+        paths = []
+        if qt in update_types:
+            paths.append(("update", True, "Update() 내부"))
+        if qt in handler_of:
+            h = handler_of[qt]
+            paths.append(("event", h in subscribed, h))
+        if qt in notify_of:
+            paths.append(("notify", None, notify_of[qt]))
+        out[qt] = paths
+    return out
+
+
+def dialogue_region_keys() -> set:
+    """NpcDialogueDatabase.RegionLines의 regionId 키 집합. 리전 ID 드리프트 검증용."""
+    src = _read("npc_dialogue")
+    block = _need(
+        re.search(r"RegionLines\s*=\s*new\s+Dictionary[^{]*\{(.*?)\n\s*\};", src, re.DOTALL),
+        "RegionLines 딕셔너리", "npc_dialogue",
+    )
+    # collection initializer 형태: ["meadow"] = new[]{...}
+    keys = set(re.findall(r'\["(\w+)"\]\s*=', block.group(1)))
+    if not keys:
+        raise ExtractorBroken("RegionLines에서 regionId 키를 못 읽었다 — 초기화 형태가 바뀌었는가?")
+    return keys
 
 
 def region_pools() -> list:

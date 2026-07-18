@@ -47,6 +47,7 @@ BLOCKING_HOOKS = ["check_namespace.py"]
 # 저장소 전체를 보는 스크립트. 종료 코드가 곧 판정이다.
 REPO_CHECKS = [
     (["data_lint.py"], "데이터 정합성"),
+    (["quest_lint.py"], "퀘스트 정합성"),
     (["sync_codex.py", "--check"], "Codex 미러 동기"),
 ]
 
