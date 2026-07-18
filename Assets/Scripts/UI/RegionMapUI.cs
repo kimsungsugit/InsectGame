@@ -7,6 +7,8 @@ using UnityEngine;
 
 namespace InsectGame.UI
 {
+    // 월드 지도 모달 — 리전을 색상 원(disc)으로 그리는 지도 + 선택 리전 정보패널(가로 우측/세로 하단) + 도감 브라우저.
+    // 렌더는 안티앨리어싱 disc 텍스처 1개 재사용(MinimapUI.MakeDisc 이식). 데이터·세이브 무변경(UI 전용).
     public class RegionMapUI : MonoBehaviour, IModalUI
     {
         [SerializeField] private RegionManager regionManager;
@@ -16,12 +18,20 @@ namespace InsectGame.UI
         [SerializeField] private InsectSpawner spawner;
 
         private bool isOpen;
-        private string selectedRegionId;
+        private string selectedRegionId;   // 지도에서 선택돼 정보패널에 표시되는 리전(도감 아님)
+        private bool dexOpen;              // 도감 브라우저 열림(정보패널 [도감]이 켬)
         private Vector2 dexScroll;
+        private Transform playerTransform; // 최초 1회 탐색 후 캐시(GameObject.Find 매 프레임 회피)
 
         private readonly List<RaidBossMarker> raidMarkers = new List<RaidBossMarker>();
         private string errorMessage = "";
         private float errorTimer;
+
+        // 리전 간 공간 인접(길). RegionData.connections는 전부 null이라 여기서 토폴로지 유지. 정적이라 프레임당 할당 없음.
+        private static readonly string[,] Connections = {
+            {"meadow","pond"}, {"meadow","forest"}, {"meadow","swamp"}, {"meadow","garden"},
+            {"mountain","ruins"}, {"forest","swamp"}, {"forest","mountain"}
+        };
 
         private struct RaidBossMarker
         {
@@ -35,7 +45,7 @@ namespace InsectGame.UI
         public void Toggle()
         {
             isOpen = !isOpen;
-            if (!isOpen) selectedRegionId = null;
+            if (!isOpen) { selectedRegionId = null; dexOpen = false; }
             if (isOpen) ModalUIRegistry.Register(this);
             else ModalUIRegistry.Unregister(this);
         }
@@ -43,119 +53,90 @@ namespace InsectGame.UI
         {
             isOpen = false;
             selectedRegionId = null;
+            dexOpen = false;
             ModalUIRegistry.Unregister(this);
         }
 
         private void OnDisable()
         {
             if (spawner != null) spawner.RaidBossSpawned -= OnRaidBossSpawned;
-            // CharacterOutfitUI 동일 P1: GO SetActive 토글 시 isOpen 잔존 + Registry 미등록 → stale 모달
+            // GO SetActive 토글 시 isOpen 잔존 + Registry 미등록 stale 모달 방지.
             isOpen = false;
             selectedRegionId = null;
+            dexOpen = false;
             ModalUIRegistry.Unregister(this);
         }
 
-        // OnGUI 매 OnGUI(모달 토글 시 매 프레임) 28 new GUIStyle 회귀 차단 — InitMapStyles에서 1회 할당.
-        // 일부 textColor는 동적(분기/alpha)이라 base 캐시 + 호출 시 갱신 (BattleScreenUI 패턴).
-        private GUIStyle mapErrStyleCache;
-        private GUIStyle mapTitleStyleCache;
-        private GUIStyle mapCloseStyleCache;
-        private GUIStyle mapNoDataStyleCache;
-        private GUIStyle mapLvStyleCache;
-        private GUIStyle regionNameStyleCache;
-        private GUIStyle regionDiffStyleCache;
-        private GUIStyle regionSubNameStyleCache;
-        private GUIStyle regionInvisibleStyleCache;
-        private GUIStyle regionRaidLabelStyleCache;
-        private GUIStyle nsStyleCache;
-        private GUIStyle curStyleCache;
-        private GUIStyle diffSStyleCache;
-        private GUIStyle csStyleCache;
-        private GUIStyle btnStyleCache;
-        private GUIStyle detailTitleStyleCache;
-        private GUIStyle detailBackStyleCache;
-        private GUIStyle detailCloseStyleCache;
-        private GUIStyle detailDescStyleCache;
-        private GUIStyle detailSummaryStyleCache;
-        private GUIStyle detailNoInsectStyleCache;
-        private GUIStyle dexNameStyleCache;
-        private GUIStyle dexInfoStyleCache;
-        private GUIStyle dexCheckStyleCache;
-        private GUIStyle dexUnknownStyleCache;
-        private GUIStyle dexHiddenNameStyleCache;
-        private GUIStyle dexNotCaughtStyleCache;
-        private GUIStyle symStyleCache;
-        private bool mapStylesReady;
+        // ─── 자산(GUIStyle + disc 텍스처) — mapStylesReady 가드로 1회 할당(프레임당 new 회피) ───
+        private Texture2D discTex;
+        private GUIStyle titleStyle, closeStyle, levelStyle, noDataStyle;
+        private GUIStyle regionNameStyle, subNameStyle, raidLabelStyle, guardianStyle, mapErrStyle;
+        private GUIStyle infoTitleStyle, infoLineStyle, legendStyle, btnStyle, hintStyle;
+        private GUIStyle detailTitleStyle, detailBtnStyle, detailDescStyle, detailSummaryStyle, detailNoInsectStyle;
+        private GUIStyle dexNameStyle, dexInfoStyle, dexCheckStyle, dexUnknownStyle, dexHiddenStyle, dexNotCaughtStyle;
+        private bool ready;
 
-        private static readonly Color MapErrTextCol = new Color(1f, 0.55f, 0.55f);
-        private static readonly Color MapNoDataCol = new Color(0.5f, 0.5f, 0.5f);
-        private static readonly Color MapLvCol = new Color(0.7f, 0.85f, 1f);
-
-        private void InitMapStyles()
+        private void EnsureAssets()
         {
-            if (mapStylesReady) return;
-            mapStylesReady = true;
+            if (ready) return;
+            ready = true;
 
-            mapErrStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 28, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            discTex = MakeSoftDisc(64);
 
-            mapTitleStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 44, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            mapTitleStyleCache.normal.textColor = Color.white;
+            titleStyle = Label(40, FontStyle.Bold, TextAnchor.MiddleLeft, Color.white);
+            closeStyle = new GUIStyle(GUI.skin.button) { fontSize = 34, fontStyle = FontStyle.Bold };
+            levelStyle = Label(26, FontStyle.Bold, TextAnchor.MiddleRight, new Color(0.7f, 0.85f, 1f));
+            noDataStyle = Label(30, FontStyle.Normal, TextAnchor.MiddleCenter, new Color(0.55f, 0.55f, 0.6f));
 
-            mapCloseStyleCache = new GUIStyle(GUI.skin.button) { fontSize = 36, fontStyle = FontStyle.Bold };
+            regionNameStyle = Label(24, FontStyle.Bold, TextAnchor.MiddleCenter, Color.white);
+            subNameStyle = Label(17, FontStyle.Normal, TextAnchor.MiddleCenter, new Color(0.85f, 0.88f, 0.95f));
+            raidLabelStyle = Label(17, FontStyle.Bold, TextAnchor.MiddleCenter, Color.white);
+            guardianStyle = Label(16, FontStyle.Bold, TextAnchor.MiddleCenter, new Color(1f, 0.75f, 0.55f));
+            mapErrStyle = Label(26, FontStyle.Bold, TextAnchor.MiddleCenter, new Color(1f, 0.6f, 0.6f));
 
-            mapNoDataStyleCache = new GUIStyle(GUI.skin.label) { fontSize = 36, alignment = TextAnchor.MiddleCenter };
-            mapNoDataStyleCache.normal.textColor = MapNoDataCol;
+            infoTitleStyle = Label(34, FontStyle.Bold, TextAnchor.MiddleLeft, Color.white);
+            infoLineStyle = Label(24, FontStyle.Normal, TextAnchor.MiddleLeft, new Color(0.82f, 0.85f, 0.9f));
+            legendStyle = Label(22, FontStyle.Normal, TextAnchor.MiddleLeft, new Color(0.8f, 0.82f, 0.88f));
+            hintStyle = Label(23, FontStyle.Italic, TextAnchor.MiddleCenter, new Color(0.6f, 0.62f, 0.7f));
+            btnStyle = new GUIStyle(GUI.skin.button) { fontSize = 27, fontStyle = FontStyle.Bold };
 
-            mapLvStyleCache = new GUIStyle(GUI.skin.label) { fontSize = 34, alignment = TextAnchor.MiddleCenter };
-            mapLvStyleCache.normal.textColor = MapLvCol;
+            detailTitleStyle = Label(38, FontStyle.Bold, TextAnchor.MiddleCenter, Color.white);
+            detailBtnStyle = new GUIStyle(GUI.skin.button) { fontSize = 30, fontStyle = FontStyle.Bold };
+            detailDescStyle = Label(24, FontStyle.Normal, TextAnchor.MiddleCenter, new Color(0.7f, 0.72f, 0.78f));
+            detailDescStyle.wordWrap = true;
+            detailSummaryStyle = Label(28, FontStyle.Bold, TextAnchor.MiddleCenter, new Color(0.7f, 0.85f, 1f));
+            detailNoInsectStyle = Label(26, FontStyle.Italic, TextAnchor.MiddleCenter, new Color(0.5f, 0.5f, 0.55f));
 
-            // 리전 마커/디테일 — textColor 분기/alpha 동적이라 매 호출 갱신
-            regionNameStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 28, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            regionDiffStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 23, alignment = TextAnchor.MiddleCenter };
-            regionSubNameStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 18, alignment = TextAnchor.MiddleCenter };
-            regionInvisibleStyleCache = new GUIStyle();
-            regionRaidLabelStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 18, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            dexNameStyle = Label(32, FontStyle.Bold, TextAnchor.MiddleLeft, Color.white);
+            dexInfoStyle = Label(24, FontStyle.Normal, TextAnchor.MiddleLeft, new Color(0.62f, 0.64f, 0.7f));
+            dexCheckStyle = Label(38, FontStyle.Bold, TextAnchor.MiddleRight, new Color(0.3f, 1f, 0.5f));
+            dexUnknownStyle = Label(46, FontStyle.Bold, TextAnchor.MiddleCenter, new Color(0.35f, 0.35f, 0.4f));
+            dexHiddenStyle = Label(32, FontStyle.Italic, TextAnchor.MiddleLeft, new Color(0.42f, 0.42f, 0.48f));
+            dexNotCaughtStyle = Label(24, FontStyle.Normal, TextAnchor.MiddleLeft, new Color(0.4f, 0.4f, 0.45f));
+        }
 
-            nsStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 36, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            curStyleCache = new GUIStyle(GUI.skin.label) { fontSize = 31, alignment = TextAnchor.MiddleCenter };
-            diffSStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 28, alignment = TextAnchor.MiddleCenter };
-            csStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 28, alignment = TextAnchor.MiddleCenter };
-            btnStyleCache = new GUIStyle(GUI.skin.button) { fontSize = 31 };
+        private static GUIStyle Label(int size, FontStyle fs, TextAnchor anchor, Color col)
+        {
+            var s = new GUIStyle(GUI.skin.label) { fontSize = size, fontStyle = fs, alignment = anchor };
+            s.normal.textColor = col;
+            return s;
+        }
 
-            detailTitleStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 41, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            detailTitleStyleCache.normal.textColor = Color.white;
-            detailBackStyleCache = new GUIStyle(GUI.skin.button) { fontSize = 34, fontStyle = FontStyle.Bold };
-            detailCloseStyleCache = new GUIStyle(GUI.skin.button) { fontSize = 36, fontStyle = FontStyle.Bold };
-            detailDescStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 28, alignment = TextAnchor.MiddleCenter, wordWrap = true };
-            detailSummaryStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 31, alignment = TextAnchor.MiddleCenter };
-            detailNoInsectStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 31, fontStyle = FontStyle.Italic, alignment = TextAnchor.MiddleCenter };
-
-            dexNameStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 34, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
-            dexInfoStyleCache = new GUIStyle(GUI.skin.label) { fontSize = 34 };
-            dexCheckStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 31, alignment = TextAnchor.MiddleRight };
-            dexUnknownStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 34, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
-            dexHiddenNameStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 34, alignment = TextAnchor.MiddleLeft };
-            dexNotCaughtStyleCache = new GUIStyle(GUI.skin.label) { fontSize = 34 };
-
-            symStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 18, alignment = TextAnchor.MiddleCenter };
+        // 안티앨리어싱 원형 텍스처 — 외곽 ~1.5px 소프트 엣지(MinimapUI.MakeDisc의 하드엣지판 개선).
+        private static Texture2D MakeSoftDisc(int size)
+        {
+            Texture2D t = new Texture2D(size, size, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp };
+            float c = (size - 1) / 2f;
+            float edge = 1.5f / c;
+            for (int yy = 0; yy < size; yy++)
+                for (int xx = 0; xx < size; xx++)
+                {
+                    float d = Mathf.Sqrt((xx - c) * (xx - c) + (yy - c) * (yy - c)) / c;
+                    float a = Mathf.Clamp01((1f - d) / edge);
+                    t.SetPixel(xx, yy, new Color(1f, 1f, 1f, a));
+                }
+            t.Apply();
+            return t;
         }
 
         private void OnRaidBossSpawned(InsectEntity entity)
@@ -172,14 +153,23 @@ namespace InsectGame.UI
 
         private void Update()
         {
-            // 죽거나 디스폰된 레이드 보스 마커 제거
             for (int i = raidMarkers.Count - 1; i >= 0; i--)
             {
                 if (raidMarkers[i].entity == null || !raidMarkers[i].entity.gameObject.activeInHierarchy)
                     raidMarkers.RemoveAt(i);
             }
-
             if (errorTimer > 0f) errorTimer -= Time.deltaTime;
+        }
+
+        private Transform GetPlayer()
+        {
+            if (playerTransform == null)
+            {
+                GameObject p = GameObject.FindWithTag("Player");
+                if (p == null) p = GameObject.Find("Player");
+                if (p != null) playerTransform = p.transform;
+            }
+            return playerTransform;
         }
 
         private void OnGUI()
@@ -187,464 +177,441 @@ namespace InsectGame.UI
             if (!isOpen) return;
 
             UIScale.Begin();
-            if (selectedRegionId != null)
-                DrawRegionDetail();
-            else
-                DrawMap();
+            EnsureAssets();
+            if (dexOpen) DrawDexBrowser();
+            else DrawMap();
             DrawErrorToast();
             UIScale.End();
+        }
+
+        // ─── 패널 지오메트리(세이프에어리어 노치 오프셋 반영) ───
+        private void PanelRect(out float px, out float py, out float pw, out float ph)
+        {
+            pw = Mathf.Min(1160f, UIScale.ContentWidth(18f));
+            float safeTop = UIScale.VirtualSafeTop;
+            float safeBot = UIScale.VirtualSafeBottom;
+            float availH = UIScale.VirtualScreenHeight - safeTop - safeBot;
+            ph = Mathf.Min(980f, availH - 24f);
+            px = (UIScale.VirtualScreenWidth - pw) / 2f;
+            py = safeTop + (availH - ph) * 0.5f;   // 세이프에어리어 내 중앙(노치 침범 방지)
+        }
+
+        private void DrawPanelFrame(float px, float py, float pw, float ph, string title, Color headerAccent)
+        {
+            UITheme t = UITheme.Instance;
+            GUI.color = t.panelBg;
+            GUI.DrawTexture(new Rect(px, py, pw, ph), Texture2D.whiteTexture);
+            GUI.color = t.panelHeaderBg;
+            GUI.DrawTexture(new Rect(px, py, pw, 84f), Texture2D.whiteTexture);
+            GUI.color = headerAccent;
+            GUI.DrawTexture(new Rect(px, py + 84f, pw, 4f), Texture2D.whiteTexture);
+            GUI.color = Color.white;
+            GUI.Label(new Rect(px + 26f, py + 12f, pw - 200f, 60f), title, titleStyle);
+        }
+
+        private void DrawMap()
+        {
+            PanelRect(out float px, out float py, out float pw, out float ph);
+            DrawPanelFrame(px, py, pw, ph, "월드 지도", new Color(0.3f, 0.5f, 0.8f));
+
+            int playerLv = progress != null ? progress.Level : 1;
+            GUI.Label(new Rect(px + pw - 320f, py + 26f, 200f, 34f), $"플레이어 레벨 {playerLv}", levelStyle);
+
+            if (GUI.Button(new Rect(px + pw - 76f, py + 12f, 60f, 60f), "X", closeStyle))
+            {
+                CloseModal();
+                return;
+            }
+
+            if (regionManager == null || regionManager.Regions == null)
+            {
+                GUI.Label(new Rect(px, py + 84f, pw, ph - 84f), "등록된 지역 없음", noDataStyle);
+                return;
+            }
+
+            // 콘텐츠 영역 → 지도(주역) + 정보패널(가로 우측 / 세로 하단)
+            float cx = px + 20f, cy = py + 100f, cw = pw - 40f, ch = ph - 120f;
+            Rect mapRect, infoRect;
+            if (UIScale.IsPortrait)
+            {
+                float mapH = ch * 0.60f;
+                mapRect = new Rect(cx, cy, cw, mapH);
+                infoRect = new Rect(cx, cy + mapH + 10f, cw, ch - mapH - 10f);
+            }
+            else
+            {
+                float mapW = cw * 0.66f;
+                mapRect = new Rect(cx, cy, mapW, ch);
+                infoRect = new Rect(cx + mapW + 12f, cy, cw - mapW - 12f, ch);
+            }
+
+            DrawWorldMap(mapRect);
+            DrawRegionInfoPanel(infoRect);
+        }
+
+        // ─── 월드→지도 좌표 변환(종횡비 보존 fit) 캐시 ───
+        private float wmMinX, wmMinZ, wmW, wmH, wmOx, wmOy, wmDrawW, wmDrawH;
+
+        private Vector2 WorldToMap(float wx, float wz)
+        {
+            float nx = (wx - wmMinX) / wmW;
+            float nz = (wz - wmMinZ) / wmH;
+            return new Vector2(wmOx + nx * wmDrawW, wmOy + (1f - nz) * wmDrawH);
+        }
+
+        private void DrawWorldMap(Rect area)
+        {
+            // 지도 배경
+            GUI.color = new Color(0.06f, 0.08f, 0.13f, 0.9f);
+            GUI.DrawTexture(area, Texture2D.whiteTexture);
+            GUI.color = new Color(0.2f, 0.24f, 0.34f, 0.8f);
+            GUI.DrawTexture(new Rect(area.x, area.y, area.width, 2f), Texture2D.whiteTexture);
+
+            RegionData[] regions = regionManager.Regions;
+
+            // 월드 경계 계산
+            float minX = float.MaxValue, maxX = float.MinValue, minZ = float.MaxValue, maxZ = float.MinValue;
+            foreach (var r in regions)
+            {
+                if (r == null) continue;
+                minX = Mathf.Min(minX, r.centerPosition.x - r.radius);
+                maxX = Mathf.Max(maxX, r.centerPosition.x + r.radius);
+                minZ = Mathf.Min(minZ, r.centerPosition.z - r.radius);
+                maxZ = Mathf.Max(maxZ, r.centerPosition.z + r.radius);
+            }
+            float pad = 40f;
+            minX -= pad; maxX += pad; minZ -= pad; maxZ += pad;
+            wmW = Mathf.Max(1f, maxX - minX);
+            wmH = Mathf.Max(1f, maxZ - minZ);
+            wmMinX = minX; wmMinZ = minZ;
+
+            float fit = Mathf.Min(area.width / wmW, area.height / wmH) * 0.9f;
+            wmDrawW = wmW * fit; wmDrawH = wmH * fit;
+            wmOx = area.x + (area.width - wmDrawW) * 0.5f;
+            wmOy = area.y + (area.height - wmDrawH) * 0.5f;
+            float worldToPx = fit;
+
+            // 1) 연결선(길) — 회전 quad로 깔끔하게
+            Color pathCol = new Color(0.5f, 0.44f, 0.3f, 0.5f);
+            for (int i = 0; i < Connections.GetLength(0); i++)
+            {
+                RegionData a = FindRegion(regions, Connections[i, 0]);
+                RegionData b = FindRegion(regions, Connections[i, 1]);
+                if (a == null || b == null) continue;
+                DrawThickLine(WorldToMap(a.centerPosition.x, a.centerPosition.z),
+                              WorldToMap(b.centerPosition.x, b.centerPosition.z), 3f, pathCol);
+            }
+
+            // 2) 리전 원
+            foreach (var r in regions)
+            {
+                if (r == null) continue;
+                bool accessible = regionManager.IsRegionAccessible(r);
+                bool current = regionManager.CurrentRegion == r;
+                Vector2 c = WorldToMap(r.centerPosition.x, r.centerPosition.z);
+                float cr = Mathf.Clamp(r.radius * worldToPx, 30f, 130f);
+
+                Color theme = r.themeColor;
+                Color fill = accessible ? theme : Desaturate(theme, 0.7f);
+                float fillA = accessible ? (current ? 0.85f : 0.6f) : 0.32f;
+
+                // 외곽 링(살짝 큰 disc) → fill disc 순서
+                float pulse = current ? (0.75f + 0.25f * Mathf.Sin(Time.time * 3.5f)) : 1f;
+                Color ring = current ? new Color(1f, 1f, 1f, 0.95f * pulse)
+                                     : new Color(fill.r * 0.6f + 0.3f, fill.g * 0.6f + 0.3f, fill.b * 0.6f + 0.3f, accessible ? 0.8f : 0.5f);
+                float ringPad = current ? 5f : 3f;
+                GUI.color = ring;
+                GUI.DrawTexture(new Rect(c.x - cr - ringPad, c.y - cr - ringPad, (cr + ringPad) * 2f, (cr + ringPad) * 2f), discTex);
+                GUI.color = new Color(fill.r, fill.g, fill.b, fillA);
+                GUI.DrawTexture(new Rect(c.x - cr, c.y - cr, cr * 2f, cr * 2f), discTex);
+
+                // 이름
+                regionNameStyle.normal.textColor = accessible ? Color.white : new Color(0.7f, 0.7f, 0.72f);
+                GUI.color = Color.white;
+                GUI.Label(new Rect(c.x - cr - 10f, c.y - 18f, (cr + 10f) * 2f, 36f), r.displayName, regionNameStyle);
+
+                // 선택 강조 링
+                if (selectedRegionId == r.regionId)
+                {
+                    GUI.color = new Color(1f, 0.9f, 0.4f, 0.9f);
+                    float sp = cr + ringPad + 4f;
+                    GUI.DrawTexture(new Rect(c.x - sp, c.y - sp, sp * 2f, sp * 2f), discTex);
+                    GUI.color = new Color(fill.r, fill.g, fill.b, fillA);
+                    GUI.DrawTexture(new Rect(c.x - cr - ringPad, c.y - cr - ringPad, (cr + ringPad) * 2f, (cr + ringPad) * 2f), discTex);
+                    GUI.color = new Color(fill.r, fill.g, fill.b, fillA);
+                    GUI.DrawTexture(new Rect(c.x - cr, c.y - cr, cr * 2f, cr * 2f), discTex);
+                    regionNameStyle.normal.textColor = accessible ? Color.white : new Color(0.7f, 0.7f, 0.72f);
+                    GUI.color = Color.white;
+                    GUI.Label(new Rect(c.x - cr - 10f, c.y - 18f, (cr + 10f) * 2f, 36f), r.displayName, regionNameStyle);
+                }
+
+                // 서브에리어 — 소형 disc(형태 통일) + 클릭 텔레포트
+                if (r.subAreas != null)
+                {
+                    foreach (var sub in r.subAreas)
+                    {
+                        Vector2 sc = WorldToMap(sub.centerPosition.x, sub.centerPosition.z);
+                        float sr = Mathf.Clamp(cr * 0.22f, 8f, 20f);
+                        Color subCol = accessible ? GetSubAreaColor(sub.environmentType) : new Color(0.4f, 0.4f, 0.42f);
+                        GUI.color = new Color(subCol.r, subCol.g, subCol.b, 0.85f);
+                        GUI.DrawTexture(new Rect(sc.x - sr, sc.y - sr, sr * 2f, sr * 2f), discTex);
+                        GUI.color = new Color(subCol.r + 0.25f, subCol.g + 0.25f, subCol.b + 0.25f, 0.9f);
+                        GUI.DrawTexture(new Rect(sc.x - sr - 1.5f, sc.y - sr - 1.5f, (sr + 1.5f) * 2f, (sr + 1.5f) * 2f), discTex);
+                        GUI.color = new Color(subCol.r, subCol.g, subCol.b, 0.85f);
+                        GUI.DrawTexture(new Rect(sc.x - sr, sc.y - sr, sr * 2f, sr * 2f), discTex);
+                        GUI.color = Color.white;
+                        GUI.Label(new Rect(sc.x - 60f, sc.y + sr + 1f, 120f, 22f), sub.displayName, subNameStyle);
+
+                        float hot = Mathf.Max(sr, 14f);
+                        if (GUI.Button(new Rect(sc.x - hot, sc.y - hot, hot * 2f, hot * 2f), "", GUIStyle.none))
+                        {
+                            if (accessible) TeleportToSubArea(sub);
+                            else { errorMessage = $"먼저 {r.displayName}을(를) 해금하세요 (이전 지역의 수문장 격파)"; errorTimer = 3f; }
+                        }
+                    }
+                }
+
+                // 가디언 마커 — 미격파 가디언이 있으면 진입로(GetGuardianPosition)에 표시
+                if (!string.IsNullOrEmpty(r.guardianInsectId) && !regionManager.IsGuardianDefeated(r.regionId))
+                {
+                    Vector3 gpos = regionManager.GetGuardianPosition(r);
+                    Vector2 gc = WorldToMap(gpos.x, gpos.z);
+                    GUI.color = new Color(0.95f, 0.35f, 0.25f, 0.95f);
+                    GUI.DrawTexture(new Rect(gc.x - 9f, gc.y - 9f, 18f, 18f), discTex);
+                    GUI.color = new Color(1f, 0.8f, 0.6f, 1f);
+                    GUI.DrawTexture(new Rect(gc.x - 4f, gc.y - 4f, 8f, 8f), discTex);
+                    GUI.color = Color.white;
+                    GUI.Label(new Rect(gc.x - 60f, gc.y + 10f, 120f, 22f), $"수문장 Lv{r.guardianLevel}", guardianStyle);
+                }
+
+                // 리전 클릭 버튼 — 서브에리어 버튼 '이후' 호출해야 서브 점 클릭이 리전에 먹히지 않음(IMGUI 이벤트 소비 순서).
+                if (GUI.Button(new Rect(c.x - cr, c.y - cr, cr * 2f, cr * 2f), "", GUIStyle.none))
+                    selectedRegionId = r.regionId;
+            }
+
+            // 3) 레이드 보스 마커
+            foreach (var m in raidMarkers)
+            {
+                Vector2 mc = WorldToMap(m.worldPos.x, m.worldPos.z);
+                Color raidCol = m.rarity == InsectRarity.Legendary ? new Color(1f, 0.8f, 0.15f) : new Color(0.7f, 0.3f, 0.95f);
+                float pulse = 0.7f + Mathf.Sin(Time.time * 4f) * 0.3f;
+                GUI.color = new Color(raidCol.r, raidCol.g, raidCol.b, 0.3f * pulse);
+                GUI.DrawTexture(new Rect(mc.x - 15f, mc.y - 15f, 30f, 30f), discTex);
+                GUI.color = new Color(raidCol.r, raidCol.g, raidCol.b, pulse);
+                GUI.DrawTexture(new Rect(mc.x - 7f, mc.y - 7f, 14f, 14f), discTex);
+                raidLabelStyle.normal.textColor = raidCol;
+                GUI.color = Color.white;
+                GUI.Label(new Rect(mc.x - 70f, mc.y + 13f, 140f, 22f), m.name, raidLabelStyle);
+            }
+
+            // 4) 플레이어 마커 — disc + 진행방향
+            Transform pl = GetPlayer();
+            if (pl != null)
+            {
+                Vector2 pc = WorldToMap(pl.position.x, pl.position.z);
+                GUI.color = new Color(0.4f, 0.85f, 1f, 1f);
+                GUI.DrawTexture(new Rect(pc.x - 8f, pc.y - 8f, 16f, 16f), discTex);
+                Vector3 f = pl.forward;
+                Vector2 fd = new Vector2(f.x, -f.z);
+                if (fd.sqrMagnitude > 0.001f)
+                {
+                    fd = fd.normalized * 18f;
+                    GUI.color = new Color(0.75f, 0.95f, 1f, 1f);
+                    GUI.DrawTexture(new Rect(pc.x + fd.x - 5f, pc.y + fd.y - 5f, 10f, 10f), discTex);
+                }
+            }
+            GUI.color = Color.white;
+        }
+
+        // 정보 패널 — 선택 리전 상세 or 범례
+        private void DrawRegionInfoPanel(Rect area)
+        {
+            UITheme t = UITheme.Instance;
+            GUI.color = new Color(t.panelHeaderBg.r, t.panelHeaderBg.g, t.panelHeaderBg.b, 0.65f);
+            GUI.DrawTexture(area, Texture2D.whiteTexture);
+
+            RegionData region = selectedRegionId != null ? regionManager.GetRegionById(selectedRegionId) : null;
+            float ix = area.x + 20f, iw = area.width - 40f;
+
+            if (region == null)
+            {
+                // 범례 — 색상 원 스와치 + 한글(폰트 무관)
+                GUI.color = Color.white;
+                GUI.Label(new Rect(ix, area.y + 16f, iw, 34f), "범례", infoTitleStyle);
+                float ly = area.y + 62f;
+                DrawLegendRow(ix, ref ly, iw, new Color(1f, 1f, 1f, 0.95f), "현재 위치 (밝은 테두리)");
+                DrawLegendRow(ix, ref ly, iw, new Color(0.45f, 0.45f, 0.47f), "잠긴 지역 (회색)");
+                DrawLegendRow(ix, ref ly, iw, new Color(0.95f, 0.35f, 0.25f), "수문장 (진입로 표시)");
+                DrawLegendRow(ix, ref ly, iw, new Color(0.7f, 0.3f, 0.95f), "레이드 보스");
+                DrawLegendRow(ix, ref ly, iw, new Color(0.4f, 0.85f, 1f), "내 위치");
+                DrawLegendRow(ix, ref ly, iw, new Color(0.5f, 0.7f, 0.4f), "서브에리어 (소형 원, 눌러 이동)");
+                GUI.Label(new Rect(ix, area.y + area.height - 60f, iw, 40f), "지역을 눌러 정보를 확인하세요", hintStyle);
+                return;
+            }
+
+            bool accessible = regionManager.IsRegionAccessible(region);
+            bool current = regionManager.CurrentRegion == region;
+
+            // 헤더 악센트
+            GUI.color = new Color(region.themeColor.r, region.themeColor.g, region.themeColor.b, accessible ? 1f : 0.5f);
+            GUI.DrawTexture(new Rect(area.x, area.y, area.width, 4f), Texture2D.whiteTexture);
+
+            infoTitleStyle.normal.textColor = accessible ? region.themeColor : new Color(0.6f, 0.6f, 0.62f);
+            GUI.color = Color.white;
+            GUI.Label(new Rect(ix, area.y + 16f, iw, 40f), region.displayName + (current ? " (현재)" : ""), infoTitleStyle);
+
+            float y = area.y + 64f;
+            DiffLabel(region.requiredLevel, out string diff, out Color diffCol);
+            DrawInfoLine(ix, ref y, iw, "난이도", diff, diffCol);
+            DrawInfoLine(ix, ref y, iw, "요구 레벨", $"Lv {region.requiredLevel}", new Color(0.8f, 0.85f, 0.95f));
+            DrawInfoLine(ix, ref y, iw, "상태", accessible ? "해금됨" : "잠김",
+                accessible ? new Color(0.4f, 0.9f, 0.5f) : new Color(0.9f, 0.45f, 0.4f));
+
+            if (!string.IsNullOrEmpty(region.guardianInsectId))
+            {
+                bool defeated = regionManager.IsGuardianDefeated(region.regionId);
+                string gname = string.IsNullOrEmpty(region.guardianDisplayName) ? "수문장" : region.guardianDisplayName;
+                DrawInfoLine(ix, ref y, iw, "수문장", $"{gname} Lv{region.guardianLevel}" + (defeated ? " (격파)" : ""),
+                    defeated ? new Color(0.5f, 0.7f, 0.5f) : new Color(1f, 0.6f, 0.4f));
+            }
+
+            // 도감 진행바
+            int total = region.insectIds != null ? region.insectIds.Length : 0;
+            int caught = CountCaught(region);
+            y += 8f;
+            infoLineStyle.normal.textColor = new Color(0.82f, 0.85f, 0.9f);
+            GUI.Label(new Rect(ix, y, iw, 30f), $"도감  {caught} / {total}", infoLineStyle);
+            y += 34f;
+            GUI.color = new Color(0.15f, 0.15f, 0.2f, 1f);
+            GUI.DrawTexture(new Rect(ix, y, iw, 16f), Texture2D.whiteTexture);
+            GUI.color = region.themeColor;
+            GUI.DrawTexture(new Rect(ix, y, iw * (total > 0 ? (float)caught / total : 0f), 16f), Texture2D.whiteTexture);
+            GUI.color = Color.white;
+
+            // 버튼 [이동] [도감]
+            float btnH = UIScale.IsMobileLayout ? 64f : 52f;
+            float btnY = area.y + area.height - btnH - 14f;
+            float halfW = (iw - 12f) / 2f;
+            GUI.backgroundColor = accessible ? UITheme.Instance.btnPrimary : UITheme.Instance.btnDisabled;
+            if (GUI.Button(new Rect(ix, btnY, halfW, btnH), "이동", btnStyle))
+            {
+                if (accessible) { TeleportToRegion(region); CloseModal(); }
+                else { errorMessage = "잠긴 지역입니다 (이전 지역의 수문장 격파)"; errorTimer = 3f; }
+            }
+            GUI.backgroundColor = UITheme.Instance.btnSecondary;
+            if (GUI.Button(new Rect(ix + halfW + 12f, btnY, halfW, btnH), "도감", btnStyle))
+                dexOpen = true;
+            GUI.backgroundColor = Color.white;
+        }
+
+        private void DrawLegendRow(float x, ref float y, float w, Color swatch, string label)
+        {
+            GUI.color = swatch;
+            GUI.DrawTexture(new Rect(x, y + 3f, 22f, 22f), discTex);
+            GUI.color = Color.white;
+            GUI.Label(new Rect(x + 32f, y, w - 32f, 28f), label, legendStyle);
+            y += 34f;
+        }
+
+        private void DrawInfoLine(float x, ref float y, float w, string key, string val, Color valCol)
+        {
+            infoLineStyle.normal.textColor = new Color(0.62f, 0.64f, 0.72f);
+            GUI.Label(new Rect(x, y, w * 0.42f, 30f), key, infoLineStyle);
+            var s = infoLineStyle;
+            s.normal.textColor = valCol;
+            GUI.Label(new Rect(x + w * 0.42f, y, w * 0.58f, 30f), val, s);
+            y += 36f;
+        }
+
+        private static void DiffLabel(int requiredLevel, out string label, out Color col)
+        {
+            if (requiredLevel <= 2) { label = "쉬움"; col = new Color(0.4f, 0.9f, 0.5f); }
+            else if (requiredLevel <= 5) { label = "보통"; col = new Color(0.9f, 0.8f, 0.3f); }
+            else { label = "어려움"; col = new Color(1f, 0.45f, 0.35f); }
+        }
+
+        private static Color Desaturate(Color c, float amount)
+        {
+            float g = c.r * 0.3f + c.g * 0.59f + c.b * 0.11f;
+            return new Color(Mathf.Lerp(c.r, g, amount), Mathf.Lerp(c.g, g, amount), Mathf.Lerp(c.b, g, amount), c.a);
+        }
+
+        private void DrawThickLine(Vector2 a, Vector2 b, float thickness, Color col)
+        {
+            Vector2 d = b - a;
+            float len = d.magnitude;
+            if (len < 0.5f) return;
+            float ang = Mathf.Atan2(d.y, d.x) * Mathf.Rad2Deg;
+            Matrix4x4 saved = GUI.matrix;
+            GUIUtility.RotateAroundPivot(ang, a);
+            GUI.color = col;
+            GUI.DrawTexture(new Rect(a.x, a.y - thickness * 0.5f, len, thickness), Texture2D.whiteTexture);
+            GUI.matrix = saved;
+            GUI.color = Color.white;
         }
 
         private void DrawErrorToast()
         {
             if (errorTimer <= 0f || string.IsNullOrEmpty(errorMessage)) return;
-
-            float sw = UIScale.VirtualScreenWidth;
-            float sh = UIScale.VirtualScreenHeight;
-            float bw = 860f;
-            float bh = 96f;
-            float bx = (sw - bw) * 0.5f;
-            float by = sh * 0.7f;
-
+            float sw = UIScale.VirtualScreenWidth, sh = UIScale.VirtualScreenHeight;
+            float bw = 900f, bh = 96f;
+            float bx = (sw - bw) * 0.5f, by = sh * 0.72f;
             float alpha = Mathf.Clamp01(errorTimer);
 
             GUI.color = new Color(0f, 0f, 0f, 0.85f * alpha);
             GUI.DrawTexture(new Rect(bx, by, bw, bh), Texture2D.whiteTexture);
-
             GUI.color = new Color(1f, 0.3f, 0.3f, alpha);
-            GUI.DrawTexture(new Rect(bx, by, bw, 3), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(bx, by + bh - 3, bw, 3), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(bx, by, bw, 3f), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(bx, by + bh - 3f, bw, 3f), Texture2D.whiteTexture);
 
-            InitMapStyles();
-            mapErrStyleCache.normal.textColor = new Color(MapErrTextCol.r, MapErrTextCol.g, MapErrTextCol.b, alpha);
+            mapErrStyle.normal.textColor = new Color(1f, 0.6f, 0.6f, alpha);
             GUI.color = Color.white;
-            GUI.Label(new Rect(bx, by, bw, bh), errorMessage, mapErrStyleCache);
+            GUI.Label(new Rect(bx, by, bw, bh), errorMessage, mapErrStyle);
         }
 
-        private void DrawMap()
+        // ─── 도감 브라우저(정보패널 [도감]으로 진입) ───
+        private void DrawDexBrowser()
         {
-            InitMapStyles();
+            RegionData region = regionManager != null ? regionManager.GetRegionById(selectedRegionId) : null;
+            if (region == null) { dexOpen = false; return; }
 
-            float panelW = Mathf.Min(1060f, UIScale.ContentWidth(18f));
-            float panelH = Mathf.Min(960f,
-                UIScale.VirtualScreenHeight - UIScale.VirtualSafeTop - UIScale.VirtualSafeBottom - 36f);
-            float px = (UIScale.VirtualScreenWidth - panelW) / 2f;
-            float py = (UIScale.VirtualScreenHeight - panelH) / 2f;
+            PanelRect(out float px, out float py, out float pw, out float ph);
+            DrawPanelFrame(px, py, pw, ph, $"{region.displayName} 도감", region.themeColor);
 
-            GUI.color = new Color(0.04f, 0.06f, 0.1f, 0.95f);
-            GUI.DrawTexture(new Rect(px, py, panelW, panelH), Texture2D.whiteTexture);
-
-            GUI.color = new Color(0.15f, 0.18f, 0.25f);
-            GUI.DrawTexture(new Rect(px, py, panelW, 84), Texture2D.whiteTexture);
-
-            GUI.color = Color.white;
-            GUI.Label(new Rect(px, py + 14, panelW - 72, 58), "WORLD MAP", mapTitleStyleCache);
-
-            if (GUI.Button(new Rect(px + panelW - 72, py + 12, 60, 60), "X", mapCloseStyleCache))
-            {
-                CloseModal();
-            }
-
-            if (regionManager == null || regionManager.Regions == null)
-            {
-                GUI.Label(new Rect(px, py + 84, panelW, panelH - 84), "No regions available", mapNoDataStyleCache);
-                return;
-            }
-
-            int playerLv = progress != null ? progress.Level : 1;
-            GUI.Label(new Rect(px, py + 92, panelW, 44), $"Player Level: {playerLv}", mapLvStyleCache);
-
-            float mapX = px + 30;
-            float mapY = py + 144;
-            float mapW = panelW - 60;
-            float mapH = panelH - 154;
-
-            GUI.color = new Color(0.08f, 0.1f, 0.15f, 0.8f);
-            GUI.DrawTexture(new Rect(mapX, mapY, mapW, mapH), Texture2D.whiteTexture);
-
-            DrawMiniMap(mapX, mapY, mapW, mapH);
-            DrawRegionCards(mapX, mapY, mapW, mapH);
-        }
-
-        // 월드→미니맵 좌표 변환용 캐시
-        private float wmMinX, wmMinZ, wmW, wmH, wmMiniX, wmMiniY, wmMiniW, wmMiniH;
-
-        private Vector2 WorldToMini(float wx, float wz)
-        {
-            float nx = (wx - wmMinX) / wmW;
-            float nz = (wz - wmMinZ) / wmH;
-            return new Vector2(wmMiniX + nx * wmMiniW, wmMiniY + (1f - nz) * wmMiniH);
-        }
-
-        private void DrawMiniMap(float mx, float my, float mw, float mh)
-        {
-            if (regionManager.Regions == null) return;
-
-            float worldMinX = float.MaxValue, worldMaxX = float.MinValue;
-            float worldMinZ = float.MaxValue, worldMaxZ = float.MinValue;
-            foreach (var r in regionManager.Regions)
-            {
-                float left = r.centerPosition.x - r.radius;
-                float right = r.centerPosition.x + r.radius;
-                float bottom = r.centerPosition.z - r.radius;
-                float top = r.centerPosition.z + r.radius;
-                if (left < worldMinX) worldMinX = left;
-                if (right > worldMaxX) worldMaxX = right;
-                if (bottom < worldMinZ) worldMinZ = bottom;
-                if (top > worldMaxZ) worldMaxZ = top;
-            }
-
-            float padding = 30f;
-            worldMinX -= padding; worldMaxX += padding;
-            worldMinZ -= padding; worldMaxZ += padding;
-
-            float worldW = worldMaxX - worldMinX;
-            float worldH = worldMaxZ - worldMinZ;
-            if (worldW < 1) worldW = 1;
-            if (worldH < 1) worldH = 1;
-
-            float miniH = mh * 0.45f;
-            float miniW = mw;
-            float miniX = mx;
-            float miniY = my;
-
-            // 변환 캐시 저장
-            wmMinX = worldMinX; wmMinZ = worldMinZ; wmW = worldW; wmH = worldH;
-            wmMiniX = miniX; wmMiniY = miniY; wmMiniW = miniW; wmMiniH = miniH;
-
-            // ─── 지형지물 먼저 그리기 (리전 아래 레이어) ───
-            DrawMapTerrain(worldMinX, worldMinZ, worldW, worldH, miniX, miniY, miniW, miniH);
-
-            foreach (var r in regionManager.Regions)
-            {
-                bool accessible = regionManager.IsRegionAccessible(r);
-                bool isCurrent = regionManager.CurrentRegion == r;
-
-                float nx = (r.centerPosition.x - worldMinX) / worldW;
-                float nz = (r.centerPosition.z - worldMinZ) / worldH;
-                float nr = r.radius / Mathf.Max(worldW, worldH);
-
-                float cx = miniX + nx * miniW;
-                float cy = miniY + (1f - nz) * miniH;
-                float cr = nr * Mathf.Min(miniW, miniH);
-                cr = Mathf.Max(cr, 20f);
-
-                Color col = r.themeColor;
-                // 원형 fill — 동심원 8 rings × 32 samples = 256 small samples.
-                // 옛 사각 DrawTexture(cx-cr, cy-cr, 2cr, 2cr)는 "네모 박스" 인상의 원인 (사용자 명시 요청).
-                GUI.color = new Color(col.r, col.g, col.b, isCurrent ? 0.5f : 0.25f);
-                int fillRings = 8;
-                int fillSamples = 32;
-                float dotSize = Mathf.Max(3f, cr / fillRings * 1.4f); // 동심원 간 빈틈 없도록 약간 큰 점
-                for (int fr = 0; fr <= fillRings; fr++)
-                {
-                    float ringR = cr * fr / fillRings;
-                    if (fr == 0)
-                    {
-                        // 중앙 1개 점
-                        GUI.DrawTexture(new Rect(cx - dotSize * 0.5f, cy - dotSize * 0.5f, dotSize, dotSize), Texture2D.whiteTexture);
-                        continue;
-                    }
-                    for (int fs = 0; fs < fillSamples; fs++)
-                    {
-                        float fa = (Mathf.PI * 2f / fillSamples) * fs;
-                        float fx = cx + Mathf.Cos(fa) * ringR - dotSize * 0.5f;
-                        float fy = cy + Mathf.Sin(fa) * ringR - dotSize * 0.5f;
-                        GUI.DrawTexture(new Rect(fx, fy, dotSize, dotSize), Texture2D.whiteTexture);
-                    }
-                }
-
-                // 리전 테두리(원형 ring) — 32 sample 점으로 ring 근사. 옛 사각 테두리는 "네모 박스" 인상의 원인.
-                int ringSamples = 32;
-                float pulse = isCurrent ? (0.7f + 0.3f * Mathf.Sin(Time.time * 3.5f)) : 1f;
-                Color ringCol = new Color(col.r * 0.6f + 0.2f, col.g * 0.6f + 0.2f, col.b * 0.6f + 0.2f,
-                    (isCurrent ? 0.95f : 0.7f) * pulse);
-                GUI.color = ringCol;
-                float ringSize = isCurrent ? 4f : 2.5f;
-                for (int rs = 0; rs < ringSamples; rs++)
-                {
-                    float ang = (Mathf.PI * 2f / ringSamples) * rs;
-                    float rx = cx + Mathf.Cos(ang) * cr - ringSize * 0.5f;
-                    float ry = cy + Mathf.Sin(ang) * cr - ringSize * 0.5f;
-                    GUI.DrawTexture(new Rect(rx, ry, ringSize, ringSize), Texture2D.whiteTexture);
-                }
-
-                // gateway 점 — 자동 검출 인접 리전 angle에 노란 점 표시 (통과 가능 지점 시각화)
-                Color gatewayCol = new Color(1f, 0.85f, 0.3f, 0.95f);
-                GUI.color = gatewayCol;
-                if (regionManager.Regions != null)
-                {
-                    foreach (RegionData other in regionManager.Regions)
-                    {
-                        if (other == null || other == r) continue;
-                        Vector3 d = other.centerPosition - r.centerPosition;
-                        float dist = new Vector2(d.x, d.z).magnitude;
-                        if (dist > r.radius + other.radius + 30f) continue;
-                        float ang = Mathf.Atan2(d.z, d.x);
-                        float gx = cx + Mathf.Cos(ang) * cr - 4f;
-                        // miniY 축 inverted (1f - nz), z+는 화면 위. atan2 sin은 그대로 사용 후 Y 부호 반전
-                        float gy = cy - Mathf.Sin(ang) * cr - 4f;
-                        GUI.DrawTexture(new Rect(gx, gy, 8f, 8f), Texture2D.whiteTexture);
-                    }
-                }
-                GUI.color = Color.white;
-
-                regionNameStyleCache.normal.textColor = Color.white;
-                GUI.color = Color.white;
-                GUI.Label(new Rect(cx - 110, cy - 19, 220, 38), r.displayName, regionNameStyleCache);
-
-                string diffLabel;
-                Color diffColor;
-                if (r.requiredLevel <= 2) { diffLabel = "쉬움"; diffColor = new Color(0.4f, 0.9f, 0.5f); }
-                else if (r.requiredLevel <= 5) { diffLabel = "보통"; diffColor = new Color(0.9f, 0.8f, 0.3f); }
-                else { diffLabel = "어려움"; diffColor = new Color(1f, 0.4f, 0.3f); }
-
-                regionDiffStyleCache.normal.textColor = diffColor;
-                GUI.Label(new Rect(cx - 80, cy + 22, 160, 34), $"난이도: {diffLabel}", regionDiffStyleCache);
-
-                // 서브에리어 점 표시 + 클릭 시 텔레포트
-                if (r.subAreas != null)
-                {
-                    foreach (var sub in r.subAreas)
-                    {
-                        float snx = (sub.centerPosition.x - worldMinX) / worldW;
-                        float snz = (sub.centerPosition.z - worldMinZ) / worldH;
-                        float scx = miniX + snx * miniW;
-                        float scy = miniY + (1f - snz) * miniH;
-                        float sCr = Mathf.Max(5f, nr * Mathf.Min(miniW, miniH) * 0.25f);
-
-                        Color subCol = GetSubAreaColor(sub.environmentType);
-                        bool regionAccessible = regionManager == null || regionManager.IsRegionAccessible(r);
-
-                        // 닫힌 상위 리전 SubArea는 회색
-                        if (!regionAccessible)
-                            subCol = new Color(0.4f, 0.4f, 0.4f);
-
-                        GUI.color = new Color(subCol.r, subCol.g, subCol.b, 0.7f);
-                        GUI.DrawTexture(new Rect(scx - sCr, scy - sCr, sCr * 2, sCr * 2), Texture2D.whiteTexture);
-                        // 테두리
-                        GUI.color = new Color(subCol.r + 0.2f, subCol.g + 0.2f, subCol.b + 0.2f, 0.9f);
-                        GUI.DrawTexture(new Rect(scx - sCr, scy - sCr, sCr * 2, 1), Texture2D.whiteTexture);
-                        GUI.DrawTexture(new Rect(scx - sCr, scy + sCr - 1, sCr * 2, 1), Texture2D.whiteTexture);
-
-                        regionSubNameStyleCache.fontSize = 18;
-                        regionSubNameStyleCache.normal.textColor = new Color(0.9f, 0.9f, 0.9f, 0.8f);
-                        GUI.color = Color.white;
-                        GUI.Label(new Rect(scx - 60, scy + sCr + 2, 120, 24), sub.displayName, regionSubNameStyleCache);
-
-                        // 클릭 핫존: 점 위 투명 버튼으로 텔레포트 트리거
-                        float hot = Mathf.Max(sCr, 14f);
-                        Rect hotRect = new Rect(scx - hot, scy - hot, hot * 2, hot * 2);
-                        if (GUI.Button(hotRect, "", regionInvisibleStyleCache))
-                        {
-                            if (regionAccessible)
-                            {
-                                TeleportToSubArea(sub);
-                            }
-                            else
-                            {
-                                // 잠금은 unlockedRegions HashSet 기반 — 이전 region의 수문장을 격파해야 해금됨
-                                errorMessage = $"먼저 {r.displayName}을(를) 해금해야 합니다 (이전 지역의 수문장을 격파하세요)";
-                                errorTimer = 3f;
-                            }
-                        }
-                    }
-                }
-            }
-
-            GameObject player = GameObject.Find("Player");
-            if (player != null)
-            {
-                float pnx = (player.transform.position.x - worldMinX) / worldW;
-                float pnz = (player.transform.position.z - worldMinZ) / worldH;
-                float ppx = miniX + pnx * miniW;
-                float ppy = miniY + (1f - pnz) * miniH;
-                GUI.color = Color.yellow;
-                GUI.DrawTexture(new Rect(ppx - 8, ppy - 8, 16, 16), Texture2D.whiteTexture);
-                GUI.color = Color.white;
-            }
-
-            // 레이드 보스 마커
-            foreach (var marker in raidMarkers)
-            {
-                float rnx = (marker.worldPos.x - worldMinX) / worldW;
-                float rnz = (marker.worldPos.z - worldMinZ) / worldH;
-                float rpx = miniX + rnx * miniW;
-                float rpy = miniY + (1f - rnz) * miniH;
-
-                Color raidCol = marker.rarity == InsectRarity.Legendary
-                    ? new Color(1f, 0.8f, 0.15f) : new Color(0.7f, 0.3f, 0.95f);
-                float pulse = 0.7f + Mathf.Sin(Time.time * 4f) * 0.3f;
-
-                // 외곽 링
-                GUI.color = new Color(raidCol.r, raidCol.g, raidCol.b, 0.3f * pulse);
-                GUI.DrawTexture(new Rect(rpx - 14, rpy - 14, 28, 28), Texture2D.whiteTexture);
-                // 내부 점
-                GUI.color = new Color(raidCol.r, raidCol.g, raidCol.b, pulse);
-                GUI.DrawTexture(new Rect(rpx - 6, rpy - 6, 12, 12), Texture2D.whiteTexture);
-                // 이름
-                regionRaidLabelStyleCache.fontSize = 18;
-                regionRaidLabelStyleCache.normal.textColor = raidCol;
-                GUI.color = Color.white;
-                GUI.Label(new Rect(rpx - 60, rpy + 12, 120, 24), marker.name, regionRaidLabelStyleCache);
-            }
-
-            float cardY = miniY + miniH + 10;
-            float cardH = mh - miniH - 15;
-            DrawRegionList(mx, cardY, mw, cardH);
-        }
-
-        private void DrawRegionList(float x, float y, float w, float h)
-        {
-            RegionData[] accessible = regionManager.GetAccessibleRegions();
-            if (accessible.Length == 0) return;
-
-            float cardW = (w - 10 * (accessible.Length - 1)) / Mathf.Max(accessible.Length, 1);
-            cardW = Mathf.Min(cardW, 320);
-
-            for (int i = 0; i < accessible.Length; i++)
-            {
-                var r = accessible[i];
-                float cx = x + i * (cardW + 10);
-                bool isCurrent = regionManager.CurrentRegion == r;
-
-                GUI.color = new Color(r.themeColor.r * 0.2f, r.themeColor.g * 0.2f, r.themeColor.b * 0.2f, 0.7f);
-                GUI.DrawTexture(new Rect(cx, y, cardW, h), Texture2D.whiteTexture);
-
-                GUI.color = r.themeColor;
-                GUI.DrawTexture(new Rect(cx, y, cardW, 3), Texture2D.whiteTexture);
-
-                if (isCurrent)
-                {
-                    GUI.color = new Color(r.themeColor.r, r.themeColor.g, r.themeColor.b, 0.15f);
-                    GUI.DrawTexture(new Rect(cx, y, cardW, h), Texture2D.whiteTexture);
-                }
-
-                nsStyleCache.normal.textColor = r.themeColor;
-                GUI.color = Color.white;
-                GUI.Label(new Rect(cx, y + 14, cardW, 46), r.displayName, nsStyleCache);
-
-                if (isCurrent)
-                {
-                    curStyleCache.normal.textColor = new Color(0.5f, 1f, 0.5f);
-                    GUI.Label(new Rect(cx, y + 66, cardW, 40), "현재 위치", curStyleCache);
-                }
-
-                string diffLabel;
-                Color diffColor;
-                if (r.requiredLevel <= 2) { diffLabel = "쉬움"; diffColor = new Color(0.4f, 0.9f, 0.5f); }
-                else if (r.requiredLevel <= 5) { diffLabel = "보통"; diffColor = new Color(0.9f, 0.8f, 0.3f); }
-                else { diffLabel = "어려움"; diffColor = new Color(1f, 0.4f, 0.3f); }
-                diffSStyleCache.normal.textColor = diffColor;
-                float diffY = isCurrent ? y + 112 : y + 66;
-                GUI.Label(new Rect(cx, diffY, cardW, 36), $"난이도: {diffLabel}", diffSStyleCache);
-
-                int total = r.insectIds != null ? r.insectIds.Length : 0;
-                int caught = CountCaught(r);
-
-                float dexButtonH = UIScale.IsMobileLayout ? 64f : 50f;
-                float dexBtnTop = y + h - dexButtonH - 12f;
-                float barW = cardW - 30;
-                float barY = dexBtnTop - 24f;
-
-                csStyleCache.normal.textColor = new Color(0.7f, 0.7f, 0.7f);
-                GUI.Label(new Rect(cx, barY - 46f, cardW, 40), $"{caught}/{total}", csStyleCache);
-
-                float bar = total > 0 ? (float)caught / total : 0;
-                GUI.color = new Color(0.15f, 0.15f, 0.2f);
-                GUI.DrawTexture(new Rect(cx + 10, barY, barW, 14), Texture2D.whiteTexture);
-                GUI.color = new Color(0.3f, 0.8f, 0.3f);
-                GUI.DrawTexture(new Rect(cx + 10, barY, barW * bar, 14), Texture2D.whiteTexture);
-
-                GUI.backgroundColor = new Color(0.2f, 0.3f, 0.5f);
-                GUI.color = Color.white;
-                if (GUI.Button(new Rect(cx + 5, dexBtnTop, cardW - 10, dexButtonH), "도감", btnStyleCache))
-                    selectedRegionId = r.regionId;
-                GUI.backgroundColor = Color.white;
-            }
-        }
-
-        private void DrawRegionCards(float mx, float my, float mw, float mh) { }
-
-        private void DrawRegionDetail()
-        {
-            InitMapStyles();
-
-            RegionData region = regionManager.GetRegionById(selectedRegionId);
-            if (region == null) { selectedRegionId = null; return; }
-
-            float panelW = Mathf.Min(1060f, UIScale.ContentWidth(18f));
-            float panelH = Mathf.Min(960f,
-                UIScale.VirtualScreenHeight - UIScale.VirtualSafeTop - UIScale.VirtualSafeBottom - 36f);
-            float px = (UIScale.VirtualScreenWidth - panelW) / 2f;
-            float py = (UIScale.VirtualScreenHeight - panelH) / 2f;
-
-            GUI.color = new Color(0.04f, 0.06f, 0.1f, 0.95f);
-            GUI.DrawTexture(new Rect(px, py, panelW, panelH), Texture2D.whiteTexture);
-
-            GUI.color = new Color(region.themeColor.r * 0.3f, region.themeColor.g * 0.3f, region.themeColor.b * 0.3f, 1f);
-            GUI.DrawTexture(new Rect(px, py, panelW, 84), Texture2D.whiteTexture);
-            GUI.color = region.themeColor;
-            GUI.DrawTexture(new Rect(px, py + 84, panelW, 5), Texture2D.whiteTexture);
-
-            detailTitleStyleCache.normal.textColor = region.themeColor;
-            GUI.color = Color.white;
-            GUI.Label(new Rect(px + 150, py + 14, panelW - 300, 58), $"{region.displayName} Dex", detailTitleStyleCache);
-
-            if (GUI.Button(new Rect(px + 14, py + 10f, 160f, UIScale.IsMobileLayout ? 64f : 52f), "< Back", detailBackStyleCache))
-                selectedRegionId = null;
-
-            if (GUI.Button(new Rect(px + panelW - 76f, py + 10f, 64f, UIScale.IsMobileLayout ? 64f : 52f), "X", detailCloseStyleCache))
-            {
-                CloseModal();
-            }
+            if (GUI.Button(new Rect(px + pw - 76f, py + 12f, 60f, 60f), "X", closeStyle)) { CloseModal(); return; }
+            if (GUI.Button(new Rect(px + 20f, py + 14f, 150f, UIScale.IsMobileLayout ? 60f : 52f), "< 뒤로", detailBtnStyle))
+            { dexOpen = false; return; }
 
             if (!string.IsNullOrEmpty(region.description))
-            {
-                detailDescStyleCache.normal.textColor = new Color(0.6f, 0.6f, 0.6f);
-                GUI.Label(new Rect(px + 30, py + 96, panelW - 60, 42), region.description, detailDescStyleCache);
-            }
+                GUI.Label(new Rect(px + 30f, py + 96f, pw - 60f, 42f), region.description, detailDescStyle);
 
             int total = region.insectIds != null ? region.insectIds.Length : 0;
             int caught = CountCaught(region);
-            detailSummaryStyleCache.normal.textColor = new Color(0.7f, 0.85f, 1f);
-            GUI.Label(new Rect(px, py + 146, panelW, 44), $"Captured: {caught} / {total}", detailSummaryStyleCache);
+            GUI.Label(new Rect(px, py + 146f, pw, 40f), $"포획  {caught} / {total}", detailSummaryStyle);
 
-            float barX = px + panelW * 0.2f;
-            float barW = panelW * 0.6f;
-            float barY = py + 198;
+            float barX = px + pw * 0.2f, barW = pw * 0.6f, barY = py + 196f;
             GUI.color = new Color(0.15f, 0.15f, 0.2f);
-            GUI.DrawTexture(new Rect(barX, barY, barW, 18), Texture2D.whiteTexture);
-            float fill = total > 0 ? (float)caught / total : 0;
+            GUI.DrawTexture(new Rect(barX, barY, barW, 18f), Texture2D.whiteTexture);
             GUI.color = region.themeColor;
-            GUI.DrawTexture(new Rect(barX, barY, barW * fill, 18), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(barX, barY, barW * (total > 0 ? (float)caught / total : 0f), 18f), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
-            float listY = py + 232;
-            float listH = panelH - 242;
-            Rect listArea = new Rect(px + 15, listY, panelW - 30, listH);
-
-            if (region.insectIds == null || region.insectIds.Length == 0)
+            Rect listArea = new Rect(px + 15f, py + 232f, pw - 30f, ph - 244f);
+            if (total == 0)
             {
-                detailNoInsectStyleCache.fontSize = 20;
-                detailNoInsectStyleCache.normal.textColor = new Color(0.5f, 0.5f, 0.5f);
-                GUI.Label(listArea, "No insects registered", detailNoInsectStyleCache);
+                GUI.Label(listArea, "등록된 곤충 없음", detailNoInsectStyle);
                 return;
             }
 
             float itemH = 140f;
-            float totalListH = region.insectIds.Length * itemH;
-            Rect viewRect = new Rect(0, 0, listArea.width - 20, totalListH);
-
+            Rect viewRect = new Rect(0, 0, listArea.width - 20f, region.insectIds.Length * itemH);
             dexScroll = GUI.BeginScrollView(listArea, dexScroll, viewRect);
             for (int i = 0; i < region.insectIds.Length; i++)
-            {
-                DrawDexItem(new Rect(0, i * itemH, viewRect.width, itemH - 4), region.insectIds[i], region.themeColor);
-            }
+                DrawDexItem(new Rect(0, i * itemH, viewRect.width, itemH - 4f), region.insectIds[i]);
             GUI.EndScrollView();
         }
 
-        private void DrawDexItem(Rect rect, string insectId, Color themeCol)
+        private void DrawDexItem(Rect rect, string insectId)
         {
             InsectData data = FindInsectData(insectId);
             bool isCaught = dex != null && dex.HasRecord(insectId);
@@ -656,44 +623,27 @@ namespace InsectGame.UI
             {
                 Color rarityCol = UITheme.Instance.GetInsectRarityColor(data.rarity);
                 GUI.color = rarityCol;
-                GUI.DrawTexture(new Rect(rect.x, rect.y, 6, rect.height), Texture2D.whiteTexture);
+                GUI.DrawTexture(new Rect(rect.x, rect.y, 6f, rect.height), Texture2D.whiteTexture);
+                CapturePopupUI.DrawTypedInsectPortrait(rect.x + 62f, rect.y + rect.height / 2f, data.insectId, data.rarity, 1f);
 
-                CapturePopupUI.DrawTypedInsectPortrait(rect.x + 62, rect.y + rect.height / 2f, data.insectId, data.rarity, 1f);
-
-                dexNameStyleCache.normal.textColor = rarityCol;
+                dexNameStyle.normal.textColor = rarityCol;
                 GUI.color = Color.white;
-                GUI.Label(new Rect(rect.x + 120, rect.y + 18, rect.width - 200, 46), data.displayName, dexNameStyleCache);
-
-                dexInfoStyleCache.normal.textColor = new Color(0.6f, 0.6f, 0.6f);
-                GUI.Label(new Rect(rect.x + 120, rect.y + 68, rect.width - 200, 42),
-                    $"{data.rarity}  |  CP {PlayerInsectCombatPower.CalculateBasePreview(data, data.minLevel)}", dexInfoStyleCache);
-
-                dexCheckStyleCache.fontSize = 41;
-                dexCheckStyleCache.fontStyle = FontStyle.Bold;
-                dexCheckStyleCache.normal.textColor = new Color(0.3f, 1f, 0.5f);
-                GUI.Label(new Rect(rect.x + rect.width - 72, rect.y + 22, 60, 60), "V", dexCheckStyleCache);
+                GUI.Label(new Rect(rect.x + 120f, rect.y + 18f, rect.width - 200f, 46f), data.displayName, dexNameStyle);
+                GUI.Label(new Rect(rect.x + 120f, rect.y + 68f, rect.width - 200f, 42f),
+                    $"{data.rarity}  |  CP {PlayerInsectCombatPower.CalculateBasePreview(data, data.minLevel)}", dexInfoStyle);
+                GUI.Label(new Rect(rect.x + rect.width - 72f, rect.y + 22f, 60f, 60f), "V", dexCheckStyle);
             }
             else
             {
                 GUI.color = new Color(0.3f, 0.3f, 0.3f);
-                GUI.DrawTexture(new Rect(rect.x, rect.y, 6, rect.height), Texture2D.whiteTexture);
-
+                GUI.DrawTexture(new Rect(rect.x, rect.y, 6f, rect.height), Texture2D.whiteTexture);
                 GUI.color = new Color(0.2f, 0.2f, 0.2f, 0.5f);
-                GUI.DrawTexture(new Rect(rect.x + 24, rect.y + rect.height / 2f - 34, 68, 68), Texture2D.whiteTexture);
-
-                dexUnknownStyleCache.fontSize = 49;
-                dexUnknownStyleCache.alignment = TextAnchor.MiddleCenter;
-                dexUnknownStyleCache.normal.textColor = new Color(0.35f, 0.35f, 0.35f);
+                GUI.DrawTexture(new Rect(rect.x + 24f, rect.y + rect.height / 2f - 34f, 68f, 68f), Texture2D.whiteTexture);
                 GUI.color = Color.white;
-                GUI.Label(new Rect(rect.x + 24, rect.y + rect.height / 2f - 34, 68, 68), "?", dexUnknownStyleCache);
-
-                dexHiddenNameStyleCache.fontStyle = FontStyle.Italic;
-                dexHiddenNameStyleCache.normal.textColor = new Color(0.4f, 0.4f, 0.4f);
-                string displayHint = data != null ? new string('?', data.displayName.Length) : "???";
-                GUI.Label(new Rect(rect.x + 120, rect.y + 26, rect.width - 200, 46), displayHint, dexHiddenNameStyleCache);
-
-                dexNotCaughtStyleCache.normal.textColor = new Color(0.35f, 0.35f, 0.35f);
-                GUI.Label(new Rect(rect.x + 120, rect.y + 74, rect.width - 200, 42), "아직 포획하지 않음", dexNotCaughtStyleCache);
+                GUI.Label(new Rect(rect.x + 24f, rect.y + rect.height / 2f - 34f, 68f, 68f), "?", dexUnknownStyle);
+                string hint = data != null ? new string('?', data.displayName.Length) : "???";
+                GUI.Label(new Rect(rect.x + 120f, rect.y + 26f, rect.width - 200f, 46f), hint, dexHiddenStyle);
+                GUI.Label(new Rect(rect.x + 120f, rect.y + 74f, rect.width - 200f, 42f), "아직 포획하지 않음", dexNotCaughtStyle);
             }
         }
 
@@ -702,9 +652,7 @@ namespace InsectGame.UI
             if (region == null || region.insectIds == null || dex == null) return 0;
             int count = 0;
             foreach (string id in region.insectIds)
-            {
                 if (dex.HasRecord(id)) count++;
-            }
             return count;
         }
 
@@ -712,176 +660,36 @@ namespace InsectGame.UI
         {
             if (database == null || database.insects == null) return null;
             foreach (var d in database.insects)
-            {
                 if (d != null && d.insectId == insectId) return d;
-            }
             return null;
-        }
-
-        public void AutoWire(RegionManager rm, PlayerProgressController prog, DexController dexCtrl, InsectDatabase db)
-        {
-            if (regionManager == null) regionManager = rm;
-            if (progress == null) progress = prog;
-            if (dex == null) dex = dexCtrl;
-            if (database == null) database = db;
-        }
-
-        public void AutoWire(InsectSpawner sp)
-        {
-            if (spawner != null) spawner.RaidBossSpawned -= OnRaidBossSpawned;
-            spawner = sp;
-            if (spawner != null) spawner.RaidBossSpawned += OnRaidBossSpawned;
-        }
-
-        private void DrawMapTerrain(float wMinX, float wMinZ, float wW, float wH, float mX, float mY, float mW, float mH)
-        {
-            if (regionManager.Regions == null) return;
-
-            // ─── 리전 간 길 ───
-            Color pathCol = new Color(0.55f, 0.48f, 0.32f, 0.6f);
-            RegionData[] regions = regionManager.Regions;
-
-            // 연결 관계: meadow↔pond, meadow↔forest, meadow↔swamp, meadow↔garden, mountain↔ruins, forest↔swamp
-            string[,] connections = {
-                {"meadow","pond"}, {"meadow","forest"}, {"meadow","swamp"}, {"meadow","garden"},
-                {"mountain","ruins"}, {"forest","swamp"}
-            };
-
-            for (int i = 0; i < connections.GetLength(0); i++)
-            {
-                RegionData a = FindRegion(regions, connections[i, 0]);
-                RegionData b = FindRegion(regions, connections[i, 1]);
-                if (a == null || b == null) continue;
-
-                Vector2 pa = WorldToMini(a.centerPosition.x, a.centerPosition.z);
-                Vector2 pb = WorldToMini(b.centerPosition.x, b.centerPosition.z);
-                DrawMapLine(pa, pb, 3f, pathCol);
-            }
-
-            // ─── 강 (pond 근처) ───
-            RegionData pond = FindRegion(regions, "pond");
-            if (pond != null)
-            {
-                Vector2 riverStart = WorldToMini(pond.centerPosition.x, pond.centerPosition.z);
-                Vector2 riverEnd = WorldToMini(pond.centerPosition.x - pond.radius * 0.8f, pond.centerPosition.z);
-                DrawMapLine(riverStart, riverEnd, 4f, new Color(0.2f, 0.45f, 0.7f, 0.7f));
-
-                // 다리 표시
-                Vector2 bridgePos = Vector2.Lerp(riverStart, riverEnd, 0.5f);
-                GUI.color = new Color(0.5f, 0.35f, 0.15f, 0.9f);
-                GUI.DrawTexture(new Rect(bridgePos.x - 6, bridgePos.y - 3, 12, 6), Texture2D.whiteTexture);
-                GUI.color = Color.white;
-            }
-
-            // ─── 절벽 (forest↔mountain) ───
-            RegionData forest = FindRegion(regions, "forest");
-            RegionData mountain = FindRegion(regions, "mountain");
-            if (forest != null && mountain != null)
-            {
-                Vector2 cliffA = WorldToMini(forest.centerPosition.x, forest.centerPosition.z);
-                Vector2 cliffB = WorldToMini(mountain.centerPosition.x, mountain.centerPosition.z);
-                Vector2 mid = (cliffA + cliffB) * 0.5f;
-                Vector2 dir = (cliffB - cliffA).normalized;
-                Vector2 perp = new Vector2(-dir.y, dir.x);
-
-                // 절벽 = 두꺼운 갈색 선 + 지그재그
-                for (int j = 0; j < 5; j++)
-                {
-                    float t = (j + 0.5f) / 5f;
-                    Vector2 p = Vector2.Lerp(cliffA, cliffB, t);
-                    p += perp * Mathf.Sin(t * Mathf.PI * 2f) * 4f;
-                    float zag = (j % 2 == 0) ? 2f : -2f;
-                    GUI.color = new Color(0.45f, 0.38f, 0.3f, 0.8f);
-                    GUI.DrawTexture(new Rect(p.x - 4 + zag, p.y - 4, 8, 8), Texture2D.whiteTexture);
-                }
-
-                // mountain↔ruins 다리
-                RegionData ruins = FindRegion(regions, "ruins");
-                if (ruins != null)
-                {
-                    Vector2 bStart = WorldToMini(mountain.centerPosition.x, mountain.centerPosition.z);
-                    Vector2 bEnd = WorldToMini(ruins.centerPosition.x, ruins.centerPosition.z);
-                    Vector2 bMid = Vector2.Lerp(bStart, bEnd, 0.5f);
-                    GUI.color = new Color(0.5f, 0.45f, 0.38f, 0.9f);
-                    GUI.DrawTexture(new Rect(bMid.x - 8, bMid.y - 3, 16, 6), Texture2D.whiteTexture);
-                    GUI.color = Color.white;
-                }
-            }
-
-            // ─── 리전 내 지형 심볼 ───
-            foreach (var r in regions)
-            {
-                Vector2 rc = WorldToMini(r.centerPosition.x, r.centerPosition.z);
-                float rr = (r.radius / Mathf.Max(wW, wH)) * Mathf.Min(mW, mH);
-                rr = Mathf.Max(rr, 20f);
-
-                symStyleCache.fontSize = 18;
-                symStyleCache.normal.textColor = new Color(1f, 1f, 1f, 0.4f);
-                GUI.color = Color.white;
-
-                string sym = GetRegionSymbol(r.regionId);
-                if (!string.IsNullOrEmpty(sym))
-                    GUI.Label(new Rect(rc.x - 40, rc.y + rr * 0.3f, 80, 24), sym, symStyleCache);
-            }
-
-            GUI.color = Color.white;
-        }
-
-        private void DrawMapLine(Vector2 a, Vector2 b, float thickness, Color col)
-        {
-            Vector2 dir = b - a;
-            float len = dir.magnitude;
-            if (len < 1f) return;
-            int segments = Mathf.Max(2, Mathf.RoundToInt(len / 6f));
-            float segLen = len / segments;
-
-            GUI.color = col;
-            for (int i = 0; i < segments; i++)
-            {
-                float t = ((float)i + 0.5f) / segments;
-                Vector2 p = Vector2.Lerp(a, b, t);
-                Vector2 d = dir.normalized;
-                // 방향에 따라 가로/세로 선택
-                if (Mathf.Abs(d.x) > Mathf.Abs(d.y))
-                    GUI.DrawTexture(new Rect(p.x - segLen * 0.5f, p.y - thickness * 0.5f, segLen, thickness), Texture2D.whiteTexture);
-                else
-                    GUI.DrawTexture(new Rect(p.x - thickness * 0.5f, p.y - segLen * 0.5f, thickness, segLen), Texture2D.whiteTexture);
-            }
-            GUI.color = Color.white;
         }
 
         private RegionData FindRegion(RegionData[] regions, string id)
         {
             foreach (var r in regions)
-                if (r.regionId == id) return r;
+                if (r != null && r.regionId == id) return r;
             return null;
-        }
-
-        private string GetRegionSymbol(string regionId)
-        {
-            switch (regionId)
-            {
-                case "meadow": return "~ ~ ~";
-                case "pond": return "~~~";
-                case "forest": return "TTT";
-                case "swamp": return "...";
-                case "mountain": return "/\\";
-                case "garden": return "***";
-                case "ruins": return "|||";
-                default: return null;
-            }
         }
 
         private void TeleportToSubArea(Data.SubAreaData sub)
         {
             if (sub == null) return;
-            GameObject player = GameObject.Find("Player");
-            if (player == null) return;
-            // SubArea 중심점 위에 배치 — RegionManager.Update가 ContainsPoint 감지 → 자동 진입
+            Transform pl = GetPlayer();
+            if (pl == null) return;
             Vector3 dest = sub.centerPosition;
-            dest.y = player.transform.position.y;
-            player.transform.position = dest;
-            // 맵 UI는 닫지 않음 — 사용자가 닫음. 다음 Update에서 SubArea 진입 알림 팝업이 자동 발화.
+            dest.y = pl.position.y;
+            pl.position = dest;
+            // 맵은 닫지 않음 — 다음 Update에서 SubArea 진입 팝업 자동 발화.
+        }
+
+        private void TeleportToRegion(RegionData region)
+        {
+            if (region == null) return;
+            Transform pl = GetPlayer();
+            if (pl == null) return;
+            Vector3 dest = region.centerPosition;
+            dest.y = pl.position.y;
+            pl.position = dest;
         }
 
         private Color GetSubAreaColor(string envType)
@@ -901,6 +709,21 @@ namespace InsectGame.UI
                 case "underground": return new Color(0.3f, 0.25f, 0.2f);
                 default: return new Color(0.5f, 0.5f, 0.5f);
             }
+        }
+
+        public void AutoWire(RegionManager rm, PlayerProgressController prog, DexController dexCtrl, InsectDatabase db)
+        {
+            if (regionManager == null) regionManager = rm;
+            if (progress == null) progress = prog;
+            if (dex == null) dex = dexCtrl;
+            if (database == null) database = db;
+        }
+
+        public void AutoWire(InsectSpawner sp)
+        {
+            if (spawner != null) spawner.RaidBossSpawned -= OnRaidBossSpawned;
+            spawner = sp;
+            if (spawner != null) spawner.RaidBossSpawned += OnRaidBossSpawned;
         }
     }
 }
