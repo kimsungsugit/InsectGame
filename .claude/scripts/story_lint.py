@@ -110,8 +110,12 @@ def evaluate_signals() -> list:
                     "FAIL" if branch_bad else "PASS"))
 
     # 5. onComplete 보상 ID 존재 + unlockQuestId → 퀘스트 존재
-    shop_items, _ = data_lint.extract_cashshop_items()
-    item_ids = data_lint.extract_capture_items() | shop_items
+    # 아이템 존재 집합 = capture item ∪ shop 진열ID ∪ shop 지급ID ∪ ItemDatabase 레지스트리.
+    # (예전엔 shop 지급ID(rewards)를 _로 버려 exp_boost처럼 ItemDatabase에만 있고 채집망이 아닌
+    #  아이템이 오탐으로 걸렸다. game_facts.item_ids()가 런타임 레지스트리 단일 출처.)
+    shop_items, shop_rewards = data_lint.extract_cashshop_items()
+    item_ids = (data_lint.extract_capture_items() | shop_items | shop_rewards
+                | game_facts.item_ids())
     reward_bad = []
     for b in beats:
         oc = b.get("onComplete") or {}

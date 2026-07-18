@@ -96,9 +96,13 @@ def evaluate_signals() -> list:
                     else f"0건 (곤충 {len(insect_ids)}종 대조)",
                     "FAIL" if bad_insect else "PASS"))
 
-    # 4. 보상 아이템 ID → 아이템 존재 (data_lint 추출 재사용)
-    shop_items, _ = data_lint.extract_cashshop_items()
-    item_ids = data_lint.extract_capture_items() | shop_items
+    # 4. 보상 아이템 ID → 아이템 존재
+    # 집합 = capture item ∪ shop 진열ID ∪ shop 지급ID ∪ ItemDatabase 레지스트리.
+    # (예전엔 shop 지급ID(rewards)를 _로 버려 exp_boost처럼 ItemDatabase에만 있는 아이템이
+    #  오탐으로 걸렸다 — story_lint와 동일 수정. game_facts.item_ids()가 런타임 레지스트리.)
+    shop_items, shop_rewards = data_lint.extract_cashshop_items()
+    item_ids = (data_lint.extract_capture_items() | shop_items | shop_rewards
+                | game_facts.item_ids())
     bad_item = [f"{q['questId']}:{q['reward_item']}"
                 for q in quests if q["reward_item"] and q["reward_item"] not in item_ids]
     signals.append(("보상 아이템 ID 존재", "0건 미존재",
