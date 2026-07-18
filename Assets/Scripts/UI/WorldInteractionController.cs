@@ -24,6 +24,7 @@ namespace InsectGame.UI
         private NpcDialogueUI dialogue;
         private InsectSpawner spawner;
         private NpcManager npcManager;
+        private InsectGame.Story.StoryDirector storyDirector;   // 스토리 NPC 대화 → NpcTalk 트리거
 
         private readonly List<InteractionPointDef> points = new List<InteractionPointDef>();
 
@@ -65,6 +66,11 @@ namespace InsectGame.UI
         public void AutoWire(NpcManager manager)
         {
             if (npcManager == null) npcManager = manager;
+        }
+
+        public void AutoWire(InsectGame.Story.StoryDirector director)
+        {
+            if (storyDirector == null) storyDirector = director;
         }
 
         /// <summary>VillageBuilder가 생성한 상호작용 지점 등록 — 부트스트랩이 호출.</summary>
@@ -130,23 +136,13 @@ namespace InsectGame.UI
                 }
             }
 
-            // 대화 가능 최근접 주민 (반경 3m)
+            // 대화 가능 최근접 주민/스토리 NPC (반경 3m) — 두 목록 모두 스캔.
             VillagerNpc bestVillager = null;
             float bestVillagerDist = float.MaxValue;
             if (npcManager != null)
             {
-                IReadOnlyList<VillagerNpc> villagers = npcManager.Villagers;
-                for (int i = 0; i < villagers.Count; i++)
-                {
-                    VillagerNpc v = villagers[i];
-                    if (v == null || !v.CanTalk || !v.gameObject.activeInHierarchy) continue;
-                    float d = Vector3.Distance(playerPos, v.transform.position);
-                    if (d <= VillagerTalkRadius && d < bestVillagerDist)
-                    {
-                        bestVillagerDist = d;
-                        bestVillager = v;
-                    }
-                }
+                ScanTalkable(npcManager.Villagers, playerPos, ref bestVillager, ref bestVillagerDist);
+                ScanTalkable(npcManager.StoryNpcs, playerPos, ref bestVillager, ref bestVillagerDist);
             }
 
             // 더 가까운 쪽을 단일 대상으로
@@ -182,6 +178,24 @@ namespace InsectGame.UI
             hasPriorityTarget = currentTargetDistance < nearestInsectDist;
         }
 
+        // 대화 가능 최근접 NPC 갱신 — 일반 주민/스토리 NPC 공용.
+        private static void ScanTalkable(IReadOnlyList<VillagerNpc> list, Vector3 playerPos,
+            ref VillagerNpc best, ref float bestDist)
+        {
+            if (list == null) return;
+            for (int i = 0; i < list.Count; i++)
+            {
+                VillagerNpc v = list[i];
+                if (v == null || !v.CanTalk || !v.gameObject.activeInHierarchy) continue;
+                float d = Vector3.Distance(playerPos, v.transform.position);
+                if (d <= VillagerTalkRadius && d < bestDist)
+                {
+                    bestDist = d;
+                    best = v;
+                }
+            }
+        }
+
         private void Activate()
         {
             // 스캔 간격(0.15s) 사이에 모달이 열렸을 수 있음 — 발동 직전 재확인
@@ -190,7 +204,11 @@ namespace InsectGame.UI
 
             if (currentVillager != null)
             {
-                if (dialogue != null) dialogue.Show(currentVillager);
+                // 스토리 NPC면 먼저 NpcTalk 스토리 발동 시도. 비트가 뜨면 NpcDialogueUI가 렌더,
+                // 아니면(이미 봤거나 일반 주민) 앰비언트 대사로 폴백.
+                bool storyFired = currentVillager.IsStoryNpc && storyDirector != null
+                    && storyDirector.OnNpcTalked(currentVillager.StoryNpcId);
+                if (!storyFired && dialogue != null) dialogue.Show(currentVillager);
             }
             else if (currentPoint != null)
             {

@@ -28,7 +28,8 @@ namespace InsectGame.Core
     public enum NpcKind
     {
         Villager,
-        CatcherKid
+        CatcherKid,
+        StoryNpc
     }
 
     /// <summary>NPC 스폰 위치 정의 — VillageBuilder가 생성, NpcManager가 소비.</summary>
@@ -39,6 +40,9 @@ namespace InsectGame.Core
         public NpcKind kind;
         public string regionId;
         public float wanderRadius = 8f;
+        // StoryNpc 전용 — 어르신/라온/세라 식별자(village_elder/catcher_rival/ruins_scholar).
+        // 다가가 대화하면 StoryDirector NpcTalk 트리거로 해당 스토리를 발동한다.
+        public string storyNpcId;
     }
 
     /// <summary>VillageBuilder.Build() 결과 — 부트스트랩이 NpcManager/WorldInteractionController에 전달.</summary>

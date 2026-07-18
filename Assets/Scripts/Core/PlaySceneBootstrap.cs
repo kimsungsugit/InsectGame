@@ -522,6 +522,7 @@ namespace InsectGame.Core
                     EnsureComponent<InsectGame.NPC.NpcManager>("World/NpcManager");
                 npcManager.AutoWire(spawner, regionMgr, player.transform);
                 worldInteract.AutoWire(npcManager);
+                worldInteract.AutoWire(storyDirector);   // 스토리 NPC 대화 → NpcTalk 트리거
 
                 InsectGame.UI.NpcDialogueUI npcDialogue =
                     EnsureComponent<InsectGame.UI.NpcDialogueUI>("UI/NpcDialogueUI");

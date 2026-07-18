@@ -31,7 +31,7 @@ StoryBeat: beatId, chapterId, order, prerequisiteBeatId(옵션),
 StoryList { beats[] }   // JsonUtility 래퍼 (InsectLoreList와 동형)
 
 trigger.type enum: RegionEnter / QuestComplete / LevelReach / CaptureInsect /
-                   BattleWin / SubAreaEnter / Immediate
+                   BattleWin / SubAreaEnter / Immediate / NpcTalk
 ```
 
 ## 흐름

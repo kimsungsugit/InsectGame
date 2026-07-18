@@ -39,6 +39,9 @@ namespace InsectGame.Story
         private const string TriggerBattleWin = "BattleWin";
         private const string TriggerSubAreaEnter = "SubAreaEnter";
         private const string TriggerImmediate = "Immediate";
+        // 스토리 NPC(어르신/라온/세라)에게 다가가 대화 시 발화. param=storyNpcId. 이벤트 소스는
+        // WorldInteractionController가 OnNpcTalked를 호출하는 것(구독 대신 직접 진입점).
+        private const string TriggerNpcTalk = "NpcTalk";
 
         // 트리거 평가 + 진행/보상 지급에 필요한 참조 주입. Bootstrap이 호출.
         public void AutoWire(RegionManager region, InsectBattleController battle,
@@ -154,6 +157,17 @@ namespace InsectGame.Story
             EvaluateTriggers(TriggerCaptureInsect, insect != null ? insect.insectId : null);
         }
 
+        // WorldInteractionController가 스토리 NPC에게 대화(E) 시 호출 — 그 NPC의 NpcTalk 비트를 발화.
+        // 반환: 실제로 비트가 발화했으면 true(호출부가 false면 앰비언트 대사로 폴백). 이벤트 구독이
+        // 아니라 직접 진입점 — WorldInteractionController(UI)가 StoryDirector를 AutoWire해 호출한다.
+        public bool OnNpcTalked(string npcId)
+        {
+            if (string.IsNullOrEmpty(npcId)) return false;
+            string before = pendingBeatId;
+            EvaluateTriggers(TriggerNpcTalk, npcId);
+            return pendingBeatId != before && !string.IsNullOrEmpty(pendingBeatId);
+        }
+
         // --- 중앙 트리거 평가 ---
 
         // triggerType의 미열람·prereq충족·param일치 비트를 찾아 하나만 발화(모달 클로버링 방지).
@@ -176,7 +190,8 @@ namespace InsectGame.Story
                     case TriggerRegionEnter:
                     case TriggerQuestComplete:
                     case TriggerSubAreaEnter:
-                        // param 완전 일치(리전/퀘스트/서브에리어 ID).
+                    case TriggerNpcTalk:
+                        // param 완전 일치(리전/퀘스트/서브에리어 ID / 스토리 NPC ID).
                         matches = !string.IsNullOrEmpty(beat.trigger.param)
                             && beat.trigger.param == eventParam;
                         break;

@@ -109,6 +109,33 @@ namespace InsectGame.Core
                 });
             }
 
+            // ── 4) 스토리 NPC (고정 배치, wanderRadius 0) — 다가가 대화하면 스토리 발동 ──
+            if (meadow != null)
+            {
+                result.npcAnchors.Add(new NpcSpawnAnchor
+                {
+                    position = Polar(meadow.centerPosition, 200f, meadow.radius * 0.16f),
+                    kind = NpcKind.StoryNpc, regionId = "meadow",
+                    storyNpcId = "village_elder", wanderRadius = 0f
+                });
+                result.npcAnchors.Add(new NpcSpawnAnchor
+                {
+                    position = Polar(meadow.centerPosition, 75f, meadow.radius * 0.30f),
+                    kind = NpcKind.StoryNpc, regionId = "meadow",
+                    storyNpcId = "catcher_rival", wanderRadius = 0f
+                });
+            }
+            Data.RegionData storyForest = FindRegion(regions, "forest");
+            if (storyForest != null)
+            {
+                result.npcAnchors.Add(new NpcSpawnAnchor
+                {
+                    position = Polar(storyForest.centerPosition, 90f, storyForest.radius * 0.22f),
+                    kind = NpcKind.StoryNpc, regionId = "forest",
+                    storyNpcId = "ruins_scholar", wanderRadius = 0f
+                });
+            }
+
             Debug.Log($"[VillageBuilder] 마을 생성 완료 — NPC 앵커 {result.npcAnchors.Count}개, 상호작용 {result.interactions.Count}개");
             return result;
         }

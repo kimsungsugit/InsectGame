@@ -570,6 +570,60 @@
         "unlockQuestId": ""
       },
       "oneShot": true
+    },
+    {
+      "beatId": "talk_elder",
+      "chapterId": "npc",
+      "order": 30,
+      "prerequisiteBeatId": "",
+      "trigger": { "type": "NpcTalk", "param": "village_elder" },
+      "speakerNpcId": "village_elder",
+      "lines": [
+        { "speaker": "마을 어르신", "text": "오, 가까이 왔구나. 이렇게 얼굴을 보니 마음이 놓여. 곤충들이 사라지는 이 시국에, 네가 있어 참 다행이야." },
+        { "speaker": "마을 어르신", "text": "무리하진 말고… 허나 도감을 한 장 한 장 채워 주렴. 그게 이 세계를 붙드는 길이란다." }
+      ],
+      "choices": [],
+      "onComplete": {
+        "rewardCandy": 5, "rewardExp": 0, "rewardItemId": "", "rewardItemCount": 0,
+        "rewardInsectId": "", "rewardInsectDisplayName": "", "rewardInsectLevel": 0, "unlockQuestId": ""
+      },
+      "oneShot": true
+    },
+    {
+      "beatId": "talk_rival",
+      "chapterId": "npc",
+      "order": 31,
+      "prerequisiteBeatId": "",
+      "trigger": { "type": "NpcTalk", "param": "catcher_rival" },
+      "speakerNpcId": "catcher_rival",
+      "lines": [
+        { "speaker": "라온", "text": "왔냐. 딱 봐도 또 곤충 잡으러 가는 얼굴인데?" },
+        { "speaker": "라온", "text": "나도 질 생각 없거든. 누가 더 많이 구해내나, 계속 겨뤄 보자고!" }
+      ],
+      "choices": [],
+      "onComplete": {
+        "rewardCandy": 5, "rewardExp": 0, "rewardItemId": "", "rewardItemCount": 0,
+        "rewardInsectId": "", "rewardInsectDisplayName": "", "rewardInsectLevel": 0, "unlockQuestId": ""
+      },
+      "oneShot": true
+    },
+    {
+      "beatId": "talk_scholar",
+      "chapterId": "npc",
+      "order": 32,
+      "prerequisiteBeatId": "",
+      "trigger": { "type": "NpcTalk", "param": "ruins_scholar" },
+      "speakerNpcId": "ruins_scholar",
+      "lines": [
+        { "speaker": "세라", "text": "당신이군요. 마침 잘 왔어요 — 유적의 봉인에 대해 새로 알아낸 게 있어요." },
+        { "speaker": "세라", "text": "당신이 모으는 기록 하나하나가 그 균열을 메우고 있어요. 부디, 멈추지 말아요." }
+      ],
+      "choices": [],
+      "onComplete": {
+        "rewardCandy": 5, "rewardExp": 0, "rewardItemId": "", "rewardItemCount": 0,
+        "rewardInsectId": "", "rewardInsectDisplayName": "", "rewardInsectLevel": 0, "unlockQuestId": ""
+      },
+      "oneShot": true
     }
   ]
 }

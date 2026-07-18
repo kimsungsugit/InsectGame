@@ -21,6 +21,7 @@ namespace InsectGame.NPC
 
         private string npcId;
         private string displayName;
+        private string storyNpcId;   // 비어있으면 일반 주민, 채워지면 스토리 NPC(대화 시 스토리 발동)
         private string regionId;
         private Vector3 anchorPosition;
         private float wanderRadius = 8f;
@@ -38,14 +39,19 @@ namespace InsectGame.NPC
         public string RegionId => regionId;
         public bool IsTalking => state == State.Talking;
 
+        /// <summary>스토리 NPC 식별자(village_elder 등). 일반 주민이면 빈 문자열.</summary>
+        public string StoryNpcId => storyNpcId;
+        public bool IsStoryNpc => !string.IsNullOrEmpty(storyNpcId);
+
         /// <summary>대화 가능 여부 — 이미 대화 중이 아니고 활성 상태일 때.</summary>
         public bool CanTalk => state != State.Talking && isActiveAndEnabled;
 
         /// <summary>NpcManager가 스폰 직후 호출. 시각 모델은 NpcVisualBuilder.Build로 이미 생성된 상태.</summary>
-        public void Initialize(NpcSpawnAnchor anchor, string id, string name, int seed)
+        public void Initialize(NpcSpawnAnchor anchor, string id, string name, int seed, string storyId = null)
         {
             npcId = id;
             displayName = name;
+            storyNpcId = storyId;
             regionId = anchor != null ? anchor.regionId : string.Empty;
             anchorPosition = anchor != null ? anchor.position : transform.position;
             wanderRadius = anchor != null ? anchor.wanderRadius : 8f;

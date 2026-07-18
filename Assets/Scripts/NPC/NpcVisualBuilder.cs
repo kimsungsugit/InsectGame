@@ -113,6 +113,35 @@ namespace InsectGame.NPC
             };
         }
 
+        /// <summary>스토리 NPC(어르신/라온/세라) 고정 외형 — 구분되는 실루엣. seed 대신 storyNpcId로 결정.</summary>
+        public static NpcAppearance StoryNpcAppearance(string storyNpcId)
+        {
+            switch (storyNpcId)
+            {
+                case "catcher_rival": // 라온 — 곤충잡이 아이(뜰채·모자·밝은 상의)
+                    return new NpcAppearance
+                    {
+                        isChild = true, hairStyle = 0, hasHat = true,
+                        hair = HairPalette[1], top = KidTopPalette[0], bottom = BottomPalette[1],
+                        skin = SkinPalette[2], hat = HatPalette[0],
+                    };
+                case "ruins_scholar": // 세라 — 학자(올림머리·모자 없음·보라 상의)
+                    return new NpcAppearance
+                    {
+                        isChild = false, hairStyle = 2, hasHat = false,
+                        hair = HairPalette[0], top = TopPalette[4], bottom = BottomPalette[0],
+                        skin = SkinPalette[0], hat = HatPalette[1],
+                    };
+                default: // village_elder — 마을 어르신(백발·모자·따뜻한 상의)
+                    return new NpcAppearance
+                    {
+                        isChild = false, hairStyle = 0, hasHat = true,
+                        hair = HairPalette[3], top = TopPalette[3], bottom = BottomPalette[1],
+                        skin = SkinPalette[1], hat = HatPalette[2],
+                    };
+            }
+        }
+
         /// <summary>root 아래에 NPC 모델 생성. 아이는 루트 스케일 0.75 + 뜰채(NetHandle/NetRing) 부착.</summary>
         public static void Build(Transform root, NpcAppearance a)
         {

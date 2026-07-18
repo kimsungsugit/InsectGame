@@ -33,12 +33,14 @@ FAIL 0을 확인한다.**
 }
 ```
 
-**trigger.type (기존 7종)**: RegionEnter, QuestComplete, LevelReach, CaptureInsect,
-BattleWin, SubAreaEnter, Immediate. `param`은 그 타입의 대상 ID:
+**trigger.type (기존 8종)**: RegionEnter, QuestComplete, LevelReach, CaptureInsect,
+BattleWin, SubAreaEnter, Immediate, NpcTalk. `param`은 그 타입의 대상 ID:
 - RegionEnter/SubAreaEnter → 리전 ID (meadow/pond/…)
 - QuestComplete → questId (q_approach 등)
 - CaptureInsect → 곤충 ID (비우면 아무 포획)
 - LevelReach → 정수 레벨
+- NpcTalk → 스토리 NPC ID (village_elder/catcher_rival/ruins_scholar). WorldInteractionController가
+  스토리 NPC 대화 시 `StoryDirector.OnNpcTalked`로 발화(구독 아닌 직접 진입점)
 
 ## Phase 2: 트리거 판정 — 배선 범위가 갈린다
 

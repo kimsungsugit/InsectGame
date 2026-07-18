@@ -36,8 +36,10 @@ namespace InsectGame.NPC
 
         private readonly List<NpcSpawnAnchor> villagerAnchors = new List<NpcSpawnAnchor>();
         private readonly List<NpcSpawnAnchor> kidAnchors = new List<NpcSpawnAnchor>();
+        private readonly List<NpcSpawnAnchor> storyAnchors = new List<NpcSpawnAnchor>();
         private readonly List<VillagerNpc> villagers = new List<VillagerNpc>();
         private readonly List<CatcherKidNpc> kids = new List<CatcherKidNpc>();
+        private readonly List<VillagerNpc> storyNpcs = new List<VillagerNpc>();
         private bool anchorsReceived;
 
         private readonly HashSet<InsectEntity> reservedInsects = new HashSet<InsectEntity>();
@@ -51,6 +53,9 @@ namespace InsectGame.NPC
         private float sweepTimer = ReservationSweepInterval;
 
         public IReadOnlyList<VillagerNpc> Villagers => villagers;
+
+        /// <summary>스토리 NPC(어르신/라온/세라) — 고정 배치, WorldInteractionController가 별도 스캔.</summary>
+        public IReadOnlyList<VillagerNpc> StoryNpcs => storyNpcs;
 
         /// <summary>리전 진행 상태 참조 (향후 리전별 NPC 행동 분기용 — CS0414 방지 겸 공개).</summary>
         public RegionManager Region => regionManager;
@@ -113,15 +118,18 @@ namespace InsectGame.NPC
 
             villagerAnchors.Clear();
             kidAnchors.Clear();
+            storyAnchors.Clear();
             for (int i = 0; i < anchors.Count; i++)
             {
                 NpcSpawnAnchor a = anchors[i];
                 if (a == null) continue;
                 if (a.kind == NpcKind.Villager) villagerAnchors.Add(a);
                 else if (a.kind == NpcKind.CatcherKid) kidAnchors.Add(a);
+                else if (a.kind == NpcKind.StoryNpc) storyAnchors.Add(a);
             }
             anchorsReceived = true;
             SyncSpawns();
+            SpawnStoryNpcs();
         }
 
         /// <summary>튜닝 프로필 반영. SpawnFromAnchors 이후 호출되어도 수 증감을 동기화.</summary>
@@ -188,6 +196,41 @@ namespace InsectGame.NPC
             npc.Initialize(this, anchor, npcId, seed);
             AttachCulling(go);
             return npc;
+        }
+
+        // 스토리 NPC는 수 캡과 무관하게 앵커마다 1회 스폰(고정 배치). VillagerNpc를 재사용하되 storyNpcId 지정.
+        private void SpawnStoryNpcs()
+        {
+            while (storyNpcs.Count < storyAnchors.Count)
+            {
+                int i = storyNpcs.Count;
+                storyNpcs.Add(SpawnStoryNpc(storyAnchors[i], i));
+            }
+        }
+
+        private VillagerNpc SpawnStoryNpc(NpcSpawnAnchor anchor, int index)
+        {
+            string storyId = anchor.storyNpcId ?? string.Empty;
+            string npcId = $"story_{storyId}_{index}";
+            int seed = NpcDialogueDatabase.StableHash(npcId);
+
+            GameObject go = CreateNpcObject($"Npc_{npcId}", anchor.position);
+            NpcVisualBuilder.Build(go.transform, NpcVisualBuilder.StoryNpcAppearance(storyId));
+
+            VillagerNpc npc = go.AddComponent<VillagerNpc>();
+            npc.Initialize(anchor, npcId, StoryNpcDisplayName(storyId), seed, storyId);
+            AttachCulling(go);
+            return npc;
+        }
+
+        private static string StoryNpcDisplayName(string storyId)
+        {
+            switch (storyId)
+            {
+                case "catcher_rival": return "라온";
+                case "ruins_scholar": return "세라";
+                default: return "마을 어르신";
+            }
         }
 
         private GameObject CreateNpcObject(string name, Vector3 position)
