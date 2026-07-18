@@ -71,7 +71,12 @@ namespace InsectGame.UI
 
         public void AutoWire(InsectGame.Story.StoryDirector director)
         {
-            if (storyDirector == null) storyDirector = director;
+            if (storyDirector == null && director != null)
+            {
+                storyDirector = director;
+                // 스토리 모달을 벨 종료 전에 닫으면 조우 줌을 부드럽게 조기 종료(카메라 잔류 제거).
+                storyDirector.StoryBeatCompleted += OnStoryBeatCompleted;
+            }
         }
 
         public void AutoWire(CameraFollower follower)
@@ -93,6 +98,18 @@ namespace InsectGame.UI
         {
             // AutoWire되지 않았으면 카메라 팔로워를 직접 탐색(첫 조우 줌 폴백 — AutoWire 우선).
             if (cameraFollower == null) cameraFollower = FindFirstObjectByType<CameraFollower>();
+        }
+
+        private void OnDestroy()
+        {
+            if (storyDirector != null)
+                storyDirector.StoryBeatCompleted -= OnStoryBeatCompleted;
+        }
+
+        // 스토리 비트 모달이 닫히면 조우 카메라 줌을 부드럽게 조기 종료(진행 중 포커스 없으면 no-op).
+        private void OnStoryBeatCompleted(InsectGame.Story.StoryBeat beat)
+        {
+            if (cameraFollower != null) cameraFollower.ReleaseFocus();
         }
 
         private void Update()

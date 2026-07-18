@@ -30,6 +30,8 @@ namespace InsectGame.Story
         private bool subscribed;
 
         public event Action<StoryBeat> StoryBeatTriggered;
+        // 비트 완료(스토리 모달 닫힘) 신호 — WorldInteractionController가 조우 카메라 포커스를 릴리즈.
+        public event Action<StoryBeat> StoryBeatCompleted;
 
         // 트리거 타입 상수(닫힌 enum). JSON trigger.type과 반드시 일치. EvaluateTriggers switch가 전 케이스 처리.
         private const string TriggerRegionEnter = "RegionEnter";
@@ -290,6 +292,8 @@ namespace InsectGame.Story
             Save();
             // 스토리 보상은 캔디/XP/아이템/곤충 → 다른 기기 재관람 방지를 위해 즉시 클라우드 동기(퀘스트와 동일).
             if (CloudSaveManager.Instance != null) CloudSaveManager.Instance.SaveToCloud();
+
+            StoryBeatCompleted?.Invoke(beat);   // 모달 닫힘 → 조우 카메라 포커스 조기 릴리즈
         }
 
         private void MarkSeen(string beatId)

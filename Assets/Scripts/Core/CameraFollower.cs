@@ -46,6 +46,11 @@ namespace InsectGame.Core
         private Vector3 focusPoint;
         private float focusTimer;
         private float focusDuration;
+        // 포커스 조기 릴리즈 — 스토리 모달을 벨(2.5s) 종료 전에 닫으면 현재 amt에서 짧게 이즈아웃(스냅 방지).
+        private bool focusReleasing;
+        private float releaseTimer;
+        private float releaseDuration;
+        private float releaseFromAmt;
 
         public void SetTarget(Transform newTarget)
         {
@@ -58,6 +63,7 @@ namespace InsectGame.Core
         {
             battleMode = true;
             focusTimer = 0f;   // 진행 중 시네마틱 포커스 취소(배틀 카메라 우선)
+            focusReleasing = false;
             // 이탈 fade-out(battleTransition > 0) 진행 중 재진입 시 transition 보존 — 시각적 끊김 차단.
             // 새 진입(이미 normal)이면 0부터 시작.
             // 옛은 무조건 0 리셋 → 배틀→이탈→배틀 빠른 전환 시 카메라 끊김.
@@ -113,6 +119,21 @@ namespace InsectGame.Core
             focusPoint = worldPoint;
             focusDuration = Mathf.Max(0.2f, duration);
             focusTimer = focusDuration;
+            focusReleasing = false;   // 진행 중 릴리즈가 새 포커스를 삼키지 않게
+        }
+
+        /// <summary>진행 중인 시네마틱 포커스를 부드럽게 조기 종료 — 스토리 모달을 벨 종료 전에 닫았을 때
+        /// 카메라 잔류 제거. 현재 벨 amt에서 ~0.4s 이즈아웃(벨 경로를 두면 최대 절반 지속시간만큼 줌이 남는다).</summary>
+        public void ReleaseFocus()
+        {
+            if (focusReleasing) return;    // 이미 릴리즈 중
+            if (focusTimer <= 0f) return;  // 진행 중 포커스 없음(자연 종료했거나 시작 전)
+            float bell = 1f - Mathf.Abs(2f * (focusTimer / focusDuration) - 1f);
+            releaseFromAmt = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(bell));
+            releaseDuration = 0.4f;
+            releaseTimer = releaseDuration;
+            focusReleasing = true;
+            focusTimer = 0f;               // 벨 경로 중단 → 릴리즈 경로로 전환
         }
 
         private Vector3 GetShakeOffset()
@@ -165,15 +186,26 @@ namespace InsectGame.Core
                     desiredPosition = ResolveObstruction(lookTarget, desiredPosition);
 
                     // 시네마틱 포커스(첫 조우 등) — focusPoint 쪽으로 잠깐 줌인 후 복귀(0→1→0 벨 이즈).
-                    if (focusTimer > 0f)
+                    // ReleaseFocus() 호출(모달 조기 닫힘) 시엔 현재 amt에서 짧게 이즈아웃.
+                    float focusAmt = 0f;
+                    if (focusReleasing)
+                    {
+                        releaseTimer -= Time.deltaTime;
+                        focusAmt = releaseFromAmt * Mathf.Clamp01(releaseTimer / releaseDuration);
+                        if (releaseTimer <= 0f) focusReleasing = false;
+                    }
+                    else if (focusTimer > 0f)
                     {
                         focusTimer -= Time.deltaTime;
                         float bell = 1f - Mathf.Abs(2f * (focusTimer / focusDuration) - 1f);
-                        float amt = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(bell));
+                        focusAmt = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(bell));
+                    }
+                    if (focusAmt > 0f)
+                    {
                         Vector3 fp = focusPoint + Vector3.up * 0.85f;
-                        lookTarget = Vector3.Lerp(lookTarget, (lookTarget + fp) * 0.5f, amt * 0.8f);
-                        Vector3 zoomPos = target.position + offset * (1f - amt * 0.35f) + lookAhead;
-                        desiredPosition = Vector3.Lerp(desiredPosition, ResolveObstruction(lookTarget, zoomPos), amt);
+                        lookTarget = Vector3.Lerp(lookTarget, (lookTarget + fp) * 0.5f, focusAmt * 0.8f);
+                        Vector3 zoomPos = target.position + offset * (1f - focusAmt * 0.35f) + lookAhead;
+                        desiredPosition = Vector3.Lerp(desiredPosition, ResolveObstruction(lookTarget, zoomPos), focusAmt);
                     }
 
                     // 쉐이크 이전의 깨끗한 위치를 기준으로 Lerp (쉐이크 누적 방지)
