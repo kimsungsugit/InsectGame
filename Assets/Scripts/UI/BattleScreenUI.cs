@@ -115,6 +115,9 @@ namespace InsectGame.UI
 
         private float displayPlayerHp;
         private float displayEnemyHp;
+        // 칩바(ghost) — displayHp보다 느리게 따라와 최근 피해량을 잔상으로 표시(Phase 1 저즈).
+        private float chipPlayerHp;
+        private float chipEnemyHp;
 
         private int turnNumber;
 
@@ -198,6 +201,8 @@ namespace InsectGame.UI
                 enemyStats = enemy;
                 displayPlayerHp = player.CurrentHp;
                 displayEnemyHp = enemy.CurrentHp;
+                chipPlayerHp = player.CurrentHp;
+                chipEnemyHp = enemy.CurrentHp;
                 turnNumber = 0;
                 phase = Phase.Intro;
                 introTimer = 0f;
@@ -234,6 +239,7 @@ namespace InsectGame.UI
                 playerStats = player;
                 enemyStats = enemy;
                 displayPlayerHp = player.CurrentHp;
+                chipPlayerHp = player.CurrentHp;
                 if (player.PlayerData != null) currentInsectId = player.PlayerData.instanceId;
                 phase = Phase.PlayerTurn;
                 phaseTimer = 0f;
@@ -358,6 +364,13 @@ namespace InsectGame.UI
                 displayPlayerHp = Mathf.MoveTowards(displayPlayerHp, playerStats.CurrentHp, hpSpeed);
             if (enemyStats != null)
                 displayEnemyHp = Mathf.MoveTowards(displayEnemyHp, enemyStats.CurrentHp, hpSpeed);
+
+            // 칩바 — 실제 fill(displayHp)보다 느리게 감소해 최근 피해 잔상. 회복 시엔 스냅.
+            float chipSpeed = 22f * Time.deltaTime;
+            chipPlayerHp = chipPlayerHp > displayPlayerHp
+                ? Mathf.MoveTowards(chipPlayerHp, displayPlayerHp, chipSpeed) : displayPlayerHp;
+            chipEnemyHp = chipEnemyHp > displayEnemyHp
+                ? Mathf.MoveTowards(chipEnemyHp, displayEnemyHp, chipSpeed) : displayEnemyHp;
 
             // BGM 인텐시티: HP 30% 이하부터 가파르게 상승
             if (AudioManager.Instance != null && playerStats != null && playerStats.MaxHp > 0)
@@ -1557,7 +1570,17 @@ namespace InsectGame.UI
             GUI.color = new Color(0.12f, 0.12f, 0.18f);
             GUI.DrawTexture(new Rect(barX, barY, barW, barH), Texture2D.whiteTexture);
 
-            float hpRatio = stats.MaxHp > 0 ? dispHp / stats.MaxHp : 0;
+            float hpRatio = stats.MaxHp > 0 ? Mathf.Clamp01(dispHp / stats.MaxHp) : 0;
+
+            // 칩바(ghost) — chipHp까지 흐릿한 적색 잔상으로 최근 피해량 시각화(main fill 뒤에 먼저 그림).
+            float chipHp = isPlayer ? chipPlayerHp : chipEnemyHp;
+            float chipRatio = stats.MaxHp > 0 ? Mathf.Clamp01(chipHp / stats.MaxHp) : 0f;
+            if (chipRatio > hpRatio + 0.001f)
+            {
+                GUI.color = new Color(0.9f, 0.3f, 0.25f, 0.7f);
+                GUI.DrawTexture(new Rect(barX, barY, barW * chipRatio, barH), Texture2D.whiteTexture);
+            }
+
             Color hpColor = hpRatio > 0.5f ? new Color(0.3f, 0.85f, 0.35f) :
                            hpRatio > 0.2f ? new Color(0.95f, 0.8f, 0.2f) :
                            new Color(0.95f, 0.25f, 0.2f);
@@ -1566,6 +1589,14 @@ namespace InsectGame.UI
 
             GUI.color = new Color(hpColor.r + 0.15f, hpColor.g + 0.15f, hpColor.b + 0.15f, 0.4f);
             GUI.DrawTexture(new Rect(barX, barY, barW * hpRatio, barH / 3f), Texture2D.whiteTexture);
+
+            // 피격 플래시 — 최근 피해 시 흰 오버레이(shake 타이머 재사용). 무피해/회복 시 0.
+            float hitFlash = isPlayer ? playerShake : enemyShake;
+            if (hitFlash > 0f)
+            {
+                GUI.color = new Color(1f, 1f, 1f, Mathf.Clamp01(hitFlash) * 0.5f);
+                GUI.DrawTexture(new Rect(barX, barY, barW * Mathf.Max(chipRatio, hpRatio), barH), Texture2D.whiteTexture);
+            }
 
             GUI.color = Color.white;
             GUI.Label(new Rect(barX, barY, barW, barH), $"{Mathf.CeilToInt(dispHp)} / {stats.MaxHp}", hpTextCache);
@@ -1961,15 +1992,22 @@ namespace InsectGame.UI
                     float sh3d = UIScale.VirtualScreenHeight;
                     float dmgY = sh3d * 0.25f - (t3d - 0.3f) * 60f;
 
+                    // 등장 팝(초반 확대 후 정착) + 후반 페이드아웃 — 데미지 숫자 저즈(2D 폴백 패턴 이식).
+                    float dmgP = Mathf.Clamp01((t3d - 0.3f) / 0.7f);
+                    float dmgAlpha = Mathf.Clamp01(1.15f - dmgP);
+                    float popScale = 1f + Mathf.Sin(Mathf.Clamp01(dmgP * 2f) * Mathf.PI) * 0.3f;
+
                     // 크리티컬이면 더 큰 폰트 + 펄스 + CRITICAL! 라벨
                     bool isCrit = isPlayerAttack && lastWasCritical;
                     float critPulse = isCrit ? 1f + Mathf.Abs(Mathf.Sin(Time.unscaledTime * 20f)) * 0.15f : 1f;
-                    int dmgFontSize = isCrit ? Mathf.RoundToInt(64f * critPulse) : 38;
+                    int dmgFontSize = Mathf.RoundToInt((isCrit ? 64f * critPulse : 38f) * popScale);
 
                     dmgStyle3dCache.fontSize = dmgFontSize;
-                    dmgStyle3dCache.normal.textColor = isCrit
+                    Color dmgTextCol = isCrit
                         ? new Color(1f, 0.5f, 0.1f)
                         : (isPlayerAttack ? new Color(1f, 0.9f, 0.3f) : new Color(1f, 0.3f, 0.3f));
+                    dmgTextCol.a = dmgAlpha;
+                    dmgStyle3dCache.normal.textColor = dmgTextCol;
 
                     // 크리티컬 그림자 효과
                     if (isCrit)

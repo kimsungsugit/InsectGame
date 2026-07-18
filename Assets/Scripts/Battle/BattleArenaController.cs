@@ -27,6 +27,13 @@ namespace InsectGame.Battle
 
         private int selectedTeamIndex = -1;
 
+        // 전투 모델 스케일 — 전투는 필드 rarity 배율(1.0~1.9) 미적용·고정 배율(등급 무관 동일 크기).
+        // 곤충이 화면에서 과대해 하향(카메라·battlePos·FOV·아레나 지오메트리는 불변 = "모델만 축소").
+        // 보스는 위압 비율 유지, 팀은 5마리 호 배치라 더 작게.
+        private const float BattleInsectScale = 1.1f;   // 1v1 플레이어/적 (기존 1.5)
+        private const float BossInsectScale = 1.85f;    // 레이드 보스 (기존 2.5)
+        private const float TeamInsectScale = 0.8f;     // 레이드 팀원 (기존 1.0)
+
         public bool IsActive => isActive;
         public Vector3 ArenaCenter => arenaCenter;
         public Vector3 PlayerModelPos => playerBattlePos;
@@ -69,10 +76,10 @@ namespace InsectGame.Battle
             CreateArenaFloor();
             CreateBattleLight();
 
-            playerModel = CreateBattleInsect(playerInsect, playerLevel, false, playerBattlePos, 1.5f);
+            playerModel = CreateBattleInsect(playerInsect, playerLevel, false, playerBattlePos, BattleInsectScale);
             playerModel.name = "BattleInsect_Player";
 
-            enemyModel = CreateBattleInsect(enemyInsect, enemyLevel, enemyShiny, enemyBattlePos, 1.5f);
+            enemyModel = CreateBattleInsect(enemyInsect, enemyLevel, enemyShiny, enemyBattlePos, BattleInsectScale);
             enemyModel.name = "BattleInsect_Enemy";
 
             // 서로 마주보게
@@ -105,7 +112,7 @@ namespace InsectGame.Battle
             CreateArenaFloor();
             CreateBattleLight();
 
-            bossModel = CreateBattleInsect(bossInsect, bossLevel, bossShiny, bossBattlePos, 2.5f);
+            bossModel = CreateBattleInsect(bossInsect, bossLevel, bossShiny, bossBattlePos, BossInsectScale);
             bossModel.name = "RaidInsect_Boss";
             bossModel.transform.rotation = Quaternion.Euler(0f, 180f, 0f);
 
@@ -122,7 +129,7 @@ namespace InsectGame.Battle
                 float x = Mathf.Lerp(-2.5f, 2.5f, t);
                 float z = -3.5f + Mathf.Abs(t - 0.5f) * 2f; // 양 끝이 약간 뒤로
                 Vector3 pos = arenaCenter + new Vector3(x, 0.5f, z);
-                teamModels[i] = CreateBattleInsect(teamInsects[i], teamLevels[i], false, pos, 1.0f);
+                teamModels[i] = CreateBattleInsect(teamInsects[i], teamLevels[i], false, pos, TeamInsectScale);
                 teamModels[i].name = $"RaidInsect_Team_{i}";
                 teamModels[i].transform.LookAt(bossBattlePos); // 보스를 바라봄
             }
@@ -155,7 +162,7 @@ namespace InsectGame.Battle
                 playerModel = null;
             }
 
-            playerModel = CreateBattleInsect(newInsect, newLevel, false, playerBattlePos, 1.5f);
+            playerModel = CreateBattleInsect(newInsect, newLevel, false, playerBattlePos, BattleInsectScale);
             playerModel.name = "BattleInsect_Player";
 
             if (enemyModel != null)
