@@ -25,6 +25,7 @@ namespace InsectGame.UI
         private InsectSpawner spawner;
         private NpcManager npcManager;
         private InsectGame.Story.StoryDirector storyDirector;   // 스토리 NPC 대화 → NpcTalk 트리거
+        private CameraFollower cameraFollower;                   // 첫 조우 시네마틱 줌
 
         private readonly List<InteractionPointDef> points = new List<InteractionPointDef>();
 
@@ -73,6 +74,11 @@ namespace InsectGame.UI
             if (storyDirector == null) storyDirector = director;
         }
 
+        public void AutoWire(CameraFollower follower)
+        {
+            if (cameraFollower == null) cameraFollower = follower;
+        }
+
         /// <summary>VillageBuilder가 생성한 상호작용 지점 등록 — 부트스트랩이 호출.</summary>
         public void RegisterPoints(List<InteractionPointDef> defs)
         {
@@ -81,6 +87,12 @@ namespace InsectGame.UI
             {
                 if (defs[i] != null) points.Add(defs[i]);
             }
+        }
+
+        private void Start()
+        {
+            // AutoWire되지 않았으면 카메라 팔로워를 직접 탐색(첫 조우 줌 폴백 — AutoWire 우선).
+            if (cameraFollower == null) cameraFollower = FindFirstObjectByType<CameraFollower>();
         }
 
         private void Update()
@@ -212,6 +224,8 @@ namespace InsectGame.UI
                 // 아니면(이미 봤거나 일반 주민) 앰비언트 대사로 폴백.
                 bool storyFired = currentVillager.IsStoryNpc && storyDirector != null
                     && storyDirector.OnNpcTalked(currentVillager.StoryNpcId);
+                if (storyFired && cameraFollower != null)
+                    cameraFollower.FocusOn(currentVillager.transform.position, 2.5f);   // 첫 조우 줌인
                 if (!storyFired && dialogue != null) dialogue.Show(currentVillager);
             }
             else if (currentPoint != null)

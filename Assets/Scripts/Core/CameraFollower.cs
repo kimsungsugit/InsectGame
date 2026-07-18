@@ -42,6 +42,11 @@ namespace InsectGame.Core
         private Vector3 baselinePos; // 쉐이크 영향 없는 기본 위치 (다음 프레임 Lerp 기준)
         private bool baselineValid;
 
+        // 시네마틱 포커스 — 첫 조우 등에서 잠깐 대상 쪽으로 줌인 후 자동 복귀(focusTimer>0일 때만 동작).
+        private Vector3 focusPoint;
+        private float focusTimer;
+        private float focusDuration;
+
         public void SetTarget(Transform newTarget)
         {
             target = newTarget;
@@ -52,6 +57,7 @@ namespace InsectGame.Core
         public void EnterBattleMode(Vector3 playerPos, Vector3 enemyPos)
         {
             battleMode = true;
+            focusTimer = 0f;   // 진행 중 시네마틱 포커스 취소(배틀 카메라 우선)
             // 이탈 fade-out(battleTransition > 0) 진행 중 재진입 시 transition 보존 — 시각적 끊김 차단.
             // 새 진입(이미 normal)이면 0부터 시작.
             // 옛은 무조건 0 리셋 → 배틀→이탈→배틀 빠른 전환 시 카메라 끊김.
@@ -97,6 +103,16 @@ namespace InsectGame.Core
             shakeIntensity = Mathf.Max(shakeIntensity, intensity);
             shakeDuration = Mathf.Max(shakeDuration, duration);
             shakeTimer = shakeDuration;
+        }
+
+        /// <summary>짧은 시네마틱 포커스 — worldPoint 쪽으로 잠깐 줌인 후 자동 복귀(첫 조우 연출 등).
+        /// 배틀 모드 중엔 무시. 팔로우를 대체하지 않고 focusTimer 동안만 데스티네이션을 편향한다.</summary>
+        public void FocusOn(Vector3 worldPoint, float duration)
+        {
+            if (battleMode) return;
+            focusPoint = worldPoint;
+            focusDuration = Mathf.Max(0.2f, duration);
+            focusTimer = focusDuration;
         }
 
         private Vector3 GetShakeOffset()
@@ -147,6 +163,19 @@ namespace InsectGame.Core
                     // 카메라 시야 차단 보정 — 나무/벽/기둥 등 정적 scenery가 카메라-플레이어
                     // 사이를 가리면 카메라를 플레이어 쪽으로 당겨 시야 확보.
                     desiredPosition = ResolveObstruction(lookTarget, desiredPosition);
+
+                    // 시네마틱 포커스(첫 조우 등) — focusPoint 쪽으로 잠깐 줌인 후 복귀(0→1→0 벨 이즈).
+                    if (focusTimer > 0f)
+                    {
+                        focusTimer -= Time.deltaTime;
+                        float bell = 1f - Mathf.Abs(2f * (focusTimer / focusDuration) - 1f);
+                        float amt = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(bell));
+                        Vector3 fp = focusPoint + Vector3.up * 0.85f;
+                        lookTarget = Vector3.Lerp(lookTarget, (lookTarget + fp) * 0.5f, amt * 0.8f);
+                        Vector3 zoomPos = target.position + offset * (1f - amt * 0.35f) + lookAhead;
+                        desiredPosition = Vector3.Lerp(desiredPosition, ResolveObstruction(lookTarget, zoomPos), amt);
+                    }
+
                     // 쉐이크 이전의 깨끗한 위치를 기준으로 Lerp (쉐이크 누적 방지)
                     Vector3 lerpFrom = baselineValid ? baselinePos : transform.position;
                     finalPos = Vector3.Lerp(lerpFrom, desiredPosition, smoothSpeed * Time.deltaTime);
