@@ -35,7 +35,6 @@ namespace InsectGame.Spawning
         public IReadOnlyList<InsectEntity> ActiveInsects => activeInsects;
         private SimpleObjectPool pool;
         private bool poolInitialized;
-        private string debugStatus = "초기화 대기";
         private int totalSpawned;
 
         private RegionManager regionManager;
@@ -146,13 +145,11 @@ namespace InsectGame.Spawning
         {
             if (database == null || worldStateProvider == null || spawnPoints == null || spawnPoints.Length == 0)
             {
-                debugStatus = $"초기화 미완: DB={database != null} World={worldStateProvider != null} SP={spawnPoints?.Length ?? 0}";
                 return;
             }
 
             if (defaultPrefab == null)
             {
-                debugStatus = "프리팹 없음!";
                 return;
             }
 
@@ -172,7 +169,6 @@ namespace InsectGame.Spawning
                         SpawnSubAreaInsects(currentSubArea);
                     }
                 }
-                debugStatus = $"SubArea 활성: {currentSubArea.subAreaId} | {activeInsects.Count}마리";
                 return;
             }
             subAreaRespawnTimer = 0f;
@@ -194,14 +190,12 @@ namespace InsectGame.Spawning
 
             if (activeInsects.Count >= maxActiveTotal)
             {
-                debugStatus = $"최대치 도달 ({activeInsects.Count}/{maxActiveTotal})";
                 return;
             }
 
             spawnTimer += Time.deltaTime;
             if (spawnTimer < spawnIntervalSeconds)
             {
-                debugStatus = $"대기중... {spawnTimer:F1}/{spawnIntervalSeconds}s | 활성: {activeInsects.Count} | 총: {totalSpawned}";
                 return;
             }
 
@@ -222,13 +216,11 @@ namespace InsectGame.Spawning
             SpawnPoint point = GetAvailableSpawnPoint(preferredRegionId);
             if (point == null)
             {
-                debugStatus = "스폰포인트 없음 (모두 사용중)";
                 return;
             }
 
             if (!string.IsNullOrEmpty(point.regionId) && CountActiveInRegion(point.regionId) >= maxActivePerRegion)
             {
-                debugStatus = $"리전 {point.regionId} 최대치 도달 ({maxActivePerRegion}마리)";
                 return;
             }
 
@@ -236,7 +228,6 @@ namespace InsectGame.Spawning
             List<InsectData> candidates = database.GetCandidates(state);
             if (candidates == null || candidates.Count == 0)
             {
-                debugStatus = "후보 곤충 0마리 (조건 불일치)";
                 return;
             }
 
@@ -280,14 +271,12 @@ namespace InsectGame.Spawning
                 : database.GetWeightedRandom(candidates);
             if (selected == null)
             {
-                debugStatus = "곤충 선택 실패";
                 return;
             }
 
             GameObject prefab = selected.prefabOverride != null ? selected.prefabOverride : defaultPrefab;
             if (prefab == null)
             {
-                debugStatus = "프리팹 null";
                 return;
             }
 
@@ -314,7 +303,6 @@ namespace InsectGame.Spawning
             entity.Initialize(selected, level, point, DespawnEntity);
             activeInsects.Add(entity);
             totalSpawned++;
-            debugStatus = $"스폰 성공! {selected.displayName} Lv.{level} | 활성: {activeInsects.Count} | 총: {totalSpawned}";
 
             if (selected.rarity == InsectRarity.Epic || selected.rarity == InsectRarity.Legendary)
             {
@@ -370,102 +358,9 @@ namespace InsectGame.Spawning
             spawnTimer = 0f;
         }
 
-        // OnGUI GUIStyle 캐싱 — 옛 매 프레임 new GUIStyle 회귀 차단
-        private GUIStyle debugStyleCache;
-        // 렌더 진단 캐시 — 매 프레임 Find 비용 회피 위해 1초마다 갱신.
-        private float nextDiagRefresh;
-        private string renderDiagCache = "(측정 중)";
-        // 프리미티브 빌트인 메시 null 프로브 — 1회만 실행. Plane 메시가 null이면 회색필드+MeshCollider 에러 확정.
-        private string primProbeCache;
-
-        private void OnGUI()
-        {
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
-            if (debugStyleCache == null)
-            {
-                debugStyleCache = new GUIStyle(GUI.skin.box)
-                { fontSize = 14, alignment = TextAnchor.MiddleLeft, wordWrap = true };
-                debugStyleCache.normal.textColor = Color.white;
-            }
-
-            // 회색 필드 원인 추적용 렌더 진단 — 셰이더/라이트강도/fog/카메라클립/지형머티리얼.
-            // 프리미티브 빌트인 메시 1회 프로브 — Plane 메시가 NULL이면 지형 안보임+MeshCollider 에러 확정.
-            if (primProbeCache == null)
-            {
-                System.Text.StringBuilder sb = new System.Text.StringBuilder("Prim ");
-                PrimitiveType[] types = { PrimitiveType.Plane, PrimitiveType.Quad, PrimitiveType.Cube, PrimitiveType.Sphere, PrimitiveType.Cylinder, PrimitiveType.Capsule };
-                string[] tn = { "Pl", "Qd", "Cb", "Sp", "Cy", "Cp" };
-                for (int i = 0; i < types.Length; i++)
-                {
-                    GameObject probe = null;
-                    bool meshOk = false;
-                    try
-                    {
-                        probe = GameObject.CreatePrimitive(types[i]);
-                        MeshFilter pmf = probe.GetComponent<MeshFilter>();
-                        meshOk = pmf != null && pmf.sharedMesh != null && pmf.sharedMesh.vertexCount > 0;
-                    }
-                    catch { meshOk = false; }
-                    finally { if (probe != null) Destroy(probe); }
-                    sb.Append(tn[i]).Append(meshOk ? "=OK " : "=NULL ");
-                }
-                primProbeCache = sb.ToString();
-                Debug.Log("[InsectSpawner] 프리미티브 메시 프로브 → " + primProbeCache);
-            }
-
-            if (Time.unscaledTime >= nextDiagRefresh)
-            {
-                nextDiagRefresh = Time.unscaledTime + 1f;
-                bool stdNull = Shader.Find("Standard") == null;
-                Light[] lightsArr = FindObjectsByType<Light>(FindObjectsSortMode.None);
-                MeshRenderer[] rendsArr = FindObjectsByType<MeshRenderer>(FindObjectsSortMode.None);
-                int onRends = 0;
-                for (int i = 0; i < rendsArr.Length; i++)
-                    if (rendsArr[i].enabled && rendsArr[i].gameObject.activeInHierarchy) onRends++;
-                string lightInfo = lightsArr.Length > 0
-                    ? $"{lightsArr[0].type}I{lightsArr[0].intensity:0.0}dir{lightsArr[0].transform.forward.y:0.00}"
-                    : "none";
-                Camera mc = Camera.main;
-                string camInfo = mc != null
-                    ? $"fov{mc.fieldOfView:0} clip{mc.nearClipPlane:0.0}-{mc.farClipPlane:0} y{mc.transform.position.y:0.0} rx{mc.transform.eulerAngles.x:0}"
-                    : "null";
-                string groundInfo;
-                GameObject g = GameObject.Find("Ground");
-                if (g == null) groundInfo = "noObj";
-                else
-                {
-                    MeshRenderer gr = g.GetComponent<MeshRenderer>();
-                    MeshFilter gmf = g.GetComponent<MeshFilter>();
-                    string meshState = (gmf == null || gmf.sharedMesh == null) ? "MESHNULL" : $"v{gmf.sharedMesh.vertexCount}";
-                    if (gr == null || gr.sharedMaterial == null) groundInfo = $"noMat {meshState}";
-                    else groundInfo = $"{meshState} {gr.sharedMaterial.shader.name} c{ColHex(gr.sharedMaterial.color)}";
-                }
-                // 스카이박스 셰이더가 회색 출처일 수 있어 셰이더명 노출. 앰비언트 색도(검정이면 전체 어두움).
-                string skyInfo = RenderSettings.skybox != null
-                    ? $"{(RenderSettings.skybox.shader != null ? RenderSettings.skybox.shader.name : "noShader")}"
-                    : "null";
-                renderDiagCache =
-                    $"Std:{(stdNull ? "NULL" : "OK")} Light:{lightInfo} Amb:{RenderSettings.ambientMode}/{ColHex(RenderSettings.ambientLight)}\n" +
-                    $"Fog:{(RenderSettings.fog ? RenderSettings.fogMode.ToString() : "off")} Cam:{camInfo}\n" +
-                    $"Rend:{rendsArr.Length}(on{onRends}) Grd:{groundInfo}\n" +
-                    $"Sky:{skyInfo} {primProbeCache}";
-            }
-
-            float y = Screen.height - 190;
-            string info = $"[스포너] {debugStatus}\n" +
-                          $"DB:{database != null} | 프리팹:{defaultPrefab != null} | 풀:{pool != null} | " +
-                          $"SP:{spawnPoints?.Length ?? 0} | 활성:{activeInsects.Count}/{maxActiveTotal}\n" +
-                          $"[렌더] {renderDiagCache}";
-            GUI.Box(new Rect(10, y, 780, 174), info, debugStyleCache);
-            // 튜토리얼 리셋 버튼 제거(사용자 요청). 재테스트가 필요하면 세이브 삭제/마스터 계정으로.
-#endif
-        }
 
 
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
-        private static string ColHex(Color c) =>
-            $"{Mathf.RoundToInt(Mathf.Clamp01(c.r) * 255):X2}{Mathf.RoundToInt(Mathf.Clamp01(c.g) * 255):X2}{Mathf.RoundToInt(Mathf.Clamp01(c.b) * 255):X2}";
-#endif
+
 
         private SpawnPoint GetAvailableSpawnPoint(string preferredRegionId = null)
         {
