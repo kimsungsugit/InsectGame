@@ -123,7 +123,7 @@ namespace InsectGame.Core
                 new TutorialQuest
                 {
                     questId = "q_approach", title = "첫 곤충 포획!",
-                    description = "곤충에게 다가가 화면의 포획 버튼을 누르세요",
+                    description = "사라져가는 곤충을 만나 기록하세요 — 포획이 곧 그 생명을 붙드는 일입니다",
                     hint = "풀밭에서 움직이는 곤충에게 다가가 포획 미니게임을 완료하세요",
                     type = QuestType.Capture, targetCount = 1,
                     rewardCandy = 5, rewardExp = 10,
@@ -159,7 +159,7 @@ namespace InsectGame.Core
                 new TutorialQuest
                 {
                     questId = "q_capture3", title = "곤충 수집가",
-                    description = "곤충을 3마리 포획하세요",
+                    description = "곤충을 3마리 포획하세요 — 기록이 쌓일수록 사라짐을 늦출 수 있습니다",
                     hint = "풀밭을 돌아다니며 다양한 곤충을 잡아보세요",
                     type = QuestType.Capture, targetCount = 3,
                     prerequisiteQuestId = "q_approach",
@@ -190,7 +190,8 @@ namespace InsectGame.Core
                     hint = "야생 곤충에게 다가가 전투를 시작하세요",
                     type = QuestType.Battle, targetCount = 1,
                     prerequisiteQuestId = "q_equip",
-                    rewardCandy = 10, rewardExp = 20
+                    rewardCandy = 10, rewardExp = 20,
+                    rewardItemId = "exp_boost", rewardItemCount = 1
                 },
                 new TutorialQuest
                 {
@@ -199,7 +200,8 @@ namespace InsectGame.Core
                     hint = "인벤토리에서 아이템을 선택해 사용하세요",
                     type = QuestType.UseItem, targetCount = 1,
                     prerequisiteQuestId = "q_battle",
-                    rewardCandy = 5
+                    rewardCandy = 5,
+                    rewardItemId = "net_silver", rewardItemCount = 2
                 },
                 new TutorialQuest
                 {
@@ -235,12 +237,13 @@ namespace InsectGame.Core
                     hint = "특별한 색상이나 효과를 가진 곤충을 찾아보세요",
                     type = QuestType.CaptureRare, targetCount = 1,
                     prerequisiteQuestId = "q_battle3",
-                    rewardCandy = 20, rewardExp = 25
+                    rewardCandy = 20, rewardExp = 25,
+                    rewardItemId = "net_gold", rewardItemCount = 1
                 },
                 new TutorialQuest
                 {
                     questId = "q_guardian1", title = "수호자 도전!",
-                    description = "초원의 수문장을 물리치고 연못으로 가세요",
+                    description = "사라짐에 동요한 초원의 수문장을 넘어 새 지역으로 나아가세요",
                     hint = "초원 경계 근처에서 수문장을 찾아 전투하세요",
                     type = QuestType.DefeatGuardian, targetCount = 1,
                     prerequisiteQuestId = "q_capture_rare",
