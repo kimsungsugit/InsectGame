@@ -40,6 +40,9 @@ namespace InsectGame.Core
             public const string ActiveQuest = "InsectGame.ActiveQuest";
             // 완료됐지만 아직 퀘스트 창에서 확인 안 한 퀘스트 id 목록 — 퀵바 배지 카운터용.
             public const string QuestUnseen = "InsectGame.QuestUnseen";
+            // 서브 퀘스트 진행/반복횟수 — 로컬 전용(QuestUnseen처럼 클라우드 미동기).
+            public const string QuestSideProgress = "InsectGame.QuestSideProgress";
+            public const string QuestSideRepeat = "InsectGame.QuestSideRepeat";
             public const string TutorialHidden = "InsectGame.TutorialHidden";
             public const string LastSubAreaId = "InsectGame.SubArea.LastEntered";
         }

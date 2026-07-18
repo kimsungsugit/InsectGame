@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using InsectGame.Core;
 using UnityEngine;
 
@@ -687,96 +688,134 @@ namespace InsectGame.UI
             TutorialQuest[] allQuests = questManager.GetAllQuests();
             if (allQuests == null || allQuests.Length == 0) return;
 
+            // \uc2a4\ud1a0\ub9ac/\uc11c\ube0c \ubd84\ub9ac \u2014 \uc11c\ube0c\ub294 \ubc30\uc5f4 \ub4a4\ucabd\uc5d0 \uc815\uc758\ub428.
+            List<TutorialQuest> story = new List<TutorialQuest>();
+            List<TutorialQuest> side = new List<TutorialQuest>();
+            foreach (TutorialQuest q in allQuests)
+            {
+                if (q.category == QuestCategory.Side) side.Add(q);
+                else story.Add(q);
+            }
+
             float rowH = 52f;
-            float contentH = allQuests.Length * rowH;
+            float headH = 34f;
+            float contentH = headH + story.Count * rowH
+                + (side.Count > 0 ? headH + side.Count * rowH : 0f);
             Rect viewRect = new Rect(0, 0, listW - 20f, contentH);
 
             detailScroll = GUI.BeginScrollView(
                 new Rect(listX, listY, listW, listH), detailScroll, viewRect);
 
-            for (int i = 0; i < allQuests.Length; i++)
+            float ry = 0f;
+            DrawQuestSectionHeader(viewRect.width, ref ry, headH, "\u2605 \uc2a4\ud1a0\ub9ac");
+            for (int i = 0; i < story.Count; i++)
+                DrawQuestRow(story[i], viewRect.width, ref ry, rowH, i);
+
+            if (side.Count > 0)
             {
-                TutorialQuest quest = allQuests[i];
-                float ry = i * rowH;
-                bool isCompleted = questManager.IsQuestCompleted(quest.questId);
-                bool isActive = questManager.ActiveQuest != null
-                    && questManager.ActiveQuest.questId == quest.questId;
-                bool isLocked = !isCompleted && !isActive
-                    && !string.IsNullOrEmpty(quest.prerequisiteQuestId)
-                    && !questManager.IsQuestCompleted(quest.prerequisiteQuestId);
-
-                // Row background (alternating)
-                if (i % 2 == 0)
-                {
-                    GUI.color = new Color(0.08f, 0.1f, 0.18f, 0.6f);
-                    GUI.DrawTexture(new Rect(0, ry, viewRect.width, rowH), Texture2D.whiteTexture);
-                }
-
-                // Active highlight
-                if (isActive)
-                {
-                    GUI.color = new Color(0.2f, 0.4f, 0.15f, 0.4f);
-                    GUI.DrawTexture(new Rect(0, ry, viewRect.width, rowH), Texture2D.whiteTexture);
-                }
-
-                GUI.color = Color.white;
-
-                // Status icon + title \u2014 base \uce90\uc2dc, textColor\ub9cc \ubd84\uae30 \ub3d9\uc801 \uac31\uc2e0
-                string icon;
-                if (isCompleted)
-                {
-                    icon = "\u2713 ";
-                    detailRowStyleCache.normal.textColor = RowCompletedCol;
-                }
-                else if (isActive)
-                {
-                    icon = "\u25ba ";
-                    detailRowStyleCache.normal.textColor = Color.white;
-                }
-                else if (isLocked)
-                {
-                    icon = "\ud83d\udd12 ";
-                    detailRowStyleCache.normal.textColor = RowLockedCol;
-                }
-                else
-                {
-                    icon = "  ";
-                    detailRowStyleCache.normal.textColor = RowPendingCol;
-                }
-
-                GUI.Label(new Rect(8f, ry, viewRect.width * 0.6f, rowH),
-                    icon + quest.title, detailRowStyleCache);
-
-                // Status text (right side) \u2014 base \uce90\uc2dc, textColor \ubd84\uae30 \ub3d9\uc801
-                string statusText;
-                if (isCompleted)
-                {
-                    statusText = "\uc644\ub8cc";
-                    detailStatusStyleCache.normal.textColor = StatusCompletedCol;
-                }
-                else if (isActive)
-                {
-                    int cur = questManager.ActiveProgress;
-                    int tgt = quest.targetCount;
-                    statusText = cur + "/" + tgt;
-                    detailStatusStyleCache.normal.textColor = StatusActiveCol;
-                }
-                else if (isLocked)
-                {
-                    statusText = "\ubbf8\ud574\uae08";
-                    detailStatusStyleCache.normal.textColor = RowLockedCol;
-                }
-                else
-                {
-                    statusText = "\ub300\uae30";
-                    detailStatusStyleCache.normal.textColor = RowPendingCol;
-                }
-
-                GUI.Label(new Rect(viewRect.width * 0.6f, ry, viewRect.width * 0.38f, rowH),
-                    statusText, detailStatusStyleCache);
+                DrawQuestSectionHeader(viewRect.width, ref ry, headH, "\u25c6 \uc11c\ube0c (\ubc18\ubcf5 \uc2dc \ubaa9\ud45c \uc0c1\uc2b9)");
+                for (int i = 0; i < side.Count; i++)
+                    DrawQuestRow(side[i], viewRect.width, ref ry, rowH, i);
             }
 
             GUI.EndScrollView();
+        }
+
+        private void DrawQuestSectionHeader(float width, ref float ry, float headH, string label)
+        {
+            GUI.color = new Color(0.9f, 0.75f, 0.2f, 0.16f);
+            GUI.DrawTexture(new Rect(0, ry, width, headH), Texture2D.whiteTexture);
+            GUI.color = Color.white;
+            detailHeaderStyleCache.fontSize = 21;
+            GUI.Label(new Rect(10f, ry + 3f, width - 20f, headH - 4f), label, detailHeaderStyleCache);
+            detailHeaderStyleCache.fontSize = 31;   // \ud328\ub110 \ud5e4\ub354\uc6a9\uc73c\ub85c \ubcf5\uc6d0
+            ry += headH;
+        }
+
+        // \ud55c \ud018\uc2a4\ud2b8 \ud589 \ub80c\ub354 \u2014 \uc2a4\ud1a0\ub9ac/\uc11c\ube0c \uacf5\uc6a9. \uc11c\ube0c\ub294 \ubc18\ubcf5 \uc0c1\uc2b9 \uc9c4\ud589(Lv \ud2f0\uc5b4) \ud45c\uc2dc.
+        private void DrawQuestRow(TutorialQuest quest, float width, ref float ry, float rowH, int idx)
+        {
+            bool isSide = quest.category == QuestCategory.Side;
+            bool isActiveStory = false;
+            string icon;
+            string statusText;
+            Color statusCol;
+
+            if (isSide)
+            {
+                bool unlocked = string.IsNullOrEmpty(quest.prerequisiteQuestId)
+                    || questManager.IsQuestCompleted(quest.prerequisiteQuestId);
+                if (!unlocked)
+                {
+                    icon = "\ud83d\udd12 "; detailRowStyleCache.normal.textColor = RowLockedCol;
+                    statusText = "\ubbf8\ud574\uae08"; statusCol = RowLockedCol;
+                }
+                else if (!quest.repeatable && questManager.IsQuestCompleted(quest.questId))
+                {
+                    icon = "\u2713 "; detailRowStyleCache.normal.textColor = RowCompletedCol;
+                    statusText = "\uc644\ub8cc"; statusCol = StatusCompletedCol;
+                }
+                else
+                {
+                    icon = "\u25c6 "; detailRowStyleCache.normal.textColor = Color.white;
+                    int cur = questManager.GetSideProgress(quest.questId);
+                    int tgt = questManager.EffectiveTarget(quest);
+                    statusText = quest.repeatable
+                        ? cur + "/" + tgt + "  Lv" + (questManager.GetSideRepeatCount(quest.questId) + 1)
+                        : cur + "/" + tgt;
+                    statusCol = StatusActiveCol;
+                }
+            }
+            else
+            {
+                bool isCompleted = questManager.IsQuestCompleted(quest.questId);
+                isActiveStory = questManager.ActiveQuest != null
+                    && questManager.ActiveQuest.questId == quest.questId;
+                bool isLocked = !isCompleted && !isActiveStory
+                    && !string.IsNullOrEmpty(quest.prerequisiteQuestId)
+                    && !questManager.IsQuestCompleted(quest.prerequisiteQuestId);
+
+                if (isCompleted)
+                {
+                    icon = "\u2713 "; detailRowStyleCache.normal.textColor = RowCompletedCol;
+                    statusText = "\uc644\ub8cc"; statusCol = StatusCompletedCol;
+                }
+                else if (isActiveStory)
+                {
+                    icon = "\u25b6 "; detailRowStyleCache.normal.textColor = Color.white;
+                    statusText = questManager.ActiveProgress + "/" + quest.targetCount;
+                    statusCol = StatusActiveCol;
+                }
+                else if (isLocked)
+                {
+                    icon = "\ud83d\udd12 "; detailRowStyleCache.normal.textColor = RowLockedCol;
+                    statusText = "\ubbf8\ud574\uae08"; statusCol = RowLockedCol;
+                }
+                else
+                {
+                    icon = "  "; detailRowStyleCache.normal.textColor = RowPendingCol;
+                    statusText = "\ub300\uae30"; statusCol = RowPendingCol;
+                }
+            }
+
+            // \ubc30\uacbd(\uad50\ub300) + \ud65c\uc131 \uc2a4\ud1a0\ub9ac \ud558\uc774\ub77c\uc774\ud2b8
+            if (idx % 2 == 0)
+            {
+                GUI.color = new Color(0.08f, 0.1f, 0.18f, 0.6f);
+                GUI.DrawTexture(new Rect(0, ry, width, rowH), Texture2D.whiteTexture);
+            }
+            if (isActiveStory)
+            {
+                GUI.color = new Color(0.2f, 0.4f, 0.15f, 0.4f);
+                GUI.DrawTexture(new Rect(0, ry, width, rowH), Texture2D.whiteTexture);
+            }
+            GUI.color = Color.white;
+
+            GUI.Label(new Rect(8f, ry, width * 0.58f, rowH), icon + quest.title, detailRowStyleCache);
+            detailStatusStyleCache.normal.textColor = statusCol;
+            GUI.Label(new Rect(width * 0.58f, ry, width * 0.4f, rowH), statusText, detailStatusStyleCache);
+
+            ry += rowH;
         }
 
         public void AutoWire(TutorialQuestManager manager)

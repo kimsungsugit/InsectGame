@@ -148,6 +148,24 @@ def evaluate_signals() -> list:
                     else f"0건 (대화 키 {len(dlg_keys)}개 대조)",
                     "FAIL" if orphan else "PASS"))
 
+    # 7. 서브 퀘스트 정합 — repeatable은 Side 전용(스토리 선형 체인 오염 방지),
+    #    repeatable이면 targetIncrement>0(그래야 '할 때마다 목표 상승'이 실제로 일어남).
+    #    필드 생략 시 category=Story/repeatable=false라 기존 20개는 자동 통과.
+    side_bad = []
+    for q in quests:
+        cat = q.get("category", "Story")
+        rep = q.get("repeatable", False)
+        inc = q.get("target_increment", 0)
+        if rep and cat != "Side":
+            side_bad.append(f"{q['questId']}(repeatable인데 category={cat})")
+        if rep and inc <= 0:
+            side_bad.append(f"{q['questId']}(repeatable인데 targetIncrement={inc}=목표상승 없음)")
+    side_count = sum(1 for q in quests if q.get("category") == "Side")
+    signals.append(("서브 퀘스트 정합 (반복/카테고리)", "0건",
+                    f"{len(side_bad)}건 ({side_bad})" if side_bad
+                    else f"0건 (Side {side_count}개 정합)",
+                    "FAIL" if side_bad else "PASS"))
+
     return signals
 
 

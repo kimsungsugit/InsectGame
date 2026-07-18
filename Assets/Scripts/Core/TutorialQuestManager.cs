@@ -27,6 +27,10 @@ namespace InsectGame.Core
         private string activeQuestId;
         private bool tutorialSessionStarted;
 
+        // 서브 퀘스트 상태 — 로컬 전용(QuestUnseen처럼 클라우드 미동기). 스토리 questProgress(동기)와 분리.
+        private Dictionary<string, int> sideProgress = new Dictionary<string, int>();
+        private Dictionary<string, int> sideRepeatCount = new Dictionary<string, int>();
+
         private Vector3 lastPlayerPos;
         private Transform cachedPlayerTransform; // 매 프레임 GameObject.Find("Player") 회피
 
@@ -47,6 +51,8 @@ namespace InsectGame.Core
         private static string CompletedKey => AuthManager.ScopedKey(GameConstants.PrefsKeys.QuestCompleted);
         private static string ActiveKey => AuthManager.ScopedKey(GameConstants.PrefsKeys.ActiveQuest);
         private static string UnseenKey => AuthManager.ScopedKey(GameConstants.PrefsKeys.QuestUnseen);
+        private static string SideProgressKey => AuthManager.ScopedKey(GameConstants.PrefsKeys.QuestSideProgress);
+        private static string SideRepeatKey => AuthManager.ScopedKey(GameConstants.PrefsKeys.QuestSideRepeat);
 
         public event System.Action<TutorialQuest> QuestActivated;
         public event System.Action<TutorialQuest, int, int> QuestProgressUpdated;
@@ -69,7 +75,14 @@ namespace InsectGame.Core
 
         public bool AllCompleted
         {
-            get { return allQuests != null && completedQuests.Count >= allQuests.Length; }
+            // 스토리 퀘스트만 대상 — 서브(반복)는 영구 완료가 없어 카운트에서 제외.
+            get
+            {
+                if (allQuests == null) return false;
+                foreach (TutorialQuest q in allQuests)
+                    if (q.category == QuestCategory.Story && !completedQuests.Contains(q.questId)) return false;
+                return true;
+            }
         }
 
         public void AutoWire(PlayerInsectCollection col, PlayerCandyInventory candy,
@@ -303,6 +316,38 @@ namespace InsectGame.Core
                     prerequisiteQuestId = "q_battle10",
                     rewardCandy = 100, rewardExp = 100
                 },
+
+                // --- 서브 퀘스트(다중 활성, 반복 시 목표 상승) — category=Side ---
+                new TutorialQuest
+                {
+                    questId = "s_capture_wild", title = "야생 곤충 수집",
+                    description = "야생 곤충을 포획하세요. 달성할수록 다음 목표가 늘어납니다.",
+                    hint = "필드에서 곤충을 계속 포획하세요",
+                    type = QuestType.Capture, targetCount = 5, targetIncrement = 5,
+                    category = QuestCategory.Side, repeatable = true,
+                    prerequisiteQuestId = "q_capture3",
+                    rewardCandy = 15, rewardExp = 10
+                },
+                new TutorialQuest
+                {
+                    questId = "s_battle_win", title = "전투 단련",
+                    description = "배틀에서 승리하세요. 반복할수록 목표가 상승합니다.",
+                    hint = "야생 곤충에게 배틀을 걸어 이기세요",
+                    type = QuestType.Battle, targetCount = 3, targetIncrement = 3,
+                    category = QuestCategory.Side, repeatable = true,
+                    prerequisiteQuestId = "q_battle",
+                    rewardCandy = 20, rewardExp = 15
+                },
+                new TutorialQuest
+                {
+                    questId = "s_raid_win", title = "레이드 도전자",
+                    description = "레이드에서 승리하세요. 반복할수록 목표가 상승합니다.",
+                    hint = "Epic/Legendary 곤충에게 레이드를 도전하세요",
+                    type = QuestType.RaidBattle, targetCount = 1, targetIncrement = 1,
+                    category = QuestCategory.Side, repeatable = true,
+                    prerequisiteQuestId = "q_raid",
+                    rewardCandy = 40, rewardExp = 30
+                },
             };
         }
 
@@ -408,23 +453,25 @@ namespace InsectGame.Core
         public void NotifyAction(QuestType type, int count = 1)
         {
             if (!tutorialSessionStarted) return;
-            if (ActiveQuest == null || ActiveQuest.type != type) return;
-            IncrementProgress(activeQuestId, count);
+            if (ActiveQuest != null && ActiveQuest.type == type)
+                IncrementProgress(activeQuestId, count);
+            ProgressSideQuests(type, count);   // 서브 퀘스트(다중 활성)도 함께 진행
         }
 
         public void NotifyCapture(InsectRarity rarity)
         {
             if (!tutorialSessionStarted) return;
-            if (ActiveQuest == null) return;
 
-            if (ActiveQuest.type == QuestType.Capture)
+            if (ActiveQuest != null)
             {
-                IncrementProgress(activeQuestId);
+                if (ActiveQuest.type == QuestType.Capture)
+                    IncrementProgress(activeQuestId);
+                else if (ActiveQuest.type == QuestType.CaptureRare && rarity >= InsectRarity.Uncommon)
+                    IncrementProgress(activeQuestId);
             }
-            else if (ActiveQuest.type == QuestType.CaptureRare && rarity >= InsectRarity.Uncommon)
-            {
-                IncrementProgress(activeQuestId);
-            }
+
+            // 서브 포획 퀘스트: Capture는 모든 포획, CaptureRare는 Uncommon+ 만.
+            ProgressSideCapture(rarity);
         }
 
         public void NotifyBattleWon()
@@ -508,22 +555,40 @@ namespace InsectGame.Core
             TutorialQuest quest = GetQuest(questId);
             if (quest == null) return;
 
+            GrantRewards(quest);
+
+            // 완료했지만 아직 퀘스트 창에서 안 본 목록에 추가 → 퀵바 배지 +1. 창을 열면 MarkQuestsSeen로 비운다.
+            unseenCompleted.Add(questId);
+
+            QuestCompleted?.Invoke(quest);
+            SaveProgress();
+            // 퀘스트 완료 보상은 캔디/XP/아이템/곤충 → 클라우드 즉시 동기 (다른 기기 진입 시 재진행 방지).
+            // IncrementProgress의 잦은 호출은 120초 자동저장에 맡겨 API 폭주 차단.
+            if (CloudSaveManager.Instance != null) CloudSaveManager.Instance.SaveToCloud();
+            ActivateNextQuest();
+        }
+
+        // 보상 지급(캔디/XP/아이템/곤충 + 팀 비었으면 스타터 1슬롯 배치). 스토리·서브 퀘스트 공용.
+        private void GrantRewards(TutorialQuest quest)
+        {
+            if (quest == null) return;
+
             if (quest.rewardCandy > 0)
             {
                 if (candyInventory != null) candyInventory.AddCandy(quest.rewardCandy);
-                else Debug.LogWarning($"[Quest] candyInventory null — 캔디 보상 손실: {questId} (+{quest.rewardCandy})");
+                else Debug.LogWarning($"[Quest] candyInventory null — 캔디 보상 손실: {quest.questId} (+{quest.rewardCandy})");
             }
 
             if (quest.rewardExp > 0)
             {
                 if (progressController != null) progressController.GainXp(quest.rewardExp);
-                else Debug.LogWarning($"[Quest] progressController null — XP 보상 손실: {questId} (+{quest.rewardExp})");
+                else Debug.LogWarning($"[Quest] progressController null — XP 보상 손실: {quest.questId} (+{quest.rewardExp})");
             }
 
             if (!string.IsNullOrEmpty(quest.rewardItemId) && quest.rewardItemCount > 0)
             {
                 if (itemInventory != null) itemInventory.AddItem(quest.rewardItemId, quest.rewardItemCount);
-                else Debug.LogWarning($"[Quest] itemInventory null — 아이템 보상 손실: {questId} {quest.rewardItemId}x{quest.rewardItemCount}");
+                else Debug.LogWarning($"[Quest] itemInventory null — 아이템 보상 손실: {quest.questId} {quest.rewardItemId}x{quest.rewardItemCount}");
             }
 
             if (!string.IsNullOrEmpty(quest.rewardInsectId))
@@ -544,19 +609,95 @@ namespace InsectGame.Core
                 }
                 else
                 {
-                    Debug.LogWarning($"[Quest] insectCollection null — 곤충 보상 손실: {questId} {quest.rewardInsectId}");
+                    Debug.LogWarning($"[Quest] insectCollection null — 곤충 보상 손실: {quest.questId} {quest.rewardInsectId}");
                 }
             }
+        }
 
-            // 완료했지만 아직 퀘스트 창에서 안 본 목록에 추가 → 퀵바 배지 +1. 창을 열면 MarkQuestsSeen로 비운다.
-            unseenCompleted.Add(questId);
+        // --- 서브 퀘스트(다중 활성 + 반복 상승) ---
 
-            QuestCompleted?.Invoke(quest);
+        // 해금(prereq 완료)됐고, 반복이거나 아직 미완료면 활성.
+        private bool IsSideActive(TutorialQuest q)
+        {
+            if (q == null || q.category != QuestCategory.Side) return false;
+            if (!string.IsNullOrEmpty(q.prerequisiteQuestId) && !completedQuests.Contains(q.prerequisiteQuestId))
+                return false;
+            if (!q.repeatable && completedQuests.Contains(q.questId)) return false;
+            return true;
+        }
+
+        // 유효 목표 = 기본 + (반복 완료 횟수 × 증가량). 반복 아니면 기본 그대로.
+        public int EffectiveTarget(TutorialQuest q)
+        {
+            if (q == null) return 0;
+            if (q.category == QuestCategory.Side && q.repeatable)
+                return q.targetCount + GetSideRepeatCount(q.questId) * Mathf.Max(0, q.targetIncrement);
+            return q.targetCount;
+        }
+
+        public int GetSideProgress(string questId)
+            => sideProgress.TryGetValue(questId, out int v) ? v : 0;
+
+        public int GetSideRepeatCount(string questId)
+            => sideRepeatCount.TryGetValue(questId, out int v) ? v : 0;
+
+        // 활성 서브 퀘스트(UI 나열용).
+        public IEnumerable<TutorialQuest> ActiveSideQuests()
+        {
+            if (allQuests == null) yield break;
+            foreach (TutorialQuest q in allQuests)
+                if (IsSideActive(q)) yield return q;
+        }
+
+        private void ProgressSideQuests(QuestType type, int count)
+        {
+            if (allQuests == null) return;
+            foreach (TutorialQuest q in allQuests)
+            {
+                if (q.type != type || !IsSideActive(q)) continue;
+                IncrementSideProgress(q, count);
+            }
+        }
+
+        private void ProgressSideCapture(InsectRarity rarity)
+        {
+            if (allQuests == null) return;
+            foreach (TutorialQuest q in allQuests)
+            {
+                if (!IsSideActive(q)) continue;
+                if (q.type == QuestType.Capture) IncrementSideProgress(q, 1);
+                else if (q.type == QuestType.CaptureRare && rarity >= InsectRarity.Uncommon) IncrementSideProgress(q, 1);
+            }
+        }
+
+        private void IncrementSideProgress(TutorialQuest q, int amount)
+        {
+            int cur = GetSideProgress(q.questId) + amount;
+            sideProgress[q.questId] = cur;
+            int target = EffectiveTarget(q);
+            QuestProgressUpdated?.Invoke(q, cur, target);
+            if (cur >= target) CompleteSideQuest(q);
+            else SaveProgress();
+        }
+
+        private void CompleteSideQuest(TutorialQuest q)
+        {
+            GrantRewards(q);
+            if (q.repeatable)
+            {
+                sideRepeatCount[q.questId] = GetSideRepeatCount(q.questId) + 1;
+                sideProgress[q.questId] = 0;   // 다음 티어로 리셋 → 목표 상승
+            }
+            else
+            {
+                completedQuests.Add(q.questId);
+                sideProgress.Remove(q.questId);
+            }
+            unseenCompleted.Add(q.questId);
+            QuestCompleted?.Invoke(q);
             SaveProgress();
-            // 퀘스트 완료 보상은 캔디/XP/아이템/곤충 → 클라우드 즉시 동기 (다른 기기 진입 시 재진행 방지).
-            // IncrementProgress의 잦은 호출은 120초 자동저장에 맡겨 API 폭주 차단.
             if (CloudSaveManager.Instance != null) CloudSaveManager.Instance.SaveToCloud();
-            ActivateNextQuest();
+            // ActivateNextQuest 호출 안 함 — 서브는 스토리 체인과 무관.
         }
 
         private void ActivateNextQuest()
@@ -565,6 +706,7 @@ namespace InsectGame.Core
 
             foreach (TutorialQuest quest in allQuests)
             {
+                if (quest.category != QuestCategory.Story) continue;   // 서브는 선형 체인 제외
                 if (completedQuests.Contains(quest.questId)) continue;
 
                 if (!string.IsNullOrEmpty(quest.prerequisiteQuestId)
@@ -649,6 +791,8 @@ namespace InsectGame.Core
             questProgress.Clear();
             completedQuests.Clear();
             unseenCompleted.Clear();
+            sideProgress.Clear();
+            sideRepeatCount.Clear();
             activeQuestId = null;
             ActiveQuest = null;
 
@@ -656,6 +800,8 @@ namespace InsectGame.Core
             PlayerPrefs.DeleteKey(CompletedKey);
             PlayerPrefs.DeleteKey(ActiveKey);
             PlayerPrefs.DeleteKey(UnseenKey);
+            PlayerPrefs.DeleteKey(SideProgressKey);
+            PlayerPrefs.DeleteKey(SideRepeatKey);
             PlayerPrefs.DeleteKey(GameConstants.PrefsKeys.TutorialHidden);
 
             if (AuthManager.Instance != null && !string.IsNullOrEmpty(AuthManager.Instance.UserId))
@@ -730,7 +876,29 @@ namespace InsectGame.Core
             // 미확인 완료 목록 저장 — 앱 재시작 후에도 배지 유지.
             PlayerPrefs.SetString(UnseenKey, string.Join(",", new List<string>(unseenCompleted)));
 
+            // 서브 퀘스트 진행/반복횟수 저장(로컬 전용).
+            PlayerPrefs.SetString(SideProgressKey, SerializeIntDict(sideProgress));
+            PlayerPrefs.SetString(SideRepeatKey, SerializeIntDict(sideRepeatCount));
+
             PlayerPrefs.Save();
+        }
+
+        private static string SerializeIntDict(Dictionary<string, int> dict)
+        {
+            List<string> entries = new List<string>();
+            foreach (var kvp in dict) entries.Add(kvp.Key + ":" + kvp.Value);
+            return string.Join(",", entries);
+        }
+
+        private static void ParseIntDict(string s, Dictionary<string, int> into)
+        {
+            into.Clear();
+            if (string.IsNullOrEmpty(s)) return;
+            foreach (string entry in s.Split(','))
+            {
+                string[] parts = entry.Split(':');
+                if (parts.Length == 2 && int.TryParse(parts[1], out int v)) into[parts[0]] = v;
+            }
         }
 
         private void LoadProgress()
@@ -738,6 +906,8 @@ namespace InsectGame.Core
             questProgress.Clear();
             completedQuests.Clear();
             unseenCompleted.Clear();
+            sideProgress.Clear();
+            sideRepeatCount.Clear();
 
             // 진행도 로드
             string progressStr = PlayerPrefs.GetString(ProgressKey, "");
@@ -788,6 +958,10 @@ namespace InsectGame.Core
                         unseenCompleted.Add(id);
                 }
             }
+
+            // 서브 퀘스트 진행/반복 로드(로컬 전용).
+            ParseIntDict(PlayerPrefs.GetString(SideProgressKey, ""), sideProgress);
+            ParseIntDict(PlayerPrefs.GetString(SideRepeatKey, ""), sideRepeatCount);
         }
     }
 }

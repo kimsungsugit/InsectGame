@@ -429,6 +429,8 @@ def quest_defs() -> list:
             return int(m.group(1)) if m else None
 
         t = re.search(r"type\s*=\s*QuestType\.(\w+)", block)
+        cat = re.search(r"category\s*=\s*QuestCategory\.(\w+)", block)
+        rep = re.search(r"repeatable\s*=\s*(true|false)", block)
         out.append({
             "questId": s("questId"),
             "type": t.group(1) if t else None,
@@ -437,6 +439,10 @@ def quest_defs() -> list:
             "reward_item": s("rewardItemId"),
             "reward_item_count": i("rewardItemCount"),
             "target": i("targetCount"),
+            # 분류/반복 상승(필드 생략 시 C# 기본값: category=Story, repeatable=false, increment=0).
+            "category": cat.group(1) if cat else "Story",
+            "repeatable": (rep.group(1) == "true") if rep else False,
+            "target_increment": i("targetIncrement") or 0,
         })
     if not out:
         raise ExtractorBroken("allQuests 배열에서 퀘스트를 하나도 못 읽었다 — 구조가 바뀌었는가?")
