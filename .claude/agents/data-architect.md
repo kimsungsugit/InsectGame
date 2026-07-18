@@ -56,6 +56,8 @@ tools:
 - `Assets/Scripts/Dex/DexListItemUI.cs` - 도감 목록 아이템
 - `Assets/Scripts/Dex/RarityIconProvider.cs` - 레어도 아이콘
 - `Assets/Scripts/NPC/NpcDialogueDatabase.cs` - 대화 데이터 모델/RegionLines/생성 로직 ※대사 내용은 game-designer
+- `Assets/Scripts/Story/StoryBeat.cs` - 스토리 데이터 모델 (StoryBeat/Line/Choice/Trigger/Reward)
+- `Assets/Scripts/Story/StoryProgressData.cs` - 스토리 진행 세이브 모델
 
 ## 세이브 파일 구조
 | 파일 | 내용 | 서비스 |

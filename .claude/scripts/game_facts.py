@@ -47,6 +47,8 @@ PATHS = {
     "region_defs": "Assets/Scripts/Core/RegionDefinitions.cs",
     "tutorial_data": "Assets/Scripts/Core/TutorialQuestData.cs",
     "npc_dialogue": "Assets/Scripts/NPC/NpcDialogueDatabase.cs",
+    "story_json": "Assets/Resources/Story.json",
+    "story_director": "Assets/Scripts/Story/StoryDirector.cs",
 }
 
 RARITIES = ("Common", "Uncommon", "Rare", "Epic", "Legendary")
@@ -490,6 +492,56 @@ def quest_progress_wiring() -> dict:
         if qt in notify_of:
             paths.append(("notify", None, notify_of[qt]))
         out[qt] = paths
+    return out
+
+
+# ── 스토리 ──────────────────────────────────────────────────────────────────
+
+def story_beats() -> list:
+    """Story.json의 비트 목록 (파싱된 dict). json.load라 퀘스트 정규식보다 견고하다.
+
+    설계(Docs/StorySystemDesign.md)가 데이터 모델을 JSON으로 정한 이유가 이것이다 —
+    lines[]/choices[] 중첩 구조를 정규식으로 자르는 대신 네이티브 파싱한다.
+    """
+    import json
+    path = PATHS["story_json"]
+    if not os.path.isfile(path):
+        raise ExtractorBroken(f"{path}가 없다 — 스토리 시스템이 아직 없거나 파일이 옮겨갔는가?")
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError) as e:
+        raise ExtractorBroken(f"{path} 파싱 실패: {e}")
+    beats = data.get("beats")
+    if beats is None:
+        raise ExtractorBroken(f"{path}에 'beats' 키가 없다 — StoryList 형식이 바뀌었는가?")
+    return beats
+
+
+def story_trigger_wiring() -> dict:
+    """{triggerType: (in_switch, has_event_source)} — StoryDirector가 각 트리거를 처리하는가.
+
+    검사 근거: JSON이 쓰는 trigger.type이 (a) EvaluateTriggers switch의 case에 있고
+    (b) 그 트리거를 발화하는 이벤트 소스가 구독돼 있어야 비트가 발화한다. q_team 회귀의
+    스토리 등가물 — 새 trigger.type을 JSON에 넣고 switch/구독을 빠뜨리면 비트 영구 미발화.
+
+    - in_switch: `case TriggerX:` 또는 상수 정의가 switch 문맥에 존재
+    - has_event_source: 그 트리거를 EvaluateTriggers(TriggerX, ...)로 호출하는 지점이 있음
+      (Immediate는 Start에서, 나머지는 OnXxx 이벤트 핸들러에서)
+    """
+    raw = _read("story_director")
+    # 상수 정의는 원본에서 읽는다 — strip_cs가 "Y" 리터럴을 지우면 값을 못 읽는다.
+    consts = dict(re.findall(r'const\s+string\s+(Trigger\w+)\s*=\s*"(\w+)"', raw))
+    if not consts:
+        raise ExtractorBroken("StoryDirector에서 Trigger 상수를 못 읽었다 — 정의 형태가 바뀌었는가?")
+    # switch case / 발화 지점은 주석 제거 후에 본다 — 주석 처리된 case를 살아있다고 오인 않게.
+    src = strip_cs(raw)
+    in_switch = set(re.findall(r"case\s+(Trigger\w+)\s*:", src))
+    fired = set(re.findall(r"EvaluateTriggers\(\s*(Trigger\w+)", src))
+
+    out = {}
+    for const, ttype in consts.items():
+        out[ttype] = (const in in_switch, const in fired)
     return out
 
 
