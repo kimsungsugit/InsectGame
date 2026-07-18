@@ -103,7 +103,6 @@ namespace InsectGame.UI
             detailTitleStyle = Label(38, FontStyle.Bold, TextAnchor.MiddleCenter, Color.white);
             detailBtnStyle = new GUIStyle(GUI.skin.button) { fontSize = 30, fontStyle = FontStyle.Bold };
             detailDescStyle = Label(24, FontStyle.Normal, TextAnchor.MiddleCenter, new Color(0.7f, 0.72f, 0.78f));
-            detailDescStyle.wordWrap = true;
             detailSummaryStyle = Label(28, FontStyle.Bold, TextAnchor.MiddleCenter, new Color(0.7f, 0.85f, 1f));
             detailNoInsectStyle = Label(26, FontStyle.Italic, TextAnchor.MiddleCenter, new Color(0.5f, 0.5f, 0.55f));
 
@@ -117,7 +116,8 @@ namespace InsectGame.UI
 
         private static GUIStyle Label(int size, FontStyle fs, TextAnchor anchor, Color col)
         {
-            var s = new GUIStyle(GUI.skin.label) { fontSize = size, fontStyle = fs, alignment = anchor };
+            // wordWrap=false — GUI.skin.label 기본값이 true라 좁은 rect에서 2줄로 접혀 잘림. 지도 라벨은 1줄 고정.
+            var s = new GUIStyle(GUI.skin.label) { fontSize = size, fontStyle = fs, alignment = anchor, wordWrap = false };
             s.normal.textColor = col;
             return s;
         }
@@ -215,7 +215,7 @@ namespace InsectGame.UI
             DrawPanelFrame(px, py, pw, ph, "월드 지도", new Color(0.3f, 0.5f, 0.8f));
 
             int playerLv = progress != null ? progress.Level : 1;
-            GUI.Label(new Rect(px + pw - 320f, py + 26f, 200f, 34f), $"플레이어 레벨 {playerLv}", levelStyle);
+            GUI.Label(new Rect(px + pw - 400f, py + 26f, 280f, 34f), $"플레이어 레벨 {playerLv}", levelStyle);
 
             if (GUI.Button(new Rect(px + pw - 76f, py + 12f, 60f, 60f), "X", closeStyle))
             {
@@ -240,7 +240,7 @@ namespace InsectGame.UI
             }
             else
             {
-                float mapW = cw * 0.66f;
+                float mapW = cw * 0.60f;
                 mapRect = new Rect(cx, cy, mapW, ch);
                 infoRect = new Rect(cx + mapW + 12f, cy, cw - mapW - 12f, ch);
             }
@@ -328,7 +328,7 @@ namespace InsectGame.UI
                 // 이름
                 regionNameStyle.normal.textColor = accessible ? Color.white : new Color(0.7f, 0.7f, 0.72f);
                 GUI.color = Color.white;
-                GUI.Label(new Rect(c.x - cr - 10f, c.y - 18f, (cr + 10f) * 2f, 36f), r.displayName, regionNameStyle);
+                GUI.Label(new Rect(c.x - Mathf.Max(95f, cr + 10f), c.y - 18f, Mathf.Max(190f, (cr + 10f) * 2f), 36f), r.displayName, regionNameStyle);
 
                 // 선택 강조 링
                 if (selectedRegionId == r.regionId)
@@ -342,7 +342,7 @@ namespace InsectGame.UI
                     GUI.DrawTexture(new Rect(c.x - cr, c.y - cr, cr * 2f, cr * 2f), discTex);
                     regionNameStyle.normal.textColor = accessible ? Color.white : new Color(0.7f, 0.7f, 0.72f);
                     GUI.color = Color.white;
-                    GUI.Label(new Rect(c.x - cr - 10f, c.y - 18f, (cr + 10f) * 2f, 36f), r.displayName, regionNameStyle);
+                    GUI.Label(new Rect(c.x - Mathf.Max(95f, cr + 10f), c.y - 18f, Mathf.Max(190f, (cr + 10f) * 2f), 36f), r.displayName, regionNameStyle);
                 }
 
                 // 서브에리어 — 소형 disc(형태 통일) + 클릭 텔레포트
@@ -360,7 +360,7 @@ namespace InsectGame.UI
                         GUI.color = new Color(subCol.r, subCol.g, subCol.b, 0.85f);
                         GUI.DrawTexture(new Rect(sc.x - sr, sc.y - sr, sr * 2f, sr * 2f), discTex);
                         GUI.color = Color.white;
-                        GUI.Label(new Rect(sc.x - 60f, sc.y + sr + 1f, 120f, 22f), sub.displayName, subNameStyle);
+                        GUI.Label(new Rect(sc.x - 85f, sc.y + sr + 1f, 170f, 22f), sub.displayName, subNameStyle);
 
                         float hot = Mathf.Max(sr, 14f);
                         if (GUI.Button(new Rect(sc.x - hot, sc.y - hot, hot * 2f, hot * 2f), "", GUIStyle.none))
@@ -401,7 +401,7 @@ namespace InsectGame.UI
                 GUI.DrawTexture(new Rect(mc.x - 7f, mc.y - 7f, 14f, 14f), discTex);
                 raidLabelStyle.normal.textColor = raidCol;
                 GUI.color = Color.white;
-                GUI.Label(new Rect(mc.x - 70f, mc.y + 13f, 140f, 22f), m.name, raidLabelStyle);
+                GUI.Label(new Rect(mc.x - 90f, mc.y + 13f, 180f, 22f), m.name, raidLabelStyle);
             }
 
             // 4) 플레이어 마커 — disc + 진행방향
@@ -515,11 +515,11 @@ namespace InsectGame.UI
 
         private void DrawInfoLine(float x, ref float y, float w, string key, string val, Color valCol)
         {
+            float keyW = 116f;
             infoLineStyle.normal.textColor = new Color(0.62f, 0.64f, 0.72f);
-            GUI.Label(new Rect(x, y, w * 0.42f, 30f), key, infoLineStyle);
-            var s = infoLineStyle;
-            s.normal.textColor = valCol;
-            GUI.Label(new Rect(x + w * 0.42f, y, w * 0.58f, 30f), val, s);
+            GUI.Label(new Rect(x, y, keyW, 30f), key, infoLineStyle);
+            infoLineStyle.normal.textColor = valCol;
+            GUI.Label(new Rect(x + keyW, y, w - keyW, 30f), val, infoLineStyle);
             y += 36f;
         }
 
