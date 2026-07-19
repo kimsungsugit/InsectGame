@@ -2853,8 +2853,10 @@ namespace InsectGame.Core
 
         private void ValidateBattleDefinitions(InsectDatabase database)
         {
-            if (GameConstants.Player.MaxLearnedSkills != 4)
-                throw new CriticalBootstrapException("배틀 데이터 검증 실패 — 최대 기술 수는 4개여야 함");
+            // 배틀 UI는 정확히 4개 장착 슬롯이므로 MaxEquipSlots 불변식을 지킨다(4가 아니면 UI 슬롯과 어긋남).
+            // MaxLearnedSkills(습득 풀 상한, 현재 6)는 4보다 커도 정상 — 옛 canary가 이 둘을 혼동해 부팅을 막았다.
+            if (GameConstants.Player.MaxEquipSlots != 4)
+                throw new CriticalBootstrapException("배틀 데이터 검증 실패 — 전투 장착 슬롯은 4개여야 함");
             if (InsectTypeChart.GetEffectiveness(InsectElement.Leaf, InsectElement.Water, InsectElement.None) <= 1f)
                 throw new CriticalBootstrapException("배틀 데이터 검증 실패 — 타입 상성표 비활성");
 
