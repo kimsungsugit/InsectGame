@@ -20,6 +20,12 @@ namespace InsectGame.Core
         public int ivDef;
         public bool isShiny;
 
+        // 지속 HP·상태(전투 간 유지). currentHp = -1은 '미초기화'(구세이브 마이그레이션) → 풀피 취급.
+        // EnsureHp가 로드 시 실제 MaxHp로 채운다. isPoisoned/isParalyzed 기본 false(무상태) = 마이그레이션 무해.
+        public int currentHp = -1;
+        public bool isPoisoned;
+        public bool isParalyzed;
+
         public const int MaxEquipSlots = GameConstants.Player.MaxEquipSlots;
         public const int MaxLearnedSkills = GameConstants.Player.MaxLearnedSkills;
         public const int MaxIV = GameConstants.Player.MaxIV;
@@ -42,6 +48,23 @@ namespace InsectGame.Core
         public int GetTotalHp(int baseHp)
         {
             return baseHp + ivHp * 2 + level * 3;
+        }
+
+        /// <summary>전투 시작 시 시드할 현재 HP. currentHp 미초기화(-1)면 풀피(maxHp).</summary>
+        public int GetEffectiveHp(int maxHp)
+        {
+            if (currentHp < 0) return maxHp;
+            return UnityEngine.Mathf.Clamp(currentHp, 0, maxHp);
+        }
+
+        /// <summary>기절(치료 전까지 출전 불가) — 초기화된 currentHp가 0.</summary>
+        public bool IsFainted => currentHp == 0;
+
+        /// <summary>로드 직후 currentHp 확정(미초기화면 풀피). EnsureInstanceId와 함께 호출.</summary>
+        public void EnsureHp(int maxHp)
+        {
+            if (currentHp < 0) currentHp = maxHp;
+            else currentHp = UnityEngine.Mathf.Clamp(currentHp, 0, maxHp);
         }
 
         public int GetTotalAtk(int baseAtk)

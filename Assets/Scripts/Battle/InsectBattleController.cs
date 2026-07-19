@@ -40,6 +40,11 @@ namespace InsectGame.Battle
         private int enemyCooldown;
         private int playerStunTurns;   // >0이면 플레이어 다음 행동 스킵(P4 Stun)
         private int enemyStunTurns;    // >0이면 적 다음 행동 스킵
+        // 지속 상태(전투 간 유지) — 현재 활성 플레이어 곤충의 감염. 전투 시작/교체 시 seed, 종료/교체 시 write-back.
+        private bool playerPoisoned;
+        private bool playerParalyzed;
+        private const int PersistentPoisonDamage = 8;   // 감염 곤충의 전투 시작 시 재적용 독 피해(턴당)
+        private const int PersistentPoisonTurns = 3;
         private readonly List<ActiveEffect> effects = new List<ActiveEffect>();
         private int lastCandyReward;
         private int lastExpReward;
@@ -73,6 +78,7 @@ namespace InsectGame.Battle
             playerStunTurns = 0;
             enemyStunTurns = 0;
             effects.Clear();
+            SeedPersistentState(playerPid);   // 지속 독/마비 재적용
             lastCandyReward = 0;
             lastExpReward = 0;
             lastItemId = string.Empty;
@@ -173,6 +179,7 @@ namespace InsectGame.Battle
                 // 도주 성공 시에도 enemyEntity Despawn — 사용자 의도("전투 끝나면 사라져야").
                 // 옛은 도주 후 곤충이 필드에 잔존했고 같은 적이 그대로 다시 만남 가능.
                 if (enemyEntity != null) enemyEntity.Despawn();
+                PersistActivePlayer();   // 도주 시에도 남은 HP·감염 저장
                 battleEnded = true;
                 BattleEnded?.Invoke(false);
                 return true;
@@ -300,14 +307,15 @@ namespace InsectGame.Battle
                     break;
                 }
                 case SkillEffectType.PoisonDot:
-                    // 대상에 턴당 피해(power) 부여. TickEffects에서 매턴 적용.
+                    // 대상에 턴당 피해(power) 부여. TickEffects에서 매턴 적용. 플레이어 피격 시 지속 감염(전투 후 유지).
                     AddEffect(!isPlayer, skill.power, skill.effectDurationTurns, EffectKind.Dot);
+                    if (defenderIsPlayer) playerPoisoned = true;
                     TryPlayHitFlash(defenderIsPlayer);
                     TryPlayEffectText("중독!", new Color(0.6f, 0.9f, 0.3f));
                     break;
                 case SkillEffectType.Stun:
-                    // 대상 다음 행동 1회 스킵(별도 카운터).
-                    if (defenderIsPlayer) playerStunTurns = 1; else enemyStunTurns = 1;
+                    // 대상 다음 행동 1회 스킵(별도 카운터). 플레이어 피격 시 지속 마비(전투 후 유지).
+                    if (defenderIsPlayer) { playerStunTurns = 1; playerParalyzed = true; } else enemyStunTurns = 1;
                     TryPlayHitFlash(defenderIsPlayer);
                     TryPlayEffectText("기절!", new Color(1f, 0.9f, 0.3f));
                     break;
@@ -384,6 +392,22 @@ namespace InsectGame.Battle
             {
                 enemyCooldown--;
             }
+        }
+
+        // 지속 감염을 전투 시작/교체 시 재적용 — 감염 곤충은 독 DoT·마비 스킵을 안고 시작.
+        private void SeedPersistentState(Core.PlayerInsectData pid)
+        {
+            playerPoisoned = pid != null && pid.isPoisoned;
+            playerParalyzed = pid != null && pid.isParalyzed;
+            if (playerPoisoned) AddEffect(true, PersistentPoisonDamage, PersistentPoisonTurns, EffectKind.Dot);
+            if (playerParalyzed) playerStunTurns = 1;
+        }
+
+        // 현재 활성 플레이어 곤충의 남은 HP·감염을 영구 저장(전투 종료/교체 시).
+        private void PersistActivePlayer()
+        {
+            if (playerCollection == null || playerStats == null || playerStats.PlayerData == null) return;
+            playerCollection.SetAfterBattle(playerStats.PlayerData, playerStats.CurrentHp, playerPoisoned, playerParalyzed);
         }
 
         private void AddEffect(bool targetIsPlayer, float value, int duration, EffectKind kind = EffectKind.AtkBuff)
@@ -527,6 +551,7 @@ namespace InsectGame.Battle
 
             if (enemyStats.CurrentHp <= 0)
             {
+                PersistActivePlayer();   // 승리 — 활성 곤충의 남은 HP·감염 영구 저장(전체치료 없음)
                 battleEnded = true;
                 lastPlayerWon = playerWon;
                 BattleEnded?.Invoke(playerWon);
@@ -555,6 +580,7 @@ namespace InsectGame.Battle
                 // !fainted: 교체 핸들러 없음 → 컨트롤러가 패배로 종료 + 적 Despawn(필드 잔존 방지).
                 if (!fainted)
                 {
+                    PersistActivePlayer();   // 전멸 패배 — 활성 곤충 기절(0 HP) 영구 저장
                     battleEnded = true;
                     if (enemyEntity != null) enemyEntity.Despawn();
                     BattleEnded?.Invoke(false);
@@ -646,11 +672,15 @@ namespace InsectGame.Battle
         {
             if (newInsect == null || enemyStats == null) return;
 
+            PersistActivePlayer();   // 교체 전 이전 곤충의 남은 HP·감염 저장(기절이면 0 그대로)
+
             playerStats = new InsectBattleStats(newInsect, newLevel, playerPid);
             playerOverrideSkills = ResolvePlayerSkills(newInsect, equippedSkills, playerPid);
             int skillCount = playerOverrideSkills != null ? playerOverrideSkills.Length : (newInsect.skills != null ? newInsect.skills.Length : 0);
             playerCooldowns = new int[skillCount];
             effects.Clear();
+            playerStunTurns = 0;
+            SeedPersistentState(playerPid);   // 새 곤충의 지속 독/마비 재적용
             RecalculateBonuses();
 
             // Faint 후 비활성/페이드된 PlayerModel을 새 곤충으로 재생성

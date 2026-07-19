@@ -19,7 +19,7 @@ description: 테스트 프레임워크, 컨벤션, 필수 기준
 ```
 
 `-testPlatform EditMode`를 쓰면 **0건을 실행하고 "성공"이라 보고한다.** 실행 개수를
-반드시 확인할 것 — 현재 `[Test]`는 52개다(방어 보너스 3 + Heal/DoT 4 추가). 0건 보고는 통과가 아니라 실패다.
+반드시 확인할 것 — 현재 `[Test]`는 58개다(방어 보너스 3 + Heal/DoT 4 추가). 0건 보고는 통과가 아니라 실패다.
 
 EditMode 러너를 되살리려면 `Assets/Scripts`·`Assets/Editor`·`Assets/Tests`에 asmdef를
 도입해야 한다(asmdef는 `Assembly-CSharp`를 참조할 수 없어 게임 코드 쪽도 함께 필요).
@@ -46,6 +46,6 @@ EditMode 러너를 되살리려면 `Assets/Scripts`·`Assets/Editor`·`Assets/Te
 
 ## 테스트 제외 대상
 - OnGUI 렌더링 코드 (IMGUI는 렌더 루프 없이 검증 불가)
-- MonoBehaviour 생명주기 의존 로직 (`[UnityTest]` + `yield`가 필요. 현재 52개는 전부
+- MonoBehaviour 생명주기 의존 로직 (`[UnityTest]` + `yield`가 필요. 현재 58개는 전부
   씬 없이 도는 순수 로직 `[Test]`다)
 - 외부 서비스 호출 (Firebase, Firestore)

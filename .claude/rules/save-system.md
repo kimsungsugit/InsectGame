@@ -11,7 +11,7 @@ description: 로컬 7개 JSON·Firestore 세이브 구조와 필드 추가·마�
 
 ## 파일 목록
 - player_progress.json (level, xp)
-- player_insects.json (보유 곤충 전체)
+- player_insects.json (보유 곤충 전체 — currentHp/isPoisoned/isParalyzed 포함, 아래 지속 HP 참조)
 - player_candies.json (캔디)
 - player_currency.json (코인, 젬)
 - player_items.json (아이템)
@@ -51,3 +51,15 @@ questSideProgress/questSideRepeat)와 직렬화/파싱/업로드/복원 4곳을 
   갖도록 선언할 것. (옛 문서에 "누락 필드 무시" / "기본값으로 채움" 두 표현이
   갈라져 있었으나 동작은 이 한 가지다.)
 - 기존 세이브 구조를 바꾼다면 마이그레이션 경로를 먼저 설계할 것
+
+## 곤충 지속 HP·상태 (player_insects.json)
+
+`PlayerInsectData`는 전투 간 유지되는 `currentHp`/`isPoisoned`/`isParalyzed`를 저장한다.
+- **`currentHp` 기본값 `-1`(미초기화 센티넬)** — 구세이브엔 이 필드가 없어 로드 시 -1로 남는다.
+  `PlayerInsectCollection` 로드 루프(EnsureInstanceId 인근)의 `EnsureHp`가 -1이면 실제 MaxHp로 채워
+  **구세이브 곤충이 0 HP 기절로 뜨는 것을 방지**한다. `IsFainted`는 `currentHp == 0`(초기화 후에만 유효).
+- `isPoisoned`/`isParalyzed` 기본 `false`(무상태) — 마이그레이션 무해.
+- **클라우드는 자동**: `CloudSaveManager`가 player_insects.json 블롭 전체를 저장하므로 PlayerInsectData
+  필드 추가에 DTO 4점 변경 불필요(퀘스트 세이브와 다름).
+- 전투 종료/교체 시 `PlayerInsectCollection.SetAfterBattle`이 남은 HP·감염을 기록(무료 전체치료 없음).
+  치료는 병원/치료 아이템의 `HealInsect`/`FullHeal`/`CurePoison`/`CureParalysis`로만.

@@ -41,7 +41,8 @@ namespace InsectGame.Battle
                 Defense = 5 + Level;
             }
 
-            CurrentHp = MaxHp;
+            // 지속 HP 시드 — 보유 곤충(pid)이면 저장된 현재 HP로 시작(전투 간 유지). pid 없으면(야생/적) 풀피.
+            CurrentHp = pid != null ? Mathf.Clamp(pid.GetEffectiveHp(MaxHp), 0, MaxHp) : MaxHp;
             AttackBonus = 0f;
             DefenseBonus = 0f;
         }

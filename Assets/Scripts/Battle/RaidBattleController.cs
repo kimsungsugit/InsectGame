@@ -361,6 +361,18 @@ namespace InsectGame.Battle
             }
         }
 
+        // 레이드 종료 시 팀 각 곤충의 남은 HP를 영구 저장(전투 후 전체치료 없음). 감염 플래그는 기존값 보존
+        // (보스는 팀에 독/마비를 걸지 않으므로 레이드는 HP만 변동).
+        private void PersistTeamHp()
+        {
+            if (playerCollection == null || TeamStats == null || TeamPids == null) return;
+            for (int i = 0; i < TeamStats.Length && i < TeamPids.Length; i++)
+            {
+                if (TeamStats[i] == null || TeamPids[i] == null) continue;
+                playerCollection.SetAfterBattle(TeamPids[i], TeamStats[i].CurrentHp, TeamPids[i].isPoisoned, TeamPids[i].isParalyzed);
+            }
+        }
+
         private void CheckEnd()
         {
             if (!IsActive) return; // 이미 종료(IsActive=false) — ×3 보상/캡처 중복 차단
@@ -371,6 +383,7 @@ namespace InsectGame.Battle
                 TryPlayEffectText("보스 격파!", new Color(0.3f, 1f, 0.5f));
                 PlayerWon = true;
                 IsActive = false;
+                PersistTeamHp();
                 OnRaidVictory();
                 RaidEnded?.Invoke(true);
             }
@@ -379,6 +392,7 @@ namespace InsectGame.Battle
                 TryPlayEffectText("팀 전멸!", new Color(0.9f, 0.2f, 0.2f));
                 PlayerWon = false;
                 IsActive = false;
+                PersistTeamHp();
                 // 레이드 패배 시에도 BossEntity Despawn — 옛은 패배 시 보스가 필드에 잔존,
                 // 다음 진입 시 같은 보스 중첩 발동 가능 (사용자 보고: "전투 끝나면 사라져야").
                 if (BossEntity != null) BossEntity.Despawn();

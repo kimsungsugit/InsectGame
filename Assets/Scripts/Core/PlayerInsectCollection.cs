@@ -96,6 +96,13 @@ namespace InsectGame.Core
                 }
 
                 InsectData insect = GetInsectData(data.insectId);
+                // 지속 HP 초기화 — 구세이브(currentHp -1)는 풀피로 확정. insect null이면 다음 로드에 미룸.
+                if (insect != null)
+                {
+                    int beforeHp = data.currentHp;
+                    data.EnsureHp(data.GetTotalHp(insect.baseHp));
+                    if (data.currentHp != beforeHp) needsSave = true;
+                }
                 if (EnsureLevelSkills(data, insect))
                 {
                     needsSave = true;
@@ -238,6 +245,64 @@ namespace InsectGame.Core
 
             EnsureLevelSkills(data, insect);
 
+            MarkDirty();
+            InsectUpdated?.Invoke(data);
+        }
+
+        // ── 지속 HP·상태 치료 API (GainXp 패턴: mutate → MarkDirty → InsectUpdated) ──
+
+        private int MaxHpOf(PlayerInsectData data)
+        {
+            InsectData insect = data != null ? GetInsectData(data.insectId) : null;
+            int baseHp = insect != null ? insect.baseHp : 50;
+            return data != null ? data.GetTotalHp(baseHp) : baseHp;
+        }
+
+        /// <summary>HP를 amount만큼 회복(상한 MaxHp). 기절(0)도 회복 가능(부활).</summary>
+        public void HealInsect(PlayerInsectData data, int amount)
+        {
+            if (data == null || amount <= 0) return;
+            int max = MaxHpOf(data);
+            int cur = data.currentHp < 0 ? max : data.currentHp;
+            data.currentHp = Mathf.Clamp(cur + amount, 0, max);
+            MarkDirty();
+            InsectUpdated?.Invoke(data);
+        }
+
+        /// <summary>HP 전액 + 모든 상태 해제(병원 젬 치료·종합치료제).</summary>
+        public void FullHeal(PlayerInsectData data)
+        {
+            if (data == null) return;
+            data.currentHp = MaxHpOf(data);
+            data.isPoisoned = false;
+            data.isParalyzed = false;
+            MarkDirty();
+            InsectUpdated?.Invoke(data);
+        }
+
+        public void CurePoison(PlayerInsectData data)
+        {
+            if (data == null || !data.isPoisoned) return;
+            data.isPoisoned = false;
+            MarkDirty();
+            InsectUpdated?.Invoke(data);
+        }
+
+        public void CureParalysis(PlayerInsectData data)
+        {
+            if (data == null || !data.isParalyzed) return;
+            data.isParalyzed = false;
+            MarkDirty();
+            InsectUpdated?.Invoke(data);
+        }
+
+        /// <summary>전투 종료 시 남은 HP·상태를 영구 기록(무료 전체치료 제거의 핵심).</summary>
+        public void SetAfterBattle(PlayerInsectData data, int remainingHp, bool poisoned, bool paralyzed)
+        {
+            if (data == null) return;
+            data.currentHp = Mathf.Clamp(remainingHp, 0, MaxHpOf(data));
+            data.isPoisoned = poisoned;
+            data.isParalyzed = paralyzed;
             MarkDirty();
             InsectUpdated?.Invoke(data);
         }
