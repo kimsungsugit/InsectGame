@@ -1588,8 +1588,9 @@ namespace InsectGame.UI
         private void DrawInsectSelector()
         {
             bool mobile = UIScale.IsMobileLayout;
+            bool portrait = UIScale.IsPortrait;   // 레이아웃 형태는 방향 기준 — 가로 모바일 세로형 패널의 곤충 가림 방지
             float panelW = UIScale.VirtualScreenWidth;
-            float panelH = mobile ? 380f : 200f;
+            float panelH = portrait ? 380f : 200f;
             float safeBottom = SafeArea.Bottom / UIScale.Scale; // 제스처바 위로
             float panelY = UIScale.VirtualScreenHeight - panelH - safeBottom;
 
@@ -1603,8 +1604,8 @@ namespace InsectGame.UI
                 mobile ? "공격할 곤충을 선택하세요" : "공격할 곤충을 선택하세요 [1-5]:", insectSelHeaderStyleCache);
 
             int count = raidController.TeamStats != null ? raidController.TeamStats.Length : 0;
-            float btnW = mobile ? (panelW - 84f) / 3f : Mathf.Min(240, (panelW - 60) / Mathf.Max(count, 1));
-            float btnH = mobile ? 136f : 120f;
+            float btnW = portrait ? (panelW - 84f) / 3f : Mathf.Min(240, (panelW - 60) / Mathf.Max(count, 1));
+            float btnH = portrait ? 136f : 120f;
             float baseBtnY = panelY + 52f;
             float btnY = baseBtnY;
             float startX = 30;
@@ -1614,10 +1615,10 @@ namespace InsectGame.UI
                 var stats = raidController.TeamStats[i];
                 if (stats == null) continue;
                 bool alive = stats.CurrentHp > 0;
-                float bx = mobile
+                float bx = portrait
                     ? startX + (i % 3) * (btnW + 12f)
                     : startX + i * (btnW + 12f);
-                if (mobile) btnY = baseBtnY + (i / 3) * (btnH + 12f);
+                if (portrait) btnY = baseBtnY + (i / 3) * (btnH + 12f);
 
                 Color bgCol = alive ? new Color(0.08f, 0.10f, 0.20f) : new Color(0.06f, 0.04f, 0.04f);
                 if (i == selectedSlot && alive) bgCol = new Color(0.12f, 0.15f, 0.30f);
@@ -1665,8 +1666,8 @@ namespace InsectGame.UI
             }
             insectBtnCount = count;
 
-            float uniteX = mobile ? startX + 2f * (btnW + 12f) : startX + count * (btnW + 12f) + 20f;
-            float uniteY = mobile ? baseBtnY + btnH + 12f : baseBtnY;
+            float uniteX = portrait ? startX + 2f * (btnW + 12f) : startX + count * (btnW + 12f) + 20f;
+            float uniteY = portrait ? baseBtnY + btnH + 12f : baseBtnY;
             DrawUniteButton(uniteX, uniteY, btnH);
         }
 
@@ -1680,8 +1681,9 @@ namespace InsectGame.UI
                 ? raidController.TeamCooldowns[selectedSlot] : null;
 
             bool mobile = UIScale.IsMobileLayout;
+            bool portrait = UIScale.IsPortrait;   // 레이아웃 형태는 방향 기준 — 가로 모바일 세로형 패널의 곤충 가림 방지
             float panelW = UIScale.VirtualScreenWidth;
-            float panelH = mobile ? 580f : 280f;
+            float panelH = portrait ? 580f : 280f;
             float safeBottom = SafeArea.Bottom / UIScale.Scale; // 제스처바 위로
             float panelY = UIScale.VirtualScreenHeight - panelH - safeBottom;
 
@@ -1696,7 +1698,7 @@ namespace InsectGame.UI
                     : $"{stats.Data.displayName}의 스킬 [Q/W/E/R]  |  ESC: 돌아가기", skillSelHeaderStyleCache);
 
             int count = skills != null ? Mathf.Min(skills.Length, 4) : 0;
-            float btnW = mobile ? (panelW - 76f) * 0.5f : Mathf.Min(300, (panelW - 80) / Mathf.Max(count, 1));
+            float btnW = portrait ? (panelW - 76f) * 0.5f : Mathf.Min(300, (panelW - 80) / Mathf.Max(count, 1));
             float btnH = 180f;
             float baseBtnY = panelY + 52f;
             float btnY = baseBtnY;
@@ -1708,10 +1710,10 @@ namespace InsectGame.UI
                 var skill = skills[i];
                 if (skill == null) continue;
 
-                float bx = mobile
+                float bx = portrait
                     ? startX + (i % 2) * (btnW + 14f)
                     : startX + i * (btnW + 14f);
-                if (mobile) btnY = baseBtnY + (i / 2) * (btnH + 14f);
+                if (portrait) btnY = baseBtnY + (i / 2) * (btnH + 14f);
                 int cd = cooldowns != null && i < cooldowns.Length ? cooldowns[i] : 0;
                 bool canUse = cd <= 0;
 
@@ -1795,7 +1797,7 @@ namespace InsectGame.UI
                 GUI.Label(new Rect(0, btnY, panelW, btnH), "스킬 없음", skillSelNoSkillStyleCache);
             }
 
-            if (mobile)
+            if (portrait)
                 DrawUniteButton(startX, baseBtnY + 2f * (btnH + 14f), 90f);
             else
                 DrawUniteButton(startX + count * (btnW + 14) + 20, baseBtnY, btnH);
