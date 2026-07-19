@@ -75,6 +75,7 @@ namespace InsectGame.UI
         private GUIStyle skillKeyNumCache;
         private GUIStyle skillNameStyleCache;
         private GUIStyle skillTypeLabelCache;
+        private GUIStyle skillEffLabelCache;   // 상성 배지(효과적/비효과)
         private GUIStyle skillInfoStyleCache;
         private GUIStyle skillCdStyleCache;
         private GUIStyle skillCdInfoCache;
@@ -760,6 +761,7 @@ namespace InsectGame.UI
             skillNameStyleCache = new GUIStyle(GUI.skin.label)
             { fontSize = 26, fontStyle = FontStyle.Bold };
             skillTypeLabelCache = new GUIStyle(GUI.skin.label) { fontSize = 20 };
+            skillEffLabelCache = new GUIStyle(GUI.skin.label) { fontSize = 20, fontStyle = FontStyle.Bold };
             skillInfoStyleCache = new GUIStyle(GUI.skin.label) { fontSize = 22, fontStyle = FontStyle.Bold };
             skillCdStyleCache = new GUIStyle(GUI.skin.label)
             { fontSize = 22, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleRight };
@@ -2005,6 +2007,22 @@ namespace InsectGame.UI
                                     skill.effectType == SkillEffectType.BuffAttack ? "버프" : "디버프";
                 string typeStr = $"{InsectTypeChart.GetDisplayName(skill.element)} 타입 · {actionType}";
                 GUI.Label(new Rect(bx + 14, btnY + 96, btnW - 28, 26), typeStr, skillTypeLabelCache);
+
+                // 상성 배지 — 지금 적에게 강/약(데미지 스킬만, 버프·디버프는 상성 무관). 스킬 선택 전 판단 제공.
+                if (skill.effectType == SkillEffectType.Damage && enemyStats != null && enemyStats.Data != null)
+                {
+                    float eff = InsectTypeChart.GetEffectiveness(skill.element,
+                        enemyStats.Data.primaryType, enemyStats.Data.secondaryType);
+                    if (eff > 1.05f || eff < 0.95f)
+                    {
+                        bool strong = eff > 1.05f;
+                        skillEffLabelCache.normal.textColor = canUse
+                            ? (strong ? new Color(0.4f, 1f, 0.5f) : new Color(1f, 0.45f, 0.4f))
+                            : new Color(0.3f, 0.3f, 0.3f);
+                        GUI.Label(new Rect(bx + 14, btnY + btnH - 30, btnW - 28, 24),
+                            strong ? "효과적 ▲" : "비효과 ▼", skillEffLabelCache);
+                    }
+                }
 
                 skillInfoStyleCache.normal.textColor = canUse ? new Color(0.9f, 0.85f, 0.65f) : new Color(0.3f, 0.3f, 0.3f);
                 string powerStr = skill.effectType == SkillEffectType.Damage ? $"위력: {skill.power}" :

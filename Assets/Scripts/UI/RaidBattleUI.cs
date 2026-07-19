@@ -1784,6 +1784,21 @@ namespace InsectGame.UI
                                  skill.effectType == SkillEffectType.BuffAttack ? "버프 스킬" : "디버프 스킬";
                 GUI.Label(new Rect(bx + 12, btnY + 86, btnW - 24, 24), typeStr, skillSelTypeStyleCache);
 
+                // 상성 배지 — 보스에게 강/약(데미지 스킬만). InsectTypeChart는 이미 public.
+                if (skill.effectType == SkillEffectType.Damage && raidController.BossStats != null && raidController.BossStats.Data != null)
+                {
+                    float eff = InsectTypeChart.GetEffectiveness(skill.element,
+                        raidController.BossStats.Data.primaryType, raidController.BossStats.Data.secondaryType);
+                    if (eff > 1.05f || eff < 0.95f)
+                    {
+                        bool strong = eff > 1.05f;
+                        skillSelTypeStyleCache.normal.textColor = canUse
+                            ? (strong ? new Color(0.4f, 1f, 0.5f) : new Color(1f, 0.45f, 0.4f))
+                            : new Color(0.3f, 0.3f, 0.3f);
+                        GUI.Label(new Rect(bx + btnW - 110, btnY + 86, 98, 24), strong ? "효과적 ▲" : "비효과 ▼", skillSelTypeStyleCache);
+                    }
+                }
+
                 skillSelInfoStyleCache.normal.textColor = canUse ? new Color(0.9f, 0.85f, 0.65f) : new Color(0.3f, 0.3f, 0.3f);
                 string pStr = skill.effectType == SkillEffectType.Damage ? $"위력: {skill.power}" :
                               skill.effectType == SkillEffectType.BuffAttack ? "ATK UP" : "ATK DOWN";
