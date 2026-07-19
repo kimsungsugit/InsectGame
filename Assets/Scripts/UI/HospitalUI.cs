@@ -103,7 +103,7 @@ namespace InsectGame.UI
 
         private int MaxHpOf(PlayerInsectData pid)
         {
-            InsectData data = database != null && pid != null ? database.FindById(pid.insectId) : null;
+            InsectData data = database != null && pid != null ? database.GetById(pid.insectId) : null;
             int baseHp = data != null ? data.baseHp : 50;
             return pid != null ? pid.GetTotalHp(baseHp) : baseHp;
         }
@@ -178,7 +178,7 @@ namespace InsectGame.UI
         private void DrawInsectRow(Rect rect, PlayerInsectData pid)
         {
             if (pid == null) return;
-            InsectData data = database != null ? database.FindById(pid.insectId) : null;
+            InsectData data = database != null ? database.GetById(pid.insectId) : null;
             int maxHp = MaxHpOf(pid);
             int curHp = pid.currentHp < 0 ? maxHp : pid.currentHp;
             bool needsHeal = curHp < maxHp || pid.isPoisoned || pid.isParalyzed;
@@ -301,7 +301,7 @@ namespace InsectGame.UI
 
         private string DisplayName(PlayerInsectData pid)
         {
-            InsectData data = database != null ? database.FindById(pid.insectId) : null;
+            InsectData data = database != null ? database.GetById(pid.insectId) : null;
             return data != null ? data.displayName : pid.insectId;
         }
 
