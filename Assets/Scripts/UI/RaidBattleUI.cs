@@ -13,7 +13,7 @@ namespace InsectGame.UI
         [SerializeField] private PlayerMovement playerMovement;
         [SerializeField] private BattleArenaController arena;
 
-        private enum Phase { None, Intro, SelectInsect, SelectSkill, PlayerAttack, BossAttack, UniteAttack, Result }
+        private enum Phase { None, Intro, SelectInsect, SelectSkill, PlayerAttack, BossAttack, TurnAnnounce, UniteAttack, Result }
 
         private Phase phase = Phase.None;
         public bool IsRaidActive => phase != Phase.None;
@@ -22,6 +22,13 @@ namespace InsectGame.UI
         private float introTimer;
         private float resultTimer;
         private bool resultShown;
+        // 인터-턴 배너(턴 가시성) — 팀 턴 / 보스의 턴을 중앙에 표시하는 대기.
+        private const float TurnAnnounceDuration = 0.9f;
+        private float announceTimer;
+        private string announceText;
+        private bool announceIsPlayer;
+        private Phase announceNextPhase;
+        private bool announceTriggerBoss;   // 종료 후 보스 공격 연출 발동 여부
 
         private string actionText;
         private float actionTimer;
@@ -319,6 +326,7 @@ namespace InsectGame.UI
 
                 phase = Phase.Intro;
                 introTimer = 0f;
+                announceTimer = 0f;
                 resultShown = false;
                 if (AudioManager.Instance != null)
                 {
@@ -580,45 +588,56 @@ namespace InsectGame.UI
                 if (uniteAnimTimer > 2.5f)
                 {
                     if (lastDmgToTeam > 0)
-                    {
-                        phase = Phase.BossAttack;
-                        phaseTimer = 0f;
-                        TriggerBossAttackEffect();   // 유나이트 후 보스 반격 연출
-                    }
+                        BeginTurnAnnounce("보스의 턴", false, Phase.BossAttack, triggerBoss: true);
                     else if (!resultShown)
-                    {
-                        phase = Phase.SelectInsect;
-                        phaseTimer = 0f;
-                    }
+                        BeginTurnAnnounce("팀의 턴", true, Phase.SelectInsect, triggerBoss: false);
                 }
             }
 
             if (phase == Phase.PlayerAttack && phaseTimer > 1f)
             {
                 if (lastDmgToTeam > 0)
-                {
-                    phase = Phase.BossAttack;
-                    phaseTimer = 0f;
-                    TriggerBossAttackEffect();   // 보스 반격 연출(러시/투사체/임팩트/쉐이크)
-                }
+                    BeginTurnAnnounce("보스의 턴", false, Phase.BossAttack, triggerBoss: true);
                 else if (!resultShown)
-                {
-                    phase = Phase.SelectInsect;
-                    phaseTimer = 0f;
-                }
+                    BeginTurnAnnounce("팀의 턴", true, Phase.SelectInsect, triggerBoss: false);
             }
 
             if (phase == Phase.BossAttack && phaseTimer > 1f)
             {
                 if (!resultShown)
-                {
-                    phase = Phase.SelectInsect;
-                    phaseTimer = 0f;
-                }
+                    BeginTurnAnnounce("팀의 턴", true, Phase.SelectInsect, triggerBoss: false);
+            }
+
+            if (phase == Phase.TurnAnnounce)
+            {
+                announceTimer -= Time.deltaTime;
+                if (wantMouseClick) { wantMouseClick = false; announceTimer = 0f; }   // 탭/키로 즉시 스킵
+                if (announceTimer <= 0f) FinishTurnAnnounce();
             }
 
             if (phase == Phase.Result && resultTimer > 5f)
                 EndRaid();
+        }
+
+        // 다음 턴 중앙 배너 시작. 종료 후 nextPhase로 전이(triggerBoss면 보스 연출 발동).
+        private void BeginTurnAnnounce(string text, bool isPlayer, Phase nextPhase, bool triggerBoss)
+        {
+            // 결과 화면 대기 중이면 배너 없이(레이드 종료 우선). resultShown이면 SelectInsect 전이는 스킵되던 기존 동작 보존.
+            phase = Phase.TurnAnnounce;
+            phaseTimer = 0f;
+            announceTimer = TurnAnnounceDuration;
+            announceText = text;
+            announceIsPlayer = isPlayer;
+            announceNextPhase = nextPhase;
+            announceTriggerBoss = triggerBoss;
+        }
+
+        private void FinishTurnAnnounce()
+        {
+            phase = announceNextPhase;
+            phaseTimer = 0f;
+            if (announceTriggerBoss)
+                TriggerBossAttackEffect();   // 보스 공격 연출 발동
         }
 
         private void TrySelectInsect(int index)
@@ -741,6 +760,8 @@ namespace InsectGame.UI
                 DrawUniteAttackAnimation();
             else if (phase == Phase.PlayerAttack || phase == Phase.BossAttack)
                 DrawAttackEffects();
+            else if (phase == Phase.TurnAnnounce)
+                DrawTurnAnnounce();
 
             if (actionTimer > 0)
                 DrawActionText();
@@ -1801,6 +1822,30 @@ namespace InsectGame.UI
                 DrawUniteButton(startX, baseBtnY + 2f * (btnH + 14f), 90f);
             else
                 DrawUniteButton(startX + count * (btnW + 14) + 20, baseBtnY, btnH);
+        }
+
+        // 인터-턴 중앙 배너 — "팀의 턴"(청록)/"보스의 턴"(적색). 페이드 인·아웃 + 슬라이드. introFightStyle 재사용.
+        private void DrawTurnAnnounce()
+        {
+            float sw = UIScale.VirtualScreenWidth;
+            float cy = UIScale.VirtualScreenHeight * 0.30f;
+            float t = 1f - Mathf.Clamp01(announceTimer / TurnAnnounceDuration);
+            float alpha = Mathf.Clamp01(Mathf.Min(t * 4f, (1f - t) * 4f)) + 0.15f;
+            alpha = Mathf.Clamp01(alpha);
+            float slide = (1f - Mathf.Clamp01(t * 3f)) * 40f;
+
+            Color accent = announceIsPlayer ? new Color(0.4f, 0.9f, 1f) : new Color(1f, 0.4f, 0.35f);
+
+            GUI.color = new Color(0.03f, 0.04f, 0.09f, 0.72f * alpha);
+            GUI.DrawTexture(new Rect(0, cy - 12f, sw, 92f), Texture2D.whiteTexture);
+            GUI.color = new Color(accent.r, accent.g, accent.b, 0.85f * alpha);
+            GUI.DrawTexture(new Rect(0, cy - 12f, sw, 4f), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(0, cy + 76f, sw, 4f), Texture2D.whiteTexture);
+
+            introFightStyleCache.fontSize = 58;
+            introFightStyleCache.normal.textColor = new Color(accent.r, accent.g, accent.b, alpha);
+            GUI.color = Color.white;
+            GUI.Label(new Rect(0, cy + slide, sw, 80f), announceText, introFightStyleCache);
         }
 
         private void DrawAttackEffects()
