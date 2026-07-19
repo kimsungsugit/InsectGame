@@ -77,6 +77,13 @@ namespace InsectGame.UI
             ownedDirty = true;
             if (!isOpen) { isOpen = true; ModalUIRegistry.Register(this); }
         }
+        private void OnEnable()
+        {
+            // OnDisable이 InsectUpdated를 해지하므로 재활성 시 재구독한다. 첫 활성 땐 collection이
+            // 아직 AutoWire 전이라 null → no-op(AutoWire가 최초 구독을 건다). 재활성 시 목록도 갱신.
+            if (collection != null) { collection.InsectUpdated -= OnInsectUpdated; collection.InsectUpdated += OnInsectUpdated; }
+            ownedDirty = true;
+        }
         private void OnDisable()
         {
             isOpen = false;
