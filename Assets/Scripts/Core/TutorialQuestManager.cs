@@ -296,7 +296,8 @@ namespace InsectGame.Core
                     hint = "다양한 지역을 탐험하며 곤충을 모으세요",
                     type = QuestType.Capture, targetCount = 10,
                     prerequisiteQuestId = "q_raid",
-                    rewardCandy = 30, rewardExp = 50
+                    rewardCandy = 30, rewardExp = 50,
+                    rewardItemId = "binding_net", rewardItemCount = 1
                 },
                 new TutorialQuest
                 {
@@ -305,7 +306,8 @@ namespace InsectGame.Core
                     hint = "다양한 야생 곤충들과 전투하세요",
                     type = QuestType.Battle, targetCount = 10,
                     prerequisiteQuestId = "q_capture10",
-                    rewardCandy = 40, rewardExp = 60
+                    rewardCandy = 40, rewardExp = 60,
+                    rewardItemId = "beast_mark", rewardItemCount = 1
                 },
                 new TutorialQuest
                 {
@@ -314,7 +316,8 @@ namespace InsectGame.Core
                     hint = "월드를 자유롭게 탐험하세요",
                     type = QuestType.Movement, targetCount = 1,
                     prerequisiteQuestId = "q_battle10",
-                    rewardCandy = 100, rewardExp = 100
+                    rewardCandy = 100, rewardExp = 100,
+                    rewardItemId = "spirit_blessing", rewardItemCount = 1
                 },
 
                 // --- 서브 퀘스트(다중 활성, 반복 시 목표 상승) — category=Side ---
@@ -346,7 +349,8 @@ namespace InsectGame.Core
                     type = QuestType.RaidBattle, targetCount = 1, targetIncrement = 1,
                     category = QuestCategory.Side, repeatable = true,
                     prerequisiteQuestId = "q_raid",
-                    rewardCandy = 40, rewardExp = 30
+                    rewardCandy = 40, rewardExp = 30,
+                    rewardItemId = "guardian_totem", rewardItemCount = 1
                 },
             };
         }

@@ -80,6 +80,12 @@ namespace InsectGame.Core
                 new CashShopItem { itemId = "shop_candy_pack",   displayName = "캔디 대량팩",   description = "캔디 50개",                category = CashItemCategory.MinigameItem, priceKRW = 0, gemPrice = 300, rewardItemId = "candy",        rewardCount = 50 },
                 new CashShopItem { itemId = "shop_exp_boost",    displayName = "경험치 부스터", description = "10분간 경험치 2배",        category = CashItemCategory.MinigameItem, priceKRW = 0, gemPrice = 300, rewardItemId = "exp_boost",    rewardCount = 1 },
 
+                // -- 슈퍼 아이템 (보석으로 구매) — Epic/Legendary 강화 묶음. 무료는 후반 퀘스트 보상으로도 획득 --
+                new CashShopItem { itemId = "shop_beast_mark",     displayName = "맹수의 표식",   description = "10분간 전투 공격력 +35%",           category = CashItemCategory.MinigameItem, priceKRW = 0, gemPrice = 450,  rewardItemId = "beast_mark",     rewardCount = 2 },
+                new CashShopItem { itemId = "shop_binding_net",    displayName = "포박의 그물",   description = "10분간 포획 +35% & 도주 방지",      category = CashItemCategory.MinigameItem, priceKRW = 0, gemPrice = 500,  rewardItemId = "binding_net",    rewardCount = 2 },
+                new CashShopItem { itemId = "shop_golden_censer",  displayName = "황금 향로",     description = "15분간 희귀 출현 ×2.3 & 포획 +25%", category = CashItemCategory.MinigameItem, priceKRW = 0, gemPrice = 900,  rewardItemId = "golden_censer",  rewardCount = 1 },
+                new CashShopItem { itemId = "shop_spirit_blessing", displayName = "정령의 가호",  description = "10분간 공격력·방어력 대폭 상승",     category = CashItemCategory.MinigameItem, priceKRW = 0, gemPrice = 1000, rewardItemId = "spirit_blessing", rewardCount = 1 },
+
                 // -- 랜덤 상자 (보석으로 구매) --
                 new CashShopItem { itemId = "box_bronze", displayName = "브론즈 상자", description = "기본 곤충 + 소량 희귀 확률", category = CashItemCategory.GachaBox, priceKRW = 0, gemPrice = 500, rewardCount = 1 },
                 new CashShopItem { itemId = "box_silver", displayName = "실버 상자",   description = "희귀 곤충 확률 UP!",        category = CashItemCategory.GachaBox, priceKRW = 0, gemPrice = 600, rewardCount = 1 },

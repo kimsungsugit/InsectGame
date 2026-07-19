@@ -295,8 +295,10 @@ def evaluate_signals() -> list:
     # 4. CashShop rewardItemId ↔ CreateCaptureItems 매칭
     shop_items, reward_items = extract_cashshop_items()
     capture_items = extract_capture_items()
-    # rewardItemId 중 캐시샵 아이템(gem_*, shop_*, box_*) 외의 ID는 실제 아이템 풀에 있어야
-    expected_pool = capture_items.union({"candy", "exp_boost"})  # 알려진 외부 아이템
+    # rewardItemId 중 캐시샵 아이템(gem_*, shop_*, box_*) 외의 ID는 실제 아이템 풀에 있어야.
+    # 소비형 아이템 풀은 하드코딩 사본 대신 ItemDatabase(CreateItem) 단일 출처(game_facts.item_ids)를 읽는다
+    # — 신규 소비형(golden_censer 등)이 자동 인정돼 거짓 WARN을 안 낸다. candy만 ItemDatabase 밖이라 별도.
+    expected_pool = capture_items.union(game_facts.item_ids()).union({"candy"})
     unmapped = reward_items - expected_pool
     judge = "WARN" if unmapped else "PASS"
     signals.append((
