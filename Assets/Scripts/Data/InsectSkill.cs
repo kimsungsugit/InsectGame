@@ -6,7 +6,12 @@ namespace InsectGame.Data
     {
         Damage,
         BuffAttack,
-        DebuffAttack
+        DebuffAttack,
+        // ── P4 신규 효과 타입 ──
+        Heal,          // 시전자 HP 회복 (effectValue = MaxHp 비율)
+        PoisonDot,     // 대상에 지속 피해 부여 (power = 턴당 피해, effectDurationTurns 턴)
+        Stun,          // 대상 다음 행동 1회 스킵
+        DefenseBuff    // 시전자 방어 상승 (effectValue, effectDurationTurns 턴)
     }
 
     [CreateAssetMenu(menuName = "InsectGame/Insect Skill", fileName = "InsectSkill")]

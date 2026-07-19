@@ -1735,11 +1735,18 @@ namespace InsectGame.UI
                 string effectStr = "";
                 foreach (var eff in effects)
                 {
-                    if (eff.targetIsPlayer == isPlayer)
+                    if (eff.targetIsPlayer != isPlayer) continue;
+                    string tag;
+                    switch (eff.kind)
                     {
-                        string tag = eff.value >= 0 ? $"ATK+({eff.remainingTurns})" : $"ATK-({eff.remainingTurns})";
-                        effectStr += (effectStr.Length > 0 ? " " : "") + tag;
+                        case InsectBattleController.EffectKind.DefBuff:
+                            tag = $"DEF+({eff.remainingTurns})"; break;
+                        case InsectBattleController.EffectKind.Dot:
+                            tag = $"독({eff.remainingTurns})"; break;
+                        default:
+                            tag = eff.value >= 0 ? $"ATK+({eff.remainingTurns})" : $"ATK-({eff.remainingTurns})"; break;
                     }
+                    effectStr += (effectStr.Length > 0 ? " " : "") + tag;
                 }
                 if (effectStr.Length > 0)
                 {
@@ -2003,9 +2010,7 @@ namespace InsectGame.UI
                 GUI.Label(new Rect(bx + 14, btnY + 58, btnW - 28, 34), skill.displayName, skillNameStyleCache);
 
                 skillTypeLabelCache.normal.textColor = canUse ? skillIconCol : new Color(0.3f, 0.3f, 0.3f);
-                string actionType = skill.effectType == SkillEffectType.Damage ? "공격" :
-                                    skill.effectType == SkillEffectType.BuffAttack ? "버프" : "디버프";
-                string typeStr = $"{InsectTypeChart.GetDisplayName(skill.element)} 타입 · {actionType}";
+                string typeStr = $"{InsectTypeChart.GetDisplayName(skill.element)} 타입 · {SkillActionLabel(skill.effectType)}";
                 GUI.Label(new Rect(bx + 14, btnY + 96, btnW - 28, 26), typeStr, skillTypeLabelCache);
 
                 // 상성 배지 — 지금 적에게 강/약(데미지 스킬만, 버프·디버프는 상성 무관). 스킬 선택 전 판단 제공.
@@ -2025,9 +2030,7 @@ namespace InsectGame.UI
                 }
 
                 skillInfoStyleCache.normal.textColor = canUse ? new Color(0.9f, 0.85f, 0.65f) : new Color(0.3f, 0.3f, 0.3f);
-                string powerStr = skill.effectType == SkillEffectType.Damage ? $"위력: {skill.power}" :
-                                  skill.effectType == SkillEffectType.BuffAttack ? "공격력 UP" : "공격력 DOWN";
-                GUI.Label(new Rect(bx + 14, btnY + 126, btnW - 28, 28), powerStr, skillInfoStyleCache);
+                GUI.Label(new Rect(bx + 14, btnY + 126, btnW - 28, 28), SkillPowerLabel(skill), skillInfoStyleCache);
 
                 if (cd > 0)
                 {
@@ -2087,6 +2090,35 @@ namespace InsectGame.UI
 
                 GUI.Label(new Rect(escapeX, escY + 8, extraW, 32), mobile ? "도망가기" : "[ESC] 도망가기", skillEscStyleCache);
                 GUI.Label(new Rect(escapeX, escY + 44, extraW, 26), "확률적 성공", skillEscInfoCache);
+            }
+        }
+
+        // 스킬 효과 타입 라벨(신규 타입 포함) — 스킬 패널 표시용.
+        private static string SkillActionLabel(SkillEffectType t)
+        {
+            switch (t)
+            {
+                case SkillEffectType.BuffAttack: return "공격 버프";
+                case SkillEffectType.DebuffAttack: return "공격 디버프";
+                case SkillEffectType.Heal: return "회복";
+                case SkillEffectType.PoisonDot: return "중독";
+                case SkillEffectType.Stun: return "기절";
+                case SkillEffectType.DefenseBuff: return "방어 버프";
+                default: return "공격";
+            }
+        }
+
+        private static string SkillPowerLabel(InsectSkill skill)
+        {
+            switch (skill.effectType)
+            {
+                case SkillEffectType.BuffAttack: return "공격력 UP";
+                case SkillEffectType.DebuffAttack: return "공격력 DOWN";
+                case SkillEffectType.Heal: return "HP 회복";
+                case SkillEffectType.PoisonDot: return $"지속 피해 {skill.power}";
+                case SkillEffectType.Stun: return "행동 봉인";
+                case SkillEffectType.DefenseBuff: return "방어력 UP";
+                default: return $"위력: {skill.power}";
             }
         }
 

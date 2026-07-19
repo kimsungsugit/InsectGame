@@ -3130,8 +3130,9 @@ namespace InsectGame.Core
 
             if (id.Contains("spider"))
             {
-                traitKey = "web"; displayName = "거미줄 구속"; element = InsectElement.Poison;
-                effectType = SkillEffectType.DebuffAttack; power = 1; effectValue = 0.3f;
+                // 거미줄로 상대를 묶어 다음 행동 1회 스킵(Stun).
+                traitKey = "web"; displayName = "거미줄 속박"; element = InsectElement.Poison;
+                effectType = SkillEffectType.Stun; power = 1; effectValue = 0.3f;
             }
             else if (id.Contains("mantis"))
             {
@@ -3147,11 +3148,15 @@ namespace InsectGame.Core
             }
             else if (id.Contains("butterfly") || id.Contains("moth"))
             {
-                traitKey = "scale_wind"; displayName = "인분 회오리"; element = InsectElement.Wind;
+                // 꽃꿀을 흡수해 HP 회복(Heal, MaxHp의 30%).
+                traitKey = "nectar_heal"; displayName = "꿀 흡수"; element = InsectElement.Leaf;
+                effectType = SkillEffectType.Heal; power = 1; effectValue = 0.3f;
             }
             else if (IsBeeInsectId(id) || id.Contains("wasp") || id.Contains("hornet") || id.Contains("mosquito"))
             {
-                traitKey = "venom_sting"; displayName = "급소 독침"; element = InsectElement.Poison; power = 33;
+                // 독침으로 지속 피해(PoisonDot, 턴당 12 × 3턴).
+                traitKey = "venom_sting"; displayName = "맹독 침"; element = InsectElement.Poison;
+                effectType = SkillEffectType.PoisonDot; power = 12;
             }
             else if (IsAntInsectId(id))
             {
@@ -3176,7 +3181,9 @@ namespace InsectGame.Core
             }
             else if (id.Contains("pill_bug") || id.Contains("pillbug"))
             {
-                traitKey = "armor_roll"; displayName = "환형 강타"; element = InsectElement.Earth; power = 31;
+                // 몸을 말아 방어 상승(DefenseBuff).
+                traitKey = "armor_roll"; displayName = "환형 방어"; element = InsectElement.Earth;
+                effectType = SkillEffectType.DefenseBuff; power = 1; effectValue = 0.35f;
             }
             else if (id.Contains("aphid"))
             {

@@ -38,6 +38,8 @@ namespace InsectGame.Battle
         private InsectSkill[] playerOverrideSkills;
         private int[] playerCooldowns;
         private int enemyCooldown;
+        private int playerStunTurns;   // >0이면 플레이어 다음 행동 스킵(P4 Stun)
+        private int enemyStunTurns;    // >0이면 적 다음 행동 스킵
         private readonly List<ActiveEffect> effects = new List<ActiveEffect>();
         private int lastCandyReward;
         private int lastExpReward;
@@ -68,6 +70,9 @@ namespace InsectGame.Battle
             int skillCount = playerOverrideSkills != null ? playerOverrideSkills.Length : (playerInsect.skills != null ? playerInsect.skills.Length : 0);
             playerCooldowns = new int[skillCount];
             enemyCooldown = 0;
+            playerStunTurns = 0;
+            enemyStunTurns = 0;
+            effects.Clear();
             lastCandyReward = 0;
             lastExpReward = 0;
             lastItemId = string.Empty;
@@ -91,13 +96,22 @@ namespace InsectGame.Battle
                 return;
             }
 
-            InsectSkill[] skills = GetPlayerSkills();
-            InsectSkill skill = skills != null && skillIndex < skills.Length ? skills[skillIndex] : GetSkill(playerStats.Data, skillIndex);
-            ApplySkill(playerStats, enemyStats, skill, true);
-
-            if (skill != null)
+            // 기절 상태면 이번 행동 스킵(스킬 소모 없음) — 적은 그대로 반격.
+            if (playerStunTurns > 0)
             {
-                playerCooldowns[skillIndex] = skill.cooldownTurns;
+                playerStunTurns--;
+                TryPlayEffectText("행동 불가!", new Color(1f, 0.85f, 0.3f));
+            }
+            else
+            {
+                InsectSkill[] skills = GetPlayerSkills();
+                InsectSkill skill = skills != null && skillIndex < skills.Length ? skills[skillIndex] : GetSkill(playerStats.Data, skillIndex);
+                ApplySkill(playerStats, enemyStats, skill, true);
+
+                if (skill != null)
+                {
+                    playerCooldowns[skillIndex] = skill.cooldownTurns;
+                }
             }
 
             if (enemyStats.CurrentHp > 0)
@@ -119,9 +133,17 @@ namespace InsectGame.Battle
             }
             if (battleEnded) return; // 종료 후 액션 차단
 
-            int damage = Mathf.Max(1, Mathf.RoundToInt(playerStats.Attack * 0.7f));
-            enemyStats.ApplyDamage(damage, playerStats.Attack, enemyStats.Defense);
-            TryPlayHitFlash(false);
+            if (playerStunTurns > 0)
+            {
+                playerStunTurns--;
+                TryPlayEffectText("행동 불가!", new Color(1f, 0.85f, 0.3f));
+            }
+            else
+            {
+                int damage = Mathf.Max(1, Mathf.RoundToInt(playerStats.Attack * 0.7f));
+                enemyStats.ApplyDamage(damage, playerStats.Attack, enemyStats.Defense);
+                TryPlayHitFlash(false);
+            }
 
             if (enemyStats.CurrentHp > 0)
             {
@@ -263,12 +285,35 @@ namespace InsectGame.Battle
             switch (skill.effectType)
             {
                 case SkillEffectType.BuffAttack:
-                    AddEffect(isPlayer, skill.effectValue, skill.effectDurationTurns);
+                    AddEffect(isPlayer, skill.effectValue, skill.effectDurationTurns, EffectKind.AtkBuff);
                     TryPlayEffectText("공격력 상승!", new Color(1f, 0.8f, 0.3f));
                     break;
                 case SkillEffectType.DebuffAttack:
-                    AddEffect(!isPlayer, -skill.effectValue, skill.effectDurationTurns);
+                    AddEffect(!isPlayer, -skill.effectValue, skill.effectDurationTurns, EffectKind.AtkBuff);
                     TryPlayEffectText("공격력 하락!", new Color(0.6f, 0.4f, 0.9f));
+                    break;
+                case SkillEffectType.Heal:
+                {
+                    int healAmt = Mathf.Max(1, Mathf.RoundToInt(attacker.MaxHp * Mathf.Clamp01(skill.effectValue)));
+                    attacker.Heal(healAmt);
+                    TryPlayEffectText($"HP +{healAmt}!", new Color(0.4f, 1f, 0.5f));
+                    break;
+                }
+                case SkillEffectType.PoisonDot:
+                    // 대상에 턴당 피해(power) 부여. TickEffects에서 매턴 적용.
+                    AddEffect(!isPlayer, skill.power, skill.effectDurationTurns, EffectKind.Dot);
+                    TryPlayHitFlash(defenderIsPlayer);
+                    TryPlayEffectText("중독!", new Color(0.6f, 0.9f, 0.3f));
+                    break;
+                case SkillEffectType.Stun:
+                    // 대상 다음 행동 1회 스킵(별도 카운터).
+                    if (defenderIsPlayer) playerStunTurns = 1; else enemyStunTurns = 1;
+                    TryPlayHitFlash(defenderIsPlayer);
+                    TryPlayEffectText("기절!", new Color(1f, 0.9f, 0.3f));
+                    break;
+                case SkillEffectType.DefenseBuff:
+                    AddEffect(isPlayer, skill.effectValue, skill.effectDurationTurns, EffectKind.DefBuff);
+                    TryPlayEffectText("방어력 상승!", new Color(0.4f, 0.7f, 1f));
                     break;
                 default:
                     int baseDamage = skill.power;
@@ -299,6 +344,15 @@ namespace InsectGame.Battle
 
         private void UseEnemyTurn()
         {
+            // 기절 상태면 적 행동 스킵.
+            if (enemyStunTurns > 0)
+            {
+                enemyStunTurns--;
+                LastEnemySkill = null;
+                TryPlayEffectText("적 행동 불가!", new Color(1f, 0.85f, 0.3f));
+                return;
+            }
+
             InsectSkill enemySkill = GetPrimarySkill(enemyStats.Data);
             if (enemyCooldown > 0)
             {
@@ -332,7 +386,7 @@ namespace InsectGame.Battle
             }
         }
 
-        private void AddEffect(bool targetIsPlayer, float value, int duration)
+        private void AddEffect(bool targetIsPlayer, float value, int duration, EffectKind kind = EffectKind.AtkBuff)
         {
             if (duration <= 0)
             {
@@ -343,7 +397,8 @@ namespace InsectGame.Battle
             {
                 targetIsPlayer = targetIsPlayer,
                 value = value,
-                remainingTurns = duration
+                remainingTurns = duration,
+                kind = kind
             });
             RecalculateBonuses();
         }
@@ -353,6 +408,19 @@ namespace InsectGame.Battle
             for (int i = effects.Count - 1; i >= 0; i--)
             {
                 ActiveEffect effect = effects[i];
+
+                // 지속 피해(Dot) — 매턴 대상에 value만큼 피해. 상성/방어 배율 없는 순수 피해.
+                if (effect.kind == EffectKind.Dot)
+                {
+                    int dot = Mathf.Max(1, Mathf.RoundToInt(effect.value));
+                    InsectBattleStats target = effect.targetIsPlayer ? playerStats : enemyStats;
+                    if (target != null && target.CurrentHp > 0)
+                    {
+                        target.ApplyDamage(dot);
+                        TryPlayHitFlash(effect.targetIsPlayer);
+                    }
+                }
+
                 effect.remainingTurns--;
                 if (effect.remainingTurns <= 0)
                 {
@@ -369,17 +437,17 @@ namespace InsectGame.Battle
 
         private void RecalculateBonuses()
         {
-            float playerBonus = 0f;
-            float enemyBonus = 0f;
+            // 효과를 kind별로 합산 — AtkBuff(음수=디버프)→AttackBonus, DefBuff→DefenseBonus. Dot는 보너스 무관.
+            float playerAtk = 0f, enemyAtk = 0f, playerDef = 0f, enemyDef = 0f;
             foreach (ActiveEffect effect in effects)
             {
-                if (effect.targetIsPlayer)
+                if (effect.kind == EffectKind.AtkBuff)
                 {
-                    playerBonus += effect.value;
+                    if (effect.targetIsPlayer) playerAtk += effect.value; else enemyAtk += effect.value;
                 }
-                else
+                else if (effect.kind == EffectKind.DefBuff)
                 {
-                    enemyBonus += effect.value;
+                    if (effect.targetIsPlayer) playerDef += effect.value; else enemyDef += effect.value;
                 }
             }
 
@@ -387,17 +455,18 @@ namespace InsectGame.Battle
             {
                 float outfitAtk = outfitBonus != null ? outfitBonus.GetAtkBonus() : 0f;
                 float itemAtk = itemEffects != null ? itemEffects.GetAtkBonus() : 0f;
-                playerStats.AttackBonus = playerBonus + outfitAtk + itemAtk;
+                playerStats.AttackBonus = playerAtk + outfitAtk + itemAtk;
 
-                // 방어 보너스(의상+아이템) — ApplyDamage에서 유효 방어로 소비. 의상 GetDefBonus가 드디어 반영됨.
+                // 방어 보너스(전투 효과 + 의상 + 아이템) — ApplyDamage에서 유효 방어로 소비.
                 float outfitDef = outfitBonus != null ? outfitBonus.GetDefBonus() : 0f;
                 float itemDef = itemEffects != null ? itemEffects.GetDefBonus() : 0f;
-                playerStats.DefenseBonus = outfitDef + itemDef;
+                playerStats.DefenseBonus = playerDef + outfitDef + itemDef;
             }
 
             if (enemyStats != null)
             {
-                enemyStats.AttackBonus = enemyBonus;
+                enemyStats.AttackBonus = enemyAtk;
+                enemyStats.DefenseBonus = enemyDef;
             }
         }
 
@@ -638,7 +707,8 @@ namespace InsectGame.Battle
                 {
                     targetIsPlayer = effect.targetIsPlayer,
                     value = effect.value,
-                    remainingTurns = effect.remainingTurns
+                    remainingTurns = effect.remainingTurns,
+                    kind = effect.kind
                 };
             }
 
@@ -670,11 +740,16 @@ namespace InsectGame.Battle
             return lastItemCount;
         }
 
+        // 효과 종류 — AtkBuff(공격 배율, 음수=디버프), DefBuff(방어 배율), Dot(턴당 피해).
+        // 스턴은 틱 간섭 방지 위해 효과 리스트가 아니라 별도 카운터(playerStunTurns/enemyStunTurns)로 관리.
+        public enum EffectKind { AtkBuff, DefBuff, Dot }
+
         public struct EffectSnapshot
         {
             public bool targetIsPlayer;
             public float value;
             public int remainingTurns;
+            public EffectKind kind;
         }
 
         private struct ActiveEffect
@@ -682,6 +757,7 @@ namespace InsectGame.Battle
             public bool targetIsPlayer;
             public float value;
             public int remainingTurns;
+            public EffectKind kind;
         }
     }
 }

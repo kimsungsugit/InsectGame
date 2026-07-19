@@ -533,7 +533,9 @@ namespace InsectGame.Battle
 
             if (AudioManager.Instance != null) AudioManager.Instance.PlaySkillSFX(element);
 
-            if (effectType == SkillEffectType.BuffAttack)
+            // 자기 강화(공격/방어 버프·회복)는 시전자에 버프 연출. 대상 약화(디버프)는 대상에 디버프 연출.
+            if (effectType == SkillEffectType.BuffAttack || effectType == SkillEffectType.DefenseBuff
+                || effectType == SkillEffectType.Heal)
             {
                 PlayBuffEffect(isPlayerAttacking, element);
                 onImpact?.Invoke();
@@ -545,6 +547,7 @@ namespace InsectGame.Battle
                 onImpact?.Invoke();
                 return;
             }
+            // Stun/PoisonDot은 대상을 때리는 공격 연출(아래 러시/투사체) 경유.
 
             playingSkill = true;
             StartCoroutine(SkillAttackCoroutine(isPlayerAttacking, element, onImpact, isMelee));

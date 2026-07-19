@@ -50,6 +50,7 @@ namespace InsectGame.Battle
         public int[] UniteSlotDamages { get; private set; }
 
         private int bossCooldown;
+        private bool bossStunned;   // 팀 Stun 스킬로 보스 다음 턴 스킵(P4)
         private bool bossShinyAtStart; // 시작 시점 스냅샷 — 도주/풀 재사용된 라이브 보스 참조로 이로치 오등록 방지
 
         public void StartRaid(InsectEntity bossEntity,
@@ -100,6 +101,7 @@ namespace InsectGame.Battle
             UniteGauge = 0f;
             UniteSlotDamages = null;
             bossCooldown = 0;
+            bossStunned = false;
             RewardCandy = 0;
             RewardExp = 0;
 
@@ -172,6 +174,40 @@ namespace InsectGame.Battle
                 LastActionText = $"{attacker.Data.displayName}의 {skill.displayName}! ATK UP!";
                 TryPlayEffectText("공격력 상승!", new Color(1f, 0.8f, 0.3f));
             }
+            else if (skill.effectType == SkillEffectType.Heal)
+            {
+                int healAmt = Mathf.Max(1, Mathf.RoundToInt(attacker.MaxHp * Mathf.Clamp01(skill.effectValue)));
+                attacker.Heal(healAmt);
+                LastDamageToBoss = 0;
+                LastActionText = $"{attacker.Data.displayName}의 {skill.displayName}! HP +{healAmt}!";
+                TryPlayEffectText($"HP +{healAmt}!", new Color(0.4f, 1f, 0.5f));
+            }
+            else if (skill.effectType == SkillEffectType.DefenseBuff)
+            {
+                attacker.DefenseBonus += skill.effectValue;
+                LastDamageToBoss = 0;
+                LastActionText = $"{attacker.Data.displayName}의 {skill.displayName}! DEF UP!";
+                TryPlayEffectText("방어력 상승!", new Color(0.4f, 0.7f, 1f));
+            }
+            else if (skill.effectType == SkillEffectType.Stun)
+            {
+                // 보스 다음 턴 스킵. 레이드엔 턴 효과 리스트가 없어 플래그로 처리.
+                bossStunned = true;
+                LastDamageToBoss = 0;
+                LastActionText = $"{attacker.Data.displayName}의 {skill.displayName}! 보스 기절!";
+                TryPlayEffectText("보스 기절!", new Color(1f, 0.9f, 0.3f));
+            }
+            else if (skill.effectType == SkillEffectType.PoisonDot)
+            {
+                // 레이드엔 턴별 DoT 틱이 없어 즉시 총합 피해(power × 지속턴)로 근사.
+                int dotDamage = Mathf.Max(1, skill.power * Mathf.Max(1, skill.effectDurationTurns));
+                int hpBefore = BossStats.CurrentHp;
+                BossStats.ApplyDamage(dotDamage);
+                LastDamageToBoss = Mathf.Max(1, hpBefore - BossStats.CurrentHp);
+                LastActionText = $"{attacker.Data.displayName}의 {skill.displayName}! 중독!";
+                TryPlayBossHitFlash();
+                TryPlayEffectText("중독!", new Color(0.6f, 0.9f, 0.3f));
+            }
             else
             {
                 BossStats.AttackBonus -= skill.effectValue;
@@ -201,6 +237,18 @@ namespace InsectGame.Battle
 
         private void ExecuteBossTurn()
         {
+            // 기절 상태면 보스 이번 턴 스킵.
+            if (bossStunned)
+            {
+                bossStunned = false;
+                LastBossSkill = null;
+                LastDamageToTeam = 0;
+                LastHitSlot = -1;
+                BossUsedAoe = false;
+                LastActionText += "\n보스가 기절해 움직이지 못한다!";
+                return;
+            }
+
             bossCooldown--;
             bool aoe = bossCooldown <= 0;
             LastBossSkill = null;   // 기본값(AOE·기본공격) — 단일 대상 시그니처면 아래에서 갱신

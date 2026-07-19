@@ -51,6 +51,13 @@ namespace InsectGame.Battle
             CurrentHp = MaxHp;
         }
 
+        /// <summary>HP를 amount만큼 회복(MaxHp 상한). 0 이하 곤충은 회복 불가(기절 유지).</summary>
+        public void Heal(int amount)
+        {
+            if (amount <= 0 || CurrentHp <= 0) return;
+            CurrentHp = Mathf.Min(MaxHp, CurrentHp + amount);
+        }
+
         public void ApplyDamage(int amount, int attackerAtk = 0, int defenderDef = 0)
         {
             int finalDamage = amount;

@@ -1780,9 +1780,7 @@ namespace InsectGame.UI
                 GUI.Label(new Rect(bx + 12, btnY + 52, btnW - 24, 30), skill.displayName, skillSelNameStyleCache);
 
                 skillSelTypeStyleCache.normal.textColor = canUse ? skillCol : new Color(0.3f, 0.3f, 0.3f);
-                string typeStr = skill.effectType == SkillEffectType.Damage ? "공격 스킬" :
-                                 skill.effectType == SkillEffectType.BuffAttack ? "버프 스킬" : "디버프 스킬";
-                GUI.Label(new Rect(bx + 12, btnY + 86, btnW - 24, 24), typeStr, skillSelTypeStyleCache);
+                GUI.Label(new Rect(bx + 12, btnY + 86, btnW - 24, 24), RaidSkillTypeLabel(skill.effectType), skillSelTypeStyleCache);
 
                 // 상성 배지 — 보스에게 강/약(데미지 스킬만). InsectTypeChart는 이미 public.
                 if (skill.effectType == SkillEffectType.Damage && raidController.BossStats != null && raidController.BossStats.Data != null)
@@ -1800,9 +1798,7 @@ namespace InsectGame.UI
                 }
 
                 skillSelInfoStyleCache.normal.textColor = canUse ? new Color(0.9f, 0.85f, 0.65f) : new Color(0.3f, 0.3f, 0.3f);
-                string pStr = skill.effectType == SkillEffectType.Damage ? $"위력: {skill.power}" :
-                              skill.effectType == SkillEffectType.BuffAttack ? "ATK UP" : "ATK DOWN";
-                GUI.Label(new Rect(bx + 12, btnY + 114, btnW - 24, 26), pStr, skillSelInfoStyleCache);
+                GUI.Label(new Rect(bx + 12, btnY + 114, btnW - 24, 26), RaidSkillPowerLabel(skill), skillSelInfoStyleCache);
 
                 if (cd > 0)
                 {
@@ -1837,6 +1833,35 @@ namespace InsectGame.UI
                 DrawUniteButton(startX, baseBtnY + 2f * (btnH + 14f), 90f);
             else
                 DrawUniteButton(startX + count * (btnW + 14) + 20, baseBtnY, btnH);
+        }
+
+        // 스킬 효과 타입 라벨(신규 타입 포함).
+        private static string RaidSkillTypeLabel(SkillEffectType t)
+        {
+            switch (t)
+            {
+                case SkillEffectType.BuffAttack: return "버프 스킬";
+                case SkillEffectType.DebuffAttack: return "디버프 스킬";
+                case SkillEffectType.Heal: return "회복 스킬";
+                case SkillEffectType.PoisonDot: return "중독 스킬";
+                case SkillEffectType.Stun: return "기절 스킬";
+                case SkillEffectType.DefenseBuff: return "방어 스킬";
+                default: return "공격 스킬";
+            }
+        }
+
+        private static string RaidSkillPowerLabel(InsectSkill skill)
+        {
+            switch (skill.effectType)
+            {
+                case SkillEffectType.BuffAttack: return "ATK UP";
+                case SkillEffectType.DebuffAttack: return "ATK DOWN";
+                case SkillEffectType.Heal: return "HP 회복";
+                case SkillEffectType.PoisonDot: return $"지속 피해 {skill.power}";
+                case SkillEffectType.Stun: return "보스 기절";
+                case SkillEffectType.DefenseBuff: return "DEF UP";
+                default: return $"위력: {skill.power}";
+            }
         }
 
         // 인터-턴 중앙 배너 — "팀의 턴"(청록)/"보스의 턴"(적색). 페이드 인·아웃 + 슬라이드. introFightStyle 재사용.
