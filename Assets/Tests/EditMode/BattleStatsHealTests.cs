@@ -1,3 +1,4 @@
+#if UNITY_EDITOR
 using NUnit.Framework;
 using InsectGame.Battle;
 
@@ -49,3 +50,4 @@ namespace InsectGame.Tests
         }
     }
 }
+#endif

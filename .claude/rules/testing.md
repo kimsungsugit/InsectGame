@@ -25,6 +25,17 @@ EditMode 러너를 되살리려면 `Assets/Scripts`·`Assets/Editor`·`Assets/Te
 도입해야 한다(asmdef는 `Assembly-CSharp`를 참조할 수 없어 게임 코드 쪽도 함께 필요).
 출시 후 별건.
 
+## 테스트 파일은 반드시 `#if UNITY_EDITOR`로 감쌀 것 (안 그러면 APK/AAB 빌드가 깨진다)
+
+`.asmdef`가 없어 테스트가 `Assembly-CSharp`(런타임 어셈블리)로 컴파일되므로, 가드 없이 두면
+테스트의 `nunit.framework` 참조가 IL2CPP 플레이어(APK/AAB) 빌드로 **새어 나가 링크가 실패한다**
+(`Mono.Cecil.AssemblyResolutionException: Failed to resolve assembly: 'nunit.framework'`).
+
+그래서 모든 EditMode 테스트 `.cs`는 **첫 줄 `#if UNITY_EDITOR`, 마지막 줄 `#endif`로 파일
+전체를 감싼다.** 에디터 PlayMode 러너에선 `UNITY_EDITOR`가 정의돼 전부 그대로 돌고, 기기 빌드에선
+통째로 제외된다. 기존 파일엔 이미 이 가드가 있으니 **새 테스트 추가 시 빠뜨리지 말 것** —
+2026-07 실제로 새 테스트 4개가 가드 누락으로 APK 빌드 링크를 멈췄다(그 4개만으로 전체 빌드 실패).
+
 ## 컨벤션
 - 클래스: `[TestFixture]` 어트리뷰트
 - 메서드: `[Test]` 어트리뷰트
