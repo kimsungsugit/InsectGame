@@ -208,6 +208,7 @@ namespace InsectGame.UI
                 if (faintedInsectIds.Contains(slotId)) continue;
                 if (slotId == currentInsectId) continue;
                 PlayerInsectData pid = collection.GetByInstanceId(slotId);
+                if (pid != null && pid.IsFainted) continue;   // 지속 기절(0 HP)은 치료 전까지 출전 불가
                 InsectData data = pid != null ? collection.GetInsectData(pid.insectId) : null;
                 if (data != null) return true;
             }
@@ -662,6 +663,7 @@ namespace InsectGame.UI
             if (slotId == currentInsectId) return;
 
             PlayerInsectData pid = collection.GetByInstanceId(slotId);
+            if (pid != null && pid.IsFainted) return;   // 지속 기절(0 HP)은 교체 불가(치료 필요)
             InsectData data = pid != null ? collection.GetInsectData(pid.insectId) : null;
             if (data == null) return;
 
@@ -3244,9 +3246,10 @@ namespace InsectGame.UI
                 float bx = startX + i * (btnW + 14);
                 string slotId = teamManager.GetSlot(i);
                 bool isEmpty = string.IsNullOrEmpty(slotId);
-                bool isFainted = !isEmpty && faintedInsectIds.Contains(slotId);
-                bool isCurrent = !isEmpty && slotId == currentInsectId;
                 PlayerInsectData pid = isEmpty ? null : collection.GetByInstanceId(slotId);
+                // 전투 내 기절(faintedInsectIds) 또는 지속 기절(currentHp==0) — 둘 다 교체 불가로 표시.
+                bool isFainted = !isEmpty && (faintedInsectIds.Contains(slotId) || (pid != null && pid.IsFainted));
+                bool isCurrent = !isEmpty && slotId == currentInsectId;
                 InsectData data = pid != null ? collection.GetInsectData(pid.insectId) : null;
                 bool available = !isEmpty && !isFainted && !isCurrent && data != null;
 

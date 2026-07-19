@@ -157,6 +157,7 @@ namespace InsectGame.Core
             BuildShop(root, v, result);
             BuildTrainingHall(root, v, result);
             BuildGachaHut(root, v, result);
+            BuildHospital(root, v, result);
             BuildVillageDecorations(root);
             AddVillageVillagers(v, result);
         }
@@ -285,6 +286,45 @@ namespace InsectGame.Core
                 radius = InteractionRadius,
                 label = "상점",
                 kind = InteractionKind.ItemShop
+            });
+        }
+
+        /// <summary>병원 — 흰 벽 + 빨간 십자 간판. 곤충 HP·상태 치료(Hospital 상호작용). 빈 각도 315°.</summary>
+        private void BuildHospital(Transform root, Vector3 villageCenter, VillageBuildResult result)
+        {
+            Vector3 pos = Polar(villageCenter, 315f, 12f);
+            Transform hosp = FacingRoot("Hospital", root, pos, villageCenter);
+
+            Color wall = new Color(0.95f, 0.95f, 0.97f);       // 흰 병원 벽
+            Color roof = new Color(0.80f, 0.30f, 0.28f);       // 붉은 지붕
+            Color cross = new Color(0.90f, 0.20f, 0.18f);      // 적십자
+
+            Prim(PrimitiveType.Cube, "Wall", hosp,
+                new Vector3(0f, 1.9f, 0f), Vector3.zero, new Vector3(6f, 3.8f, 5f), wall, keepCollider: true);
+            Prim(PrimitiveType.Cube, "Roof", hosp,
+                new Vector3(0f, 3.95f, 0f), Vector3.zero, new Vector3(6.6f, 0.3f, 5.6f), roof);
+            Prim(PrimitiveType.Cube, "Door", hosp,
+                new Vector3(0f, 1.1f, 2.56f), Vector3.zero, new Vector3(1.3f, 2.2f, 0.12f), new Color(0.6f, 0.75f, 0.85f));
+            Prim(PrimitiveType.Cube, "WindowL", hosp,
+                new Vector3(-1.9f, 2.2f, 2.56f), Vector3.zero, new Vector3(0.9f, 0.9f, 0.10f), new Color(0.85f, 0.92f, 1f));
+            Prim(PrimitiveType.Cube, "WindowR", hosp,
+                new Vector3(1.9f, 2.2f, 2.56f), Vector3.zero, new Vector3(0.9f, 0.9f, 0.10f), new Color(0.85f, 0.92f, 1f));
+
+            // 적십자 마크(벽 정면) — 세로 + 가로 큐브
+            Prim(PrimitiveType.Cube, "CrossV", hosp,
+                new Vector3(0f, 2.9f, 2.60f), Vector3.zero, new Vector3(0.45f, 1.4f, 0.10f), cross);
+            Prim(PrimitiveType.Cube, "CrossH", hosp,
+                new Vector3(0f, 2.9f, 2.60f), Vector3.zero, new Vector3(1.4f, 0.45f, 0.10f), cross);
+
+            CreateSign(hosp, "병원", new Vector3(0f, 4.55f, 2.56f), 3.2f);
+
+            result.interactions.Add(new InteractionPointDef
+            {
+                id = "village_hospital",
+                worldPosition = pos + DirTo(pos, villageCenter) * 4.0f,
+                radius = InteractionRadius,
+                label = "병원",
+                kind = InteractionKind.Hospital
             });
         }
 

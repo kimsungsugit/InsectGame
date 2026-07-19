@@ -515,6 +515,12 @@ namespace InsectGame.Core
                     EnsureComponent<InsectGame.UI.WorldInteractionController>("UI/WorldInteraction");
                 worldInteract.AutoWire(cashShopUI, trainingUi, playerMov);
                 worldInteract.AutoWire(spawner);
+
+                // 병원 치료 UI — 지속 HP/상태 치료(P1의 짝). worldInteract가 Hospital 상호작용에 Toggle.
+                InsectGame.UI.HospitalUI hospitalUi =
+                    EnsureComponent<InsectGame.UI.HospitalUI>("UI/Hospital");
+                hospitalUi.AutoWire(insectCollection, database, wallet, candyInventory);
+                worldInteract.AutoWire(hospitalUi);
                 if (villageResult != null)
                 {
                     worldInteract.RegisterPoints(villageResult.interactions);

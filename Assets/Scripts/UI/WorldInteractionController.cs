@@ -26,6 +26,7 @@ namespace InsectGame.UI
         private NpcManager npcManager;
         private InsectGame.Story.StoryDirector storyDirector;   // 스토리 NPC 대화 → NpcTalk 트리거
         private CameraFollower cameraFollower;                   // 첫 조우 시네마틱 줌
+        private HospitalUI hospital;                             // 병원 치료 UI
 
         private readonly List<InteractionPointDef> points = new List<InteractionPointDef>();
 
@@ -52,6 +53,11 @@ namespace InsectGame.UI
             if (shop == null) shop = cashShop;
             if (training == null) training = trainingUi;
             if (playerMovement == null) playerMovement = player;
+        }
+
+        public void AutoWire(HospitalUI hospitalUi)
+        {
+            if (hospital == null) hospital = hospitalUi;
         }
 
         public void AutoWire(NpcDialogueUI dialogueUi)
@@ -258,6 +264,9 @@ namespace InsectGame.UI
                     case InteractionKind.Training:
                         if (training != null) training.Toggle();
                         break;
+                    case InteractionKind.Hospital:
+                        if (hospital != null) hospital.Toggle();
+                        break;
                 }
             }
 
@@ -319,6 +328,7 @@ namespace InsectGame.UI
                 case InteractionKind.ItemShop: return "상점";
                 case InteractionKind.Gacha: return "상자";
                 case InteractionKind.Training: return "훈련";
+                case InteractionKind.Hospital: return "병원";
                 default: return "확인";
             }
         }

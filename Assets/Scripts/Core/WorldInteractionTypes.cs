@@ -8,7 +8,8 @@ namespace InsectGame.Core
     {
         ItemShop,
         Training,
-        Gacha
+        Gacha,
+        Hospital
     }
 
     /// <summary>
