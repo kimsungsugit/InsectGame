@@ -86,6 +86,10 @@ namespace InsectGame.Core
                 new CashShopItem { itemId = "shop_golden_censer",  displayName = "황금 향로",     description = "15분간 희귀 출현 ×2.3 & 포획 +25%", category = CashItemCategory.MinigameItem, priceKRW = 0, gemPrice = 900,  rewardItemId = "golden_censer",  rewardCount = 1 },
                 new CashShopItem { itemId = "shop_spirit_blessing", displayName = "정령의 가호",  description = "10분간 공격력·방어력 대폭 상승",     category = CashItemCategory.MinigameItem, priceKRW = 0, gemPrice = 1000, rewardItemId = "spirit_blessing", rewardCount = 1 },
 
+                // -- 치료 아이템 (보석으로 편의 구매 — 코인 상점에서도 저렴하게 판매) --
+                new CashShopItem { itemId = "shop_wound_salve",  displayName = "상처약 묶음",   description = "곤충 HP 40 회복 ×5",          category = CashItemCategory.MinigameItem, priceKRW = 0, gemPrice = 30, rewardItemId = "wound_salve",  rewardCount = 5 },
+                new CashShopItem { itemId = "shop_full_restore", displayName = "종합 치료제",   description = "HP 전액 + 모든 상태 치료 ×3", category = CashItemCategory.MinigameItem, priceKRW = 0, gemPrice = 60, rewardItemId = "full_restore", rewardCount = 3 },
+
                 // -- 랜덤 상자 (보석으로 구매) --
                 new CashShopItem { itemId = "box_bronze", displayName = "브론즈 상자", description = "기본 곤충 + 소량 희귀 확률", category = CashItemCategory.GachaBox, priceKRW = 0, gemPrice = 500, rewardCount = 1 },
                 new CashShopItem { itemId = "box_silver", displayName = "실버 상자",   description = "희귀 곤충 확률 UP!",        category = CashItemCategory.GachaBox, priceKRW = 0, gemPrice = 600, rewardCount = 1 },

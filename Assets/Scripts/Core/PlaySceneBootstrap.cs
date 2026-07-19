@@ -216,8 +216,8 @@ namespace InsectGame.Core
             cloudSave.RegisterReloadable(itemInventory); // 아이템도 클라우드 적용 후 인메모리 갱신
             ShopUIController shopUi = EnsureComponent<ShopUIController>("UI/ShopUI");
             shopUi.ConfigureCatalog(
-                new[] { "net_silver", "net_gold", "exp_boost" },
-                new[] { 200, 400, 300 });
+                new[] { "net_silver", "net_gold", "exp_boost", "wound_salve", "wound_salve_great", "antidote", "paralysis_heal", "full_restore" },
+                new[] { 200, 400, 300, 20, 55, 30, 30, 90 });   // 치료 아이템은 코인 저렴(전투 재화로 상비)
             DexUIController dexSummary = EnsureComponent<DexUIController>("UI/DexSummary");
             dexSummary.AutoWire(dex);
 
@@ -521,6 +521,7 @@ namespace InsectGame.Core
                     EnsureComponent<InsectGame.UI.HospitalUI>("UI/Hospital");
                 hospitalUi.AutoWire(insectCollection, database, wallet, candyInventory);
                 worldInteract.AutoWire(hospitalUi);
+                inventoryUi.AutoWire(hospitalUi);   // 대상지정 치료 아이템 → 병원 선택기
                 if (villageResult != null)
                 {
                     worldInteract.RegisterPoints(villageResult.interactions);

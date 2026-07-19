@@ -27,6 +27,9 @@ namespace InsectGame.UI
         private bool isOpen;
         private string selectedInstanceId;
         private bool payWithCoins = true;   // true=코인, false=캔디
+        // 대상지정 치료 아이템 모드 — 인벤토리에서 상처약/해독제 사용 시 곤충 선택기로 이 UI를 연다.
+        private ItemData pendingItem;
+        private PlayerItemInventory pendingInv;
         private Vector2 scroll;
         private string feedback = "";
         private float feedbackTimer;
@@ -58,7 +61,20 @@ namespace InsectGame.UI
         public void CloseModal()
         {
             isOpen = false;
+            pendingItem = null;
+            pendingInv = null;
             ModalUIRegistry.Unregister(this);
+        }
+
+        /// <summary>인벤토리에서 대상지정 치료 아이템 사용 — 이 UI를 곤충 선택기로 연다(선택 시 소비+적용).</summary>
+        public void UseTreatmentItem(ItemData item, PlayerItemInventory inv)
+        {
+            if (item == null || inv == null) return;
+            pendingItem = item;
+            pendingInv = inv;
+            selectedInstanceId = null;
+            ownedDirty = true;
+            if (!isOpen) { isOpen = true; ModalUIRegistry.Register(this); }
         }
         private void OnDisable()
         {
@@ -115,20 +131,29 @@ namespace InsectGame.UI
             GUI.DrawTexture(new Rect(px, py, pw, 6f), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
-            GUI.Label(new Rect(px + 26f, py + 14f, pw - 200f, 50f), "병원 — 곤충 치료", titleStyle);
+            bool itemMode = pendingItem != null;
+            string title = itemMode ? $"{pendingItem.displayName} 사용 — 곤충 선택" : "병원 — 곤충 치료";
+            GUI.Label(new Rect(px + 26f, py + 14f, pw - 200f, 50f), title, titleStyle);
             if (GUI.Button(new Rect(px + pw - 74f, py + 14f, 58f, 58f), "X", closeStyle)) { CloseModal(); return; }
 
-            // 결제 수단 토글(코인/캔디) + 잔액
-            int coins = wallet != null ? wallet.Coins : 0;
-            int candies = candyInventory != null ? candyInventory.Candies : 0;
-            int gems = wallet != null ? wallet.Gems : 0;
             float ty = py + 78f;
-            GUI.backgroundColor = payWithCoins ? UITheme.Instance.tabSelected : UITheme.Instance.tabNormal;
-            if (GUI.Button(new Rect(px + 26f, ty, 150f, 44f), $"코인 {coins}", toggleStyle)) payWithCoins = true;
-            GUI.backgroundColor = !payWithCoins ? UITheme.Instance.tabSelected : UITheme.Instance.tabNormal;
-            if (GUI.Button(new Rect(px + 184f, ty, 150f, 44f), $"캔디 {candies}", toggleStyle)) payWithCoins = false;
-            GUI.backgroundColor = Color.white;
-            GUI.Label(new Rect(px + 350f, ty, pw - 380f, 44f), $"젬 {gems} · 젬 {FullHealGems}로 선택 곤충 전액+상태 즉시치료", hintStyle);
+            if (itemMode)
+            {
+                GUI.Label(new Rect(px + 26f, ty, pw - 52f, 44f), pendingItem.description + "  (X로 취소)", hintStyle);
+            }
+            else
+            {
+                // 결제 수단 토글(코인/캔디) + 잔액
+                int coins = wallet != null ? wallet.Coins : 0;
+                int candies = candyInventory != null ? candyInventory.Candies : 0;
+                int gems = wallet != null ? wallet.Gems : 0;
+                GUI.backgroundColor = payWithCoins ? UITheme.Instance.tabSelected : UITheme.Instance.tabNormal;
+                if (GUI.Button(new Rect(px + 26f, ty, 150f, 44f), $"코인 {coins}", toggleStyle)) payWithCoins = true;
+                GUI.backgroundColor = !payWithCoins ? UITheme.Instance.tabSelected : UITheme.Instance.tabNormal;
+                if (GUI.Button(new Rect(px + 184f, ty, 150f, 44f), $"캔디 {candies}", toggleStyle)) payWithCoins = false;
+                GUI.backgroundColor = Color.white;
+                GUI.Label(new Rect(px + 350f, ty, pw - 380f, 44f), $"젬 {gems} · 젬 {FullHealGems}로 선택 곤충 전액+상태 즉시치료", hintStyle);
+            }
 
             // 곤충 목록
             float listY = ty + 58f;
@@ -200,7 +225,18 @@ namespace InsectGame.UI
 
             // 치료 버튼 영역(우측)
             float bx = rect.x + rect.width - 190f;
-            if (needsHeal)
+            if (pendingItem != null)
+            {
+                // 아이템 사용 모드 — 이 곤충에 적용 가능하면 '사용' 버튼.
+                bool applicable = (pendingItem.healAmount > 0 && curHp < maxHp)
+                    || (pendingItem.curePoison && pid.isPoisoned)
+                    || (pendingItem.cureParalysis && pid.isParalyzed);
+                GUI.backgroundColor = applicable ? UITheme.Instance.btnPrimary : UITheme.Instance.btnDisabled;
+                if (GUI.Button(new Rect(bx, rect.y + 34f, 176f, 48f), applicable ? "사용" : "대상 아님", btnStyle) && applicable)
+                    ApplyTreatmentItem(pid);
+                GUI.backgroundColor = Color.white;
+            }
+            else if (needsHeal)
             {
                 int lostHp = maxHp - curHp;
                 int cost = HealCost(lostHp, pid);
@@ -236,6 +272,23 @@ namespace InsectGame.UI
             collection.CurePoison(pid);
             collection.CureParalysis(pid);
             Feedback($"{DisplayName(pid)} 치료 완료!");
+        }
+
+        // 대상지정 치료 아이템 적용 — 인벤 소비 후 HP 회복·상태 해제. 소진되면 모드 종료.
+        private void ApplyTreatmentItem(PlayerInsectData pid)
+        {
+            if (pendingItem == null || pendingInv == null) return;
+            if (!pendingInv.UseItem(pendingItem.itemId, 1)) { Feedback("아이템이 없습니다"); pendingItem = null; pendingInv = null; return; }
+
+            if (pendingItem.healAmount > 0)
+                collection.HealInsect(pid, pendingItem.healAmount);   // 9999=전액(상한 클램프)
+            if (pendingItem.curePoison) collection.CurePoison(pid);
+            if (pendingItem.cureParalysis) collection.CureParalysis(pid);
+            Feedback($"{DisplayName(pid)}에게 {pendingItem.displayName} 사용!");
+
+            // 같은 아이템이 더 있으면 모드 유지(연속 사용), 없으면 종료.
+            if (pendingInv.GetCount(pendingItem.itemId) <= 0) { pendingItem = null; pendingInv = null; }
+            ownedDirty = true;
         }
 
         private void TryGemHeal(PlayerInsectData pid)

@@ -51,8 +51,35 @@ namespace InsectGame.Data
                 CreateItem("guardian_totem", "수호의 토템",
                     "12분 동안 전투에서 받는 피해가 크게 줄어듭니다(방어 +40%).",
                     ItemRarity.Epic, 0f, 1f, 1f, 1f, 720f, defBonus: 0.4f),
+
+                // ── 치료 아이템(대상지정 즉시 사용) — 병원 선택기 경유. 상점(코인)·젬샵 판매 ──
+                CreateTreatment("wound_salve", "상처약", "곤충 1마리의 HP를 40 회복합니다.",
+                    ItemRarity.Common, healAmount: 40),
+                CreateTreatment("wound_salve_great", "고급 상처약", "곤충 1마리의 HP를 120 회복합니다.",
+                    ItemRarity.Uncommon, healAmount: 120),
+                CreateTreatment("antidote", "해독제", "곤충 1마리의 중독을 치료합니다.",
+                    ItemRarity.Common, curePoison: true),
+                CreateTreatment("paralysis_heal", "마비 치료약", "곤충 1마리의 마비를 치료합니다.",
+                    ItemRarity.Common, cureParalysis: true),
+                CreateTreatment("full_restore", "종합 치료제", "곤충 1마리의 HP를 전부 회복하고 모든 상태를 치료합니다.",
+                    ItemRarity.Rare, healAmount: 9999, curePoison: true, cureParalysis: true),
             };
             return database;
+        }
+
+        private static ItemData CreateTreatment(string id, string name, string description,
+            ItemRarity rarity, int healAmount = 0, bool curePoison = false, bool cureParalysis = false)
+        {
+            ItemData item = ScriptableObject.CreateInstance<ItemData>();
+            item.itemId = id;
+            item.displayName = name;
+            item.description = description;
+            item.rarity = rarity;
+            item.isTargetedUse = true;
+            item.healAmount = healAmount;
+            item.curePoison = curePoison;
+            item.cureParalysis = cureParalysis;
+            return item;
         }
 
         private static ItemData CreateItem(string id, string name, string description,

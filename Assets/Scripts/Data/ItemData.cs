@@ -35,5 +35,12 @@ namespace InsectGame.Data
 
         [Header("Duration")]
         [Range(30f, 3600f)] public float durationSeconds = 600f;
+
+        [Header("Treatment (대상지정 치료 아이템)")]
+        // isTargetedUse=true면 부스터가 아니라 곤충을 지정해 즉시 사용(병원 선택기 경유). HP 회복·상태 해제.
+        public bool isTargetedUse = false;
+        [Range(0, 9999)] public int healAmount = 0;   // HP 회복량(0=회복 없음). 9999=전액 취급.
+        public bool curePoison = false;
+        public bool cureParalysis = false;
     }
 }

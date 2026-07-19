@@ -385,14 +385,15 @@ def all_insect_ids() -> set:
 def item_ids() -> set:
     """게임에 존재하는 모든 아이템 ID. 보상 아이템(rewardItemId) 검증용 레지스트리.
 
-    ItemDatabase.CreateRuntimeDefault()의 CreateItem("id", ...)가 런타임 아이템 레지스트리다
-    (PlayerItemInventory.AddItem이 이 ID로 해석). 채집망은 capture item, exp_boost처럼 상점
-    보상으로만 지급되는 아이템은 여기 등록돼 있으나 capture item 목록엔 없다 — 그래서 lint는
-    이 집합을 capture item·shop reward와 합집합해 어느 소스의 아이템이든 인정한다.
+    ItemDatabase.CreateRuntimeDefault()의 CreateItem/CreateTreatment("id", ...)가 런타임 아이템
+    레지스트리다 (PlayerItemInventory.AddItem이 이 ID로 해석). 채집망은 capture item, exp_boost처럼
+    상점 보상으로만 지급되는 아이템·치료 아이템(CreateTreatment)도 여기 등록돼 있으나 capture item
+    목록엔 없다 — 그래서 lint는 이 집합을 capture item·shop reward와 합집합해 어느 소스든 인정한다.
     """
-    ids = set(re.findall(r'CreateItem\(\s*"(\w+)"', _read("item_db")))
+    # CreateItem / CreateTreatment 두 팩토리 모두 아이템 레지스트리에 등록 → 둘 다 매칭.
+    ids = set(re.findall(r'Create(?:Item|Treatment)\(\s*"(\w+)"', _read("item_db")))
     if not ids:
-        raise ExtractorBroken('아이템 ID를 하나도 못 읽었다 (ItemDatabase.CreateItem) — 구조가 바뀌었는가?')
+        raise ExtractorBroken('아이템 ID를 하나도 못 읽었다 (ItemDatabase.CreateItem/CreateTreatment) — 구조가 바뀌었는가?')
     return ids
 
 

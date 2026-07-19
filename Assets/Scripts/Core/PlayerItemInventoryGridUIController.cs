@@ -171,21 +171,31 @@ namespace InsectGame.Core
 
         private void TryUseItem(string itemId)
         {
-            if (inventory == null || effectManager == null || itemDatabase == null)
-            {
-                return;
-            }
-
-            if (!inventory.UseItem(itemId, 1))
+            if (inventory == null || itemDatabase == null)
             {
                 return;
             }
 
             ItemData data = itemDatabase.FindById(itemId);
-            if (data != null)
+            if (data == null) return;
+
+            // 대상지정 치료 아이템 — 병원 선택기를 열어 곤충 지정(소비는 선택 시). 여기선 소비하지 않는다.
+            if (data.isTargetedUse)
             {
-                effectManager.ActivateItem(data);
+                if (hospital != null) hospital.UseTreatmentItem(data, inventory);
+                return;
             }
+
+            // 시간제 부스터 — 즉시 소비 후 활성.
+            if (effectManager == null) return;
+            if (!inventory.UseItem(itemId, 1)) return;
+            effectManager.ActivateItem(data);
+        }
+
+        private InsectGame.UI.HospitalUI hospital;
+        public void AutoWire(InsectGame.UI.HospitalUI hospitalUi)
+        {
+            if (hospital == null) hospital = hospitalUi;
         }
 
         public void AutoWire(PlayerItemInventory inv, ItemDatabase db, ItemEffectManager effects)
