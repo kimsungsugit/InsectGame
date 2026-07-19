@@ -20,7 +20,7 @@ namespace InsectGame.Capture
         [SerializeField] private WorldInteractionController worldInteractions;
 
         [Header("Wild Encounter")]
-        [Range(0.05f, 1f)] [SerializeField] private float baseApproachSuccessChance = 0.45f;
+        [Range(0.05f, 1f)] [SerializeField] private float baseApproachSuccessChance = 0.55f; // 채 휘두르기 연결 기본 확률(0.45→0.55 상향)
         [Range(0f, 0.25f)] [SerializeField] private float rarityApproachPenalty = 0.08f;
         [Range(0f, 0.25f)] [SerializeField] private float distancePenaltyPerMeter = 0.07f;
         [SerializeField] private float idealApproachDistance = 1.2f;
@@ -254,7 +254,7 @@ namespace InsectGame.Capture
             int rarity = target != null && target.Data != null ? (int)target.Data.rarity : 0;
             float chance = baseApproachSuccessChance - rarity * rarityApproachPenalty;
             chance -= Mathf.Max(0f, distance - idealApproachDistance) * distancePenaltyPerMeter;
-            return Mathf.Clamp(chance, 0.08f, 0.55f);
+            return Mathf.Clamp(chance, 0.08f, 0.65f);   // 상한 0.55→0.65 (base 상향이 잘리지 않게)
         }
 
         private PlayerMovement GetPlayerMovement()
