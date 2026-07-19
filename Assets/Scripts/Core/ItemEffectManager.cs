@@ -74,6 +74,21 @@ namespace InsectGame.Core
             return activeItem != null ? activeItem.rareSpawnMultiplier : 1f;
         }
 
+        public float GetAtkBonus()
+        {
+            return activeItem != null ? activeItem.atkBonus : 0f;
+        }
+
+        public float GetDefBonus()
+        {
+            return activeItem != null ? activeItem.defBonus : 0f;
+        }
+
+        public float GetFleePreventChance()
+        {
+            return activeItem != null ? activeItem.fleePreventChance : 0f;
+        }
+
         public ItemData GetActiveItem()
         {
             return activeItem;

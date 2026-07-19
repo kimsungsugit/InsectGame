@@ -27,6 +27,12 @@ namespace InsectGame.Data
         [Range(1f, 3f)] public float candyMultiplier = 1.0f;
         [Range(1f, 3f)] public float rareSpawnMultiplier = 1.0f;
 
+        [Header("Battle & Flee Effects")]
+        // 아주 좋은(Epic/Legendary) 아이템 전용 강화 — 활성 중 전투 공격/방어 배율 가산 + 야생 곤충 도주 방지 확률.
+        [Range(0f, 1f)] public float atkBonus = 0f;          // 전투 공격력 배율 가산 (GetDamage: 1+AttackBonus)
+        [Range(0f, 1f)] public float defBonus = 0f;          // 유효 방어 배율 가산 (ApplyDamage: def*(1+DefenseBonus))
+        [Range(0f, 1f)] public float fleePreventChance = 0f; // 야생 곤충 도주 방지 확률 (patience 소진 시 롤)
+
         [Header("Duration")]
         [Range(30f, 3600f)] public float durationSeconds = 600f;
     }
