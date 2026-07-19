@@ -3049,8 +3049,10 @@ namespace InsectGame.Core
                 return primaryType == InsectElement.Dark ? InsectElement.Poison : InsectElement.Dark;
             if (id.Contains("celestial") || id.Contains("diamond") || id.Contains("gold") || id.Contains("jewel") || id.Contains("rainbow"))
                 return primaryType == InsectElement.Light ? InsectElement.Wind : InsectElement.Light;
-            if (id.Contains("firefly") || id.Contains("glow"))
-                return primaryType == InsectElement.Light ? InsectElement.Bug : InsectElement.Light;
+            // 발광 곤충(반딧불/glow)은 Electric secondary — 야생 Electric 종 확보(옛은 Electric이 gacha 1종뿐,
+            // electric_* 스킬 死속성). firefly류는 여러 야생종이라 electric_jab/burst 등이 실제 사용됨.
+            if (id.Contains("firefly") || id.Contains("glow") || id.Contains("lantern"))
+                return primaryType == InsectElement.Electric ? InsectElement.Light : InsectElement.Electric;
             if (id.Contains("spider"))
                 return primaryType == InsectElement.Poison ? InsectElement.Dark : InsectElement.Poison;
             if (IsAntInsectId(id))
@@ -3328,9 +3330,11 @@ namespace InsectGame.Core
             return skill;
         }
 
+        // L5 boost는 전 속성 자기버프. 옛은 Leaf/Light/Wind/Electric만 버프고 나머지 6속성(Water/Earth/Poison/
+        // Dark/Metal/Bug)은 디버프만 얻어 '자기강화 불가'였다. 디버프 정체성은 break(L13, 단일속성)·trait가 담당.
         private static bool UsesBuffSkill(InsectElement element)
         {
-            return element == InsectElement.Leaf || element == InsectElement.Light || element == InsectElement.Wind || element == InsectElement.Electric;
+            return element != InsectElement.None;
         }
 
         private static string GetElementLabel(InsectElement element)

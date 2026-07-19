@@ -51,7 +51,10 @@ namespace InsectGame.Core
         public static class Player
         {
             public const int MaxEquipSlots = 4;
-            public const int MaxLearnedSkills = 4;
+            // 습득 풀은 learnset 전체(최대 6: Epic+ jab/boost/trait/burst/storm/signature)를 담는다. 옛 4는 자동학습이
+            // 초반 4개(jab/boost/trait/burst)로 차서 storm(L17)·signature가 영구 미습득 → 자연 성장으로 최강기 도달 불가였다.
+            // 전투 장착 슬롯(MaxEquipSlots)은 4 유지 — 풀에서 4개를 골라 장착(플레이어 선택). 세이브 호환(리스트, 상한만 상승).
+            public const int MaxLearnedSkills = 6;
             public const int MaxIV = 15;
             public const float AutoUnfreezeTime = 20f;
         }

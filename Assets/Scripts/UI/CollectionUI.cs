@@ -47,6 +47,7 @@ namespace InsectGame.UI
         private GUIStyle detailGradePercStyle;   // textColor 동적
         private GUIStyle detailDescStyle;
         private GUIStyle detailHintStyle;
+        private GUIStyle learnsetRowStyle;   // 습득 기술 목록 행
         private GUIStyle statsLabelStyle;
         private GUIStyle statsValueStyle;
         private GUIStyle statsCandyValStyle;
@@ -108,6 +109,7 @@ namespace InsectGame.UI
             detailDescStyle = new GUIStyle(GUI.skin.label) { fontSize = 32, wordWrap = true };
             detailDescStyle.normal.textColor = DescGrayCol;
             detailHintStyle = new GUIStyle(GUI.skin.label) { fontSize = 32, fontStyle = FontStyle.Italic };
+            learnsetRowStyle = new GUIStyle(GUI.skin.label) { fontSize = 22 };
             detailHintStyle.normal.textColor = HintGreenCol;
             statsLabelStyle = new GUIStyle(GUI.skin.label) { fontSize = 38 };
             statsLabelStyle.normal.textColor = StatsLabelCol;
@@ -357,7 +359,7 @@ namespace InsectGame.UI
             InitDetailStyles();
 
             float panelW = 1000f;
-            float panelH = 1000f;
+            float panelH = 1040f;   // 하단에 습득 기술(learnset) 섹션 공간 확보
             float panelX = UIScale.VirtualScreenWidth - panelW - 24f;
             float panelY = 24f;
 
@@ -452,6 +454,31 @@ namespace InsectGame.UI
                 float hintY = statBlockY + statBlockH + 108;
                 GUI.Label(new Rect(panelX + 40, hintY, panelW - 80, 40),
                     $"서식지: {data.habitatHint}", detailHintStyle);
+            }
+
+            // 습득 기술(레벨별) — 성장 로드맵. 도감이 스킬·습득레벨을 노출하지 않던 문제 해소.
+            DrawLearnset(panelX + 40, statBlockY + statBlockH + 152, panelW - 80, pid, data);
+        }
+
+        // 레벨별 습득 기술을 compact 목록으로. 현재 레벨 습득분은 강조, 미습득은 딤.
+        private void DrawLearnset(float x, float y, float w, PlayerInsectData pid, InsectData data)
+        {
+            if (data == null || data.learnset == null || data.learnset.Length == 0) return;
+
+            GUI.Label(new Rect(x, y, w, 30), "습득 기술", detailHintStyle);
+            float ry = y + 34f;
+            int level = pid != null ? pid.level : 1;
+            foreach (InsectLearnableSkill ls in data.learnset)
+            {
+                if (ls == null || ls.skill == null) continue;
+                bool learned = ls.learnLevel <= level;
+                string typeLabel = ls.skill.effectType == SkillEffectType.Damage ? "공격"
+                    : ls.skill.effectType == SkillEffectType.BuffAttack ? "버프" : "디버프";
+                learnsetRowStyle.normal.textColor = learned ? new Color(0.85f, 0.9f, 1f) : new Color(0.45f, 0.45f, 0.5f);
+                GUI.Label(new Rect(x, ry, w, 26),
+                    $"Lv{ls.learnLevel}  ·  {ls.skill.displayName}  ({InsectTypeChart.GetDisplayName(ls.skill.element)} · {typeLabel}){(learned ? "" : "  — 미습득")}",
+                    learnsetRowStyle);
+                ry += 28f;
             }
         }
 
