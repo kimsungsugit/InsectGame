@@ -3166,6 +3166,35 @@ namespace InsectGame.Core
                 traitKey = "flash"; displayName = "발광 교란"; element = InsectElement.Light;
                 effectType = SkillEffectType.DebuffAttack; power = 1; effectValue = 0.28f;
             }
+            else if (id.Contains("centipede"))
+            {
+                traitKey = "hundred_legs"; displayName = "백족 연격"; element = InsectElement.Poison; power = 33;
+            }
+            else if (id.Contains("earwig"))
+            {
+                traitKey = "pincer_cut"; displayName = "집게 절단"; element = InsectElement.Metal; power = 32;
+            }
+            else if (id.Contains("pill_bug") || id.Contains("pillbug"))
+            {
+                traitKey = "armor_roll"; displayName = "환형 강타"; element = InsectElement.Earth; power = 31;
+            }
+            else if (id.Contains("aphid"))
+            {
+                traitKey = "swarm_drain"; displayName = "군집 흡즙"; element = InsectElement.Leaf;
+                effectType = SkillEffectType.DebuffAttack; power = 1; effectValue = 0.28f;
+            }
+            else if (id.Contains("caterpillar"))
+            {
+                traitKey = "leaf_gnaw"; displayName = "잎 갉아먹기"; element = InsectElement.Leaf; power = 30;
+            }
+            else if (id.Contains("cicada"))
+            {
+                traitKey = "resonance"; displayName = "맴맴 공명"; element = InsectElement.Earth; power = 32;
+            }
+            else if (id.Contains("stick_insect") || id.Contains("stick"))
+            {
+                traitKey = "mimic_ambush"; displayName = "의태 기습"; element = InsectElement.Leaf; power = 34;
+            }
             else if (data != null && data.primaryType == InsectElement.Water)
             {
                 traitKey = "water_skate"; displayName = "수면 질주"; element = InsectElement.Water;
