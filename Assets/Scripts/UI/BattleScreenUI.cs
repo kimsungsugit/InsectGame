@@ -1835,7 +1835,10 @@ namespace InsectGame.UI
 
             float sw = UIScale.VirtualScreenWidth;
             bool mobile = UIScale.IsMobileLayout;
-            float panelH = mobile ? 610f : 320f;
+            // 레이아웃 형태는 방향(IsPortrait) 기준 — IsMobileLayout은 '가로 모바일'에서도 true라 610px 세로 패널이
+            // 높이 1080의 56%를 덮어 곤충을 가렸음. 세로=키큰 2×2 / 가로=납작 1행. 터치 라벨 문구는 mobile 유지.
+            bool portrait = UIScale.IsPortrait;
+            float panelH = portrait ? 610f : 320f;
             // 제스처바(하단 세이프 인셋) 위로 버튼을 올림. 배경은 바닥까지 채워 빈틈 방지.
             float safeBottom = SafeArea.Bottom / UIScale.Scale;
             float panelY = UIScale.VirtualScreenHeight - panelH - safeBottom;
@@ -1857,10 +1860,10 @@ namespace InsectGame.UI
             int count = skills != null ? Mathf.Min(skills.Length, 4) : 0;
             skillBtnCount = count;
 
-            float extraW = mobile ? (sw - 76f) * 0.5f : 200f;
+            float extraW = portrait ? (sw - 76f) * 0.5f : 200f;
             float gap = 16f;
             float availW = sw - 40f - extraW - 30f;
-            float btnW = mobile
+            float btnW = portrait
                 ? (sw - 76f) * 0.5f
                 : Mathf.Max(220, Mathf.Min(320, (availW - gap * Mathf.Max(count - 1, 0)) / Mathf.Max(count, 1)));
             float btnH = 200f;
@@ -1875,10 +1878,10 @@ namespace InsectGame.UI
                 InsectSkill skill = skills[i];
                 if (skill == null) continue;
 
-                float bx = mobile
+                float bx = portrait
                     ? startX + (i % 2) * (btnW + gap)
                     : startX + i * (btnW + gap);
-                if (mobile) btnY = baseBtnY + (i / 2) * (btnH + gap);
+                if (portrait) btnY = baseBtnY + (i / 2) * (btnH + gap);
                 int cd = i < cooldowns.Length ? cooldowns[i] : 0;
                 bool canUse = cd <= 0;
 
@@ -1985,8 +1988,8 @@ namespace InsectGame.UI
                 }
             }
 
-            btnY = mobile ? baseBtnY + 2f * (btnH + gap) + 2f : baseBtnY;
-            float extraX = mobile ? startX : startX + count * (btnW + gap) + 24;
+            btnY = portrait ? baseBtnY + 2f * (btnH + gap) + 2f : baseBtnY;
+            float extraX = portrait ? startX : startX + count * (btnW + gap) + 24;
             float extraBtnH = 80f;
 
             {
@@ -2007,8 +2010,8 @@ namespace InsectGame.UI
             }
 
             {
-                float escapeX = mobile ? extraX + extraW + gap : extraX;
-                float escY = mobile ? btnY : btnY + extraBtnH + 12;
+                float escapeX = portrait ? extraX + extraW + gap : extraX;
+                float escY = portrait ? btnY : btnY + extraBtnH + 12;
                 escapeRect = new Rect(escapeX, escY, extraW, extraBtnH);
                 Vector2 mouseGui2 = UIScale.VirtualMousePosition;
                 bool hov2 = escapeRect.Contains(mouseGui2);
