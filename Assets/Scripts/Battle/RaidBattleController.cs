@@ -147,7 +147,15 @@ namespace InsectGame.Battle
             if (skill != null && !string.IsNullOrEmpty(skill.displayName))
                 TryPlayEffectText($"{skill.displayName}!", BattleArenaController.GetUIElementColor(skill.element));
 
-            if (skill.effectType == SkillEffectType.Damage)
+            // 명중 판정 — 저명중 스킬은 빗나갈 수 있음(공용 RollHit 재사용). 완전명중(1.0)은 롤 생략.
+            if (skill.effectType == SkillEffectType.Damage && skill.accuracy < 0.999f
+                && !InsectBattleController.RollHit(skill.accuracy, 0f, UnityEngine.Random.value))
+            {
+                LastDamageToBoss = 0;
+                LastActionText = $"{attacker.Data.displayName}의 {skill.displayName}! 빗나갔다!";
+                TryPlayEffectText("빗나갔다!", new Color(0.7f, 0.7f, 0.75f));
+            }
+            else if (skill.effectType == SkillEffectType.Damage)
             {
                 float effectiveness = InsectTypeChart.GetEffectiveness(
                     skill.element,

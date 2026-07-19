@@ -307,6 +307,7 @@ namespace InsectGame.Battle
                     break;
                 }
                 case SkillEffectType.PoisonDot:
+                    if (!LandsHit(skill)) { TryPlayEffectText("빗나갔다!", new Color(0.7f, 0.7f, 0.75f)); break; }
                     // 대상에 턴당 피해(power) 부여. TickEffects에서 매턴 적용. 플레이어 피격 시 지속 감염(전투 후 유지).
                     AddEffect(!isPlayer, skill.power, skill.effectDurationTurns, EffectKind.Dot);
                     if (defenderIsPlayer) playerPoisoned = true;
@@ -314,6 +315,7 @@ namespace InsectGame.Battle
                     TryPlayEffectText("중독!", new Color(0.6f, 0.9f, 0.3f));
                     break;
                 case SkillEffectType.Stun:
+                    if (!LandsHit(skill)) { TryPlayEffectText("빗나갔다!", new Color(0.7f, 0.7f, 0.75f)); break; }
                     // 대상 다음 행동 1회 스킵(별도 카운터). 플레이어 피격 시 지속 마비(전투 후 유지).
                     if (defenderIsPlayer) { playerStunTurns = 1; playerParalyzed = true; } else enemyStunTurns = 1;
                     TryPlayHitFlash(defenderIsPlayer);
@@ -324,6 +326,7 @@ namespace InsectGame.Battle
                     TryPlayEffectText("방어력 상승!", new Color(0.4f, 0.7f, 1f));
                     break;
                 default:
+                    if (!LandsHit(skill)) { TryPlayEffectText("빗나갔다!", new Color(0.7f, 0.7f, 0.75f)); break; }
                     int baseDamage = skill.power;
                     float effectiveness = InsectTypeChart.GetEffectiveness(
                         skill.element,
@@ -348,6 +351,21 @@ namespace InsectGame.Battle
             float multiplier = Mathf.Clamp(1f + attacker.AttackBonus, 0.3f, 3f);
             int damage = Mathf.RoundToInt((baseDamage + attacker.Level * 2) * multiplier);
             return Mathf.Max(1, damage);
+        }
+
+        // 명중 판정(순수 로직, 주입 롤=테스트 가능). roll<순명중이면 명중. 순명중은 최소 0.3 보장(완전 회피 방지).
+        public static bool RollHit(float accuracy, float evasion, float roll)
+        {
+            float hitChance = Mathf.Clamp(accuracy - evasion, 0.3f, 1f);
+            return roll < hitChance;
+        }
+
+        // 이번 공격이 명중하는가 — accuracy 1.0(대부분)이면 항상 명중. Random 소비는 저명중 스킬에서만.
+        private bool LandsHit(InsectSkill skill)
+        {
+            float acc = skill != null ? skill.accuracy : 1f;
+            if (acc >= 0.999f) return true;   // 완전명중 스킬은 롤 없이 통과
+            return RollHit(acc, 0f, UnityEngine.Random.value);
         }
 
         private void UseEnemyTurn()

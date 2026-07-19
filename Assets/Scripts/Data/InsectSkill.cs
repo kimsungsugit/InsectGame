@@ -29,6 +29,7 @@ namespace InsectGame.Data
         public SkillEffectType effectType = SkillEffectType.Damage;
         [Range(0f, 1f)] public float effectValue = 0.2f;
         [Range(1, 5)] public int effectDurationTurns = 2;
+        [Range(0f, 1f)] public float accuracy = 1f;   // 명중률(1=항상 명중). 저명중 스킬은 빗나갈 수 있음.
         [Range(0, 999)] public int trainingCost;
         public bool isSignatureSkill;
     }

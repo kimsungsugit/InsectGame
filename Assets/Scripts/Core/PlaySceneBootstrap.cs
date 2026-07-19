@@ -3356,10 +3356,12 @@ namespace InsectGame.Core
                 case "storm":
                     skill = CreateTypedSkillInternal($"{element.ToString().ToLowerInvariant()}_storm", $"{label} 폭풍", element, SkillEffectType.Damage, 42, 4, 0.2f, 2);
                     skill.trainingCost = 22;
+                    skill.accuracy = 0.9f;   // 고위력 스킬은 명중 트레이드오프
                     return skill;
                 default:
                     skill = CreateTypedSkillInternal($"{element.ToString().ToLowerInvariant()}_nova", $"{label} 노바", element, SkillEffectType.Damage, 52, 5, 0.2f, 2);
                     skill.trainingCost = 28;
+                    skill.accuracy = 0.85f;  // 최고위력 스킬은 더 낮은 명중
                     return skill;
             }
         }
