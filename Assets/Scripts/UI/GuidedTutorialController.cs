@@ -16,7 +16,8 @@ namespace InsectGame.UI
         // 강제 가이드 대상 questId → 코치 지시문. 이 퀘스트들만 강제 유도(나머지는 기존 비블로킹 안내).
         private static readonly Dictionary<string, string> GuidedSteps = new Dictionary<string, string>
         {
-            { "q_approach", "곤충에게 다가가 E 키로 포획해보세요!" },
+            // q_approach("곤충에게 다가가 E 키로 포획해보세요!")는 사용자 요청으로 제거 — 그 강제 배너/프리즈 미표시.
+            // 퀘스트 진행 자체는 TutorialQuestManager가 처리하므로 안내만 빠지고 흐름은 유지된다.
             { "q_battle", "야생 곤충에게 B 키로 배틀을 걸어보세요!" },
             { "q_team", "T 키로 배틀 팀을 편성하세요!" },
         };
