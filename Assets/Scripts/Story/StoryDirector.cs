@@ -9,7 +9,7 @@ using UnityEngine;
 namespace InsectGame.Story
 {
     // 스토리 트리거 평가·진행·보상 지휘자. MonoBehaviour + ICloudReloadable, 싱글턴 아님(AutoWire).
-    // 기존 이벤트(RegionChanged/BattleEnded/SubAreaChanged/QuestCompleted/ProgressChanged/InsectUpdated)를
+    // 기존 이벤트(RegionChanged/BattleEnded/SubAreaChanged/QuestCompleted/ProgressChanged/InsectCaptured)를
     // 재구독해 미열람·prereq충족·트리거일치 비트를 찾아 StoryBeatTriggered로 발화. 모달이 닫히면
     // CompleteBeat → seen 마킹 + onComplete 보상 + 저장 + 즉시 클라우드 동기(퀘스트 보상 패턴 동일).
     public class StoryDirector : MonoBehaviour, ICloudReloadable
@@ -103,7 +103,7 @@ namespace InsectGame.Story
             if (progressController != null)
                 progressController.ProgressChanged += OnProgressChanged;
             if (insectCollection != null)
-                insectCollection.InsectUpdated += OnInsectUpdated;
+                insectCollection.InsectCaptured += OnInsectCaptured;
         }
 
         private void UnsubscribeEvents()
@@ -123,7 +123,7 @@ namespace InsectGame.Story
             if (progressController != null)
                 progressController.ProgressChanged -= OnProgressChanged;
             if (insectCollection != null)
-                insectCollection.InsectUpdated -= OnInsectUpdated;
+                insectCollection.InsectCaptured -= OnInsectCaptured;
         }
 
         // --- 이벤트 핸들러 → 중앙 평가 ---
@@ -154,8 +154,9 @@ namespace InsectGame.Story
             EvaluateTriggers(TriggerLevelReach, level.ToString());
         }
 
-        private void OnInsectUpdated(PlayerInsectData insect)
+        private void OnInsectCaptured(PlayerInsectData insect)
         {
+            // InsectCaptured는 실제 포획/획득(AddInsectInternal)에서만 발화 — XP·치료·진화 오발화 없음.
             EvaluateTriggers(TriggerCaptureInsect, insect != null ? insect.insectId : null);
         }
 

@@ -26,6 +26,9 @@ namespace InsectGame.Core
         private const float SaveDebounceSeconds = 0.5f;
 
         public event Action<PlayerInsectData> InsectUpdated;
+        // 신규 포획/획득(AddInsectInternal) 전용 신호. InsectUpdated는 XP·치료·진화에서도 발화하므로
+        // "포획" 트리거로 쓰면 오발화한다(StoryDirector CaptureInsect 비트). 이건 추가 경로에서만 발화.
+        public event Action<PlayerInsectData> InsectCaptured;
 
         private void MarkDirty()
         {
@@ -155,6 +158,7 @@ namespace InsectGame.Core
             // 읽어 마지막 포획이 클라우드에서 누락되던 것 차단. (빈번한 XP 변경은 계속 디바운스)
             SaveNow();
             InsectUpdated?.Invoke(data);
+            InsectCaptured?.Invoke(data); // 포획/획득 전용 — 스토리 CaptureInsect 등 포획 한정 트리거용
             return data;
         }
 
