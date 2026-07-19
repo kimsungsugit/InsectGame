@@ -112,14 +112,14 @@
 - [x] CaptureItemPickup + CaptureItemSpawner + CaptureProximityTrigger (clean — dead code 확인, 2026-07-17)
 - [x] HospitalUI (clean P0/P1, P2:1 처리, 2026-07-19) — score 36(프레임할당9/싱글턴9) 둘 다 거짓양성 확인; 모달 ESC·결제 원자성·stale 아이템 등 회귀 7종 전부 회피(TrainingUI 패턴). P2(OnEnable 재구독) 후속 수정 완료
 - [x] GuidedTutorialController (clean P0/P1, 2026-07-19) — score 15(프레임할당5) 거짓양성(Rect/Color struct + GUIStyle 1회 캐시); Start↔OnDestroy 페어링이라 SetActive 소실버그 무관, Dictionary 기반 진행이라 정지·범위초과 없음
+- [x] StoryDirector (P1:1, P2:1 보류, 2026-07-19) — CaptureInsect가 InsectUpdated(포획+XP+치료+진화)를 오발화(치료경제가 악화) → 포획 전용 InsectCaptured 이벤트 신설. 싱글턴2 거짓양성(CloudSaveManager 가드 내). P2: 렌더러 미배선 시 인트로 무음소모(빌더 예외 경로)
 
 ## Uncovered (우선순위순)
 
 2026-07-19 세션에서 치료경제·전투·스킬 신규 코드 대량 유입 → 큐 재생성
-(`audit_candidates.py --emit-md`). 1~2순위 HospitalUI·GuidedTutorialController 처리 완료(Covered).
-남은 후보 score 순:
+(`audit_candidates.py --emit-md`). 1~3순위 HospitalUI·GuidedTutorialController·StoryDirector 처리 완료(Covered).
+남은 후보는 전부 score 0(OnGUI/Update 표면 없는 데이터·정의 파일):
 
-- [ ] StoryDirector (Story/StoryDirector.cs, 388줄, score 2) — 싱글턴 참조 2
 - [ ] GameConstants (Core/GameConstants.cs, 86줄, score 0) — 표면 점검
 - [ ] PlayerProgressUIController (Core/PlayerProgressUIController.cs, 119줄, score 0) — 표면 점검
 - [ ] InsectElement (Data/InsectElement.cs, 96줄, score 0) — 표면 점검
@@ -142,6 +142,6 @@ score 0은 OnGUI/Update 표면이 없는 데이터·정의 파일 — 표면 점
 > 그런데 Step 1이 이 파일을 통째로 Read하므로 매 라운드 컨텍스트를 먹었다(17KB, 파일의 73%).
 > 영역별 처리 이력은 위 Covered 인덱스가 이미 갖고 있다. 길어지면 아카이브로 옮길 것.
 
-- 2026-07-17: **3라운드 병렬** (CatcherKidNpc / VillagerNpc+NpcWalkAnimator / Capture아이템 3종) — P1:1 처리 + clean 2, 채점기 구멍 1건 수정. **CatcherKidNpc P1**: Rare+ 곤충이 12m 안에 있으면 아이가 영구 고착했다 — 스캔이 잡기/구경 후보를 한 루프에서 최근접 하나로 뽑는데 Rare+는 CanKidTarget을 우회해 무조건 후보가 되므로, 최근접이 Rare면 Watch(2~4s)→Idle→재스캔→같은 Rare가 여전히 최근접→Watch로 순환한다(Wander 불가, 포획 영구 중단). 같은 원인으로 Rare 뒤의 Common도 bestSq에 밀려 영영 가려졌다. 탈출은 그 곤충이 60m 밖으로 사라질 때뿐이라 플레이어가 근처면 무기한. 수정: bestCatch/bestWatch 분리(잡기 우선) + lastWatchedInsect로 직전 대상 제외, **해제는 Wander 완주 시점**(진입 시점에 풀면 그 케이스 스캔이 곧바로 같은 곤충을 다시 잡아 고착 재발). 상태 전이 모사로 검증: before는 Watch↔Idle 무한·포획 0회, after는 Watch→Idle→Wander→완주→Idle 순환이며 Common 동반 시 40틱 20회 포획. **공정성은 clean** — SetEngaged/PlayerClaimRadius 3중 방어로 플레이어 미니게임 중 곤충은 가로챌 수 없고, 유령 곤충도 없으며, 쿨다운 하한은 [Range]가 강제. **VillagerNpc+NpcWalkAnimator clean**: Talking 고착 3경로 전부 반증(비활성 GO에서도 EndTalk은 C# 호출이라 정상 동작, 씬 전환은 OnDisable→CloseModal, 대화 중 SetFrozen이라 이탈 불가). 좌표도 MaxGroundStep 클램프가 지붕 오인 차단. **Capture 아이템 3종 clean(dead code)**: PlaySceneBootstrap:335-338이 주석으로 꺼놨고(`// 필드 아이템 스폰 비활성화 — 아이템은 샵/보상에서만`) 씬 GUID 역참조도 0건이라 필드 아이템 흐름 자체가 없다. CaptureProximityTrigger.TryStartCapture도 호출자 0(실제 포획은 CaptureInputController가 재구현) — 단 position/radius 제공용으로 살아있어 삭제 불가. **이 라운드가 채점기 구멍을 드러냈다**: code_mentions가 raw text를 읽어 **주석 안의 언급도 살아있음으로 셌다** → strip_cs 적용(같은 커밋). 1단계 참조만 보는 한계는 주석에 명시. 검증: Unity PlayMode 38/38, error CS 0건.
 - 2026-07-19: HospitalUI (신규 병원 치료 UI, 이번 세션 추가) — clean, P0/P1 0건. audit_candidates score 36(프레임할당9/싱글턴9)이 **둘 다 거짓양성**: `new GUIStyle`은 stylesReady로 1회 캐시, `new Rect/Color`는 struct(스택 할당), 싱글턴 역참조는 렌더 경로 전부 삼항 가드 + `UITheme.Instance`는 CreateInstance 폴백이라 null 불가. 이 프로젝트 반복 버그 7종(모달 ESC 무력화·이벤트 짝·결제 원자성·stale 아이템·미캐싱 조회) **전부 회피** — TrainingUI 패턴을 정확히 따름. **P2:1 보류**(OnDisable은 InsectUpdated 해지하나 OnEnable 재구독 없음 — Hospital GO가 SetActive 토글 안 돼 현재 미발현). 이 세션 빌드 블로커 2건 동반 수정: `InsectDatabase.FindById`→`GetById`(컴파일 CS1061), 신규 테스트 4개 `#if UNITY_EDITOR` 가드(IL2CPP nunit 링크 실패). 검증: error CS 0건, APK 112MB 빌드 성공. **P2 후속**(7265b37): OnEnable에서 InsectUpdated 재구독 추가.
 - 2026-07-19: GuidedTutorialController (가이드형 튜토리얼 오버레이, 이번 세션 신규) — clean, P0/P1 0건. score 15 "프레임 할당 5"는 거짓양성(`new Rect`×5·`new Color`×2는 struct 스택, `new GUIStyle`×2는 stylesInit 1회 캐시). 항목 1~7 전부 통과: Find는 Start 1회, null 가드 완비, **구독은 Start↔OnDestroy 페어링**이라 SetActive 토글 소실버그에 애초 해당 안 됨(HospitalUI와 다른 정당한 설계 — 씬 상주 오버레이). Dictionary 기반이라 스텝 범위초과 불가, OnQuestCompleted가 항상 ExitGuided로 clear해 영구정지·완료후잔존 없음. 코루틴 없음, 비모달(IsAnyOpen로 겹침 회피). 검증: error CS 0건.
+- 2026-07-19: StoryDirector (스토리 트리거 디렉터, score 2) — P1:1 처리 + P2:1 보류. **P1**: OnInsectUpdated가 InsectUpdated(포획+XP+치료+진화 전부 발화)를 CaptureInsect 트리거로 매핑 → 이번 세션 치료경제가 발화지점(HealInsect/CurePoison/SetAfterBattle)을 늘려 pond/swamp/mountain에서 곤충 **치료만 해도** 빈-param 스토리 비트(ch2_water/ch4_bond/ch5_thesis)가 오발화. PlayerInsectCollection에 포획 전용 InsectCaptured 이벤트(AddInsectInternal에서만 발화) 신설, StoryDirector가 그걸 구독(1884971). 싱글턴 참조 2는 거짓양성(CloudSaveManager.Instance 동일라인 null 가드). Update/OnGUI/코루틴 없음, 이벤트 Start↔OnDestroy 페어링. **P2 보류**: Immediate 인트로 ch1_intro의 렌더러(NpcDialogueUI) 구독이 buildWorld+try 안이라 빌더 예외 시 구독 누락→헤드리스 CompleteBeat로 대사 미표시+보상 소모+oneShot 영구소실(buildWorld 기본 true라 정상 플레이 무해). 검증: ci_check 통과, error CS 0건. **P0 동반**(사용자 신고, 커밋 8cb7da8): 부팅 canary가 MaxLearnedSkills(6)를 오검사해 "핵심 시스템 초기화 실패"로 게임 중단 → MaxEquipSlots(4) 정정.
