@@ -28,8 +28,26 @@ namespace InsectGame.Story
         // 발화됐으나 아직 완료(모달 닫힘)되지 않은 비트 — 같은 이벤트 반복 시 중복 발화 차단.
         private string pendingBeatId;
         private bool subscribed;
+        // 렌더러(NpcDialogueUI) 미배선 시점에 발화된 비트 보류함 — 구독 시 accessor가 flush한다.
+        // 빌더 예외로 구독이 건너뛰면 oneShot 인트로가 헤드리스로 소모돼 영구 소실되던 것 방지.
+        private StoryBeat deferredBeat;
 
-        public event Action<StoryBeat> StoryBeatTriggered;
+        private Action<StoryBeat> storyBeatTriggered;
+        // 커스텀 accessor: 렌더러가 Start 이후(빌더 예외 등)에 늦게 구독하면 보류 비트를 즉시 전달.
+        public event Action<StoryBeat> StoryBeatTriggered
+        {
+            add
+            {
+                storyBeatTriggered += value;
+                if (deferredBeat != null)
+                {
+                    StoryBeat b = deferredBeat;
+                    deferredBeat = null;
+                    value(b);
+                }
+            }
+            remove { storyBeatTriggered -= value; }
+        }
         // 비트 완료(스토리 모달 닫힘) 신호 — WorldInteractionController가 조우 카메라 포커스를 릴리즈.
         public event Action<StoryBeat> StoryBeatCompleted;
 
@@ -255,15 +273,17 @@ namespace InsectGame.Story
             if (beat == null) return;
             pendingBeatId = beat.beatId;
 
-            if (StoryBeatTriggered != null)
+            if (storyBeatTriggered != null)
             {
                 // NpcDialogueUI가 lines[]를 모달로 렌더 → 닫으면 CompleteBeat 콜백.
-                StoryBeatTriggered.Invoke(beat);
+                storyBeatTriggered.Invoke(beat);
             }
             else
             {
-                // 렌더러 미배선(헤드리스/테스트) — 대사 없이 즉시 완료(보상/seen 처리).
-                CompleteBeat(beat.beatId);
+                // 렌더러 미배선(빌더 예외로 구독 누락 등) — 헤드리스로 즉시 완료하면 oneShot 인트로가
+                // 대사 없이 보상만 지급되고 seen 마킹돼 영구 소실된다. 보류했다가 구독 시 flush(accessor)하고,
+                // 끝내 구독자가 없으면 seen 미마킹으로 남아 다음 정상 부팅에서 발화한다.
+                deferredBeat = beat;
             }
         }
 
