@@ -386,7 +386,13 @@ namespace InsectGame.Battle
             if (playerStats != null)
             {
                 float outfitAtk = outfitBonus != null ? outfitBonus.GetAtkBonus() : 0f;
-                playerStats.AttackBonus = playerBonus + outfitAtk;
+                float itemAtk = itemEffects != null ? itemEffects.GetAtkBonus() : 0f;
+                playerStats.AttackBonus = playerBonus + outfitAtk + itemAtk;
+
+                // 방어 보너스(의상+아이템) — ApplyDamage에서 유효 방어로 소비. 의상 GetDefBonus가 드디어 반영됨.
+                float outfitDef = outfitBonus != null ? outfitBonus.GetDefBonus() : 0f;
+                float itemDef = itemEffects != null ? itemEffects.GetDefBonus() : 0f;
+                playerStats.DefenseBonus = outfitDef + itemDef;
             }
 
             if (enemyStats != null)

@@ -78,6 +78,11 @@ namespace InsectGame.Battle
             for (int i = 0; i < count; i++)
             {
                 TeamStats[i] = new InsectBattleStats(teamInsects[i], teamLevels[i], teamPids != null ? teamPids[i] : null);
+                // 의상/아이템 강화 — 레이드는 팀 보너스를 초기화하는 코드가 없어 공격/방어가 미반영이었음. 여기서 세팅.
+                TeamStats[i].AttackBonus = (outfitBonus != null ? outfitBonus.GetAtkBonus() : 0f)
+                                         + (itemEffects != null ? itemEffects.GetAtkBonus() : 0f);
+                TeamStats[i].DefenseBonus = (outfitBonus != null ? outfitBonus.GetDefBonus() : 0f)
+                                          + (itemEffects != null ? itemEffects.GetDefBonus() : 0f);
                 int sc = teamSkills != null && teamSkills[i] != null ? teamSkills[i].Length : 0;
                 TeamCooldowns[i] = new int[sc];
             }

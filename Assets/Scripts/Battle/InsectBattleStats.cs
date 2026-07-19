@@ -14,6 +14,7 @@ namespace InsectGame.Battle
         public int Attack { get; protected set; }
         public int Defense { get; protected set; }
         public float AttackBonus { get; set; }
+        public float DefenseBonus { get; set; }   // 유효 방어 배율 가산(의상/아이템) — ApplyDamage에서 소비
 
         public InsectBattleStats(InsectData data, int level, PlayerInsectData pid = null)
         {
@@ -42,6 +43,7 @@ namespace InsectGame.Battle
 
             CurrentHp = MaxHp;
             AttackBonus = 0f;
+            DefenseBonus = 0f;
         }
 
         public void ResetHp()
@@ -54,7 +56,9 @@ namespace InsectGame.Battle
             int finalDamage = amount;
             if (attackerAtk > 0 && defenderDef > 0)
             {
-                float ratio = attackerAtk / (float)Mathf.Max(1, defenderDef);
+                // 방어 보너스(의상/아이템) 반영 — 유효 방어 상승 → 피해 감소.
+                float effDef = defenderDef * (1f + DefenseBonus);
+                float ratio = attackerAtk / Mathf.Max(1f, effDef);
                 finalDamage = Mathf.RoundToInt(amount * Mathf.Clamp(ratio, 0.5f, 2.5f));
             }
             CurrentHp = Mathf.Max(0, CurrentHp - Mathf.Max(1, finalDamage));
