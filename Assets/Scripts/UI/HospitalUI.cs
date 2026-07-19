@@ -54,7 +54,8 @@ namespace InsectGame.UI
         public void Toggle()
         {
             isOpen = !isOpen;
-            if (isOpen) { selectedInstanceId = null; ownedDirty = true; }
+            // 월드 병원 버튼 = 일반 치료 방문 → 아이템 모드 잔존 클리어(stale pendingItem로 열리는 것 방지).
+            if (isOpen) { selectedInstanceId = null; ownedDirty = true; pendingItem = null; pendingInv = null; }
             if (isOpen) ModalUIRegistry.Register(this);
             else ModalUIRegistry.Unregister(this);
         }

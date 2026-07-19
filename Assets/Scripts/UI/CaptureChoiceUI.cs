@@ -505,10 +505,18 @@ namespace InsectGame.UI
                 GUI.Label(new Rect(x + 120, y + 52, w - 280, 32), $"Lv.{lv}  |  CP {cp}", info);
 
                 GUIStyle fightBtn = new GUIStyle(GUI.skin.button) { fontSize = 28, fontStyle = FontStyle.Bold };
-                GUI.backgroundColor = new Color(0.6f, 0.2f, 0.15f);
-                if (GUI.Button(new Rect(x + w - 150, y + h / 2f - 28, 130, 56), "출격!", fightBtn))
+                // 기절(0 HP) 곤충은 출전 불가 — 병원 치료 전까지 즉사 반복 방지(지속 HP 도입에 따른 가드).
+                bool fainted = pid != null && pid.IsFainted;
+                if (fainted)
                 {
-                    StartBattleCapture(pid, data, lv);
+                    GUI.backgroundColor = new Color(0.3f, 0.3f, 0.32f);
+                    GUI.Button(new Rect(x + w - 150, y + h / 2f - 28, 130, 56), "기절", fightBtn);
+                }
+                else
+                {
+                    GUI.backgroundColor = new Color(0.6f, 0.2f, 0.15f);
+                    if (GUI.Button(new Rect(x + w - 150, y + h / 2f - 28, 130, 56), "출격!", fightBtn))
+                        StartBattleCapture(pid, data, lv);
                 }
                 GUI.backgroundColor = Color.white;
             }

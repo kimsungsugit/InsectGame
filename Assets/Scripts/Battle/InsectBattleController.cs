@@ -64,6 +64,12 @@ namespace InsectGame.Battle
                 return;
             }
 
+            // 기절(0 HP) 곤충 출전 백스톱 — UI 가드를 우회한 진입점(leader=insects[0] 등)도 즉사 반복 방지.
+            if (playerPid != null && playerPid.IsFainted)
+            {
+                return;
+            }
+
             playerStats = new InsectBattleStats(playerInsect, playerLevel, playerPid);
             enemyStats = new InsectBattleStats(enemy.Data, enemy.Level);
             enemyEntity = enemy;
@@ -578,6 +584,9 @@ namespace InsectGame.Battle
             {
                 TryPlayFaint(true);
                 TryPlayEffectText("쓰러졌다!", new Color(0.9f, 0.2f, 0.2f));
+                // 죽은 곤충의 0 HP를 즉시 영구 저장(멱등) — 전멸 패배(교체 팀원 없음)에서 스왑·!fainted 경로가 모두
+                // 스킵돼 마지막 곤충이 무료 부활하던 누락을 차단. 교체 시 SwapPlayerInsect가 다시 0으로 persist(무해).
+                PersistActivePlayer();
                 // 핸들러 예외 격리 — 한 구독자 예외가 BattleEnded fallback을 차단하지 않게
                 bool fainted = false;
                 try
@@ -598,7 +607,7 @@ namespace InsectGame.Battle
                 // !fainted: 교체 핸들러 없음 → 컨트롤러가 패배로 종료 + 적 Despawn(필드 잔존 방지).
                 if (!fainted)
                 {
-                    PersistActivePlayer();   // 전멸 패배 — 활성 곤충 기절(0 HP) 영구 저장
+                    // (기절 0 HP는 위에서 이미 persist — 여기선 종료 처리만)
                     battleEnded = true;
                     if (enemyEntity != null) enemyEntity.Despawn();
                     BattleEnded?.Invoke(false);
