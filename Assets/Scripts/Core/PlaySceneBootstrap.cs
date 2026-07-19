@@ -197,6 +197,8 @@ namespace InsectGame.Core
             ItemEffectManager itemEffects = EnsureComponent<ItemEffectManager>("World/ItemEffects");
             itemEffects.AutoWire(itemDatabase);
             spawner.AutoWire(itemEffects);
+            // 야생 곤충 도주 방지 — InsectEntity(풀링)는 provider 참조가 없어 static 훅으로 아이템 효과 주입.
+            InsectGame.Spawning.InsectEntity.FleePreventChanceProvider = () => itemEffects.GetFleePreventChance();
 
             DexController dex = EnsureComponent<DexController>("UI/DexController");
             PlayerProgressController progress = EnsureComponent<PlayerProgressController>("World/PlayerProgress");

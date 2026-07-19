@@ -35,6 +35,9 @@ namespace InsectGame.Spawning
         private static Vector3 lastPlayerPos;
         private static float playerSpeed;
         private static int playerTrackFrame = -1;
+        // 아이템 도주 방지 확률 제공자 — 부트스트랩이 세팅(itemEffects.GetFleePreventChance). null이면 0(방지 없음).
+        // InsectEntity는 풀링 객체라 AutoWire/provider 참조가 없어 static 훅으로 주입.
+        public static System.Func<float> FleePreventChanceProvider;
         private bool despawnedThisCycle; // Despawn 다중 호출 가드 (Battle/Capture 동시 호출 시 풀 중복 반환 차단)
 
         // Camera.main은 매 호출마다 FindGameObjectWithTag — 최대 20마리×매 프레임 핫패스 회피.
@@ -211,11 +214,21 @@ namespace InsectGame.Spawning
                 bool burst = moving && dist < fleeR && playerSpeed > 4f; // 코앞으로 돌진하면 즉시
                 if (alertGraceTimer <= 0f && (patience <= 0f || burst))
                 {
-                    alertState = 2;
-                    Vector3 away = transform.position - cachedPlayer.position; away.y = 0f;
-                    fleeDir = away.sqrMagnitude > 0.01f ? away.normalized : Vector3.forward;
-                    fleeTimer = 1.1f;
-                    return;
+                    // 아이템 도주 방지 확률 — 활성 시 확률적으로 도주 취소(patience 리셋으로 다시 버팀).
+                    float fp = FleePreventChanceProvider != null ? FleePreventChanceProvider() : 0f;
+                    if (fp > 0f && UnityEngine.Random.value < fp)
+                    {
+                        patience = 2.6f - skit * 0.95f;
+                        alertGraceTimer = 0.5f;
+                    }
+                    else
+                    {
+                        alertState = 2;
+                        Vector3 away = transform.position - cachedPlayer.position; away.y = 0f;
+                        fleeDir = away.sqrMagnitude > 0.01f ? away.normalized : Vector3.forward;
+                        fleeTimer = 1.1f;
+                        return;
+                    }
                 }
             }
             else
