@@ -17,7 +17,7 @@ namespace InsectGame.UI
         [SerializeField] private TrainingManager trainingManager;
         [SerializeField] private BattleArenaController arena;
 
-        private enum Phase { None, Intro, PlayerTurn, PlayerAttack, EnemyAttack, SwapSelect, Result }
+        private enum Phase { None, Intro, PlayerTurn, PlayerAttack, EnemyAttack, TurnAnnounce, SwapSelect, Result }
 
         private Phase phase = Phase.None;
         public bool IsBattleActive => phase != Phase.None;
@@ -31,6 +31,13 @@ namespace InsectGame.UI
         private float introTimer;
         private string actionText;
         private float actionTimer;
+        // 인터-턴 배너(턴 가시성) — 다음 페이즈 전 "당신의 턴/상대의 턴"을 중앙에 표시하는 대기.
+        private const float TurnAnnounceDuration = 0.9f;
+        private float announceTimer;
+        private string announceText;
+        private bool announceIsPlayer;
+        private Phase announceNextPhase;   // 배너 종료 후 전이할 페이즈
+        private bool announceTriggerEnemy; // 종료 후 EnemyAttack 연출을 발동할지
         private int lastDamageToEnemy;
         private bool lastWasCritical;
         private int comboCount;
@@ -220,6 +227,7 @@ namespace InsectGame.UI
                 revealEnemyHp = enemy.CurrentHp;
                 pendingResult = false;
                 pendingSwap = false;
+                announceTimer = 0f;
                 turnNumber = 0;
                 phase = Phase.Intro;
                 introTimer = 0f;
@@ -360,7 +368,7 @@ namespace InsectGame.UI
         {
             if (arena == null || !arena.IsActive) return phaseTimer > 0.8f;
             if (phaseTimer > 2f) return true;
-            if (phaseTimer < 0.3f) return false;
+            if (phaseTimer < 0.5f) return false;   // 연출이 짧아도 최소 노출 보장(턴 인터벌 확보)
             return !arena.IsPlayingSkill;
         }
 
@@ -424,7 +432,8 @@ namespace InsectGame.UI
             if (resultShown) resultTimer += Time.deltaTime;
 
             // 아레나(3D) 없으면 즉시 리빌(기존 2D 동작 보존). 아레나 있으면 연출 임팩트 onImpact에서 리빌.
-            if (arena == null || !arena.IsActive)
+            // 단 턴 배너 중엔 2D도 리빌 보류 — 배너가 "상대의 턴"인데 HP가 미리 깎여 보이는 것 방지.
+            if ((arena == null || !arena.IsActive) && phase != Phase.TurnAnnounce)
             {
                 if (playerStats != null) revealPlayerHp = playerStats.CurrentHp;
                 if (enemyStats != null) revealEnemyHp = enemyStats.CurrentHp;
@@ -519,20 +528,13 @@ namespace InsectGame.UI
             if (phase == Phase.PlayerAttack && PhaseAnimDone())
             {
                 if (enemyStats != null) revealEnemyHp = enemyStats.CurrentHp;   // 연출 종료 시 최종 동기(보증)
-                if (lastDamageToPlayer > 0)
-                {
-                    playerShake = 0.4f;
-                    phase = Phase.EnemyAttack;
-                    phaseTimer = 0f;
-                    TriggerEnemyAttackEffect();   // 적 공격 연출 발동(러시/투사체/임팩트/쉐이크)
-                }
-                else if (pendingSwap) EnterSwapSelect();
+                // 종료/교체는 배너 없이 즉시(연출 스포일 방지 우선). 그 외엔 다음 턴을 배너로 안내.
+                if (pendingSwap) EnterSwapSelect();
                 else if (pendingResult) EnterResult();
+                else if (lastDamageToPlayer > 0)
+                    BeginTurnAnnounce("상대의 턴", false, Phase.EnemyAttack, triggerEnemy: true);
                 else
-                {
-                    phase = Phase.PlayerTurn;
-                    phaseTimer = 0f;
-                }
+                    BeginTurnAnnounce("당신의 턴", true, Phase.PlayerTurn, triggerEnemy: false);
             }
 
             if (phase == Phase.EnemyAttack && PhaseAnimDone())
@@ -541,16 +543,55 @@ namespace InsectGame.UI
                 if (pendingSwap) EnterSwapSelect();
                 else if (pendingResult) EnterResult();
                 else
-                {
-                    phase = Phase.PlayerTurn;
-                    phaseTimer = 0f;
-                }
+                    BeginTurnAnnounce("당신의 턴", true, Phase.PlayerTurn, triggerEnemy: false);
+            }
+
+            if (phase == Phase.TurnAnnounce)
+            {
+                announceTimer -= Time.deltaTime;
+                // 탭/키 입력 시 즉시 스킵(반복 전투 배려) — 추가 상태 없이 기존 입력 플래그 재사용.
+                if (wantMouseClick) { wantMouseClick = false; announceTimer = 0f; }
+                if (announceTimer <= 0f) FinishTurnAnnounce();
             }
 
             if (phase == Phase.Result && resultTimer > 4f)
             {
                 EndBattle();
             }
+        }
+
+        // 다음 턴을 알리는 중앙 배너 시작. 종료 후 nextPhase로 전이(triggerEnemy면 적 연출 발동).
+        private void BeginTurnAnnounce(string text, bool isPlayer, Phase nextPhase, bool triggerEnemy)
+        {
+            phase = Phase.TurnAnnounce;
+            phaseTimer = 0f;
+            announceTimer = TurnAnnounceDuration;
+            announceText = text;
+            announceIsPlayer = isPlayer;
+            announceNextPhase = nextPhase;
+            announceTriggerEnemy = triggerEnemy;
+        }
+
+        private void FinishTurnAnnounce()
+        {
+            phase = announceNextPhase;
+            phaseTimer = 0f;
+            if (announceTriggerEnemy)
+            {
+                playerShake = 0.4f;
+                SetEnemyActionText();          // 적 행동 텍스트(플레이어와 대칭)
+                TriggerEnemyAttackEffect();    // 적 공격 연출 발동
+            }
+        }
+
+        // 적 EnemyAttack 진입 시 "{적 이름}의 {스킬}!" 텍스트 — 3D 모드에서도 적 행동이 보이게(대칭).
+        private void SetEnemyActionText()
+        {
+            if (enemyStats == null || enemyStats.Data == null) return;
+            InsectSkill es = battleController != null ? battleController.LastEnemySkill : null;
+            string skillName = es != null && !string.IsNullOrEmpty(es.displayName) ? es.displayName : "공격";
+            actionText = $"{enemyStats.Data.displayName}의 {skillName}!";
+            actionTimer = 1.5f;
         }
 
         private void SnapshotHp()
@@ -875,6 +916,8 @@ namespace InsectGame.UI
                 DrawAttackAnimation(false);
                 DrawPhaseIndicator("적 곤충의 반격!");
             }
+            else if (phase == Phase.TurnAnnounce)
+                DrawTurnAnnounce();
 
             if (actionTimer > 0)
                 DrawActionText();
@@ -3065,6 +3108,31 @@ namespace InsectGame.UI
             float pulse = 0.6f + Mathf.Sin(Time.time * 5f) * 0.2f;
             phaseIndicatorStyleCache.normal.textColor = new Color(1f, 0.9f, 0.5f, pulse);
             GUI.Label(new Rect(0, panelY + 14, UIScale.VirtualScreenWidth, 40), text, phaseIndicatorStyleCache);
+        }
+
+        // 인터-턴 중앙 배너 — "당신의 턴"(청록)/"상대의 턴"(적색). 페이드 인·아웃 + 슬라이드. introVsStyle 재사용.
+        private void DrawTurnAnnounce()
+        {
+            float sw = UIScale.VirtualScreenWidth;
+            float cy = UIScale.VirtualScreenHeight * 0.30f;
+            float t = 1f - Mathf.Clamp01(announceTimer / TurnAnnounceDuration);   // 0→1 진행
+            float alpha = Mathf.Clamp01(Mathf.Min(t * 4f, (1f - t) * 4f)) + 0.15f; // 양끝 페이드
+            alpha = Mathf.Clamp01(alpha);
+            float slide = (1f - Mathf.Clamp01(t * 3f)) * 40f;   // 진입 시 살짝 아래→제자리
+
+            Color accent = announceIsPlayer ? new Color(0.4f, 0.9f, 1f) : new Color(1f, 0.4f, 0.35f);
+
+            // 반투명 밴드 배경
+            GUI.color = new Color(0.03f, 0.04f, 0.09f, 0.72f * alpha);
+            GUI.DrawTexture(new Rect(0, cy - 12f, sw, 92f), Texture2D.whiteTexture);
+            GUI.color = new Color(accent.r, accent.g, accent.b, 0.85f * alpha);
+            GUI.DrawTexture(new Rect(0, cy - 12f, sw, 4f), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(0, cy + 76f, sw, 4f), Texture2D.whiteTexture);
+
+            introVsStyleCache.fontSize = 58;
+            introVsStyleCache.normal.textColor = new Color(accent.r, accent.g, accent.b, alpha);
+            GUI.color = Color.white;
+            GUI.Label(new Rect(0, cy + slide, sw, 80f), announceText, introVsStyleCache);
         }
 
         // FindFirstObjectByType 캐싱 — 배틀 시작/종료마다 재조회 회귀 차단.
