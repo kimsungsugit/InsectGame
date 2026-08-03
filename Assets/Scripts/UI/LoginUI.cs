@@ -176,7 +176,7 @@ namespace InsectGame.UI
             float width = Mathf.Min(mobile ? 320f : 260f, Screen.width * (mobile ? 0.5f : 0.34f));
             float height = mobile ? 56f : 44f;
             float x = Screen.width - width - 16f - SafeArea.Right;
-            float y = Screen.height - height - 12f - SafeArea.Bottom;
+            float y = UISafeLayout.Px.BottomY(height);
 
             linkStyle.fontSize = mobile ? 22 : 20;
             if (!GUI.Button(new Rect(x, y, width, height), "개인정보처리방침", linkStyle)) return;
@@ -242,13 +242,12 @@ namespace InsectGame.UI
             GUI.DrawTexture(new Rect(rect.xMax - 30f, rect.y + 18f, 12f, 12f), panelAccentTexture);
         }
 
-        // 세이프 에어리어 안에서 패널을 세로 중앙 배치 — 짧은/노치 화면에서 상단 클립 방지.
-        // ph가 세이프 높이를 넘으면 줄여서 안에 맞춤.
+        // 세이프 에어리어 + 세로 마진 안에서 패널을 중앙 배치 — 짧은/노치 화면에서 상단 클립 방지.
+        // ph가 안전 높이를 넘으면 줄여서 안에 맞춤. (LoginUI는 픽셀 좌표계라 Px 파사드를 쓴다)
         private static float SafeCenterY(ref float ph)
         {
-            float avail = Screen.height - SafeArea.Top - SafeArea.Bottom;
-            if (ph > avail) ph = avail;
-            return SafeArea.Top + (avail - ph) * 0.5f;
+            ph = UISafeLayout.Px.ClampHeight(ph);
+            return UISafeLayout.Px.CenteredY(ph);
         }
 
         // ── 로그인 패널 ──

@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using InsectGame.Capture;
 using InsectGame.Data;
 using InsectGame.Dex;
+using InsectGame.Opening;
 using InsectGame.Spawning;
 using InsectGame.UI;
 using TMPro;
@@ -33,6 +34,9 @@ namespace InsectGame.Core
         [SerializeField] private string uiPrefabResourcePath = "UI/PlayHUD";
 
         private readonly Dictionary<string, InsectSkill> generatedSkillCache = new Dictionary<string, InsectSkill>();
+        private PlayerStartPose initialPlayerStartPose = PlayerStartPlacement.FallbackPose;
+        private bool initialPlayerStartResolved;
+        private bool initialSpawnApplied;
 
         private static Material CreateSafeMaterial(Color color)
         {
@@ -53,7 +57,13 @@ namespace InsectGame.Core
         public void Build()
         {
             Debug.Log("[PlaySceneBootstrap] Build 시작");
-            GameObject player = EnsurePlayer();
+            if (!initialPlayerStartResolved)
+            {
+                initialPlayerStartPose = ResolveInitialPlayerStartPose();
+                initialPlayerStartResolved = true;
+            }
+
+            GameObject player = EnsurePlayer(initialPlayerStartPose);
             Debug.Log("[PlaySceneBootstrap] Player 생성 완료");
             Camera camera = EnsureCamera(player.transform);
             Debug.Log("[PlaySceneBootstrap] Camera 생성 완료");
@@ -137,9 +147,7 @@ namespace InsectGame.Core
                 };
                 criticalErrStyle.normal.textColor = new Color(1f, 0.9f, 0.9f);
             }
-            float w = Mathf.Min(640f, Screen.width - 40f);
-            float h = 200f;
-            Rect r = new Rect((Screen.width - w) * 0.5f, (Screen.height - h) * 0.5f, w, h);
+            Rect r = UISafeLayout.Px.CenteredPanel(640f, 200f);
             GUI.color = new Color(0f, 0f, 0f, 0.85f);
             GUI.DrawTexture(r, Texture2D.whiteTexture);
             GUI.color = Color.white;
@@ -157,7 +165,8 @@ namespace InsectGame.Core
             // 동기화 충돌(클라우드가 더 최신 + 로컬 진행) 시 선택 모달. CloudSaveManager(위) 이후 생성 — 구독 보장.
             EnsureComponent<InsectGame.UI.SaveConflictUI>("UI/SaveConflictUI");
             // 계정 설정/삭제 패널(Play 필수: 인앱 계정 삭제). AuthManager(위) 이후 생성.
-            EnsureComponent<InsectGame.UI.AccountSettingsUI>("UI/AccountSettingsUI");
+            InsectGame.UI.AccountSettingsUI accountSettingsUi =
+                EnsureComponent<InsectGame.UI.AccountSettingsUI>("UI/AccountSettingsUI");
 
             // 월드/채널 시스템
             WorldChannelManager worldChannel = EnsureComponent<WorldChannelManager>("World/WorldChannel");
@@ -331,6 +340,16 @@ namespace InsectGame.Core
             battleScreen.AutoWire(arenaController);
             raidBattleUi.AutoWire(arenaController);
 
+            // 오프닝은 Play 월드 위에 additive로 재생한다. 조정자를 World 아래에 두어
+            // 재생 중 비활성화할 UI 루트의 자식이 되지 않게 하고, 준비된 런타임 참조만 주입한다.
+            GameObject playUiRoot = EnsureObject("UI");
+            AudioListener gameplayListener = camera.GetComponent<AudioListener>();
+            OpeningReplayCoordinator openingReplay =
+                EnsureComponent<OpeningReplayCoordinator>("World/OpeningReplayCoordinator");
+            openingReplay.AutoWire(playerMov, playUiRoot, camera, gameplayListener,
+                battleScreen, raidBattleUi, minigame);
+            accountSettingsUi.AutoWire(openingReplay);
+
             InsectGame.UI.CaptureChoiceUI captureChoice = EnsureComponent<InsectGame.UI.CaptureChoiceUI>("UI/CaptureChoice");
             captureChoice.AutoWire(minigame, battleController, battleUi, battleTeam, insectCollection, proximityTrigger, capture, dex, trainingMgr, itemInventory, raidController);
             captureChoice.AutoWire(playerMov);
@@ -398,12 +417,12 @@ namespace InsectGame.Core
             CreateGuardians(regionDefs, database);
 
             PlayerMovement playerMovement = player.GetComponent<PlayerMovement>();
-            if (playerMovement != null) playerMovement.AutoWire(regionMgr);
+            if (playerMovement != null)
+            {
+                playerMovement.AutoWire(regionMgr);
+                playerMovement.AutoWire(initialPlayerStartPose);
+            }
             worldFieldUi.AutoWire(worldChannel, playerMovement);
-
-            // 재진입 자동 복귀: 이전 종료 시 SubArea 안이었으면 그 위치로 텔레포트.
-            // 다음 RegionManager.Update가 ContainsPoint 감지 → 자동 SubArea 진입 트리거.
-            regionMgr.RestoreLastSubArea(player.transform);
 
             // 시작 시 frozen은 LoginUI/WorldLobbyUI가 OnGUI로 입력 흡수하므로 불필요.
             // 월드 선택 미완료 시 frozen이 풀리지 않는 버그 회피 (이전: SetFrozen(true) 호출).
@@ -461,8 +480,17 @@ namespace InsectGame.Core
                 battleController, raidController, dex, trainingMgr, battleTeam, regionMgr);
             cloudSave.RegisterReloadable(questManager);
 
+            // 주간 크기 대결 — 매주 저레어 종 하나를 지정하고 그 종 포획 시 기록이 자동 갱신된다.
+            // 기록은 저장하지 않고 player_insects.json의 capturedUnix로 파생하므로 별도 세이브가 없다.
+            WeeklyContestManager weeklyContest =
+                EnsureComponent<WeeklyContestManager>("World/WeeklyContestManager");
+            weeklyContest.AutoWire(insectCollection, database);
+            questManager.AutoWire(weeklyContest);
+
             InsectGame.UI.TutorialQuestUI questUi = EnsureComponent<InsectGame.UI.TutorialQuestUI>("UI/TutorialQuestUI");
-            questUi.AutoWire(questManager);
+            questUi.AutoWire(questManager);   // 주간 대결 대상 종도 questManager를 통해 읽는다
+            // 보상 아이템 표시명 조회용 — 없으면 목록·완료 배너에 아이템 ID 원문이 나온다.
+            questUi.AutoWire(itemDatabase);
 
             // 첫 몇 단계 강제 가이드 오버레이 — 지정 퀘스트 활성 시 코치 배너 + 시작 프리즈, 완료 전 숨김 억제.
             InsectGame.UI.GuidedTutorialController guidedTutorial =
@@ -533,6 +561,13 @@ namespace InsectGame.Core
                 worldInteract.AutoWire(npcManager);
                 worldInteract.AutoWire(storyDirector);   // 스토리 NPC 대화 → NpcTalk 트리거
 
+                // 곤충잡이 아이 대결 — 아이가 잡은 곤충과 1v1. 승리 시 소모품 보상 + 서브퀘스트 진행.
+                InsectGame.NPC.NpcDuelController npcDuel =
+                    EnsureComponent<InsectGame.NPC.NpcDuelController>("World/NpcDuelController");
+                npcDuel.AutoWire(battleController, battleTeam, insectCollection, database,
+                    itemInventory, itemDatabase, regionMgr);
+                worldInteract.AutoWire(npcDuel);
+
                 InsectGame.UI.NpcDialogueUI npcDialogue =
                     EnsureComponent<InsectGame.UI.NpcDialogueUI>("UI/NpcDialogueUI");
                 npcDialogue.AutoWire(playerMov);
@@ -589,6 +624,13 @@ namespace InsectGame.Core
                 camObj.tag = "MainCamera";
             }
 
+            // 씬에 미리 배치된 MainCamera에는 AudioListener가 없을 수 있다. 오프닝 replay가
+            // null listener 때문에 영구 비활성화되지 않도록 재사용 카메라도 같은 불변식을 보장한다.
+            if (camera.GetComponent<AudioListener>() == null)
+            {
+                camera.gameObject.AddComponent<AudioListener>();
+            }
+
             camera.clearFlags = CameraClearFlags.Skybox;
             camera.backgroundColor = new Color(0.5f, 0.8f, 1f);
             // 기준 수직 FOV. 가로 화면(와이드)은 CameraFollower가 종횡비에 맞춰 줌인 보정.
@@ -635,13 +677,36 @@ namespace InsectGame.Core
             light.transform.rotation = Quaternion.Euler(50f, 30f, 0f);
         }
 
-        private GameObject EnsurePlayer()
+        private PlayerStartPose ResolveInitialPlayerStartPose()
+        {
+            if (!buildWorld)
+            {
+                Debug.LogWarning("[PlaySceneBootstrap] 월드 생성이 비활성화되어 플레이어 시작 위치를 원점 fallback으로 설정합니다.");
+                return PlayerStartPlacement.FallbackPose;
+            }
+
+            PlayerStartPose pose = PlayerStartPlacement.ResolveMainVillageEntrance(RegionDefinitions.CreateAll());
+            if (pose.IsFallback)
+            {
+                Debug.LogWarning("[PlaySceneBootstrap] meadow 정의를 찾지 못해 플레이어 시작 위치를 원점 fallback으로 설정합니다.");
+            }
+            return pose;
+        }
+
+        private GameObject EnsurePlayer(PlayerStartPose startPose)
         {
             GameObject player = GameObject.Find("Player");
             if (player == null)
             {
                 player = new GameObject("Player");
-                player.transform.position = new Vector3(0f, 0.1f, 0f);
+            }
+
+            // PlayScene 진입마다 새 Bootstrap 인스턴스가 정확히 한 번 시작 Pose를 적용한다.
+            // 같은 인스턴스에서 Build()가 재호출되어도 플레이 중 위치를 다시 덮지 않는다.
+            if (!initialSpawnApplied)
+            {
+                player.transform.SetPositionAndRotation(startPose.Position, startPose.Rotation);
+                initialSpawnApplied = true;
             }
 
             player.tag = "Player";
@@ -2542,6 +2607,7 @@ namespace InsectGame.Core
             data.baseAtk = 15 + r * 8 + Random.Range(0, 6);
             data.baseDef = 10 + r * 6 + Random.Range(0, 5);
 
+            ApplySizeProfile(data);
             data.skills = GenerateSkillsForInsect(id, name, rarity);
             return data;
         }
@@ -2956,6 +3022,7 @@ namespace InsectGame.Core
             data.baseHp = 44 + rarityIndex * 18 + seed % 12;
             data.baseAtk = 16 + rarityIndex * 9 + (seed / 10) % 7;
             data.baseDef = 12 + rarityIndex * 7 + (seed / 100) % 6;
+            ApplySizeProfile(data);
 
             switch (rarity)
             {
@@ -3455,6 +3522,36 @@ namespace InsectGame.Core
         }
 
 
+        /// <summary>
+        /// 종의 표준 몸길이·무게를 결정적으로 채운다. 등급이 높을수록 크고, 같은 등급 안에서는
+        /// insectId 해시로 ±30% 흩어 놓는다.
+        ///
+        /// <b>Random을 쓰지 않는 게 핵심이다</b> — 주간 크기 대결의 티어 임계가 종 기준값의
+        /// 배수라, 기준값이 세션마다 바뀌면 같은 개체가 어제는 금이고 오늘은 은이 된다.
+        /// 무게는 몸길이의 세제곱에 비례시킨다(30mm ≈ 2g 기준).
+        /// </summary>
+        private void ApplySizeProfile(InsectData data)
+        {
+            if (data == null) return;
+
+            float rarityBaseMm;
+            switch (data.rarity)
+            {
+                case InsectRarity.Uncommon: rarityBaseMm = 30f; break;
+                case InsectRarity.Rare: rarityBaseMm = 42f; break;
+                case InsectRarity.Epic: rarityBaseMm = 58f; break;
+                case InsectRarity.Legendary: rarityBaseMm = 78f; break;
+                default: rarityBaseMm = 22f; break;   // Common
+            }
+
+            int seed = GetStableValue(data.insectId);
+            float spread = 0.7f + (seed % 61) / 100f;   // 0.70 ~ 1.30
+            data.baseSizeMm = Mathf.Clamp(rarityBaseMm * spread, 1f, 500f);
+
+            float ratio = data.baseSizeMm / 30f;
+            data.baseWeightG = Mathf.Clamp(2f * ratio * ratio * ratio, 0.01f, 2000f);
+        }
+
         private int GetStableValue(string text)
         {
             unchecked
@@ -3671,6 +3768,7 @@ namespace InsectGame.Core
                 ?.SetValue(progressUi, xpText);
             progressUi.GetType().GetField("candyText", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
                 ?.SetValue(progressUi, candyText);
+            progressUi.Refresh();
 
             TMP_Text gemsText = CreateTMPText(canvas.transform, "GemsText", new Vector2(20f, -195f), "Gems 0");
             SetAnchorTopLeft(gemsText.rectTransform);
@@ -4005,6 +4103,7 @@ namespace InsectGame.Core
                 ?.SetValue(progressUi, refs.playerXpTextTmp);
             progressUi.GetType().GetField("candyTextTmp", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
                 ?.SetValue(progressUi, refs.playerCandyTextTmp);
+            progressUi.Refresh();
 
             if (refs.listItemPrefab != null)
             {
@@ -4386,6 +4485,10 @@ namespace InsectGame.Core
                 ?.SetValue(ui, countText);
             ui.GetType().GetField("button", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
                 ?.SetValue(ui, button);
+            // 레어도 색·펄스·파티클 그라디언트의 출처. 없으면 GetRarityColor/GetPulseStrength가
+            // 하드코딩 폴백으로 떨어진다(팔레트 애셋은 ItemRarityPaletteBuilder가 생성).
+            ui.GetType().GetField("rarityPalette", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+                ?.SetValue(ui, Resources.Load<Data.ItemRarityPalette>("ItemRarityPalette"));
 
             return ui;
         }

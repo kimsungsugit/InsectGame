@@ -11,6 +11,8 @@ namespace InsectGame.UI
         private LobbyPhase phase = LobbyPhase.Hidden;
         private Vector2 worldScrollPos;
         private Vector2 playerScrollPos;
+        private readonly UIDirectScroll worldDirectScroll = new UIDirectScroll();
+        private readonly UIDirectScroll playerDirectScroll = new UIDirectScroll();
         private string errorMsg;
         private float errorTimer;
 
@@ -56,6 +58,7 @@ namespace InsectGame.UI
 
         public void ShowLobby()
         {
+            ResetAllScrolls();
             // Firebase 미설정 또는 마스터 계정이면 월드 로비 건너뛰기
             bool skipLobby = false;
             if (!FirebaseConfig.IsConfigured)
@@ -87,6 +90,7 @@ namespace InsectGame.UI
         public void HideLobby()
         {
             phase = LobbyPhase.Hidden;
+            ResetAllScrolls();
         }
 
         // ── Lifecycle ──
@@ -111,6 +115,7 @@ namespace InsectGame.UI
                 WorldChannelManager.Instance.WorldListUpdated -= OnWorldListUpdated;
                 WorldChannelManager.Instance.ErrorOccurred -= OnError;
             }
+            ResetAllScrolls();
         }
 
         private void Update()
@@ -123,10 +128,12 @@ namespace InsectGame.UI
                 if (phase == LobbyPhase.InWorld)
                 {
                     phase = LobbyPhase.Hidden;
+                    ResetPlayerScroll();
                 }
                 else if (phase == LobbyPhase.Hidden)
                 {
                     phase = LobbyPhase.InWorld;
+                    ResetPlayerScroll();
                 }
             }
         }
@@ -136,6 +143,7 @@ namespace InsectGame.UI
         private void OnWorldJoined()
         {
             phase = LobbyPhase.Hidden;
+            ResetAllScrolls();
             // 월드 입장 후 플레이어 이동 해금
             PlayerMovement pm = FindFirstObjectByType<PlayerMovement>();
             if (pm != null) pm.SetFrozen(false);
@@ -145,6 +153,7 @@ namespace InsectGame.UI
         private void OnWorldLeft()
         {
             phase = LobbyPhase.WorldSelect;
+            ResetAllScrolls();
             // 로비로 돌아오면 이동 잠금
             PlayerMovement pm = FindFirstObjectByType<PlayerMovement>();
             if (pm != null) pm.SetFrozen(true);
@@ -156,6 +165,7 @@ namespace InsectGame.UI
             if (phase == LobbyPhase.Joining)
             {
                 phase = LobbyPhase.WorldSelect;
+                ResetWorldScroll();
             }
         }
 
@@ -166,7 +176,26 @@ namespace InsectGame.UI
             if (phase == LobbyPhase.Joining)
             {
                 phase = LobbyPhase.WorldSelect;
+                ResetWorldScroll();
             }
+        }
+
+        private void ResetAllScrolls()
+        {
+            ResetWorldScroll();
+            ResetPlayerScroll();
+        }
+
+        private void ResetWorldScroll()
+        {
+            worldScrollPos = Vector2.zero;
+            worldDirectScroll.Reset();
+        }
+
+        private void ResetPlayerScroll()
+        {
+            playerScrollPos = Vector2.zero;
+            playerDirectScroll.Reset();
         }
 
         // ── OnGUI ──
@@ -203,12 +232,11 @@ namespace InsectGame.UI
             bool mobile = UIScale.IsMobileLayout;
             GUI.DrawTexture(new Rect(0, 0, sw, sh), UIHelper.GetCachedTex(BgOverlayCol));
 
-            float pw = mobile ? Mathf.Min(900f, UIScale.ContentWidth(30f)) : 600f;
-            float ph = Mathf.Min(mobile ? 760f : 500f,
-                sh - UIScale.VirtualSafeTop - UIScale.VirtualSafeBottom - 30f);
-            float px = (sw - pw) * 0.5f;
-            float py = UIScale.VirtualSafeTop
-                + (sh - UIScale.VirtualSafeTop - UIScale.VirtualSafeBottom - ph) * 0.5f;
+            Rect panel = UISafeLayout.CenteredPanel(mobile ? 900f : 600f, mobile ? 760f : 500f);
+            float pw = panel.width;
+            float ph = panel.height;
+            float px = panel.x;
+            float py = panel.y;
 
             GUI.Box(new Rect(px, py, pw, ph), "", panelStyle);
 
@@ -226,6 +254,11 @@ namespace InsectGame.UI
             Rect listArea = new Rect(cx, cy, innerW, listH);
             float contentH = Mathf.Max(listH, cachedWorlds.Count * rowStride);
 
+            worldDirectScroll.Handle(
+                ref worldScrollPos,
+                listArea,
+                contentH,
+                rowStride * 0.5f);
             worldScrollPos = GUI.BeginScrollView(listArea, worldScrollPos, new Rect(0, 0, innerW - 20f, contentH));
 
             for (int i = 0; i < cachedWorlds.Count; i++)
@@ -248,6 +281,7 @@ namespace InsectGame.UI
             if (GUI.Button(new Rect(cx, cy, btnW, actionH), "\uc790\ub3d9 \uc785\uc7a5", btnGreenStyle))
             {
                 phase = LobbyPhase.Joining;
+                ResetWorldScroll();
                 if (manager != null) manager.AutoJoinWorld();
             }
 
@@ -261,6 +295,7 @@ namespace InsectGame.UI
             if (GUI.Button(new Rect(cx, cy, innerW, mobile ? 56f : 32f), "오프라인으로 혼자 탐험", btnGrayStyle))
             {
                 phase = LobbyPhase.Hidden;
+                ResetAllScrolls();
                 PlayerMovement pm = FindFirstObjectByType<PlayerMovement>();
                 if (pm != null) pm.SetFrozen(false);
                 TutorialQuestManager.Instance?.BeginTutorialForCurrentAccount();
@@ -312,6 +347,7 @@ namespace InsectGame.UI
                 if (!isFull && manager != null)
                 {
                     phase = LobbyPhase.Joining;
+                    ResetWorldScroll();
                     manager.JoinWorld(world.worldId);
                 }
             }
@@ -326,11 +362,13 @@ namespace InsectGame.UI
             float sh = UIScale.VirtualScreenHeight;
             GUI.DrawTexture(new Rect(0, 0, sw, sh), UIHelper.GetCachedTex(BgOverlayCol));
 
-            float pw = UIScale.IsMobileLayout ? 600f : 300f;
-            float ph = UIScale.IsMobileLayout ? 220f : 150f;
-            float px = (sw - pw) * 0.5f;
-            float py = UIScale.VirtualSafeTop
-                + (sh - UIScale.VirtualSafeTop - UIScale.VirtualSafeBottom - ph) * 0.5f;
+            Rect panel = UISafeLayout.CenteredPanel(
+                UIScale.IsMobileLayout ? 600f : 300f,
+                UIScale.IsMobileLayout ? 220f : 150f);
+            float pw = panel.width;
+            float ph = panel.height;
+            float px = panel.x;
+            float py = panel.y;
 
             GUI.Box(new Rect(px, py, pw, ph), "", panelStyle);
             GUI.Label(new Rect(px, py + 40f, pw, 40f), "\uc6d4\ub4dc \uc811\uc18d \uc911...", subtitleStyle);
@@ -345,14 +383,15 @@ namespace InsectGame.UI
             WorldInstance cw = WorldChannelManager.Instance.CurrentWorld;
 
             bool mobile = UIScale.IsMobileLayout;
-            float pw = mobile ? Mathf.Min(850f, UIScale.ContentWidth(24f)) : 350f;
-            float ph = mobile
-                ? Mathf.Min(620f, UIScale.VirtualScreenHeight - UIScale.VirtualSafeTop - UIScale.VirtualSafeBottom - 24f)
-                : 400f;
-            float px = mobile
-                ? (UIScale.VirtualScreenWidth - pw) * 0.5f
-                : UIScale.VirtualScreenWidth - UIScale.VirtualSafeRight - pw - 20f;
-            float py = UIScale.VirtualSafeTop + 20f;
+            // 모바일은 중앙, 데스크톱은 우측 상단 앵커.
+            Rect panel = UISafeLayout.TopPanel(
+                mobile ? 850f : 350f,
+                mobile ? 620f : 400f,
+                mobile ? UISafeLayout.HAlign.Center : UISafeLayout.HAlign.Right);
+            float pw = panel.width;
+            float ph = panel.height;
+            float px = panel.x;
+            float py = panel.y;
 
             GUI.Box(new Rect(px, py, pw, ph), "", panelStyle);
 
@@ -373,7 +412,13 @@ namespace InsectGame.UI
             float rowStride = mobile ? 58f : 34f;
             float contentH = Mathf.Max(listH, (cw.players != null ? cw.players.Count : 0) * rowStride);
 
-            playerScrollPos = GUI.BeginScrollView(new Rect(cx, cy, innerW, listH), playerScrollPos, new Rect(0, 0, innerW - 16f, contentH));
+            Rect playerListArea = new Rect(cx, cy, innerW, listH);
+            playerDirectScroll.Handle(
+                ref playerScrollPos,
+                playerListArea,
+                contentH,
+                rowStride * 0.5f);
+            playerScrollPos = GUI.BeginScrollView(playerListArea, playerScrollPos, new Rect(0, 0, innerW - 16f, contentH));
 
             if (cw.players != null)
             {

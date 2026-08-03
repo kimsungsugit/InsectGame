@@ -1,13 +1,15 @@
 using InsectGame.Core;
+using InsectGame.Opening;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
 namespace InsectGame.UI
 {
     /// <summary>
-    /// 계정 설정 패널(로그인 시 우하단 "계정" 버튼). 로그아웃 + 계정 삭제 제공.
+    /// 계정 설정 패널(로그인 시 우하단 "계정" 버튼). 오프닝 다시 보기 + 로그아웃 + 계정 삭제 제공.
     /// 계정 삭제는 Play 필수 정책 — 2단계 확인 후 AuthManager.DeleteAccount(서버+로컬 영구 삭제).
-    /// 삭제/로그아웃 성공 시 씬을 리로드해 로그인 화면으로 복귀. 의존성 없음(AuthManager.Instance).
+    /// 삭제/로그아웃 성공 시 씬을 리로드해 로그인 화면으로 복귀.
+    /// 오프닝 서비스는 Bootstrap AutoWire, 인증은 기존 AuthManager.Instance를 사용한다.
     /// </summary>
     public class AccountSettingsUI : MonoBehaviour, IModalUI
     {
@@ -16,6 +18,12 @@ namespace InsectGame.UI
         // 게스트 로그아웃은 계정 삭제와 사실상 같은 결과라 별도 확인 단계를 둔다.
         private bool confirmLogout;
         private bool processing;
+        private IOpeningReplayService openingReplayService;
+
+        public void AutoWire(IOpeningReplayService replayService)
+        {
+            openingReplayService = replayService;
+        }
 
         public bool IsOpen => open;
         public void CloseModal()
@@ -85,6 +93,19 @@ namespace InsectGame.UI
 
         private void OnGUI()
         {
+            UIScale.Begin();
+            try
+            {
+                DrawScaledGUI();
+            }
+            finally
+            {
+                UIScale.End();
+            }
+        }
+
+        private void DrawScaledGUI()
+        {
             if (!LoggedIn())
             {
                 if (open) SetOpen(false);
@@ -107,10 +128,9 @@ namespace InsectGame.UI
 
         private void DrawOpenButton()
         {
-            float w = 116f, h = 46f;
-            float x = Screen.width - w - 16f - SafeArea.Right;
-            float y = Screen.height - h - 16f - SafeArea.Bottom; // 제스처바 위로
-            if (GUI.Button(new Rect(x, y, w, h), "계정", openBtnStyle))
+            // 우측 하단 앵커 — 제스처바 + 세로 마진 위로.
+            Rect btn = UISafeLayout.BottomPanel(116f, 46f, UISafeLayout.HAlign.Right);
+            if (GUI.Button(btn, "계정", openBtnStyle))
             {
                 confirmDelete = false;
                 confirmLogout = false;
@@ -126,13 +146,16 @@ namespace InsectGame.UI
             // 아래에 깔리면서도 모달로 등록돼 "안 보이는데 입력만 먹는" 상태가 된다.
             GUI.depth = -20;
             GUI.color = new Color(0f, 0f, 0f, 0.55f);
-            GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.whiteTexture);
+            float screenWidth = UIScale.VirtualScreenWidth;
+            float screenHeight = UIScale.VirtualScreenHeight;
+            GUI.DrawTexture(new Rect(0, 0, screenWidth, screenHeight), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
-            float pw = Mathf.Min(660f, Screen.width * 0.88f);
-            float ph = (confirmDelete || confirmLogout) ? 440f : 380f;
-            float px = (Screen.width - pw) * 0.5f;
-            float py = (Screen.height - ph) * 0.5f;
+            Rect panel = UISafeLayout.CenteredPanel(660f, (confirmDelete || confirmLogout) ? 440f : 448f);
+            float pw = panel.width;
+            float ph = panel.height;
+            float px = panel.x;
+            float py = panel.y;
             GUI.Box(new Rect(px, py, pw, ph), "", panelStyle);
 
             GUI.Label(new Rect(px, py + 24f, pw, 46f), "계정", titleStyle);
@@ -144,6 +167,17 @@ namespace InsectGame.UI
 
             if (!confirmDelete && !confirmLogout)
             {
+                bool wasEnabled = GUI.enabled;
+                GUI.enabled = wasEnabled && openingReplayService != null && openingReplayService.CanReplay;
+                if (GUI.Button(new Rect(cx, y, cw, 56f), "오프닝 다시 보기", btnGrayStyle))
+                {
+                    bool started = ReplayOpening();
+                    GUI.enabled = wasEnabled;
+                    if (started) return;
+                }
+                GUI.enabled = wasEnabled;
+                y += 68f;
+
                 if (GUI.Button(new Rect(cx, y, cw, 56f), "로그아웃", btnGrayStyle))
                 {
                     // 게스트는 refresh token이 유일한 재진입 수단이다. 로그아웃하면 그 토큰이
@@ -207,6 +241,31 @@ namespace InsectGame.UI
             }
         }
 
+        private bool ReplayOpening()
+        {
+            IOpeningReplayService replayService = openingReplayService;
+            SetOpen(false);
+
+            bool started = false;
+            try
+            {
+                started = replayService != null && replayService.TryReplay();
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning($"[AccountSettingsUI] 오프닝 다시 보기 시작 실패: {e.Message}");
+            }
+
+            if (started) return true;
+
+            // 전환을 시작하지 못했다면 사용자가 작업을 잃지 않도록 계정 패널을 복구한다.
+            if (LoggedIn()) SetOpen(true);
+            message = "오프닝을 시작할 수 없습니다. 잠시 후 다시 시도해주세요.";
+            messageError = true;
+            messageTimer = 4f;
+            return false;
+        }
+
         private static bool IsGuestAccount()
         {
             return AuthManager.Instance != null && AuthManager.Instance.IsGuest;
@@ -231,10 +290,11 @@ namespace InsectGame.UI
         {
             if (messageTimer <= 0f || string.IsNullOrEmpty(message)) return;
             EnsureStyles();
-            float w = Mathf.Min(560f, Screen.width * 0.7f);
+            float w = Mathf.Min(560f, UIScale.ContentWidth() * 0.7f);
             float h = 54f;
-            float x = (Screen.width - w) * 0.5f;
-            float y = Screen.height * 0.5f - 200f;
+            float x = UIScale.VirtualSafeLeft + (UIScale.ContentWidth(0f) - w) * 0.5f;
+            // 안전 영역 중앙보다 200 위 — 마진 위로는 넘지 않는다.
+            float y = Mathf.Max(UISafeLayout.ContentTop, UISafeLayout.CenteredY(h) - 200f);
 
             GUI.color = messageError ? new Color(0.35f, 0.08f, 0.08f, 0.92f) : new Color(0.08f, 0.25f, 0.12f, 0.92f);
             GUI.DrawTexture(new Rect(x, y, w, h), Texture2D.whiteTexture);

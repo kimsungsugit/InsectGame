@@ -16,10 +16,12 @@ tools:
 
 ### Battle 모듈 (전체)
 - `Assets/Scripts/Battle/InsectBattleController.cs` - 1v1 턴제 배틀 로직
+- `Assets/Scripts/Battle/BattleCaptureChanceCalculator.cs` - 1v1 승리 후 포획 확률·롤 판정
 - `Assets/Scripts/Battle/InsectBattleStats.cs` - 스탯 계산/데미지 적용
 - `Assets/Scripts/Battle/InsectBattleUIController.cs` - 배틀 UI 브릿지
 - `Assets/Scripts/Battle/RaidBattleController.cs` - 5v1 레이드
 - `Assets/Scripts/Battle/BattleArenaController.cs` - 배틀 아레나 ※비주얼은 visual-dev
+- `Assets/Scripts/NPC/NpcDuelController.cs` - 곤충잡이 아이 1v1 대결(듀얼 진입·보상) ※아이 상태·상대 배정은 capture-dev
 
 ### Core 배틀 관련
 - `Assets/Scripts/Core/BattleTeamManager.cs` - 5슬롯 팀 관리
@@ -55,6 +57,15 @@ HP×5, ATK×1.5, DEF×1.3
 ### 도주
 ```
 escapeChance = clamp(0.5 + (playerLv-enemyLv)×0.05, 0.1, 0.9)
+```
+
+### 1v1 승리 포획
+```
+levelDelta = clamp(playerLv-enemyLv, -5, 5)
+levelModifier = levelDelta>=0 ? levelDelta×0.02 : levelDelta×0.03
+captureChance = clamp(0.90 - rarityIndex×0.07 - clamp01(captureDifficulty)×0.50
+                      + levelModifier + max(0,itemBonus) + max(0,outfitBonus),
+                      0.10, 0.95)
 ```
 
 ## 공유 파일 수정 경계

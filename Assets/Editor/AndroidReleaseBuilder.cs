@@ -170,12 +170,14 @@ namespace InsectGame.Editor
 
             bool reimport = importer.textureType != TextureImporterType.Default
                 || importer.mipmapEnabled
-                || importer.maxTextureSize < 2048;
+                || importer.maxTextureSize < 2048
+                || importer.textureCompression != TextureImporterCompression.Uncompressed;
             if (reimport)
             {
                 importer.textureType = TextureImporterType.Default;
                 importer.mipmapEnabled = false;
                 importer.maxTextureSize = 2048;
+                importer.textureCompression = TextureImporterCompression.Uncompressed;
                 importer.SaveAndReimport();
             }
 
@@ -191,7 +193,9 @@ namespace InsectGame.Editor
                 bool changed = false;
                 foreach (PlatformIcon slot in slots)
                 {
-                    if (slot.layerCount != 1) continue;
+                    // layerCount는 현재 할당된 텍스처 수라 빈 단일 레이어 슬롯도 0이다.
+                    // 슬롯이 허용하는 최대 레이어 수로 legacy/round 단일 이미지 슬롯을 판별한다.
+                    if (slot.maxLayerCount != 1) continue;
                     slot.SetTexture(icon, 0);
                     changed = true;
                 }

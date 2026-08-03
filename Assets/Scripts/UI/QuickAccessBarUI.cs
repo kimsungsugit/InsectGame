@@ -123,8 +123,8 @@ namespace InsectGame.UI
             float gap = 6f;
             float totalW = buttons.Length * btnW + (buttons.Length - 1) * gap;
             float startX = (UIScale.VirtualScreenWidth - totalW) / 2f;
-            // 제스처바(하단 세이프 인셋) 위로 — 픽셀 인셋을 가상 단위로 변환.
-            float y = UIScale.VirtualScreenHeight - btnH - 16f - SafeArea.Bottom / UIScale.Scale;
+            // 제스처바(하단 세이프 인셋) + 세로 마진 위로.
+            float y = UISafeLayout.BottomY(btnH);
 
             GUI.color = new Color(0, 0, 0, 0.5f);
             GUI.DrawTexture(new Rect(startX - 14, y - 8, totalW + 28, btnH + 16), Texture2D.whiteTexture);
@@ -170,18 +170,16 @@ namespace InsectGame.UI
         {
             EnsureMobileStyles();
             int n = buttons.Length;
-            float safeT = UIScale.VirtualSafeTop;
-            float safeB = UIScale.VirtualSafeBottom;
             float safeR = UIScale.VirtualSafeRight;
             float gap = 8f;
             float colW = 152f;
             // 우측 상단 정렬 — 우하단의 원형 '잡기' 버튼 + '계정' 버튼 공간을 비운다.
             // 상단 ~60% 영역에 10개를 배치(셀 높이 적응, 터치 최소 48).
-            float regionH = (UIScale.VirtualScreenHeight - safeT - safeB) * 0.6f;
+            float regionH = UISafeLayout.ContentHeight * 0.6f;
             float cellH = Mathf.Clamp((regionH - 12f - (n - 1) * gap) / n, 48f, 88f);
             float totalH = n * cellH + (n - 1) * gap;
             float colX = UIScale.VirtualScreenWidth - safeR - colW - 14f;
-            float colY = safeT + 12f;
+            float colY = UISafeLayout.ContentTop;
 
             // 컬럼 배경(가독성, 필드 가림 최소화를 위해 옅게)
             GUI.color = new Color(0f, 0f, 0f, 0.3f);

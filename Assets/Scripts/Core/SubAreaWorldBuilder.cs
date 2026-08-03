@@ -231,7 +231,7 @@ namespace InsectGame.Core
             float w = Mathf.Min(620f, availableWidth);
             float h = 100f;
             float x = (Screen.width - w) * 0.5f;
-            float y = Screen.height - SafeArea.Bottom - h - 44f;
+            float y = UISafeLayout.Px.BottomY(h);
             return new Rect(x, y, w, h);
         }
 

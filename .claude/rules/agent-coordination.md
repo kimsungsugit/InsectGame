@@ -21,6 +21,9 @@ description: 공유 파일별 에이전트 수정 경계와 충돌 방지 절차
 | | battle-dev | 팀 유효성 검증, 전투력 표시 로직 |
 | `CaptureChoiceUI.cs` | ui-dev | 선택지 레이아웃, 키 안내 |
 | | capture-dev | 포획/배틀/레이드 분기 조건 로직 |
+| `NpcDuelController.cs` | battle-dev | 듀얼 진입(StartDuel 호출), 승패 처리, 보상 표 |
+| | capture-dev | 아이 상태·재도전 쿨다운, 상대 곤충 배정(EnsureDuelInsect) |
+| | game-designer | 보상 아이템 종류·수량, 레벨 스프레드 |
 | `InsectEntity.cs` | capture-dev | 스폰/디스폰, 풀 관리, 월드 배치 |
 | | visual-dev | BuildModel() 프로시저럴 모델, 애니메이션, 샤이니 |
 | `BattleArenaController.cs` | battle-dev | 아레나 상태, 전투 환경 설정 |

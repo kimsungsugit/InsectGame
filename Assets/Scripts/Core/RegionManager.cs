@@ -66,6 +66,15 @@ namespace InsectGame.Core
         public void Initialize(RegionData[] regionList)
         {
             regions = regionList;
+
+            // 이전 버전은 마지막으로 진입한 SubArea를 전역 PlayerPrefs에 남겨 다음 실행 때
+            // 자동 복귀했다. 이제 플레이어는 항상 마을에서 시작하므로 레거시 키를 1회 정리한다.
+            if (PlayerPrefs.HasKey(GameConstants.PrefsKeys.LastSubAreaId))
+            {
+                PlayerPrefs.DeleteKey(GameConstants.PrefsKeys.LastSubAreaId);
+                PlayerPrefs.Save();
+            }
+
             LoadUnlockState();
         }
 
@@ -145,37 +154,6 @@ namespace InsectGame.Core
             if (nearbySubArea == null || currentSubArea != null) return;
             currentSubArea = nearbySubArea;
             SubAreaChanged?.Invoke(currentSubArea);
-            PlayerPrefs.SetString(GameConstants.PrefsKeys.LastSubAreaId, currentSubArea.subAreaId);
-            PlayerPrefs.Save();
-        }
-
-        // --- SubArea 재진입 자동 복귀 ---
-
-        public void RestoreLastSubArea(Transform playerTransform)
-        {
-            if (playerTransform == null || regions == null) return;
-            string lastId = PlayerPrefs.GetString(GameConstants.PrefsKeys.LastSubAreaId, "");
-            if (string.IsNullOrEmpty(lastId)) return;
-
-            foreach (var r in regions)
-            {
-                if (r == null || r.subAreas == null) continue;
-                foreach (var sub in r.subAreas)
-                {
-                    if (sub != null && sub.subAreaId == lastId)
-                    {
-                        Vector3 dest = sub.centerPosition;
-                        dest.y = playerTransform.position.y;
-                        playerTransform.position = dest;
-
-                        // 첫 Update 전에 currentSubArea를 즉시 설정 → PlayerMovement의 region 가드 회귀 차단
-                        currentRegion = r;
-                        currentSubArea = sub;
-                        SubAreaChanged?.Invoke(currentSubArea);
-                        return;
-                    }
-                }
-            }
         }
 
         // --- 지역 잠금 시스템 ---

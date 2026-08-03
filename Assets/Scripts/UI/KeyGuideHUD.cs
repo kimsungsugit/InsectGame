@@ -98,7 +98,7 @@ namespace InsectGame.UI
             if (inMinigame) rowCount++;
             if (battleActive) rowCount++;
             float bgH = (rowCount + 1) * lineH + 20;
-            float y = UIScale.VirtualScreenHeight - bgH - 18f;
+            float y = UISafeLayout.BottomY(bgH);
 
             GUI.color = new Color(0, 0, 0, 0.6f);
             GUI.DrawTexture(new Rect(x - 8, y - 8, 560, bgH), Texture2D.whiteTexture);
@@ -154,7 +154,7 @@ namespace InsectGame.UI
             float safeL = UIScale.VirtualSafeLeft;
             float safeR = UIScale.VirtualSafeRight;
             float x = safeL + (UIScale.VirtualScreenWidth - safeL - safeR - w) / 2f;
-            float y = UIScale.VirtualSafeTop + 14f;
+            float y = UISafeLayout.ContentTop;
 
             GUI.color = new Color(0, 0, 0, 0.6f);
             GUI.DrawTexture(new Rect(x, y, w, h), Texture2D.whiteTexture);
@@ -175,7 +175,7 @@ namespace InsectGame.UI
             float w = 440f;
             float h = 220f;
             float x = UIScale.VirtualScreenWidth - w - 20;
-            float y = 60f;
+            float y = UISafeLayout.ContentTop;
 
             GUI.color = new Color(0, 0, 0, 0.6f);
             GUI.DrawTexture(new Rect(x, y, w, h), Texture2D.whiteTexture);

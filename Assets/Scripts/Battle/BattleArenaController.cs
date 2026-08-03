@@ -403,40 +403,357 @@ namespace InsectGame.Battle
             if (teamModels == null || bossModel == null) { onComplete?.Invoke(); yield break; }
 
             Vector3 bossPos = bossModel.transform.position;
-
+            Vector3[] starts = new Vector3[teamModels.Length];
+            bool[] active = new bool[teamModels.Length];
             for (int i = 0; i < teamModels.Length; i++)
             {
                 if (teamModels[i] == null) continue;
-                Vector3 start = teamModels[i].transform.position;
-                float dur = 0.25f;
-                float t = 0f;
-                while (t < dur)
+                starts[i] = teamModels[i].transform.position;
+                active[i] = true;
+            }
+
+            // 모든 팀원이 같은 타임라인에서 동시에 돌진한다. 이전 구현은 멤버마다
+            // yield한 뒤 복귀해 합체공격이 사실상 5연속 단일 공격처럼 보였다.
+            playingSkill = true;
+            const float rushDuration = 0.42f;
+            float t = 0f;
+            while (t < rushDuration)
+            {
+                t += Time.deltaTime;
+                float progress = Mathf.Clamp01(t / rushDuration);
+                float eased = progress * progress * (3f - 2f * progress);
+                for (int i = 0; i < teamModels.Length; i++)
                 {
-                    t += Time.deltaTime;
-                    float progress = t / dur;
-                    float eased = progress * progress;
-                    Vector3 pos = Vector3.Lerp(start, bossPos, eased * 0.6f);
+                    if (!active[i] || teamModels[i] == null) continue;
+                    float spread = (i - (teamModels.Length - 1) * 0.5f) * 0.18f;
+                    Vector3 target = bossPos + Vector3.right * spread;
+                    Vector3 pos = Vector3.Lerp(starts[i], target, eased * 0.78f);
                     pos.y += Mathf.Sin(eased * Mathf.PI) * 0.5f;
                     teamModels[i].transform.position = pos;
-                    yield return null;
                 }
-
-                CreateImpactEffect(bossPos);
-                StartCoroutine(ShakeModel(bossModel, 0.2f, 0.4f));
-
-                t = 0f;
-                while (t < 0.15f)
-                {
-                    t += Time.deltaTime;
-                    teamModels[i].transform.position = Vector3.Lerp(bossPos * 0.5f + start * 0.5f, start, t / 0.15f);
-                    yield return null;
-                }
-                teamModels[i].transform.position = start;
+                yield return null;
             }
 
             CreateBigExplosion(bossPos);
-            yield return new WaitForSeconds(0.5f);
+            StartCoroutine(ShakeModel(bossModel, 0.45f, 0.5f));
+            if (cachedCameraFollower == null && Camera.main != null)
+                cachedCameraFollower = Camera.main.GetComponent<CameraFollower>();
+            if (cachedCameraFollower != null)
+                cachedCameraFollower.Shake(0.55f, 0.55f);
 
+            const float returnDuration = 0.28f;
+            t = 0f;
+            Vector3[] contacts = new Vector3[teamModels.Length];
+            for (int i = 0; i < teamModels.Length; i++)
+                if (active[i] && teamModels[i] != null)
+                    contacts[i] = teamModels[i].transform.position;
+            while (t < returnDuration)
+            {
+                t += Time.deltaTime;
+                float progress = Mathf.Clamp01(t / returnDuration);
+                for (int i = 0; i < teamModels.Length; i++)
+                {
+                    if (!active[i] || teamModels[i] == null) continue;
+                    teamModels[i].transform.position = Vector3.Lerp(contacts[i], starts[i], progress);
+                }
+                yield return null;
+            }
+
+            for (int i = 0; i < teamModels.Length; i++)
+                if (active[i] && teamModels[i] != null)
+                    teamModels[i].transform.position = starts[i];
+
+            playingSkill = false;
+            onComplete?.Invoke();
+        }
+
+        /// <summary>
+        /// 레이드 팀 행동을 같은 타임라인에 겹쳐 재생한다. 슬롯과 속성 배열은 같은 길이여야 하며,
+        /// 사망/누락 모델은 자동으로 건너뛴다.
+        /// </summary>
+        public void PlayRaidVolley(
+            int[] slots,
+            InsectElement[] elements,
+            System.Action onComplete)
+        {
+            StartCoroutine(RaidVolleyCoroutine(slots, elements, onComplete));
+        }
+
+        private IEnumerator RaidVolleyCoroutine(
+            int[] slots,
+            InsectElement[] elements,
+            System.Action onComplete)
+        {
+            int count = slots != null ? slots.Length : 0;
+            if (!isActive || bossModel == null || teamModels == null || count == 0)
+            {
+                onComplete?.Invoke();
+                yield break;
+            }
+
+            GameObject[] attackers = new GameObject[count];
+            Vector3[] starts = new Vector3[count];
+            Vector3[] contacts = new Vector3[count];
+            GameObject[] projectiles = new GameObject[count];
+            bool[] melee = new bool[count];
+            bool[] valid = new bool[count];
+            bool[] impacted = new bool[count];
+            Vector3 bossPos = bossModel.transform.position;
+            int validCount = 0;
+
+            for (int i = 0; i < count; i++)
+            {
+                int slot = slots[i];
+                if (slot < 0 || slot >= teamModels.Length || teamModels[slot] == null)
+                    continue;
+
+                attackers[i] = teamModels[slot];
+                starts[i] = attackers[i].transform.position;
+                InsectElement element = elements != null && i < elements.Length
+                    ? elements[i]
+                    : InsectElement.Bug;
+                melee[i] = IsMeleeElement(element);
+                valid[i] = true;
+                validCount++;
+
+                if (!melee[i])
+                {
+                    projectiles[i] = CreateElementProjectile(element, GetElementColor3D(element));
+                    projectiles[i].transform.position = starts[i] + Vector3.up * 0.5f;
+                }
+            }
+
+            if (validCount == 0)
+            {
+                onComplete?.Invoke();
+                yield break;
+            }
+
+            playingSkill = true;
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.PlaySFX(SfxType.SkillUse);
+
+            // 0.035초의 짧은 스태거만 두어 충돌음은 연속으로 들리되, 한 마리가 복귀한 뒤
+            // 다음 멤버가 출발하는 직렬 연출은 만들지 않는다.
+            const float stagger = 0.035f;
+            const float actionDuration = 0.46f;
+            float totalDuration = actionDuration + Mathf.Max(0, count - 1) * stagger;
+            float timer = 0f;
+            while (timer < totalDuration)
+            {
+                timer += Time.deltaTime;
+                for (int i = 0; i < count; i++)
+                {
+                    if (!valid[i] || attackers[i] == null) continue;
+                    float local = Mathf.Clamp01((timer - i * stagger) / actionDuration);
+                    if (local <= 0f) continue;
+
+                    int slot = slots[i];
+                    float spread = (slot - (teamModels.Length - 1) * 0.5f) * 0.16f;
+                    Vector3 target = bossPos + Vector3.right * spread + Vector3.up * 0.15f;
+                    float eased = local * local * (3f - 2f * local);
+                    InsectElement element = elements != null && i < elements.Length
+                        ? elements[i]
+                        : InsectElement.Bug;
+                    Color elementColor = GetElementColor3D(element);
+
+                    if (melee[i])
+                    {
+                        Vector3 pos = Vector3.Lerp(starts[i], target, eased * 0.78f);
+                        pos.y += Mathf.Sin(eased * Mathf.PI) * 0.65f;
+                        attackers[i].transform.position = pos;
+                        CreateTrailParticle(pos, elementColor, 0.08f);
+                    }
+                    else if (projectiles[i] != null)
+                    {
+                        Vector3 start = starts[i] + Vector3.up * 0.5f;
+                        Vector3 pos = Vector3.Lerp(start, target, eased);
+                        pos += GetElementTrajectoryOffset(element, local);
+                        projectiles[i].transform.position = pos;
+                        projectiles[i].transform.Rotate(Vector3.up, 720f * Time.deltaTime);
+                        CreateTrailParticle(pos, elementColor, 0.07f);
+                    }
+
+                    if (!impacted[i] && local >= 0.98f)
+                    {
+                        impacted[i] = true;
+                        contacts[i] = attackers[i].transform.position;
+                        if (projectiles[i] != null)
+                        {
+                            Destroy(projectiles[i]);
+                            projectiles[i] = null;
+                        }
+                        CreateElementImpact3D(target, element, elementColor);
+                    }
+                }
+                yield return null;
+            }
+
+            StartCoroutine(ShakeModel(bossModel, 0.42f, 0.42f));
+            if (cachedCameraFollower == null && Camera.main != null)
+                cachedCameraFollower = Camera.main.GetComponent<CameraFollower>();
+            if (cachedCameraFollower != null)
+                cachedCameraFollower.Shake(0.38f, 0.42f);
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.PlaySFX(SfxType.Hit);
+
+            const float returnDuration = 0.26f;
+            timer = 0f;
+            while (timer < returnDuration)
+            {
+                timer += Time.deltaTime;
+                float progress = Mathf.Clamp01(timer / returnDuration);
+                for (int i = 0; i < count; i++)
+                {
+                    if (!valid[i] || !melee[i] || attackers[i] == null) continue;
+                    attackers[i].transform.position = Vector3.Lerp(contacts[i], starts[i], progress);
+                }
+                yield return null;
+            }
+
+            for (int i = 0; i < count; i++)
+            {
+                if (projectiles[i] != null) Destroy(projectiles[i]);
+                if (valid[i] && attackers[i] != null)
+                    attackers[i].transform.position = starts[i];
+            }
+
+            playingSkill = false;
+            onComplete?.Invoke();
+        }
+
+        /// <summary>
+        /// 레이드 보스의 예고된 단일/전체 공격을 실제 대상 모델에 동시 재생한다.
+        /// </summary>
+        public void PlayRaidBossAttack(
+            InsectElement element,
+            bool isAoe,
+            int targetSlot,
+            System.Action onComplete)
+        {
+            StartCoroutine(RaidBossAttackCoroutine(element, isAoe, targetSlot, onComplete));
+        }
+
+        private IEnumerator RaidBossAttackCoroutine(
+            InsectElement element,
+            bool isAoe,
+            int targetSlot,
+            System.Action onComplete)
+        {
+            if (!isActive || bossModel == null || teamModels == null)
+            {
+                onComplete?.Invoke();
+                yield break;
+            }
+
+            List<GameObject> targets = new List<GameObject>();
+            if (isAoe)
+            {
+                for (int i = 0; i < teamModels.Length; i++)
+                    if (teamModels[i] != null)
+                        targets.Add(teamModels[i]);
+            }
+            else if (targetSlot >= 0 && targetSlot < teamModels.Length && teamModels[targetSlot] != null)
+            {
+                targets.Add(teamModels[targetSlot]);
+            }
+            else
+            {
+                GameObject fallback = ResolveBossTarget();
+                if (fallback != null) targets.Add(fallback);
+            }
+
+            if (targets.Count == 0)
+            {
+                onComplete?.Invoke();
+                yield break;
+            }
+
+            playingSkill = true;
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.PlaySkillSFX(element);
+
+            Vector3 bossStart = bossModel.transform.position;
+            Vector3 targetCenter = Vector3.zero;
+            for (int i = 0; i < targets.Count; i++)
+                targetCenter += targets[i].transform.position;
+            targetCenter /= targets.Count;
+
+            bool meleeAttack = IsMeleeElement(element);
+            GameObject[] projectiles = meleeAttack ? null : new GameObject[targets.Count];
+            if (!meleeAttack)
+            {
+                Color color = GetElementColor3D(element);
+                for (int i = 0; i < targets.Count; i++)
+                {
+                    projectiles[i] = CreateElementProjectile(element, color);
+                    projectiles[i].transform.position = bossStart + Vector3.up * 0.6f;
+                }
+            }
+
+            const float castDuration = 0.42f;
+            float timer = 0f;
+            while (timer < castDuration)
+            {
+                timer += Time.deltaTime;
+                float progress = Mathf.Clamp01(timer / castDuration);
+                float eased = progress * progress * (3f - 2f * progress);
+                if (meleeAttack)
+                {
+                    Vector3 lungeTarget = Vector3.Lerp(bossStart, targetCenter, isAoe ? 0.22f : 0.52f);
+                    Vector3 pos = Vector3.Lerp(bossStart, lungeTarget, eased);
+                    pos.y += Mathf.Sin(progress * Mathf.PI) * (isAoe ? 1.4f : 0.8f);
+                    bossModel.transform.position = pos;
+                }
+                else
+                {
+                    for (int i = 0; i < targets.Count; i++)
+                    {
+                        if (projectiles[i] == null || targets[i] == null) continue;
+                        Vector3 end = targets[i].transform.position + Vector3.up * 0.4f;
+                        Vector3 pos = Vector3.Lerp(bossStart + Vector3.up * 0.6f, end, eased);
+                        pos += GetElementTrajectoryOffset(element, progress);
+                        projectiles[i].transform.position = pos;
+                        CreateTrailParticle(pos, GetElementColor3D(element), 0.09f);
+                    }
+                }
+                yield return null;
+            }
+
+            Color impactColor = GetElementColor3D(element);
+            for (int i = 0; i < targets.Count; i++)
+            {
+                if (projectiles != null && projectiles[i] != null)
+                    Destroy(projectiles[i]);
+                if (targets[i] == null) continue;
+                CreateElementImpact3D(targets[i].transform.position, element, impactColor);
+                StartCoroutine(ShakeModel(targets[i], 0.42f, isAoe ? 0.32f : 0.42f));
+            }
+
+            if (isAoe)
+                CreateBigExplosion(targetCenter);
+            if (cachedCameraFollower == null && Camera.main != null)
+                cachedCameraFollower = Camera.main.GetComponent<CameraFollower>();
+            if (cachedCameraFollower != null)
+                cachedCameraFollower.Shake(isAoe ? 0.55f : 0.35f, isAoe ? 0.55f : 0.35f);
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.PlaySFX(SfxType.Hit);
+
+            const float recoverDuration = 0.30f;
+            Vector3 bossContact = bossModel.transform.position;
+            timer = 0f;
+            while (timer < recoverDuration)
+            {
+                timer += Time.deltaTime;
+                bossModel.transform.position = Vector3.Lerp(
+                    bossContact,
+                    bossStart,
+                    Mathf.Clamp01(timer / recoverDuration));
+                yield return null;
+            }
+            bossModel.transform.position = bossStart;
+
+            playingSkill = false;
             onComplete?.Invoke();
         }
 

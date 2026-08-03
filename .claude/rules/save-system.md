@@ -61,5 +61,16 @@ questSideProgress/questSideRepeat)와 직렬화/파싱/업로드/복원 4곳을 
 - `isPoisoned`/`isParalyzed` 기본 `false`(무상태) — 마이그레이션 무해.
 - **클라우드는 자동**: `CloudSaveManager`가 player_insects.json 블롭 전체를 저장하므로 PlayerInsectData
   필드 추가에 DTO 4점 변경 불필요(퀘스트 세이브와 다름).
+
+## 곤충 크기·포획시각 (player_insects.json)
+
+- **`sizeRoll` 기본값 `-1`(미초기화 센티넬)** — `currentHp`와 같은 방식이다. 로드 루프의
+  `EnsureSize`가 `-1`이면 **`instanceId` 해시**로 채운다(`InsectSizeCalculator.RollFromInstanceId`).
+  0으로 채우면 구세이브 곤충이 전부 최소 크기가 되고, 매번 새로 굴리면 볼 때마다 크기가 바뀐다.
+- **`capturedUnix` 기본 `0`(미상)** — 주간 크기 대결 집계에서 "이번 주 아님"으로 자연히 걸러지므로
+  마이그레이션이 필요 없다.
+- **주간 대결 기록은 저장하지 않는다.** 보유 곤충 중 대상 종이면서 `capturedUnix`가 이번 주에 든
+  개체의 최대 크기를 매번 파생한다 — 블롭이 이미 클라우드 동기라 기록도 기기 간에 따라온다.
+  PlayerPrefs에 저장하는 건 보상 수령 상태(`WeeklyContestClaimed`, "주차:등급") 하나뿐이다.
 - 전투 종료/교체 시 `PlayerInsectCollection.SetAfterBattle`이 남은 HP·감염을 기록(무료 전체치료 없음).
   치료는 병원/치료 아이템의 `HealInsect`/`FullHeal`/`CurePoison`/`CureParalysis`로만.

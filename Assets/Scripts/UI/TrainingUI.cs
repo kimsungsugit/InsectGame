@@ -19,6 +19,7 @@ namespace InsectGame.UI
         private int selectedMethodIndex = -1;
         private string pendingNewSkillId;
         private Vector2 scrollPos;
+        private readonly UIDirectScroll directScroll = new UIDirectScroll();
         private string feedbackMsg;
         private float feedbackTimer;
 
@@ -91,14 +92,14 @@ namespace InsectGame.UI
         private static readonly Color LearnBtnOffCol = new Color(0.2f, 0.2f, 0.2f);
         private static readonly Color LearnedTagGreenCol = new Color(0.3f, 0.9f, 0.5f);
         private static readonly Color EquipSlotBgCol = new Color(0.1f, 0.12f, 0.18f, 0.85f);
-        private static readonly Color EquipSlotNumGrayCol = new Color(0.3f, 0.3f, 0.4f);
-        private static readonly Color EquipInfoGrayCol = new Color(0.55f, 0.55f, 0.55f);
+        private static readonly Color EquipSlotNumGrayCol = new Color(0.58f, 0.62f, 0.76f);
+        private static readonly Color EquipInfoGrayCol = new Color(0.72f, 0.72f, 0.76f);
         private static readonly Color EquipRemBgCol = new Color(0.4f, 0.2f, 0.2f);
-        private static readonly Color EquipEmptyGrayCol = new Color(0.35f, 0.35f, 0.4f);
+        private static readonly Color EquipEmptyGrayCol = new Color(0.66f, 0.66f, 0.72f);
         private static readonly Color EquipLearnedHeaderBlueCol = new Color(0.7f, 0.75f, 1f);
         private static readonly Color EquipLearnedBgCol = new Color(0.08f, 0.1f, 0.15f, 0.8f);
-        private static readonly Color EquipNameDimCol = new Color(0.5f, 0.5f, 0.5f);
-        private static readonly Color EquipLearnedInfoCol = new Color(0.45f, 0.45f, 0.45f);
+        private static readonly Color EquipNameDimCol = new Color(0.66f, 0.66f, 0.7f);
+        private static readonly Color EquipLearnedInfoCol = new Color(0.68f, 0.68f, 0.72f);
         private static readonly Color EquipEqBgCol = new Color(0.2f, 0.4f, 0.3f);
         private static readonly Color EquipEqTagGreenCol = new Color(0.4f, 0.7f, 0.4f);
         private static readonly Color ReplaceHeaderGrayCol = new Color(0.7f, 0.7f, 0.7f);
@@ -108,9 +109,9 @@ namespace InsectGame.UI
         private static readonly Color ReplaceCancelBgCol = new Color(0.3f, 0.3f, 0.35f);
         private static readonly Color CardLearnedBgCol = new Color(0.08f, 0.1f, 0.14f, 0.7f);
         private static readonly Color CardActiveBgCol = new Color(0.1f, 0.12f, 0.18f, 0.85f);
-        private static readonly Color CardLearnedNameCol = new Color(0.45f, 0.45f, 0.45f);
-        private static readonly Color CardDescGrayCol = new Color(0.5f, 0.5f, 0.5f);
-        private static readonly Color CardCdGrayCol = new Color(0.45f, 0.45f, 0.5f);
+        private static readonly Color CardLearnedNameCol = new Color(0.68f, 0.68f, 0.72f);
+        private static readonly Color CardDescGrayCol = new Color(0.72f, 0.72f, 0.76f);
+        private static readonly Color CardCdGrayCol = new Color(0.66f, 0.66f, 0.72f);
 
         private void InitTrainDetailStyles()
         {
@@ -137,7 +138,14 @@ namespace InsectGame.UI
             equipNameStyle = new GUIStyle(GUI.skin.label) { fontSize = 32, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             equipSlotNumStyle = new GUIStyle(GUI.skin.label) { fontSize = 40, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             equipSlotNumStyle.normal.textColor = EquipSlotNumGrayCol;
-            equipSlotNameStyle = new GUIStyle(GUI.skin.label) { fontSize = 30, fontStyle = FontStyle.Bold };
+            equipSlotNameStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 29,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleLeft,
+                wordWrap = true,
+                clipping = TextClipping.Clip
+            };
             equipSlotInfoStyle = new GUIStyle(GUI.skin.label) { fontSize = 30 };
             equipSlotInfoStyle.normal.textColor = EquipInfoGrayCol;
             equipRemBtnStyle = new GUIStyle(GUI.skin.button) { fontSize = 30 };
@@ -145,7 +153,14 @@ namespace InsectGame.UI
             equipEmptyStyle.normal.textColor = EquipEmptyGrayCol;
             equipLearnedHeaderStyle = new GUIStyle(GUI.skin.label) { fontSize = 30, fontStyle = FontStyle.Bold };
             equipLearnedHeaderStyle.normal.textColor = EquipLearnedHeaderBlueCol;
-            equipLearnedNameStyle = new GUIStyle(GUI.skin.label) { fontSize = 32, fontStyle = FontStyle.Bold };
+            equipLearnedNameStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 29,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleLeft,
+                wordWrap = true,
+                clipping = TextClipping.Clip
+            };
             equipLearnedInfoStyle = new GUIStyle(GUI.skin.label) { fontSize = 28 };
             equipLearnedInfoStyle.normal.textColor = EquipLearnedInfoCol;
             equipEqBtnStyle = new GUIStyle(GUI.skin.button) { fontSize = 28 };
@@ -153,13 +168,34 @@ namespace InsectGame.UI
             equipEqTagStyle.normal.textColor = EquipEqTagGreenCol;
             replaceHeaderStyle = new GUIStyle(GUI.skin.label) { fontSize = 34, alignment = TextAnchor.MiddleCenter };
             replaceHeaderStyle.normal.textColor = ReplaceHeaderGrayCol;
-            replaceNewStyle = new GUIStyle(GUI.skin.label) { fontSize = 32, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            replaceOldNameStyle = new GUIStyle(GUI.skin.label) { fontSize = 32, fontStyle = FontStyle.Bold };
+            replaceNewStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 30,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleCenter,
+                wordWrap = true,
+                clipping = TextClipping.Clip
+            };
+            replaceOldNameStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 29,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleLeft,
+                wordWrap = true,
+                clipping = TextClipping.Clip
+            };
             replaceOldInfoStyle = new GUIStyle(GUI.skin.label) { fontSize = 30 };
             replaceOldInfoStyle.normal.textColor = ReplaceOldInfoCol;
             replaceForgetBtnStyle = new GUIStyle(GUI.skin.button) { fontSize = 32, fontStyle = FontStyle.Bold };
             replaceCancelBtnStyle = new GUIStyle(GUI.skin.button) { fontSize = 30 };
-            cardSkillNameStyle = new GUIStyle(GUI.skin.label) { fontSize = 32, fontStyle = FontStyle.Bold };
+            cardSkillNameStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 29,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleLeft,
+                wordWrap = true,
+                clipping = TextClipping.Clip
+            };
             cardDescStyle = new GUIStyle(GUI.skin.label) { fontSize = 30, wordWrap = true };
             cardDescStyle.normal.textColor = CardDescGrayCol;
             cardCdStyle = new GUIStyle(GUI.skin.label) { fontSize = 28 };
@@ -211,17 +247,30 @@ namespace InsectGame.UI
         public void Toggle()
         {
             isOpen = !isOpen;
-            if (isOpen) { page = Page.InsectSelect; selectedInstanceId = null; selectedMethodIndex = -1; }
+            if (isOpen)
+            {
+                ChangePage(Page.InsectSelect);
+                selectedInstanceId = null;
+                selectedMethodIndex = -1;
+            }
+            else
+            {
+                directScroll.Reset();
+            }
             if (isOpen) ModalUIRegistry.Register(this);
             else ModalUIRegistry.Unregister(this);
         }
         public void CloseModal()
         {
             isOpen = false;
+            directScroll.Reset();
             ModalUIRegistry.Unregister(this);
         }
         private void OnDisable()
         {
+            isOpen = false;
+            pendingNewSkillId = null;
+            directScroll.Reset();
             ModalUIRegistry.Unregister(this);
             if (collection != null)
                 collection.InsectUpdated -= HandleInsectUpdated;
@@ -230,6 +279,13 @@ namespace InsectGame.UI
         private void Update()
         {
             if (feedbackTimer > 0) feedbackTimer -= Time.deltaTime;
+        }
+
+        private void ChangePage(Page nextPage)
+        {
+            page = nextPage;
+            scrollPos = Vector2.zero;
+            directScroll.Reset();
         }
 
         private void OnGUI()
@@ -254,16 +310,14 @@ namespace InsectGame.UI
         private void DrawPanel(string title, out float px, out float py, out float pw, out float ph)
         {
             InitTrainDetailStyles();
-            pw = Mathf.Min(1000f, UIScale.ContentWidth(24f));
-            ph = Mathf.Min(1000f,
-                UIScale.VirtualScreenHeight - UIScale.VirtualSafeTop - UIScale.VirtualSafeBottom - 40f);
-            px = (UIScale.VirtualScreenWidth - pw) / 2f;
-            py = (UIScale.VirtualScreenHeight - ph) / 2f;
+            Rect panel = UISafeLayout.CenteredPanel(1000f, 1000f);
+            pw = panel.width;
+            ph = panel.height;
+            px = panel.x;
+            py = panel.y;
 
-            GUI.color = PanelBgCol;
-            GUI.DrawTexture(new Rect(px, py, pw, ph), Texture2D.whiteTexture);
-            GUI.color = PanelHeaderCol;
-            GUI.DrawTexture(new Rect(px, py, pw, 70), Texture2D.whiteTexture);
+            UISurface.Card(new Rect(px, py, pw, ph), PanelBgCol, UITheme.Instance.surfaceBorder);
+            UISurface.Rounded(new Rect(px + 3f, py + 3f, pw - 6f, 70f), PanelHeaderCol);
             GUI.color = PanelAccentOrangeCol;
             GUI.DrawTexture(new Rect(px, py + 70, pw, 5), Texture2D.whiteTexture);
 
@@ -297,8 +351,15 @@ namespace InsectGame.UI
             float listH = ph - 138;
             float itemH = UIScale.IsMobileLayout ? 150f : 130f;
             Rect area = new Rect(px + 10, listY, pw - 20, listH);
-            Rect view = new Rect(0, 0, area.width - 20, owned.Count * itemH);
-            scrollPos = GUI.BeginScrollView(area, scrollPos, view);
+            float contentHeight = owned.Count * itemH;
+            Rect view = new Rect(0, 0, area.width, contentHeight);
+            directScroll.Handle(ref scrollPos, area, contentHeight, itemH * 0.35f);
+            scrollPos = GUI.BeginScrollView(
+                area,
+                scrollPos,
+                view,
+                GUIStyle.none,
+                GUIStyle.none);
 
             for (int i = 0; i < owned.Count; i++)
             {
@@ -307,8 +368,7 @@ namespace InsectGame.UI
                 Rect r = new Rect(0, i * itemH, view.width, itemH - 3);
 
                 Color rc = data != null ? UITheme.Instance.GetInsectRarityColor(data.rarity) : Color.gray;
-                GUI.color = TrainItemBgCol;
-                GUI.DrawTexture(r, Texture2D.whiteTexture);
+                UISurface.Card(r, TrainItemBgCol, UITheme.Instance.surfaceBorder);
                 GUI.color = rc;
                 GUI.DrawTexture(new Rect(r.x, r.y, 6, r.height), Texture2D.whiteTexture);
 
@@ -318,22 +378,23 @@ namespace InsectGame.UI
                 // 캐시 스타일 + textColor만 동적 갱신 (BattleScreenUI 패턴).
                 insectSelectNameStyle.normal.textColor = rc;
                 GUI.color = Color.white;
-                string name = data != null
-                    ? $"{data.displayName} #{GetShortInstanceId(pid)}"
-                    : $"{pid.insectId} #{GetShortInstanceId(pid)}";
+                // #코드 미표시 — 개체 구분은 아래 줄의 레벨·스킬 수·크기가 맡는다.
+                string name = data != null ? data.displayName : pid.insectId;
                 GUI.Label(new Rect(r.x + 120, r.y + 14, r.width - 290, 44), name, insectSelectNameStyle);
 
                 int learned = pid.learnedSkillIds != null ? pid.learnedSkillIds.Count : 0;
+                string sizeStr = data != null
+                    ? "  |  " + InsectSizeCalculator.SizeLabel(InsectSizeCalculator.SizeMm(data, pid))
+                    : string.Empty;
                 GUI.Label(new Rect(r.x + 120, r.y + 66, r.width - 290, 38),
-                    $"Lv.{pid.level}  |  스킬: {learned}/{PlayerInsectData.MaxLearnedSkills}  |  장착: {pid.EquippedCount()}/{PlayerInsectData.MaxEquipSlots}", insectSelectInfoStyle);
+                    $"Lv.{pid.level}  |  스킬: {learned}/{PlayerInsectData.MaxLearnedSkills}  |  장착: {pid.EquippedCount()}/{PlayerInsectData.MaxEquipSlots}{sizeStr}", insectSelectInfoStyle);
 
                 GUI.backgroundColor = TrainBtnGreenCol;
                 float trainH = UIScale.IsMobileLayout ? 64f : 52f;
                 if (GUI.Button(new Rect(r.x + r.width - 160, r.y + r.height / 2f - trainH * 0.5f, 140, trainH), "훈련", insectSelectBtnStyle))
                 {
                     selectedInstanceId = pid.instanceId;
-                    page = Page.MethodSelect;
-                    scrollPos = Vector2.zero;
+                    ChangePage(Page.MethodSelect);
                 }
                 GUI.backgroundColor = Color.white;
             }
@@ -343,11 +404,11 @@ namespace InsectGame.UI
         private void DrawMethodSelect()
         {
             DrawPanel("CHOOSE TRAINING", out float px, out float py, out float pw, out float ph);
-            if (DrawBackButton(px, py)) { page = Page.InsectSelect; return; }
+            if (DrawBackButton(px, py)) { ChangePage(Page.InsectSelect); return; }
 
             PlayerInsectData pid = GetPid();
             InsectData data = pid != null ? collection.GetInsectData(pid.insectId) : null;
-            if (pid == null) { page = Page.InsectSelect; return; }
+            if (pid == null) { ChangePage(Page.InsectSelect); return; }
 
             Color rc = data != null ? UITheme.Instance.GetInsectRarityColor(data.rarity) : Color.gray;
             // 캐시 + textColor 동적 갱신.
@@ -362,10 +423,7 @@ namespace InsectGame.UI
 
             GUI.backgroundColor = MethodEquipBtnCol;
             if (GUI.Button(new Rect(px + pw - 240f, py + 76f, 220f, UIScale.IsMobileLayout ? 64f : 50f), "스킬 장착", methodEquipBtnStyle))
-            {
-                page = Page.SkillEquip;
-                scrollPos = Vector2.zero;
-            }
+                ChangePage(Page.SkillEquip);
             GUI.backgroundColor = Color.white;
 
             if (trainingManager == null || trainingManager.Methods == null) return;
@@ -374,8 +432,15 @@ namespace InsectGame.UI
             float cardH = 172f;
             // 6개 방식이 세로/가로 캔버스를 넘지 않도록 스크롤 컨테이너로 감싼다.
             Rect area = new Rect(px + 10, py + 138, pw - 20, ph - 150);
-            Rect view = new Rect(0, 0, area.width - 20, methods.Length * (cardH + 8));
-            scrollPos = GUI.BeginScrollView(area, scrollPos, view);
+            float contentHeight = methods.Length * (cardH + 8);
+            Rect view = new Rect(0, 0, area.width, contentHeight);
+            directScroll.Handle(ref scrollPos, area, contentHeight, cardH * 0.35f);
+            scrollPos = GUI.BeginScrollView(
+                area,
+                scrollPos,
+                view,
+                GUIStyle.none,
+                GUIStyle.none);
             float cardW = view.width;
 
             for (int i = 0; i < methods.Length; i++)
@@ -414,8 +479,7 @@ namespace InsectGame.UI
                 if (GUI.Button(new Rect(cardW - 150, cy + cardH / 2f - startButtonH * 0.5f, 130, startButtonH), "시작", methodTrainBtnStyle))
                 {
                     selectedMethodIndex = i;
-                    page = Page.SkillLearn;
-                    scrollPos = Vector2.zero;
+                    ChangePage(Page.SkillLearn);
                 }
                 GUI.enabled = true;
                 GUI.backgroundColor = Color.white;
@@ -426,10 +490,14 @@ namespace InsectGame.UI
         private void DrawSkillLearn()
         {
             DrawPanel("LEARN SKILLS", out float px, out float py, out float pw, out float ph);
-            if (DrawBackButton(px, py)) { page = Page.MethodSelect; return; }
+            if (DrawBackButton(px, py)) { ChangePage(Page.MethodSelect); return; }
 
             PlayerInsectData pid = GetPid();
-            if (pid == null || trainingManager == null || selectedMethodIndex < 0) { page = Page.MethodSelect; return; }
+            if (pid == null || trainingManager == null || selectedMethodIndex < 0)
+            {
+                ChangePage(Page.MethodSelect);
+                return;
+            }
 
             TrainingMethod method = trainingManager.Methods[selectedMethodIndex];
             InsectSkill[] skills = trainingManager.GetAvailableSkills(method, pid);
@@ -439,10 +507,17 @@ namespace InsectGame.UI
 
             float listY = py + 128;
             float listH = ph - 138;
-            float itemH = UIScale.IsMobileLayout ? 168f : 152f;
+            float itemH = UIScale.IsMobileLayout ? 176f : 164f;
             Rect area = new Rect(px + 10, listY, pw - 20, listH);
-            Rect view = new Rect(0, 0, area.width - 20, skills.Length * itemH);
-            scrollPos = GUI.BeginScrollView(area, scrollPos, view);
+            float contentHeight = skills.Length * itemH;
+            Rect view = new Rect(0, 0, area.width, contentHeight);
+            directScroll.Handle(ref scrollPos, area, contentHeight, itemH * 0.35f);
+            scrollPos = GUI.BeginScrollView(
+                area,
+                scrollPos,
+                view,
+                GUIStyle.none,
+                GUIStyle.none);
 
             for (int i = 0; i < skills.Length; i++)
             {
@@ -467,8 +542,7 @@ namespace InsectGame.UI
                         if (isFull)
                         {
                             pendingNewSkillId = skill.skillId;
-                            page = Page.SkillReplace;
-                            scrollPos = Vector2.zero;
+                            ChangePage(Page.SkillReplace);
                         }
                         else if (trainingManager.TrainSkill(method, pid, skill.skillId))
                         {
@@ -481,7 +555,8 @@ namespace InsectGame.UI
                 }
                 else
                 {
-                    GUI.Label(new Rect(r.x + r.width - 180, r.y + r.height / 2f - 20, 160, 40), "습득완료", learnedTagStyle);
+                    GUI.Label(new Rect(r.x + r.width - 180, r.y + r.height / 2f - 28, 160, 56),
+                        "습득완료", learnedTagStyle);
                 }
             }
             GUI.EndScrollView();
@@ -490,10 +565,10 @@ namespace InsectGame.UI
         private void DrawSkillEquip()
         {
             DrawPanel("EQUIP SKILLS", out float px, out float py, out float pw, out float ph);
-            if (DrawBackButton(px, py)) { page = Page.MethodSelect; return; }
+            if (DrawBackButton(px, py)) { ChangePage(Page.MethodSelect); return; }
 
             PlayerInsectData pid = GetPid();
-            if (pid == null) { page = Page.InsectSelect; return; }
+            if (pid == null) { ChangePage(Page.InsectSelect); return; }
 
             InsectData data = collection.GetInsectData(pid.insectId);
             Color rc = data != null ? UITheme.Instance.GetInsectRarityColor(data.rarity) : Color.gray;
@@ -503,7 +578,7 @@ namespace InsectGame.UI
                 $"{(data != null ? data.displayName : pid.insectId)} - Skill Slots", equipNameStyle);
 
             float slotY = py + 128;
-            float slotH = UIScale.IsMobileLayout ? 116f : 102f;
+            float slotH = UIScale.IsMobileLayout ? 126f : 112f;
 
             for (int i = 0; i < PlayerInsectData.MaxEquipSlots; i++)
             {
@@ -511,8 +586,7 @@ namespace InsectGame.UI
                 string eqId = pid.GetEquippedSkill(i);
                 InsectSkill eqSkill = eqId != null ? trainingManager.GetSkill(eqId) : null;
 
-                GUI.color = EquipSlotBgCol;
-                GUI.DrawTexture(new Rect(px + 15, sy, pw - 30, slotH), Texture2D.whiteTexture);
+                UISurface.Card(new Rect(px + 15, sy, pw - 30, slotH), EquipSlotBgCol, UITheme.Instance.surfaceBorder);
 
                 GUI.color = Color.white;
                 GUI.Label(new Rect(px + 15, sy, 60, slotH), $"{i + 1}", equipSlotNumStyle);
@@ -524,13 +598,15 @@ namespace InsectGame.UI
                     GUI.DrawTexture(new Rect(px + 15, sy, 5, slotH), Texture2D.whiteTexture);
                     GUI.color = Color.white;
 
-                    equipSlotNameStyle.normal.textColor = sc;
-                    GUI.Label(new Rect(px + 90, sy + 14, pw - 320, 40), eqSkill.displayName, equipSlotNameStyle);
+                    equipSlotNameStyle.normal.textColor = SkillUILayout.GetReadableAccent(sc);
+                    GUI.Label(new Rect(px + 90, sy + 8, pw - 320, 52),
+                        eqSkill.displayName, equipSlotNameStyle);
 
                     string typeStr = eqSkill.effectType == SkillEffectType.Damage ? $"DMG {eqSkill.power}" :
                                      eqSkill.effectType == SkillEffectType.BuffAttack ? $"ATK UP +{eqSkill.effectValue * 100:0}%" :
                                      $"ATK DOWN -{eqSkill.effectValue * 100:0}%";
-                    GUI.Label(new Rect(px + 90, sy + 60, pw - 320, 38), $"{typeStr}  |  CD: {eqSkill.cooldownTurns}t", equipSlotInfoStyle);
+                    GUI.Label(new Rect(px + 90, sy + 64, pw - 320, 40),
+                        $"{typeStr}  |  CD: {eqSkill.cooldownTurns}t", equipSlotInfoStyle);
 
                     GUI.backgroundColor = EquipRemBgCol;
                     float removeButtonH = UIScale.IsMobileLayout ? 62f : 48f;
@@ -552,12 +628,19 @@ namespace InsectGame.UI
 
             float listY2 = learnedY + 50;
             float listH2 = ph - (listY2 - py) - 10;
-            float itemH2 = UIScale.IsMobileLayout ? 100f : 84f;
+            float itemH2 = UIScale.IsMobileLayout ? 108f : 96f;
 
             List<string> learned = pid.learnedSkillIds ?? new List<string>();
             Rect area = new Rect(px + 15, listY2, pw - 30, listH2);
-            Rect viewR = new Rect(0, 0, area.width - 20, learned.Count * itemH2);
-            scrollPos = GUI.BeginScrollView(area, scrollPos, viewR);
+            float contentHeight = learned.Count * itemH2;
+            Rect viewR = new Rect(0, 0, area.width, contentHeight);
+            directScroll.Handle(ref scrollPos, area, contentHeight, itemH2 * 0.35f);
+            scrollPos = GUI.BeginScrollView(
+                area,
+                scrollPos,
+                viewR,
+                GUIStyle.none,
+                GUIStyle.none);
 
             for (int i = 0; i < learned.Count; i++)
             {
@@ -567,18 +650,20 @@ namespace InsectGame.UI
                 Rect r = new Rect(0, i * itemH2, viewR.width, itemH2 - 3);
                 bool isEquipped = IsEquipped(pid, sk.skillId);
 
-                GUI.color = EquipLearnedBgCol;
-                GUI.DrawTexture(r, Texture2D.whiteTexture);
+                UISurface.Card(r, EquipLearnedBgCol, UITheme.Instance.surfaceBorder);
 
                 Color sc2 = GetSkillColor(sk.effectType);
                 GUI.color = sc2;
                 GUI.DrawTexture(new Rect(r.x, r.y, 5, r.height), Texture2D.whiteTexture);
                 GUI.color = Color.white;
 
-                equipLearnedNameStyle.normal.textColor = isEquipped ? EquipNameDimCol : sc2;
-                GUI.Label(new Rect(r.x + 16, r.y + 10, r.width - 210, 40), sk.displayName, equipLearnedNameStyle);
+                equipLearnedNameStyle.normal.textColor = isEquipped
+                    ? EquipNameDimCol
+                    : SkillUILayout.GetReadableAccent(sc2);
+                GUI.Label(new Rect(r.x + 16, r.y + 6, r.width - 210, 48),
+                    sk.displayName, equipLearnedNameStyle);
 
-                GUI.Label(new Rect(r.x + 16, r.y + 52, r.width - 210, 34),
+                GUI.Label(new Rect(r.x + 16, r.y + 56, r.width - 210, 36),
                     sk.effectType == SkillEffectType.Damage ? $"DMG {sk.power}" : sk.effectType.ToString(), equipLearnedInfoStyle);
 
                 if (!isEquipped && pid.EquippedCount() < PlayerInsectData.MaxEquipSlots)
@@ -613,14 +698,22 @@ namespace InsectGame.UI
         private void DrawSkillReplace()
         {
             DrawPanel("REPLACE SKILL", out float px, out float py, out float pw, out float ph);
-            if (DrawBackButton(px, py)) { page = Page.SkillLearn; pendingNewSkillId = null; return; }
+            if (DrawBackButton(px, py))
+            {
+                ChangePage(Page.SkillLearn);
+                pendingNewSkillId = null;
+                return;
+            }
 
             PlayerInsectData pid = GetPid();
             if (pid == null || trainingManager == null || string.IsNullOrEmpty(pendingNewSkillId))
-            { page = Page.SkillLearn; return; }
+            {
+                ChangePage(Page.SkillLearn);
+                return;
+            }
 
             InsectSkill newSkill = trainingManager.GetSkill(pendingNewSkillId);
-            if (newSkill == null) { page = Page.SkillLearn; return; }
+            if (newSkill == null) { ChangePage(Page.SkillLearn); return; }
 
             TrainingMethod method = selectedMethodIndex >= 0 ? trainingManager.Methods[selectedMethodIndex] : null;
             int replaceCost = trainingManager.GetTrainingCost(method, pid, pendingNewSkillId);
@@ -630,64 +723,88 @@ namespace InsectGame.UI
                 replaceHeaderStyle);
 
             Color nc = GetSkillColor(newSkill.effectType);
-            replaceNewStyle.normal.textColor = nc;
+            replaceNewStyle.normal.textColor = SkillUILayout.GetReadableAccent(nc);
             string newInfo = newSkill.effectType == SkillEffectType.Damage ? $"DMG {newSkill.power}" :
                              newSkill.effectType == SkillEffectType.BuffAttack ? $"ATK UP +{newSkill.effectValue * 100:0}%" :
                              $"ATK DOWN -{newSkill.effectValue * 100:0}%";
-            GUI.Label(new Rect(px, py + 128, pw, 42), $"New: {newSkill.displayName}  ({newInfo})", replaceNewStyle);
+            GUI.Label(new Rect(px + 24f, py + 124, pw - 48f, 58),
+                $"New: {newSkill.displayName}  ({newInfo})", replaceNewStyle);
 
             GUI.color = nc;
-            GUI.DrawTexture(new Rect(px + 100, py + 176, pw - 200, 2), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(px + 100, py + 188, pw - 200, 2), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
-            float startY = py + 192;
             float cardH = 140f;
             System.Collections.Generic.List<string> learned = pid.learnedSkillIds ?? new System.Collections.Generic.List<string>();
+            float cancelY = py + ph - 72f;
+            Rect listArea = new Rect(
+                px + 15f,
+                py + 204f,
+                pw - 30f,
+                Mathf.Max(80f, cancelY - (py + 204f) - 12f));
+            float contentHeight = GetSkillReplacementContentHeight(learned.Count);
+            Rect viewRect = new Rect(0f, 0f, listArea.width, contentHeight);
+            directScroll.Handle(ref scrollPos, listArea, contentHeight, cardH * 0.35f);
+            scrollPos = GUI.BeginScrollView(
+                listArea,
+                scrollPos,
+                viewRect,
+                GUIStyle.none,
+                GUIStyle.none);
 
             for (int i = 0; i < learned.Count; i++)
             {
                 InsectSkill old = trainingManager.GetSkill(learned[i]);
                 if (old == null) continue;
 
-                float cy = startY + i * (cardH + 4);
+                float cy = i * (cardH + 4f);
                 Color oc = GetSkillColor(old.effectType);
 
-                GUI.color = ReplaceOldBgCol;
-                GUI.DrawTexture(new Rect(px + 15, cy, pw - 30, cardH), Texture2D.whiteTexture);
+                UISurface.Card(new Rect(0f, cy, viewRect.width, cardH), ReplaceOldBgCol, UITheme.Instance.surfaceBorder);
                 GUI.color = oc;
-                GUI.DrawTexture(new Rect(px + 15, cy, 6, cardH), Texture2D.whiteTexture);
+                GUI.DrawTexture(new Rect(0f, cy, 6f, cardH), Texture2D.whiteTexture);
                 GUI.color = Color.white;
 
-                replaceOldNameStyle.normal.textColor = oc;
-                GUI.Label(new Rect(px + 40, cy + 12, pw - 300, 44), old.displayName, replaceOldNameStyle);
+                replaceOldNameStyle.normal.textColor = SkillUILayout.GetReadableAccent(oc);
+                GUI.Label(new Rect(25f, cy + 8f, viewRect.width - 270f, 52f),
+                    old.displayName, replaceOldNameStyle);
 
                 string oldInfo = old.effectType == SkillEffectType.Damage ? $"DMG {old.power}" :
                                  old.effectType == SkillEffectType.BuffAttack ? $"ATK UP +{old.effectValue * 100:0}%" :
                                  $"ATK DOWN -{old.effectValue * 100:0}%";
-                GUI.Label(new Rect(px + 40, cy + 64, pw - 300, 38), $"{oldInfo}  |  CD: {old.cooldownTurns}t", replaceOldInfoStyle);
+                GUI.Label(new Rect(25f, cy + 66f, viewRect.width - 270f, 40f),
+                    $"{oldInfo}  |  CD: {old.cooldownTurns}t", replaceOldInfoStyle);
 
                 GUI.backgroundColor = ReplaceForgetBgCol;
-                if (GUI.Button(new Rect(px + pw - 210, cy + cardH / 2f - 28, 160, 56), "잊기", replaceForgetBtnStyle))
+                if (GUI.Button(
+                    new Rect(viewRect.width - 195f, cy + cardH / 2f - 28f, 160f, 56f),
+                    "잊기",
+                    replaceForgetBtnStyle))
                 {
                     if (method != null && trainingManager.TrainSkill(method, pid, pendingNewSkillId, old.skillId))
                     {
                         feedbackMsg = $"{old.displayName}을 잊고 {newSkill.displayName}을 습득했습니다!";
                         feedbackTimer = 2.5f;
                         pendingNewSkillId = null;
-                        page = Page.SkillLearn;
-                        scrollPos = Vector2.zero;
+                        ChangePage(Page.SkillLearn);
                     }
                 }
                 GUI.backgroundColor = Color.white;
             }
+            GUI.EndScrollView();
 
             GUI.backgroundColor = ReplaceCancelBgCol;
-            if (GUI.Button(new Rect(px + pw / 2f - 100, py + ph - 72, 200, 56), "Cancel", replaceCancelBtnStyle))
+            if (GUI.Button(new Rect(px + pw / 2f - 100, cancelY, 200, 56), "Cancel", replaceCancelBtnStyle))
             {
                 pendingNewSkillId = null;
-                page = Page.SkillLearn;
+                ChangePage(Page.SkillLearn);
             }
             GUI.backgroundColor = Color.white;
+        }
+
+        internal static float GetSkillReplacementContentHeight(int learnedSkillCount)
+        {
+            return Mathf.Max(0, learnedSkillCount) * 144f;
         }
 
         private void DrawSkillCard(Rect r, InsectSkill skill, bool learned, Color accent)
@@ -702,16 +819,21 @@ namespace InsectGame.UI
             GUI.color = Color.white;
 
             // textColor 동적 갱신 (learned/sc).
-            cardSkillNameStyle.normal.textColor = learned ? CardLearnedNameCol : sc;
-            GUI.Label(new Rect(r.x + 18, r.y + 12, r.width - 200, 42), skill.displayName, cardSkillNameStyle);
+            cardSkillNameStyle.normal.textColor = learned
+                ? CardLearnedNameCol
+                : SkillUILayout.GetReadableAccent(sc);
+            GUI.Label(new Rect(r.x + 18, r.y + 6, r.width - 200, 58),
+                skill.displayName, cardSkillNameStyle);
 
             string elementName = InsectTypeChart.GetDisplayName(skill.element);
             string typeStr = skill.effectType == SkillEffectType.Damage ? $"{elementName} 타입 · 데미지: {skill.power}" :
                              skill.effectType == SkillEffectType.BuffAttack ? $"{elementName} 타입 · ATK UP +{skill.effectValue * 100:0}% ({skill.effectDurationTurns}t)" :
                              $"{elementName} 타입 · ATK DOWN -{skill.effectValue * 100:0}% ({skill.effectDurationTurns}t)";
-            GUI.Label(new Rect(r.x + 18, r.y + 58, r.width - 200, 38), typeStr, cardDescStyle);
+            GUI.Label(new Rect(r.x + 18, r.y + 66, r.width - 200, 50),
+                typeStr, cardDescStyle);
 
-            GUI.Label(new Rect(r.x + 18, r.y + 100, r.width - 200, 34), $"쿨다운: {skill.cooldownTurns}턴", cardCdStyle);
+            GUI.Label(new Rect(r.x + 18, r.y + 120, r.width - 200, 34),
+                $"쿨다운: {skill.cooldownTurns}턴", cardCdStyle);
         }
 
         private void DrawFeedback()
@@ -766,14 +888,5 @@ namespace InsectGame.UI
             if (candyInventory == null) candyInventory = candy;
         }
 
-        private static string GetShortInstanceId(PlayerInsectData data)
-        {
-            if (data == null || string.IsNullOrEmpty(data.instanceId))
-            {
-                return "----";
-            }
-
-            return data.instanceId.Substring(0, Mathf.Min(6, data.instanceId.Length)).ToUpperInvariant();
-        }
     }
 }

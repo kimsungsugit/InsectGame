@@ -26,21 +26,31 @@ tools:
 - `Assets/Scripts/UI/TrainingUI.cs` - 훈련 UI
 - `Assets/Scripts/UI/CollectionUI.cs` - 보유 곤충 UI
 - `Assets/Scripts/UI/BattleTeamUI.cs` - 팀 편성 UI ※배틀 로직은 battle-dev
+- `Assets/Scripts/UI/HospitalUI.cs` - 병원 치료·아이템 대상 선택 UI
 - `Assets/Scripts/UI/RegionMapUI.cs` - 지역 맵 UI
 - `Assets/Scripts/UI/SettingsPanel.cs` - 설정 패널
+- `Assets/Scripts/UI/AccountSettingsUI.cs` - 계정/오프닝 다시 보기 패널
 - `Assets/Scripts/UI/LoginUI.cs` - 로그인 화면
 - `Assets/Scripts/UI/CashShopUI.cs` - 캐시샵 화면
 - `Assets/Scripts/UI/CharacterOutfitUI.cs` - 의상 UI
 - `Assets/Scripts/UI/CharacterViewerUI.cs` - 캐릭터 뷰어
 - `Assets/Scripts/UI/QuickAccessBarUI.cs` - 퀵액세스 바
+- `Assets/Scripts/UI/SocialPvpUI.cs` - 소셜 PvP 로비·스킬 선택 UI
 - `Assets/Scripts/UI/TutorialQuestUI.cs` - 튜토리얼 퀘스트 UI
 - `Assets/Scripts/UI/GuidedTutorialController.cs` - 첫 몇 단계 강제 가이드 오버레이(코치 배너+시작 프리즈) ※퀘스트 이벤트는 TutorialQuestManager(Core)
 - `Assets/Scripts/UI/WorldLobbyUI.cs` - 월드 로비
 - `Assets/Scripts/UI/CharacterPortraitRenderer.cs` - 통합 캐릭터 포트레이트 렌더러
 - `Assets/Scripts/UI/UIHelper.cs` - UI 유틸리티
 - `Assets/Scripts/UI/UIScale.cs` - 1920×1080 기준 가상 좌표계 / GUI.matrix 자동 스케일링
+- `Assets/Scripts/UI/UISafeLayout.cs` - 세이프에어리어 + 세로 마진 배치 하네스 (패널 Rect의 단일 출처, `rules/ui-layout.md`)
+- `Assets/Scripts/UI/UISurface.cs` - 둥근 카드·그림자·호버 공용 서피스 (전 화면 표면 처리의 단일 출처). 색은 UITheme 토큰에서만 받는다
+- `Assets/Scripts/UI/QuestListLayout.cs` - 퀘스트 목록 아코디언 가변 높이 순수 계산
+- `Assets/Scripts/UI/UIDirectScroll.cs` - IMGUI 목록 휠·터치 드래그 직접 스크롤
 - `Assets/Scripts/UI/UITheme.cs` - UI 테마/스타일
 - `Assets/Scripts/UI/UITween.cs` - UI 트윈 애니메이션
+
+### 오프닝 UI
+- `Assets/Scripts/Opening/OpeningSceneController.cs` - 오프닝 타임라인 입력·IMGUI 렌더링·화면 전환
 
 ### Core UI 컨트롤러
 - `Assets/Scripts/Core/PlayerCurrencyUIController.cs` - 재화 UI
@@ -52,6 +62,7 @@ tools:
 - `Assets/Scripts/Core/ItemInventoryGridItem.cs` - 그리드 아이템 위젯
 - `Assets/Scripts/Core/ShopUIController.cs` - 샵 UI 컨트롤러
 - `Assets/Scripts/UI/NpcDialogueUI.cs` - NPC 대화 모달 (레이아웃/렌더) ※대사 내용은 game-designer
+- `Assets/Scripts/Core/QuestRewardFormatter.cs` - 퀘스트 보상 표시 문자열 조립 (배너·목록 공용) ※보상 수치 자체는 game-designer
 
 ### Editor
 - `Assets/Editor/PlayUIPrefabGenerator.cs` - UI 프리팹 자동 생성

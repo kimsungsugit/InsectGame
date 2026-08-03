@@ -141,11 +141,11 @@ namespace InsectGame.UI
             InitStyles();
 
             float panelW = 480f;
-            float panelH = 540f;
+            float panelH = UISafeLayout.ClampHeight(540f);
             float margin = 20f;
-            // 세이프 에어리어(노치/상태바) 안쪽으로 — 가상 좌표라 픽셀 인셋을 Scale로 변환.
+            // 세이프 에어리어(노치/상태바) 안쪽으로 — 세로는 하네스의 ContentTop(인셋 + 세로 마진).
             float safeL = SafeArea.Left / UIScale.Scale;
-            float py = margin + SafeArea.Top / UIScale.Scale;
+            float py = UISafeLayout.ContentTop;
 
             // 닫힘 상태에서는 패널을 화면 밖으로 '완전히' 밀어 잘린 숫자가 새어 보이지 않게 한다.
             // (기존엔 50px 띠만 남겨 우측 정렬된 스탯 값이 잘린 채 노출돼 깨져 보였음 — 가로/세로 공통 버그)

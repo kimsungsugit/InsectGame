@@ -262,6 +262,10 @@ namespace InsectGame.Editor
             SetPrivateField(gridItemUi, "rarityParticles", particles);
             gridItem.gameObject.SetActive(false);
             refs.inventoryGridItemPrefab = gridItemUi;
+            // WireFromRefs가 읽는 필드 중 유일하게 TMP 짝이 없는 참조다. 여기서 안 채우면
+            // 프리팹 경로로 뜰 때 팔레트가 null이 되어 Resources/ItemRarityPalette.asset이
+            // 무시되고 하드코딩 폴백 색으로 돌아간다(절차 생성 경로는 Bootstrap이 주입한다).
+            refs.itemRarityPalette = Resources.Load<InsectGame.Data.ItemRarityPalette>("ItemRarityPalette");
 
             GameObject shopPanel = CreatePanel(root.transform, "ShopPanel", new Vector2(0f, -2300f), new Vector2(360f, 200f));
             Button buy1 = CreateButton(shopPanel.transform, "BuyButton1", new Vector2(0f, -40f), "구매1");

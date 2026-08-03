@@ -40,6 +40,7 @@ namespace InsectGame.UI
         private string toast = string.Empty;
         private float toastUntil;
         private Vector2 friendScroll;
+        private readonly UIDirectScroll friendDirectScroll = new UIDirectScroll();
 
         // OnGUI는 프레임당 Layout/Repaint/입력 이벤트로 여러 번 호출된다. 아래 문자열들은
         // 서버 이벤트 시점에만 바뀌므로 그때 한 번 만들고 Draw는 재사용한다.
@@ -74,6 +75,7 @@ namespace InsectGame.UI
             friendsOpen = false;
             chatTargetUid = string.Empty;
             chatInput = string.Empty;
+            ResetFriendScroll();
             ModalUIRegistry.Unregister(this);
         }
 
@@ -87,6 +89,7 @@ namespace InsectGame.UI
         private void OnDisable()
         {
             Unsubscribe();
+            ResetFriendScroll();
             ModalUIRegistry.Unregister(this);
             ClearRemoteAvatars();
         }
@@ -379,7 +382,7 @@ namespace InsectGame.UI
             WorldInstance world = manager.CurrentWorld;
             float w = Mathf.Min(360f, Screen.width - SafeArea.Left - SafeArea.Right - 32f);
             float x = Screen.width - SafeArea.Right - w - 18f;
-            float y = SafeArea.Top + 18f;
+            float y = UISafeLayout.Px.ContentTop;
             GUI.Box(new Rect(x, y, w, 122f), "", panelStyle);
             GUI.Label(new Rect(x + 12f, y + 8f, w - 24f, 36f), cachedWorldTitle, titleStyle);
             if (GUI.Button(new Rect(x + 14f, y + 54f, w - 28f, 56f), "친구를 이 필드로 초대", buttonStyle))
@@ -396,7 +399,7 @@ namespace InsectGame.UI
             float w = SafeClampW(620f);
             float h = 132f;
             float x = SafeCenterX(w);
-            float y = Screen.height - SafeArea.Bottom - h - 30f;
+            float y = UISafeLayout.Px.BottomY(h);
             GUI.Box(new Rect(x, y, w, h), "", panelStyle);
             GUI.Label(new Rect(x + 18f, y + 10f, w - 36f, 30f), cachedNearbyLabel, titleStyle);
 
@@ -447,7 +450,7 @@ namespace InsectGame.UI
             float w = SafeClampW(620f);
             float h = 120f;
             float x = SafeCenterX(w);
-            float y = Screen.height * 0.5f - h * 0.5f;
+            float y = UISafeLayout.Px.CenteredY(h);
             GUI.Box(new Rect(x, y, w, h), "", panelStyle);
             GUI.Label(new Rect(x + 14f, y + 8f, w - 28f, 27f), player.displayName + "에게 말하기", titleStyle);
             chatInput = GUI.TextField(new Rect(x + 14f, y + 42f, w - 150f, 55f), chatInput, 80, fieldStyle);
@@ -465,7 +468,7 @@ namespace InsectGame.UI
             float w = Mathf.Min(470f, Screen.width * 0.46f);
             float h = Mathf.Min(190f, messages.Count * 34f + 20f);
             float x = SafeArea.Left + 16f;
-            float y = Screen.height - SafeArea.Bottom - h - 180f;
+            float y = UISafeLayout.Px.BottomY(h) - 150f;   // 하단 근접 패널 위
             GUI.Box(new Rect(x, y, w, h), "", panelStyle);
             int first = Mathf.Max(0, messageLines.Count - 5);
             for (int i = first; i < messageLines.Count; i++)
@@ -478,9 +481,9 @@ namespace InsectGame.UI
         private void DrawFriendInvitePanel()
         {
             float w = SafeClampW(520f);
-            float h = Mathf.Min(520f, Screen.height - SafeArea.Top - SafeArea.Bottom - 40f);
+            float h = UISafeLayout.Px.ClampHeight(520f);
             float x = SafeCenterX(w);
-            float y = SafeArea.Top + 20f;
+            float y = UISafeLayout.Px.ContentTop;
             GUI.Box(new Rect(x, y, w, h), "", panelStyle);
             GUI.Label(new Rect(x + 16f, y + 12f, w - 100f, 36f), "친구 필드 초대", titleStyle);
             if (GUI.Button(new Rect(x + w - 72f, y + 8f, 58f, 56f), "X", dangerStyle)) CloseModal();
@@ -490,6 +493,12 @@ namespace InsectGame.UI
                 : Array.Empty<PvpProfileSnapshot>();
             Rect view = new Rect(x + 16f, y + 72f, w - 32f, h - 88f);
             float contentH = Mathf.Max(view.height, friends.Length * 76f);
+            HandleScreenSpaceDirectScroll(
+                ref friendScroll,
+                friendDirectScroll,
+                view,
+                contentH,
+                38f);
             friendScroll = GUI.BeginScrollView(view, friendScroll, new Rect(0f, 0f, view.width - 18f, contentH));
             if (friends.Length == 0)
                 GUI.Label(new Rect(8f, 20f, view.width - 40f, 60f), "친구 목록이 비어 있습니다.\n소셜 메뉴에서 친구를 먼저 추가하세요.", labelStyle);
@@ -505,12 +514,40 @@ namespace InsectGame.UI
             GUI.EndScrollView();
         }
 
+        private void ResetFriendScroll()
+        {
+            friendScroll = Vector2.zero;
+            friendDirectScroll.Reset();
+        }
+
+        private static void HandleScreenSpaceDirectScroll(
+            ref Vector2 scrollPosition,
+            UIDirectScroll directScroll,
+            Rect viewport,
+            float contentHeight,
+            float wheelStep)
+        {
+            float scale = Mathf.Max(0.3f, UIScale.Scale);
+            Vector2 virtualScroll = scrollPosition / scale;
+            Rect virtualViewport = new Rect(
+                viewport.x / scale,
+                viewport.y / scale,
+                viewport.width / scale,
+                viewport.height / scale);
+            directScroll.Handle(
+                ref virtualScroll,
+                virtualViewport,
+                contentHeight / scale,
+                wheelStep / scale);
+            scrollPosition = virtualScroll * scale;
+        }
+
         private void DrawInvitePopup(WorldInviteSnapshot invite)
         {
             float w = SafeClampW(520f);
             float h = 190f;
             float x = SafeCenterX(w);
-            float y = SafeArea.Top + 130f;
+            float y = UISafeLayout.Px.ContentTop + 100f;   // 상단 초대/친구 패널 아래
             GUI.Box(new Rect(x, y, w, h), "", panelStyle);
             GUI.Label(new Rect(x + 16f, y + 12f, w - 32f, 32f), "필드 초대", titleStyle);
             GUI.Label(new Rect(x + 16f, y + 50f, w - 32f, 40f),
@@ -526,7 +563,7 @@ namespace InsectGame.UI
         {
             float w = SafeClampW(560f);
             float x = SafeCenterX(w);
-            float y = SafeArea.Top + 24f;
+            float y = UISafeLayout.Px.ContentTop;
             GUI.Box(new Rect(x, y, w, 58f), "", panelStyle);
             GUI.Label(new Rect(x + 12f, y + 8f, w - 24f, 42f), toast, labelStyle);
         }

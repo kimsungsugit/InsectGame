@@ -19,7 +19,19 @@ description: 테스트 프레임워크, 컨벤션, 필수 기준
 ```
 
 `-testPlatform EditMode`를 쓰면 **0건을 실행하고 "성공"이라 보고한다.** 실행 개수를
-반드시 확인할 것 — 현재 `[Test]`는 62개다(방어 보너스 3 + Heal/DoT 4 추가). 0건 보고는 통과가 아니라 실패다.
+반드시 확인할 것 — 현재 `[Test]` 메서드는 **234개**, 러너가 실제 실행하는 케이스는 **255개**다
+(`[TestCase]` 파라미터화가 여러 케이스로 펼쳐진다). 단일 출처는 코드다 —
+`grep -c "\[Test\]" Assets/Tests/EditMode/*.cs`의 합과 TestResults.xml의 `total`.
+문서에 박아둔 숫자는 늘 낡는다(실제로 62로 적혀 있다가 147까지 벌어져 있었다).
+0건 보고는 통과가 아니라 실패다.
+
+**`-runTests`에 `-quit`를 같이 붙이지 말 것.** 붙이면 Unity가 테스트를 시작하기 전에 종료하는데
+**exit 0에 `Exiting batchmode successfully now!`까지 찍어** 성공처럼 보이고, `TestResults.xml`은
+아예 쓰이지 않는다. 이전 실행의 파일이 남아 있으면 그 낡은 `total`을 이번 결과로 착각하기 딱 좋다
+(2026-08-03에 실제로 그렇게 254/254를 잘못 읽었다). 테스트 러너가 스스로 종료하므로 `-quit`은 불필요하다.
+
+그래서 결과는 **두 가지를 함께** 봐야 한다 — `total`뿐 아니라 `TestResults.xml`의 **mtime이
+이번 실행 시각인지**. 확실히 하려면 실행 전에 기존 파일을 치워 없는 상태에서 시작한다.
 
 EditMode 러너를 되살리려면 `Assets/Scripts`·`Assets/Editor`·`Assets/Tests`에 asmdef를
 도입해야 한다(asmdef는 `Assembly-CSharp`를 참조할 수 없어 게임 코드 쪽도 함께 필요).
@@ -57,6 +69,6 @@ EditMode 러너를 되살리려면 `Assets/Scripts`·`Assets/Editor`·`Assets/Te
 
 ## 테스트 제외 대상
 - OnGUI 렌더링 코드 (IMGUI는 렌더 루프 없이 검증 불가)
-- MonoBehaviour 생명주기 의존 로직 (`[UnityTest]` + `yield`가 필요. 현재 62개는 전부
+- MonoBehaviour 생명주기 의존 로직 (`[UnityTest]` + `yield`가 필요. 현재 테스트는 전부
   씬 없이 도는 순수 로직 `[Test]`다)
 - 외부 서비스 호출 (Firebase, Firestore)

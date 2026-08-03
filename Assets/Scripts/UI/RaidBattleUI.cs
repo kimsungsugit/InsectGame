@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using InsectGame.Battle;
 using InsectGame.Core;
 using InsectGame.Data;
@@ -13,7 +14,19 @@ namespace InsectGame.UI
         [SerializeField] private PlayerMovement playerMovement;
         [SerializeField] private BattleArenaController arena;
 
-        private enum Phase { None, Intro, SelectInsect, SelectSkill, PlayerAttack, BossAttack, TurnAnnounce, UniteAttack, Result }
+        private enum Phase
+        {
+            None,
+            Intro,
+            SelectInsect,
+            SelectSkill,
+            PlayerAttack,
+            BossTelegraph,
+            BossAttack,
+            TurnAnnounce,
+            UniteAttack,
+            Result
+        }
 
         private Phase phase = Phase.None;
         public bool IsRaidActive => phase != Phase.None;
@@ -37,6 +50,15 @@ namespace InsectGame.UI
         private bool lastAoe;
         private int lastHitSlot;
         private string lastSkillUsedName;
+        private RaidRoundResult activeRound;
+        private bool teamAnimationComplete;
+        private bool bossAnimationComplete;
+        private bool bossResponseRequested;
+        private bool presentationCompletionRequested;
+        private const float TeamRushMinDuration = 0.85f;
+        private const float UniteRushMinDuration = 1.15f;
+        private const float BossTelegraphDuration = 0.72f;
+        private const float BossImpactMinDuration = 0.8f;
 
         private float displayBossHp;
         private float[] displayTeamHp;
@@ -118,6 +140,8 @@ namespace InsectGame.UI
         private GUIStyle resultWinTitleStyleCache;  // DrawResult "RAID CLEAR!"
         private GUIStyle uniteLabelStyleCache;      // DrawUniteAttackAnimation "★ 합체공격! ★"
         private GUIStyle uniteTotalStyleCache;      // DrawUniteAttackAnimation total damage
+        private GUIStyle bossIntentStyleCache;      // 다음 보스 행동 예고
+        private GUIStyle comboStyleCache;           // 동시 팀 러시 콤보
 
         private void InitStyles()
         {
@@ -186,26 +210,38 @@ namespace InsectGame.UI
             { fontSize = 19, fontStyle = FontStyle.Bold };
 
             skillSelHeaderStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 26, fontStyle = FontStyle.Bold };
+            {
+                fontSize = 26,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleLeft,
+                wordWrap = true,
+                clipping = TextClipping.Clip
+            };
             skillSelHeaderStyleCache.normal.textColor = new Color(0.9f, 0.85f, 0.5f);
 
             skillSelKeyStyleCache = new GUIStyle(GUI.skin.label)
             { fontSize = 28, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
 
             skillSelNameStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 24, fontStyle = FontStyle.Bold };
+            {
+                fontSize = 27,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleLeft,
+                wordWrap = true,
+                clipping = TextClipping.Clip
+            };
 
             skillSelTypeStyleCache = new GUIStyle(GUI.skin.label) { fontSize = 19 };
 
-            skillSelInfoStyleCache = new GUIStyle(GUI.skin.label) { fontSize = 21, fontStyle = FontStyle.Bold };
+            skillSelInfoStyleCache = new GUIStyle(GUI.skin.label) { fontSize = 20, fontStyle = FontStyle.Bold };
 
             skillSelCdStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 20, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleRight };
+            { fontSize = 19, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleRight };
             skillSelCdStyleCache.normal.textColor = new Color(1f, 0.4f, 0.3f);
 
             skillSelCdInfoStyleCache = new GUIStyle(GUI.skin.label)
             { fontSize = 17, alignment = TextAnchor.MiddleRight };
-            skillSelCdInfoStyleCache.normal.textColor = new Color(0.45f, 0.45f, 0.5f);
+            skillSelCdInfoStyleCache.normal.textColor = new Color(0.68f, 0.68f, 0.74f);
 
             skillSelNoSkillStyleCache = new GUIStyle(GUI.skin.label)
             { fontSize = 24, alignment = TextAnchor.MiddleCenter };
@@ -291,11 +327,29 @@ namespace InsectGame.UI
             { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             uniteTotalStyleCache = new GUIStyle(GUI.skin.label)
             { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+
+            bossIntentStyleCache = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 24,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleCenter,
+                clipping = TextClipping.Clip
+            };
+            bossIntentStyleCache.normal.textColor = new Color(1f, 0.91f, 0.72f);
+
+            comboStyleCache = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 34,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleCenter
+            };
+            comboStyleCache.normal.textColor = new Color(0.45f, 0.95f, 1f);
         }
 
         private void OnEnable()
         {
-            // 구독은 AutoWire에서만 수행 (중복 구독 방지).
+            // OnDisable이 해지한 구독을 되살린다 — 오프닝 다시보기가 UI 루트를 토글하기 때문.
+            SubscribeRaidController();
         }
 
         private void OnDisable()
@@ -304,6 +358,9 @@ namespace InsectGame.UI
             {
                 raidController.RaidUpdated -= OnRaidUpdated;
                 raidController.RaidEnded -= OnRaidEnded;
+                raidController.RaidTeamRushResolved -= OnRaidTeamRushResolved;
+                raidController.RaidBossResponseResolved -= OnRaidBossResponseResolved;
+                raidController.RaidRoundCompleted -= OnRaidRoundCompleted;
             }
             // timeScale 안전 복구 (다른 시스템이 변경한 채 종료된 경우 대비)
             if (Time.timeScale < 0.99f) Time.timeScale = 1f;
@@ -328,6 +385,11 @@ namespace InsectGame.UI
                 introTimer = 0f;
                 announceTimer = 0f;
                 resultShown = false;
+                activeRound = null;
+                teamAnimationComplete = false;
+                bossAnimationComplete = false;
+                bossResponseRequested = false;
+                presentationCompletionRequested = false;
                 if (AudioManager.Instance != null)
                 {
                     AudioManager.Instance.PlayBGM(BgmType.RaidBattle);
@@ -360,41 +422,142 @@ namespace InsectGame.UI
                 return;
             }
 
-            lastDmgToBoss = raidController.LastDamageToBoss;
-            lastDmgToTeam = raidController.LastDamageToTeam;
-            lastAoe = raidController.BossUsedAoe;
-            lastHitSlot = raidController.LastHitSlot;
-            actionText = raidController.LastActionText;
-            actionTimer = 2f;
-
-            if (lastDmgToBoss > 0) bossShake = 0.4f;
-            if (lastAoe)
-            {
-                for (int i = 0; i < teamShake.Length; i++)
-                    if (raidController.TeamStats[i].CurrentHp >= 0) teamShake[i] = 0.4f;
-            }
-            else if (lastHitSlot >= 0 && lastHitSlot < teamShake.Length)
-            {
-                teamShake[lastHitSlot] = 0.4f;
-            }
-
             selectedSlot = raidController.ActiveSlot;
+        }
 
-            if (raidController.LastWasUnite)
+        private void OnRaidTeamRushResolved(RaidRoundResult round)
+        {
+            if (round == null) return;
+
+            activeRound = round;
+            selectedSlot = round.LeaderSlot >= 0 ? round.LeaderSlot : raidController.ActiveSlot;
+            lastDmgToBoss = round.TotalDamageToBoss;
+            lastDmgToTeam = 0;
+            lastAoe = false;
+            lastHitSlot = -1;
+            teamAnimationComplete = arena == null || !arena.IsActive;
+            bossAnimationComplete = false;
+            bossResponseRequested = false;
+            presentationCompletionRequested = false;
+            phaseTimer = 0f;
+            uniteAnimTimer = 0f;
+            phase = round.IsUnite ? Phase.UniteAttack : Phase.PlayerAttack;
+
+            RaidActionResult leader = FindLeaderAction(round);
+            lastSkillUsedName = round.IsUnite
+                ? "합체공격"
+                : leader != null && !string.IsNullOrEmpty(leader.DisplayName)
+                    ? leader.DisplayName
+                    : "팀 러시";
+            actionText = round.IsUnite
+                ? $"★ 전원 합체공격! TOTAL {round.TotalDamageToBoss}"
+                : $"TEAM RUSH ×{round.TeamActions.Count}  TOTAL {round.TotalDamageToBoss}";
+            actionTimer = 2f;
+            if (lastDmgToBoss > 0) bossShake = 0.42f;
+
+            if (arena == null || !arena.IsActive)
+                return;
+
+            if (round.IsUnite)
             {
-                phase = Phase.UniteAttack;
-                phaseTimer = 0f;
-                uniteAnimTimer = 0f;
-                // 데드코드였던 팀 전원 러시 → 대폭발 연출 연결(~2.5s = UniteAttack 페이즈 길이와 정합).
-                // 폭발 클라이맥스에 카메라 쉐이크로 필살기 임팩트.
-                if (arena != null && arena.IsActive)
-                    arena.PlayUniteAttackAnimation(() => { if (cameraFollower != null) cameraFollower.Shake(0.5f, 0.6f); });
+                arena.PlayUniteAttackAnimation(() =>
+                {
+                    teamAnimationComplete = true;
+                    if (cameraFollower != null) cameraFollower.Shake(0.5f, 0.6f);
+                });
+                return;
             }
-            else
+
+            if (leader != null && leader.Damage <= 0 && leader.SourceSlot >= 0)
             {
-                phase = Phase.PlayerAttack;
+                arena.SetSelectedTeamIndex(leader.SourceSlot);
+                arena.PlaySkillEffect(
+                    true,
+                    leader.Element,
+                    leader.EffectType,
+                    null,
+                    BattleArenaController.IsMeleeElement(leader.Element));
+            }
+
+            List<int> slots = new List<int>();
+            List<InsectElement> elements = new List<InsectElement>();
+            foreach (RaidActionResult action in round.TeamActions)
+            {
+                if (action == null || action.SourceSlot < 0) continue;
+                if (action.Damage <= 0 && !action.IsSupport) continue;
+                slots.Add(action.SourceSlot);
+                elements.Add(action.Element);
+            }
+
+            if (slots.Count == 0)
+            {
+                teamAnimationComplete = true;
+                return;
+            }
+
+            arena.PlayRaidVolley(slots.ToArray(), elements.ToArray(), () =>
+            {
+                teamAnimationComplete = true;
+            });
+        }
+
+        private void OnRaidBossResponseResolved(RaidRoundResult round)
+        {
+            if (round == null) return;
+
+            activeRound = round;
+            RaidActionResult bossAction = round.BossAction;
+            lastDmgToTeam = round.TotalDamageToTeam;
+            lastAoe = bossAction != null && bossAction.Kind == RaidActionKind.BossArea;
+            lastHitSlot = bossAction != null ? bossAction.TargetSlot : -1;
+            actionText = bossAction != null && !string.IsNullOrEmpty(bossAction.DisplayName)
+                ? bossAction.DisplayName
+                : round.BossResponseSkipped ? "보스가 기절해 움직이지 못한다!" : "";
+            actionTimer = 2f;
+            bossAnimationComplete = arena == null || !arena.IsActive
+                || round.BossResponseSkipped || bossAction == null;
+            presentationCompletionRequested = false;
+            phase = Phase.BossAttack;
+            phaseTimer = 0f;
+
+            if (teamShake != null)
+            {
+                for (int i = 0; i < round.BossDamageBySlot.Length && i < teamShake.Length; i++)
+                    if (round.BossDamageBySlot[i] > 0)
+                        teamShake[i] = 0.42f;
+            }
+
+            if (bossAnimationComplete) return;
+
+            arena.PlayRaidBossAttack(
+                bossAction.Element,
+                lastAoe,
+                lastHitSlot,
+                () => { bossAnimationComplete = true; });
+        }
+
+        private void OnRaidRoundCompleted(RaidRoundResult round)
+        {
+            activeRound = null;
+            bossResponseRequested = false;
+            presentationCompletionRequested = false;
+            teamAnimationComplete = false;
+            bossAnimationComplete = false;
+            selectedSlot = raidController != null ? raidController.ActiveSlot : -1;
+            if (!resultShown)
+            {
+                phase = Phase.SelectInsect;
                 phaseTimer = 0f;
             }
+        }
+
+        private static RaidActionResult FindLeaderAction(RaidRoundResult round)
+        {
+            if (round == null) return null;
+            foreach (RaidActionResult action in round.TeamActions)
+                if (action != null && action.IsLeader)
+                    return action;
+            return null;
         }
 
         private void OnRaidEnded(bool playerWon)
@@ -500,7 +663,7 @@ namespace InsectGame.UI
                     {
                         lastSkillUsedName = "합체공격";
                         if (AudioManager.Instance != null) AudioManager.Instance.PlaySFX(SfxType.UniteAttack);
-                        raidController.UseUniteAttack();
+                        raidController.ResolveUniteCommand();
                     }
                     wantUnite = false;
                 }
@@ -514,7 +677,7 @@ namespace InsectGame.UI
                     {
                         lastSkillUsedName = "합체공격";
                         if (AudioManager.Instance != null) AudioManager.Instance.PlaySFX(SfxType.UniteAttack);
-                        raidController.UseUniteAttack();
+                        raidController.ResolveUniteCommand();
                     }
                     else
                     {
@@ -544,7 +707,7 @@ namespace InsectGame.UI
                     {
                         lastSkillUsedName = "합체공격";
                         if (AudioManager.Instance != null) AudioManager.Instance.PlaySFX(SfxType.UniteAttack);
-                        raidController.UseUniteAttack();
+                        raidController.ResolveUniteCommand();
                     }
                     wantUnite = false;
                 }
@@ -565,7 +728,7 @@ namespace InsectGame.UI
                     {
                         lastSkillUsedName = "합체공격";
                         if (AudioManager.Instance != null) AudioManager.Instance.PlaySFX(SfxType.UniteAttack);
-                        raidController.UseUniteAttack();
+                        raidController.ResolveUniteCommand();
                     }
                     else
                     {
@@ -582,30 +745,44 @@ namespace InsectGame.UI
                 }
             }
 
-            if (phase == Phase.UniteAttack)
+            if (phase == Phase.UniteAttack || phase == Phase.PlayerAttack)
             {
-                uniteAnimTimer += Time.deltaTime;
-                if (uniteAnimTimer > 2.5f)
+                if (phase == Phase.UniteAttack)
+                    uniteAnimTimer += Time.deltaTime;
+                float minDuration = phase == Phase.UniteAttack
+                    ? UniteRushMinDuration
+                    : TeamRushMinDuration;
+                bool animationReady = teamAnimationComplete || phaseTimer > 2.4f;
+                if (animationReady && phaseTimer >= minDuration)
                 {
-                    if (lastDmgToTeam > 0)
-                        BeginTurnAnnounce("보스의 턴", false, Phase.BossAttack, triggerBoss: true);
-                    else if (!resultShown)
-                        BeginTurnAnnounce("팀의 턴", true, Phase.SelectInsect, triggerBoss: false);
+                    if (raidController.IsAwaitingBossResponse)
+                    {
+                        phase = Phase.BossTelegraph;
+                        phaseTimer = 0f;
+                        bossResponseRequested = false;
+                    }
+                    else
+                    {
+                        TryCompleteRoundPresentation();
+                    }
                 }
             }
 
-            if (phase == Phase.PlayerAttack && phaseTimer > 1f)
+            if (phase == Phase.BossTelegraph
+                && phaseTimer >= BossTelegraphDuration
+                && !bossResponseRequested)
             {
-                if (lastDmgToTeam > 0)
-                    BeginTurnAnnounce("보스의 턴", false, Phase.BossAttack, triggerBoss: true);
-                else if (!resultShown)
-                    BeginTurnAnnounce("팀의 턴", true, Phase.SelectInsect, triggerBoss: false);
+                bossResponseRequested = true;
+                RaidRoundResult resolved = raidController.ResolveBossResponse();
+                if (resolved == null && raidController.IsAwaitingPresentationCompletion)
+                    TryCompleteRoundPresentation();
             }
 
-            if (phase == Phase.BossAttack && phaseTimer > 1f)
+            if (phase == Phase.BossAttack)
             {
-                if (!resultShown)
-                    BeginTurnAnnounce("팀의 턴", true, Phase.SelectInsect, triggerBoss: false);
+                bool animationReady = bossAnimationComplete || phaseTimer > 2.4f;
+                if (animationReady && phaseTimer >= BossImpactMinDuration)
+                    TryCompleteRoundPresentation();
             }
 
             if (phase == Phase.TurnAnnounce)
@@ -617,6 +794,15 @@ namespace InsectGame.UI
 
             if (phase == Phase.Result && resultTimer > 5f)
                 EndRaid();
+        }
+
+        private void TryCompleteRoundPresentation()
+        {
+            if (presentationCompletionRequested || raidController == null) return;
+            if (!raidController.IsAwaitingPresentationCompletion) return;
+
+            presentationCompletionRequested = true;
+            raidController.CompleteRoundPresentation();
         }
 
         // 다음 턴 중앙 배너 시작. 종료 후 nextPhase로 전이(triggerBoss면 보스 연출 발동).
@@ -662,17 +848,7 @@ namespace InsectGame.UI
                 InsectSkill skill = skills != null && index < skills.Length ? skills[index] : null;
                 lastSkillUsedName = skill != null ? skill.displayName : "공격";
 
-                if (arena != null && arena.IsActive)
-                {
-                    arena.SetSelectedTeamIndex(selectedSlot);
-                    InsectElement elem = InsectElement.Bug;
-                    if (raidController.TeamData != null && selectedSlot >= 0 && selectedSlot < raidController.TeamData.Length && raidController.TeamData[selectedSlot] != null)
-                        elem = raidController.TeamData[selectedSlot].primaryType;
-                    SkillEffectType effectType = (skill != null) ? skill.effectType : SkillEffectType.Damage;
-                    arena.PlaySkillEffect(true, elem, effectType, null, BattleArenaController.IsMeleeElement(elem));
-                }
-
-                raidController.UseSkill(index);
+                raidController.ResolveTeamCommand(index);
             }
         }
 
@@ -747,6 +923,7 @@ namespace InsectGame.UI
             DrawTeamField();
             DrawBossHpBar();
             DrawTeamHpBars();
+            DrawBossIntent();
 
             DrawUniteGaugeBar();
 
@@ -760,6 +937,8 @@ namespace InsectGame.UI
                 DrawUniteAttackAnimation();
             else if (phase == Phase.PlayerAttack || phase == Phase.BossAttack)
                 DrawAttackEffects();
+            else if (phase == Phase.BossTelegraph)
+                DrawBossTelegraph();
             else if (phase == Phase.TurnAnnounce)
                 DrawTurnAnnounce();
 
@@ -1403,7 +1582,7 @@ namespace InsectGame.UI
             float w = Mathf.Min(700, UIScale.VirtualScreenWidth * 0.7f);
             float h = 100f;
             float x = (UIScale.VirtualScreenWidth - w) / 2f;
-            float y = 36f + SafeArea.Top / UIScale.Scale; // 노치/상태바 아래로
+            float y = UISafeLayout.ContentTop; // 노치/상태바 + 세로 마진 아래로
 
             GUI.color = new Color(0.05f, 0.03f, 0.08f, 0.95f);
             GUI.DrawTexture(new Rect(x, y, w, h), Texture2D.whiteTexture);
@@ -1611,12 +1790,12 @@ namespace InsectGame.UI
             bool mobile = UIScale.IsMobileLayout;
             bool portrait = UIScale.IsPortrait;   // 레이아웃 형태는 방향 기준 — 가로 모바일 세로형 패널의 곤충 가림 방지
             float panelW = UIScale.VirtualScreenWidth;
-            float panelH = portrait ? 380f : 200f;
-            float safeBottom = SafeArea.Bottom / UIScale.Scale; // 제스처바 위로
-            float panelY = UIScale.VirtualScreenHeight - panelH - safeBottom;
+            float panelH = UISafeLayout.ClampHeight(portrait ? 380f : 200f);
+            // 제스처바(하단 세이프 인셋) + 세로 마진 위로. 배경은 바닥까지 채워 빈틈 방지.
+            float panelY = UISafeLayout.ContentBottom - panelH;
 
             GUI.color = new Color(0.04f, 0.05f, 0.10f, 0.97f);
-            GUI.DrawTexture(new Rect(0, panelY, panelW, panelH + safeBottom), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(0, panelY, panelW, UIScale.VirtualScreenHeight - panelY), Texture2D.whiteTexture);
             GUI.color = new Color(1f, 0.6f, 0.15f);
             GUI.DrawTexture(new Rect(0, panelY, panelW, 4), Texture2D.whiteTexture);
             GUI.color = Color.white;
@@ -1704,24 +1883,25 @@ namespace InsectGame.UI
             bool mobile = UIScale.IsMobileLayout;
             bool portrait = UIScale.IsPortrait;   // 레이아웃 형태는 방향 기준 — 가로 모바일 세로형 패널의 곤충 가림 방지
             float panelW = UIScale.VirtualScreenWidth;
-            float panelH = portrait ? 580f : 280f;
-            float safeBottom = SafeArea.Bottom / UIScale.Scale; // 제스처바 위로
-            float panelY = UIScale.VirtualScreenHeight - panelH - safeBottom;
+            float panelH = UISafeLayout.ClampHeight(portrait ? 640f : 300f);
+            // 제스처바(하단 세이프 인셋) + 세로 마진 위로. 배경은 바닥까지 채워 빈틈 방지.
+            float panelY = UISafeLayout.ContentBottom - panelH;
 
             GUI.color = new Color(0.03f, 0.04f, 0.09f, 0.97f);
-            GUI.DrawTexture(new Rect(0, panelY, panelW, panelH + safeBottom), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(0, panelY, panelW, UIScale.VirtualScreenHeight - panelY), Texture2D.whiteTexture);
             GUI.color = new Color(0.3f, 0.5f, 0.9f);
             GUI.DrawTexture(new Rect(0, panelY, panelW, 4), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
-            GUI.Label(new Rect(30, panelY + 10, panelW - 60f, 32),
+            skillSelHeaderStyleCache.fontSize = mobile ? 27 : 26;
+            GUI.Label(new Rect(30, panelY + 8, panelW - 60f, 48),
                 mobile ? $"{stats.Data.displayName}의 기술을 선택하세요"
                     : $"{stats.Data.displayName}의 스킬 [Q/W/E/R]  |  ESC: 돌아가기", skillSelHeaderStyleCache);
 
             int count = skills != null ? Mathf.Min(skills.Length, 4) : 0;
             float btnW = portrait ? (panelW - 76f) * 0.5f : Mathf.Min(300, (panelW - 80) / Mathf.Max(count, 1));
-            float btnH = 180f;
-            float baseBtnY = panelY + 52f;
+            float btnH = 212f;
+            float baseBtnY = panelY + 60f;
             float btnY = baseBtnY;
             float startX = 30;
             string[] keyLabels = { "Q", "W", "E", "R" };
@@ -1776,11 +1956,19 @@ namespace InsectGame.UI
                     GUI.Label(new Rect(bx + btnW - 46, btnY + 10, 36, 36), keyLabels[i], skillSelKeyStyleCache);
                 }
 
-                skillSelNameStyleCache.normal.textColor = canUse ? Color.white : new Color(0.4f, 0.4f, 0.4f);
-                GUI.Label(new Rect(bx + 12, btnY + 52, btnW - 24, 30), skill.displayName, skillSelNameStyleCache);
+                Rect skillCardRect = new Rect(bx, btnY, btnW, btnH);
+                SkillCardDetailRows detailRows = SkillUILayout.GetDetailRows(
+                    skillCardRect, 136f, 12f, 22f, 2f);
+                skillSelNameStyleCache.fontSize = mobile ? 29 : 27;
+                skillSelNameStyleCache.normal.textColor = canUse ? Color.white : SkillUILayout.DisabledTextColor;
+                GUI.Label(SkillUILayout.GetNameRect(skillCardRect, 50f, 12f, 56f),
+                    skill.displayName, skillSelNameStyleCache);
 
-                skillSelTypeStyleCache.normal.textColor = canUse ? skillCol : new Color(0.3f, 0.3f, 0.3f);
-                GUI.Label(new Rect(bx + 12, btnY + 86, btnW - 24, 24), RaidSkillTypeLabel(skill.effectType), skillSelTypeStyleCache);
+                skillSelTypeStyleCache.normal.textColor = canUse
+                    ? SkillUILayout.GetReadableAccent(skillCol)
+                    : SkillUILayout.DisabledSecondaryTextColor;
+                GUI.Label(new Rect(bx + 12, btnY + 110, btnW - 24, 24),
+                    RaidSkillTypeLabel(skill.effectType), skillSelTypeStyleCache);
 
                 // 상성 배지 — 보스에게 강/약(데미지 스킬만). InsectTypeChart는 이미 public.
                 if (skill.effectType == SkillEffectType.Damage && raidController.BossStats != null && raidController.BossStats.Data != null)
@@ -1792,24 +1980,29 @@ namespace InsectGame.UI
                         bool strong = eff > 1.05f;
                         skillSelTypeStyleCache.normal.textColor = canUse
                             ? (strong ? new Color(0.4f, 1f, 0.5f) : new Color(1f, 0.45f, 0.4f))
-                            : new Color(0.3f, 0.3f, 0.3f);
-                        GUI.Label(new Rect(bx + btnW - 110, btnY + 86, 98, 24), strong ? "효과적 ▲" : "비효과 ▼", skillSelTypeStyleCache);
+                            : SkillUILayout.DisabledSecondaryTextColor;
+                        GUI.Label(detailRows.Effectiveness,
+                            strong ? "효과적 ▲" : "비효과 ▼", skillSelTypeStyleCache);
                     }
                 }
 
-                skillSelInfoStyleCache.normal.textColor = canUse ? new Color(0.9f, 0.85f, 0.65f) : new Color(0.3f, 0.3f, 0.3f);
-                GUI.Label(new Rect(bx + 12, btnY + 114, btnW - 24, 26), RaidSkillPowerLabel(skill), skillSelInfoStyleCache);
+                skillSelInfoStyleCache.normal.textColor = canUse
+                    ? new Color(0.96f, 0.91f, 0.72f)
+                    : SkillUILayout.DisabledSecondaryTextColor;
+                GUI.Label(detailRows.Power,
+                    RaidSkillPowerLabel(skill), skillSelInfoStyleCache);
 
                 if (cd > 0)
                 {
-                    GUI.Label(new Rect(bx, btnY + 148, btnW - 14, 24), $"쿨다운 {cd}턴", skillSelCdStyleCache);
+                    GUI.Label(detailRows.Cooldown, $"쿨다운 {cd}턴", skillSelCdStyleCache);
 
                     GUI.color = new Color(1f, 0.3f, 0.2f, 0.12f);
                     GUI.DrawTexture(new Rect(bx, btnY, btnW, btnH), Texture2D.whiteTexture);
                 }
                 else if (skill.cooldownTurns > 0)
                 {
-                    GUI.Label(new Rect(bx, btnY + 150, btnW - 14, 22), $"쿨다운: {skill.cooldownTurns}턴", skillSelCdInfoStyleCache);
+                    GUI.Label(detailRows.Cooldown,
+                        $"쿨다운: {skill.cooldownTurns}턴", skillSelCdInfoStyleCache);
                 }
 
                 if (hovered)
@@ -1888,6 +2081,102 @@ namespace InsectGame.UI
             GUI.Label(new Rect(0, cy + slide, sw, 80f), announceText, introFightStyleCache);
         }
 
+        private void DrawBossIntent()
+        {
+            if (phase == Phase.None || phase == Phase.Intro || phase == Phase.Result
+                || phase == Phase.BossAttack
+                || raidController == null) return;
+
+            RaidBossIntent intent = activeRound != null
+                ? activeRound.BossIntent
+                : raidController.NextBossIntent;
+            if (intent == null) return;
+
+            float sw = UIScale.VirtualScreenWidth;
+            float safeTop = SafeArea.Top / UIScale.Scale;
+            float width = Mathf.Min(680f, sw - 48f);
+            float x = (sw - width) * 0.5f;
+            float y = safeTop + 142f;
+            float height = UIScale.IsMobileLayout ? 64f : 54f;
+            Color accent = intent.IsArea
+                ? new Color(1f, 0.35f, 0.25f)
+                : new Color(1f, 0.72f, 0.25f);
+
+            string target = "";
+            if (!intent.IsArea
+                && intent.TargetSlot >= 0
+                && raidController.TeamStats != null
+                && intent.TargetSlot < raidController.TeamStats.Length
+                && raidController.TeamStats[intent.TargetSlot] != null)
+            {
+                target = $" → {raidController.TeamStats[intent.TargetSlot].Data.displayName}";
+            }
+
+            string name = !string.IsNullOrEmpty(intent.DisplayName)
+                ? intent.DisplayName
+                : intent.IsArea ? "전체 공격" : "강공격";
+            string prefix = phase == Phase.BossTelegraph ? "CASTING" : "NEXT";
+            string areaLabel = intent.IsArea ? " · 전원 대상" : target;
+
+            GUI.color = new Color(0.035f, 0.035f, 0.075f, 0.94f);
+            GUI.DrawTexture(new Rect(x, y, width, height), Texture2D.whiteTexture);
+            GUI.color = new Color(accent.r, accent.g, accent.b, 0.9f);
+            GUI.DrawTexture(new Rect(x, y, 6f, height), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(x, y, width, 3f), Texture2D.whiteTexture);
+
+            bossIntentStyleCache.fontSize = UIScale.IsMobileLayout ? 25 : 23;
+            bossIntentStyleCache.normal.textColor = new Color(1f, 0.92f, 0.78f);
+            GUI.color = Color.white;
+            GUI.Label(new Rect(x + 16f, y + 5f, width - 32f, height - 12f),
+                $"⚠ {prefix} · {name}{areaLabel}", bossIntentStyleCache);
+
+            float progress = phase == Phase.BossTelegraph
+                ? Mathf.Clamp01(phaseTimer / BossTelegraphDuration)
+                : 0f;
+            GUI.color = new Color(0.12f, 0.12f, 0.18f, 0.95f);
+            GUI.DrawTexture(new Rect(x + 8f, y + height - 7f, width - 16f, 4f), Texture2D.whiteTexture);
+            if (progress > 0f)
+            {
+                GUI.color = accent;
+                GUI.DrawTexture(new Rect(x + 8f, y + height - 7f, (width - 16f) * progress, 4f),
+                    Texture2D.whiteTexture);
+            }
+            GUI.color = Color.white;
+        }
+
+        private void DrawBossTelegraph()
+        {
+            RaidBossIntent intent = activeRound != null
+                ? activeRound.BossIntent
+                : raidController != null ? raidController.NextBossIntent : null;
+            if (intent == null) return;
+
+            float sw = UIScale.VirtualScreenWidth;
+            float sh = UIScale.VirtualScreenHeight;
+            float pulse = 0.7f + Mathf.Sin(Time.time * 14f) * 0.2f;
+            Color accent = intent.IsArea
+                ? new Color(1f, 0.22f, 0.16f)
+                : new Color(1f, 0.58f, 0.18f);
+
+            GUI.color = new Color(accent.r, accent.g, accent.b, 0.10f * pulse);
+            GUI.DrawTexture(new Rect(0, sh * 0.20f, sw, sh * 0.28f), Texture2D.whiteTexture);
+            GUI.color = new Color(0.025f, 0.02f, 0.05f, 0.74f);
+            GUI.DrawTexture(new Rect(0, sh * 0.28f, sw, 104f), Texture2D.whiteTexture);
+            GUI.color = new Color(accent.r, accent.g, accent.b, pulse);
+            GUI.DrawTexture(new Rect(0, sh * 0.28f, sw, 4f), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(0, sh * 0.28f + 100f, sw, 4f), Texture2D.whiteTexture);
+
+            introFightStyleCache.fontSize = UIScale.IsMobileLayout ? 50 : 58;
+            introFightStyleCache.normal.textColor = new Color(accent.r, accent.g, accent.b, 1f);
+            GUI.color = Color.white;
+            GUI.Label(new Rect(0, sh * 0.28f + 4f, sw, 62f),
+                intent.IsArea ? "⚠ 보스 전체 공격!" : "⚠ 보스 공격 준비!", introFightStyleCache);
+
+            bossIntentStyleCache.normal.textColor = Color.white;
+            GUI.Label(new Rect(0, sh * 0.28f + 60f, sw, 36f),
+                intent.DisplayName, bossIntentStyleCache);
+        }
+
         private void DrawAttackEffects()
         {
             float t = Mathf.Clamp01(phaseTimer / 1f);
@@ -1899,17 +2188,15 @@ namespace InsectGame.UI
                 float bossX = sw * 0.5f;
                 float bossY = sh * 0.12f;
 
-                // Determine skill color based on skill type
+                // 실제 선택한 리더 스킬을 사용한다. 이전 구현은 항상 skills[0]을 읽어
+                // 선택한 기술과 2D/3D 속성 이펙트가 어긋났다.
                 Color skillColor = new Color(0.3f, 0.7f, 1f);
                 InsectElement element = InsectElement.Bug;
-                if (raidController.TeamSkills != null && selectedSlot >= 0 && selectedSlot < raidController.TeamSkills.Length)
+                RaidActionResult leaderAction = FindLeaderAction(activeRound);
+                if (leaderAction != null)
                 {
-                    var skills = raidController.TeamSkills[selectedSlot];
-                    if (skills != null && skills.Length > 0 && skills[0] != null)
-                    {
-                        skillColor = GetSkillColor(skills[0].effectType);
-                        element = skills[0].element;
-                    }
+                    skillColor = GetSkillColor(leaderAction.EffectType);
+                    element = leaderAction.Element;
                 }
                 Color elemCol = GetElementColor(element);
 
@@ -1918,29 +2205,32 @@ namespace InsectGame.UI
                     float projT = t / 0.35f;
                     float easeT = projT * projT * (3f - 2f * projT);
                     int teamCount = raidController.TeamStats != null ? raidController.TeamStats.Length : 1;
-                    float atkX = sw * 0.15f + (selectedSlot >= 0 ? selectedSlot : 0) * (sw * 0.7f / Mathf.Max(teamCount - 1, 1));
                     float atkY = sh * 0.40f;
-                    float px = Mathf.Lerp(atkX, bossX, easeT);
-                    float py = Mathf.Lerp(atkY, bossY, easeT) - Mathf.Sin(easeT * Mathf.PI) * 80f;
-
-                    // Colored projectile based on skill type
-                    float projSize = 16f + Mathf.Sin(projT * Mathf.PI * 3f) * 5f;
-                    GUI.color = new Color(skillColor.r, skillColor.g, skillColor.b, 0.15f);
-                    GUI.DrawTexture(new Rect(px - projSize * 2, py - projSize * 2, projSize * 4, projSize * 4), Texture2D.whiteTexture);
-                    GUI.color = new Color(skillColor.r, skillColor.g, skillColor.b, 0.8f);
-                    GUI.DrawTexture(new Rect(px - projSize / 2, py - projSize / 2, projSize, projSize), Texture2D.whiteTexture);
-                    GUI.color = new Color(1, 1, 1, 0.9f);
-                    GUI.DrawTexture(new Rect(px - 4, py - 4, 8, 8), Texture2D.whiteTexture);
-
-                    for (int tr = 1; tr <= 4; tr++)
+                    if (activeRound != null)
                     {
-                        float trailT = Mathf.Max(0, projT - tr * 0.06f);
-                        float trailEase = trailT * trailT * (3f - 2f * trailT);
-                        float tx = Mathf.Lerp(atkX, bossX, trailEase);
-                        float ty = Mathf.Lerp(atkY, bossY, trailEase) - Mathf.Sin(trailEase * Mathf.PI) * 80f;
-                        GUI.color = new Color(skillColor.r, skillColor.g, skillColor.b, 0.3f - tr * 0.06f);
-                        float ts = projSize * (1f - tr * 0.18f);
-                        GUI.DrawTexture(new Rect(tx - ts / 2, ty - ts / 2, ts, ts), Texture2D.whiteTexture);
+                        int actionIndex = 0;
+                        foreach (RaidActionResult action in activeRound.TeamActions)
+                        {
+                            if (action == null || action.SourceSlot < 0) continue;
+                            if (action.Damage <= 0 && !action.IsSupport) continue;
+                            float localT = Mathf.Clamp01((projT - actionIndex * 0.05f) / 0.82f);
+                            float localEase = localT * localT * (3f - 2f * localT);
+                            float atkX = sw * 0.15f + action.SourceSlot
+                                * (sw * 0.7f / Mathf.Max(teamCount - 1, 1));
+                            float px = Mathf.Lerp(atkX, bossX, localEase);
+                            float py = Mathf.Lerp(atkY, bossY, localEase)
+                                - Mathf.Sin(localEase * Mathf.PI) * (62f + actionIndex * 8f);
+                            Color actionColor = GetElementColor(action.Element);
+                            float projSize = 12f + (action.IsLeader ? 7f : 2f);
+
+                            GUI.color = new Color(actionColor.r, actionColor.g, actionColor.b, 0.16f);
+                            GUI.DrawTexture(new Rect(px - projSize * 1.8f, py - projSize * 1.8f,
+                                projSize * 3.6f, projSize * 3.6f), Texture2D.whiteTexture);
+                            GUI.color = new Color(actionColor.r, actionColor.g, actionColor.b, 0.88f);
+                            GUI.DrawTexture(new Rect(px - projSize / 2f, py - projSize / 2f,
+                                projSize, projSize), Texture2D.whiteTexture);
+                            actionIndex++;
+                        }
                     }
                 }
 
@@ -1975,6 +2265,14 @@ namespace InsectGame.UI
                     bossDmgNumStyleCache.normal.textColor = new Color(1, 1, 0.3f, dmgAlpha);
                     GUI.color = Color.white;
                     GUI.Label(new Rect(bossX - 70, bossY - 90 - dmgT * 50, 140, 56), $"-{lastDmgToBoss}", bossDmgNumStyleCache);
+
+                    if (activeRound != null && activeRound.TeamActions.Count > 1)
+                    {
+                        float comboAlpha = Mathf.Clamp01(1f - dmgT * 0.65f);
+                        comboStyleCache.normal.textColor = new Color(0.45f, 0.95f, 1f, comboAlpha);
+                        GUI.Label(new Rect(bossX - 180, bossY - 32 - dmgT * 36f, 360, 44),
+                            $"TEAM RUSH ×{activeRound.TeamActions.Count}", comboStyleCache);
+                    }
                 }
             }
 
@@ -2014,7 +2312,8 @@ namespace InsectGame.UI
 
                     // Damage number below
                     aoeDmgStyleCache.normal.textColor = new Color(1, 0.3f, 0.3f, 1f - t * 0.6f);
-                    GUI.Label(new Rect(sw / 2 - 80, sh * 0.38f - t * 30, 160, 44), $"-{lastDmgToTeam}", aoeDmgStyleCache);
+                    GUI.Label(new Rect(sw / 2 - 130, sh * 0.38f - t * 30, 260, 44),
+                        $"TOTAL -{lastDmgToTeam}", aoeDmgStyleCache);
 
                     // Per-team-member damage popup
                     if (raidController.TeamStats != null && t > 0.2f)
@@ -2032,8 +2331,14 @@ namespace InsectGame.UI
                             if (memberT > 0)
                             {
                                 float mAlpha = Mathf.Clamp01(1f - memberT * 0.8f);
+                                int memberDamage = activeRound != null
+                                    && i < activeRound.BossDamageBySlot.Length
+                                        ? activeRound.BossDamageBySlot[i]
+                                        : 0;
+                                if (memberDamage <= 0) continue;
                                 aoeMemberDmgStyleCache.normal.textColor = new Color(1, 0.4f, 0.3f, mAlpha);
-                                GUI.Label(new Rect(mx - 30, my - 40 - memberT * 30, 60, 30), $"-{lastDmgToTeam}", aoeMemberDmgStyleCache);
+                                GUI.Label(new Rect(mx - 42, my - 40 - memberT * 30, 84, 30),
+                                    $"-{memberDamage}", aoeMemberDmgStyleCache);
                             }
                         }
                     }
@@ -2092,7 +2397,12 @@ namespace InsectGame.UI
                         attackDmg2StyleCache.normal.textColor = new Color(1, 0.3f, 0.3f, dmgAlpha2);
                         GUI.color = Color.white;
                         float shakeX = impT < 0.5f ? Mathf.Sin(Time.time * 50f) * 4f : 0;
-                        GUI.Label(new Rect(hx - 40 + shakeX, hy - 60 - impT * 30, 80, 36), $"-{lastDmgToTeam}", attackDmg2StyleCache);
+                        int actualDamage = activeRound != null
+                            && lastHitSlot < activeRound.BossDamageBySlot.Length
+                                ? activeRound.BossDamageBySlot[lastHitSlot]
+                                : lastDmgToTeam;
+                        GUI.Label(new Rect(hx - 48 + shakeX, hy - 60 - impT * 30, 96, 36),
+                            $"-{actualDamage}", attackDmg2StyleCache);
                     }
                 }
             }
@@ -2295,7 +2605,7 @@ namespace InsectGame.UI
             float barW = 360f;
             float barH = 36f;
             float bx = (UIScale.VirtualScreenWidth - barW) / 2f;
-            float by = UIScale.VirtualScreenHeight - 160f - SafeArea.Bottom / UIScale.Scale; // 하단 패널과 상대 위치 유지
+            float by = UISafeLayout.ContentBottom - 160f; // 하단 패널(ContentBottom 기준)과 상대 위치 유지
 
             GUI.color = new Color(0.05f, 0.05f, 0.1f, 0.9f);
             GUI.DrawTexture(new Rect(bx - 4, by - 4, barW + 8, barH + 28), Texture2D.whiteTexture);
@@ -2553,6 +2863,11 @@ namespace InsectGame.UI
             displayTeamHp = null;
             teamShake = null;
             selectedSlot = -1;
+            activeRound = null;
+            teamAnimationComplete = false;
+            bossAnimationComplete = false;
+            bossResponseRequested = false;
+            presentationCompletionRequested = false;
             if (cameraFollower != null) cameraFollower.ExitBattleMode();
             if (playerMovement != null) playerMovement.SetFrozen(false);
         }
@@ -2576,6 +2891,7 @@ namespace InsectGame.UI
         {
             switch (element)
             {
+                case InsectElement.Bug: return new Color(0.55f, 0.82f, 0.28f);
                 case InsectElement.Poison: return new Color(0.6f, 0.2f, 0.8f);
                 case InsectElement.Water: return new Color(0.2f, 0.5f, 1f);
                 case InsectElement.Leaf: return new Color(0.2f, 0.85f, 0.3f);
@@ -3163,6 +3479,10 @@ namespace InsectGame.UI
                 case SkillEffectType.Damage: return new Color(0.9f, 0.35f, 0.3f);
                 case SkillEffectType.BuffAttack: return new Color(0.3f, 0.8f, 0.4f);
                 case SkillEffectType.DebuffAttack: return new Color(0.7f, 0.4f, 0.9f);
+                case SkillEffectType.Heal: return new Color(0.35f, 0.92f, 0.62f);
+                case SkillEffectType.DefenseBuff: return new Color(0.35f, 0.68f, 1f);
+                case SkillEffectType.Stun: return new Color(1f, 0.86f, 0.25f);
+                case SkillEffectType.PoisonDot: return new Color(0.68f, 0.35f, 0.88f);
                 default: return Color.gray;
             }
         }
@@ -3173,22 +3493,39 @@ namespace InsectGame.UI
             {
                 raidController.RaidUpdated -= OnRaidUpdated;
                 raidController.RaidEnded -= OnRaidEnded;
+                raidController.RaidTeamRushResolved -= OnRaidTeamRushResolved;
+                raidController.RaidBossResponseResolved -= OnRaidBossResponseResolved;
+                raidController.RaidRoundCompleted -= OnRaidRoundCompleted;
             }
 
             if (raidController == null || raidController != rc)
             {
                 raidController = rc;
-                if (raidController != null)
-                {
-                    raidController.RaidUpdated -= OnRaidUpdated;
-                    raidController.RaidEnded -= OnRaidEnded;
-                    raidController.RaidUpdated += OnRaidUpdated;
-                    raidController.RaidEnded += OnRaidEnded;
-                }
+                SubscribeRaidController();
             }
 
             if (cameraFollower == null) cameraFollower = cam;
             if (playerMovement == null) playerMovement = pm;
+        }
+
+        /// <summary>
+        /// 레이드 컨트롤러 구독. <b>AutoWire와 OnEnable이 공유한다</b>(해지 뒤 구독이라 중복 없음).
+        /// BattleScreenUI와 같은 이유 — 오프닝 다시보기가 UI 루트를 토글하면 OnDisable이 해지한
+        /// 구독을 되살릴 곳이 없어 레이드 화면이 영구히 열리지 않는다.
+        /// </summary>
+        private void SubscribeRaidController()
+        {
+            if (raidController == null) return;
+            raidController.RaidUpdated -= OnRaidUpdated;
+            raidController.RaidEnded -= OnRaidEnded;
+            raidController.RaidTeamRushResolved -= OnRaidTeamRushResolved;
+            raidController.RaidBossResponseResolved -= OnRaidBossResponseResolved;
+            raidController.RaidRoundCompleted -= OnRaidRoundCompleted;
+            raidController.RaidUpdated += OnRaidUpdated;
+            raidController.RaidEnded += OnRaidEnded;
+            raidController.RaidTeamRushResolved += OnRaidTeamRushResolved;
+            raidController.RaidBossResponseResolved += OnRaidBossResponseResolved;
+            raidController.RaidRoundCompleted += OnRaidRoundCompleted;
         }
 
         public void AutoWire(BattleArenaController a)

@@ -99,10 +99,11 @@ namespace InsectGame.UI
             GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
-            float pw = Mathf.Min(880f, Screen.width * 0.92f);
-            float ph = Mathf.Min(560f, Screen.height * 0.9f);
-            float px = (Screen.width - pw) * 0.5f;
-            float py = (Screen.height - ph) * 0.5f;
+            Rect panel = UISafeLayout.Px.CenteredPanel(880f, 560f);
+            float pw = panel.width;
+            float ph = panel.height;
+            float px = panel.x;
+            float py = panel.y;
 
             GUI.Box(new Rect(px, py, pw, ph), "", panelStyle);
 

@@ -147,7 +147,7 @@ namespace InsectGame.UI
             float w = Mathf.Min(720f, availW - 24f);
             float h = 100f;
             float x = UIScale.VirtualSafeLeft + (availW - w) * 0.5f;
-            float y = UIScale.VirtualSafeTop + 200f;   // 상단 리전 배너·알림 아래
+            float y = UISafeLayout.ContentTop + 150f;   // 상단 리전 배너(ContentTop)·알림 아래
 
             float pulse = 0.5f + 0.5f * Mathf.Sin(Time.time * 3f);
             GUI.color = new Color(0.1f, 0.08f, 0.02f, 0.9f);

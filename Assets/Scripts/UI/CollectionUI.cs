@@ -13,6 +13,9 @@ namespace InsectGame.UI
 
         private bool isOpen;
         private Vector2 scrollPos;
+        private readonly UIDirectScroll directScroll = new UIDirectScroll();
+        private Vector2 detailScrollPos;
+        private readonly UIDirectScroll detailDirectScroll = new UIDirectScroll();
         private int selectedTab;
 
         private string selectedInstanceId;
@@ -47,7 +50,10 @@ namespace InsectGame.UI
         private GUIStyle detailGradePercStyle;   // textColor 동적
         private GUIStyle detailDescStyle;
         private GUIStyle detailHintStyle;
-        private GUIStyle learnsetRowStyle;   // 습득 기술 목록 행
+        private GUIStyle learnsetHeaderStyle;
+        private GUIStyle learnsetLevelStyle;
+        private GUIStyle learnsetNameStyle;
+        private GUIStyle learnsetMetaStyle;
         private GUIStyle statsLabelStyle;
         private GUIStyle statsValueStyle;
         private GUIStyle statsCandyValStyle;
@@ -109,7 +115,34 @@ namespace InsectGame.UI
             detailDescStyle = new GUIStyle(GUI.skin.label) { fontSize = 32, wordWrap = true };
             detailDescStyle.normal.textColor = DescGrayCol;
             detailHintStyle = new GUIStyle(GUI.skin.label) { fontSize = 32, fontStyle = FontStyle.Italic };
-            learnsetRowStyle = new GUIStyle(GUI.skin.label) { fontSize = 22 };
+            learnsetHeaderStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 30,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleLeft
+            };
+            learnsetHeaderStyle.normal.textColor = new Color(0.72f, 0.9f, 0.78f);
+            learnsetLevelStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 24,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleLeft
+            };
+            learnsetNameStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 27,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleLeft,
+                wordWrap = true,
+                clipping = TextClipping.Clip
+            };
+            learnsetMetaStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 23,
+                alignment = TextAnchor.MiddleRight,
+                wordWrap = true,
+                clipping = TextClipping.Clip
+            };
             detailHintStyle.normal.textColor = HintGreenCol;
             statsLabelStyle = new GUIStyle(GUI.skin.label) { fontSize = 38 };
             statsLabelStyle.normal.textColor = StatsLabelCol;
@@ -185,7 +218,19 @@ namespace InsectGame.UI
         public void Toggle()
         {
             isOpen = !isOpen;
-            if (!isOpen) selectedInstanceId = null;
+            if (!isOpen)
+            {
+                selectedInstanceId = null;
+                directScroll.Reset();
+                detailDirectScroll.Reset();
+            }
+            else
+            {
+                scrollPos = Vector2.zero;
+                directScroll.Reset();
+                detailScrollPos = Vector2.zero;
+                detailDirectScroll.Reset();
+            }
             if (isOpen && TutorialQuestManager.Instance != null)
                 TutorialQuestManager.Instance.NotifyCollectionOpened();
             if (isOpen) ModalUIRegistry.Register(this);
@@ -195,10 +240,16 @@ namespace InsectGame.UI
         {
             isOpen = false;
             selectedInstanceId = null;
+            directScroll.Reset();
+            detailDirectScroll.Reset();
             ModalUIRegistry.Unregister(this);
         }
         private void OnDisable()
         {
+            isOpen = false;
+            selectedInstanceId = null;
+            directScroll.Reset();
+            detailDirectScroll.Reset();
             ModalUIRegistry.Unregister(this);
             if (insectCollection != null)
                 insectCollection.InsectUpdated -= HandleInsectUpdated;
@@ -227,16 +278,15 @@ namespace InsectGame.UI
         private void DrawPanel()
         {
             InitDetailStyles();
-            float panelW = 1000f;
-            float panelH = 1000f;
-            float panelX = UIScale.VirtualScreenWidth - panelW - 24f;
-            float panelY = 24f;
+            // 세이프에어리어 + 세로 마진 안으로 자동 clamp — 가로 캔버스(높이 1080)에서 잘리던 자리다.
+            Rect panel = UISafeLayout.AnchoredPanel(1000f, 1000f, UISafeLayout.HAlign.Right);
+            float panelW = panel.width;
+            float panelH = panel.height;
+            float panelX = panel.x;
+            float panelY = panel.y;
 
-            GUI.color = PanelBgCol;
-            GUI.DrawTexture(new Rect(panelX, panelY, panelW, panelH), Texture2D.whiteTexture);
-
-            GUI.color = PanelHeaderCol;
-            GUI.DrawTexture(new Rect(panelX, panelY, panelW, 88), Texture2D.whiteTexture);
+            UISurface.Card(new Rect(panelX, panelY, panelW, panelH), PanelBgCol, UITheme.Instance.surfaceBorder);
+            UISurface.Rounded(new Rect(panelX + 3f, panelY + 3f, panelW - 6f, 88f), PanelHeaderCol);
 
             GUI.color = Color.white;
             GUI.Label(new Rect(panelX, panelY + 16, panelW - 84, 58), "컬렉션", panelTitleStyle);
@@ -253,7 +303,11 @@ namespace InsectGame.UI
                 bool active = selectedTab == i;
                 GUI.backgroundColor = active ? TabActiveBgCol : TabInactiveBgCol;
                 if (GUI.Button(new Rect(tabX, tabY, 280, 64), tabNames[i], active ? panelTabActiveStyle : panelTabInactiveStyle))
+                {
                     selectedTab = i;
+                    scrollPos = Vector2.zero;
+                    directScroll.Reset();
+                }
             }
             GUI.backgroundColor = Color.white;
             GUI.color = Color.white;
@@ -289,15 +343,25 @@ namespace InsectGame.UI
 
             float itemH = 168f;
             float totalH = owned.Count * itemH;
-            Rect viewRect = new Rect(0, 0, area.width - 24, totalH);
+            Rect viewRect = new Rect(0, 0, area.width, totalH);
 
-            scrollPos = GUI.BeginScrollView(area, scrollPos, viewRect);
+            directScroll.Handle(ref scrollPos, area, totalH, itemH * 0.35f);
+            scrollPos = GUI.BeginScrollView(
+                area,
+                scrollPos,
+                viewRect,
+                GUIStyle.none,
+                GUIStyle.none);
             for (int i = 0; i < owned.Count; i++)
             {
                 PlayerInsectData pid = owned[i];
                 InsectData data = insectCollection.GetInsectData(pid.insectId);
                 if (DrawInsectItem(new Rect(0, i * itemH, viewRect.width, itemH - 4), pid, data))
+                {
                     selectedInstanceId = pid.instanceId;
+                    detailScrollPos = Vector2.zero;
+                    detailDirectScroll.Reset();
+                }
             }
             GUI.EndScrollView();
         }
@@ -308,8 +372,7 @@ namespace InsectGame.UI
             Color rarityColor = data != null ? GetRarityColor(data.rarity) : Color.gray;
             int rarityTier = data != null ? (int)data.rarity : 0;
 
-            GUI.color = ItemBgCol;
-            GUI.DrawTexture(rect, Texture2D.whiteTexture);
+            UISurface.Card(rect, ItemBgCol, UITheme.Instance.surfaceBorder);
             GUI.color = Color.white;
 
             UIHelper.DrawRarityBorder(rect, rarityTier, Time.time);
@@ -324,8 +387,11 @@ namespace InsectGame.UI
             GUI.Label(new Rect(rect.x + 138, rect.y + 12, rect.width - 320, 48), displayName, itemNameStyle);
 
             string rarityStr = data != null ? data.rarity.ToString() : "?";
+            // 크기는 #코드를 대신하는 개체 구분 축이라 목록 줄에 함께 보여준다.
+            string sizeStr = data != null ? "  |  " + InsectSizeCalculator.SizeLabel(
+                InsectSizeCalculator.SizeMm(data, pid)) : string.Empty;
             GUI.Label(new Rect(rect.x + 138, rect.y + 66, rect.width - 320, 40),
-                $"Lv.{pid.level}  |  {rarityStr}  |  IV: {pid.IVPercent * 100:0}%", itemInfoStyle);
+                $"Lv.{pid.level}  |  {rarityStr}  |  IV: {pid.IVPercent * 100:0}%{sizeStr}", itemInfoStyle);
 
             string gradeStr = CapturePopupUI.GetGradeLabel(pid.Grade);
             Color gradeCol = UITheme.Instance.GetGradeColor(pid.Grade);
@@ -358,13 +424,14 @@ namespace InsectGame.UI
 
             InitDetailStyles();
 
-            float panelW = 1000f;
-            float panelH = 1040f;   // 하단에 습득 기술(learnset) 섹션 공간 확보
-            float panelX = UIScale.VirtualScreenWidth - panelW - 24f;
-            float panelY = 24f;
+            // 1040은 "하단에 습득 기술(learnset) 섹션까지 담고 싶은" 희망 높이 — 안전 영역이 좁으면 줄어든다.
+            Rect panel = UISafeLayout.AnchoredPanel(1000f, 1040f, UISafeLayout.HAlign.Right);
+            float panelW = panel.width;
+            float panelH = panel.height;
+            float panelX = panel.x;
+            float panelY = panel.y;
 
-            GUI.color = PanelBgCol;
-            GUI.DrawTexture(new Rect(panelX, panelY, panelW, panelH), Texture2D.whiteTexture);
+            UISurface.Card(new Rect(panelX, panelY, panelW, panelH), PanelBgCol, UITheme.Instance.surfaceBorder);
 
             Color rarityCol = data != null ? GetRarityColor(data.rarity) : Color.gray;
             int detailRarityTier = data != null ? (int)data.rarity : 0;
@@ -376,7 +443,11 @@ namespace InsectGame.UI
                 UIHelper.DrawRarityGlow(detailRect, rarityCol, detailRarityTier >= 4 ? 0.6f : 0.3f, Time.time);
 
             if (GUI.Button(new Rect(panelX + 16, panelY + 16, 150, 60), "< 뒤로", detailBackStyle))
+            {
                 selectedInstanceId = null;
+                detailScrollPos = Vector2.zero;
+                detailDirectScroll.Reset();
+            }
 
             if (GUI.Button(new Rect(panelX + panelW - 72, panelY + 16, 56, 56), "X", panelCloseStyle))
             {
@@ -409,7 +480,10 @@ namespace InsectGame.UI
                     + (data.secondaryType != InsectElement.None ? "/" + InsectTypeChart.GetDisplayName(data.secondaryType) : "")
                 : "타입 미상";
             GUI.Label(new Rect(panelX, panelY + 340, panelW, 42),
-                data != null ? $"{data.rarity} · {elementLabel} 타입" : "Unknown", detailRarityStyle);
+                data != null
+                    ? $"{data.rarity} · {elementLabel} 타입 · {InsectSizeCalculator.Summary(data, pid)}"
+                    : "Unknown",
+                detailRarityStyle);
 
             Color gradeCol = UITheme.Instance.GetGradeColor(pid.Grade);
             string gradeLabel = CapturePopupUI.GetGradeLabel(pid.Grade);
@@ -421,18 +495,41 @@ namespace InsectGame.UI
             GUI.Label(new Rect(panelX + panelW - 172, panelY + 348, 150, 36),
                 $"{pid.IVPercent * 100:0}%", detailGradePercStyle);
 
-            float statY = panelY + 398;
+            float lowerTop = panelY + 398f;
+            // 패널이 안전 영역에 맞춰 줄면 뷰포트도 함께 줄어 스크롤로 넘어간다(음수 방지).
+            Rect lowerViewport = new Rect(
+                panelX + 24f,
+                lowerTop,
+                panelW - 48f,
+                Mathf.Max(1f, panelY + panelH - lowerTop - 16f));
+            int learnsetRows = CountLearnsetRows(data);
+            float learnsetRowH = UIScale.IsMobileLayout ? 58f : 50f;
+            float lowerContentH = GetDetailLowerContentHeight(
+                learnsetRows,
+                UIScale.IsMobileLayout);
+            detailDirectScroll.Handle(
+                ref detailScrollPos,
+                lowerViewport,
+                lowerContentH,
+                learnsetRowH);
 
-            DrawLevelUpSection(panelX + 34, statY, panelW - 68, pid, data);
+            detailScrollPos = GUI.BeginScrollView(
+                lowerViewport,
+                detailScrollPos,
+                new Rect(0f, 0f, lowerViewport.width, lowerContentH),
+                GUIStyle.none,
+                GUIStyle.none);
 
-            float statBlockY = statY + 168;
+            DrawLevelUpSection(10f, 0f, lowerViewport.width - 20f, pid, data);
+
+            float statBlockY = 168f;
             float statBlockH = 264f;
             GUI.color = StatBlockBgCol;
-            GUI.DrawTexture(new Rect(panelX + 34, statBlockY, panelW - 68, statBlockH), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(10f, statBlockY, lowerViewport.width - 20f, statBlockH), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
-            float sx = panelX + 52;
-            float sw = panelW - 104;
+            float sx = 28f;
+            float sw = lowerViewport.width - 56f;
 
             float barY = statBlockY + 18;
             int bHp = data != null ? data.baseHp : 50;
@@ -446,18 +543,43 @@ namespace InsectGame.UI
             if (data != null && !string.IsNullOrEmpty(data.description))
             {
                 float descY = statBlockY + statBlockH + 16;
-                GUI.Label(new Rect(panelX + 40, descY, panelW - 80, 84), data.description, detailDescStyle);
+                GUI.Label(new Rect(16f, descY, lowerViewport.width - 32f, 84f), data.description, detailDescStyle);
             }
 
             if (data != null && !string.IsNullOrEmpty(data.habitatHint))
             {
                 float hintY = statBlockY + statBlockH + 108;
-                GUI.Label(new Rect(panelX + 40, hintY, panelW - 80, 40),
+                GUI.Label(new Rect(16f, hintY, lowerViewport.width - 32f, 40),
                     $"서식지: {data.habitatHint}", detailHintStyle);
             }
 
             // 습득 기술(레벨별) — 성장 로드맵. 도감이 스킬·습득레벨을 노출하지 않던 문제 해소.
-            DrawLearnset(panelX + 40, statBlockY + statBlockH + 152, panelW - 80, pid, data);
+            DrawLearnset(16f, statBlockY + statBlockH + 152f, lowerViewport.width - 32f, pid, data);
+            GUI.EndScrollView();
+        }
+
+        private static int CountLearnsetRows(InsectData data)
+        {
+            if (data == null || data.learnset == null)
+                return 0;
+
+            int count = 0;
+            foreach (InsectLearnableSkill learnable in data.learnset)
+            {
+                if (learnable != null && learnable.skill != null)
+                    count++;
+            }
+            return count;
+        }
+
+        internal static float GetDetailLowerContentHeight(int learnsetRows, bool mobileLayout)
+        {
+            int safeRows = Mathf.Max(0, learnsetRows);
+            if (safeRows == 0)
+                return 594f;
+
+            float rowHeight = mobileLayout ? 58f : 50f;
+            return 640f + safeRows * rowHeight;
         }
 
         // 레벨별 습득 기술을 compact 목록으로. 현재 레벨 습득분은 강조, 미습득은 딤.
@@ -465,8 +587,14 @@ namespace InsectGame.UI
         {
             if (data == null || data.learnset == null || data.learnset.Length == 0) return;
 
-            GUI.Label(new Rect(x, y, w, 30), "습득 기술", detailHintStyle);
-            float ry = y + 34f;
+            bool mobile = UIScale.IsMobileLayout;
+            learnsetNameStyle.fontSize = mobile ? 29 : 27;
+            GUI.Label(new Rect(x, y, w, 42), "습득 기술", learnsetHeaderStyle);
+            float ry = y + 44f;
+            float rowH = mobile ? 58f : 50f;
+            float levelW = 84f;
+            float metaW = Mathf.Clamp(w * 0.38f, 280f, 360f);
+            float nameW = Mathf.Max(140f, w - levelW - metaW - 16f);
             int level = pid != null ? pid.level : 1;
             foreach (InsectLearnableSkill ls in data.learnset)
             {
@@ -474,11 +602,23 @@ namespace InsectGame.UI
                 bool learned = ls.learnLevel <= level;
                 string typeLabel = ls.skill.effectType == SkillEffectType.Damage ? "공격"
                     : ls.skill.effectType == SkillEffectType.BuffAttack ? "버프" : "디버프";
-                learnsetRowStyle.normal.textColor = learned ? new Color(0.85f, 0.9f, 1f) : new Color(0.45f, 0.45f, 0.5f);
-                GUI.Label(new Rect(x, ry, w, 26),
-                    $"Lv{ls.learnLevel}  ·  {ls.skill.displayName}  ({InsectTypeChart.GetDisplayName(ls.skill.element)} · {typeLabel}){(learned ? "" : "  — 미습득")}",
-                    learnsetRowStyle);
-                ry += 28f;
+                learnsetLevelStyle.normal.textColor = learned
+                    ? new Color(0.78f, 0.86f, 1f)
+                    : SkillUILayout.DisabledSecondaryTextColor;
+                learnsetNameStyle.normal.textColor = learned
+                    ? Color.white
+                    : SkillUILayout.DisabledTextColor;
+                learnsetMetaStyle.normal.textColor = learned
+                    ? new Color(0.76f, 0.82f, 0.92f)
+                    : SkillUILayout.DisabledSecondaryTextColor;
+
+                GUI.Label(new Rect(x, ry, levelW, rowH), $"Lv{ls.learnLevel}", learnsetLevelStyle);
+                GUI.Label(new Rect(x + levelW, ry, nameW, rowH), ls.skill.displayName, learnsetNameStyle);
+                GUI.Label(new Rect(x + w - metaW, ry, metaW, rowH),
+                    $"{InsectTypeChart.GetDisplayName(ls.skill.element)} · {typeLabel}"
+                    + (learned ? "" : " · 미습득"),
+                    learnsetMetaStyle);
+                ry += rowH;
             }
         }
 
@@ -652,14 +792,12 @@ namespace InsectGame.UI
             return UITheme.Instance.GetInsectRarityColor(rarity);
         }
 
+        // #코드 미표시 — 이로치 표식(★)만 남긴다. 개체 구분은 레벨·IV 등급·크기가 맡는다.
         private string GetOwnedDisplayName(PlayerInsectData pid, InsectData data)
         {
             string baseName = data != null ? data.displayName : (pid != null ? pid.insectId : "Unknown");
-            string shortId = pid == null || string.IsNullOrEmpty(pid.instanceId)
-                ? "----"
-                : pid.instanceId.Substring(0, Mathf.Min(6, pid.instanceId.Length)).ToUpperInvariant();
             string shinyMark = (pid != null && pid.isShiny) ? "★ " : "";
-            return $"{shinyMark}{baseName} #{shortId}";
+            return shinyMark + baseName;
         }
 
         public void AutoWire(PlayerInsectCollection collection, PlayerCandyInventory candy, PlayerProgressController progress)

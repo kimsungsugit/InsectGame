@@ -1,0 +1,189 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 52cf560209b587d47ac0f45590330f2f, type: 3}
+  m_Name: ItemRarityPalette
+  m_EditorClassIdentifier: Assembly-CSharp::InsectGame.Data.ItemRarityPalette
+  commonColor: {r: 0.8, g: 0.8, b: 0.8, a: 1}
+  uncommonColor: {r: 0.5, g: 0.9, b: 0.5, a: 1}
+  rareColor: {r: 0.4, g: 0.7, b: 1, a: 1}
+  epicColor: {r: 0.8, g: 0.4, b: 1, a: 1}
+  legendaryColor: {r: 1, g: 0.75, b: 0.2, a: 1}
+  commonGradient:
+    serializedVersion: 2
+    key0: {r: 0.35999998, g: 0.35999998, b: 0.35999998, a: 0}
+    key1: {r: 0.8, g: 0.8, b: 0.8, a: 1}
+    key2: {r: 1, g: 1, b: 1, a: 0}
+    key3: {r: 0, g: 0, b: 0, a: 0}
+    key4: {r: 0, g: 0, b: 0, a: 0}
+    key5: {r: 0, g: 0, b: 0, a: 0}
+    key6: {r: 0, g: 0, b: 0, a: 0}
+    key7: {r: 0, g: 0, b: 0, a: 0}
+    ctime0: 0
+    ctime1: 32768
+    ctime2: 65535
+    ctime3: 0
+    ctime4: 0
+    ctime5: 0
+    ctime6: 0
+    ctime7: 0
+    atime0: 0
+    atime1: 16384
+    atime2: 65535
+    atime3: 0
+    atime4: 0
+    atime5: 0
+    atime6: 0
+    atime7: 0
+    m_Mode: 0
+    m_ColorSpace: -1
+    m_NumColorKeys: 3
+    m_NumAlphaKeys: 3
+  uncommonGradient:
+    serializedVersion: 2
+    key0: {r: 0.225, g: 0.40499997, b: 0.225, a: 0}
+    key1: {r: 0.5, g: 0.9, b: 0.5, a: 1}
+    key2: {r: 0.77500004, g: 1, b: 0.77500004, a: 0}
+    key3: {r: 0, g: 0, b: 0, a: 0}
+    key4: {r: 0, g: 0, b: 0, a: 0}
+    key5: {r: 0, g: 0, b: 0, a: 0}
+    key6: {r: 0, g: 0, b: 0, a: 0}
+    key7: {r: 0, g: 0, b: 0, a: 0}
+    ctime0: 0
+    ctime1: 32768
+    ctime2: 65535
+    ctime3: 0
+    ctime4: 0
+    ctime5: 0
+    ctime6: 0
+    ctime7: 0
+    atime0: 0
+    atime1: 16384
+    atime2: 65535
+    atime3: 0
+    atime4: 0
+    atime5: 0
+    atime6: 0
+    atime7: 0
+    m_Mode: 0
+    m_ColorSpace: -1
+    m_NumColorKeys: 3
+    m_NumAlphaKeys: 3
+  rareGradient:
+    serializedVersion: 2
+    key0: {r: 0.17999999, g: 0.315, b: 0.45, a: 0}
+    key1: {r: 0.4, g: 0.7, b: 1, a: 1}
+    key2: {r: 0.64000005, g: 1, b: 1, a: 0}
+    key3: {r: 0, g: 0, b: 0, a: 0}
+    key4: {r: 0, g: 0, b: 0, a: 0}
+    key5: {r: 0, g: 0, b: 0, a: 0}
+    key6: {r: 0, g: 0, b: 0, a: 0}
+    key7: {r: 0, g: 0, b: 0, a: 0}
+    ctime0: 0
+    ctime1: 32768
+    ctime2: 65535
+    ctime3: 0
+    ctime4: 0
+    ctime5: 0
+    ctime6: 0
+    ctime7: 0
+    atime0: 0
+    atime1: 16384
+    atime2: 65535
+    atime3: 0
+    atime4: 0
+    atime5: 0
+    atime6: 0
+    atime7: 0
+    m_Mode: 0
+    m_ColorSpace: -1
+    m_NumColorKeys: 3
+    m_NumAlphaKeys: 3
+  epicGradient:
+    serializedVersion: 2
+    key0: {r: 0.35999998, g: 0.17999999, b: 0.45, a: 0}
+    key1: {r: 0.8, g: 0.4, b: 1, a: 1}
+    key2: {r: 1, g: 0.64000005, b: 1, a: 0}
+    key3: {r: 0, g: 0, b: 0, a: 0}
+    key4: {r: 0, g: 0, b: 0, a: 0}
+    key5: {r: 0, g: 0, b: 0, a: 0}
+    key6: {r: 0, g: 0, b: 0, a: 0}
+    key7: {r: 0, g: 0, b: 0, a: 0}
+    ctime0: 0
+    ctime1: 32768
+    ctime2: 65535
+    ctime3: 0
+    ctime4: 0
+    ctime5: 0
+    ctime6: 0
+    ctime7: 0
+    atime0: 0
+    atime1: 16384
+    atime2: 65535
+    atime3: 0
+    atime4: 0
+    atime5: 0
+    atime6: 0
+    atime7: 0
+    m_Mode: 0
+    m_ColorSpace: -1
+    m_NumColorKeys: 3
+    m_NumAlphaKeys: 3
+  legendaryGradient:
+    serializedVersion: 2
+    key0: {r: 0.45, g: 0.33749998, b: 0.089999996, a: 0}
+    key1: {r: 1, g: 0.75, b: 0.2, a: 1}
+    key2: {r: 1, g: 1, b: 0.37, a: 0}
+    key3: {r: 0, g: 0, b: 0, a: 0}
+    key4: {r: 0, g: 0, b: 0, a: 0}
+    key5: {r: 0, g: 0, b: 0, a: 0}
+    key6: {r: 0, g: 0, b: 0, a: 0}
+    key7: {r: 0, g: 0, b: 0, a: 0}
+    ctime0: 0
+    ctime1: 32768
+    ctime2: 65535
+    ctime3: 0
+    ctime4: 0
+    ctime5: 0
+    ctime6: 0
+    ctime7: 0
+    atime0: 0
+    atime1: 16384
+    atime2: 65535
+    atime3: 0
+    atime4: 0
+    atime5: 0
+    atime6: 0
+    atime7: 0
+    m_Mode: 0
+    m_ColorSpace: -1
+    m_NumColorKeys: 3
+    m_NumAlphaKeys: 3
+  commonPulse: 0.05
+  uncommonPulse: 0.08
+  rarePulse: 0.12
+  epicPulse: 0.18
+  legendaryPulse: 0.25
+  commonBorderThickness: 1
+  uncommonBorderThickness: 1
+  rareBorderThickness: 2
+  epicBorderThickness: 2
+  legendaryBorderThickness: 3
+  commonGlowIntensity: 0
+  uncommonGlowIntensity: 0
+  rareGlowIntensity: 0.3
+  epicGlowIntensity: 0.5
+  legendaryGlowIntensity: 0.8
+  commonAnimSpeed: 0
+  uncommonAnimSpeed: 0
+  rareAnimSpeed: 1
+  epicAnimSpeed: 2
+  legendaryAnimSpeed: 3

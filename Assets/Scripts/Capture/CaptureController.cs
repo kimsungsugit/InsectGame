@@ -8,14 +8,21 @@ namespace InsectGame.Capture
 {
     public class CaptureController : MonoBehaviour
     {
-        [Range(0f, 1f)] [SerializeField] private float baseSuccessChance = 0.35f;
-        [Range(0f, 0.5f)] [SerializeField] private float rarityPenaltyStep = 0.08f;
-        [Range(0f, 1f)] [SerializeField] private float difficultyPenaltyScale = 0.45f;
-        [Range(0f, 0.3f)] [SerializeField] private float perfectTimingBonus = 0.1f;
-        [Range(0f, 0.5f)] [SerializeField] private float timingWindow = 0.15f;
+        [Range(0f, 1f)] [SerializeField]
+        private float baseSuccessChance = CaptureChanceTuning.DefaultBaseSuccessChance;
+        [Range(0f, 0.5f)] [SerializeField]
+        private float rarityPenaltyStep = CaptureChanceTuning.DefaultRarityPenaltyStep;
+        [Range(0f, 1f)] [SerializeField]
+        private float difficultyPenaltyScale = CaptureChanceTuning.DefaultDifficultyPenaltyScale;
+        [Range(0f, 0.3f)] [SerializeField]
+        private float perfectTimingBonus = CaptureChanceTuning.DefaultPerfectTimingBonus;
+        [Range(0f, 0.5f)] [SerializeField]
+        private float timingWindow = CaptureChanceTuning.DefaultTimingWindow;
         [Header("Level Modifier")]
-        [SerializeField] private float playerLevelBonusStep = 0.02f;
-        [SerializeField] private float enemyLevelPenaltyStep = 0.03f;
+        [SerializeField]
+        private float playerLevelBonusStep = CaptureChanceTuning.DefaultPlayerLevelBonusStep;
+        [SerializeField]
+        private float enemyLevelPenaltyStep = CaptureChanceTuning.DefaultEnemyLevelPenaltyStep;
 
         [SerializeField] private Dex.DexController dexController;
         [SerializeField] private PlayerProgressController playerProgress;
@@ -33,7 +40,7 @@ namespace InsectGame.Capture
                 return;
             }
 
-            float chance = Mathf.Clamp01(CalculateSuccessChance(target.Data, target.Level, timing01) + extraBonus);
+            float chance = CalculateSuccessChance(target.Data, target.Level, timing01, extraBonus);
             bool success = UnityEngine.Random.value <= chance;
 
             // 이벤트 핸들러 예외가 DEX/보상 처리를 차단하지 않도록 격리
@@ -79,31 +86,34 @@ namespace InsectGame.Capture
             }
         }
 
-        private float CalculateSuccessChance(InsectData data, int insectLevel, float timing01)
-        {
-            float chance = baseSuccessChance;
-            chance -= (int)data.rarity * rarityPenaltyStep;
-            chance -= data.captureDifficulty * difficultyPenaltyScale;
-            chance += GetLevelModifier(insectLevel);
-            chance += itemEffects != null ? itemEffects.GetCaptureChanceBonus() : 0f;
-            chance += outfitBonus != null ? outfitBonus.GetCaptureChanceBonus() : 0f;
-
-            float timingBonus = Mathf.Abs(timing01 - 0.5f) <= timingWindow ? perfectTimingBonus : 0f;
-            chance += timingBonus;
-
-            return Mathf.Clamp01(chance);
-        }
-
-        private float GetLevelModifier(int insectLevel)
+        private float CalculateSuccessChance(
+            InsectData data,
+            int insectLevel,
+            float timing01,
+            float minigameBonus)
         {
             int playerLevel = playerProgress != null ? playerProgress.Level : 1;
-            int diff = playerLevel - Mathf.Max(1, insectLevel);
-            if (diff >= 0)
-            {
-                return diff * playerLevelBonusStep;
-            }
+            float activeItemBonus = itemEffects != null ? itemEffects.GetCaptureChanceBonus() : 0f;
+            float equippedOutfitBonus = outfitBonus != null ? outfitBonus.GetCaptureChanceBonus() : 0f;
+            CaptureChanceTuning tuning = new CaptureChanceTuning(
+                baseSuccessChance,
+                rarityPenaltyStep,
+                difficultyPenaltyScale,
+                perfectTimingBonus,
+                timingWindow,
+                playerLevelBonusStep,
+                enemyLevelPenaltyStep);
 
-            return diff * enemyLevelPenaltyStep;
+            return CaptureChanceCalculator.Calculate(
+                data.rarity,
+                data.captureDifficulty,
+                playerLevel,
+                insectLevel,
+                timing01,
+                activeItemBonus,
+                equippedOutfitBonus,
+                minigameBonus,
+                tuning);
         }
 
         public void AutoWire(Dex.DexController dex)

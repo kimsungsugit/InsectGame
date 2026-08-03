@@ -25,6 +25,8 @@ namespace InsectGame.Battle
         private const int BattleVictoryCoins = 3;
 
         public event Action<bool> BattleEnded;
+        /// <summary>NPC 대결이 끝났을 때만 발화(승리 여부). 야생 전투에서는 울리지 않는다.</summary>
+        public event Action<bool> DuelEnded;
         public event Action<InsectBattleStats, InsectBattleStats> BattleUpdated;
         public event Action PlayerFainted;
 
@@ -35,6 +37,7 @@ namespace InsectGame.Battle
         private InsectBattleStats enemyStats;
         private InsectEntity enemyEntity;
         private bool enemyShinyAtStart; // 시작 시점 스냅샷 — 도주/풀 재사용된 라이브 참조로 보상 오등록 방지
+        private bool duelMode;          // NPC 대결 — 포획 롤·야생 아이템 드랍 없음(StartDuel 참조)
         private InsectSkill[] playerOverrideSkills;
         private int[] playerCooldowns;
         private int enemyCooldown;
@@ -54,6 +57,9 @@ namespace InsectGame.Battle
         private string lastItemId;
         private int lastItemCount;
         private bool lastPlayerWon;
+        private bool lastCaptureAttempted;
+        private bool lastCaptureSucceeded;
+        private float lastCaptureChance;
 
         private BattleArenaController Arena => arena;
 
@@ -70,13 +76,44 @@ namespace InsectGame.Battle
                 return;
             }
 
-            playerStats = new InsectBattleStats(playerInsect, playerLevel, playerPid);
-            enemyStats = new InsectBattleStats(enemy.Data, enemy.Level);
-            enemyEntity = enemy;
-            enemyShinyAtStart = enemy.IsShiny;
             // 배틀 동안 야생 엔티티가 도주(patience 소진)→Despawn→풀 재사용되어 종료 시 엉뚱한
             // 곤충이 포획/디스폰되는 보상 무결성 손상을 차단. (미니게임/선택 UI는 이미 SetEngaged)
             enemy.SetEngaged(true);
+            BeginBattleCommon(playerInsect, playerLevel, enemy.Data, enemy.Level, equippedSkills, playerPid);
+            enemyEntity = enemy;
+            enemyShinyAtStart = enemy.IsShiny;
+            duelMode = false;
+            onStarted?.Invoke(playerStats, enemyStats);
+            BattleUpdated?.Invoke(playerStats, enemyStats);
+        }
+
+        /// <summary>
+        /// NPC 대결 — 월드 엔티티 없이 데이터만으로 붙는다. 상대 곤충은 NPC의 것이므로
+        /// 포획 롤과 야생 아이템 드랍을 건너뛴다(캔디·EXP·코인은 정상 지급).
+        /// 아이템 보상은 승부를 건 쪽(NpcDuelController)이 준다.
+        /// </summary>
+        public bool StartDuel(InsectData playerInsect, int playerLevel, InsectData enemyInsect, int enemyLevel,
+            Action<InsectBattleStats, InsectBattleStats> onStarted = null, InsectSkill[] equippedSkills = null,
+            Core.PlayerInsectData playerPid = null)
+        {
+            if (playerInsect == null || enemyInsect == null) return false;
+            if (playerPid != null && playerPid.IsFainted) return false;
+
+            BeginBattleCommon(playerInsect, playerLevel, enemyInsect, enemyLevel, equippedSkills, playerPid);
+            enemyEntity = null;          // 디스폰할 월드 개체가 없다
+            enemyShinyAtStart = false;
+            duelMode = true;
+            onStarted?.Invoke(playerStats, enemyStats);
+            BattleUpdated?.Invoke(playerStats, enemyStats);
+            return true;
+        }
+
+        // StartBattle/StartDuel이 공유하는 초기화 — 야생/듀얼 차이는 호출부가 뒤에 덮는다.
+        private void BeginBattleCommon(InsectData playerInsect, int playerLevel,
+            InsectData enemyInsect, int enemyLevel, InsectSkill[] equippedSkills, Core.PlayerInsectData playerPid)
+        {
+            playerStats = new InsectBattleStats(playerInsect, playerLevel, playerPid);
+            enemyStats = new InsectBattleStats(enemyInsect, enemyLevel);
             playerOverrideSkills = ResolvePlayerSkills(playerInsect, equippedSkills, playerPid);
             int skillCount = playerOverrideSkills != null ? playerOverrideSkills.Length : (playerInsect.skills != null ? playerInsect.skills.Length : 0);
             playerCooldowns = new int[skillCount];
@@ -90,9 +127,12 @@ namespace InsectGame.Battle
             lastItemId = string.Empty;
             lastItemCount = 0;
             lastPlayerWon = false;
+            lastCaptureAttempted = false;
+            lastCaptureSucceeded = false;
+            lastCaptureChance = 0f;
             battleEnded = false;
-            onStarted?.Invoke(playerStats, enemyStats);
-            BattleUpdated?.Invoke(playerStats, enemyStats);
+            // onStarted/BattleUpdated는 호출부가 야생/듀얼 고유 필드(enemyEntity 등)를 채운 뒤에 울린다 —
+            // BattleScreenUI.OnBattleUpdated가 GetEnemyEntity()를 읽어 아레나 위치를 잡기 때문이다.
         }
 
         public void UseSkill(int skillIndex)
@@ -298,12 +338,16 @@ namespace InsectGame.Battle
             switch (skill.effectType)
             {
                 case SkillEffectType.BuffAttack:
-                    AddEffect(isPlayer, skill.effectValue, skill.effectDurationTurns, EffectKind.AtkBuff);
-                    TryPlayEffectText("공격력 상승!", new Color(1f, 0.8f, 0.3f));
+                    if (AddEffect(isPlayer, skill.effectValue, skill.effectDurationTurns, EffectKind.AtkBuff))
+                        TryPlayEffectText("공격력 상승!", new Color(1f, 0.8f, 0.3f));
+                    else
+                        TryPlayEffectText("이미 최대치!", new Color(0.7f, 0.7f, 0.75f));
                     break;
                 case SkillEffectType.DebuffAttack:
-                    AddEffect(!isPlayer, -skill.effectValue, skill.effectDurationTurns, EffectKind.AtkBuff);
-                    TryPlayEffectText("공격력 하락!", new Color(0.6f, 0.4f, 0.9f));
+                    if (AddEffect(!isPlayer, -skill.effectValue, skill.effectDurationTurns, EffectKind.AtkBuff))
+                        TryPlayEffectText("공격력 하락!", new Color(0.6f, 0.4f, 0.9f));
+                    else
+                        TryPlayEffectText("이미 최대치!", new Color(0.7f, 0.7f, 0.75f));
                     break;
                 case SkillEffectType.Heal:
                 {
@@ -328,8 +372,10 @@ namespace InsectGame.Battle
                     TryPlayEffectText("기절!", new Color(1f, 0.9f, 0.3f));
                     break;
                 case SkillEffectType.DefenseBuff:
-                    AddEffect(isPlayer, skill.effectValue, skill.effectDurationTurns, EffectKind.DefBuff);
-                    TryPlayEffectText("방어력 상승!", new Color(0.4f, 0.7f, 1f));
+                    if (AddEffect(isPlayer, skill.effectValue, skill.effectDurationTurns, EffectKind.DefBuff))
+                        TryPlayEffectText("방어력 상승!", new Color(0.4f, 0.7f, 1f));
+                    else
+                        TryPlayEffectText("이미 최대치!", new Color(0.7f, 0.7f, 0.75f));
                     break;
                 default:
                     if (!LandsHit(skill)) { TryPlayEffectText("빗나갔다!", new Color(0.7f, 0.7f, 0.75f)); break; }
@@ -434,11 +480,20 @@ namespace InsectGame.Battle
             playerCollection.SetAfterBattle(playerStats.PlayerData, playerStats.CurrentHp, playerPoisoned, playerParalyzed);
         }
 
-        private void AddEffect(bool targetIsPlayer, float value, int duration, EffectKind kind = EffectKind.AtkBuff)
+        /// <summary>
+        /// 지속 효과 추가. 상한(GameConstants.Battle.MaxBuffStacks)에 걸려 추가하지 못하면 false.
+        /// Dot는 상한 대상이 아니다 — 버프/디버프 배율만 무한 누적이 문제였다.
+        /// </summary>
+        private bool AddEffect(bool targetIsPlayer, float value, int duration, EffectKind kind = EffectKind.AtkBuff)
         {
             if (duration <= 0)
             {
-                return;
+                return false;
+            }
+
+            if (kind != EffectKind.Dot && CountStacks(targetIsPlayer, value, kind) >= GameConstants.Battle.MaxBuffStacks)
+            {
+                return false;
             }
 
             effects.Add(new ActiveEffect
@@ -449,6 +504,22 @@ namespace InsectGame.Battle
                 kind = kind
             });
             RecalculateBonuses();
+            return true;
+        }
+
+        // 같은 대상·같은 종류·같은 방향(부호)으로 살아 있는 효과 수. 만료된 것은 TickEffects가 이미 지웠다.
+        // 부호를 따지므로 공격력 상승 3스택이 찼어도 공격력 하락은 그대로 걸린다(되돌릴 길을 막지 않는다).
+        private int CountStacks(bool targetIsPlayer, float value, EffectKind kind)
+        {
+            bool positive = value > 0f;
+            int count = 0;
+            for (int i = 0; i < effects.Count; i++)
+            {
+                ActiveEffect e = effects[i];
+                if (e.targetIsPlayer == targetIsPlayer && e.kind == kind && (e.value > 0f) == positive)
+                    count++;
+            }
+            return count;
         }
 
         private void TickEffects()
@@ -527,7 +598,29 @@ namespace InsectGame.Battle
             if (battleEnded) return; // 이미 종료 — 보상/이벤트 중복 차단
 
             bool playerWon = enemyStats.CurrentHp <= 0 && playerStats.CurrentHp > 0;
-            if (playerWon && enemyEntity != null)
+            if (playerWon && duelMode)
+            {
+                // NPC 대결 승리 — 상대는 NPC 소유라 포획도, 야생 드랍도 없다.
+                // 성장 재화(캔디·EXP)와 코인만 야생과 같은 계산으로 지급한다.
+                InsectData duelData = enemyStats.Data;
+                float duelCandyMul = (itemEffects != null ? itemEffects.GetCandyMultiplier() : 1f)
+                                    * (outfitBonus != null ? outfitBonus.GetCandyMultiplier() : 1f);
+                float duelExpMul = (itemEffects != null ? itemEffects.GetExpMultiplier() : 1f)
+                                  * (outfitBonus != null ? outfitBonus.GetExpMultiplier() : 1f);
+                lastCandyReward = Mathf.RoundToInt(InsectRewardCalculator.GetCandyReward(duelData) * duelCandyMul);
+                lastExpReward = Mathf.RoundToInt(InsectRewardCalculator.GetExpReward(duelData) * duelExpMul);
+                candyInventory?.AddCandy(lastCandyReward);
+                playerProgress?.GainXp(lastExpReward);
+                wallet?.AddCoins(BattleVictoryCoins);
+
+                lastItemId = string.Empty;
+                lastItemCount = 0;
+                lastCaptureAttempted = false;
+                lastCaptureSucceeded = false;
+                lastCaptureChance = 0f;
+                TryPlayFaint(false);
+            }
+            else if (playerWon && enemyEntity != null)
             {
                 // 보상은 시작 시점 스냅샷(enemyStats)에서 — SetEngaged로 도주를 막았지만,
                 // 라이브 enemyEntity 대신 스냅샷을 써 이중 안전(엉뚱한 종/레벨/이로치 등록 방지).
@@ -535,6 +628,10 @@ namespace InsectGame.Battle
                 int enemyLevel = enemyStats.Level;
                 int itemCount = InsectRewardCalculator.GetItemRewardCount(enemyData);
                 string itemId = enemyData.itemRewardId;
+                // 같은 승리에서 지급하는 XP가 이번 포획 확률을 바꾸지 않도록 보상 지급 전에 고정한다.
+                int capturePlayerLevel = playerProgress != null
+                    ? playerProgress.Level
+                    : playerStats.Level;
 
                 // EXP/캔디 부스터(아이템·아웃핏) 배율 — 포획 경로(CaptureController)와 동일 항목만 적용.
                 float candyMultiplier = (itemEffects != null ? itemEffects.GetCandyMultiplier() : 1f)
@@ -553,15 +650,54 @@ namespace InsectGame.Battle
                     itemInventory?.AddItem(itemId, itemCount);
                 }
 
-                if (playerCollection != null)
-                    playerCollection.AddCapturedInsect(enemyData.insectId, enemyLevel, enemyShinyAtStart);
-                else
-                    Debug.LogError("[Battle] playerCollection null — 캡처 보상 손실: " + enemyData.insectId);
+                float activeItemBonus = itemEffects != null
+                    ? itemEffects.GetCaptureChanceBonus()
+                    : 0f;
+                float equippedOutfitBonus = outfitBonus != null
+                    ? outfitBonus.GetCaptureChanceBonus()
+                    : 0f;
+                lastCaptureAttempted = true;
+                lastCaptureChance = BattleCaptureChanceCalculator.Calculate(
+                    enemyData.rarity,
+                    enemyData.captureDifficulty,
+                    capturePlayerLevel,
+                    enemyLevel,
+                    activeItemBonus,
+                    equippedOutfitBonus);
+                bool captureRollSucceeded = BattleCaptureChanceCalculator.IsSuccessful(
+                    lastCaptureChance,
+                    UnityEngine.Random.value);
 
                 if (dexController != null)
                 {
                     dexController.RegisterEncounter(enemyData.insectId);
-                    dexController.RegisterCapture(enemyData.insectId);
+                }
+
+                if (captureRollSucceeded)
+                {
+                    if (playerCollection == null)
+                    {
+                        Debug.LogError("[Battle] playerCollection null — 전투 포획 저장 실패: " + enemyData.insectId);
+                    }
+                    else
+                    {
+                        Core.PlayerInsectData captured = playerCollection.AddCapturedInsect(
+                            enemyData.insectId,
+                            enemyLevel,
+                            enemyShinyAtStart);
+                        if (captured == null)
+                        {
+                            Debug.LogError("[Battle] AddCapturedInsect가 null을 반환해 전투 포획에 실패했습니다: "
+                                           + enemyData.insectId);
+                        }
+                        else
+                        {
+                            lastCaptureSucceeded = true;
+                            dexController?.RegisterCapture(enemyData.insectId);
+                            // 전투는 CaptureController/CaptureResolved를 우회하므로 성공한 실제 포획만 직접 알린다.
+                            TutorialQuestManager.Instance?.NotifyCapture(enemyData.rarity);
+                        }
+                    }
                 }
 
                 lastCandyReward = candy;
@@ -579,6 +715,7 @@ namespace InsectGame.Battle
                 battleEnded = true;
                 lastPlayerWon = playerWon;
                 BattleEnded?.Invoke(playerWon);
+                if (duelMode) DuelEnded?.Invoke(playerWon);
             }
             else if (playerStats.CurrentHp <= 0)
             {
@@ -611,6 +748,7 @@ namespace InsectGame.Battle
                     battleEnded = true;
                     if (enemyEntity != null) enemyEntity.Despawn();
                     BattleEnded?.Invoke(false);
+                    if (duelMode) DuelEnded?.Invoke(false);
                 }
             }
         }
@@ -785,6 +923,21 @@ namespace InsectGame.Battle
         public int GetLastExpReward()
         {
             return lastExpReward;
+        }
+
+        public bool GetLastCaptureAttempted()
+        {
+            return lastCaptureAttempted;
+        }
+
+        public bool GetLastCaptureSucceeded()
+        {
+            return lastCaptureSucceeded;
+        }
+
+        public float GetLastCaptureChance()
+        {
+            return lastCaptureChance;
         }
 
         public string GetLastItemId()

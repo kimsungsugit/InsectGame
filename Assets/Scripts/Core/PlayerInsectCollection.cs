@@ -98,6 +98,14 @@ namespace InsectGame.Core
                     needsSave = true;
                 }
 
+                // 크기 롤 초기화 — 구세이브(sizeRoll -1)는 instanceId 해시로 채운다.
+                // 중복 GUID 재발급 뒤에 부른다(새 ID 기준으로 크기가 정해져야 결정적이다).
+                if (data.sizeRoll < InsectSizeCalculator.MinRoll)
+                {
+                    data.EnsureSize();
+                    needsSave = true;
+                }
+
                 InsectData insect = GetInsectData(data.insectId);
                 // 지속 HP 초기화 — 구세이브(currentHp -1)는 풀피로 확정. insect null이면 다음 로드에 미룸.
                 if (insect != null)

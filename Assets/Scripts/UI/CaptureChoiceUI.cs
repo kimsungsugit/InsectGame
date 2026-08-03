@@ -162,10 +162,11 @@ namespace InsectGame.UI
             if (targetInsect == null || targetInsect.Data == null) return;
 
             bool isRaid = IsRaidTarget();
-            float panelW = isRaid ? 760f : 760f;
-            float panelH = isRaid ? 560f : 480f;
-            float px = (UIScale.VirtualScreenWidth - panelW) / 2f;
-            float py = (UIScale.VirtualScreenHeight - panelH) / 2f;
+            Rect panel = UISafeLayout.CenteredPanel(760f, isRaid ? 560f : 480f);
+            float panelW = panel.width;
+            float panelH = panel.height;
+            float px = panel.x;
+            float py = panel.y;
 
             GUI.color = new Color(0.04f, 0.06f, 0.1f, 0.95f);
             GUI.DrawTexture(new Rect(px, py, panelW, panelH), Texture2D.whiteTexture);
@@ -299,10 +300,12 @@ namespace InsectGame.UI
         {
             if (captureItems == null || captureItems.Length == 0) { showItemSelect = false; return; }
 
-            float panelW = 800f;
-            float panelH = 120 + captureItems.Length * 160;
-            float px = (UIScale.VirtualScreenWidth - panelW) / 2f;
-            float py = (UIScale.VirtualScreenHeight - panelH) / 2f;
+            // 아이템 수에 비례해 무한히 자라는 높이 — 안전 영역을 넘으면 clamp된다(넘치는 목록은 스크롤로 본다).
+            Rect panel = UISafeLayout.CenteredPanel(800f, 120 + captureItems.Length * 160);
+            float panelW = panel.width;
+            float panelH = panel.height;
+            float px = panel.x;
+            float py = panel.y;
 
             GUI.color = new Color(0.04f, 0.06f, 0.1f, 0.95f);
             GUI.DrawTexture(new Rect(px, py, panelW, panelH), Texture2D.whiteTexture);
@@ -421,10 +424,11 @@ namespace InsectGame.UI
 
         private void DrawTeamSelect()
         {
-            float panelW = 820f;
-            float panelH = 720f;
-            float px = (UIScale.VirtualScreenWidth - panelW) / 2f;
-            float py = (UIScale.VirtualScreenHeight - panelH) / 2f;
+            Rect panel = UISafeLayout.CenteredPanel(820f, 720f);
+            float panelW = panel.width;
+            float panelH = panel.height;
+            float px = panel.x;
+            float py = panel.y;
 
             GUI.color = new Color(0.04f, 0.06f, 0.1f, 0.95f);
             GUI.DrawTexture(new Rect(px, py, panelW, panelH), Texture2D.whiteTexture);
@@ -445,16 +449,22 @@ namespace InsectGame.UI
                 $"vs {targetInsect.Data.displayName} Lv.{targetInsect.Level}", subStyle);
 
             float slotY = py + 110;
-            float slotH = 100f;
+            const float slotGap = 6f;
+            float backH = UIScale.IsMobileLayout ? 60f : 46f;
+            // 패널이 안전 영역에 맞춰 줄면 슬롯도 줄여 '뒤로' 버튼과 겹치지 않게 한다.
+            float slotAvail = panelH - (slotY - py) - backH - 24f;
+            float slotH = Mathf.Clamp(
+                (slotAvail - (BattleTeamManager.MaxSlots - 1) * slotGap) / BattleTeamManager.MaxSlots,
+                UIScale.MinTouchHeight,
+                100f);
 
             for (int i = 0; i < BattleTeamManager.MaxSlots; i++)
             {
                 string instanceId = teamManager != null ? teamManager.GetSlot(i) : null;
-                DrawTeamSlotChoice(px + 24, slotY + i * (slotH + 6), panelW - 48, slotH, i, instanceId);
+                DrawTeamSlotChoice(px + 24, slotY + i * (slotH + slotGap), panelW - 48, slotH, i, instanceId);
             }
 
             GUIStyle backStyle = new GUIStyle(GUI.skin.button) { fontSize = 24, fontStyle = FontStyle.Bold };
-            float backH = UIScale.IsMobileLayout ? 60f : 46f;
             if (GUI.Button(new Rect(px + panelW / 2f - 90f, py + panelH - backH - 10f, 180f, backH), "< 뒤로", backStyle))
                 showTeamSelect = false;
         }
@@ -570,13 +580,10 @@ namespace InsectGame.UI
             raidController.StartRaid(savedTarget, teamInsects, teamLevels, teamPids, teamSkills);
         }
 
+        // #코드 미표시 — BattleTeamUI.GetOwnedDisplayName과 같은 이유.
         private static string GetOwnedDisplayName(PlayerInsectData pid, InsectData data)
         {
-            string baseName = data != null ? data.displayName : (pid != null ? pid.insectId : "Unknown");
-            string shortId = pid == null || string.IsNullOrEmpty(pid.instanceId)
-                ? "----"
-                : pid.instanceId.Substring(0, Mathf.Min(6, pid.instanceId.Length)).ToUpperInvariant();
-            return $"{baseName} #{shortId}";
+            return data != null ? data.displayName : (pid != null ? pid.insectId : "Unknown");
         }
 
         public void AutoWire(

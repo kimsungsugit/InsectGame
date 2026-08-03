@@ -9,7 +9,14 @@ namespace InsectGame.UI
     {
         private bool isOpen;
         private int selectedTab; // 0=보석충전, 1=아이템, 2=랜덤상자
-        private Vector2 scrollPos;
+        private readonly Vector2[] tabScrollPositions = new Vector2[3];
+        private readonly UIDirectScroll[] tabDirectScrolls =
+        {
+            new UIDirectScroll(),
+            new UIDirectScroll(),
+            new UIDirectScroll()
+        };
+        private readonly float[] tabContentHeights = new float[3];
 
         // 가챠 연출
         private bool showingGachaResult;
@@ -138,6 +145,7 @@ namespace InsectGame.UI
         {
             isOpen = !isOpen;
             showingGachaResult = false;
+            ResetAllTabScrolls();
             if (isOpen) ModalUIRegistry.Register(this);
             else ModalUIRegistry.Unregister(this);
         }
@@ -146,6 +154,7 @@ namespace InsectGame.UI
         {
             isOpen = false;
             showingGachaResult = false;
+            ResetAllTabScrolls();
             ModalUIRegistry.Unregister(this);
         }
 
@@ -154,6 +163,7 @@ namespace InsectGame.UI
         {
             selectedTab = Mathf.Clamp(tab, 0, 2);
             showingGachaResult = false;
+            ResetAllTabScrolls();
             if (!isOpen)
             {
                 isOpen = true;
@@ -184,6 +194,7 @@ namespace InsectGame.UI
         {
             if (GachaBoxManager.Instance != null)
                 GachaBoxManager.Instance.BoxOpened -= OnBoxOpened;
+            ResetAllTabScrolls();
             ModalUIRegistry.Unregister(this);
         }
 
@@ -192,6 +203,7 @@ namespace InsectGame.UI
             gachaResult = result;
             showingGachaResult = true;
             gachaAnimTimer = 0f;
+            ResetAllTabScrolls();
 
             if (AudioManager.Instance != null)
             {
@@ -219,16 +231,16 @@ namespace InsectGame.UI
             GUI.DrawTexture(new Rect(0, 0, vw, vh), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
-            float panelW = Mathf.Min(1200f, vw * 0.96f);
-            // 모바일 세로는 긴 화면(1920+)을 더 활용해 확대된 카드의 스크롤을 줄임(세이프에어리어 여백 유지). 데스크톱은 기존 유지.
-            float panelH = UIScale.IsMobileLayout ? Mathf.Min(1560f, vh * 0.9f) : Mathf.Min(820f, vh * 0.95f);
-            float px = (vw - panelW) * 0.5f;
-            float py = (vh - panelH) * 0.5f;
-            Rect panelRect = new Rect(px, py, panelW, panelH);
+            // 모바일 세로는 긴 화면(1920+)을 더 활용해 확대된 카드의 스크롤을 줄임. 데스크톱은 기존 유지.
+            // 세이프에어리어 + 세로 마진은 하네스가 뺀다.
+            Rect panelRect = UISafeLayout.CenteredPanel(1200f, UIScale.IsMobileLayout ? 1560f : 820f);
+            float panelW = panelRect.width;
+            float panelH = panelRect.height;
+            float px = panelRect.x;
+            float py = panelRect.y;
 
             // 패널 배경
-            GUI.color = PanelBgCol;
-            GUI.DrawTexture(panelRect, Texture2D.whiteTexture);
+            UISurface.Card(panelRect, PanelBgCol, UITheme.Instance.surfaceBorder);
             GUI.color = Color.white;
 
             // ── 좌측 캐릭터 미리보기 영역 (가챠 결과 화면에서는 숨김) ──
@@ -238,8 +250,7 @@ namespace InsectGame.UI
                 float charAreaW = 340f;
                 float charAreaH = panelH - 60f;
                 Rect charArea = new Rect(px + 16, py + 50, charAreaW, charAreaH);
-                GUI.color = CharAreaBgCol;
-                GUI.DrawTexture(charArea, Texture2D.whiteTexture);
+                UISurface.Card(charArea, CharAreaBgCol, UITheme.Instance.surfaceBorder);
                 GUI.color = Color.white;
 
                 float charCx = charArea.x + charAreaW * 0.5f;
@@ -320,7 +331,7 @@ namespace InsectGame.UI
             {
                 GUI.color = (selectedTab == i) ? Color.cyan : Color.gray;
                 if (GUILayout.Button(tabNames[i], tabStyle, GUILayout.Height(mobile ? 64 : 52)))
-                    selectedTab = i;
+                    SelectTab(i);
             }
             GUI.color = Color.white;
             GUILayout.EndHorizontal();
@@ -335,20 +346,88 @@ namespace InsectGame.UI
             }
 
             // -- 탭 콘텐츠 --
-            scrollPos = GUILayout.BeginScrollView(scrollPos, GUILayout.ExpandHeight(true));
+            DrawScrollableTab(contentArea);
 
-            switch (selectedTab)
+            GUILayout.EndArea();
+
+            UIScale.End();
+        }
+
+        private void SelectTab(int tab)
+        {
+            int nextTab = Mathf.Clamp(tab, 0, tabNames.Length - 1);
+            if (selectedTab == nextTab) return;
+            selectedTab = nextTab;
+            ResetTabScroll(selectedTab);
+        }
+
+        private void ResetAllTabScrolls()
+        {
+            for (int i = 0; i < tabScrollPositions.Length; i++)
+                ResetTabScroll(i);
+        }
+
+        private void ResetTabScroll(int tab)
+        {
+            if (tab < 0 || tab >= tabScrollPositions.Length) return;
+            tabScrollPositions[tab] = Vector2.zero;
+            tabContentHeights[tab] = 0f;
+            tabDirectScrolls[tab].Reset();
+        }
+
+        private void DrawScrollableTab(Rect contentArea)
+        {
+            int tab = Mathf.Clamp(selectedTab, 0, tabNames.Length - 1);
+            Rect viewport = GUILayoutUtility.GetRect(
+                1f,
+                1f,
+                GUILayout.ExpandWidth(true),
+                GUILayout.ExpandHeight(true));
+            Rect directViewport = new Rect(
+                contentArea.x + viewport.x,
+                contentArea.y + viewport.y,
+                viewport.width,
+                viewport.height);
+
+            float contentHeight = tabContentHeights[tab] > 0f
+                ? Mathf.Max(viewport.height, tabContentHeights[tab])
+                : Mathf.Max(viewport.height, 4096f);
+            float contentWidth = Mathf.Max(
+                viewport.width - 20f,
+                !UIScale.IsMobileLayout && tab == 2 ? 960f
+                    : !UIScale.IsMobileLayout ? 840f
+                    : viewport.width - 20f);
+
+            Vector2 position = tabScrollPositions[tab];
+            float horizontalPosition = position.x;
+            tabDirectScrolls[tab].Handle(
+                ref position,
+                directViewport,
+                contentHeight,
+                UIScale.IsMobileLayout ? 72f : 52f);
+            position.x = horizontalPosition;
+
+            position = GUI.BeginScrollView(
+                viewport,
+                position,
+                new Rect(0f, 0f, contentWidth, contentHeight));
+            GUILayout.BeginArea(new Rect(0f, 0f, contentWidth, contentHeight));
+
+            switch (tab)
             {
                 case 0: DrawGemTab(); break;
                 case 1: DrawItemTab(); break;
                 case 2: DrawGachaTab(); break;
             }
 
-            GUILayout.EndScrollView();
+            GUILayout.Space(1f);
+            Rect contentEnd = GUILayoutUtility.GetLastRect();
+            if (Event.current.type == EventType.Repaint)
+                tabContentHeights[tab] = Mathf.Max(viewport.height, contentEnd.yMax + 12f);
 
             GUILayout.EndArea();
-
-            UIScale.End();
+            GUI.EndScrollView();
+            tabScrollPositions[tab] = position;
         }
 
         // ===== Tab 0: 보석 충전 =====
@@ -750,6 +829,7 @@ namespace InsectGame.UI
                 {
                     showingGachaResult = false;
                     gachaResult = null;
+                    ResetTabScroll(selectedTab);
                 }
                 GUILayout.FlexibleSpace();
                 GUILayout.EndHorizontal();

@@ -21,6 +21,12 @@ namespace InsectGame.Tests
         }
 
         [Test]
+        public void SceneNames_OpeningScene_IsNotEmpty()
+        {
+            Assert.IsFalse(string.IsNullOrEmpty(GameConstants.Scenes.Opening));
+        }
+
+        [Test]
         public void SaveFiles_AllNotEmpty()
         {
             Assert.IsFalse(string.IsNullOrEmpty(GameConstants.SaveFiles.PlayerProgress));
@@ -30,6 +36,7 @@ namespace InsectGame.Tests
             Assert.IsFalse(string.IsNullOrEmpty(GameConstants.SaveFiles.PlayerItems));
             Assert.IsFalse(string.IsNullOrEmpty(GameConstants.SaveFiles.BattleTeam));
             Assert.IsFalse(string.IsNullOrEmpty(GameConstants.SaveFiles.DexSave));
+            Assert.IsFalse(string.IsNullOrEmpty(GameConstants.SaveFiles.StoryProgress));
         }
 
         [Test]
@@ -39,6 +46,7 @@ namespace InsectGame.Tests
             Assert.IsTrue(GameConstants.SaveFiles.PlayerInsects.EndsWith(".json"));
             Assert.IsTrue(GameConstants.SaveFiles.BattleTeam.EndsWith(".json"));
             Assert.IsTrue(GameConstants.SaveFiles.DexSave.EndsWith(".json"));
+            Assert.IsTrue(GameConstants.SaveFiles.StoryProgress.EndsWith(".json"));
         }
 
         [Test]
@@ -54,9 +62,9 @@ namespace InsectGame.Tests
         }
 
         [Test]
-        public void Player_MaxLearnedSkills_Is4()
+        public void Player_MaxLearnedSkills_Is6()
         {
-            Assert.AreEqual(4, GameConstants.Player.MaxLearnedSkills);
+            Assert.AreEqual(6, GameConstants.Player.MaxLearnedSkills);
         }
 
         [Test]
@@ -76,16 +84,18 @@ namespace InsectGame.Tests
         }
 
         [Test]
-        public void PlayerInsect_FifthSkillRequiresReplacement()
+        public void PlayerInsect_SeventhSkillRequiresReplacement()
         {
             PlayerInsectData insect = new PlayerInsectData();
             Assert.IsTrue(insect.LearnSkill("s1"));
             Assert.IsTrue(insect.LearnSkill("s2"));
             Assert.IsTrue(insect.LearnSkill("s3"));
             Assert.IsTrue(insect.LearnSkill("s4"));
-            Assert.IsFalse(insect.LearnSkill("s5"));
-            Assert.IsTrue(insect.ReplaceSkill("s1", "s5"));
-            Assert.IsTrue(insect.HasLearnedSkill("s5"));
+            Assert.IsTrue(insect.LearnSkill("s5"));
+            Assert.IsTrue(insect.LearnSkill("s6"));
+            Assert.IsFalse(insect.LearnSkill("s7"));
+            Assert.IsTrue(insect.ReplaceSkill("s1", "s7"));
+            Assert.IsTrue(insect.HasLearnedSkill("s7"));
             Assert.IsFalse(insect.HasLearnedSkill("s1"));
         }
 

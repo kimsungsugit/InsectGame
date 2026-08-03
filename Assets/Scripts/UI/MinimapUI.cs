@@ -56,7 +56,7 @@ namespace InsectGame.UI
 
             float size = 220f;
             float x = UIScale.VirtualSafeLeft + 16f;
-            float y = UIScale.VirtualSafeTop + 170f; // 좌상단 HUD 닫힘 탭 아래
+            float y = UISafeLayout.ContentTop + 150f; // 좌상단 HUD(ContentTop) 닫힘 탭 아래
             Rect rect = new Rect(x, y, size, size);
             float cx = x + size / 2f;
             float cy = y + size / 2f;

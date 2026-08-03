@@ -11,6 +11,7 @@ namespace InsectGame.Core
         {
             public const string Play = "PlayScene";
             public const string MainMenu = "MainMenu";
+            public const string Opening = "OpeningScene";
         }
 
         // ── 저장 파일명 ──
@@ -45,6 +46,9 @@ namespace InsectGame.Core
             public const string QuestSideRepeat = "InsectGame.QuestSideRepeat";
             public const string TutorialHidden = "InsectGame.TutorialHidden";
             public const string LastSubAreaId = "InsectGame.SubArea.LastEntered";
+            // 주간 크기 대결 보상 수령 상태 "주차:등급". 주차가 바뀌면 값이 안 맞아 자동 미수령.
+            // 기록 자체는 저장하지 않는다 — player_insects.json의 capturedUnix로 파생한다.
+            public const string WeeklyContestClaimed = "InsectGame.WeeklyContest.Claimed";
         }
 
         // ── 플레이어 ──
@@ -72,6 +76,14 @@ namespace InsectGame.Core
         {
             public const int MaxTeamSlots = 5;
             public const float UniteGaugeMax = 100f;
+
+            /// <summary>
+            /// 공격력 상승/하락·방어 상승이 같은 방향으로 쌓일 수 있는 최대 횟수.
+            /// 1v1은 지속턴이 만료시켜 자연히 줄지만 그 안에서 연타하면 무한히 쌓였고,
+            /// 레이드는 만료 자체가 없어 전투 내내 남았다(break 3회면 보스 공격이 하한 고정).
+            /// 두 모드가 같은 상한을 공유한다.
+            /// </summary>
+            public const int MaxBuffStacks = 3;
         }
 
         // ── 기본 설정값 ──

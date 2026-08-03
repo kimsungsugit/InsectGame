@@ -13,7 +13,14 @@ namespace InsectGame.UI
         private Page page;
         private bool isOpen;
         private string friendCodeInput = string.Empty;
-        private Vector2 scroll;
+        private readonly Vector2[] pageScrollPositions = new Vector2[3];
+        private readonly UIDirectScroll[] pageDirectScrolls =
+        {
+            new UIDirectScroll(),
+            new UIDirectScroll(),
+            new UIDirectScroll()
+        };
+        private readonly float[] pageContentHeights = new float[3];
 
         // 매치 상태 전이 감지용 — OnStateChanged가 폴링마다 호출되므로 edge를 직접 기억한다.
         private string lastMatchId = string.Empty;
@@ -30,6 +37,7 @@ namespace InsectGame.UI
         private GUIStyle smallStyle;
         private GUIStyle labelStyle;
         private GUIStyle buttonStyle;
+        private GUIStyle skillButtonStyle;
         private GUIStyle textFieldStyle;
         private Texture2D cardTexture;
 
@@ -43,6 +51,7 @@ namespace InsectGame.UI
         private void OnDisable()
         {
             if (manager != null) manager.StateChanged -= OnStateChanged;
+            ResetAllPageScrolls();
             ModalUIRegistry.Unregister(this);
         }
 
@@ -57,6 +66,7 @@ namespace InsectGame.UI
         public void Toggle()
         {
             isOpen = !isOpen;
+            ResetAllPageScrolls();
             if (isOpen)
             {
                 ModalUIRegistry.Register(this);
@@ -68,6 +78,7 @@ namespace InsectGame.UI
         public void CloseModal()
         {
             isOpen = false;
+            ResetAllPageScrolls();
             ModalUIRegistry.Unregister(this);
         }
 
@@ -82,11 +93,15 @@ namespace InsectGame.UI
 
             bool becameActive = status == "active"
                 && (id != lastMatchId || lastMatchStatus != "active");
+            bool matchContextChanged = id != lastMatchId || status != lastMatchStatus;
 
             lastMatchId = id;
             lastMatchStatus = status;
 
-            if (becameActive) page = Page.Battle;
+            if (becameActive)
+                SetPage(Page.Battle);
+            else if (matchContextChanged && page == Page.Battle)
+                ResetPageScroll(Page.Battle);
         }
 
         /// <summary>
@@ -128,6 +143,15 @@ namespace InsectGame.UI
             // (색상은 skin 기본값 그대로 복사 — 변경 없음). 매 프레임 new 금지 캐시 패턴.
             labelStyle = new GUIStyle(GUI.skin.label) { fontSize = 23 };
             buttonStyle = new GUIStyle(GUI.skin.button) { fontSize = 24 };
+            skillButtonStyle = new GUIStyle(GUI.skin.button)
+            {
+                fontSize = 25,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleCenter,
+                wordWrap = true,
+                clipping = TextClipping.Clip,
+                padding = new RectOffset(10, 10, 8, 8)
+            };
             textFieldStyle = new GUIStyle(GUI.skin.textField) { fontSize = 23 };
             cardStyle = new GUIStyle(GUI.skin.box) { padding = new RectOffset(16, 16, 12, 12) };
             cardTexture = new Texture2D(1, 1);
@@ -141,23 +165,20 @@ namespace InsectGame.UI
             if (!isOpen) return;
             EnsureStyles();
             UIScale.Begin();
-            float width = Mathf.Min(1120f, UIScale.ContentWidth(20f));
-            float height = Mathf.Min(850f,
-                UIScale.VirtualScreenHeight - UIScale.VirtualSafeTop - UIScale.VirtualSafeBottom - 40f);
-            float x = (UIScale.VirtualScreenWidth - width) * 0.5f;
-            float y = (UIScale.VirtualScreenHeight - height) * 0.5f;
+            Rect panel = UISafeLayout.CenteredPanel(1120f, 850f);
+            float width = panel.width;
+            float height = panel.height;
+            float x = panel.x;
+            float y = panel.y;
             GUI.color = new Color(0.025f, 0.04f, 0.075f, 0.98f);
             GUI.DrawTexture(new Rect(x, y, width, height), Texture2D.whiteTexture);
             GUI.color = Color.white;
-            GUILayout.BeginArea(new Rect(x + 18f, y + 12f, width - 36f, height - 24f));
+            Rect contentArea = new Rect(x + 18f, y + 12f, width - 36f, height - 24f);
+            GUILayout.BeginArea(contentArea);
             DrawHeader();
             DrawTabs();
             GUILayout.Space(8f);
-            scroll = GUILayout.BeginScrollView(scroll);
-            if (page == Page.Friends) DrawFriends();
-            else if (page == Page.Ranked) DrawRanked();
-            else DrawBattle();
-            GUILayout.EndScrollView();
+            DrawScrollablePage(contentArea);
             DrawStatus();
             GUILayout.EndArea();
             UIScale.End();
@@ -170,7 +191,10 @@ namespace InsectGame.UI
             GUILayout.Label(UIScale.IsMobileLayout ? "친구 · 3:3 배틀" : "FRIENDS & 3:3 BATTLE",
                 titleStyle, GUILayout.Height(UIScale.IsMobileLayout ? 66f : 56f));
             if (GUILayout.Button("새로고침", buttonStyle, GUILayout.Width(160f), GUILayout.Height(buttonH)) && manager != null)
+            {
+                ResetPageScroll(page);
                 manager.RefreshAll();
+            }
             if (GUILayout.Button("X", buttonStyle, GUILayout.Width(64f), GUILayout.Height(buttonH))) CloseModal();
             GUILayout.EndHorizontal();
         }
@@ -190,11 +214,75 @@ namespace InsectGame.UI
             Color old = GUI.backgroundColor;
             GUI.backgroundColor = page == target ? new Color(0.2f, 0.55f, 0.85f) : new Color(0.18f, 0.2f, 0.25f);
             if (GUILayout.Button(text, buttonStyle, GUILayout.Height(UIScale.IsMobileLayout ? 60f : 48f)))
-            {
-                page = target;
-                scroll = Vector2.zero;
-            }
+                SetPage(target);
             GUI.backgroundColor = old;
+        }
+
+        private void SetPage(Page target)
+        {
+            if (page == target) return;
+            page = target;
+            ResetPageScroll(target);
+        }
+
+        private void ResetAllPageScrolls()
+        {
+            for (int i = 0; i < pageScrollPositions.Length; i++)
+                ResetPageScroll((Page)i);
+        }
+
+        private void ResetPageScroll(Page target)
+        {
+            int index = (int)target;
+            if (index < 0 || index >= pageScrollPositions.Length) return;
+            pageScrollPositions[index] = Vector2.zero;
+            pageContentHeights[index] = 0f;
+            pageDirectScrolls[index].Reset();
+        }
+
+        private void DrawScrollablePage(Rect contentArea)
+        {
+            int index = (int)page;
+            Rect viewport = GUILayoutUtility.GetRect(
+                1f,
+                1f,
+                GUILayout.ExpandWidth(true),
+                GUILayout.ExpandHeight(true));
+            Rect directViewport = new Rect(
+                contentArea.x + viewport.x,
+                contentArea.y + viewport.y,
+                viewport.width,
+                viewport.height);
+
+            float contentHeight = pageContentHeights[index] > 0f
+                ? Mathf.Max(viewport.height, pageContentHeights[index])
+                : Mathf.Max(viewport.height, 4096f);
+            float contentWidth = Mathf.Max(1f, viewport.width - 20f);
+            Vector2 position = pageScrollPositions[index];
+
+            pageDirectScrolls[index].Handle(
+                ref position,
+                directViewport,
+                contentHeight,
+                UIScale.IsMobileLayout ? 72f : 52f);
+            position = GUI.BeginScrollView(
+                viewport,
+                position,
+                new Rect(0f, 0f, contentWidth, contentHeight));
+            GUILayout.BeginArea(new Rect(0f, 0f, contentWidth, contentHeight));
+
+            if (page == Page.Friends) DrawFriends();
+            else if (page == Page.Ranked) DrawRanked();
+            else DrawBattle();
+
+            GUILayout.Space(1f);
+            Rect contentEnd = GUILayoutUtility.GetLastRect();
+            if (Event.current.type == EventType.Repaint)
+                pageContentHeights[index] = Mathf.Max(viewport.height, contentEnd.yMax + 12f);
+
+            GUILayout.EndArea();
+            GUI.EndScrollView();
+            pageScrollPositions[index] = position;
         }
 
         private void DrawFriends()
@@ -397,6 +485,9 @@ namespace InsectGame.UI
                 PvpInsectSnapshot active = GetMember(ownTeam, ownActive);
                 PvpSkillSnapshot[] skills = active != null && active.skills != null
                     ? active.skills : Array.Empty<PvpSkillSnapshot>();
+                bool mobile = UIScale.IsMobileLayout;
+                skillButtonStyle.fontSize = mobile ? 27 : 25;
+                float skillButtonH = SkillUILayout.GetTouchHeight(mobile, 82f, 92f);
                 for (int i = 0; i < skills.Length; i++)
                 {
                     int index = i;
@@ -405,7 +496,8 @@ namespace InsectGame.UI
                         : skill != null && skill.effectType == 2 ? "공격 약화"
                         : skill != null ? $"위력 {skill.power}" : string.Empty;
                     string label = skill != null ? $"{skill.displayName}\n{effect}" : "-";
-                    if (GUILayout.Button(label, buttonStyle, GUILayout.Height(68f))) manager.SubmitSkill(index);
+                    if (GUILayout.Button(label, skillButtonStyle, GUILayout.Height(skillButtonH)))
+                        manager.SubmitSkill(index);
                 }
                 GUILayout.EndHorizontal();
                 GUILayout.BeginHorizontal();

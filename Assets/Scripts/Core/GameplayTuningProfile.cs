@@ -23,10 +23,10 @@ namespace InsectGame.Core
         [Range(10f, 120f)] public float kidCatchCooldownSeconds = 45f;
 
         [Header("Capture")]
-        [Range(0f, 1f)] public float baseSuccessChance = 0.35f;
+        [Range(0f, 1f)] public float baseSuccessChance = 0.60f;
         [Range(0f, 0.5f)] public float rarityPenaltyStep = 0.08f;
-        [Range(0f, 1f)] public float difficultyPenaltyScale = 0.45f;
-        [Range(0f, 0.5f)] public float perfectTimingBonus = 0.1f;
+        [Range(0f, 1f)] public float difficultyPenaltyScale = 0.40f;
+        [Range(0f, 0.5f)] public float perfectTimingBonus = 0.15f;
         [Range(0f, 0.5f)] public float timingWindow = 0.15f;
     }
 }

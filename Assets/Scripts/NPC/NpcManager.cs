@@ -57,6 +57,9 @@ namespace InsectGame.NPC
         /// <summary>스토리 NPC(어르신/라온/세라) — 고정 배치, WorldInteractionController가 별도 스캔.</summary>
         public IReadOnlyList<VillagerNpc> StoryNpcs => storyNpcs;
 
+        /// <summary>곤충 잡는 아이들 — WorldInteractionController가 대결 대상으로 스캔.</summary>
+        public IReadOnlyList<CatcherKidNpc> Kids => kids;
+
         /// <summary>리전 진행 상태 참조 (향후 리전별 NPC 행동 분기용 — CS0414 방지 겸 공개).</summary>
         public RegionManager Region => regionManager;
 
@@ -194,6 +197,8 @@ namespace InsectGame.NPC
 
             CatcherKidNpc npc = go.AddComponent<CatcherKidNpc>();
             npc.Initialize(this, anchor, npcId, seed);
+            // 대결 프롬프트에 뜰 이름 — 주민과 같은 이름 풀을 쓰되 역할을 덧붙인다.
+            npc.SetDisplayName($"{NpcDialogueDatabase.GetVillagerName(seed)}(곤충잡이)");
             AttachCulling(go);
             return npc;
         }

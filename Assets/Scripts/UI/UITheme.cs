@@ -25,6 +25,43 @@ namespace InsectGame.UI
         public Color panelHeaderBg = new Color(0.12f, 0.14f, 0.25f, 1f);
         public Color dimOverlay = new Color(0f, 0f, 0f, 0.6f);
 
+        // ── 서피스 토큰 ──
+        // 화면마다 흩어져 있던 배경/카드/테두리 색의 단일 출처. `UISurface`가 이 값들로 그린다.
+        // 기존 panelBg 계열은 그대로 두었다 — 15개 파일이 참조하므로 시그니처를 깨지 않는다.
+        [Header("Surface")]
+        public Color surfaceBase = new Color(0.063f, 0.075f, 0.122f, 1f);    // #10131F 화면 바탕
+        public Color surfaceCard = new Color(0.102f, 0.122f, 0.188f, 1f);    // #1A1F30 카드 표면
+        public Color surfaceRaised = new Color(0.145f, 0.169f, 0.247f, 1f);  // 선택/강조된 카드
+        public Color surfaceBorder = new Color(0.24f, 0.28f, 0.38f, 1f);
+        public Color surfaceShadow = new Color(0f, 0f, 0f, 0.35f);
+
+        // 도감의 따뜻한 액센트를 전체 화면 공용으로 승격한 것.
+        [Header("Accent")]
+        public Color accentCoral = new Color(0.961f, 0.388f, 0.310f, 1f);   // #F5634F 헤더·활성 탭
+        public Color accentAmber = new Color(1f, 0.788f, 0.302f, 1f);       // #FFC94D 보상·강조
+        public Color accentMint = new Color(0.310f, 0.788f, 0.541f, 1f);    // #4FC98A 포획·완료
+
+        [Header("Text Tokens")]
+        public Color textPrimary = new Color(0.94f, 0.95f, 0.98f);
+        public Color textSecondary = new Color(0.68f, 0.72f, 0.80f);
+        public Color textMuted = new Color(0.45f, 0.49f, 0.57f);
+
+        /// <summary>여백 스케일 — 가상 좌표계(1920×1080) 기준 px.</summary>
+        public static class Space
+        {
+            public const float XS = 6f;
+            public const float S = 10f;
+            public const float M = 16f;
+            public const float L = 24f;
+        }
+
+        /// <summary>모서리 반경 — <see cref="UISurface"/>가 텍스처를 구울 때 쓴다.</summary>
+        public static class Radius
+        {
+            public const float Card = 12f;
+            public const float Chip = 8f;
+        }
+
         [Header("Tab")]
         public Color tabNormal = new Color(0.25f, 0.28f, 0.35f, 1f);
         public Color tabSelected = new Color(0.3f, 0.5f, 0.9f, 1f);

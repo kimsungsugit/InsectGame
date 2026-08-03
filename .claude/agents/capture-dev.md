@@ -14,7 +14,9 @@ tools:
 
 ## 담당 파일
 - `Assets/Scripts/Capture/CaptureController.cs` - 포획률 계산 핵심
+- `Assets/Scripts/Capture/CaptureChanceCalculator.cs` - 포획 성공 확률 순수 계산
 - `Assets/Scripts/Capture/CaptureMinigameController.cs` - 3단계 타이밍 미니게임
+- `Assets/Scripts/Capture/CaptureMinigameProbability.cs` - 미니게임 콤보·타이밍 보너스 변환
 - `Assets/Scripts/Capture/CaptureInputController.cs` - 포획 입력
 - `Assets/Scripts/Capture/CaptureProximityTrigger.cs` - 근접 감지 (8m 반경)
 - `Assets/Scripts/Capture/CaptureRaycastTrigger.cs` - 레이캐스트 감지
@@ -34,6 +36,7 @@ tools:
 - `Assets/Scripts/Core/GameClock.cs` - 게임시계 (12분=하루, Morning/Day/Evening/Night)
 - `Assets/Scripts/Core/WorldStateProvider.cs` - WorldState(시간+날씨) 제공
 - `Assets/Scripts/Core/PlayerMovement.cs` - 플레이어 이동 (월드 탐험)
+- `Assets/Scripts/Core/PlayerStartPlacement.cs` - 플레이어 시작 위치·방향 계산
 - `Assets/Scripts/UI/CaptureChoiceUI.cs` - 포획/배틀/레이드 선택 허브 ※UI 레이아웃은 ui-dev
 - `Assets/Scripts/NPC/NpcManager.cs` - NPC 스폰/디스폰/배치
 - `Assets/Scripts/NPC/CatcherKidNpc.cs` - 잡기 아이 NPC (곤충 가로채기 로직) ※모델은 visual-dev
@@ -44,10 +47,12 @@ tools:
 
 ### 포획률
 ```
-chance = 0.6 - rarity×0.08 - difficulty×0.4 + levelMod + itemBonus + timingBonus
+core = 0.6 - rarity×0.08 - difficulty×0.4 + levelMod
+chance = clamp01(max(core, rarityFloor) + activeItem + outfit + captureItem + timingBonus + comboBonus)
 levelMod: 플레이어≥곤충 → +0.02/lv, 미만 → -0.03/lv
 timingBonus: |timing-0.5|≤0.15이면 +0.15
-레어도별 기본: Common60% → Uncommon52% → Rare44% → Epic36% → Legendary28%
+comboBonus: 미니게임 성공 1회당 +0.05 (최대 3회, +0.15)
+rarityFloor: Common30% / Uncommon22% / Rare14% / Epic8% / Legendary4%
 ```
 
 ### 미니게임 난이도

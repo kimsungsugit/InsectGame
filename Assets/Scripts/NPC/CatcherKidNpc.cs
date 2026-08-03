@@ -50,7 +50,50 @@ namespace InsectGame.NPC
         private System.Random rng;
         private NpcWalkAnimator animator;
 
+        // ── 대결(듀얼) ──
+        // 아이가 방금 잡은 곤충이 그대로 대결 상대가 된다. 아직 아무것도 못 잡았으면
+        // NpcDuelController가 리전 풀에서 골라 채운다(SetDuelInsect).
+        private InsectData duelInsect;
+        private int duelLevel = 1;
+        private float duelCooldownUntil;
+        private string displayName = "곤충잡이 아이";
+
         public string NpcId => npcId;
+        public string DisplayName => displayName;
+        public InsectData DuelInsect => duelInsect;
+        public int DuelLevel => duelLevel;
+
+        /// <summary>
+        /// 지금 도전을 받을 수 있는가. 곤충을 쫓는 중(Approach/CatchSwing)에는 말을 걸 수 없고,
+        /// 대결 직후에는 쿨다운이 끝나야 다시 붙을 수 있다(연속 파밍 차단).
+        /// </summary>
+        public bool CanChallenge(float time)
+        {
+            return duelInsect != null
+                && time >= duelCooldownUntil
+                && state != State.Approach
+                && state != State.CatchSwing
+                && gameObject.activeInHierarchy;
+        }
+
+        /// <summary>대결 상대 곤충 지정 — 아직 아무것도 잡지 못한 아이를 채울 때 쓴다.</summary>
+        public void SetDuelInsect(InsectData data, int level)
+        {
+            if (data == null) return;
+            duelInsect = data;
+            duelLevel = Mathf.Max(1, level);
+        }
+
+        public void SetDisplayName(string value)
+        {
+            if (!string.IsNullOrEmpty(value)) displayName = value;
+        }
+
+        /// <summary>대결이 끝났음을 알린다 — 결과와 무관하게 재도전 쿨다운을 건다.</summary>
+        public void MarkDuelFinished(float time, float cooldownSeconds)
+        {
+            duelCooldownUntil = time + Mathf.Max(0f, cooldownSeconds);
+        }
 
         /// <summary>NpcManager가 스폰 직후 호출.</summary>
         public void Initialize(NpcManager owner, NpcSpawnAnchor anchor, string id, int seed)
@@ -283,6 +326,11 @@ namespace InsectGame.NPC
 
             if (success)
             {
+                // 방금 잡은 곤충이 이 아이의 대결 상대가 된다 — Despawn 전에 스냅샷을 뜬다
+                // (Despawn은 풀에 반환하므로 이후 caught.Data는 다른 곤충으로 바뀔 수 있다).
+                duelInsect = caught.Data;
+                duelLevel = Mathf.Max(1, caught.Level);
+
                 caught.SetEngaged(true);   // 도주 차단 상태로 고정 후
                 caught.Despawn();          // 스포너 알림 + 풀 반환 (다중 호출 가드 내장)
                 manager.ReleaseInsect(caught);

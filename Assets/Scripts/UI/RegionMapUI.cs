@@ -21,6 +21,7 @@ namespace InsectGame.UI
         private string selectedRegionId;   // 지도에서 선택돼 정보패널에 표시되는 리전(도감 아님)
         private bool dexOpen;              // 도감 브라우저 열림(정보패널 [도감]이 켬)
         private Vector2 dexScroll;
+        private readonly UIDirectScroll dexDirectScroll = new UIDirectScroll();
         private Transform playerTransform; // 최초 1회 탐색 후 캐시(GameObject.Find 매 프레임 회피)
 
         private readonly List<RaidBossMarker> raidMarkers = new List<RaidBossMarker>();
@@ -45,7 +46,17 @@ namespace InsectGame.UI
         public void Toggle()
         {
             isOpen = !isOpen;
-            if (!isOpen) { selectedRegionId = null; dexOpen = false; }
+            if (!isOpen)
+            {
+                selectedRegionId = null;
+                dexOpen = false;
+                dexDirectScroll.Reset();
+            }
+            else
+            {
+                dexScroll = Vector2.zero;
+                dexDirectScroll.Reset();
+            }
             if (isOpen) ModalUIRegistry.Register(this);
             else ModalUIRegistry.Unregister(this);
         }
@@ -54,7 +65,20 @@ namespace InsectGame.UI
             isOpen = false;
             selectedRegionId = null;
             dexOpen = false;
+            dexDirectScroll.Reset();
             ModalUIRegistry.Unregister(this);
+        }
+
+        private void OnEnable()
+        {
+            // OnDisable이 해지한 구독을 되살린다 — 오프닝 다시보기(OpeningReplayCoordinator)가
+            // UI 루트를 통째로 SetActive 토글하므로, 없으면 다시보기 한 번에 레이드 보스 마커가
+            // 영구히 안 뜬다. 해지 뒤 구독이라 중복되지 않는다.
+            if (spawner != null)
+            {
+                spawner.RaidBossSpawned -= OnRaidBossSpawned;
+                spawner.RaidBossSpawned += OnRaidBossSpawned;
+            }
         }
 
         private void OnDisable()
@@ -64,6 +88,7 @@ namespace InsectGame.UI
             isOpen = false;
             selectedRegionId = null;
             dexOpen = false;
+            dexDirectScroll.Reset();
             ModalUIRegistry.Unregister(this);
         }
 
@@ -184,27 +209,24 @@ namespace InsectGame.UI
             UIScale.End();
         }
 
-        // ─── 패널 지오메트리(세이프에어리어 노치 오프셋 반영) ───
+        // ─── 패널 지오메트리(세이프에어리어 + 세로 마진은 UISafeLayout이 처리) ───
         private void PanelRect(out float px, out float py, out float pw, out float ph)
         {
-            pw = Mathf.Min(1160f, UIScale.ContentWidth(18f));
-            float safeTop = UIScale.VirtualSafeTop;
-            float safeBot = UIScale.VirtualSafeBottom;
-            float availH = UIScale.VirtualScreenHeight - safeTop - safeBot;
-            ph = Mathf.Min(980f, availH - 24f);
-            px = (UIScale.VirtualScreenWidth - pw) / 2f;
-            py = safeTop + (availH - ph) * 0.5f;   // 세이프에어리어 내 중앙(노치 침범 방지)
+            Rect panel = UISafeLayout.CenteredPanel(1160f, 980f);
+            px = panel.x;
+            py = panel.y;
+            pw = panel.width;
+            ph = panel.height;
         }
 
         private void DrawPanelFrame(float px, float py, float pw, float ph, string title, Color headerAccent)
         {
             UITheme t = UITheme.Instance;
-            GUI.color = t.panelBg;
-            GUI.DrawTexture(new Rect(px, py, pw, ph), Texture2D.whiteTexture);
-            GUI.color = t.panelHeaderBg;
-            GUI.DrawTexture(new Rect(px, py, pw, 84f), Texture2D.whiteTexture);
+            // 이 화면의 모든 패널이 이 프레임 하나를 지나므로 여기만 바꾸면 지도·상세가 함께 둥글어진다.
+            UISurface.Card(new Rect(px, py, pw, ph), t.panelBg, t.surfaceBorder);
+            UISurface.Rounded(new Rect(px + 3f, py + 3f, pw - 6f, 84f), t.panelHeaderBg);
             GUI.color = headerAccent;
-            GUI.DrawTexture(new Rect(px, py + 84f, pw, 4f), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(px + 3f, py + 84f, pw - 6f, 4f), Texture2D.whiteTexture);
             GUI.color = Color.white;
             GUI.Label(new Rect(px + 26f, py + 12f, pw - 200f, 60f), title, titleStyle);
         }
@@ -386,7 +408,11 @@ namespace InsectGame.UI
 
                 // 리전 클릭 버튼 — 서브에리어 버튼 '이후' 호출해야 서브 점 클릭이 리전에 먹히지 않음(IMGUI 이벤트 소비 순서).
                 if (GUI.Button(new Rect(c.x - cr, c.y - cr, cr * 2f, cr * 2f), "", GUIStyle.none))
+                {
                     selectedRegionId = r.regionId;
+                    dexScroll = Vector2.zero;
+                    dexDirectScroll.Reset();
+                }
             }
 
             // 3) 레이드 보스 마커
@@ -500,7 +526,11 @@ namespace InsectGame.UI
             }
             GUI.backgroundColor = UITheme.Instance.btnSecondary;
             if (GUI.Button(new Rect(ix + halfW + 12f, btnY, halfW, btnH), "도감", btnStyle))
+            {
                 dexOpen = true;
+                dexScroll = Vector2.zero;
+                dexDirectScroll.Reset();
+            }
             GUI.backgroundColor = Color.white;
         }
 
@@ -573,14 +603,23 @@ namespace InsectGame.UI
         private void DrawDexBrowser()
         {
             RegionData region = regionManager != null ? regionManager.GetRegionById(selectedRegionId) : null;
-            if (region == null) { dexOpen = false; return; }
+            if (region == null)
+            {
+                dexOpen = false;
+                dexDirectScroll.Reset();
+                return;
+            }
 
             PanelRect(out float px, out float py, out float pw, out float ph);
             DrawPanelFrame(px, py, pw, ph, $"{region.displayName} 도감", region.themeColor);
 
             if (GUI.Button(new Rect(px + pw - 76f, py + 12f, 60f, 60f), "X", closeStyle)) { CloseModal(); return; }
             if (GUI.Button(new Rect(px + 20f, py + 14f, 150f, UIScale.IsMobileLayout ? 60f : 52f), "< 뒤로", detailBtnStyle))
-            { dexOpen = false; return; }
+            {
+                dexOpen = false;
+                dexDirectScroll.Reset();
+                return;
+            }
 
             if (!string.IsNullOrEmpty(region.description))
                 GUI.Label(new Rect(px + 30f, py + 96f, pw - 60f, 42f), region.description, detailDescStyle);
@@ -604,8 +643,15 @@ namespace InsectGame.UI
             }
 
             float itemH = 140f;
-            Rect viewRect = new Rect(0, 0, listArea.width - 20f, region.insectIds.Length * itemH);
-            dexScroll = GUI.BeginScrollView(listArea, dexScroll, viewRect);
+            float contentH = region.insectIds.Length * itemH;
+            Rect viewRect = new Rect(0, 0, listArea.width, contentH);
+            dexDirectScroll.Handle(ref dexScroll, listArea, contentH, itemH * 0.4f);
+            dexScroll = GUI.BeginScrollView(
+                listArea,
+                dexScroll,
+                viewRect,
+                GUIStyle.none,
+                GUIStyle.none);
             for (int i = 0; i < region.insectIds.Length; i++)
                 DrawDexItem(new Rect(0, i * itemH, viewRect.width, itemH - 4f), region.insectIds[i]);
             GUI.EndScrollView();

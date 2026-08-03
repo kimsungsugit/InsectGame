@@ -89,9 +89,8 @@ namespace InsectGame.Core
             }
 
             InsectData insect = collection.GetInsectData(current.insectId);
-            string name = insect != null
-                ? $"{insect.displayName} #{GetShortInstanceId(current)}"
-                : $"{current.insectId} #{GetShortInstanceId(current)}";
+            // #코드 미표시 — 의미 없는 GUID 조각이라 이름만 보여준다.
+            string name = insect != null ? insect.displayName : current.insectId;
             int cost = 0;
             if (insect != null)
             {
@@ -172,14 +171,5 @@ namespace InsectGame.Core
             if (isActiveAndEnabled) Subscribe();
         }
 
-        private static string GetShortInstanceId(PlayerInsectData data)
-        {
-            if (data == null || string.IsNullOrEmpty(data.instanceId))
-            {
-                return "----";
-            }
-
-            return data.instanceId.Substring(0, Mathf.Min(6, data.instanceId.Length)).ToUpperInvariant();
-        }
     }
 }

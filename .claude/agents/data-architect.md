@@ -41,6 +41,7 @@ tools:
 - `Assets/Scripts/Core/PlayerItemInventory.cs` - 아이템 인벤토리
 - `Assets/Scripts/Core/PlayerInsectCollection.cs` - 보유 곤충 컬렉션
 - `Assets/Scripts/Core/PlayerInsectData.cs` - 개별 곤충 인스턴스 데이터
+- `Assets/Scripts/Core/InsectSizeCalculator.cs` - 개체 크기·무게 계산 ※기준값·배율 튜닝은 game-designer
 - `Assets/Scripts/Core/GameConstants.cs` - 전역 상수
 - `Assets/Scripts/Core/CharacterOutfitData.cs` - 의상 데이터 모델
 

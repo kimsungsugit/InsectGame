@@ -388,14 +388,26 @@ namespace InsectGame.Battle
                 resultPanel.SetActive(true);
             }
 
+            string resultMessage = playerWon ? winMessage : loseMessage;
+            if (playerWon && battleController != null)
+            {
+                string captureMessage = BattleScreenUI.GetCaptureResultMessage(
+                    battleController.GetLastCaptureAttempted(),
+                    battleController.GetLastCaptureSucceeded());
+                if (!string.IsNullOrEmpty(captureMessage))
+                {
+                    resultMessage = $"{resultMessage}\n{captureMessage}";
+                }
+            }
+
             if (resultText != null)
             {
-                resultText.text = playerWon ? winMessage : loseMessage;
+                resultText.text = resultMessage;
             }
 
             if (resultTextLegacy != null)
             {
-                resultTextLegacy.text = playerWon ? winMessage : loseMessage;
+                resultTextLegacy.text = resultMessage;
             }
 
             int candy = battleController != null ? battleController.GetLastCandyReward() : 0;

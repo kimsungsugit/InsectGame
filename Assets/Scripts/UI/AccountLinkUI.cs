@@ -110,7 +110,7 @@ namespace InsectGame.UI
             float w = Mathf.Min(440f, Screen.width * 0.55f);
             float h = 42f;
             float x = (Screen.width - w) * 0.5f;
-            float y = 8f + SafeArea.Top; // 노치/펀치홀 아래로
+            float y = UISafeLayout.Px.ContentTop; // 노치/펀치홀 + 세로 마진 아래로
 
             if (GUI.Button(new Rect(x, y, w, h), "게스트 모드 · 정식 계정으로 전환하기", badgeStyle))
             {
@@ -124,10 +124,11 @@ namespace InsectGame.UI
             // IMGUI는 depth로 렌더 순서를 정한다. 기본 0이면 DexScreenUI(-10) 같은 패널
             // 아래에 깔리면서도 모달로 등록돼 "안 보이는데 입력만 먹는" 상태가 된다.
             GUI.depth = -20;
-            float pw = Mathf.Min(760f, Screen.width * 0.86f);
-            float ph = Mathf.Min(660f, Screen.height * 0.9f);
-            float px = (Screen.width - pw) * 0.5f;
-            float py = (Screen.height - ph) * 0.5f;
+            Rect panel = UISafeLayout.Px.CenteredPanel(760f, 660f);
+            float pw = panel.width;
+            float ph = panel.height;
+            float px = panel.x;
+            float py = panel.y;
 
             // 반투명 전체 딤
             GUI.color = new Color(0f, 0f, 0f, 0.55f);
@@ -224,7 +225,10 @@ namespace InsectGame.UI
             float w = Mathf.Min(560f, Screen.width * 0.7f);
             float h = 56f;
             float x = (Screen.width - w) * 0.5f;
-            float y = open ? Screen.height * 0.5f + 200f : 58f;
+            // 폼이 열려 있으면 폼 아래(단 마진 안), 닫혀 있으면 상단 배지 아래.
+            float y = open
+                ? Mathf.Min(Screen.height * 0.5f + 200f, UISafeLayout.Px.ContentBottom - h)
+                : UISafeLayout.Px.ContentTop + 50f;
 
             GUI.color = messageIsError
                 ? new Color(0.35f, 0.08f, 0.08f, 0.92f)

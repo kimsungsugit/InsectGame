@@ -17,6 +17,9 @@ namespace InsectGame.UI
     {
         private const float ScanInterval = 0.15f;
         private const float VillagerTalkRadius = 3f;
+        // 아이는 돌아다니므로 주민보다 조금 넉넉하게 — 쫓아가서 말 걸기가 덜 답답하다.
+        private const float KidDuelRadius = 3.5f;
+        private const float ResultToastSeconds = 3.5f;
 
         private CashShopUI shop;
         private TrainingUI training;
@@ -27,12 +30,14 @@ namespace InsectGame.UI
         private InsectGame.Story.StoryDirector storyDirector;   // 스토리 NPC 대화 → NpcTalk 트리거
         private CameraFollower cameraFollower;                   // 첫 조우 시네마틱 줌
         private HospitalUI hospital;                             // 병원 치료 UI
+        private NpcDuelController duelController;                // 곤충잡이 아이 대결
 
         private readonly List<InteractionPointDef> points = new List<InteractionPointDef>();
 
         private float scanTimer;
         private InteractionPointDef currentPoint;   // 현재 대상 건물 (주민이 더 가까우면 null)
         private VillagerNpc currentVillager;        // 현재 대상 주민 (건물이 더 가까우면 null)
+        private CatcherKidNpc currentKid;           // 현재 대결 대상 아이 (더 가까운 대상이 있으면 null)
         private float currentTargetDistance;
         private bool hasPriorityTarget;             // 스캔 시 갱신·캐시 (프로퍼티 계산 금지)
         private string promptText = string.Empty;   // OnGUI 매 프레임 문자열 보간 할당 회피 — 스캔 시 캐시
@@ -73,6 +78,11 @@ namespace InsectGame.UI
         public void AutoWire(NpcManager manager)
         {
             if (npcManager == null) npcManager = manager;
+        }
+
+        public void AutoWire(NpcDuelController duel)
+        {
+            if (duelController == null) duelController = duel;
         }
 
         public void AutoWire(InsectGame.Story.StoryDirector director)
@@ -149,6 +159,7 @@ namespace InsectGame.UI
         {
             currentPoint = null;
             currentVillager = null;
+            currentKid = null;
             hasPriorityTarget = false;
 
             if (playerMovement == null) return;
@@ -180,9 +191,35 @@ namespace InsectGame.UI
                 ScanTalkable(npcManager.StoryNpcs, playerPos, ref bestVillager, ref bestVillagerDist);
             }
 
-            // 더 가까운 쪽을 단일 대상으로
-            if (bestPoint == null && bestVillager == null) return;
-            if (bestVillager != null && (bestPoint == null || bestVillagerDist <= bestPointDist))
+            // 대결 가능한 최근접 아이 (반경 3.5m). 곤충을 쫓는 중이거나 쿨다운이면 후보에서 빠진다.
+            CatcherKidNpc bestKid = null;
+            float bestKidDist = float.MaxValue;
+            if (npcManager != null && duelController != null)
+            {
+                IReadOnlyList<CatcherKidNpc> kids = npcManager.Kids;
+                float now = Time.time;
+                for (int i = 0; i < kids.Count; i++)
+                {
+                    CatcherKidNpc kid = kids[i];
+                    if (kid == null || !kid.gameObject.activeInHierarchy) continue;
+                    float d = Vector3.Distance(playerPos, kid.transform.position);
+                    if (d > KidDuelRadius || d >= bestKidDist) continue;
+                    if (!duelController.CanDuel(kid, now)) continue;
+                    bestKidDist = d;
+                    bestKid = kid;
+                }
+            }
+
+            // 더 가까운 쪽을 단일 대상으로 (건물 / 주민 / 아이)
+            if (bestPoint == null && bestVillager == null && bestKid == null) return;
+            if (bestKid != null && bestKidDist <= bestVillagerDist && bestKidDist <= bestPointDist)
+            {
+                currentKid = bestKid;
+                currentTargetDistance = bestKidDist;
+                promptText = $"[E] 대결: {bestKid.DisplayName}";
+                buttonText = "대결";
+            }
+            else if (bestVillager != null && (bestPoint == null || bestVillagerDist <= bestPointDist))
             {
                 currentVillager = bestVillager;
                 currentTargetDistance = bestVillagerDist;
@@ -237,7 +274,11 @@ namespace InsectGame.UI
             if (ModalUIRegistry.IsAnyOpen()) return;
             if (playerMovement != null && playerMovement.IsFrozen) return;
 
-            if (currentVillager != null)
+            if (currentKid != null)
+            {
+                if (duelController != null) duelController.TryStartDuel(currentKid, Time.time);
+            }
+            else if (currentVillager != null)
             {
                 // 조우 연출 — 스토리 NPC가 플레이어를 향해 돌아본다(시선 맞춤).
                 if (currentVillager.IsStoryNpc && playerMovement != null)
@@ -273,13 +314,19 @@ namespace InsectGame.UI
             // 발동 후 즉시 재스캔 (모달이 열렸으면 대상 해제 → 프롬프트/버튼 숨김)
             currentPoint = null;
             currentVillager = null;
+            currentKid = null;
             hasPriorityTarget = false;
             scanTimer = 0f;
         }
 
         private void OnGUI()
         {
-            if (!hasPriorityTarget) return;
+            // 대결 결과 토스트는 대상이 없어도(대결 직후엔 아이가 쿨다운이라 대상에서 빠진다) 떠야 한다.
+            bool showResult = duelController != null
+                && !string.IsNullOrEmpty(duelController.LastResultText)
+                && Time.time - duelController.LastResultTime < ResultToastSeconds;
+
+            if (!hasPriorityTarget && !showResult) return;
             if (ModalUIRegistry.IsAnyOpen()) return;
 
             EnsureStyles();
@@ -287,20 +334,32 @@ namespace InsectGame.UI
 
             UIScale.Begin();
 
+            if (showResult)
+            {
+                GUI.Label(
+                    new Rect(UIScale.VirtualScreenWidth / 2f - 400f, UISafeLayout.ContentBottom - 150f, 800f, 44f),
+                    duelController.LastResultText,
+                    promptStyle);
+            }
+
+            if (!hasPriorityTarget)
+            {
+                UIScale.End();
+                return;
+            }
+
             float vw = UIScale.VirtualScreenWidth;
-            float vh = UIScale.VirtualScreenHeight;
             float safeR = UIScale.VirtualSafeRight;
-            float safeB = UIScale.VirtualSafeBottom;
 
             // 프롬프트 — 화면 하단 중앙에서 좌측 오프셋 (잡기 버튼/미스 피드백과 겹침 회피)
-            GUI.Label(new Rect(vw / 2f - 560f, vh - safeB - 96f, 640f, 44f), promptText, promptStyle);
+            GUI.Label(new Rect(vw / 2f - 560f, UISafeLayout.ContentBottom - 96f, 640f, 44f), promptText, promptStyle);
 
             // 원형 상호작용 버튼 — 잡기 버튼(우하단, 반경 96) 왼쪽에 배치
             float radius = 80f;
             float accountClear = 92f / UIScale.Scale; // CaptureInputController와 동일한 '계정' 버튼 회피 보정
             float catchCx = vw - safeR - 96f - 40f;   // 잡기 버튼 중심 X (DrawCatchButton과 동기)
             float cx = catchCx - 96f - radius - 36f;  // 잡기 버튼 왼쪽
-            float cy = vh - safeB - 96f - accountClear; // 잡기 버튼과 같은 높이(중심 정렬)
+            float cy = UISafeLayout.ContentBottom - 96f - accountClear; // 잡기 버튼과 같은 높이(중심 정렬)
             Rect rect = new Rect(cx - radius, cy - radius, radius * 2f, radius * 2f);
             interactButtonRect = rect;
             FieldHudInput.RegisterBlockingRect(rect); // 버튼 위 탭의 클릭-이동 오발 차단

@@ -127,15 +127,13 @@ namespace InsectGame.Capture
             bool near = nearestInsect != null && nearestInsect.Data != null;
 
             float vw = UIScale.VirtualScreenWidth;
-            float vh = UIScale.VirtualScreenHeight;
             float safeR = UIScale.VirtualSafeRight;
-            float safeB = UIScale.VirtualSafeBottom;
             float radius = 96f;
             // '계정' 버튼(AccountSettingsUI)은 raw 픽셀로 하단 62px에 고정 — 스케일이 작을수록 가상좌표와
             // 어긋나 겹친다. 가상 여백을 1/Scale로 환산해 화면 스케일과 무관하게 항상 그 위로 띄운다.
             float accountClear = 92f / UIScale.Scale;
             float cx = vw - safeR - radius - 40f;
-            float cy = vh - safeB - radius - accountClear; // 우하단 '계정' 버튼 위(스케일 보정)
+            float cy = UISafeLayout.ContentBottom - radius - accountClear; // 우하단 '계정' 버튼 위(스케일 보정)
             Rect rect = new Rect(cx - radius, cy - radius, radius * 2f, radius * 2f);
             catchButtonRect = rect; // 멀티터치 raw 히트테스트 + 클릭-이동 억제용으로 공유
             // PlayerMovement 클릭-이동이 이 버튼 위 탭을 월드 클릭으로 오인하지 않게 등록.

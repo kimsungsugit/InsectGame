@@ -188,13 +188,12 @@ namespace InsectGame.Capture
 
         private void FinishCapture()
         {
-            float timing01 = comboHits >= 3 ? 0.5f :
-                             comboHits >= 2 ? 0.45f :
-                             comboHits >= 1 ? 0.3f : 0.1f;
+            float timing01 = CaptureMinigameProbability.GetTiming01(comboHits);
+            float extraBonus = CaptureMinigameProbability.GetExtraBonus(comboHits, itemCaptureBonus);
 
             if (captureController != null && currentTarget != null)
             {
-                captureController.AttemptCapture(currentTarget, timing01, itemCaptureBonus);
+                captureController.AttemptCapture(currentTarget, timing01, extraBonus);
 
                 if (comboHits >= 3)
                     ShowResult("PERFECT!", true);
@@ -286,9 +285,13 @@ namespace InsectGame.Capture
         {
             bool mobile = UIScale.IsMobileLayout;
             float panelW = mobile ? Mathf.Min(900f, UIScale.ContentWidth(28f)) : 500f;
-            float panelH = mobile ? 340f : 220f;
+            float panelH = UISafeLayout.ClampHeight(mobile ? 340f : 220f);
             float x = (UIScale.VirtualScreenWidth - panelW) / 2f;
-            float y = UIScale.VirtualScreenHeight * (mobile ? 0.24f : 0.28f);
+            // 화면 상단 1/4 근처 비율 배치 — 단 안전 영역 밖으로는 나가지 않는다.
+            float y = Mathf.Clamp(
+                UIScale.VirtualScreenHeight * (mobile ? 0.24f : 0.28f),
+                UISafeLayout.ContentTop,
+                Mathf.Max(UISafeLayout.ContentTop, UISafeLayout.ContentBottom - panelH));
 
             GUI.color = new Color(0, 0, 0, 0.88f);
             GUI.DrawTexture(new Rect(x, y, panelW, panelH), Texture2D.whiteTexture);

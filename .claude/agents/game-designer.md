@@ -19,6 +19,8 @@ tools:
 - `Assets/Scripts/Core/TrainingManager.cs` - 훈련 시스템
 - `Assets/Scripts/Core/TutorialQuestManager.cs` - 튜토리얼/퀘스트
 - `Assets/Scripts/Core/TutorialQuestData.cs` - 퀘스트 데이터
+- `Assets/Scripts/Core/WeeklyContestSchedule.cs` - 주간 크기 대결 일정·대상 종·등급 임계
+- `Assets/Scripts/Core/WeeklyContestManager.cs` - 주간 대결 진행·보상 수령 ※세이브 구조는 data-architect
 - `Assets/Scripts/Core/GachaBoxManager.cs` - 가챠 시스템
 - `Assets/Scripts/Core/CashShopManager.cs` - 캐시샵 로직
 - `Assets/Scripts/Core/ItemEffectManager.cs` - 아이템 효과

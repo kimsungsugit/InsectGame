@@ -183,9 +183,13 @@ namespace InsectGame.UI
             float cx = Screen.width / 2f;
             float cy = Screen.height * 0.38f;
             float panelW = 560f;
-            float panelH = 540f;
+            float panelH = UISafeLayout.Px.ClampHeight(540f);
             float px = cx - panelW / 2f;
-            float py = cy - panelH / 2f;
+            // 화면 38% 지점 중심 — 단 세이프에어리어 + 세로 마진 밖으로는 나가지 않는다.
+            float py = Mathf.Clamp(
+                cy - panelH / 2f,
+                UISafeLayout.Px.ContentTop,
+                Mathf.Max(UISafeLayout.Px.ContentTop, UISafeLayout.Px.ContentBottom - panelH));
 
             float slideIn = Mathf.Clamp01(animTime / 0.25f);
             py += (1f - slideIn) * 30f;

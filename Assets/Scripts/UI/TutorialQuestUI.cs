@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using InsectGame.Core;
+using InsectGame.Data;
 using UnityEngine;
 
 namespace InsectGame.UI
@@ -7,13 +8,21 @@ namespace InsectGame.UI
     public class TutorialQuestUI : MonoBehaviour, IModalUI
     {
         [SerializeField] private TutorialQuestManager questManager;
+        // 보상 아이템 ID를 표시명으로 바꾸는 데만 쓴다. 미주입이면 ID를 그대로 보여준다.
+        [SerializeField] private ItemDatabase itemDatabase;
         private GuidedTutorialController guided;   // 강제 가이드 상태 조회(가이드 중 숨김 억제)
 
         private bool detailOpen;
         private bool activeDetailOpen;   // 칩 클릭 시 뜨는 활성 퀘스트 상세 팝업(중앙)
         public bool IsOpen => detailOpen || activeDetailOpen;
         public void Toggle() { SetDetailOpen(!detailOpen); }
-        public void CloseModal() { detailOpen = false; activeDetailOpen = false; UpdateModalRegistration(); }
+        public void CloseModal()
+        {
+            detailOpen = false;
+            activeDetailOpen = false;
+            detailDirectScroll.Reset();
+            UpdateModalRegistration();
+        }
 
         // 모달 등록 갱신 — 목록/활성 팝업 중 하나라도 열리면 등록(이동 차단 + ESC로 닫기).
         private void UpdateModalRegistration()
@@ -34,6 +43,8 @@ namespace InsectGame.UI
         private void SetDetailOpen(bool v)
         {
             detailOpen = v;
+            detailScroll = Vector2.zero;
+            detailDirectScroll.Reset();
             if (v)
             {
                 activeDetailOpen = false;
@@ -77,10 +88,15 @@ namespace InsectGame.UI
         private float completionAnimTimer;
         private string completedQuestTitle;
         private float rewardAnimTimer;
-        private int rewardCandy;
-        private int rewardExp;
-        private string rewardInsectName;
+        // 완료 시점에 QuestRewardFormatter로 한 번 조립해 둔다. 옛 버전은 캔디/경험치/곤충을
+        // 배너에서 직접 이어 붙이면서 아이템 보상을 통째로 빠뜨렸다.
+        private string completedRewardText;
         private float hintPulse;
+
+        // 목록 행의 보상 칩용 재사용 버퍼 — OnGUI 매 프레임 할당 방지.
+        private readonly List<QuestRewardEntry> rewardChipBuffer = new List<QuestRewardEntry>(4);
+        // 아코디언으로 펼쳐진 퀘스트. 빈 문자열이면 모두 접힌 상태.
+        private string expandedQuestId = string.Empty;
 
         private float newQuestAnimTimer;
         private string newQuestTitle;
@@ -88,6 +104,7 @@ namespace InsectGame.UI
         private float newQuestDelay; // 완료 알림이 끝난 뒤 이어서 표시하기 위한 지연
 
         private Vector2 detailScroll;
+        private readonly UIDirectScroll detailDirectScroll = new UIDirectScroll();
 
         // 설명/힌트 동적 높이(CalcHeight) 계산용 — OnGUI 매 프레임 new GUIContent 회피.
         private readonly GUIContent descContentCache = new GUIContent();
@@ -117,7 +134,14 @@ namespace InsectGame.UI
         private GUIStyle detailCloseStyleCache;
         private GUIStyle detailRowStyleCache;
         private GUIStyle detailStatusStyleCache;
+        private GUIStyle detailRewardStyleCache;
+        private GUIStyle detailRewardLabelStyleCache;
+        private GUIStyle detailDescStyleCache;
         private bool detailStylesReady;
+
+        // 퀘스트별 보상 요약 문자열 캐시. 보상은 불변이라 최초 1회만 조립하면 되고,
+        // 목록이 매 프레임 그려지므로 캐시하지 않으면 행마다 문자열 할당이 쌓인다.
+        private readonly Dictionary<string, string> rewardTextCache = new Dictionary<string, string>();
 
         private static readonly Color DoneTextCol = new Color(0.9f, 0.75f, 0.2f);
         private static readonly Color QuestTitleCol = new Color(0.9f, 0.75f, 0.2f);
@@ -203,6 +227,23 @@ namespace InsectGame.UI
             detailStatusStyleCache = new GUIStyle(GUI.skin.label)
             { fontSize = 21, alignment = TextAnchor.MiddleRight };
             // textColor 4분기 동적 갱신.
+
+            detailRewardStyleCache = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 19,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleLeft,
+                clipping = TextClipping.Clip
+            };
+            detailRewardStyleCache.normal.textColor = UITheme.Instance.accentAmber;
+
+            detailDescStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 20, wordWrap = true, alignment = TextAnchor.UpperLeft };
+            detailDescStyleCache.normal.textColor = UITheme.Instance.textSecondary;
+
+            detailRewardLabelStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 19, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
+            detailRewardLabelStyleCache.normal.textColor = UITheme.Instance.textMuted;
         }
 
         private void OnEnable()
@@ -217,6 +258,9 @@ namespace InsectGame.UI
 
         private void OnDisable()
         {
+            detailOpen = false;
+            activeDetailOpen = false;
+            detailDirectScroll.Reset();
             if (questManager != null)
             {
                 questManager.QuestActivated -= OnQuestActivated;
@@ -247,11 +291,73 @@ namespace InsectGame.UI
         private void OnQuestCompleted(TutorialQuest quest)
         {
             completedQuestTitle = quest.title;
-            rewardCandy = quest.rewardCandy;
-            rewardExp = quest.rewardExp;
-            rewardInsectName = quest.rewardInsectDisplayName;
+            // 지급 조건과 같은 규칙으로 4종(캔디·경험치·아이템·곤충)을 전부 모은다.
+            completedRewardText = QuestRewardFormatter.Format(quest, ResolveItemName);
             completionAnimTimer = 3f;
             rewardAnimTimer = 3f;
+        }
+
+        // ── 주간 크기 대결 문구 ──
+        // 정의 배열의 제목·설명은 틀이고, 실제 문구는 이번 주 대상 종에 따라 달라진다.
+        // 보상처럼 questId로 캐시할 수 없어(주차마다 바뀐다) 대상 종 ID를 키로 잡는다 —
+        // OnGUI는 프레임당 여러 번 도므로 매 패스 문자열 보간을 돌리면 그대로 프레임 할당이다.
+        private string contestCacheTargetId = string.Empty;
+        private string contestTitleCache = string.Empty;
+        private string contestDescCache = string.Empty;
+
+        private void EnsureContestText(InsectData target)
+        {
+            if (target == null || contestCacheTargetId == target.insectId) return;
+
+            contestCacheTargetId = target.insectId;
+            contestTitleCache = "주간 크기 대결 — " + target.displayName;
+
+            float bronze = WeeklyContestSchedule.RequiredMm(target, ContestTier.Bronze);
+            float gold = WeeklyContestSchedule.RequiredMm(target, ContestTier.Gold);
+            contestDescCache = $"이번 주는 {target.displayName}입니다. "
+                + $"{InsectSizeCalculator.SizeLabel(bronze)} 이상이면 동, "
+                + $"{InsectSizeCalculator.SizeLabel(gold)} 이상이면 금.";
+        }
+
+        private string QuestTitle(TutorialQuest quest)
+        {
+            if (quest == null) return string.Empty;
+            if (quest.type != QuestType.SizeContest) return quest.title;
+
+            InsectData target = questManager != null ? questManager.WeeklyContestTarget : null;
+            if (target == null) return quest.title;
+            EnsureContestText(target);
+            return contestTitleCache;
+        }
+
+        private string QuestDescription(TutorialQuest quest)
+        {
+            if (quest == null) return string.Empty;
+            if (quest.type != QuestType.SizeContest) return quest.description;
+
+            InsectData target = questManager != null ? questManager.WeeklyContestTarget : null;
+            if (target == null) return quest.description;
+            EnsureContestText(target);
+            return contestDescCache;
+        }
+
+        /// <summary>퀘스트별 보상 요약. 보상은 불변이라 최초 1회만 조립한다.</summary>
+        private string GetRewardText(TutorialQuest quest)
+        {
+            if (quest == null || string.IsNullOrEmpty(quest.questId)) return string.Empty;
+            if (rewardTextCache.TryGetValue(quest.questId, out string cached)) return cached;
+
+            string text = QuestRewardFormatter.Format(quest, ResolveItemName);
+            rewardTextCache[quest.questId] = text;
+            return text;
+        }
+
+        /// <summary>보상 아이템 ID → 표시명. DB 미주입이면 ID 원문을 돌려준다(표시 누락 방지).</summary>
+        private string ResolveItemName(string itemId)
+        {
+            if (itemDatabase == null || string.IsNullOrEmpty(itemId)) return itemId;
+            ItemData data = itemDatabase.FindById(itemId);
+            return data != null && !string.IsNullOrEmpty(data.displayName) ? data.displayName : itemId;
         }
 
         private void Update()
@@ -299,8 +405,8 @@ namespace InsectGame.UI
                 float rW = UIScale.IsMobileLayout ? 230f : 172f;
                 float rH = UIScale.IsMobileLayout ? 54f : 38f;
                 float rY = UIScale.IsMobileLayout
-                    ? UIScale.VirtualSafeTop + 406f
-                    : UIScale.VirtualScreenHeight - UIScale.VirtualSafeBottom - rH - 24f;
+                    ? UISafeLayout.ContentTop + 380f   // 모바일: 미니맵 아래
+                    : UISafeLayout.BottomY(rH);        // 데스크톱: 좌하단
                 if (GUI.Button(new Rect(chipX, rY, rW, rH), "▼ 퀘스트 보기", panelBtnStyleCache))
                     SetTutorialHidden(false);
                 return;
@@ -319,8 +425,8 @@ namespace InsectGame.UI
             float cbarH = done ? 0f : 26f;
             float chipH = cpad + ctitleH + cbarH + cpad;
             float chipY = UIScale.IsMobileLayout
-                ? UIScale.VirtualSafeTop + 406f
-                : UIScale.VirtualScreenHeight - UIScale.VirtualSafeBottom - chipH - 24f;
+                ? UISafeLayout.ContentTop + 380f   // 모바일: 미니맵 아래
+                : UISafeLayout.BottomY(chipH);     // 데스크톱: 좌하단
             Rect chipRect = new Rect(chipX, chipY, chipW, chipH);
 
             // 배경 + 골드 상단 바
@@ -417,9 +523,10 @@ namespace InsectGame.UI
                     hintH = questHintStyleCache.CalcHeight(hintContentCache, wq - 28f) + 8f;
                 }
             }
-            float panelH = pad + titleH + descH2 + barBlockH + hintH + pad;
+            // 내용 길이에 따라 자라는 높이 — 안전 영역을 넘으면 clamp된다.
+            float panelH = UISafeLayout.ClampHeight(pad + titleH + descH2 + barBlockH + hintH + pad);
             float panelX = (UIScale.VirtualScreenWidth - panelW) * 0.5f;
-            float panelY = (UIScale.VirtualScreenHeight - panelH) * 0.5f;
+            float panelY = UISafeLayout.CenteredY(panelH);
             Rect panelRect = new Rect(panelX, panelY, panelW, panelH);
 
             // Background
@@ -521,9 +628,9 @@ namespace InsectGame.UI
 
             float availW = UIScale.VirtualScreenWidth - UIScale.VirtualSafeLeft - UIScale.VirtualSafeRight;
             float panelW = Mathf.Min(520f, availW - 24f);
-            float panelH = 150f;
+            float panelH = UISafeLayout.ClampHeight(150f);
             float panelX = UIScale.VirtualSafeLeft + (availW - panelW) * 0.5f;
-            float panelY = 30f + UIScale.VirtualSafeTop + slideOffset;
+            float panelY = UISafeLayout.ContentTop + slideOffset;
 
             // Background
             GUI.color = new Color(0.15f, 0.12f, 0.02f, 0.9f * alpha);
@@ -547,26 +654,12 @@ namespace InsectGame.UI
             GUI.Label(new Rect(panelX, panelY + 58f, panelW, 34f),
                 "\"" + (completedQuestTitle ?? "") + "\"", compTitleStyleCache);
 
-            // Rewards
-            string rewardText = "";
-            if (rewardCandy > 0)
-                rewardText += "\uce94\ub514 " + rewardCandy;
-            if (rewardExp > 0)
-            {
-                if (rewardText.Length > 0) rewardText += " + ";
-                rewardText += "\uacbd\ud5d8\uce58 " + rewardExp;
-            }
-            if (!string.IsNullOrEmpty(rewardInsectName))
-            {
-                if (rewardText.Length > 0) rewardText += " + ";
-                rewardText += rewardInsectName;
-            }
-
-            if (rewardText.Length > 0)
+            // \ubcf4\uc0c1 \u2014 \uc870\ub9bd\uc740 OnQuestCompleted\uc5d0\uc11c QuestRewardFormatter\uac00 \uc774\ubbf8 \ub05d\ub0c8\ub2e4.
+            if (!string.IsNullOrEmpty(completedRewardText))
             {
                 rewardStyleCache.normal.textColor = new Color(RewardBaseCol.r, RewardBaseCol.g, RewardBaseCol.b, alpha);
                 GUI.Label(new Rect(panelX, panelY + 96f, panelW, 32f),
-                    "\ubcf4\uc0c1: " + rewardText, rewardStyleCache);
+                    "\ubcf4\uc0c1: " + completedRewardText, rewardStyleCache);
             }
 
             GUI.color = Color.white;
@@ -599,9 +692,9 @@ namespace InsectGame.UI
             bool hasDesc = !string.IsNullOrEmpty(newQuestDesc);
             float availW = UIScale.VirtualScreenWidth - UIScale.VirtualSafeLeft - UIScale.VirtualSafeRight;
             float panelW = Mathf.Min(520f, availW - 24f);
-            float panelH = hasDesc ? 132f : 54f;
+            float panelH = UISafeLayout.ClampHeight(hasDesc ? 132f : 54f);
             float panelX = UIScale.VirtualSafeLeft + (availW - panelW) * 0.5f;
-            float panelY = 60f + UIScale.VirtualSafeTop;
+            float panelY = UISafeLayout.ContentTop + 30f;   // 퀘스트 토스트(ContentTop) 아래로
 
             GUI.color = new Color(0.08f, 0.15f, 0.3f, 0.92f * alpha);
             GUI.DrawTexture(new Rect(panelX, panelY, panelW, panelH), Texture2D.whiteTexture);
@@ -645,11 +738,9 @@ namespace InsectGame.UI
             float panelW = UIScale.IsMobileLayout
                 ? Mathf.Min(600f, UIScale.VirtualScreenWidth - UIScale.VirtualSafeLeft - UIScale.VirtualSafeRight - 32f)
                 : 540f;
-            float panelH = UIScale.IsMobileLayout
-                ? Mathf.Min(760f, UIScale.VirtualScreenHeight - UIScale.VirtualSafeTop - UIScale.VirtualSafeBottom - 32f)
-                : 560f;
+            float panelH = UISafeLayout.ClampHeight(UIScale.IsMobileLayout ? 760f : 560f);
             float panelX = (UIScale.VirtualScreenWidth - panelW) * 0.5f;
-            float panelY = (UIScale.VirtualScreenHeight - panelH) * 0.5f;
+            float panelY = UISafeLayout.CenteredY(panelH);
 
             // Background
             GUI.color = new Color(0.05f, 0.08f, 0.15f, 0.95f);
@@ -697,14 +788,21 @@ namespace InsectGame.UI
                 else story.Add(q);
             }
 
-            float rowH = 52f;
-            float headH = 34f;
-            float contentH = headH + story.Count * rowH
-                + (side.Count > 0 ? headH + side.Count * rowH : 0f);
-            Rect viewRect = new Rect(0, 0, listW - 20f, contentH);
+            float rowH = QuestListLayout.RowHeight;
+            float headH = QuestListLayout.SectionHeaderHeight;
+            // 펼쳐진 행이 있으면 그만큼 콘텐츠가 길어진다(한 번에 하나만 펼친다).
+            int expandedCount = string.IsNullOrEmpty(expandedQuestId) ? 0 : 1;
+            float contentH = QuestListLayout.GetContentHeight(story.Count, side.Count, expandedCount);
+            Rect listArea = new Rect(listX, listY, listW, listH);
+            Rect viewRect = new Rect(0, 0, listW, contentH);
+            detailDirectScroll.Handle(ref detailScroll, listArea, contentH, rowH);
 
             detailScroll = GUI.BeginScrollView(
-                new Rect(listX, listY, listW, listH), detailScroll, viewRect);
+                listArea,
+                detailScroll,
+                viewRect,
+                GUIStyle.none,
+                GUIStyle.none);
 
             float ry = 0f;
             DrawQuestSectionHeader(viewRect.width, ref ry, headH, "\u2605 \uc2a4\ud1a0\ub9ac");
@@ -733,6 +831,7 @@ namespace InsectGame.UI
         }
 
         // \ud55c \ud018\uc2a4\ud2b8 \ud589 \ub80c\ub354 \u2014 \uc2a4\ud1a0\ub9ac/\uc11c\ube0c \uacf5\uc6a9. \uc11c\ube0c\ub294 \ubc18\ubcf5 \uc0c1\uc2b9 \uc9c4\ud589(Lv \ud2f0\uc5b4) \ud45c\uc2dc.
+        // \ud589\uc744 \ub204\ub974\uba74 \uadf8 \uc790\ub9ac\uc5d0\uc11c \ud3bc\uccd0\uc838 \uc124\uba85\u00b7\uc9c4\ud589\u00b7\uc804\uccb4 \ubcf4\uc0c1\uc744 \ubcf4\uc5ec\uc900\ub2e4(\uc544\ucf54\ub514\uc5b8).
         private void DrawQuestRow(TutorialQuest quest, float width, ref float ry, float rowH, int idx)
         {
             bool isSide = quest.category == QuestCategory.Side;
@@ -740,30 +839,36 @@ namespace InsectGame.UI
             string icon;
             string statusText;
             Color statusCol;
+            Color titleCol;
+            int cur = 0;
+            int tgt = Mathf.Max(0, quest.targetCount);
+            bool showBar = false;
 
             if (isSide)
             {
                 bool unlocked = string.IsNullOrEmpty(quest.prerequisiteQuestId)
                     || questManager.IsQuestCompleted(quest.prerequisiteQuestId);
+                tgt = questManager.EffectiveTarget(quest);
                 if (!unlocked)
                 {
-                    icon = "\ud83d\udd12 "; detailRowStyleCache.normal.textColor = RowLockedCol;
+                    icon = "\ud83d\udd12 "; titleCol = RowLockedCol;
                     statusText = "\ubbf8\ud574\uae08"; statusCol = RowLockedCol;
                 }
                 else if (!quest.repeatable && questManager.IsQuestCompleted(quest.questId))
                 {
-                    icon = "\u2713 "; detailRowStyleCache.normal.textColor = RowCompletedCol;
+                    icon = "\u2713 "; titleCol = RowCompletedCol;
                     statusText = "\uc644\ub8cc"; statusCol = StatusCompletedCol;
+                    cur = tgt;
                 }
                 else
                 {
-                    icon = "\u25c6 "; detailRowStyleCache.normal.textColor = Color.white;
-                    int cur = questManager.GetSideProgress(quest.questId);
-                    int tgt = questManager.EffectiveTarget(quest);
+                    icon = "\u25c6 "; titleCol = Color.white;
+                    cur = questManager.GetSideProgress(quest.questId);
                     statusText = quest.repeatable
                         ? cur + "/" + tgt + "  Lv" + (questManager.GetSideRepeatCount(quest.questId) + 1)
                         : cur + "/" + tgt;
                     statusCol = StatusActiveCol;
+                    showBar = true;
                 }
             }
             else
@@ -777,45 +882,112 @@ namespace InsectGame.UI
 
                 if (isCompleted)
                 {
-                    icon = "\u2713 "; detailRowStyleCache.normal.textColor = RowCompletedCol;
+                    icon = "\u2713 "; titleCol = RowCompletedCol;
                     statusText = "\uc644\ub8cc"; statusCol = StatusCompletedCol;
+                    cur = tgt;
                 }
                 else if (isActiveStory)
                 {
-                    icon = "\u25b6 "; detailRowStyleCache.normal.textColor = Color.white;
-                    statusText = questManager.ActiveProgress + "/" + quest.targetCount;
+                    icon = "\u25b6 "; titleCol = Color.white;
+                    cur = questManager.ActiveProgress;
+                    statusText = cur + "/" + tgt;
                     statusCol = StatusActiveCol;
+                    showBar = true;
                 }
                 else if (isLocked)
                 {
-                    icon = "\ud83d\udd12 "; detailRowStyleCache.normal.textColor = RowLockedCol;
+                    icon = "\ud83d\udd12 "; titleCol = RowLockedCol;
                     statusText = "\ubbf8\ud574\uae08"; statusCol = RowLockedCol;
                 }
                 else
                 {
-                    icon = "  "; detailRowStyleCache.normal.textColor = RowPendingCol;
+                    icon = "  "; titleCol = RowPendingCol;
                     statusText = "\ub300\uae30"; statusCol = RowPendingCol;
                 }
             }
 
-            // \ubc30\uacbd(\uad50\ub300) + \ud65c\uc131 \uc2a4\ud1a0\ub9ac \ud558\uc774\ub77c\uc774\ud2b8
+            bool expanded = !string.IsNullOrEmpty(quest.questId) && quest.questId == expandedQuestId;
+            float totalH = QuestListLayout.GetRowHeight(expanded);
+            UITheme t = UITheme.Instance;
+
+            // \ubc30\uacbd(\uad50\ub300) + \ud65c\uc131 \uc2a4\ud1a0\ub9ac \ud558\uc774\ub77c\uc774\ud2b8 \u2014 \ud3bc\uce5c \uc601\uc5ed\uae4c\uc9c0 \ud568\uaed8 \uce60\ud55c\ub2e4.
             if (idx % 2 == 0)
             {
                 GUI.color = new Color(0.08f, 0.1f, 0.18f, 0.6f);
-                GUI.DrawTexture(new Rect(0, ry, width, rowH), Texture2D.whiteTexture);
+                GUI.DrawTexture(new Rect(0, ry, width, totalH), Texture2D.whiteTexture);
             }
             if (isActiveStory)
             {
                 GUI.color = new Color(0.2f, 0.4f, 0.15f, 0.4f);
-                GUI.DrawTexture(new Rect(0, ry, width, rowH), Texture2D.whiteTexture);
+                GUI.DrawTexture(new Rect(0, ry, width, totalH), Texture2D.whiteTexture);
+            }
+            if (expanded)
+            {
+                GUI.color = new Color(t.accentAmber.r, t.accentAmber.g, t.accentAmber.b, 0.14f);
+                GUI.DrawTexture(new Rect(0, ry, width, totalH), Texture2D.whiteTexture);
+                GUI.color = t.accentAmber;
+                GUI.DrawTexture(new Rect(0, ry, 3f, totalH), Texture2D.whiteTexture);
             }
             GUI.color = Color.white;
 
-            GUI.Label(new Rect(8f, ry, width * 0.58f, rowH), icon + quest.title, detailRowStyleCache);
-            detailStatusStyleCache.normal.textColor = statusCol;
-            GUI.Label(new Rect(width * 0.58f, ry, width * 0.4f, rowH), statusText, detailStatusStyleCache);
+            detailRowStyleCache.normal.textColor = titleCol;
+            GUI.Label(new Rect(10f, ry, width * 0.46f, rowH), icon + QuestTitle(quest), detailRowStyleCache);
 
-            ry += rowH;
+            // \ubcf4\uc0c1 \uc694\uc57d \u2014 \ubaa9\ub85d\uc5d0\uc11c "\uc774\uac70 \uae68\uba74 \ubb58 \uc8fc\ub098"\uac00 \ubc14\ub85c \ubcf4\uc774\uac8c.
+            string rewardText = GetRewardText(quest);
+            if (!string.IsNullOrEmpty(rewardText))
+            {
+                GUI.Label(new Rect(width * 0.47f, ry, width * 0.32f, rowH), rewardText, detailRewardStyleCache);
+            }
+
+            detailStatusStyleCache.normal.textColor = statusCol;
+            GUI.Label(new Rect(width * 0.80f, ry, width * 0.18f, rowH), statusText, detailStatusStyleCache);
+
+            if (showBar && tgt > 0)
+            {
+                UIHelper.DrawProgressBar(
+                    new Rect(10f, ry + rowH - 9f, width - 20f, 4f),
+                    cur / (float)tgt,
+                    t.surfaceBase,
+                    t.accentMint);
+            }
+
+            // \ud074\ub9ad \ud310\uc815\uc740 \ud5e4\ub354 \ud589\uc5d0\ub9cc \u2014 \ud3bc\uce5c \ub0b4\uc6a9\uc744 \ub204\ub97c \ub54c \uc811\ud788\uc9c0 \uc54a\uac8c \ud55c\ub2e4.
+            if (GUI.Button(new Rect(0f, ry, width, rowH), string.Empty, GUIStyle.none)
+                && !detailDirectScroll.IsDragging)
+            {
+                expandedQuestId = expanded ? string.Empty : quest.questId;
+            }
+
+            if (expanded)
+            {
+                float ey = ry + rowH + 6f;
+                string desc = QuestDescription(quest);
+                if (!string.IsNullOrEmpty(desc))
+                {
+                    GUI.Label(new Rect(16f, ey, width - 32f, 52f), desc, detailDescStyleCache);
+                }
+                ey += 56f;
+
+                if (tgt > 0)
+                {
+                    GUI.Label(new Rect(16f, ey, 60f, 26f), "\uc9c4\ud589", detailRewardLabelStyleCache);
+                    UIHelper.DrawProgressBar(
+                        new Rect(80f, ey + 9f, width - 176f, 8f),
+                        cur / (float)tgt,
+                        t.surfaceBase,
+                        t.accentMint);
+                    detailStatusStyleCache.normal.textColor = statusCol;
+                    GUI.Label(new Rect(width - 88f, ey, 72f, 26f), cur + " / " + tgt, detailStatusStyleCache);
+                }
+                ey += 34f;
+
+                GUI.Label(new Rect(16f, ey, 60f, 26f), "\ubcf4\uc0c1", detailRewardLabelStyleCache);
+                GUI.Label(new Rect(80f, ey, width - 96f, 26f),
+                    string.IsNullOrEmpty(rewardText) ? "\uc5c6\uc74c" : rewardText, detailRewardStyleCache);
+            }
+
+            ry += totalH;
         }
 
         public void AutoWire(TutorialQuestManager manager)
@@ -837,6 +1009,14 @@ namespace InsectGame.UI
         public void AutoWire(GuidedTutorialController guidedController)
         {
             if (guided == null) guided = guidedController;
+        }
+
+        /// <summary>보상 아이템의 표시명 조회용. 미주입이면 목록·배너에 아이템 ID가 그대로 나온다.</summary>
+        public void AutoWire(ItemDatabase database)
+        {
+            if (itemDatabase == null) itemDatabase = database;
+            // AutoWire가 첫 렌더보다 늦게 올 수 있다. 그 사이 ID 원문으로 굳은 캐시를 버린다.
+            rewardTextCache.Clear();
         }
     }
 }

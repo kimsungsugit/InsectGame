@@ -84,6 +84,7 @@ MainMenu → PlayScene
 AutoWire·이벤트·오브젝트 풀 패턴, 금지 사항이 전부 거기 있다.
 
 관련: `rules/architecture.md`(의존성 방향·Bootstrap 등록),
+`rules/ui-layout.md`(배치는 `UISafeLayout`, 표면·색은 `UISurface`+`UITheme` 토큰 경유 강제),
 `rules/save-system.md`(세이브 필드 추가),
 `rules/scriptable-objects.md`(SO 생성),
 `rules/testing.md`(테스트 필수 기준),

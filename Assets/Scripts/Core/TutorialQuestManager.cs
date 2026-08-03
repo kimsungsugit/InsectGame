@@ -18,6 +18,7 @@ namespace InsectGame.Core
         private TrainingManager trainingManager;
         private BattleTeamManager battleTeamManager;
         private RegionManager regionManager;
+        private WeeklyContestManager weeklyContest;
 
         private TutorialQuest[] allQuests;
         private Dictionary<string, int> questProgress = new Dictionary<string, int>();
@@ -102,6 +103,23 @@ namespace InsectGame.Core
             if (battleTeamManager == null) battleTeamManager = team;
             if (regionManager == null) regionManager = region;
         }
+
+        /// <summary>
+        /// 주간 크기 대결 연결. Start(SubscribeEvents) 뒤에 배선될 수 있어 여기서도 구독한다 —
+        /// q_team이 구독 등록 누락으로 영구 정지했던 전례(rules/quest-system.md) 때문에
+        /// 이벤트 기반 QuestType은 구독 지점을 반드시 이중으로 확인한다.
+        /// </summary>
+        public void AutoWire(WeeklyContestManager contest)
+        {
+            if (weeklyContest == contest) return;
+            if (weeklyContest != null) weeklyContest.TierReached -= OnContestTierReached;
+            weeklyContest = contest;
+            if (weeklyContest != null) weeklyContest.TierReached += OnContestTierReached;
+        }
+
+        /// <summary>이번 주 대결 대상 종 — TutorialQuestUI가 퀘스트 문구를 덮어쓸 때 쓴다.</summary>
+        public Data.InsectData WeeklyContestTarget =>
+            weeklyContest != null ? weeklyContest.TargetInsect : null;
 
         private void Awake()
         {
@@ -352,6 +370,91 @@ namespace InsectGame.Core
                     rewardCandy = 40, rewardExp = 30,
                     rewardItemId = "guardian_totem", rewardItemCount = 1
                 },
+                new TutorialQuest
+                {
+                    questId = "s_npc_duel", title = "동네 최강자",
+                    description = "곤충잡이 아이와의 대결에서 승리하세요. 반복할수록 목표가 상승합니다.",
+                    hint = "필드를 돌아다니는 아이에게 [E]로 대결을 신청하세요",
+                    type = QuestType.NpcDuel, targetCount = 3, targetIncrement = 2,
+                    category = QuestCategory.Side, repeatable = true,
+                    prerequisiteQuestId = "q_battle",
+                    rewardCandy = 25, rewardExp = 20,
+                    rewardItemId = "wound_salve", rewardItemCount = 3
+                },
+
+                // --- 등급 패키지 포획(각 등급을 콕 집는다) — QuestType.CaptureRarity ---
+                new TutorialQuest
+                {
+                    // 제목·설명은 틀이다 — TutorialQuestUI가 이번 주 대상 종 이름으로 덮어쓴다.
+                    questId = "s_weekly_contest", title = "주간 크기 대결",
+                    description = "이번 주 지정 곤충을 큰 개체로 포획하세요.",
+                    hint = "같은 종이라도 개체마다 크기가 다릅니다 — 여러 마리 잡아 보세요",
+                    type = QuestType.SizeContest, targetCount = 1, targetIncrement = 1,
+                    category = QuestCategory.Side, repeatable = true,
+                    prerequisiteQuestId = "q_capture3",
+                    rewardCandy = 30, rewardExp = 25,
+                    rewardItemId = "net_silver", rewardItemCount = 2
+                },
+                new TutorialQuest
+                {
+                    questId = "s_pack_common", title = "일반 곤충 채집단",
+                    description = "일반(Common) 등급 곤충을 포획하세요. 반복할수록 목표가 상승합니다.",
+                    hint = "어느 리전에서나 흔하게 만날 수 있습니다",
+                    type = QuestType.CaptureRarity, requiredRarity = InsectRarity.Common,
+                    targetCount = 8, targetIncrement = 6,
+                    category = QuestCategory.Side, repeatable = true,
+                    prerequisiteQuestId = "q_capture3",
+                    rewardCandy = 12, rewardExp = 8,
+                    rewardItemId = "net_basic", rewardItemCount = 3
+                },
+                new TutorialQuest
+                {
+                    questId = "s_pack_uncommon", title = "고급 곤충 채집단",
+                    description = "고급(Uncommon) 등급 곤충을 포획하세요. 반복할수록 목표가 상승합니다.",
+                    hint = "은빛 채집망을 쓰면 성공률이 오릅니다",
+                    type = QuestType.CaptureRarity, requiredRarity = InsectRarity.Uncommon,
+                    targetCount = 5, targetIncrement = 4,
+                    category = QuestCategory.Side, repeatable = true,
+                    prerequisiteQuestId = "q_capture3",
+                    rewardCandy = 20, rewardExp = 15,
+                    rewardItemId = "net_silver", rewardItemCount = 2
+                },
+                new TutorialQuest
+                {
+                    questId = "s_pack_rare", title = "희귀 곤충 채집단",
+                    description = "희귀(Rare) 등급 곤충을 포획하세요. 반복할수록 목표가 상승합니다.",
+                    hint = "황금 채집망과 포박의 그물을 함께 쓰세요",
+                    type = QuestType.CaptureRarity, requiredRarity = InsectRarity.Rare,
+                    targetCount = 3, targetIncrement = 2,
+                    category = QuestCategory.Side, repeatable = true,
+                    prerequisiteQuestId = "q_capture10",
+                    rewardCandy = 35, rewardExp = 28,
+                    rewardItemId = "net_gold", rewardItemCount = 2
+                },
+                new TutorialQuest
+                {
+                    questId = "s_pack_epic", title = "영웅 곤충 채집단",
+                    description = "영웅(Epic) 등급 곤충을 포획하세요. 반복할수록 목표가 상승합니다.",
+                    hint = "레이드로 약화시킨 뒤 포획하면 수월합니다",
+                    type = QuestType.CaptureRarity, requiredRarity = InsectRarity.Epic,
+                    targetCount = 2, targetIncrement = 1,
+                    category = QuestCategory.Side, repeatable = true,
+                    prerequisiteQuestId = "q_capture10",
+                    rewardCandy = 60, rewardExp = 50,
+                    rewardItemId = "golden_censer", rewardItemCount = 1
+                },
+                new TutorialQuest
+                {
+                    questId = "s_pack_legendary", title = "전설 곤충 채집단",
+                    description = "전설(Legendary) 등급 곤충을 포획하세요. 반복할수록 목표가 상승합니다.",
+                    hint = "최고 난도입니다 — 포획 보정 아이템을 모두 준비하세요",
+                    type = QuestType.CaptureRarity, requiredRarity = InsectRarity.Legendary,
+                    targetCount = 1, targetIncrement = 1,
+                    category = QuestCategory.Side, repeatable = true,
+                    prerequisiteQuestId = "q_capture10",
+                    rewardCandy = 120, rewardExp = 100,
+                    rewardItemId = "spirit_blessing", rewardItemCount = 1
+                },
             };
         }
 
@@ -374,6 +477,14 @@ namespace InsectGame.Core
             // 팀 편성 변경 (q_team) — 옛은 NotifyTeamSet 호출처 없어 영구 정지
             if (battleTeamManager != null)
                 battleTeamManager.TeamChanged += OnTeamChanged;
+
+            // 주간 크기 대결 등급 달성. AutoWire(WeeklyContestManager)에서도 구독하므로
+            // 배선 순서와 무관하게 정확히 한 번만 걸리도록 해지 후 구독한다.
+            if (weeklyContest != null)
+            {
+                weeklyContest.TierReached -= OnContestTierReached;
+                weeklyContest.TierReached += OnContestTierReached;
+            }
         }
 
         private void UnsubscribeEvents()
@@ -392,9 +503,48 @@ namespace InsectGame.Core
 
             if (battleTeamManager != null)
                 battleTeamManager.TeamChanged -= OnTeamChanged;
+
+            if (weeklyContest != null)
+                weeklyContest.TierReached -= OnContestTierReached;
         }
 
         private void OnTeamChanged() => NotifyAction(QuestType.SetTeam);
+
+        // 등급을 새로 달성했을 때만 울린다(WeeklyContestManager가 중복 발화를 막는다).
+        // 등급별 추가 보상은 여기서 지급한다 — 퀘스트 보상(고정)과 별개로 동/은/금 차등을 준다.
+        private void OnContestTierReached(ContestTier tier)
+        {
+            if (weeklyContest != null && weeklyContest.TryClaim(out ContestTier claimed))
+                GrantContestTierReward(claimed);
+            // NotifySizeContestTier()를 거치지 않고 직접 부른다 — quest_lint의 배선 검사가
+            // "핸들러 본문에 NotifyAction(QuestType.X)"를 찾는다(OnTeamChanged와 같은 형태).
+            // 한 겹 감싸면 배선이 안 보여 q_team류 영구 정지로 오판된다.
+            NotifyAction(QuestType.SizeContest);
+        }
+
+        // 동/은/금 차등 보상. TryClaim이 주차·등급 중복을 막으므로 여기선 지급만 한다.
+        private void GrantContestTierReward(ContestTier tier)
+        {
+            int candy;
+            string itemId;
+            int itemCount;
+            switch (tier)
+            {
+                case ContestTier.Gold: candy = 80; itemId = "net_gold"; itemCount = 2; break;
+                case ContestTier.Silver: candy = 40; itemId = "net_silver"; itemCount = 1; break;
+                case ContestTier.Bronze: candy = 20; itemId = null; itemCount = 0; break;
+                default: return;
+            }
+
+            if (candyInventory != null) candyInventory.AddCandy(candy);
+            else Debug.LogWarning($"[Quest] candyInventory null — 주간 대결 캔디 손실 (+{candy})");
+
+            if (!string.IsNullOrEmpty(itemId) && itemCount > 0)
+            {
+                if (itemInventory != null) itemInventory.AddItem(itemId, itemCount);
+                else Debug.LogWarning($"[Quest] itemInventory null — 주간 대결 아이템 손실: {itemId}x{itemCount}");
+            }
+        }
 
         // --- 이벤트 핸들러 ---
 
@@ -472,9 +622,11 @@ namespace InsectGame.Core
                     IncrementProgress(activeQuestId);
                 else if (ActiveQuest.type == QuestType.CaptureRare && rarity >= InsectRarity.Uncommon)
                     IncrementProgress(activeQuestId);
+                else if (ActiveQuest.type == QuestType.CaptureRarity && rarity == ActiveQuest.requiredRarity)
+                    IncrementProgress(activeQuestId);
             }
 
-            // 서브 포획 퀘스트: Capture는 모든 포획, CaptureRare는 Uncommon+ 만.
+            // 서브 포획 퀘스트: Capture는 모든 포획, CaptureRare는 Uncommon+, CaptureRarity는 지정 등급만.
             ProgressSideCapture(rarity);
         }
 
@@ -526,6 +678,18 @@ namespace InsectGame.Core
         public void NotifyGuardianDefeated()
         {
             NotifyAction(QuestType.DefeatGuardian);
+        }
+
+        /// <summary>곤충잡이 아이와의 대결에서 이겼을 때 — NpcDuelController가 호출.</summary>
+        public void NotifyNpcDuelWon()
+        {
+            NotifyAction(QuestType.NpcDuel);
+        }
+
+        /// <summary>주간 크기 대결에서 등급을 새로 달성했을 때 — WeeklyContestManager 이벤트가 호출.</summary>
+        public void NotifySizeContestTier()
+        {
+            NotifyAction(QuestType.SizeContest);
         }
 
         // --- 진행 추적 ---
@@ -671,6 +835,7 @@ namespace InsectGame.Core
                 if (!IsSideActive(q)) continue;
                 if (q.type == QuestType.Capture) IncrementSideProgress(q, 1);
                 else if (q.type == QuestType.CaptureRare && rarity >= InsectRarity.Uncommon) IncrementSideProgress(q, 1);
+                else if (q.type == QuestType.CaptureRarity && rarity == q.requiredRarity) IncrementSideProgress(q, 1);
             }
         }
 

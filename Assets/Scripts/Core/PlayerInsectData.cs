@@ -26,6 +26,16 @@ namespace InsectGame.Core
         public bool isPoisoned;
         public bool isParalyzed;
 
+        // 개체 크기 롤 0~100. **-1은 '미초기화'**(구세이브) — currentHp와 같은 센티넬 방식이다.
+        // 0으로 두면 기존 곤충이 전부 최소 크기가 되므로, 로드 시 EnsureSize가 instanceId
+        // 해시로 채운다(결정적이라 볼 때마다 값이 바뀌지 않는다).
+        public int sizeRoll = -1;
+
+        // 포획 시각(Unix 초). 0 = 미상(구세이브) — 주간 대결 집계에서 '이번 주 아님'으로 걸러진다.
+        // 주간 기록을 따로 저장하지 않고 이 필드로 파생하므로, player_insects.json 블롭이
+        // 클라우드로 올라가면서 기록도 함께 따라온다.
+        public long capturedUnix;
+
         public const int MaxEquipSlots = GameConstants.Player.MaxEquipSlots;
         public const int MaxLearnedSkills = GameConstants.Player.MaxLearnedSkills;
         public const int MaxIV = GameConstants.Player.MaxIV;
@@ -101,8 +111,24 @@ namespace InsectGame.Core
                 ivAtk = RollIV(ivPower),
                 ivDef = RollIV(ivPower),
                 isShiny = UnityEngine.Random.value < 0.01f,
+                // 크기는 등급과 무관하게 균등 — IV처럼 등급이 높을수록 어렵게 하면
+                // 저레어 종으로 도는 주간 크기 대결의 의미가 사라진다.
+                sizeRoll = UnityEngine.Random.Range(
+                    InsectSizeCalculator.MinRoll, InsectSizeCalculator.MaxRoll + 1),
+                capturedUnix = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
             };
             return data;
+        }
+
+        /// <summary>
+        /// 구세이브 마이그레이션 — sizeRoll이 -1이면 instanceId 해시로 채운다.
+        /// EnsureHp와 같은 자리(로드 루프)에서 호출한다. instanceId가 먼저 보장돼야 하므로
+        /// EnsureInstanceId 뒤에 부른다.
+        /// </summary>
+        public void EnsureSize()
+        {
+            if (sizeRoll < InsectSizeCalculator.MinRoll)
+                sizeRoll = InsectSizeCalculator.RollFromInstanceId(instanceId);
         }
 
         public void EnsureInstanceId()

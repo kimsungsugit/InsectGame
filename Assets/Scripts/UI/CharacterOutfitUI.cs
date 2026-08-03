@@ -12,6 +12,7 @@ namespace InsectGame.UI
         private bool isOpen;
         private OutfitSlot selectedSlot = OutfitSlot.Hat;
         private Vector2 scrollPos;
+        private readonly UIDirectScroll directScroll = new UIDirectScroll();
 
         // 장착 피드백
         private float equipFlashTimer;
@@ -65,6 +66,8 @@ namespace InsectGame.UI
         public void Toggle()
         {
             isOpen = !isOpen;
+            if (isOpen) scrollPos = Vector2.zero;
+            directScroll.Reset();
             if (isOpen) ModalUIRegistry.Register(this);
             else ModalUIRegistry.Unregister(this);
         }
@@ -72,6 +75,7 @@ namespace InsectGame.UI
         public void CloseModal()
         {
             isOpen = false;
+            directScroll.Reset();
             ModalUIRegistry.Unregister(this);
         }
 
@@ -80,6 +84,7 @@ namespace InsectGame.UI
             // 옛은 isOpen=true 그대로 두고 Unregister만 호출 → 같은 GO SetActive 토글 시
             // isOpen=true이지만 Registry 미등록 상태로 stale. HandleEscape가 이 모달을 무시.
             isOpen = false;
+            directScroll.Reset();
             ModalUIRegistry.Unregister(this);
         }
 
@@ -218,12 +223,12 @@ namespace InsectGame.UI
             if (Event.current.type == EventType.Repaint)
                 previewRotate += Time.deltaTime * 30f;
 
-            float panelW = Mathf.Min(1200f, UIScale.VirtualScreenWidth * 0.96f);
-            float panelH = Mathf.Min(820f, UIScale.VirtualScreenHeight * 0.95f);
+            Rect panelRect = UISafeLayout.CenteredPanel(1200f, 820f);
+            float panelW = panelRect.width;
+            float panelH = panelRect.height;
             bool mobile = UIScale.IsMobileLayout;
-            float x = (UIScale.VirtualScreenWidth - panelW) * 0.5f;
-            float y = (UIScale.VirtualScreenHeight - panelH) * 0.5f;
-            Rect panelRect = new Rect(x, y, panelW, panelH);
+            float x = panelRect.x;
+            float y = panelRect.y;
 
             GUI.Box(panelRect, "", panelStyle);
 
@@ -291,6 +296,7 @@ namespace InsectGame.UI
                 {
                     selectedSlot = slots[i];
                     scrollPos = Vector2.zero;
+                    directScroll.Reset();
                 }
             }
 
@@ -344,7 +350,7 @@ namespace InsectGame.UI
             float gridX = mobile ? x + 20f : tabX + tabW + 20f;
             float gridY = mobile ? tabY + tabRows * (tabH + tabGap) + 12f : y + 70f;
             float gridW = mobile ? panelW - 40f : panelW - (gridX - x) - 20f;
-            float gridH = mobile ? panelH - (gridY - y) - 84f : panelH - 150f;
+            float gridH = Mathf.Max(1f, mobile ? panelH - (gridY - y) - 84f : panelH - 150f);
 
             OutfitItem[] items = outfitManager.GetItemsForSlot(selectedSlot);
 
@@ -356,8 +362,14 @@ namespace InsectGame.UI
             float contentH = rows * (cardH + cardGap) + 10;
 
             Rect viewRect = new Rect(gridX, gridY, gridW, gridH);
-            Rect contentRect = new Rect(0, 0, gridW - 20, contentH);
-            scrollPos = GUI.BeginScrollView(viewRect, scrollPos, contentRect);
+            Rect contentRect = new Rect(0, 0, gridW, contentH);
+            directScroll.Handle(ref scrollPos, viewRect, contentH, cardH * 0.3f);
+            scrollPos = GUI.BeginScrollView(
+                viewRect,
+                scrollPos,
+                contentRect,
+                GUIStyle.none,
+                GUIStyle.none);
 
             for (int i = 0; i < items.Length; i++)
             {

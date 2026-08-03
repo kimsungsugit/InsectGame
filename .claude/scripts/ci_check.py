@@ -49,6 +49,8 @@ REPO_CHECKS = [
     (["data_lint.py"], "데이터 정합성"),
     (["quest_lint.py"], "퀘스트 정합성"),
     (["story_lint.py"], "스토리 정합성"),
+    (["ui_layout_lint.py"], "UI 레이아웃 마진"),
+    (["subscription_lint.py"], "UI 구독 소실"),
     (["sync_codex.py", "--check"], "Codex 미러 동기"),
 ]
 

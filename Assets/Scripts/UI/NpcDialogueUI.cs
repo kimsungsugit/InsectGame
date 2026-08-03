@@ -179,14 +179,12 @@ namespace InsectGame.UI
             EnsureStyles();
             UIScale.Begin();
 
-            float vw = UIScale.VirtualScreenWidth;
-            float vh = UIScale.VirtualScreenHeight;
-            float safeB = UIScale.VirtualSafeBottom;
-
-            float panelW = Mathf.Min(920f, vw - 48f);
-            float panelH = 210f;
-            float px = (vw - panelW) / 2f;
-            float py = vh - safeB - panelH - 28f;
+            // 하단 앵커 — 제스처바 + 세로 마진 위에 붙는다.
+            Rect panel = UISafeLayout.BottomPanel(920f, 210f);
+            float panelW = panel.width;
+            float panelH = panel.height;
+            float px = panel.x;
+            float py = panel.y;
 
             // 패널 배경
             GUI.color = new Color(0f, 0f, 0f, 0.82f);

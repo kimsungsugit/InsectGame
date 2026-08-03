@@ -46,7 +46,8 @@ namespace InsectGame.Core
 
         // 마이그레이션 버전 — 스코핑 대상 키를 늘리거나 복사 로직을 고칠 때마다 +1. 기존 소유자도 1회 재이전.
         // v3: int형 캐릭터 외형 키를 GetString→GetInt 복사로 수정 (외형 초기화 버그).
-        private const int MigrationVersion = 3;
+        // v4: story_progress.json을 계정 마이그레이션/삭제 대상에 포함.
+        private const int MigrationVersion = 4;
 
         private static readonly string[] ScopedFiles =
         {
@@ -57,6 +58,7 @@ namespace InsectGame.Core
             GameConstants.SaveFiles.PlayerItems,
             GameConstants.SaveFiles.BattleTeam,
             GameConstants.SaveFiles.DexSave,
+            GameConstants.SaveFiles.StoryProgress,
         };
 
         private const string LocalOwnerKey = "InsectGame.LocalOwnerUid";

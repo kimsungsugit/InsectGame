@@ -74,10 +74,11 @@ namespace InsectGame.UI
             DrawCharacterModel(charCx, charCy, charScale);
 
             // 오른쪽 버튼 패널 — 글씨 확대에 맞춰 패널·버튼도 확대(220×420 → 320×520).
-            float panelW = 320f;
-            float panelH = 520f;
-            float panelX = sw - panelW - 40f;
-            float panelY = (sh - panelH) * 0.5f;
+            Rect panel = UISafeLayout.AnchoredPanel(320f, 520f, UISafeLayout.HAlign.Right);
+            float panelW = panel.width;
+            float panelH = panel.height;
+            float panelX = panel.x;
+            float panelY = panel.y;
 
             GUI.color = new Color(0.08f, 0.08f, 0.15f, 0.92f);
             GUI.DrawTexture(new Rect(panelX - 10f, panelY - 10f, panelW + 20f, panelH + 20f), Texture2D.whiteTexture);

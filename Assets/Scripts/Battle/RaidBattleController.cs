@@ -1,5 +1,4 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using InsectGame.Core;
 using InsectGame.Data;
@@ -19,6 +18,9 @@ namespace InsectGame.Battle
 
         public event Action RaidUpdated;
         public event Action<bool> RaidEnded;
+        public event Action<RaidRoundResult> RaidTeamRushResolved;
+        public event Action<RaidRoundResult> RaidBossResponseResolved;
+        public event Action<RaidRoundResult> RaidRoundCompleted;
 
         // 보스가 직전 턴에 쓴 시그니처 스킬(null=기본/AOE) — UI가 BossAttack 페이즈 연출 속성에 사용.
         public InsectSkill LastBossSkill { get; private set; }
@@ -45,19 +47,42 @@ namespace InsectGame.Battle
 
         public float UniteGauge { get; private set; }
         public const float UniteGaugeMax = GameConstants.Battle.UniteGaugeMax;
-        public bool CanUniteAttack => IsActive && UniteGauge >= UniteGaugeMax && AliveCount() >= 2;
+        public bool CanUniteAttack => CanSubmitTeamCommand
+            && UniteGauge >= UniteGaugeMax && AliveCount() >= 2;
         public bool LastWasUnite { get; private set; }
         public int[] UniteSlotDamages { get; private set; }
+        public RaidBossIntent NextBossIntent { get; private set; }
+        public RaidRoundResult CurrentRoundResult { get; private set; }
+        public RaidRoundStage RoundStage => roundStage;
+        public bool CanSubmitTeamCommand => IsActive && roundStage == RaidRoundStage.Ready;
+        public bool IsAwaitingBossResponse => IsActive
+            && roundStage == RaidRoundStage.TeamResolved
+            && CurrentRoundResult != null
+            && CurrentRoundResult.EndState == RaidRoundEndState.Ongoing;
+        public bool IsAwaitingPresentationCompletion => IsActive
+            && CurrentRoundResult != null
+            && ((roundStage == RaidRoundStage.TeamResolved
+                    && CurrentRoundResult.EndState == RaidRoundEndState.Victory)
+                || roundStage == RaidRoundStage.BossResolved);
 
+        // 0이면 다음 의도가 AOE. AOE 후 2로 설정되어 단일 공격 2회를 거친 뒤 다시 AOE.
         private int bossCooldown;
         private bool bossStunned;   // 팀 Stun 스킬로 보스 다음 턴 스킵(P4)
         private bool bossShinyAtStart; // 시작 시점 스냅샷 — 도주/풀 재사용된 라이브 보스 참조로 이로치 오등록 방지
+        private RaidRoundStage roundStage = RaidRoundStage.Completed;
+        private IRaidRandomSource randomSource = new UnityRaidRandomSource();
+        private bool raidEndedRaised;
 
         public void StartRaid(InsectEntity bossEntity,
             InsectData[] teamInsects, int[] teamLevels,
             PlayerInsectData[] teamPids, InsectSkill[][] teamSkills)
         {
-            if (bossEntity == null || bossEntity.Data == null) return;
+            if (bossEntity == null || bossEntity.Data == null
+                || teamInsects == null || teamLevels == null
+                || teamInsects.Length == 0 || teamLevels.Length < teamInsects.Length)
+            {
+                return;
+            }
 
             BossEntity = bossEntity;
             bossShinyAtStart = bossEntity.IsShiny;
@@ -78,13 +103,18 @@ namespace InsectGame.Battle
 
             for (int i = 0; i < count; i++)
             {
-                TeamStats[i] = new InsectBattleStats(teamInsects[i], teamLevels[i], teamPids != null ? teamPids[i] : null);
+                PlayerInsectData pid = teamPids != null && i < teamPids.Length
+                    ? teamPids[i]
+                    : null;
+                TeamStats[i] = new InsectBattleStats(teamInsects[i], teamLevels[i], pid);
                 // 의상/아이템 강화 — 레이드는 팀 보너스를 초기화하는 코드가 없어 공격/방어가 미반영이었음. 여기서 세팅.
                 TeamStats[i].AttackBonus = (outfitBonus != null ? outfitBonus.GetAtkBonus() : 0f)
                                          + (itemEffects != null ? itemEffects.GetAtkBonus() : 0f);
                 TeamStats[i].DefenseBonus = (outfitBonus != null ? outfitBonus.GetDefBonus() : 0f)
                                           + (itemEffects != null ? itemEffects.GetDefBonus() : 0f);
-                int sc = teamSkills != null && teamSkills[i] != null ? teamSkills[i].Length : 0;
+                int sc = teamSkills != null && i < teamSkills.Length && teamSkills[i] != null
+                    ? teamSkills[i].Length
+                    : 0;
                 TeamCooldowns[i] = new int[sc];
             }
 
@@ -102,15 +132,20 @@ namespace InsectGame.Battle
             UniteSlotDamages = null;
             bossCooldown = 0;
             bossStunned = false;
+            LastBossSkill = null;
             RewardCandy = 0;
             RewardExp = 0;
+            CurrentRoundResult = null;
+            roundStage = RaidRoundStage.Ready;
+            raidEndedRaised = false;
 
+            PrepareNextBossIntent();
             RaidUpdated?.Invoke();
         }
 
         public void SelectSlot(int slot)
         {
-            if (!IsActive) return;
+            if (!CanSubmitTeamCommand) return;
             if (slot < 0 || slot >= TeamStats.Length) return;
             if (TeamStats[slot].CurrentHp <= 0) return;
             ActiveSlot = slot;
@@ -118,7 +153,7 @@ namespace InsectGame.Battle
 
         public bool CanUseSkill(int skillIndex)
         {
-            if (!IsActive || ActiveSlot < 0) return false;
+            if (!CanSubmitTeamCommand || ActiveSlot < 0) return false;
             // 방어: 활성 슬롯이 기절/무효면 행동 불가(죽은 멤버 공격 방지). 정상 흐름은 보스턴 후 자동 전환됨.
             if (ActiveSlot >= TeamStats.Length || TeamStats[ActiveSlot] == null
                 || TeamStats[ActiveSlot].CurrentHp <= 0) return false;
@@ -132,211 +167,127 @@ namespace InsectGame.Battle
 
         public void UseSkill(int skillIndex)
         {
-            if (!CanUseSkill(skillIndex)) return;
-
-            TurnNumber++;
-            var attacker = TeamStats[ActiveSlot];
-            var skill = TeamSkills[ActiveSlot][skillIndex];
-
-            int baseDmg = skill != null ? skill.power : 10;
-            float mult = Mathf.Clamp(1f + attacker.AttackBonus, 0.3f, 3f);
-            int damage = Mathf.RoundToInt((baseDmg + attacker.Level * 2) * mult);
-            damage = Mathf.Max(1, damage);
-
-            // 스킬 이름 효과 텍스트 (속성 색상)
-            if (skill != null && !string.IsNullOrEmpty(skill.displayName))
-                TryPlayEffectText($"{skill.displayName}!", BattleArenaController.GetUIElementColor(skill.element));
-
-            // 명중 판정 — 저명중 스킬은 빗나갈 수 있음(공용 RollHit 재사용). 완전명중(1.0)은 롤 생략.
-            if (skill.effectType == SkillEffectType.Damage && skill.accuracy < 0.999f
-                && !InsectBattleController.RollHit(skill.accuracy, 0f, UnityEngine.Random.value))
-            {
-                LastDamageToBoss = 0;
-                LastActionText = $"{attacker.Data.displayName}의 {skill.displayName}! 빗나갔다!";
-                TryPlayEffectText("빗나갔다!", new Color(0.7f, 0.7f, 0.75f));
-            }
-            else if (skill.effectType == SkillEffectType.Damage)
-            {
-                float effectiveness = InsectTypeChart.GetEffectiveness(
-                    skill.element,
-                    BossStats.Data != null ? BossStats.Data.primaryType : InsectElement.None,
-                    BossStats.Data != null ? BossStats.Data.secondaryType : InsectElement.None);
-                float sameTypeBonus = attacker.Data != null
-                    ? InsectTypeChart.GetSameTypeBonus(skill.element, attacker.Data.primaryType, attacker.Data.secondaryType)
-                    : 1f;
-                damage = Mathf.Max(1, Mathf.RoundToInt(damage * effectiveness * sameTypeBonus));
-                int hpBefore = BossStats.CurrentHp;
-                BossStats.ApplyDamage(damage, attacker.Attack, BossStats.Defense);
-                LastDamageToBoss = Mathf.Max(1, hpBefore - BossStats.CurrentHp);
-                LastActionText = $"{attacker.Data.displayName}의 {skill.displayName}!";
-                TryPlayBossHitFlash();
-                if (effectiveness > 1.05f)
-                    TryPlayEffectText("효과가 굉장했다!", new Color(1f, 0.55f, 0.2f));
-                else if (effectiveness < 0.95f)
-                    TryPlayEffectText("효과가 별로인 듯하다...", new Color(0.55f, 0.65f, 0.8f));
-            }
-            else if (skill.effectType == SkillEffectType.BuffAttack)
-            {
-                attacker.AttackBonus += skill.effectValue;
-                LastDamageToBoss = 0;
-                LastActionText = $"{attacker.Data.displayName}의 {skill.displayName}! ATK UP!";
-                TryPlayEffectText("공격력 상승!", new Color(1f, 0.8f, 0.3f));
-            }
-            else if (skill.effectType == SkillEffectType.Heal)
-            {
-                int healAmt = Mathf.Max(1, Mathf.RoundToInt(attacker.MaxHp * Mathf.Clamp01(skill.effectValue)));
-                attacker.Heal(healAmt);
-                LastDamageToBoss = 0;
-                LastActionText = $"{attacker.Data.displayName}의 {skill.displayName}! HP +{healAmt}!";
-                TryPlayEffectText($"HP +{healAmt}!", new Color(0.4f, 1f, 0.5f));
-            }
-            else if (skill.effectType == SkillEffectType.DefenseBuff)
-            {
-                attacker.DefenseBonus += skill.effectValue;
-                LastDamageToBoss = 0;
-                LastActionText = $"{attacker.Data.displayName}의 {skill.displayName}! DEF UP!";
-                TryPlayEffectText("방어력 상승!", new Color(0.4f, 0.7f, 1f));
-            }
-            else if (skill.effectType == SkillEffectType.Stun)
-            {
-                // 보스 다음 턴 스킵. 레이드엔 턴 효과 리스트가 없어 플래그로 처리.
-                bossStunned = true;
-                LastDamageToBoss = 0;
-                LastActionText = $"{attacker.Data.displayName}의 {skill.displayName}! 보스 기절!";
-                TryPlayEffectText("보스 기절!", new Color(1f, 0.9f, 0.3f));
-            }
-            else if (skill.effectType == SkillEffectType.PoisonDot)
-            {
-                // 레이드엔 턴별 DoT 틱이 없어 즉시 총합 피해(power × 지속턴)로 근사.
-                int dotDamage = Mathf.Max(1, skill.power * Mathf.Max(1, skill.effectDurationTurns));
-                int hpBefore = BossStats.CurrentHp;
-                BossStats.ApplyDamage(dotDamage);
-                LastDamageToBoss = Mathf.Max(1, hpBefore - BossStats.CurrentHp);
-                LastActionText = $"{attacker.Data.displayName}의 {skill.displayName}! 중독!";
-                TryPlayBossHitFlash();
-                TryPlayEffectText("중독!", new Color(0.6f, 0.9f, 0.3f));
-            }
-            else
-            {
-                BossStats.AttackBonus -= skill.effectValue;
-                LastDamageToBoss = 0;
-                LastActionText = $"{attacker.Data.displayName}의 {skill.displayName}! Boss ATK DOWN!";
-                TryPlayEffectText("보스 공격력 하락!", new Color(0.6f, 0.4f, 0.9f));
-            }
-
-            TeamCooldowns[ActiveSlot][skillIndex] = skill.cooldownTurns;
-
-            if (LastDamageToBoss > 0)
-                UniteGauge = Mathf.Min(UniteGauge + 12f + LastDamageToBoss * 0.15f, UniteGaugeMax);
-
-            BossUsedAoe = false;
-            LastWasUnite = false;
-            UniteSlotDamages = null;
-            LastDamageToTeam = 0;
-            LastHitSlot = -1;
-
-            if (BossStats.CurrentHp > 0)
-                ExecuteBossTurn();
-
-            TickCooldowns();
-            RaidUpdated?.Invoke();
-            CheckEnd();
+            ResolveTeamCommand(skillIndex);
         }
 
-        private void ExecuteBossTurn()
+        public RaidRoundResult ResolveTeamCommand(int skillIndex)
         {
-            // 기절 상태면 보스 이번 턴 스킵.
+            if (!CanUseSkill(skillIndex)) return null;
+
+            int leaderSlot = ActiveSlot;
+            InsectBattleStats leader = TeamStats[leaderSlot];
+            InsectSkill skill = TeamSkills[leaderSlot][skillIndex];
+            RaidRoundResult result = new RaidRoundResult(
+                TurnNumber + 1,
+                leaderSlot,
+                skillIndex,
+                false,
+                NextBossIntent,
+                TeamStats.Length);
+
+            RaidActionResult leaderAction = RaidRoundResolver.ResolveLeaderSkill(
+                leaderSlot, skillIndex, leader, BossStats, skill, randomSource);
+            result.AddTeamAction(leaderAction);
+            if (skill.effectType == SkillEffectType.Stun)
+                bossStunned = true;
+
+            // 선택한 리더 외 생존 팀원은 같은 러시에 기본 지원 공격으로 참여한다.
+            // 슬롯 순서로 계산하여 RNG와 오버킬 배분도 항상 결정론적으로 유지한다.
+            for (int i = 0; i < TeamStats.Length; i++)
+            {
+                if (i == leaderSlot || TeamStats[i] == null
+                    || TeamStats[i].CurrentHp <= 0)
+                {
+                    continue;
+                }
+
+                result.AddTeamAction(
+                    RaidRoundResolver.ResolveSupportAssist(i, TeamStats[i], BossStats));
+            }
+
+            TeamCooldowns[leaderSlot][skillIndex] = skill.cooldownTurns;
+            if (result.TotalDamageToBoss > 0)
+            {
+                UniteGauge = Mathf.Min(
+                    UniteGauge + 12f + result.TotalDamageToBoss * 0.15f,
+                    UniteGaugeMax);
+            }
+
+            LastDamageToBoss = result.TotalDamageToBoss;
+            LastDamageToTeam = 0;
+            LastHitSlot = -1;
+            BossUsedAoe = false;
+            LastBossSkill = null;
+            LastWasUnite = false;
+            UniteSlotDamages = null;
+            LastActionText = BuildTeamRushText(result);
+
+            if (BossStats.CurrentHp <= 0)
+                result.EndState = RaidRoundEndState.Victory;
+
+            result.Stage = RaidRoundStage.TeamResolved;
+            CurrentRoundResult = result;
+            roundStage = RaidRoundStage.TeamResolved;
+            RaidTeamRushResolved?.Invoke(result);
+            RaidUpdated?.Invoke();
+            return result;
+        }
+
+        public RaidRoundResult ResolveBossResponse()
+        {
+            if (!IsAwaitingBossResponse) return null;
+
+            RaidRoundResult result = CurrentRoundResult;
+            RaidBossIntent intent = result.BossIntent;
+
             if (bossStunned)
             {
                 bossStunned = false;
+                result.BossResponseResolved = true;
+                result.BossResponseSkipped = true;
+                result.BossAction = new RaidActionResult
+                {
+                    Kind = RaidActionKind.BossSkipped,
+                    SourceSlot = -1,
+                    TargetSlot = intent != null ? intent.TargetSlot : -1,
+                    Skill = intent != null ? intent.Skill : null,
+                    Element = intent != null ? intent.Element : InsectElement.None,
+                    EffectType = intent != null ? intent.EffectType : SkillEffectType.Damage,
+                    DisplayName = "기절"
+                };
                 LastBossSkill = null;
                 LastDamageToTeam = 0;
                 LastHitSlot = -1;
                 BossUsedAoe = false;
                 LastActionText += "\n보스가 기절해 움직이지 못한다!";
-                return;
-            }
-
-            bossCooldown--;
-            bool aoe = bossCooldown <= 0;
-            LastBossSkill = null;   // 기본값(AOE·기본공격) — 단일 대상 시그니처면 아래에서 갱신
-
-            InsectData bd = BossStats.Data;
-            int bossBaseDmg = 10 + BossStats.Level * 2;
-            float bossMult = Mathf.Clamp(1f + BossStats.AttackBonus, 0.3f, 3f);
-            int bossDmg = Mathf.Max(1, Mathf.RoundToInt(bossBaseDmg * bossMult));
-
-            if (aoe)
-            {
-                bossCooldown = 3;
-                BossUsedAoe = true;
-                int aoeDmg = Mathf.Max(1, bossDmg * 2 / 3);
-                TryPlayEffectText("전체 공격!", new Color(1f, 0.5f, 0.2f));
-                for (int i = 0; i < TeamStats.Length; i++)
-                {
-                    if (TeamStats[i].CurrentHp > 0)
-                    {
-                        bool wasAlive = TeamStats[i].CurrentHp > 0;
-                        TeamStats[i].ApplyDamage(aoeDmg, BossStats.Attack, TeamStats[i].Defense);
-                        TryPlayTeamHitFlash(i);
-                        if (wasAlive && TeamStats[i].CurrentHp <= 0)
-                            TryPlayTeamFaint(i);
-                    }
-                }
-                LastDamageToTeam = aoeDmg;
-                LastHitSlot = -1;
-                LastActionText += $"\n{bd.displayName}의 전체 공격!";
-                UniteGauge = Mathf.Min(UniteGauge + 18f, UniteGaugeMax);
             }
             else
             {
-                List<int> alive = new List<int>();
-                for (int i = 0; i < TeamStats.Length; i++)
-                    if (TeamStats[i].CurrentHp > 0) alive.Add(i);
+                RaidActionResult bossAction = RaidRoundResolver.ResolveBossIntent(
+                    intent, BossStats, TeamStats, result.BossDamageBySlot);
+                result.BossAction = bossAction;
+                result.BossResponseResolved = true;
+                for (int i = 0; i < result.BossDamageBySlot.Length; i++)
+                    result.TotalDamageToTeam += result.BossDamageBySlot[i];
 
-                if (alive.Count > 0)
-                {
-                    int target = alive[UnityEngine.Random.Range(0, alive.Count)];
-                    InsectSkill signature = GetUnlockedBossSignature(bd, BossStats.Level);
-                    LastBossSkill = signature;   // UI BossAttack 연출용(null이면 기본 속성)
-                    int singleTargetDamage = bossDmg;
-                    float effectiveness = 1f;
-                    if (signature != null)
-                    {
-                        effectiveness = InsectTypeChart.GetEffectiveness(
-                            signature.element,
-                            TeamStats[target].Data != null ? TeamStats[target].Data.primaryType : InsectElement.None,
-                            TeamStats[target].Data != null ? TeamStats[target].Data.secondaryType : InsectElement.None);
-                        float sameTypeBonus = InsectTypeChart.GetSameTypeBonus(
-                            signature.element, bd.primaryType, bd.secondaryType);
-                        singleTargetDamage = Mathf.Max(1, Mathf.RoundToInt(
-                            (signature.power + BossStats.Level * 2) * bossMult * effectiveness * sameTypeBonus));
-                        TryPlayEffectText($"전용기 · {signature.displayName}!", BattleArenaController.GetUIElementColor(signature.element));
-                    }
+                bool area = intent != null && intent.IsArea;
+                if (area)
+                    bossCooldown = 2;
+                else if (bossCooldown > 0)
+                    bossCooldown--;
 
-                    bool wasAlive = TeamStats[target].CurrentHp > 0;
-                    int hpBefore = TeamStats[target].CurrentHp;
-                    TeamStats[target].ApplyDamage(singleTargetDamage, BossStats.Attack, TeamStats[target].Defense);
-                    LastDamageToTeam = Mathf.Max(1, hpBefore - TeamStats[target].CurrentHp);
-                    LastHitSlot = target;
-                    LastActionText += signature != null
-                        ? $"\n{bd.displayName}의 {signature.displayName}!"
-                        : $"\n{bd.displayName}이(가) {TeamStats[target].Data.displayName}을(를) 공격!";
-                    UniteGauge = Mathf.Min(UniteGauge + 10f, UniteGaugeMax);
-
-                    if (signature != null && effectiveness > 1.05f)
-                        TryPlayEffectText("효과가 굉장했다!", new Color(1f, 0.55f, 0.2f));
-                    else if (signature != null && effectiveness < 0.95f)
-                        TryPlayEffectText("효과가 별로인 듯하다...", new Color(0.55f, 0.65f, 0.8f));
-
-                    TryPlayTeamHitFlash(target);
-                    if (wasAlive && TeamStats[target].CurrentHp <= 0)
-                    {
-                        TryPlayTeamFaint(target);
-                        TryPlayEffectText($"{TeamStats[target].Data.displayName} 쓰러짐!", new Color(0.9f, 0.2f, 0.2f));
-                    }
-                }
+                LastBossSkill = intent != null ? intent.Skill : null;
+                LastDamageToTeam = result.TotalDamageToTeam;
+                LastHitSlot = area ? -1 : (intent != null ? intent.TargetSlot : -1);
+                BossUsedAoe = area;
+                LastActionText += BuildBossResponseText(intent);
+                UniteGauge = Mathf.Min(
+                    UniteGauge + (area ? 18f : 10f),
+                    UniteGaugeMax);
             }
+
+            if (FindFirstAlive() < 0)
+                result.EndState = RaidRoundEndState.Defeat;
 
             if (ActiveSlot >= 0 && ActiveSlot < TeamStats.Length
                 && TeamStats[ActiveSlot] != null && TeamStats[ActiveSlot].CurrentHp <= 0)
@@ -344,6 +295,89 @@ namespace InsectGame.Battle
                 int next = FindFirstAlive();
                 if (next >= 0) ActiveSlot = next;
             }
+
+            result.Stage = RaidRoundStage.BossResolved;
+            roundStage = RaidRoundStage.BossResolved;
+            RaidBossResponseResolved?.Invoke(result);
+            RaidUpdated?.Invoke();
+            return result;
+        }
+
+        public bool CompleteRoundPresentation()
+        {
+            if (!IsAwaitingPresentationCompletion) return false;
+
+            RaidRoundResult completed = CurrentRoundResult;
+            TickCooldowns();
+            TurnNumber++;
+            completed.RoundNumber = TurnNumber;
+            completed.Stage = RaidRoundStage.Completed;
+            roundStage = RaidRoundStage.Completed;
+            RaidRoundCompleted?.Invoke(completed);
+
+            if (completed.EndState != RaidRoundEndState.Ongoing)
+            {
+                CompleteRaid(completed.EndState == RaidRoundEndState.Victory);
+                RaidUpdated?.Invoke();
+                return true;
+            }
+
+            roundStage = RaidRoundStage.Ready;
+            PrepareNextBossIntent();
+            RaidUpdated?.Invoke();
+            return true;
+        }
+
+        public void SetRandomSource(IRaidRandomSource source)
+        {
+            randomSource = source ?? new UnityRaidRandomSource();
+        }
+
+        private void PrepareNextBossIntent()
+        {
+            if (!IsActive || BossStats == null || TeamStats == null)
+            {
+                NextBossIntent = null;
+                return;
+            }
+
+            InsectSkill signature = GetUnlockedBossSignature(
+                BossStats.Data, BossStats.Level);
+            NextBossIntent = RaidRoundResolver.CreateBossIntent(
+                TurnNumber + 1,
+                BossStats,
+                TeamStats,
+                bossCooldown,
+                signature,
+                randomSource);
+        }
+
+        private static string BuildTeamRushText(RaidRoundResult result)
+        {
+            if (result == null || result.TeamActions.Count == 0)
+                return string.Empty;
+
+            RaidActionResult leader = result.TeamActions[0];
+            string leaderText;
+            if (leader.Missed)
+                leaderText = $"{leader.DisplayName}! 빗나갔다!";
+            else if (leader.Capped)
+                leaderText = $"{leader.DisplayName}! 이미 최대치다!";   // 스택 상한 — 턴은 소비됐다
+            else
+                leaderText = $"{leader.DisplayName}!";
+            int supports = Mathf.Max(0, result.TeamActions.Count - 1);
+            return supports > 0
+                ? $"{leaderText}\n팀 러시! 지원 {supports}마리"
+                : leaderText;
+        }
+
+        private string BuildBossResponseText(RaidBossIntent intent)
+        {
+            if (intent == null || BossStats == null || BossStats.Data == null)
+                return string.Empty;
+            return intent.IsArea
+                ? $"\n{BossStats.Data.displayName}의 전체 공격!"
+                : $"\n{BossStats.Data.displayName}의 {intent.DisplayName}!";
         }
 
         private static InsectSkill GetUnlockedBossSignature(InsectData data, int level)
@@ -381,31 +415,29 @@ namespace InsectGame.Battle
             }
         }
 
-        private void CheckEnd()
+        private void CompleteRaid(bool playerWon)
         {
-            if (!IsActive) return; // 이미 종료(IsActive=false) — ×3 보상/캡처 중복 차단
+            if (!IsActive || raidEndedRaised) return;
 
-            if (BossStats.CurrentHp <= 0)
+            raidEndedRaised = true;
+            PlayerWon = playerWon;
+            IsActive = false;
+            roundStage = RaidRoundStage.Completed;
+            NextBossIntent = null;
+            PersistTeamHp();
+
+            if (playerWon)
             {
-                TryPlayBossFaint();
-                TryPlayEffectText("보스 격파!", new Color(0.3f, 1f, 0.5f));
-                PlayerWon = true;
-                IsActive = false;
-                PersistTeamHp();
                 OnRaidVictory();
-                RaidEnded?.Invoke(true);
             }
-            else if (FindFirstAlive() < 0)
+            else
             {
-                TryPlayEffectText("팀 전멸!", new Color(0.9f, 0.2f, 0.2f));
-                PlayerWon = false;
-                IsActive = false;
-                PersistTeamHp();
                 // 레이드 패배 시에도 BossEntity Despawn — 옛은 패배 시 보스가 필드에 잔존,
                 // 다음 진입 시 같은 보스 중첩 발동 가능 (사용자 보고: "전투 끝나면 사라져야").
                 if (BossEntity != null) BossEntity.Despawn();
-                RaidEnded?.Invoke(false);
             }
+
+            RaidEnded?.Invoke(playerWon);
         }
 
         private void OnRaidVictory()
@@ -443,54 +475,49 @@ namespace InsectGame.Battle
 
         public void UseUniteAttack()
         {
-            if (!CanUniteAttack) return;
+            ResolveUniteCommand();
+        }
 
-            TurnNumber++;
-            UniteGauge = 0f;
-            LastWasUnite = true;
-            LastDamageToBoss = 0;
-            UniteSlotDamages = new int[TeamStats.Length];
+        public RaidRoundResult ResolveUniteCommand()
+        {
+            if (!CanUniteAttack) return null;
 
-            TryPlayEffectText("★ 합체공격! ★", new Color(1f, 0.9f, 0.3f));
-
-            int totalDmg = 0;
+            RaidRoundResult result = new RaidRoundResult(
+                TurnNumber + 1,
+                ActiveSlot,
+                -1,
+                true,
+                NextBossIntent,
+                TeamStats.Length);
             List<string> names = new List<string>();
             for (int i = 0; i < TeamStats.Length; i++)
             {
-                if (TeamStats[i] == null || TeamStats[i].CurrentHp <= 0)
-                {
-                    UniteSlotDamages[i] = 0;
-                    continue;
-                }
-                var atk = TeamStats[i];
-                int baseDmg = 15 + atk.Level * 2;
-                float mult = Mathf.Clamp(1f + atk.AttackBonus, 0.3f, 3f);
-                int dmg = Mathf.Max(1, Mathf.RoundToInt(baseDmg * mult * 1.5f));
-                // 실제 보스 HP 감소량과 동일 공식 사용 — ApplyDamage 내부 clamp(0.5, 2.5) 정합.
-                // 옛은 actual = dmg × (atk/def) (clamp 없음) → UI 표시가 실제보다 크게 보였고,
-                // totalDmg += dmg (방어 미반영)는 LastDamageToBoss를 과대 표시.
-                float ratio = Mathf.Clamp(atk.Attack / (float)Mathf.Max(1, BossStats.Defense), 0.5f, 2.5f);
-                int actual = Mathf.Max(1, Mathf.RoundToInt(dmg * ratio));
-                UniteSlotDamages[i] = actual;
-                totalDmg += actual;
-                names.Add(atk.Data.displayName);
-                BossStats.ApplyDamage(dmg, atk.Attack, BossStats.Defense);
+                InsectBattleStats attacker = TeamStats[i];
+                if (attacker == null || attacker.CurrentHp <= 0) continue;
+                result.AddTeamAction(
+                    RaidRoundResolver.ResolveUniteContribution(i, attacker, BossStats));
+                names.Add(attacker.Data != null ? attacker.Data.displayName : $"팀원 {i + 1}");
             }
 
-            TryPlayBossHitFlash();
-            LastDamageToBoss = totalDmg;
+            UniteGauge = 0f;
+            LastWasUnite = true;
+            LastDamageToBoss = result.TotalDamageToBoss;
+            UniteSlotDamages = result.UniteSlotDamages;
             LastActionText = $"★ 합체공격! {string.Join(" + ", names)} ★";
-
             BossUsedAoe = false;
+            LastBossSkill = null;
             LastDamageToTeam = 0;
             LastHitSlot = -1;
 
-            if (BossStats.CurrentHp > 0)
-                ExecuteBossTurn();
+            if (BossStats.CurrentHp <= 0)
+                result.EndState = RaidRoundEndState.Victory;
 
-            TickCooldowns();
+            result.Stage = RaidRoundStage.TeamResolved;
+            CurrentRoundResult = result;
+            roundStage = RaidRoundStage.TeamResolved;
+            RaidTeamRushResolved?.Invoke(result);
             RaidUpdated?.Invoke();
-            CheckEnd();
+            return result;
         }
 
         public int AliveCount()

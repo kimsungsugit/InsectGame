@@ -23,6 +23,9 @@ namespace InsectGame.UI
         private const int CurePoisonCoin = 15;
         private const int CureParalysisCoin = 15;
         private const int FullHealGems = 5;
+        // 전체 치료는 개별 합산보다 싸다 — 한 마리씩 누르는 수고를 아끼는 대신 재화를 더 쓰는
+        // 구조면 아무도 안 쓴다. 35% 할인으로 "묶어서 내면 이득"을 분명히 한다.
+        private const float HealAllDiscount = 0.65f;
 
         private bool isOpen;
         private string selectedInstanceId;
@@ -31,6 +34,7 @@ namespace InsectGame.UI
         private ItemData pendingItem;
         private PlayerItemInventory pendingInv;
         private Vector2 scroll;
+        private readonly UIDirectScroll directScroll = new UIDirectScroll();
         private string feedback = "";
         private float feedbackTimer;
 
@@ -55,7 +59,15 @@ namespace InsectGame.UI
         {
             isOpen = !isOpen;
             // 월드 병원 버튼 = 일반 치료 방문 → 아이템 모드 잔존 클리어(stale pendingItem로 열리는 것 방지).
-            if (isOpen) { selectedInstanceId = null; ownedDirty = true; pendingItem = null; pendingInv = null; }
+            if (isOpen)
+            {
+                selectedInstanceId = null;
+                ownedDirty = true;
+                pendingItem = null;
+                pendingInv = null;
+                scroll = Vector2.zero;
+            }
+            directScroll.Reset();
             if (isOpen) ModalUIRegistry.Register(this);
             else ModalUIRegistry.Unregister(this);
         }
@@ -64,6 +76,7 @@ namespace InsectGame.UI
             isOpen = false;
             pendingItem = null;
             pendingInv = null;
+            directScroll.Reset();
             ModalUIRegistry.Unregister(this);
         }
 
@@ -75,6 +88,8 @@ namespace InsectGame.UI
             pendingInv = inv;
             selectedInstanceId = null;
             ownedDirty = true;
+            scroll = Vector2.zero;
+            directScroll.Reset();
             if (!isOpen) { isOpen = true; ModalUIRegistry.Register(this); }
         }
         private void OnEnable()
@@ -87,6 +102,7 @@ namespace InsectGame.UI
         private void OnDisable()
         {
             isOpen = false;
+            directScroll.Reset();
             ModalUIRegistry.Unregister(this);
             if (collection != null) collection.InsectUpdated -= OnInsectUpdated;
         }
@@ -127,16 +143,18 @@ namespace InsectGame.UI
         private void DrawPanel()
         {
             UITheme t = UITheme.Instance;
-            float pw = Mathf.Min(920f, UIScale.ContentWidth(18f));
-            float availH = UIScale.VirtualScreenHeight - UIScale.VirtualSafeTop - UIScale.VirtualSafeBottom;
-            float ph = Mathf.Min(940f, availH - 24f);
-            float px = (UIScale.VirtualScreenWidth - pw) / 2f;
-            float py = UIScale.VirtualSafeTop + (availH - ph) * 0.5f;
+            Rect panel = UISafeLayout.CenteredPanel(920f, 940f);
+            float pw = panel.width;
+            float ph = panel.height;
+            float px = panel.x;
+            float py = panel.y;
 
-            GUI.color = t.panelBg;
-            GUI.DrawTexture(new Rect(px, py, pw, ph), Texture2D.whiteTexture);
-            GUI.color = new Color(0.85f, 0.25f, 0.22f);   // 병원 적십자 악센트
-            GUI.DrawTexture(new Rect(px, py, pw, 6f), Texture2D.whiteTexture);
+            UISurface.Card(new Rect(px, py, pw, ph), t.panelBg, t.surfaceBorder);
+            // 병원 적십자 악센트 — 8px 스트라이프라 각진 채로 둔다(둥근 9-slice는 테두리 폭이
+            // 높이를 넘겨 뭉개진다). 대신 x를 카드 반경만큼 물려 둥근 모서리를 뚫지 않게 한다.
+            UISurface.Flat(
+                new Rect(px + UITheme.Radius.Card, py + 3f, pw - UITheme.Radius.Card * 2f, 8f),
+                new Color(0.85f, 0.25f, 0.22f));
             GUI.color = Color.white;
 
             bool itemMode = pendingItem != null;
@@ -145,6 +163,7 @@ namespace InsectGame.UI
             if (GUI.Button(new Rect(px + pw - 74f, py + 14f, 58f, 58f), "X", closeStyle)) { CloseModal(); return; }
 
             float ty = py + 78f;
+            float topControlH = UIScale.IsMobileLayout ? UIScale.MinTouchHeight : 44f;
             if (itemMode)
             {
                 GUI.Label(new Rect(px + 26f, ty, pw - 52f, 44f), pendingItem.description + "  (X로 취소)", hintStyle);
@@ -156,21 +175,43 @@ namespace InsectGame.UI
                 int candies = candyInventory != null ? candyInventory.Candies : 0;
                 int gems = wallet != null ? wallet.Gems : 0;
                 GUI.backgroundColor = payWithCoins ? UITheme.Instance.tabSelected : UITheme.Instance.tabNormal;
-                if (GUI.Button(new Rect(px + 26f, ty, 150f, 44f), $"코인 {coins}", toggleStyle)) payWithCoins = true;
+                if (GUI.Button(new Rect(px + 26f, ty, 150f, topControlH), $"코인 {coins}", toggleStyle)) payWithCoins = true;
                 GUI.backgroundColor = !payWithCoins ? UITheme.Instance.tabSelected : UITheme.Instance.tabNormal;
-                if (GUI.Button(new Rect(px + 184f, ty, 150f, 44f), $"캔디 {candies}", toggleStyle)) payWithCoins = false;
+                if (GUI.Button(new Rect(px + 184f, ty, 150f, topControlH), $"캔디 {candies}", toggleStyle)) payWithCoins = false;
+
+                // 전체 치료 — 부상 곤충 전부를 HP+상태까지 한 번에. 개별 합산 대비 HealAllDiscount 할인.
+                int injured = InjuredCount();
+                int allCost = HealAllCost();
+                GUI.backgroundColor = injured > 0
+                    ? new Color(0.25f, 0.62f, 0.42f)
+                    : UITheme.Instance.btnDisabled;
+                string allLabel = injured > 0
+                    ? $"전체 치료 {allCost} {(payWithCoins ? "코인" : "캔디")}"
+                    : "전체 치료 불필요";
+                if (GUI.Button(new Rect(px + 342f, ty, 258f, topControlH), allLabel, toggleStyle) && injured > 0)
+                    TryHealAll(allCost);
                 GUI.backgroundColor = Color.white;
-                GUI.Label(new Rect(px + 350f, ty, pw - 380f, 44f), $"젬 {gems} · 젬 {FullHealGems}로 선택 곤충 전액+상태 즉시치료", hintStyle);
+
+                GUI.Label(new Rect(px + 610f, ty, pw - 636f, topControlH),
+                    injured > 0 ? $"젬 {gems} · 부상 {injured}마리" : $"젬 {gems} · 모두 정상",
+                    hintStyle);
             }
 
             // 곤충 목록
-            float listY = ty + 58f;
+            float listY = ty + topControlH + 14f;
             float listH = ph - (listY - py) - 20f;
             Rect listArea = new Rect(px + 20f, listY, pw - 40f, listH);
             List<PlayerInsectData> owned = Owned();
-            float rowH = 118f;
-            Rect view = new Rect(0, 0, listArea.width - 20f, owned.Count * (rowH + 8f));
-            scroll = GUI.BeginScrollView(listArea, scroll, view);
+            float rowH = UIScale.IsMobileLayout ? 132f : 118f;
+            float contentH = owned.Count * (rowH + 8f);
+            Rect view = new Rect(0, 0, listArea.width, contentH);
+            directScroll.Handle(ref scroll, listArea, contentH, rowH * 0.45f);
+            scroll = GUI.BeginScrollView(
+                listArea,
+                scroll,
+                view,
+                GUIStyle.none,
+                GUIStyle.none);
             for (int i = 0; i < owned.Count; i++)
                 DrawInsectRow(new Rect(0, i * (rowH + 8f), view.width, rowH), owned[i]);
             GUI.EndScrollView();
@@ -191,11 +232,16 @@ namespace InsectGame.UI
             bool needsHeal = curHp < maxHp || pid.isPoisoned || pid.isParalyzed;
             bool selected = pid.instanceId == selectedInstanceId;
 
-            GUI.color = selected ? new Color(0.18f, 0.22f, 0.34f, 0.95f) : new Color(0.10f, 0.12f, 0.18f, 0.9f);
-            GUI.DrawTexture(rect, Texture2D.whiteTexture);
             Color rarityCol = data != null ? UITheme.Instance.GetInsectRarityColor(data.rarity) : Color.gray;
-            GUI.color = rarityCol;
-            GUI.DrawTexture(new Rect(rect.x, rect.y, 5f, rect.height), Texture2D.whiteTexture);
+            UISurface.Card(
+                rect,
+                selected ? new Color(0.18f, 0.22f, 0.34f, 0.95f) : new Color(0.10f, 0.12f, 0.18f, 0.9f),
+                selected ? rarityCol : UITheme.Instance.surfaceBorder);
+            // 등급 레일 — 5px라 각진 채로, 세로는 카드 반경만큼 물려 둥근 모서리 안쪽에 둔다
+            UISurface.Flat(
+                new Rect(rect.x + 3f, rect.y + 3f + UITheme.Radius.Card, 5f,
+                    Mathf.Max(4f, rect.height - 6f - UITheme.Radius.Card * 2f)),
+                rarityCol);
             GUI.color = Color.white;
 
             if (data != null)
@@ -240,7 +286,11 @@ namespace InsectGame.UI
                     || (pendingItem.curePoison && pid.isPoisoned)
                     || (pendingItem.cureParalysis && pid.isParalyzed);
                 GUI.backgroundColor = applicable ? UITheme.Instance.btnPrimary : UITheme.Instance.btnDisabled;
-                if (GUI.Button(new Rect(bx, rect.y + 34f, 176f, 48f), applicable ? "사용" : "대상 아님", btnStyle) && applicable)
+                float actionH = UIScale.IsMobileLayout ? UIScale.MinTouchHeight : 48f;
+                if (GUI.Button(
+                    new Rect(bx, rect.y + (rect.height - actionH) * 0.5f, 176f, actionH),
+                    applicable ? "사용" : "대상 아님",
+                    btnStyle) && applicable)
                     ApplyTreatmentItem(pid);
                 GUI.backgroundColor = Color.white;
             }
@@ -249,14 +299,83 @@ namespace InsectGame.UI
                 int lostHp = maxHp - curHp;
                 int cost = HealCost(lostHp, pid);
                 string curLabel = payWithCoins ? "코인" : "캔디";
+                float actionH = UIScale.IsMobileLayout ? UIScale.MinTouchHeight : 44f;
+                float actionGap = UIScale.IsMobileLayout ? 6f : 4f;
+                float actionTop = rect.y + (rect.height - actionH * 2f - actionGap) * 0.5f;
                 GUI.backgroundColor = UITheme.Instance.btnPrimary;
-                if (GUI.Button(new Rect(bx, rect.y + 14f, 176f, 44f), $"치료 {cost} {curLabel}", btnStyle))
+                if (GUI.Button(new Rect(bx, actionTop, 176f, actionH), $"치료 {cost} {curLabel}", btnStyle))
                     TryHeal(pid, cost);
                 GUI.backgroundColor = new Color(0.55f, 0.35f, 0.85f);
-                if (GUI.Button(new Rect(bx, rect.y + 62f, 176f, 42f), $"젬 {FullHealGems} 즉시", btnStyle))
+                if (GUI.Button(
+                    new Rect(bx, actionTop + actionH + actionGap, 176f, actionH),
+                    $"젬 {FullHealGems} 즉시",
+                    btnStyle))
                     TryGemHeal(pid);
                 GUI.backgroundColor = Color.white;
             }
+        }
+
+        // 치료가 필요한 곤충 수 — HP가 깎였거나 독/마비 상태.
+        private int InjuredCount()
+        {
+            List<PlayerInsectData> owned = Owned();
+            int count = 0;
+            for (int i = 0; i < owned.Count; i++)
+            {
+                if (NeedsHeal(owned[i])) count++;
+            }
+            return count;
+        }
+
+        private bool NeedsHeal(PlayerInsectData pid)
+        {
+            if (pid == null) return false;
+            int maxHp = MaxHpOf(pid);
+            int curHp = pid.currentHp < 0 ? maxHp : pid.currentHp;
+            return curHp < maxHp || pid.isPoisoned || pid.isParalyzed;
+        }
+
+        /// <summary>부상 곤충 개별 치료비의 합에 할인을 적용한 값. 부상이 없으면 0.</summary>
+        private int HealAllCost()
+        {
+            List<PlayerInsectData> owned = Owned();
+            int sum = 0;
+            for (int i = 0; i < owned.Count; i++)
+            {
+                PlayerInsectData pid = owned[i];
+                if (!NeedsHeal(pid)) continue;
+                int maxHp = MaxHpOf(pid);
+                int curHp = pid.currentHp < 0 ? maxHp : pid.currentHp;
+                sum += HealCost(maxHp - curHp, pid);
+            }
+            return sum <= 0 ? 0 : Mathf.Max(1, Mathf.CeilToInt(sum * HealAllDiscount));
+        }
+
+        private void TryHealAll(int cost)
+        {
+            if (cost <= 0) return;
+            // 결제 전 확인 — collection이 없으면 재화만 빠지고 아무도 낫지 않는다.
+            if (collection == null) { Feedback("치료할 수 없습니다"); return; }
+
+            bool paid = payWithCoins
+                ? (wallet != null && wallet.SpendCoins(cost))
+                : (candyInventory != null && candyInventory.SpendCandy(cost));
+            if (!paid) { Feedback("재화가 부족합니다"); return; }
+
+            // 결제가 끝난 뒤에 회복한다 — 실패 시 아무것도 바뀌지 않아야 한다(부분 치료 방지).
+            // Owned()가 반환하는 캐시 리스트를 FullHeal이 갱신 이벤트로 무효화할 수 있어 사본을 돈다.
+            List<PlayerInsectData> targets = new List<PlayerInsectData>();
+            List<PlayerInsectData> owned = Owned();
+            for (int i = 0; i < owned.Count; i++)
+            {
+                if (NeedsHeal(owned[i])) targets.Add(owned[i]);
+            }
+
+            for (int i = 0; i < targets.Count; i++)
+                collection.FullHeal(targets[i]);
+
+            Feedback($"{targets.Count}마리 전체 치료 완료!");
+            ownedDirty = true;
         }
 
         private int HealCost(int lostHp, PlayerInsectData pid)

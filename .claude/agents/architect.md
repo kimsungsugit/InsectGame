@@ -23,6 +23,13 @@ tools:
 - `Assets/Scripts/Core/FirebaseConfig.cs` - Firebase 설정
 - `Assets/Scripts/Core/WorldChannelManager.cs` - 월드 채널
 
+### 오프닝 런타임/생성 인프라
+- `Assets/Scripts/Opening/IOpeningReplayService.cs` - 오프닝 재생 서비스 계약
+- `Assets/Scripts/Opening/OpeningAutoPlayPolicy.cs` - 최초 자동 재생 소비 정책
+- `Assets/Scripts/Opening/OpeningSequenceState.cs` - 오프닝 타임라인 상태
+- `Assets/Scripts/Opening/OpeningReplayCoordinator.cs` - Play 씬 ↔ additive 오프닝 전환 조정
+- `Assets/Editor/OpeningContentBuilder.cs` - 오프닝 씬·오디오·BuildSettings 생성기
+
 ## 역할
 
 ### 1. 신규 시스템 설계

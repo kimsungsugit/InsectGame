@@ -13,6 +13,7 @@ namespace InsectGame.Core
 
         private RegionManager regionManager;
         private OutfitBonusProvider outfitBonus;
+        private PlayerStartPose mainWorldSafePose = PlayerStartPlacement.FallbackPose;
         private bool frozen;
         private float frozenTimer;
         private float verticalVelocity;
@@ -60,6 +61,7 @@ namespace InsectGame.Core
         private float stuckTimer; // 끼임(embedded) 자동탈출용 — 이동 시도 중 콜라이더 박힘 지속시간
 
         public bool IsFrozen => frozen;
+        public PlayerStartPose MainWorldSafePose => mainWorldSafePose;
 
         // 잡기 버튼 탭 시 캐릭터가 도구를 휙 휘두르는 1회성 액션. CaptureInputController가 호출.
         public void PlayCatchSwing()
@@ -138,7 +140,7 @@ namespace InsectGame.Core
             if (Input.GetKeyDown(KeyCode.F9) || guiUnstickPressed)
             {
                 guiUnstickPressed = false;
-                UnstickToSafePosition();
+                RecoverToSafePosition();
                 if (frozen) frozen = false; // frozen 상태도 자동 해제 (끼임은 frozen 동반 가능)
                 return;
             }
@@ -335,7 +337,7 @@ namespace InsectGame.Core
                 if (stuckTimer >= 1.5f)
                 {
                     stuckTimer = 0f;
-                    UnstickToSafePosition();
+                    RecoverToSafePosition();
                     move = Vector3.zero; // 텔레포트했으니 이번 프레임 이동 적용 안 함
                 }
             }
@@ -572,9 +574,9 @@ namespace InsectGame.Core
             return false;
         }
 
-        // F11 unstick — 끼임 escape. SubArea 안이면 SubAreaWorldBuilder의 FindSafeSpawnPosition과
-        // 동일 패턴으로 벽 없는 입구 좌표 탐색. 메인 월드면 (0, 0.1, 0) 초기 스폰 위치.
-        private void UnstickToSafePosition()
+        // F9 unstick — 끼임 escape. SubArea 안이면 SubAreaWorldBuilder의 FindSafeSpawnPosition과
+        // 동일 패턴으로 벽 없는 입구 좌표 탐색. 메인 월드면 주입된 안전 시작 포즈를 기준으로 복구.
+        internal void RecoverToSafePosition()
         {
             bool inSubArea = regionManager != null && regionManager.CurrentSubArea != null;
             Vector3 target;
@@ -586,10 +588,12 @@ namespace InsectGame.Core
             }
             else
             {
-                // 메인 월드 초기 스폰 위치
-                target = FindClearSpot(new Vector3(0f, 0.1f, 0f), Vector3.zero);
+                // 메인 월드 안전 시작 위치
+                target = FindClearSpot(mainWorldSafePose.Position, mainWorldSafePose.Position);
             }
             transform.position = target;
+            if (!inSubArea)
+                transform.rotation = mainWorldSafePose.Rotation;
             verticalVelocity = 0f;
             movingToClick = false;
         }
@@ -630,6 +634,11 @@ namespace InsectGame.Core
         public void AutoWire(RegionManager rm)
         {
             if (regionManager == null) regionManager = rm;
+        }
+
+        public void AutoWire(PlayerStartPose pose)
+        {
+            mainWorldSafePose = pose;
         }
 
         public void AutoWire(OutfitBonusProvider bonus)

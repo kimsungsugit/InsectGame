@@ -16,6 +16,40 @@ namespace InsectGame.Battle
         public float AttackBonus { get; set; }
         public float DefenseBonus { get; set; }   // 유효 방어 배율 가산(의상/아이템) — ApplyDamage에서 소비
 
+        // 레이드 전용 스택 카운터. 1v1은 효과 목록(ActiveEffect)의 개수를 세어 상한을 잡지만,
+        // 레이드엔 그 목록이 없어 보너스 값에 직접 누적하므로 몇 번 쌓였는지를 따로 센다.
+        // 부호 있는 값: +면 버프 누적, -면 디버프 누적. 범위는 ±GameConstants.Battle.MaxBuffStacks.
+        public int AttackStacks { get; private set; }
+        public int DefenseStacks { get; private set; }
+
+        /// <summary>
+        /// 상한 안이면 보너스에 delta를 더하고 스택을 1 옮긴 뒤 true. 상한이면 아무것도 하지 않고 false.
+        /// delta 부호가 곧 방향이다 — 반대 방향은 상한과 무관하게 항상 통과해 되돌릴 수 있다.
+        /// </summary>
+        public bool TryStackAttackBonus(float delta)
+        {
+            if (!CanStack(AttackStacks, delta)) return false;
+            AttackBonus += delta;
+            AttackStacks += delta > 0f ? 1 : -1;
+            return true;
+        }
+
+        /// <summary>공격 버전과 같은 규칙의 방어 보너스 누적.</summary>
+        public bool TryStackDefenseBonus(float delta)
+        {
+            if (!CanStack(DefenseStacks, delta)) return false;
+            DefenseBonus += delta;
+            DefenseStacks += delta > 0f ? 1 : -1;
+            return true;
+        }
+
+        private static bool CanStack(int current, float delta)
+        {
+            if (Mathf.Approximately(delta, 0f)) return false;
+            int max = GameConstants.Battle.MaxBuffStacks;
+            return delta > 0f ? current < max : current > -max;
+        }
+
         public InsectBattleStats(InsectData data, int level, PlayerInsectData pid = null)
         {
             Data = data;
