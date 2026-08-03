@@ -122,6 +122,13 @@ namespace InsectGame.Battle
             enemyStunTurns = 0;
             effects.Clear();
             SeedPersistentState(playerPid);   // 지속 독/마비 재적용
+            // 의상·아이템 보너스를 **첫 턴부터** 태운다. 없으면 AttackBonus/DefenseBonus가 0으로
+            // 시작해, 첫 공격은 의상 ATK 배율을 못 받고 적의 첫 반격은 의상 DEF를 못 받는다
+            // (RecalculateBonuses는 TickEffects·AddEffect·SwapPlayerInsect에서만 불렸다).
+            // 하필 `SeedPersistentState`가 **감염된 곤충일 때만** AddEffect→Recalculate를 태워서,
+            // "독에 걸려 있어야 의상 보너스가 켜지는" 상태였다. 교체(SwapPlayerInsect)와 레이드
+            // (RaidBattleController가 시작 시 직접 대입)는 이미 첫 턴부터 적용된다 — 여기만 빠졌다.
+            RecalculateBonuses();
             lastCandyReward = 0;
             lastExpReward = 0;
             lastItemId = string.Empty;
@@ -228,6 +235,10 @@ namespace InsectGame.Battle
                 PersistActivePlayer();   // 도주 시에도 남은 HP·감염 저장
                 battleEnded = true;
                 BattleEnded?.Invoke(false);
+                // 도주도 대결의 한 결과다 — 여기서 안 알리면 NpcDuelController가
+                // MarkDuelFinished를 못 걸어 90초 쿨다운이 통째로 우회된다("결과와 무관하게"가
+                // 그 쿨다운의 설계 의도다). 승리/전멸패배 두 경로만 발화하던 누락.
+                if (duelMode) DuelEnded?.Invoke(false);
                 return true;
             }
 

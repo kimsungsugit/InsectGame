@@ -218,7 +218,9 @@ namespace InsectGame.UI
                 textW -= off;
             }
             GUI.Label(new Rect(textX, py + 16f, textW, 34f), npcName, nameStyle);
-            GUI.Label(new Rect(textX, py + 56f, textW, 88f),
+            // 대사 길이는 데이터가 정한다 — 88px 박스에 안 들어가면 폰트를 줄여 맞춘다.
+            // 초상화가 붙는 스토리 대사는 textW까지 좁아져 더 쉽게 넘친다.
+            UIHelper.LabelFit(new Rect(textX, py + 56f, textW, 88f),
                 lines[Mathf.Clamp(lineIndex, 0, lines.Length - 1)], lineStyle);
 
             // 진행 표시 (n/총)

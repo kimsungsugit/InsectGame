@@ -19,15 +19,29 @@ description: Unity 유닛 테스트를 실행합니다 (PlayMode 러너)
 1. Unity 경로는 환경변수 `UNITY_EDITOR_PATH`를 쓴다
    (`.claude/settings.json`이 단일 출처). 없으면 사용자에게 묻는다 —
    **경로 사본을 이 문서에 적어두지 않는다.** 적어두면 반드시 썩는다.
-2. 테스트 실행:
+2. **기존 `TestResults.xml`을 먼저 치운다**(이동 또는 삭제). 이유는 아래 함정 참조.
+3. 테스트 실행 — **`-quit`를 붙이지 않는다**:
    ```
    "$UNITY_EDITOR_PATH" -runTests -batchmode -nographics \
      -projectPath "$CLAUDE_PROJECT_DIR" \
      -testPlatform PlayMode -testFilter InsectGame.Tests \
      -testResults "$CLAUDE_PROJECT_DIR/TestResults.xml"
    ```
-3. `TestResults.xml`을 읽어 요약 보고한다.
-4. 실패가 있으면 원인을 분석한다.
+4. `TestResults.xml`을 읽어 요약 보고한다.
+5. 실패가 있으면 원인을 분석한다.
+
+## 결과를 잘못 읽는 함정 2가지 (실제로 당함)
+
+**① `-runTests`에 `-quit`를 같이 넘기지 마라.** 붙이면 Unity가 테스트를 시작하기 전에
+종료하는데, **exit 0에 `Exiting batchmode successfully now!`까지 찍어** 성공처럼 보인다.
+`TestResults.xml`은 아예 쓰이지 않는다. 테스트 러너가 스스로 종료하므로 `-quit`은 불필요하다.
+(`-executeMethod`로 빌드를 돌릴 때는 반대로 `-quit`이 필요하다 — 헷갈리지 말 것.)
+
+**② `total`만 보지 말고 `TestResults.xml`의 mtime도 봐라.** ①에 걸리면 이전 실행의 파일이
+그대로 남아, 그 `total`을 이번 결과로 읽게 된다. 2026-08-03에 실제로 254/254를 잘못 보고했다.
+그래서 절차 2번이 "먼저 치운다"다 — 파일이 없는 상태에서 시작하면 속을 여지가 없다.
+
+배경과 러너 선택 이유는 `.claude/rules/testing.md`.
 
 ## 보고 전 필수 확인 — 실행 개수
 

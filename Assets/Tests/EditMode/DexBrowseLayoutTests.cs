@@ -55,23 +55,17 @@ namespace InsectGame.Tests
             Assert.AreEqual(516f, height);
         }
 
+        /// <summary>
+        /// 이 판정만 남기고 <c>FormatElementLabel</c>은 호출부 0이라 제거했다(2026-08-03).
+        /// 그때 이 술어의 유일한 테스트 경로도 같이 사라지는데, 정작 생산 코드
+        /// (<c>DexScreenUI.DrawElementBadges</c>)가 쓰는 건 이쪽이라 직접 고정한다.
+        /// </summary>
         [Test]
-        public void FormatElementLabel_SecondaryNoneOrDuplicate_ShowsPrimaryOnly()
+        public void ShouldShowSecondary_NoneOrDuplicate_HidesSecondBadge()
         {
-            Assert.AreEqual(
-                "물",
-                DexBrowseLayout.FormatElementLabel(InsectElement.Water, InsectElement.None));
-            Assert.AreEqual(
-                "물",
-                DexBrowseLayout.FormatElementLabel(InsectElement.Water, InsectElement.Water));
-        }
-
-        [Test]
-        public void FormatElementLabel_DualType_ShowsBothKoreanNames()
-        {
-            Assert.AreEqual(
-                "전기 / 바람",
-                DexBrowseLayout.FormatElementLabel(InsectElement.Electric, InsectElement.Wind));
+            Assert.IsFalse(DexBrowseLayout.ShouldShowSecondary(InsectElement.Water, InsectElement.None));
+            Assert.IsFalse(DexBrowseLayout.ShouldShowSecondary(InsectElement.Water, InsectElement.Water));
+            Assert.IsTrue(DexBrowseLayout.ShouldShowSecondary(InsectElement.Electric, InsectElement.Wind));
         }
 
         [Test]

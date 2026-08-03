@@ -37,6 +37,7 @@ tools:
 - `Assets/Scripts/Core/WorldStateProvider.cs` - WorldState(시간+날씨) 제공
 - `Assets/Scripts/Core/PlayerMovement.cs` - 플레이어 이동 (월드 탐험)
 - `Assets/Scripts/Core/PlayerStartPlacement.cs` - 플레이어 시작 위치·방향 계산
+- `Assets/Scripts/Core/WorldInteractionTypes.cs` - 월드 상호작용 종류 정의 ※프롬프트 UI는 ui-dev
 - `Assets/Scripts/UI/CaptureChoiceUI.cs` - 포획/배틀/레이드 선택 허브 ※UI 레이아웃은 ui-dev
 - `Assets/Scripts/NPC/NpcManager.cs` - NPC 스폰/디스폰/배치
 - `Assets/Scripts/NPC/CatcherKidNpc.cs` - 잡기 아이 NPC (곤충 가로채기 로직) ※모델은 visual-dev

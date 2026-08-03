@@ -80,13 +80,21 @@ float px = panel.x, py = panel.y, pw = panel.width, ph = panel.height;
 | `BottomPanel(w, h[, HAlign])` | 하단 앵커 바·버튼 |
 | `ContentTop` / `ContentBottom` / `ContentHeight` | y만 필요할 때(폭은 호출부가 이미 정함) |
 | `CenteredY(h)` / `BottomY(h)` | 위와 같음 — 세로 좌표 하나만 |
-| `ClampHeight(desired)` | 내용 길이에 따라 자라는 높이의 상한 |
+| `ClampHeight(desired)` / `ClampWidth(desired)` | 내용 길이에 따라 자라는 크기의 상한 |
 | `Overflows(desired)` | 스크롤이 필요한지 판단 |
 | `Content` | 전체화면 UI의 콘텐츠 영역(`DexScreenUI`) |
+| `ContentLeft` / `ContentWidth` | x만 필요할 때(가로 마진 24 고정판) |
+| `MarginY` | 현재 화면의 세로 마진값 자체가 필요할 때 |
 | `UISafeLayout.Px.*` | `UIScale.Begin()`을 쓰지 않는 픽셀 좌표계 UI |
 
 `UIScale.Begin()` 안이면 그냥 `UISafeLayout.*`, 픽셀 좌표로 그리면 `UISafeLayout.Px.*`.
 두 파사드는 같은 순수 계산부(`Compute`/`ClampSize`/`CenterStart`)를 공유한다.
+
+**`UISafeLayout.ContentWidth`와 `UIScale.ContentWidth(margin)`은 중복이 아니다.**
+앞쪽은 가로 마진 `MarginX`(24)로 **고정된 판**이고, 뒤쪽은 마진을 인자로 받는 **일반판**이다
+(`CaptureMinigameController`는 28, `AccountSettingsUI`는 0을 넘긴다). 24가 맞으면 하네스 쪽을,
+다른 마진이 필요하면 `UIScale` 쪽을 쓴다. 이 구분을 안 적어둬서 한동안 "같은 질문에 답이 둘"로
+보였다 — 표에 없던 `ContentLeft`/`ContentWidth`/`MarginY`/`ClampWidth`를 여기 올린 이유다.
 
 ## 금지 관용구 — `ui_layout_lint.py`가 잡는다
 
@@ -113,10 +121,62 @@ float px = panel.x, py = panel.y, pw = panel.width, ph = panel.height;
 
 면제를 늘리려면 이 목록과 이 문서를 함께 고친다. 스크립트에만 추가하지 않는다.
 
+## 래핑 텍스트를 고정 높이 상자에 그리지 않는다 — `UIHelper.LabelFit`
+
+`wordWrap = true` 스타일을 **고정 높이** Rect에 `GUI.Label`로 그리면, 줄바꿈이 일어나는
+순간 넘치는 줄이 통째로 잘린다. 상자는 그대로 두고 **글자를 줄여 맞춘다**:
+
+```csharp
+// Before — 두 줄이 되면 아랫줄이 사라진다
+GUI.Label(new Rect(x, y, w, 84f), data.description, descStyle);
+
+// After
+UIHelper.LabelFit(new Rect(x, y, w, 84f), data.description, descStyle);
+```
+
+`LabelFit`은 `CalcHeight`로 재서 들어갈 때까지 폰트를 한 단계씩 줄이고,
+`UIHelper.MinReadableFontSize`(18)에서 멈춘다. 결과는 (텍스트, 폭, 높이, 기준 폰트)로
+캐시되므로 적중 시 측정이 없다. 호출부의 공유 스타일은 그려진 뒤 폰트 크기가 원복된다.
+
+**상자를 키우는 쪽이 맞는 자리라면** `UIHelper.MeasureWrappedHeight(style, text, width)`로
+필요한 높이를 받아 레이아웃을 늘린다(`TutorialQuestUI`의 퀘스트 설명이 그 형태다).
+스크롤 목록처럼 아래 요소가 밀려도 되는 곳에서만 쓴다 — 고정 패널에서 상자를 키우면
+그 아래가 전부 밀려 회귀 범위가 커진다.
+
+한국어는 같은 뜻을 더 긴 글자수로 쓰고 모바일에선 기준 폰트가 커져서, 데스크톱 Game View에서
+멀쩡하던 라벨이 기기에서 잘리는 일이 반복됐다(도감 설명·아이템 설명·보유 곤충 설명·NPC 대사·
+팀 슬롯 이름·가이드 배너).
+
+## 구독은 `OnEnable`에서 되살린다 — `subscription_lint.py`가 잡는다
+
+UI 컴포넌트가 `OnDisable`에서 `-=`로 해지한 이벤트는 **반드시 `OnEnable`에서 다시 `+=`** 한다.
+`AutoWire`는 Bootstrap에서 **한 번만** 불리므로, 거기서만 구독하면 되살아나지 못한다.
+
+이게 왜 UI 규칙이냐면, `OpeningReplayCoordinator`가 오프닝 다시보기 중
+`playUiRoot.SetActive(false/true)`로 **UI 루트를 통째로 껐다 켜기 때문**이다. 그 한 번에
+UI 루트 아래 41개 컴포넌트의 `OnDisable`이 발화한다.
+
+같은 계열로 네 번 났고 그중 하나는 P0였다:
+
+| 파일 | 증상 |
+|---|---|
+| `HospitalUI` | `InsectUpdated` 해지만 있고 재구독 없음 (2026-07-19) |
+| `BattleScreenUI` | `OnEnable`이 빈 메서드 → **다시보기 후 배틀 화면이 영구히 안 열림** (P0, 2026-08-03) |
+| `RaidBattleUI` | 같은 형태 |
+| `RegionMapUI` | `OnEnable` 자체가 없어 레이드 보스 마커 소실 |
+
+고치는 형태는 하나다 — 구독을 `Subscribe___()`로 빼고 `AutoWire`와 `OnEnable`이 함께 부른다.
+`-=` 뒤 `+=`라 중복 구독이 되지 않는다.
+
+**`ApplyReplayBlock`의 줄 순서도 의미를 갖는다**: `BattleScreenUI`/`RaidBattleUI`의 `OnDisable`에
+`if (Time.timeScale < 0.99f) Time.timeScale = 1f` 슬로우모션 복구가 있어서, `SetActive(false)`보다
+`Time.timeScale = 0f`를 먼저 두면 오프닝 뒤에서 월드가 계속 돈다.
+
 ## 검증
 
 ```
 python -X utf8 .claude/scripts/ui_layout_lint.py
+python -X utf8 .claude/scripts/subscription_lint.py
 ```
 
 `ci_check.py`의 `REPO_CHECKS`에도 들어 있어 세션 밖 편집(Codex CLI 등)도 CI가 잡는다.

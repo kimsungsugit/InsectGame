@@ -192,10 +192,9 @@ namespace InsectGame.NPC
                 : null;
             if (pool == null || pool.Length == 0) return;
 
-            int seed = Mathf.Abs(StableHash(kid.NpcId));
             for (int attempt = 0; attempt < pool.Length; attempt++)
             {
-                InsectData data = database.GetById(pool[(seed + attempt) % pool.Length]);
+                InsectData data = database.GetById(pool[PoolIndexFor(kid.NpcId, pool.Length, attempt)]);
                 if (data == null) continue;
                 PlayerInsectData leader = FindPlayerLeader();
                 kid.SetDuelInsect(data, leader != null ? leader.level : 1);
@@ -212,6 +211,22 @@ namespace InsectGame.NPC
             int lo = Mathf.Max(1, playerLevel - LevelSpread);
             int hi = Mathf.Max(lo, playerLevel + LevelSpread);
             return Mathf.Clamp(caughtLevel, lo, hi);
+        }
+
+        /// <summary>
+        /// 아이 ID로 결정적으로 고른 리전 풀 인덱스. 항상 <c>[0, poolLength)</c> 안이다.
+        ///
+        /// <c>Mathf.Abs(int.MinValue)</c>는 그 자신(음수)이라 오버플로한다 — 그대로 쓰면
+        /// <c>pool[음수]</c>로 즉사하므로 long으로 받아 양수화한다.
+        /// <c>InsectSizeCalculator.RollFromInstanceId</c>·<c>NpcDialogueDatabase.Mod</c>가
+        /// 같은 자리에서 이미 쓰는 방어이고, 여기만 빠져 있었다.
+        /// </summary>
+        public static int PoolIndexFor(string npcId, int poolLength, int attempt)
+        {
+            if (poolLength <= 0) return 0;
+            int hash = StableHash(npcId);
+            long seed = hash < 0 ? -(long)hash : hash;
+            return (int)((seed + Mathf.Max(0, attempt)) % poolLength);
         }
 
         // string.GetHashCode는 런타임마다 값이 달라 배정이 세션마다 바뀐다(FNV-1a로 고정).

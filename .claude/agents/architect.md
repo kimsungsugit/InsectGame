@@ -22,6 +22,12 @@ tools:
 - `Assets/Scripts/Core/AuthManager.cs` - 인증 (싱글턴)
 - `Assets/Scripts/Core/FirebaseConfig.cs` - Firebase 설정
 - `Assets/Scripts/Core/WorldChannelManager.cs` - 월드 채널
+- `Assets/Scripts/Core/MasterAccount.cs` - 마스터 계정 판정 (자격은 `Resources/master_config.json`, 커밋 금지)
+- `Assets/Scripts/Core/SocialPvpManager.cs` - 소셜 PvP 로비·매칭 ※UI는 ui-dev
+
+### 결제 인프라
+- `Assets/Scripts/Core/IAPManager.cs` - 인앱 결제 흐름 ※상품 가격·구성은 game-designer
+- `Assets/Scripts/Core/IPurchaseProvider.cs` - 결제 프로바이더 계약(스토어 SDK 교체 지점)
 
 ### 오프닝 런타임/생성 인프라
 - `Assets/Scripts/Opening/IOpeningReplayService.cs` - 오프닝 재생 서비스 계약
@@ -29,6 +35,13 @@ tools:
 - `Assets/Scripts/Opening/OpeningSequenceState.cs` - 오프닝 타임라인 상태
 - `Assets/Scripts/Opening/OpeningReplayCoordinator.cs` - Play 씬 ↔ additive 오프닝 전환 조정
 - `Assets/Editor/OpeningContentBuilder.cs` - 오프닝 씬·오디오·BuildSettings 생성기
+
+### 빌드/에디터 인프라
+- `Assets/Editor/AndroidReleaseBuilder.cs` - 서명 AAB / 기기 테스트 APK 생성.
+  `-runTests`와 달리 `-executeMethod`에는 `-quit`를 붙인다. 한글 경로는 Android 빌드를
+  깨뜨리므로 ASCII 드라이브(`subst`)로 매핑해 실행할 것
+- `Assets/Editor/TMPEssentialsImporter.cs` - TMP Essential Resources 자동 임포트
+  (누락 시 `TMP_Settings` null → TextMeshProUGUI NRE로 부트스트랩이 멈춘다)
 
 ## 역할
 

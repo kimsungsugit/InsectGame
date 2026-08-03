@@ -43,10 +43,17 @@ desktop.ini
 # Crashlytics
 crashlytics-build.properties
 
-# Test results
+# Test results / 배치 실행 로그
 TestResults.xml
 TestResults/
+# `unity-test.log`(하이픈)만 적어둔 탓에 실제 산출물인 `unity_test.log`·`unity_compile.log`
+# (언더스코어)가 매번 `git add -A`에 딸려 들어왔다. 두 표기를 모두 덮는다.
 unity-test.log
+unity_*.log
+android_build.log
+
+# Claude Code 실행 캐시 — 훅·스킬이 남기는 마지막 빌드/테스트 로그
+.claude/cache/
 
 # Claude Code local settings
 .claude/settings.local.json

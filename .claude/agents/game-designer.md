@@ -25,6 +25,7 @@ tools:
 - `Assets/Scripts/Core/CashShopManager.cs` - 캐시샵 로직
 - `Assets/Scripts/Core/ItemEffectManager.cs` - 아이템 효과
 - `Assets/Scripts/Core/RegionManager.cs` - 리전 관리
+- `Assets/Scripts/Core/RegionDefinitions.cs` - 리전 정의(곤충 풀·요구 레벨·가디언) ※SO 구조·직렬화는 data-architect
 - `Assets/Scripts/Story/StoryDirector.cs` - 스토리 트리거 평가·진행 ※새 trigger.type 배선은 이벤트 시스템 담당
 - `Assets/Scripts/Story/StoryService.cs` - Story.json 로더
 

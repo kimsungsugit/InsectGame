@@ -48,6 +48,16 @@ tools:
 - `Assets/Scripts/UI/UIDirectScroll.cs` - IMGUI 목록 휠·터치 드래그 직접 스크롤
 - `Assets/Scripts/UI/UITheme.cs` - UI 테마/스타일
 - `Assets/Scripts/UI/UITween.cs` - UI 트윈 애니메이션
+- `Assets/Scripts/UI/AccountLinkUI.cs` - 게스트→정식 계정 연동 화면
+- `Assets/Scripts/UI/SaveConflictUI.cs` - 로컬/클라우드 세이브 충돌 선택 모달 ※세이브 구조는 data-architect
+- `Assets/Scripts/UI/WorldFieldMultiplayerUI.cs` - 필드 멀티 초대·친구 목록 (픽셀 좌표계 — `UISafeLayout.Px` 사용)
+- `Assets/Scripts/UI/WorldInteractionController.cs` - 월드 오브젝트 상호작용 프롬프트
+- `Assets/Scripts/UI/MinimapUI.cs` - 미니맵 HUD
+- `Assets/Scripts/UI/SafeArea.cs` - `Screen.safeArea` 픽셀 인셋 (프레임당 1회 캐시). `UISafeLayout`의 입력원
+- `Assets/Scripts/UI/SafeAreaPanel.cs` - uGUI RectTransform 세이프에어리어 적용 컴포넌트
+- `Assets/Scripts/UI/VirtualJoystickUI.cs` - 모바일 가상 조이스틱 ※`ui_layout_lint` 면제 대상(조작 영역이라 마진을 주면 좁아진다)
+- `Assets/Scripts/UI/FieldHudInput.cs` - 필드 HUD 터치 좌표 변환 ※`ui_layout_lint` 면제 대상(배치가 아니라 입력)
+- `Assets/Scripts/Dex/DexBrowseLayout.cs` - 도감 순환 선택·그리드 열 수/높이 순수 계산 (도감 탭과 보유 탭이 공유)
 
 ### 오프닝 UI
 - `Assets/Scripts/Opening/OpeningSceneController.cs` - 오프닝 타임라인 입력·IMGUI 렌더링·화면 전환

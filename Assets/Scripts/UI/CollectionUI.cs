@@ -543,7 +543,9 @@ namespace InsectGame.UI
             if (data != null && !string.IsNullOrEmpty(data.description))
             {
                 float descY = statBlockY + statBlockH + 16;
-                GUI.Label(new Rect(16f, descY, lowerViewport.width - 32f, 84f), data.description, detailDescStyle);
+                // 84px 고정 박스 — 긴 설명은 폰트를 줄여 맞춘다(잘림 방지).
+                UIHelper.LabelFit(
+                    new Rect(16f, descY, lowerViewport.width - 32f, 84f), data.description, detailDescStyle);
             }
 
             if (data != null && !string.IsNullOrEmpty(data.habitatHint))

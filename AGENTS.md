@@ -87,8 +87,27 @@ AutoWire·이벤트·오브젝트 풀 패턴, 금지 사항이 전부 거기 있
 `rules/ui-layout.md`(배치는 `UISafeLayout`, 표면·색은 `UISurface`+`UITheme` 토큰 경유 강제),
 `rules/save-system.md`(세이브 필드 추가),
 `rules/scriptable-objects.md`(SO 생성),
+`rules/quest-system.md`(퀘스트 추가 시 다지점 등록 — 빠뜨리면 영구 정지),
 `rules/testing.md`(테스트 필수 기준),
 `rules/agent-coordination.md`(공유 파일 수정 경계).
+
+## 검사기 — 어느 스크립트가 어느 규칙을 강제하나
+
+전부 `.claude/scripts/`에 있고 `ci_check.py`가 한 번에 돌린다(세션 밖 편집도 CI가 잡는다).
+**규칙의 단일 출처는 문서이고 스크립트는 그걸 강제할 뿐이다** — 규칙을 바꾸려면 문서를 고친다.
+
+| 검사기 | 강제하는 규칙 | 단일 출처 |
+|---|---|---|
+| `quest_lint.py` | questId 중복·prerequisite 무결성·QuestType↔진행 배선 등 6검사 | `rules/quest-system.md` |
+| `ui_layout_lint.py` | 패널 y·height 직접 계산 금지 (`UISafeLayout` 경유) | `rules/ui-layout.md` |
+| `subscription_lint.py` | `OnDisable`에서 해지한 구독을 `OnEnable`에서 되살릴 것 | `rules/ui-layout.md` |
+| `data_lint.py` | 곤충·아이템·리전 데이터 정합(ID 유일성, 참조 무결, 풀 배정) | 코드(`InsectDatabase` 등)와 스크립트 자신 |
+| `story_lint.py` | 스토리 비트 트리거·보상·리전키 정합 | 코드(`StoryBeat`)와 스크립트 자신 |
+| `sync_codex.py` | `.claude` ↔ `.codex` 미러 동기 | 스크립트 자신 |
+| `verify_coverage.py` | 모든 `.cs`에 담당 에이전트가 있을 것 | `rules/agent-coordination.md` + `agents/*.md` |
+
+`data_lint`·`story_lint`는 대응 규칙 문서 없이 코드를 직접 읽는다 — 데이터 스키마가 곧 규칙이라
+문서 사본을 두면 썩기 때문이다. 나머지는 문서를 파싱하거나 문서에 적힌 규칙을 구현한다.
 
 ## 규칙
 

@@ -76,20 +76,18 @@ namespace InsectGame.Dex
             return Mathf.Max(0f, headerHeight) + rowsHeight + gapsHeight + Mathf.Max(0f, bottomPadding);
         }
 
+        /// <summary>
+        /// 보조 속성을 따로 표기할지. UI는 이 판정만 받아 배지를 하나 더 그린다
+        /// (<c>DexScreenUI.DrawElementBadges</c>).
+        ///
+        /// 여기에 "속성 / 속성" 한 줄짜리 라벨을 만드는 <c>FormatElementLabel</c>이 같이 있었는데
+        /// 호출부가 0이었다(2026-08-03 제거). 이름만 보면 속성 표기의 정석 API라 누가 쓰는 순간
+        /// 배지 경로와 두 갈래가 됐을 자리다 — <c>RaidRoundModels.SetBossDamage</c>와 같은 형태.
+        /// 한 줄 라벨이 다시 필요해지면 배지 쪽을 대체할지부터 정하고 되살릴 것.
+        /// </summary>
         public static bool ShouldShowSecondary(InsectElement primary, InsectElement secondary)
         {
             return secondary != InsectElement.None && secondary != primary;
-        }
-
-        public static string FormatElementLabel(InsectElement primary, InsectElement secondary)
-        {
-            string primaryLabel = InsectTypeChart.GetDisplayName(primary);
-            if (!ShouldShowSecondary(primary, secondary))
-            {
-                return primaryLabel;
-            }
-
-            return $"{primaryLabel} / {InsectTypeChart.GetDisplayName(secondary)}";
         }
     }
 }

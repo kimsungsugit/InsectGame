@@ -552,6 +552,13 @@ namespace InsectGame.Dex
         private const float TargetTileWidth = 260f;
         private const float TileGap = 14f;
 
+        // 보유 탭 타일 — 개체 정보를 담느라 도감 타일보다 넓다.
+        // 397은 옛 `floor(panelW / 410f)`가 2열로 넘어가던 지점의 실제 카드 폭이다.
+        // 그 값을 쓰면 공식을 GetGridColumns로 바꿔도 열 수가 그대로 나온다.
+        private const float OwnedTileWidth = 397f;
+        private const float OwnedTileGap = 12f;
+        private const int OwnedMaxColumns = 3;
+
         private void DrawPokedex(Rect contentRect)
         {
             // 좌우 분할(좌 34% 목록 + 우 상세)을 버리고 전체 폭 그리드 하나만 그린다.
@@ -1087,8 +1094,10 @@ namespace InsectGame.Dex
                     new Rect(infoBoxX, py, infoBoxW, 160),
                     DescBg,
                     CardBorderCol);
-                // 라벨 높이를 박스에 맞춰 키움(옛 56 → 144) — 여러 줄 설명 짤림 해소.
-                GUI.Label(new Rect(infoBoxX + 14, py + 10, infoBoxW - 28, 144), ins.description, descSCache);
+                // 박스는 고정이고 설명 길이는 종마다 다르다 — 넘치면 폰트를 줄여 맞춘다.
+                // (박스를 키우면 아래 요소가 전부 밀린다. 옛날엔 56px에 그려 대놓고 잘렸다.)
+                UIHelper.LabelFit(
+                    new Rect(infoBoxX + 14, py + 10, infoBoxW - 28, 144), ins.description, descSCache);
             }
         }
 
@@ -1120,8 +1129,11 @@ namespace InsectGame.Dex
 
             float panelW = Mathf.Min(contentRect.width - 28f, 1400f);
             float px = contentRect.x + (contentRect.width - panelW) / 2f;
-            int cols = Mathf.Max(1, Mathf.FloorToInt(panelW / 410f));
-            float gap = 12f;
+            float gap = OwnedTileGap;
+            // 도감 탭과 같은 공식을 탄다. 예전엔 여기만 `floor(panelW / 410f)`로 자기 공식을 써서
+            // "폭에서 열 수"라는 한 질문에 답이 둘이었다. 폭 기준은 아래 cardW·BeginScrollView와
+            // 같은 `panelW - 14f`(스크롤바 여유)여야 세 계산이 어긋나지 않는다.
+            int cols = DexBrowseLayout.GetGridColumns(panelW - 14f, OwnedTileWidth, gap, 1, OwnedMaxColumns);
             float cardW = (panelW - (cols - 1) * gap - 14f) / cols;
             float cardH = 182f;
             float totalH = DexBrowseLayout.GetGridContentHeight(owned.Count, cols, cardH, gap);
@@ -1272,9 +1284,10 @@ namespace InsectGame.Dex
 
             // 이름/설명 폭은 우측 수량 컬럼(x+w-180) 앞까지로 제한 — 겹침 방지.
             itemNameCache.normal.textColor = itemCol;
-            GUI.Label(new Rect(x + 90, y + 14, w - 280, 52), displayName, itemNameCache);
+            UIHelper.LabelFit(new Rect(x + 90, y + 14, w - 280, 52), displayName, itemNameCache);
 
-            GUI.Label(new Rect(x + 90, y + 72, w - 280, 40), desc, itemDescCache);
+            // 40px면 이 폰트로 한 줄이 겨우다 — 두 줄짜리 설명은 아랫줄이 통째로 잘렸다.
+            UIHelper.LabelFit(new Rect(x + 90, y + 72, w - 280, 40), desc, itemDescCache);
 
             itemCountCache.normal.textColor = rec.count > 0 ? ItemCountGood : ItemCountBad;
             GUI.Label(new Rect(x + w - 180, y + 16, 160, 90), $"x{rec.count}", itemCountCache);

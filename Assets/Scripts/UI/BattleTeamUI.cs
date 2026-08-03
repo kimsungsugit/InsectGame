@@ -208,7 +208,9 @@ namespace InsectGame.UI
 
                     slotNameCache.normal.textColor = rarityCol;
                     GUI.color = Color.white;
-                    GUI.Label(new Rect(x + 150, y + 16, w - 330, 46), GetOwnedDisplayName(pid, data), slotNameCache);
+                    // 46px는 이 폰트로 한 줄이라, 긴 이름이 줄바꿈되면 둘째 줄이 잘렸다.
+                    UIHelper.LabelFit(
+                        new Rect(x + 150, y + 16, w - 330, 46), GetOwnedDisplayName(pid, data), slotNameCache);
 
                     int lv = pid != null ? pid.level : 1;
                     int cp = PlayerInsectCombatPower.Calculate(data, pid);
@@ -323,7 +325,9 @@ namespace InsectGame.UI
 
                 pickerNameCache.normal.textColor = alreadyInTeam ? DimNameCol : rarityCol;
                 GUI.color = Color.white;
-                GUI.Label(new Rect(rect.x + 100, rect.y + 14, rect.width - 280, 42), GetOwnedDisplayName(pid, data), pickerNameCache);
+                UIHelper.LabelFit(
+                    new Rect(rect.x + 100, rect.y + 14, rect.width - 280, 42),
+                    GetOwnedDisplayName(pid, data), pickerNameCache);
 
                 int cp = PlayerInsectCombatPower.Calculate(data, pid);
                 GUI.Label(new Rect(rect.x + 100, rect.y + 62, rect.width - 280, 40),

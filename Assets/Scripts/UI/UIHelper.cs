@@ -176,6 +176,109 @@ namespace InsectGame.UI
         public static void ClearStyleCache()
         {
             styleCache.Clear();
+            fitCache.Clear();
+        }
+
+        // ── 상자에 맞춰 그리는 텍스트 ──
+
+        /// <summary>측정 전용 스크래치. GUIContent는 class라 매 프레임 new 하면 GC가 돈다.</summary>
+        private static readonly GUIContent fitContent = new GUIContent();
+
+        /// <summary>(텍스트, 폭, 높이, 기준 폰트) → 들어가는 폰트 크기. CalcHeight가 공짜가 아니라 캐시한다.</summary>
+        private static readonly Dictionary<long, int> fitCache = new Dictionary<long, int>();
+        private const int FitCacheMax = 512;
+
+        /// <summary>더 줄이면 읽을 수 없는 하한. 여기서도 넘치면 잘리는 걸 받아들인다.</summary>
+        public const int MinReadableFontSize = 18;
+
+        /// <summary>
+        /// <paramref name="rect"/> 안에 다 들어가도록 폰트를 줄여서 그린다.
+        ///
+        /// IMGUI에서 `wordWrap` 스타일을 **고정 높이** Rect에 그리면, 줄바꿈이 일어나는 순간
+        /// 넘치는 줄이 통째로 잘린다. 이 저장소엔 그런 자리가 여럿 있었고(도감 설명 144px,
+        /// 아이템 설명 40px, 보유 곤충 설명 84px, NPC 대사 88px) 한국어는 같은 뜻을 더 긴
+        /// 글자수로 쓰는 데다 모바일에선 기준 폰트가 커져 훨씬 쉽게 넘쳤다.
+        ///
+        /// 레이아웃(Rect)은 그대로 두고 **글자만 줄여 맞춘다** — 상자를 키우면 그 아래 요소가
+        /// 전부 밀리므로 회귀 범위가 훨씬 커진다. 하한(<see cref="MinReadableFontSize"/>)까지
+        /// 줄여도 안 들어가면 거기서 멈춘다.
+        ///
+        /// 호출부의 <paramref name="style"/>은 대개 공유 캐시라, 폰트 크기를 잠시 바꿔 그린 뒤
+        /// 반드시 원복한다.
+        /// </summary>
+        public static void LabelFit(Rect rect, string text, GUIStyle style, int minFontSize = 0)
+        {
+            if (style == null || string.IsNullOrEmpty(text))
+                return;
+
+            int baseSize = style.fontSize > 0 ? style.fontSize : 12;
+            int floor = Mathf.Clamp(
+                minFontSize > 0 ? minFontSize : Mathf.Min(baseSize, MinReadableFontSize),
+                1,
+                baseSize);
+
+            int fitted = FitFontSize(text, rect.width, rect.height, style, baseSize, floor);
+            if (fitted == baseSize)
+            {
+                GUI.Label(rect, text, style);
+                return;
+            }
+
+            style.fontSize = fitted;
+            GUI.Label(rect, text, style);
+            style.fontSize = baseSize;
+        }
+
+        /// <summary>
+        /// 래핑된 <paramref name="text"/>가 <paramref name="width"/>에서 차지하는 높이.
+        /// 상자를 키울 수 있는 레이아웃(스크롤 목록 등)에서 쓴다.
+        /// </summary>
+        public static float MeasureWrappedHeight(GUIStyle style, string text, float width)
+        {
+            if (style == null || string.IsNullOrEmpty(text) || width <= 0f)
+                return 0f;
+
+            fitContent.text = text;
+            return style.CalcHeight(fitContent, width);
+        }
+
+        private static int FitFontSize(
+            string text, float width, float height, GUIStyle style, int baseSize, int floor)
+        {
+            if (width <= 1f || height <= 1f)
+                return baseSize;
+
+            long key = FitKey(text, width, height, baseSize);
+            if (fitCache.TryGetValue(key, out int cached))
+                return cached;
+
+            fitContent.text = text;
+            int size = baseSize;
+            // 한 단계씩 줄인다 — 이분 탐색은 CalcHeight가 폰트 크기에 대해 계단식이라 이득이 적고,
+            // 실제로 필요한 감소폭이 몇 포인트라 선형이 오히려 측정 횟수가 적다.
+            while (size > floor)
+            {
+                style.fontSize = size;
+                if (style.CalcHeight(fitContent, width) <= height)
+                    break;
+                size--;
+            }
+            style.fontSize = baseSize;
+
+            if (fitCache.Count >= FitCacheMax)
+                fitCache.Clear();
+            fitCache[key] = size;
+            return size;
+        }
+
+        private static long FitKey(string text, float width, float height, int baseSize)
+        {
+            // 문자열 해시는 런타임마다 달라도 무방하다 — 이 캐시는 세션 안에서만 산다.
+            long h = text.GetHashCode();
+            h = h * 31 + Mathf.RoundToInt(width);
+            h = h * 31 + Mathf.RoundToInt(height);
+            h = h * 31 + baseSize;
+            return h;
         }
 
         // ── 패널 페이드 ──

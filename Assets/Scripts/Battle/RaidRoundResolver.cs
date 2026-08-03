@@ -118,6 +118,12 @@ namespace InsectGame.Battle
                 // 레이드엔 1v1의 효과 만료(AddEffect + RecalculateBonuses)가 없어 보너스에 직접 누적한다.
                 // 그래서 GameConstants.Battle.MaxBuffStacks(3회)로 방향별 상한을 건다 — 상한을 넘긴
                 // 사용은 값을 바꾸지 않고 result.Capped로 알린다(턴은 소비되므로 UI가 알려야 한다).
+                //
+                // **상한 안에서는 여전히 만료되지 않는다** — 이건 의도된 divergence다(2026-08-03 결정).
+                // break(DebuffAttack) 3회를 쌓으면 남은 라운드 내내 보스 공격이 Clamp 하한 0.3배로
+                // 고정된다. 만료를 넣으려면 RaidBattleController:111-113이 같은 필드에 넣어둔
+                // 의상·아이템 보너스와 전투 버프를 먼저 분리해야 하고, 그건 레이드 난이도를
+                // 실측 없이 올린다. 상한이 최악을 유한하게 만든 지점에서 멈춘다.
                 case SkillEffectType.BuffAttack:
                     result.Capped = !attacker.TryStackAttackBonus(skill.effectValue);
                     return result;

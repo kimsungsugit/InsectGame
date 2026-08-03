@@ -157,7 +157,8 @@ namespace InsectGame.UI
             GUI.DrawTexture(new Rect(x, y + h - 4f, w, 4f), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
-            GUI.Label(new Rect(x + 16f, y + 14f, w - 32f, 46f), activeGuidedText, coachStyle);
+            // 가이드 문구는 단계마다 길이가 달라 46px(≈한 줄)을 쉽게 넘긴다 — 폰트를 줄여 맞춘다.
+            UIHelper.LabelFit(new Rect(x + 16f, y + 14f, w - 32f, 46f), activeGuidedText, coachStyle);
             GUI.Label(new Rect(x + 16f, y + 62f, w - 32f, 28f), "안내대로 진행하면 다음 단계로 넘어갑니다", hintStyle);
         }
     }

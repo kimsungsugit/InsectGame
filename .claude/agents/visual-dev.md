@@ -27,6 +27,7 @@ OnGUI의 Rect 좌표와 레이아웃은 **ui-dev 영역**입니다. 여기서는
 - `Assets/Scripts/Core/UIAudioBinder.cs` - UI 버튼 자동 hover/click 사운드 부착
 - `Assets/Scripts/Data/ItemRarityPalette.cs` - 레어도별 색상 ※data-architect 공유
 - `Assets/Scripts/Dex/RarityIconProvider.cs` - 레어도 아이콘 렌더링 ※data-architect 공유
+- `Assets/Scripts/Dex/InsectModelPreviewRenderer.cs` - 도감/상세용 곤충 모델 프리뷰 렌더 ※화면 배치는 ui-dev
 
 ### 환경 비주얼
 - `Assets/Scripts/Core/SubAreaEnvironment.cs` - 서브에리어 환경 전환 (조명, 안개, 앰비언트)

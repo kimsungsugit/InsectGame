@@ -44,6 +44,13 @@ tools:
 - `Assets/Scripts/Core/InsectSizeCalculator.cs` - 개체 크기·무게 계산 ※기준값·배율 튜닝은 game-designer
 - `Assets/Scripts/Core/GameConstants.cs` - 전역 상수
 - `Assets/Scripts/Core/CharacterOutfitData.cs` - 의상 데이터 모델
+- `Assets/Scripts/Core/SaveScope.cs` - 계정 스코핑 + 세이브 마이그레이션 버전. 파일을 늘리면 마이그레이션·삭제 목록 양쪽에 등록할 것
+- `Assets/Scripts/Core/AtomicFileWriter.cs` - 세이브 원자적 쓰기(temp→replace). 중간 크래시로 반쪽 JSON이 남지 않게 한다
+- `Assets/Scripts/Core/ICloudReloadable.cs` - 클라우드 복원 후 재로드 계약
+- `Assets/Scripts/Data/InsectExpansionDefinitions.cs` - 확장 곤충 ID/스탯 정의 ※리전 풀 배정·수치는 game-designer
+
+### Editor (데이터 애셋 생성)
+- `Assets/Editor/ItemRarityPaletteBuilder.cs` - `Resources/ItemRarityPalette.asset` 재현 가능 생성 ※색·그라디언트는 visual-dev
 
 ### Dex 모듈 (전체)
 - `Assets/Scripts/Dex/DexController.cs` - 도감 핵심 로직

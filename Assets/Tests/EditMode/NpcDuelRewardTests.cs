@@ -12,6 +12,43 @@ namespace InsectGame.Tests
     [TestFixture]
     public class NpcDuelRewardTests
     {
+        /// <summary>
+        /// 상대 배정 인덱스는 어떤 NpcId가 와도 풀 범위 안이어야 한다.
+        /// FNV-1a 해시가 음수일 때 `Mathf.Abs(int.MinValue)`가 음수를 돌려주면
+        /// `pool[음수]`로 즉사하므로, 길이·문자열을 넓게 훑어 범위를 고정한다.
+        /// </summary>
+        [Test]
+        public void PoolIndexFor_AnyNpcIdAndLength_StaysInsidePool()
+        {
+            int[] lengths = { 1, 2, 3, 7, 12 };
+            foreach (int len in lengths)
+            {
+                for (int i = 0; i < 400; i++)
+                {
+                    int idx = NpcDuelController.PoolIndexFor("kid_" + i, len, i % len);
+                    Assert.GreaterOrEqual(idx, 0, $"len={len} i={i}");
+                    Assert.Less(idx, len, $"len={len} i={i}");
+                }
+            }
+        }
+
+        [Test]
+        public void PoolIndexFor_EmptyPoolOrNullId_DoesNotThrow()
+        {
+            Assert.AreEqual(0, NpcDuelController.PoolIndexFor("kid_a", 0, 0));
+            Assert.AreEqual(0, NpcDuelController.PoolIndexFor(null, 0, 0));
+            Assert.GreaterOrEqual(NpcDuelController.PoolIndexFor(null, 5, 0), 0);
+        }
+
+        /// <summary>같은 아이는 세션이 바뀌어도 같은 곤충을 든다(결정적 배정).</summary>
+        [Test]
+        public void PoolIndexFor_SameNpcId_IsDeterministic()
+        {
+            Assert.AreEqual(
+                NpcDuelController.PoolIndexFor("kid_meadow_3", 9, 0),
+                NpcDuelController.PoolIndexFor("kid_meadow_3", 9, 0));
+        }
+
         // ItemDatabase.CreateRuntimeDefault가 등록하는 ID 집합의 부분집합.
         private static readonly string[] KnownItemIds =
         {
