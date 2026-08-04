@@ -452,7 +452,7 @@ namespace InsectGame.UI
             float x = SafeCenterX(w);
             float y = UISafeLayout.Px.CenteredY(h);
             GUI.Box(new Rect(x, y, w, h), "", panelStyle);
-            GUI.Label(new Rect(x + 14f, y + 8f, w - 28f, 27f), player.displayName + "에게 말하기", titleStyle);
+            UIHelper.LabelFit(new Rect(x + 14f, y + 8f, w - 28f, 27f), player.displayName + "에게 말하기", titleStyle);
             chatInput = GUI.TextField(new Rect(x + 14f, y + 42f, w - 150f, 55f), chatInput, 80, fieldStyle);
             if (GUI.Button(new Rect(x + w - 126f, y + 42f, 112f, 55f), "보내기", buttonStyle))
             {

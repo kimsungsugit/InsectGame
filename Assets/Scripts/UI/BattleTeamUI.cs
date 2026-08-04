@@ -204,7 +204,7 @@ namespace InsectGame.UI
                             Mathf.Max(4f, h - 6f - UITheme.Radius.Card * 2f)),
                         rarityCol);
 
-                    CapturePopupUI.DrawTypedInsectPortrait(x + 90, y + h / 2f, data.insectId, data.rarity, 1f);
+                    InsectVisual.Draw(x + 90, y + h / 2f, 96f, data, pid != null && pid.isShiny, 1f);
 
                     slotNameCache.normal.textColor = rarityCol;
                     GUI.color = Color.white;
@@ -321,7 +321,7 @@ namespace InsectGame.UI
                         Mathf.Max(4f, rect.height - 6f - UITheme.Radius.Card * 2f)),
                     railCol);
 
-                CapturePopupUI.DrawTypedInsectPortrait(rect.x + 48, rect.y + rect.height / 2f, data.insectId, data.rarity, alreadyInTeam ? 0.4f : 1f);
+                InsectVisual.Draw(rect.x + 48, rect.y + rect.height / 2f, 96f, data, pid != null && pid.isShiny, alreadyInTeam ? 0.4f : 1f);
 
                 pickerNameCache.normal.textColor = alreadyInTeam ? DimNameCol : rarityCol;
                 GUI.color = Color.white;

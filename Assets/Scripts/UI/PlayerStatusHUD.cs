@@ -340,7 +340,7 @@ namespace InsectGame.UI
             {
                 Color subCol = new Color(regionCol.r * 0.85f + 0.15f, regionCol.g * 0.85f + 0.15f, regionCol.b * 0.85f + 0.15f);
                 regionSubStyle.normal.textColor = subCol;
-                GUI.Label(new Rect(px + 20, subY, pw - 40, 24), $"▾ {regionManager.CurrentSubArea.displayName}", regionSubStyle);
+                UIHelper.LabelFit(new Rect(px + 20, subY, pw - 40, 24), $"▾ {regionManager.CurrentSubArea.displayName}", regionSubStyle);
                 subY += 22;
             }
 

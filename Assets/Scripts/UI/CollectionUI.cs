@@ -378,7 +378,7 @@ namespace InsectGame.UI
             UIHelper.DrawRarityBorder(rect, rarityTier, Time.time);
 
             if (data != null)
-                CapturePopupUI.DrawTypedInsectPortrait(rect.x + 72, rect.y + rect.height / 2f + 2, data.insectId, data.rarity, 1f);
+                InsectVisual.Draw(rect.x + 72, rect.y + rect.height / 2f + 2, 96f, data, pid != null && pid.isShiny, 1f);
 
             string displayName = GetOwnedDisplayName(pid, data);
             // 캐시 스타일 + textColor만 동적 갱신 (BattleScreenUI 패턴, owned.Count×5 GUIStyle/프레임 회피).
@@ -464,9 +464,8 @@ namespace InsectGame.UI
             GUI.color = new Color(rarityCol.r, rarityCol.g, rarityCol.b, 0.2f);
             GUI.DrawTexture(new Rect(portraitCx - 84, portraitCy - 84, 168, 168), Texture2D.whiteTexture);
 
-            InsectRarity rarity = data != null ? data.rarity : InsectRarity.Common;
-            string insId = data != null ? data.insectId : pid.insectId;
-            CapturePopupUI.DrawTypedInsectPortrait(portraitCx, portraitCy, insId, rarity, 1f);
+            // 등급·ID를 따로 뽑아 넘기던 자리 — 파사드가 InsectData 하나만 받는다.
+            InsectVisual.Draw(portraitCx, portraitCy, 168f, data, pid != null && pid.isShiny, 1f);
 
             string displayName = GetOwnedDisplayName(pid, data);
             // 캐시 스타일 + textColor만 동적 갱신.

@@ -27,7 +27,9 @@ namespace InsectGame.UI
             labelStyle = new GUIStyle(GUI.skin.label)
             { fontSize = 16, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             labelStyle.normal.textColor = new Color(0.7f, 0.85f, 1f);
-            dotTex = MakeDisc(32);
+            // 소프트 디스크는 UIShapes가 소유한다 — 여기 있던 MakeDisc는 하드 엣지라
+            // 확대 시 계단이 보였다(RegionMapUI 사본은 소프트였다). 공용판으로 통일.
+            dotTex = UIShapes.Disc;
         }
 
         private void Update()
@@ -107,19 +109,5 @@ namespace InsectGame.UI
             UIScale.End();
         }
 
-        private static Texture2D MakeDisc(int size)
-        {
-            Texture2D t = new Texture2D(size, size, TextureFormat.RGBA32, false);
-            t.wrapMode = TextureWrapMode.Clamp;
-            float c = (size - 1) / 2f;
-            for (int yy = 0; yy < size; yy++)
-                for (int xx = 0; xx < size; xx++)
-                {
-                    float d = Mathf.Sqrt((xx - c) * (xx - c) + (yy - c) * (yy - c)) / c;
-                    t.SetPixel(xx, yy, new Color(1f, 1f, 1f, d <= 1f ? 1f : 0f));
-                }
-            t.Apply();
-            return t;
-        }
     }
 }

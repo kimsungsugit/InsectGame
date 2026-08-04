@@ -183,12 +183,12 @@ namespace InsectGame.UI
             string titleText = isRaid ? "레이드 보스 발견!" : "어떻게 포획할까요?";
             GUI.Label(new Rect(px, py + 20, panelW, 48), titleText, titleStyle);
 
-            CapturePopupUI.DrawTypedInsectPortrait(px + panelW / 2f, py + 120, targetInsect.Data.insectId, targetInsect.Data.rarity, 1f);
+            InsectVisual.Draw(px + panelW / 2f, py + 120, 96f, targetInsect.Data, targetInsect.IsShiny, 1f);
 
             GUIStyle nameStyle = new GUIStyle(GUI.skin.label)
             { fontSize = 38, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             nameStyle.normal.textColor = rarityCol;
-            GUI.Label(new Rect(px, py + 160, panelW, 48),
+            UIHelper.LabelFit(new Rect(px, py + 160, panelW, 48),
                 $"{targetInsect.Data.displayName} Lv.{targetInsect.Level}", nameStyle);
 
             if (isRaid)
@@ -340,11 +340,11 @@ namespace InsectGame.UI
                 GUI.color = Color.white;
                 GUIStyle ns = new GUIStyle(GUI.skin.label) { fontSize = 32, fontStyle = FontStyle.Bold };
                 ns.normal.textColor = hasItem ? item.themeColor : new Color(0.4f, 0.4f, 0.4f);
-                GUI.Label(new Rect(px + 90, cy + 10, panelW - 280, 42), $"[{i + 1}] {item.displayName}", ns);
+                UIHelper.LabelFit(new Rect(px + 90, cy + 10, panelW - 280, 42), $"[{i + 1}] {item.displayName}", ns);
 
                 GUIStyle ds2 = new GUIStyle(GUI.skin.label) { fontSize = 24 };
                 ds2.normal.textColor = new Color(0.55f, 0.55f, 0.55f);
-                GUI.Label(new Rect(px + 90, cy + 52, panelW - 280, 32), item.description, ds2);
+                UIHelper.LabelFit(new Rect(px + 90, cy + 52, panelW - 280, 32), item.description, ds2);
 
                 string difficulty;
                 if (item.speedMultiplier <= 0.6f) difficulty = "매우 쉬움";
@@ -445,7 +445,7 @@ namespace InsectGame.UI
             GUIStyle subStyle = new GUIStyle(GUI.skin.label)
             { fontSize = 28, alignment = TextAnchor.MiddleCenter };
             subStyle.normal.textColor = new Color(0.6f, 0.6f, 0.6f);
-            GUI.Label(new Rect(px, py + 62, panelW, 36),
+            UIHelper.LabelFit(new Rect(px, py + 62, panelW, 36),
                 $"vs {targetInsect.Data.displayName} Lv.{targetInsect.Level}", subStyle);
 
             float slotY = py + 110;
@@ -501,14 +501,14 @@ namespace InsectGame.UI
                 GUI.color = rarityCol;
                 GUI.DrawTexture(new Rect(x, y, 5, h), Texture2D.whiteTexture);
 
-                CapturePopupUI.DrawTypedInsectPortrait(x + 80, y + h / 2f, data.insectId, data.rarity, 1f);
+                InsectVisual.Draw(x + 80, y + h / 2f, 96f, data, pid != null && pid.isShiny, 1f);
 
                 GUIStyle ns = new GUIStyle(GUI.skin.label) { fontSize = 30, fontStyle = FontStyle.Bold };
                 ns.normal.textColor = rarityCol;
                 GUI.color = Color.white;
                 int lv = pid != null ? pid.level : 1;
                 int cp = PlayerInsectCombatPower.Calculate(data, pid);
-                GUI.Label(new Rect(x + 120, y + 12, w - 280, 38), GetOwnedDisplayName(pid, data), ns);
+                UIHelper.LabelFit(new Rect(x + 120, y + 12, w - 280, 38), GetOwnedDisplayName(pid, data), ns);
 
                 GUIStyle info = new GUIStyle(GUI.skin.label) { fontSize = 24 };
                 info.normal.textColor = new Color(0.55f, 0.55f, 0.55f);

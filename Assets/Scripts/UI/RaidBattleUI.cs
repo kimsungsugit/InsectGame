@@ -1595,7 +1595,7 @@ namespace InsectGame.UI
 
             bossHpNameStyleCache.normal.textColor = rarityCol;
             GUI.color = Color.white;
-            GUI.Label(new Rect(x + 14, y + 8, w * 0.5f, 30),
+            UIHelper.LabelFit(new Rect(x + 14, y + 8, w * 0.5f, 30),
                 $"BOSS  {boss.Data.displayName}", bossHpNameStyleCache);
 
             GUI.Label(new Rect(x + w - 130, y + 8, 116, 26), $"Lv.{boss.Level}", bossHpLvStyleCache);
@@ -1652,7 +1652,7 @@ namespace InsectGame.UI
 
                 teamHpNameStyleCache.normal.textColor = alive ? Color.white : new Color(0.4f, 0.4f, 0.4f);
                 GUI.color = Color.white;
-                GUI.Label(new Rect(bx + 8, y + 6, barW - 16, 22),
+                UIHelper.LabelFit(new Rect(bx + 8, y + 6, barW - 16, 22),
                     $"{i + 1}. {stats.Data.displayName}", teamHpNameStyleCache);
 
                 float hbX = bx + 8;
@@ -1756,7 +1756,7 @@ namespace InsectGame.UI
 
                 introBossNameStyleCache.normal.textColor = new Color(ec.r * namePulse, ec.g * namePulse, ec.b * namePulse, nameT);
                 GUI.color = Color.white;
-                GUI.Label(new Rect(cx - 320, cy + 2, 640, 48),
+                UIHelper.LabelFit(new Rect(cx - 320, cy + 2, 640, 48),
                     $"{raidController.BossStats.Data.displayName}  Lv.{raidController.BossStats.Level}", introBossNameStyleCache);
 
                 introSubStyleCache.normal.textColor = new Color(1f, 0.8f, 0.3f, nameT);
@@ -1844,7 +1844,7 @@ namespace InsectGame.UI
                 }
 
                 insectSelNameStyleCache.normal.textColor = alive ? Color.white : new Color(0.35f, 0.35f, 0.35f);
-                GUI.Label(new Rect(bx + 8, btnY + 44, btnW - 16, 26), stats.Data.displayName, insectSelNameStyleCache);
+                UIHelper.LabelFit(new Rect(bx + 8, btnY + 44, btnW - 16, 26), stats.Data.displayName, insectSelNameStyleCache);
 
                 float hpRatio = stats.MaxHp > 0 ? (float)stats.CurrentHp / stats.MaxHp : 0;
                 insectSelHpStyleCache.normal.textColor = alive ? (hpRatio > 0.5f ? new Color(0.3f, 0.9f, 0.4f) : new Color(0.95f, 0.5f, 0.2f))
@@ -2476,7 +2476,7 @@ namespace InsectGame.UI
 
                 // Capture message
                 resultWinSubStyleCache.normal.textColor = new Color(0.9f, 0.9f, 0.9f, alpha);
-                GUI.Label(new Rect(cx - 300, cy + 68, 600, 28),
+                UIHelper.LabelFit(new Rect(cx - 300, cy + 68, 600, 28),
                     $"보스 {raidController.BossStats.Data.displayName}을(를) 포획했다!", resultWinSubStyleCache);
 
                 // Animated reward display

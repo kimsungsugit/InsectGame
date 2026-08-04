@@ -166,7 +166,7 @@ namespace InsectGame.UI
             float topControlH = UIScale.IsMobileLayout ? UIScale.MinTouchHeight : 44f;
             if (itemMode)
             {
-                GUI.Label(new Rect(px + 26f, ty, pw - 52f, 44f), pendingItem.description + "  (X로 취소)", hintStyle);
+                UIHelper.LabelFit(new Rect(px + 26f, ty, pw - 52f, 44f), pendingItem.description + "  (X로 취소)", hintStyle);
             }
             else
             {
@@ -245,7 +245,7 @@ namespace InsectGame.UI
             GUI.color = Color.white;
 
             if (data != null)
-                CapturePopupUI.DrawTypedInsectPortrait(rect.x + 58f, rect.y + rect.height / 2f, data.insectId, data.rarity, 1f);
+                InsectVisual.Draw(rect.x + 58f, rect.y + rect.height / 2f, 96f, data, pid != null && pid.isShiny, 1f);
 
             string name = data != null ? data.displayName : pid.insectId;
             rowNameStyle.normal.textColor = pid.IsFainted ? new Color(0.9f, 0.4f, 0.4f) : Color.white;

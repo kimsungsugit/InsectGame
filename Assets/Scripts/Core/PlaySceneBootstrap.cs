@@ -241,6 +241,10 @@ namespace InsectGame.Core
             // 곤충 3D 모델을 도감에 RenderTexture로 표시(옛 단색 박스/약식 2D 대체)
             InsectModelPreviewRenderer insectPreview = EnsureComponent<InsectModelPreviewRenderer>("UI/InsectModelPreview");
             dexScreen.AutoWire(insectPreview);
+            // 목록·타일도 같은 렌더러의 썸네일을 쓰게 한다 — 예전엔 이 렌더러의 호출부가 도감 상세
+            // 한 곳뿐이라 나머지 8개 화면이 손으로 그린 사각형만 봤다. 정적 훅인 이유는
+            // InsectEntity.FleePreventChanceProvider와 같다(9곳이 참조하는데 싱글턴을 늘리지 않는다).
+            InsectGame.UI.InsectVisual.Renderer = insectPreview;
 
             CaptureController capture = EnsureComponent<CaptureController>("Capture/CaptureController");
             capture.AutoWire(dex);

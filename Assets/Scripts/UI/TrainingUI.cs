@@ -373,7 +373,7 @@ namespace InsectGame.UI
                 GUI.DrawTexture(new Rect(r.x, r.y, 6, r.height), Texture2D.whiteTexture);
 
                 if (data != null)
-                    CapturePopupUI.DrawTypedInsectPortrait(r.x + 70, r.y + r.height / 2f, data.insectId, data.rarity, 1f);
+                    InsectVisual.Draw(r.x + 70, r.y + r.height / 2f, 96f, data, pid != null && pid.isShiny, 1f);
 
                 // 캐시 스타일 + textColor만 동적 갱신 (BattleScreenUI 패턴).
                 insectSelectNameStyle.normal.textColor = rc;
@@ -417,7 +417,7 @@ namespace InsectGame.UI
                 ? InsectTypeChart.GetDisplayName(data.primaryType)
                     + (data.secondaryType != InsectElement.None ? "/" + InsectTypeChart.GetDisplayName(data.secondaryType) : "")
                 : "타입 미상";
-            GUI.Label(new Rect(px, py + 80, pw, 44),
+            UIHelper.LabelFit(new Rect(px, py + 80, pw, 44),
                 data != null ? $"{data.displayName} Lv.{pid.level}  ·  {typeLabel} 타입" : pid.insectId,
                 methodNameStyle);
 
@@ -458,7 +458,7 @@ namespace InsectGame.UI
 
                 methodCardNameStyle.normal.textColor = levelOk ? m.themeColor : MethodNameDimCol;
                 GUI.color = Color.white;
-                GUI.Label(new Rect(24, cy + 16, cardW - 380, 44), m.displayName, methodCardNameStyle);
+                UIHelper.LabelFit(new Rect(24, cy + 16, cardW - 380, 44), m.displayName, methodCardNameStyle);
 
                 GUI.Label(new Rect(24, cy + 70, cardW - 380, 90), m.description, methodCardDescStyle);
 
@@ -503,7 +503,7 @@ namespace InsectGame.UI
             InsectSkill[] skills = trainingManager.GetAvailableSkills(method, pid);
 
             learnHeaderStyle.normal.textColor = method.themeColor;
-            GUI.Label(new Rect(px, py + 80, pw, 42), $"{method.displayName}  |  기술별 캔디 비용", learnHeaderStyle);
+            UIHelper.LabelFit(new Rect(px, py + 80, pw, 42), $"{method.displayName}  |  기술별 캔디 비용", learnHeaderStyle);
 
             float listY = py + 128;
             float listH = ph - 138;
@@ -574,7 +574,7 @@ namespace InsectGame.UI
             Color rc = data != null ? UITheme.Instance.GetInsectRarityColor(data.rarity) : Color.gray;
 
             equipNameStyle.normal.textColor = rc;
-            GUI.Label(new Rect(px, py + 80, pw, 42),
+            UIHelper.LabelFit(new Rect(px, py + 80, pw, 42),
                 $"{(data != null ? data.displayName : pid.insectId)} - Skill Slots", equipNameStyle);
 
             float slotY = py + 128;

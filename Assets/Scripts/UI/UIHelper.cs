@@ -199,6 +199,10 @@ namespace InsectGame.UI
         /// 아이템 설명 40px, 보유 곤충 설명 84px, NPC 대사 88px) 한국어는 같은 뜻을 더 긴
         /// 글자수로 쓰는 데다 모바일에선 기준 폰트가 커져 훨씬 쉽게 넘쳤다.
         ///
+        /// <b>`wordWrap`이 꺼져 있으면 가로도 함께 본다.</b> 줄바꿈이 없으면 높이는 폰트 크기와
+        /// 무관하게 늘 한 줄이라 세로 검사만으로는 축소가 절대 발동하지 않고, 대신 넘치는 글자가
+        /// 가로로 잘린다(가운데 정렬이면 앞뒤가 같이 잘려 더 나쁘다).
+        ///
         /// 레이아웃(Rect)은 그대로 두고 **글자만 줄여 맞춘다** — 상자를 키우면 그 아래 요소가
         /// 전부 밀리므로 회귀 범위가 훨씬 커진다. 하한(<see cref="MinReadableFontSize"/>)까지
         /// 줄여도 안 들어가면 거기서 멈춘다.
@@ -253,13 +257,21 @@ namespace InsectGame.UI
                 return cached;
 
             fitContent.text = text;
+            // wordWrap이면 폭은 CalcHeight가 이미 반영한다(줄바꿈으로 흡수). 끄면 줄바꿈이 없어
+            // **높이는 폰트 크기와 무관하게 항상 한 줄**이라 세로 검사만으로는 절대 발동하지 않고,
+            // 넘치는 글자가 가로로 잘린다. 그 경우 폭도 함께 본다.
+            // (RegionMapUI의 Label 헬퍼가 지도 핀을 1줄로 고정하려고 wordWrap을 전역으로 끈 탓에
+            //  지역 설명까지 이 경로를 탄다 — 여유가 7%뿐이라 한 줄만 길어지면 잘린다.)
+            bool checkWidth = !style.wordWrap;
             int size = baseSize;
-            // 한 단계씩 줄인다 — 이분 탐색은 CalcHeight가 폰트 크기에 대해 계단식이라 이득이 적고,
+            // 한 단계씩 줄인다 — 이분 탐색은 측정값이 폰트 크기에 대해 계단식이라 이득이 적고,
             // 실제로 필요한 감소폭이 몇 포인트라 선형이 오히려 측정 횟수가 적다.
             while (size > floor)
             {
                 style.fontSize = size;
-                if (style.CalcHeight(fitContent, width) <= height)
+                bool fitsHeight = style.CalcHeight(fitContent, width) <= height;
+                bool fitsWidth = !checkWidth || style.CalcSize(fitContent).x <= width;
+                if (fitsHeight && fitsWidth)
                     break;
                 size--;
             }

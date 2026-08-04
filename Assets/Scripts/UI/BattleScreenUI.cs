@@ -1090,9 +1090,9 @@ namespace InsectGame.UI
             DrawInsectSprite(enemyX, enemyY, enemyStats.Data, enemyScale, false);
 
             GUI.color = Color.white;
-            GUI.Label(new Rect(playerX - 80, playerY + 42 * playerScale / 3f, 160, 26), playerStats.Data.displayName, playerLabelCache);
+            UIHelper.LabelFit(new Rect(playerX - 80, playerY + 42 * playerScale / 3f, 160, 26), playerStats.Data.displayName, playerLabelCache);
             GUI.Label(new Rect(playerX - 60, playerY + 42 * playerScale / 3f + 24, 120, 18), "내 곤충", playerTagCache);
-            GUI.Label(new Rect(enemyX - 80, enemyY + 38 * enemyScale / 3f, 160, 26), enemyStats.Data.displayName, enemyLabelCache);
+            UIHelper.LabelFit(new Rect(enemyX - 80, enemyY + 38 * enemyScale / 3f, 160, 26), enemyStats.Data.displayName, enemyLabelCache);
             GUI.Label(new Rect(enemyX - 60, enemyY + 38 * enemyScale / 3f + 24, 120, 18), "야생 곤충", enemyTagCache);
         }
 
@@ -1693,7 +1693,7 @@ namespace InsectGame.UI
 
             hpNameStyleCache.normal.textColor = rarityCol;
             GUI.color = Color.white;
-            GUI.Label(new Rect(x + 14, y + 10, w - 110, 32), stats.Data.displayName, hpNameStyleCache);
+            UIHelper.LabelFit(new Rect(x + 14, y + 10, w - 110, 32), stats.Data.displayName, hpNameStyleCache);
 
             GUI.Label(new Rect(x + w - 100, y + 10, 86, 28), $"Lv.{stats.Level}", hpLvStyleCache);
 
@@ -1824,14 +1824,14 @@ namespace InsectGame.UI
                 float slideP = Mathf.Clamp01((introTimer - 0.1f) / 0.4f);
                 float pNameX = Mathf.Lerp(-400, cx - 350, slideP * slideP * (3f - 2f * slideP));
                 introPNameStyleCache.normal.textColor = new Color(pc.r, pc.g, pc.b, slideP);
-                GUI.Label(new Rect(pNameX, cy - 50, 300, 36),
+                UIHelper.LabelFit(new Rect(pNameX, cy - 50, 300, 36),
                     $"{playerStats.Data.displayName} Lv.{playerStats.Level}", introPNameStyleCache);
 
                 // Enemy name slides in from right
                 float slideE = Mathf.Clamp01((introTimer - 0.15f) / 0.4f);
                 float eNameX = Mathf.Lerp(sw + 100, cx + 50, slideE * slideE * (3f - 2f * slideE));
                 introENameStyleCache.normal.textColor = new Color(ec.r, ec.g, ec.b, slideE);
-                GUI.Label(new Rect(eNameX, cy + 56, 300, 36),
+                UIHelper.LabelFit(new Rect(eNameX, cy + 56, 300, 36),
                     $"{enemyStats.Data.displayName} Lv.{enemyStats.Level}", introENameStyleCache);
 
                 // Rarity color bars under names
@@ -1884,7 +1884,7 @@ namespace InsectGame.UI
                 GUI.color = Color.white;
 
                 introEncounterStyleCache.normal.textColor = new Color(ec.r, ec.g, ec.b, showAlpha);
-                GUI.Label(new Rect(cx - 320, cy, 640, 44),
+                UIHelper.LabelFit(new Rect(cx - 320, cy, 640, 44),
                     $"야생 {enemyStats.Data.displayName} Lv.{enemyStats.Level} 등장!", introEncounterStyleCache);
             }
 
@@ -3351,7 +3351,7 @@ namespace InsectGame.UI
 
                 swapNameStyleCache.normal.textColor = available ? rarityCol : new Color(rarityCol.r * 0.4f, rarityCol.g * 0.4f, rarityCol.b * 0.4f);
                 GUI.color = Color.white;
-                GUI.Label(new Rect(bx, btnY + 126, btnW, 28), data.displayName, swapNameStyleCache);
+                UIHelper.LabelFit(new Rect(bx, btnY + 126, btnW, 28), data.displayName, swapNameStyleCache);
 
                 swapInfoStyleCache.normal.textColor = available ? new Color(0.6f, 0.6f, 0.65f) : new Color(0.3f, 0.3f, 0.3f);
                 GUI.Label(new Rect(bx, btnY + 156, btnW, 24), $"Lv.{level}  |  CP {cp}", swapInfoStyleCache);

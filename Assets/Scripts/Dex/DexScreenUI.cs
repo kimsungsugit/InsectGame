@@ -683,7 +683,7 @@ namespace InsectGame.Dex
                 Color insectColor = caught
                     ? UITheme.Instance.GetInsectColor(insect.insectId, insect.rarity)
                     : Color.Lerp(rarityColor, T.textMuted, 0.68f);
-                DrawTinyInsect(iconPanel.center.x, iconPanel.center.y, iconSize * 0.44f, insect.insectId, insectColor);
+                InsectVisual.Draw(iconPanel.center.x, iconPanel.center.y, iconSize * 0.94f, insect, false, 1f);
             }
             else
             {
@@ -993,7 +993,7 @@ namespace InsectGame.Dex
             if (found)
             {
                 detailNameStyleCache.normal.textColor = caught ? rarityCol : CaughtNameCol;
-                GUI.Label(new Rect(x, py, w, 66), ins.displayName, detailNameStyleCache);
+                UIHelper.LabelFit(new Rect(x, py, w, 66), ins.displayName, detailNameStyleCache);
             }
             else
             {
@@ -1177,7 +1177,7 @@ namespace InsectGame.Dex
             {
                 Color ic = UITheme.Instance.GetInsectColor(data.insectId, data.rarity);
                 DrawRoundedRect(new Rect(x + 20f, y + 40f, 74f, 94f), DetailUnknownBg);
-                DrawTinyInsect(x + 57f, y + h / 2f + 4, 34f, data.insectId, ic);
+                InsectVisual.Draw(x + 57f, y + h / 2f + 4, 78f, data, pid != null && pid.isShiny, 1f);
             }
 
             string name = data != null ? data.displayName : pid.insectId;
@@ -1309,120 +1309,120 @@ namespace InsectGame.Dex
             if (id.Contains("butterfly") || id.Contains("luna") || id.Contains("atlas"))
             {
                 GUI.color = dark;
-                GUI.DrawTexture(new Rect(cx - 2 * s, cy - 10 * s, 4 * s, 20 * s), Texture2D.whiteTexture);
+                UIShapes.Part(new Rect(cx - 2 * s, cy - 10 * s, 4 * s, 20 * s), GUI.color);
                 GUI.color = new Color(col.r, col.g, col.b, 0.7f);
-                GUI.DrawTexture(new Rect(cx - 20 * s, cy - 12 * s, 16 * s, 18 * s), Texture2D.whiteTexture);
-                GUI.DrawTexture(new Rect(cx + 4 * s, cy - 12 * s, 16 * s, 18 * s), Texture2D.whiteTexture);
-                GUI.DrawTexture(new Rect(cx - 16 * s, cy + 4 * s, 12 * s, 10 * s), Texture2D.whiteTexture);
-                GUI.DrawTexture(new Rect(cx + 4 * s, cy + 4 * s, 12 * s, 10 * s), Texture2D.whiteTexture);
+                UIShapes.Part(new Rect(cx - 20 * s, cy - 12 * s, 16 * s, 18 * s), GUI.color);
+                UIShapes.Part(new Rect(cx + 4 * s, cy - 12 * s, 16 * s, 18 * s), GUI.color);
+                UIShapes.Part(new Rect(cx - 16 * s, cy + 4 * s, 12 * s, 10 * s), GUI.color);
+                UIShapes.Part(new Rect(cx + 4 * s, cy + 4 * s, 12 * s, 10 * s), GUI.color);
             }
             else if (id.Contains("moth"))
             {
                 GUI.color = col;
-                GUI.DrawTexture(new Rect(cx - 5 * s, cy - 6 * s, 10 * s, 14 * s), Texture2D.whiteTexture);
+                UIShapes.Part(new Rect(cx - 5 * s, cy - 6 * s, 10 * s, 14 * s), GUI.color);
                 GUI.color = new Color(col.r * 0.7f, col.g * 0.6f, col.b * 0.5f, 0.7f);
-                GUI.DrawTexture(new Rect(cx - 20 * s, cy - 10 * s, 18 * s, 16 * s), Texture2D.whiteTexture);
-                GUI.DrawTexture(new Rect(cx + 2 * s, cy - 10 * s, 18 * s, 16 * s), Texture2D.whiteTexture);
+                UIShapes.Part(new Rect(cx - 20 * s, cy - 10 * s, 18 * s, 16 * s), GUI.color);
+                UIShapes.Part(new Rect(cx + 2 * s, cy - 10 * s, 18 * s, 16 * s), GUI.color);
             }
             else if (id.Contains("mantis"))
             {
                 GUI.color = col;
-                GUI.DrawTexture(new Rect(cx - 4 * s, cy - 12 * s, 8 * s, 24 * s), Texture2D.whiteTexture);
+                UIShapes.Part(new Rect(cx - 4 * s, cy - 12 * s, 8 * s, 24 * s), GUI.color);
                 GUI.color = dark;
-                GUI.DrawTexture(new Rect(cx - 7 * s, cy - 16 * s, 14 * s, 8 * s), Texture2D.whiteTexture);
+                UIShapes.Part(new Rect(cx - 7 * s, cy - 16 * s, 14 * s, 8 * s), GUI.color);
                 GUI.color = col;
-                GUI.DrawTexture(new Rect(cx - 16 * s, cy - 8 * s, 10 * s, 3 * s), Texture2D.whiteTexture);
-                GUI.DrawTexture(new Rect(cx + 6 * s, cy - 8 * s, 10 * s, 3 * s), Texture2D.whiteTexture);
+                UIShapes.Part(new Rect(cx - 16 * s, cy - 8 * s, 10 * s, 3 * s), GUI.color);
+                UIShapes.Part(new Rect(cx + 6 * s, cy - 8 * s, 10 * s, 3 * s), GUI.color);
             }
             else if (id.Contains("dragonfly"))
             {
                 GUI.color = col;
-                GUI.DrawTexture(new Rect(cx - 2 * s, cy - 6 * s, 4 * s, 24 * s), Texture2D.whiteTexture);
+                UIShapes.Part(new Rect(cx - 2 * s, cy - 6 * s, 4 * s, 24 * s), GUI.color);
                 GUI.color = new Color(col.r, col.g, col.b, 0.3f);
-                GUI.DrawTexture(new Rect(cx - 18 * s, cy - 8 * s, 14 * s, 5 * s), Texture2D.whiteTexture);
-                GUI.DrawTexture(new Rect(cx + 4 * s, cy - 8 * s, 14 * s, 5 * s), Texture2D.whiteTexture);
+                UIShapes.Part(new Rect(cx - 18 * s, cy - 8 * s, 14 * s, 5 * s), GUI.color);
+                UIShapes.Part(new Rect(cx + 4 * s, cy - 8 * s, 14 * s, 5 * s), GUI.color);
                 GUI.color = dark;
-                GUI.DrawTexture(new Rect(cx - 6 * s, cy - 12 * s, 12 * s, 7 * s), Texture2D.whiteTexture);
+                UIShapes.Part(new Rect(cx - 6 * s, cy - 12 * s, 12 * s, 7 * s), GUI.color);
             }
             else if (id.Contains("bee"))
             {
                 GUI.color = col;
-                GUI.DrawTexture(new Rect(cx - 10 * s, cy - 7 * s, 20 * s, 14 * s), Texture2D.whiteTexture);
+                UIShapes.Part(new Rect(cx - 10 * s, cy - 7 * s, 20 * s, 14 * s), GUI.color);
                 GUI.color = new Color(0, 0, 0, 0.8f);
-                GUI.DrawTexture(new Rect(cx - 9 * s, cy - 2 * s, 18 * s, 2 * s), Texture2D.whiteTexture);
-                GUI.DrawTexture(new Rect(cx - 9 * s, cy + 3 * s, 18 * s, 2 * s), Texture2D.whiteTexture);
+                UIShapes.Part(new Rect(cx - 9 * s, cy - 2 * s, 18 * s, 2 * s), GUI.color);
+                UIShapes.Part(new Rect(cx - 9 * s, cy + 3 * s, 18 * s, 2 * s), GUI.color);
             }
             else if (id.Contains("firefly"))
             {
                 GUI.color = dark;
-                GUI.DrawTexture(new Rect(cx - 8 * s, cy - 7 * s, 16 * s, 12 * s), Texture2D.whiteTexture);
+                UIShapes.Part(new Rect(cx - 8 * s, cy - 7 * s, 16 * s, 12 * s), GUI.color);
                 GUI.color = new Color(0.9f, 1f, 0.3f, 0.8f);
-                GUI.DrawTexture(new Rect(cx - 6 * s, cy + 3 * s, 12 * s, 8 * s), Texture2D.whiteTexture);
+                UIShapes.Part(new Rect(cx - 6 * s, cy + 3 * s, 12 * s, 8 * s), GUI.color);
             }
             else if (id.Contains("stag") || id.Contains("rhinoceros"))
             {
                 GUI.color = col;
-                GUI.DrawTexture(new Rect(cx - 12 * s, cy - 5 * s, 24 * s, 14 * s), Texture2D.whiteTexture);
+                UIShapes.Part(new Rect(cx - 12 * s, cy - 5 * s, 24 * s, 14 * s), GUI.color);
                 GUI.color = dark;
-                GUI.DrawTexture(new Rect(cx - 8 * s, cy - 14 * s, 16 * s, 10 * s), Texture2D.whiteTexture);
+                UIShapes.Part(new Rect(cx - 8 * s, cy - 14 * s, 16 * s, 10 * s), GUI.color);
                 GUI.color = col;
-                GUI.DrawTexture(new Rect(cx - 2 * s, cy - 22 * s, 4 * s, 10 * s), Texture2D.whiteTexture);
+                UIShapes.Part(new Rect(cx - 2 * s, cy - 22 * s, 4 * s, 10 * s), GUI.color);
             }
             else if (id.Contains("cicada"))
             {
                 GUI.color = col;
-                GUI.DrawTexture(new Rect(cx - 10 * s, cy - 6 * s, 20 * s, 14 * s), Texture2D.whiteTexture);
+                UIShapes.Part(new Rect(cx - 10 * s, cy - 6 * s, 20 * s, 14 * s), GUI.color);
                 GUI.color = new Color(col.r, col.g, col.b, 0.3f);
-                GUI.DrawTexture(new Rect(cx - 16 * s, cy - 2 * s, 12 * s, 12 * s), Texture2D.whiteTexture);
-                GUI.DrawTexture(new Rect(cx + 4 * s, cy - 2 * s, 12 * s, 12 * s), Texture2D.whiteTexture);
+                UIShapes.Part(new Rect(cx - 16 * s, cy - 2 * s, 12 * s, 12 * s), GUI.color);
+                UIShapes.Part(new Rect(cx + 4 * s, cy - 2 * s, 12 * s, 12 * s), GUI.color);
             }
             else if (id.Contains("ant"))
             {
                 GUI.color = col;
-                GUI.DrawTexture(new Rect(cx - 4 * s, cy + 1 * s, 8 * s, 10 * s), Texture2D.whiteTexture);
+                UIShapes.Part(new Rect(cx - 4 * s, cy + 1 * s, 8 * s, 10 * s), GUI.color);
                 GUI.color = dark;
-                GUI.DrawTexture(new Rect(cx - 3 * s, cy - 4 * s, 6 * s, 6 * s), Texture2D.whiteTexture);
-                GUI.DrawTexture(new Rect(cx - 5 * s, cy - 12 * s, 10 * s, 8 * s), Texture2D.whiteTexture);
+                UIShapes.Part(new Rect(cx - 3 * s, cy - 4 * s, 6 * s, 6 * s), GUI.color);
+                UIShapes.Part(new Rect(cx - 5 * s, cy - 12 * s, 10 * s, 8 * s), GUI.color);
             }
             else if (id.Contains("cricket"))
             {
                 GUI.color = col;
-                GUI.DrawTexture(new Rect(cx - 7 * s, cy - 4 * s, 14 * s, 12 * s), Texture2D.whiteTexture);
+                UIShapes.Part(new Rect(cx - 7 * s, cy - 4 * s, 14 * s, 12 * s), GUI.color);
                 GUI.color = dark;
-                GUI.DrawTexture(new Rect(cx - 6 * s, cy - 12 * s, 12 * s, 8 * s), Texture2D.whiteTexture);
-                GUI.DrawTexture(new Rect(cx - 14 * s, cy + 4 * s, 8 * s, 3 * s), Texture2D.whiteTexture);
-                GUI.DrawTexture(new Rect(cx + 6 * s, cy + 4 * s, 8 * s, 3 * s), Texture2D.whiteTexture);
+                UIShapes.Part(new Rect(cx - 6 * s, cy - 12 * s, 12 * s, 8 * s), GUI.color);
+                UIShapes.Part(new Rect(cx - 14 * s, cy + 4 * s, 8 * s, 3 * s), GUI.color);
+                UIShapes.Part(new Rect(cx + 6 * s, cy + 4 * s, 8 * s, 3 * s), GUI.color);
             }
             else if (id.Contains("water") || id.Contains("strider"))
             {
                 GUI.color = col;
-                GUI.DrawTexture(new Rect(cx - 3 * s, cy - 8 * s, 6 * s, 18 * s), Texture2D.whiteTexture);
+                UIShapes.Part(new Rect(cx - 3 * s, cy - 8 * s, 6 * s, 18 * s), GUI.color);
                 GUI.color = dark;
-                GUI.DrawTexture(new Rect(cx - 18 * s, cy - 2 * s, 14 * s, 2 * s), Texture2D.whiteTexture);
-                GUI.DrawTexture(new Rect(cx + 4 * s, cy - 2 * s, 14 * s, 2 * s), Texture2D.whiteTexture);
+                UIShapes.Part(new Rect(cx - 18 * s, cy - 2 * s, 14 * s, 2 * s), GUI.color);
+                UIShapes.Part(new Rect(cx + 4 * s, cy - 2 * s, 14 * s, 2 * s), GUI.color);
             }
             else if (id.Contains("diving"))
             {
                 GUI.color = col;
-                GUI.DrawTexture(new Rect(cx - 12 * s, cy - 6 * s, 24 * s, 14 * s), Texture2D.whiteTexture);
+                UIShapes.Part(new Rect(cx - 12 * s, cy - 6 * s, 24 * s, 14 * s), GUI.color);
                 GUI.color = dark;
-                GUI.DrawTexture(new Rect(cx - 8 * s, cy - 12 * s, 16 * s, 8 * s), Texture2D.whiteTexture);
+                UIShapes.Part(new Rect(cx - 8 * s, cy - 12 * s, 16 * s, 8 * s), GUI.color);
             }
             else if (id.Contains("jewel") || id.Contains("scarab") || id.Contains("golden"))
             {
                 Color shim = new Color(Mathf.Min(1, col.r + 0.2f), Mathf.Min(1, col.g + 0.2f), col.b);
                 GUI.color = col;
-                GUI.DrawTexture(new Rect(cx - 12 * s, cy - 6 * s, 24 * s, 14 * s), Texture2D.whiteTexture);
+                UIShapes.Part(new Rect(cx - 12 * s, cy - 6 * s, 24 * s, 14 * s), GUI.color);
                 GUI.color = shim;
-                GUI.DrawTexture(new Rect(cx - 9 * s, cy - 4 * s, 8 * s, 10 * s), Texture2D.whiteTexture);
-                GUI.DrawTexture(new Rect(cx + 1 * s, cy - 4 * s, 8 * s, 10 * s), Texture2D.whiteTexture);
+                UIShapes.Part(new Rect(cx - 9 * s, cy - 4 * s, 8 * s, 10 * s), GUI.color);
+                UIShapes.Part(new Rect(cx + 1 * s, cy - 4 * s, 8 * s, 10 * s), GUI.color);
             }
             else
             {
                 GUI.color = col;
-                GUI.DrawTexture(new Rect(cx - 10 * s, cy - 5 * s, 20 * s, 12 * s), Texture2D.whiteTexture);
+                UIShapes.Part(new Rect(cx - 10 * s, cy - 5 * s, 20 * s, 12 * s), GUI.color);
                 GUI.color = dark;
-                GUI.DrawTexture(new Rect(cx - 6 * s, cy - 12 * s, 12 * s, 8 * s), Texture2D.whiteTexture);
+                UIShapes.Part(new Rect(cx - 6 * s, cy - 12 * s, 12 * s, 8 * s), GUI.color);
             }
 
             GUI.color = Color.white;

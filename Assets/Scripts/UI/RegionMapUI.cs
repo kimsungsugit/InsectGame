@@ -28,6 +28,15 @@ namespace InsectGame.UI
         private string errorMessage = "";
         private float errorTimer;
 
+        // 도감 브라우저 행 텍스트 캐시 — 리전 곤충 수(최대 20여)만큼의 라벨을 **OnGUI 패스마다**
+        // 새로 만들던 자리다(OnGUI는 프레임당 Layout+Repaint+입력마다 돈다).
+        // 둘 다 종 데이터에서만 파생되므로 세션 내내 불변이다:
+        //   - "등급 | CP n" : rarity와 minLevel 기준 CP는 안 바뀐다(보간 + enum 박싱 + CP 재계산이었다)
+        //   - "???"        : displayName 길이에만 의존한다(`new string('?', n)`이었다)
+        // 2026-05-27 캐시 라운드는 GUIStyle 28개를 다뤘고 문자열 할당은 범위 밖이었다.
+        private readonly Dictionary<string, string> dexInfoCache = new Dictionary<string, string>();
+        private readonly Dictionary<int, string> hiddenNameCache = new Dictionary<int, string>();
+
         // 리전 간 공간 인접(길). RegionData.connections는 전부 null이라 여기서 토폴로지 유지. 정적이라 프레임당 할당 없음.
         private static readonly string[,] Connections = {
             {"meadow","pond"}, {"meadow","forest"}, {"meadow","swamp"}, {"meadow","garden"},
@@ -106,7 +115,9 @@ namespace InsectGame.UI
             if (ready) return;
             ready = true;
 
-            discTex = MakeSoftDisc(64);
+            // 소프트 디스크는 UIShapes가 소유한다 — 예전엔 여기와 MinimapUI가 각각 private
+            // 사본을 만들었다(이쪽은 소프트 엣지, 저쪽은 하드 엣지로 미묘하게 다르기까지 했다).
+            discTex = UIShapes.Disc;
 
             titleStyle = Label(40, FontStyle.Bold, TextAnchor.MiddleLeft, Color.white);
             closeStyle = new GUIStyle(GUI.skin.button) { fontSize = 34, fontStyle = FontStyle.Bold };
@@ -147,22 +158,6 @@ namespace InsectGame.UI
             return s;
         }
 
-        // 안티앨리어싱 원형 텍스처 — 외곽 ~1.5px 소프트 엣지(MinimapUI.MakeDisc의 하드엣지판 개선).
-        private static Texture2D MakeSoftDisc(int size)
-        {
-            Texture2D t = new Texture2D(size, size, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp };
-            float c = (size - 1) / 2f;
-            float edge = 1.5f / c;
-            for (int yy = 0; yy < size; yy++)
-                for (int xx = 0; xx < size; xx++)
-                {
-                    float d = Mathf.Sqrt((xx - c) * (xx - c) + (yy - c) * (yy - c)) / c;
-                    float a = Mathf.Clamp01((1f - d) / edge);
-                    t.SetPixel(xx, yy, new Color(1f, 1f, 1f, a));
-                }
-            t.Apply();
-            return t;
-        }
 
         private void OnRaidBossSpawned(InsectEntity entity)
         {
@@ -350,7 +345,7 @@ namespace InsectGame.UI
                 // 이름
                 regionNameStyle.normal.textColor = accessible ? Color.white : new Color(0.7f, 0.7f, 0.72f);
                 GUI.color = Color.white;
-                GUI.Label(new Rect(c.x - Mathf.Max(95f, cr + 10f), c.y - 18f, Mathf.Max(190f, (cr + 10f) * 2f), 36f), r.displayName, regionNameStyle);
+                UIHelper.LabelFit(new Rect(c.x - Mathf.Max(95f, cr + 10f), c.y - 18f, Mathf.Max(190f, (cr + 10f) * 2f), 36f), r.displayName, regionNameStyle);
 
                 // 선택 강조 링
                 if (selectedRegionId == r.regionId)
@@ -364,7 +359,7 @@ namespace InsectGame.UI
                     GUI.DrawTexture(new Rect(c.x - cr, c.y - cr, cr * 2f, cr * 2f), discTex);
                     regionNameStyle.normal.textColor = accessible ? Color.white : new Color(0.7f, 0.7f, 0.72f);
                     GUI.color = Color.white;
-                    GUI.Label(new Rect(c.x - Mathf.Max(95f, cr + 10f), c.y - 18f, Mathf.Max(190f, (cr + 10f) * 2f), 36f), r.displayName, regionNameStyle);
+                    UIHelper.LabelFit(new Rect(c.x - Mathf.Max(95f, cr + 10f), c.y - 18f, Mathf.Max(190f, (cr + 10f) * 2f), 36f), r.displayName, regionNameStyle);
                 }
 
                 // 서브에리어 — 소형 disc(형태 통일) + 클릭 텔레포트
@@ -382,7 +377,7 @@ namespace InsectGame.UI
                         GUI.color = new Color(subCol.r, subCol.g, subCol.b, 0.85f);
                         GUI.DrawTexture(new Rect(sc.x - sr, sc.y - sr, sr * 2f, sr * 2f), discTex);
                         GUI.color = Color.white;
-                        GUI.Label(new Rect(sc.x - 85f, sc.y + sr + 1f, 170f, 22f), sub.displayName, subNameStyle);
+                        UIHelper.LabelFit(new Rect(sc.x - 85f, sc.y + sr + 1f, 170f, 22f), sub.displayName, subNameStyle);
 
                         float hot = Mathf.Max(sr, 14f);
                         if (GUI.Button(new Rect(sc.x - hot, sc.y - hot, hot * 2f, hot * 2f), "", GUIStyle.none))
@@ -484,7 +479,7 @@ namespace InsectGame.UI
 
             infoTitleStyle.normal.textColor = accessible ? region.themeColor : new Color(0.6f, 0.6f, 0.62f);
             GUI.color = Color.white;
-            GUI.Label(new Rect(ix, area.y + 16f, iw, 40f), region.displayName + (current ? " (현재)" : ""), infoTitleStyle);
+            UIHelper.LabelFit(new Rect(ix, area.y + 16f, iw, 40f), region.displayName + (current ? " (현재)" : ""), infoTitleStyle);
 
             float y = area.y + 64f;
             DiffLabel(region.requiredLevel, out string diff, out Color diffCol);
@@ -622,7 +617,7 @@ namespace InsectGame.UI
             }
 
             if (!string.IsNullOrEmpty(region.description))
-                GUI.Label(new Rect(px + 30f, py + 96f, pw - 60f, 42f), region.description, detailDescStyle);
+                UIHelper.LabelFit(new Rect(px + 30f, py + 96f, pw - 60f, 42f), region.description, detailDescStyle);
 
             int total = region.insectIds != null ? region.insectIds.Length : 0;
             int caught = CountCaught(region);
@@ -670,13 +665,13 @@ namespace InsectGame.UI
                 Color rarityCol = UITheme.Instance.GetInsectRarityColor(data.rarity);
                 GUI.color = rarityCol;
                 GUI.DrawTexture(new Rect(rect.x, rect.y, 6f, rect.height), Texture2D.whiteTexture);
-                CapturePopupUI.DrawTypedInsectPortrait(rect.x + 62f, rect.y + rect.height / 2f, data.insectId, data.rarity, 1f);
+                InsectVisual.Draw(rect.x + 62f, rect.y + rect.height / 2f, 96f, data, false, 1f);
 
                 dexNameStyle.normal.textColor = rarityCol;
                 GUI.color = Color.white;
-                GUI.Label(new Rect(rect.x + 120f, rect.y + 18f, rect.width - 200f, 46f), data.displayName, dexNameStyle);
+                UIHelper.LabelFit(new Rect(rect.x + 120f, rect.y + 18f, rect.width - 200f, 46f), data.displayName, dexNameStyle);
                 GUI.Label(new Rect(rect.x + 120f, rect.y + 68f, rect.width - 200f, 42f),
-                    $"{data.rarity}  |  CP {PlayerInsectCombatPower.CalculateBasePreview(data, data.minLevel)}", dexInfoStyle);
+                    DexInfoLine(data), dexInfoStyle);
                 GUI.Label(new Rect(rect.x + rect.width - 72f, rect.y + 22f, 60f, 60f), "V", dexCheckStyle);
             }
             else
@@ -687,10 +682,34 @@ namespace InsectGame.UI
                 GUI.DrawTexture(new Rect(rect.x + 24f, rect.y + rect.height / 2f - 34f, 68f, 68f), Texture2D.whiteTexture);
                 GUI.color = Color.white;
                 GUI.Label(new Rect(rect.x + 24f, rect.y + rect.height / 2f - 34f, 68f, 68f), "?", dexUnknownStyle);
-                string hint = data != null ? new string('?', data.displayName.Length) : "???";
+                string hint = HiddenName(data);
                 GUI.Label(new Rect(rect.x + 120f, rect.y + 26f, rect.width - 200f, 46f), hint, dexHiddenStyle);
                 GUI.Label(new Rect(rect.x + 120f, rect.y + 74f, rect.width - 200f, 42f), "아직 포획하지 않음", dexNotCaughtStyle);
             }
+        }
+
+        /// <summary>"등급  |  CP n" — 종 데이터에서만 파생되므로 insectId로 캐시한다.</summary>
+        private string DexInfoLine(InsectData data)
+        {
+            if (data == null) return string.Empty;
+            string key = data.insectId ?? data.displayName ?? string.Empty;
+            if (dexInfoCache.TryGetValue(key, out string cached)) return cached;
+
+            string line = $"{data.rarity}  |  CP {PlayerInsectCombatPower.CalculateBasePreview(data, data.minLevel)}";
+            dexInfoCache[key] = line;
+            return line;
+        }
+
+        /// <summary>미포획 곤충의 "???" — 이름 길이에만 의존하므로 길이로 캐시한다.</summary>
+        private string HiddenName(InsectData data)
+        {
+            int len = data != null && data.displayName != null ? data.displayName.Length : 3;
+            if (len <= 0) len = 3;
+            if (hiddenNameCache.TryGetValue(len, out string cached)) return cached;
+
+            string hint = new string('?', len);
+            hiddenNameCache[len] = hint;
+            return hint;
         }
 
         private int CountCaught(RegionData region)

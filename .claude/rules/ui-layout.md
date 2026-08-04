@@ -134,9 +134,15 @@ GUI.Label(new Rect(x, y, w, 84f), data.description, descStyle);
 UIHelper.LabelFit(new Rect(x, y, w, 84f), data.description, descStyle);
 ```
 
-`LabelFit`은 `CalcHeight`로 재서 들어갈 때까지 폰트를 한 단계씩 줄이고,
-`UIHelper.MinReadableFontSize`(18)에서 멈춘다. 결과는 (텍스트, 폭, 높이, 기준 폰트)로
-캐시되므로 적중 시 측정이 없다. 호출부의 공유 스타일은 그려진 뒤 폰트 크기가 원복된다.
+`LabelFit`은 들어갈 때까지 폰트를 한 단계씩 줄이고 `UIHelper.MinReadableFontSize`(18)에서
+멈춘다. 결과는 (텍스트, 폭, 높이, 기준 폰트)로 캐시되므로 적중 시 측정이 없다.
+호출부의 공유 스타일은 그려진 뒤 폰트 크기가 원복된다.
+
+**`wordWrap`을 끈 라벨은 세로가 아니라 가로로 잘린다.** 줄바꿈이 없으면 높이는 폰트 크기와
+무관하게 늘 한 줄이라 세로 검사만으로는 축소가 절대 발동하지 않는다. `LabelFit`은 이 경우
+`CalcSize().x`도 함께 보므로 그대로 쓰면 된다 — 두 방향 모두 이 헬퍼 하나로 덮인다.
+(가운데 정렬이면 앞뒤가 같이 잘려 더 나쁘다. `RegionMapUI`의 `Label()` 헬퍼가 지도 핀을
+1줄로 고정하려고 wordWrap을 전역으로 꺼서 지역 설명까지 이 경로를 탄다.)
 
 **상자를 키우는 쪽이 맞는 자리라면** `UIHelper.MeasureWrappedHeight(style, text, width)`로
 필요한 높이를 받아 레이아웃을 늘린다(`TutorialQuestUI`의 퀘스트 설명이 그 형태다).
@@ -146,6 +152,17 @@ UIHelper.LabelFit(new Rect(x, y, w, 84f), data.description, descStyle);
 한국어는 같은 뜻을 더 긴 글자수로 쓰고 모바일에선 기준 폰트가 커져서, 데스크톱 Game View에서
 멀쩡하던 라벨이 기기에서 잘리는 일이 반복됐다(도감 설명·아이템 설명·보유 곤충 설명·NPC 대사·
 팀 슬롯 이름·가이드 배너).
+
+### `text_fit_lint.py`가 잡는다
+
+```
+python -X utf8 .claude/scripts/text_fit_lint.py
+```
+
+**텍스트 길이를 데이터가 정하는데 상자가 고정**인 자리만 잡는다(`.description`/`.displayName`/
+`lines[…]` 등). 처음엔 "래핑인데 두 줄이 안 들어감"으로 잡아 봤더니 **247건**이 나왔다 —
+한 줄 라벨은 원래 높이가 fontSize의 1.2배쯤이라 정상 라벨을 전부 잡는다. 텍스트 출처를
+좁히고 나서야 31건이 됐고, 그 31곳이 전부 진짜였다. `ci_check.py`의 `REPO_CHECKS`에 있다.
 
 ## 구독은 `OnEnable`에서 되살린다 — `subscription_lint.py`가 잡는다
 

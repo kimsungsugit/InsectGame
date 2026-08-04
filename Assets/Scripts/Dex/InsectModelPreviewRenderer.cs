@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using InsectGame.Data;
 using InsectGame.Spawning;
 using UnityEngine;
@@ -41,17 +42,142 @@ namespace InsectGame.Dex
             return (currentId == data.insectId && currentShiny == wantShiny) ? currentRT : null;
         }
 
+        // ── 목록·타일용 썸네일 캐시 ──
+        //
+        // 상세 모달(GetPreview)은 512px 단일 RT를 회전까지 시키지만, 목록은 종이 여럿이라
+        // 그 구조로는 못 쓴다. 종별 소형 RT를 LRU로 들고 있는다.
+        //
+        // **프레임당 1개만 렌더한다.** RenderInsect는 InsectEntity를 통째로 만들었다 파괴하므로
+        // 도감을 여는 순간 20종을 한 프레임에 처리하면 확실히 튄다. 준비 전에는 호출부가
+        // 2D 폴백(InsectVisual)을 그린다.
+        private const int ThumbSize = 192;      // 타일 아이콘이 열 수 2~6에 따라 129~396px
+        private const int ThumbCacheMax = 24;   // 24 × 192² × 4B ≈ 3.5MB
+        private const float ThumbAngle = 150f;  // 상세 기본 각도와 같게 — 두 화면의 그림이 어긋나지 않게
+
+        private readonly Dictionary<string, RenderTexture> thumbs = new Dictionary<string, RenderTexture>();
+        private readonly List<string> thumbOrder = new List<string>();   // 앞이 가장 오래됨(LRU)
+        private readonly List<InsectData> thumbQueue = new List<InsectData>();
+        private readonly List<bool> thumbQueueShiny = new List<bool>();
+
+        internal static string ThumbKey(string insectId, bool shiny)
+        {
+            return shiny ? insectId + "*" : insectId;
+        }
+
+        /// <summary>
+        /// LRU 갱신 — <paramref name="key"/>를 목록 맨 뒤(가장 최근)로 옮긴다.
+        /// RenderTexture와 무관한 순수 정책이라 테스트가 직접 부른다.
+        /// </summary>
+        internal static void TouchKey(List<string> order, string key)
+        {
+            if (order == null || string.IsNullOrEmpty(key)) return;
+            int i = order.IndexOf(key);
+            if (i >= 0) order.RemoveAt(i);
+            order.Add(key);
+        }
+
+        /// <summary>
+        /// 상한을 넘긴 만큼 **가장 오래된 것부터** 목록에서 떼어 돌려준다(호출부가 그 RT를 해제한다).
+        /// 상한 이하면 빈 목록. 순수 함수 — 여기가 틀리면 캐시가 무한히 자라거나 방금 쓴 걸 버린다.
+        /// </summary>
+        internal static List<string> EvictKeys(List<string> order, int cap)
+        {
+            List<string> evicted = new List<string>();
+            if (order == null || cap < 0) return evicted;
+            while (order.Count > cap)
+            {
+                evicted.Add(order[0]);
+                order.RemoveAt(0);
+            }
+            return evicted;
+        }
+
+        /// <summary>
+        /// 목록·타일용 썸네일. 캐시에 있으면 즉시 돌려주고, 없으면 렌더 큐에 넣고 null을 낸다
+        /// (호출부는 그동안 2D 폴백을 그린다).
+        /// </summary>
+        public Texture GetThumbnail(InsectData data, bool shiny)
+        {
+            if (data == null || string.IsNullOrEmpty(data.insectId)) return null;
+
+            string key = ThumbKey(data.insectId, shiny);
+            if (thumbs.TryGetValue(key, out RenderTexture rt) && rt != null)
+            {
+                Touch(key);
+                return rt;
+            }
+
+            // 캡처 람다(List.Exists)를 쓰지 않는다 — 이 메서드는 OnGUI에서 항목마다 불리므로
+            // 클로저가 매 패스 할당된다(같은 형태를 RegionMapUI에서 방금 걷어냈다).
+            for (int i = 0; i < thumbQueue.Count; i++)
+            {
+                if (thumbQueue[i] != null && thumbQueue[i].insectId == data.insectId
+                    && thumbQueueShiny[i] == shiny)
+                    return null;
+            }
+            thumbQueue.Add(data);
+            thumbQueueShiny.Add(shiny);
+            return null;
+        }
+
+        private void Touch(string key)
+        {
+            TouchKey(thumbOrder, key);
+        }
+
         private void Update()
         {
-            if (requestData == null) return;
-            // (id, angle, shiny) 변화 없으면 재렌더 안 함 — 회전/선택/이로치 토글 시에만 1회 렌더
-            if (currentId == requestData.insectId && currentShiny == requestShiny
-                && Mathf.Approximately(currentAngle, requestAngle)) return;
+            // 상세 모달이 우선 — 사용자가 보고 있는 큰 그림이 먼저 나와야 한다.
+            if (requestData != null
+                && !(currentId == requestData.insectId && currentShiny == requestShiny
+                     && Mathf.Approximately(currentAngle, requestAngle)))
+            {
+                EnsureRig();
+                RenderInsect(requestData, requestAngle, requestShiny);
+                currentId = requestData.insectId;
+                currentAngle = requestAngle;
+                currentShiny = requestShiny;
+                return;   // 같은 프레임에 썸네일까지 렌더하지 않는다
+            }
+
+            RenderOneQueuedThumbnail();
+        }
+
+        private void RenderOneQueuedThumbnail()
+        {
+            if (thumbQueue.Count == 0) return;
+
+            InsectData data = thumbQueue[0];
+            bool shiny = thumbQueueShiny[0];
+            thumbQueue.RemoveAt(0);
+            thumbQueueShiny.RemoveAt(0);
+            if (data == null || string.IsNullOrEmpty(data.insectId)) return;
+
+            string key = ThumbKey(data.insectId, shiny);
+            if (thumbs.ContainsKey(key)) { Touch(key); return; }
+
             EnsureRig();
-            RenderInsect(requestData, requestAngle, requestShiny);
-            currentId = requestData.insectId;
-            currentAngle = requestAngle;
-            currentShiny = requestShiny;
+            RenderTexture rt = new RenderTexture(ThumbSize, ThumbSize, 16, RenderTextureFormat.ARGB32)
+            {
+                antiAliasing = 2
+            };
+            rt.Create();
+            RenderInsectTo(data, ThumbAngle, shiny, rt);
+
+            thumbs[key] = rt;
+            Touch(key);
+            EvictOverflow();
+        }
+
+        private void EvictOverflow()
+        {
+            List<string> evicted = EvictKeys(thumbOrder, ThumbCacheMax);
+            for (int i = 0; i < evicted.Count; i++)
+            {
+                if (thumbs.TryGetValue(evicted[i], out RenderTexture rt) && rt != null)
+                    rt.Release();
+                thumbs.Remove(evicted[i]);
+            }
         }
 
         private void EnsureRig()
@@ -86,6 +212,15 @@ namespace InsectGame.Dex
 
         private void RenderInsect(InsectData data, float yAngle, bool wantShiny)
         {
+            RenderInsectTo(data, yAngle, wantShiny, null);
+        }
+
+        /// <summary>
+        /// 모델을 만들어 <paramref name="target"/>에 렌더한다. null이면 상세용 단일 RT(currentRT).
+        /// 상세와 썸네일이 <b>같은 경로</b>를 타야 프레이밍·조명·머티리얼 정리가 어긋나지 않는다.
+        /// </summary>
+        private void RenderInsectTo(InsectData data, float yAngle, bool wantShiny, RenderTexture target)
+        {
             GameObject modelGo = new GameObject("InsectPreviewModel");
             modelGo.transform.position = RigOrigin;
             modelGo.transform.rotation = Quaternion.Euler(0f, yAngle, 0f);
@@ -104,7 +239,7 @@ namespace InsectGame.Dex
                 currentRT.antiAliasing = 2;
                 currentRT.Create();
             }
-            previewCam.targetTexture = currentRT;
+            previewCam.targetTexture = target != null ? target : currentRT;
             previewCam.Render();
             previewCam.targetTexture = null;
 
@@ -144,6 +279,14 @@ namespace InsectGame.Dex
         {
             if (currentRT != null) currentRT.Release();
             currentRT = null;
+
+            // 썸네일 캐시도 전부 해제한다 — 예전엔 RT 하나만 풀었다.
+            foreach (KeyValuePair<string, RenderTexture> pair in thumbs)
+                if (pair.Value != null) pair.Value.Release();
+            thumbs.Clear();
+            thumbOrder.Clear();
+            thumbQueue.Clear();
+            thumbQueueShiny.Clear();
         }
     }
 }
