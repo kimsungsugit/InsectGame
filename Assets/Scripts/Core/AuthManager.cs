@@ -243,9 +243,23 @@ namespace InsectGame.Core
         {
             if (!IsMasterAccount) return;
 
-            // 모든 지역 해금 + 수문장 격파
-            PlayerPrefs.SetString(SaveScope.PrefsKey("InsectGame.UnlockedRegions"), "meadow,pond,forest,swamp,mountain,garden,ruins");
-            PlayerPrefs.SetString(SaveScope.PrefsKey("InsectGame.DefeatedGuardians"), "meadow,pond,forest,swamp,mountain,garden");
+            // 모든 지역 해금 + 수문장 격파 — **RegionDefinitions에서 파생한다.**
+            // 옛은 "meadow,pond,forest,swamp,mountain,garden,ruins"를 문자열로 박아 뒀는데,
+            // 리전을 추가할 때마다 조용히 낡는다(2막 6지역 + ruins 수문장 신설에서 실제로 어긋났다).
+            // 마스터는 RegionManager.IsRegionAccessible의 우회로 이동 자체는 되지만, 이 목록이
+            // 낡으면 지도에 수문장이 미격파로 남고 필드에 스폰된다 — 진행을 건너뛰라고 있는 계정인데.
+            var allRegions = RegionDefinitions.CreateAll();
+            var unlocked = new System.Collections.Generic.List<string>(allRegions.Length);
+            var guardians = new System.Collections.Generic.List<string>(allRegions.Length);
+            foreach (var r in allRegions)
+            {
+                if (r == null || string.IsNullOrEmpty(r.regionId)) continue;
+                unlocked.Add(r.regionId);
+                // 수문장이 없는 리전은 격파 목록에 넣지 않는다(격파할 대상 자체가 없다).
+                if (!string.IsNullOrEmpty(r.guardianInsectId)) guardians.Add(r.regionId);
+            }
+            PlayerPrefs.SetString(SaveScope.PrefsKey("InsectGame.UnlockedRegions"), string.Join(",", unlocked));
+            PlayerPrefs.SetString(SaveScope.PrefsKey("InsectGame.DefeatedGuardians"), string.Join(",", guardians));
 
             // 무한 재화
             PlayerPrefs.SetInt("player_coins", 999999);

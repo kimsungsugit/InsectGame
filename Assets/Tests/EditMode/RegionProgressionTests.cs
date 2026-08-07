@@ -192,6 +192,42 @@ namespace InsectGame.Tests
         }
 
         [Test]
+        public void MasterPrivileges_DeriveRegionLists_NotHardcoded()
+        {
+            // AuthManager.ApplyMasterPrivileges는 마스터 계정에 "전 지역 해금 + 전 수문장 격파"를
+            // 준다. 그 목록을 문자열로 박아 두면 리전을 추가할 때마다 조용히 낡는다 —
+            // 2막 6지역을 얹었을 때 실제로 어긋나 마스터 지도에 수문장이 미격파로 남았다.
+            // 목록이 RegionDefinitions에서 파생되는지를 소스에서 확인한다.
+            string path = System.IO.Path.Combine(
+                UnityEngine.Application.dataPath, "Scripts/Core/AuthManager.cs");
+            Assert.IsTrue(System.IO.File.Exists(path), "AuthManager.cs를 못 찾았다");
+            string src = System.IO.File.ReadAllText(path);
+
+            // **선언을 찾아야 한다** — 그냥 이름으로 찾으면 위쪽 호출부가 먼저 잡혀
+            // 엉뚱한 구간을 본문으로 읽는다(이 테스트를 처음 쓸 때 실제로 그렇게 헛짚었다).
+            int idx = src.IndexOf("private void ApplyMasterPrivileges");
+            Assert.Greater(idx, -1,
+                "ApplyMasterPrivileges 선언을 못 찾았다 — 시그니처가 바뀌었으면 이 테스트도 고칠 것");
+            // 본문 구간 = 선언부터 다음 멤버 선언 직전까지.
+            int end = src.IndexOf("\n        private ", idx + 30);
+            int endPub = src.IndexOf("\n        public ", idx + 30);
+            if (endPub > -1 && (end < 0 || endPub < end)) end = endPub;
+            string body = end > idx ? src.Substring(idx, end - idx) : src.Substring(idx);
+
+            Assert.IsTrue(body.Contains("RegionDefinitions.CreateAll()"),
+                "마스터 특권의 리전 목록이 RegionDefinitions에서 파생되지 않는다 — 하드코딩은 반드시 낡는다");
+
+            // 주석은 걷어내고 코드만 본다 — 왜 하드코딩을 걷어냈는지 설명하는 주석에는
+            // 옛 문자열이 그대로 인용돼 있어서, 그걸 위반으로 읽으면 설명을 못 남긴다.
+            string codeOnly = System.Text.RegularExpressions.Regex.Replace(body, @"//[^\n]*", "");
+            foreach (RegionData r in RegionDefinitions.CreateAll())
+            {
+                Assert.IsFalse(codeOnly.Contains($"\"{r.regionId},"),
+                    $"마스터 특권에 리전 ID '{r.regionId}'가 문자열로 박혀 있다");
+            }
+        }
+
+        [Test]
         public void SubAreaIds_AreGloballyUnique()
         {
             // SubAreaEnter 스토리 트리거가 subAreaId 하나로 매칭하므로 중복되면 엉뚱한 리전에서 발화한다.
