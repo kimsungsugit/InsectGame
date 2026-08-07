@@ -53,7 +53,36 @@ namespace InsectGame.Core
 
         private void Initialize()
         {
-            allOutfits = new OutfitItem[]
+            allOutfits = BuildCatalog();
+
+            outfitLookup = new Dictionary<string, OutfitItem>();
+            foreach (OutfitItem item in allOutfits)
+            {
+                outfitLookup[item.itemId] = item;
+            }
+
+            equippedItems = new Dictionary<OutfitSlot, string>();
+            ownedItems = new HashSet<string>();
+
+            // 기본 제공 아이템 소유 처리
+            foreach (OutfitItem item in allOutfits)
+            {
+                if (item.unlockedByDefault)
+                {
+                    ownedItems.Add(item.itemId);
+                }
+            }
+        }
+
+        /// <summary>
+        /// 의상 카탈로그 95벌. MonoBehaviour 상태에 손대지 않는 순수 팩토리다 —
+        /// EditMode 테스트가 씬 없이 이걸 읽어 <see cref="OutfitShapeLibrary"/>의 레시피가
+        /// 실재하지 않는 itemId를 물고 있는지 검증한다(옛 2D 카드의 `hat_beanie`처럼
+        /// 존재하지 않는 id를 분기하던 dead code를 구조적으로 차단).
+        /// </summary>
+        internal static OutfitItem[] BuildCatalog()
+        {
+            return new OutfitItem[]
             {
                 // ── Hat (6) ──
                 MakeItem("hat_cap", "탐험가 캡", "기본 탐험용 모자", OutfitSlot.Hat,
@@ -389,24 +418,6 @@ namespace InsectGame.Core
                     new Color(0.6f, 0.6f, 0.65f), new Color(0.5f, 0.5f, 0.55f), 400,
                     new OutfitStatBonus { atkBonus = 0.02f, defBonus = 0.01f }),
             };
-
-            outfitLookup = new Dictionary<string, OutfitItem>();
-            foreach (OutfitItem item in allOutfits)
-            {
-                outfitLookup[item.itemId] = item;
-            }
-
-            equippedItems = new Dictionary<OutfitSlot, string>();
-            ownedItems = new HashSet<string>();
-
-            // 기본 제공 아이템 소유 처리
-            foreach (OutfitItem item in allOutfits)
-            {
-                if (item.unlockedByDefault)
-                {
-                    ownedItems.Add(item.itemId);
-                }
-            }
         }
 
         private static OutfitItem MakeItem(string id, string name, string desc, OutfitSlot slot,
@@ -548,9 +559,27 @@ namespace InsectGame.Core
 
         // ── 캐릭터 적용 ──
 
+        // GameObject.Find는 씬 전체 스캔이라 OutfitChanged마다 부르면 아깝다. 플레이어는 영구 객체다.
+        private GameObject cachedPlayer;
+
+        /// <summary>실제 플레이어에 현재 장착을 적용한다.</summary>
         public void ApplyToCharacter()
         {
-            GameObject player = GameObject.Find("Player");
+            if (cachedPlayer == null) cachedPlayer = GameObject.Find("Player");
+            ApplyToCharacter(cachedPlayer, null);
+        }
+
+        /// <summary>
+        /// 임의의 캐릭터 루트에 임의의 조합을 입힌다. <paramref name="loadout"/>이 null이면 현재 장착.
+        /// 미리보기 마네킹과 입어보기(try-on)가 이 오버로드를 쓴다.
+        ///
+        /// 색은 <c>renderer.material</c>(인스턴스)로 칠한다 — Body/ArmL/ArmR이 같은 슬롯 머티리얼을
+        /// 공유하는데 outer_none일 때만 몸통과 팔의 색이 갈리기 때문이다. sharedMaterial로 칠하면
+        /// 마지막 값이 이겨 팔이 피부색으로 안 돌아온다. 마네킹은 풀링되어 한 개만 살아있으므로
+        /// 인스턴스 머티리얼 수는 렌더러 수(~20)로 고정된다.
+        /// </summary>
+        public void ApplyToCharacter(GameObject player, OutfitLoadout loadout)
+        {
             if (player == null) return;
 
             // 안전한 default 색상 (의상 미장착 시에도 캐릭터가 보이도록)
@@ -560,17 +589,19 @@ namespace InsectGame.Core
             Color defaultBoot = new Color(0.35f, 0.22f, 0.1f);
             Color skinColor = new Color(0.92f, 0.78f, 0.62f);
 
-            // 모자
-            OutfitItem hat = GetEquipped(OutfitSlot.Hat);
+            // 모자 — 색을 먼저 적용해 Cap/CapBrim을 되살린 뒤, 레시피가 있으면 그때 다시 숨긴다.
+            // 순서가 뒤집히면 왕관 → 탐험가 캡으로 갈아입을 때 Cap이 숨겨진 채 남아 맨머리가 된다.
+            OutfitItem hat = Resolve(loadout, OutfitSlot.Hat);
             ApplyPartColor(player, "Cap", hat != null ? hat.primaryColor : Color.clear);
             ApplyPartColor(player, "CapBrim", hat != null ? hat.primaryColor : Color.clear);
+            ApplyShapeRecipe(player, OutfitSlot.Hat, hat);
 
             // 상의
-            OutfitItem top = GetEquipped(OutfitSlot.Top);
+            OutfitItem top = Resolve(loadout, OutfitSlot.Top);
             ApplyPartColor(player, "Shirt", top != null ? top.primaryColor : defaultShirt);
 
             // 겉옷: outer_none이면 Body는 셔츠 색, 팔은 피부색으로 (몸통/팔이 사라지지 않게)
-            OutfitItem outer = GetEquipped(OutfitSlot.Outerwear);
+            OutfitItem outer = Resolve(loadout, OutfitSlot.Outerwear);
             Color bodyCol, armCol;
             if (outer == null)
             {
@@ -589,180 +620,65 @@ namespace InsectGame.Core
             ApplyPartColor(player, "Body", bodyCol);
             ApplyPartColor(player, "ArmL", armCol);
             ApplyPartColor(player, "ArmR", armCol);
+            ApplyShapeRecipe(player, OutfitSlot.Outerwear, outer);   // 망토·로브 자락 등 덧붙임 파츠
 
             // 하의
-            OutfitItem bot = GetEquipped(OutfitSlot.Bottom);
+            OutfitItem bot = Resolve(loadout, OutfitSlot.Bottom);
             ApplyPartColor(player, "LegL", bot != null ? bot.primaryColor : defaultPants);
             ApplyPartColor(player, "LegR", bot != null ? bot.primaryColor : defaultPants);
 
             // 신발
-            OutfitItem shoe = GetEquipped(OutfitSlot.Shoes);
+            OutfitItem shoe = Resolve(loadout, OutfitSlot.Shoes);
             ApplyPartColor(player, "BootL", shoe != null ? shoe.primaryColor : defaultBoot);
             ApplyPartColor(player, "BootR", shoe != null ? shoe.primaryColor : defaultBoot);
 
             // 가방
-            OutfitItem bag = GetEquipped(OutfitSlot.Backpack);
-            ApplyPartColor(player, "Backpack", bag != null ? bag.primaryColor : Color.clear);
+            OutfitItem bag = Resolve(loadout, OutfitSlot.Backpack);
+            Color bagCol = bag != null ? bag.primaryColor : Color.clear;
+            ApplyPartColor(player, "Backpack", bagCol);
+            // 어깨끈은 Backpack의 자식이라 부모가 꺼지면 같이 사라진다. 색만 따로 이어준다 —
+            // 옛 코드가 이 한 줄을 빠뜨려 배낭을 어떤 색으로 바꿔도 어깨끈은 늘 초기 갈색이었다.
+            // 알파 0(bag_none)일 때 부르지 않는 게 중요하다: 그러면 끈이 SetActive(false)로 남아
+            // 다음에 가방을 메도 끈만 사라진 채로 보인다.
+            if (bagCol.a >= 0.01f) ApplyPartColor(player, "BackpackStrap", OutfitShapeLibrary.Darken(bagCol));
+            ApplyShapeRecipe(player, OutfitSlot.Backpack, bag);
 
-            // 도구 (종류별 형태 변경)
-            OutfitItem tool = GetEquipped(OutfitSlot.Tool);
+            // 도구 (종류별 형태 변경) — 색은 ApplyPartColor가, 형태는 OutfitShapeLibrary 레시피가 맡는다.
+            OutfitItem tool = Resolve(loadout, OutfitSlot.Tool);
             ApplyPartColor(player, "NetHandle", tool != null ? tool.primaryColor : Color.clear);
             ApplyPartColor(player, "NetRing", tool != null ? tool.secondaryColor : Color.clear);
-            ApplyToolShape(player, tool);
+            ApplyShapeRecipe(player, OutfitSlot.Tool, tool);
+
+            // 악세서리 — 전량 레시피다. 옛 PlayerVisualBuilder.ApplyAccessory는 미리 만든 4노드 중
+            // 하나만 켜는 방식이라 15종 중 8종(날개·오라·후광·스카프 등)이 전부 가슴팍 큐브였다.
+            ApplyShapeRecipe(player, OutfitSlot.Accessory, Resolve(loadout, OutfitSlot.Accessory));
         }
 
-        // 도구별 mesh 캐싱 — 옛은 handle/ring이 항상 Cylinder로 어떤 도구든 막대기 모양.
-        // PrimitiveType별 sharedMesh를 1회 추출 후 재사용 (CreatePrimitive 매번 호출 회피).
-        private static System.Collections.Generic.Dictionary<PrimitiveType, Mesh> primMeshCache;
-
-        private static Mesh GetPrimMesh(PrimitiveType type)
+        /// <summary>로드아웃이 있으면 그쪽 itemId를, 없으면 실제 장착을 쓴다.</summary>
+        private OutfitItem Resolve(OutfitLoadout loadout, OutfitSlot slot)
         {
-            if (primMeshCache == null)
-                primMeshCache = new System.Collections.Generic.Dictionary<PrimitiveType, Mesh>();
-            if (!primMeshCache.TryGetValue(type, out Mesh m))
-            {
-                GameObject temp = GameObject.CreatePrimitive(type);
-                m = temp.GetComponent<MeshFilter>().sharedMesh;
-                // collider 제거 + GameObject destroy (mesh asset은 built-in이라 생존)
-                UnityEngine.Object.Destroy(temp.GetComponent<Collider>());
-                UnityEngine.Object.Destroy(temp);
-                primMeshCache[type] = m;
-            }
-            return m;
+            if (loadout == null) return GetEquipped(slot);
+
+            string id = loadout.Get(slot);
+            if (string.IsNullOrEmpty(id)) return null;
+            return outfitLookup.TryGetValue(id, out OutfitItem item) ? item : null;
         }
 
-        private static void SetMesh(Transform t, PrimitiveType type)
+        /// <summary>
+        /// 슬롯의 형태 레시피를 적용한다. 레시피가 없으면 이 슬롯이 남긴 spawn 파츠만 정리하므로
+        /// <b>레시피 유무와 무관하게 매번 불러야 한다</b> — 안 그러면 왕관을 벗어도 뿔이 남는다.
+        /// </summary>
+        private static void ApplyShapeRecipe(GameObject player, OutfitSlot slot, OutfitItem item)
         {
-            MeshFilter mf = t.GetComponent<MeshFilter>();
-            if (mf != null) mf.sharedMesh = GetPrimMesh(type);
-        }
+            Color primary = item != null ? item.primaryColor : Color.clear;
+            Color secondary = item != null ? item.secondaryColor : Color.clear;
 
-        private void ApplyToolShape(GameObject player, OutfitItem tool)
-        {
-            Transform handle = FindDeep(player.transform, "NetHandle");
-            Transform ring = FindDeep(player.transform, "NetRing");
-            if (handle == null || ring == null) return;
+            // 미장착(null)과 *_none(알파 0)은 형태도 없다 — ApplyPartColor가 이미 노드를 껐다.
+            OutfitRecipe recipe = null;
+            if (item != null && primary.a >= 0.01f)
+                OutfitShapeLibrary.TryGet(slot, item.itemId ?? "", out recipe);
 
-            string id = tool != null ? tool.itemId ?? "" : "";
-
-            // 손 위치 기준 — PlayerVisualBuilder HandR localPosition (0.29, 0.52, 0)와 일치시켜
-            // 도구가 손에 붙도록. 치비 비례 적용으로 손 높이가 0.95→0.52로 내려옴(HandR과 동기 필수).
-            const float hx = 0.29f;
-            const float hy = 0.52f;
-            if (id.Contains("gun") || id.Contains("blaster") || id.Contains("tranq"))
-            {
-                // 총: 박스형 본체 + 원통 총구 — handle Cube, ring Cylinder
-                SetMesh(handle, PrimitiveType.Cube);
-                SetMesh(ring, PrimitiveType.Cylinder);
-                handle.localPosition = new Vector3(hx, hy, 0.18f);
-                handle.localScale = new Vector3(0.08f, 0.05f, 0.22f);
-                handle.localRotation = Quaternion.identity;
-                ring.localPosition = new Vector3(hx, hy, 0.32f);
-                ring.localScale = new Vector3(0.06f, 0.06f, 0.04f);
-                ring.localRotation = Quaternion.Euler(90f, 0f, 0f);
-            }
-            else if (id.Contains("wand"))
-            {
-                // 지팡이: 가는 막대 + 구체 오브
-                SetMesh(handle, PrimitiveType.Cylinder);
-                SetMesh(ring, PrimitiveType.Sphere);
-                handle.localPosition = new Vector3(hx, hy + 0.18f, 0.05f);
-                handle.localScale = new Vector3(0.03f, 0.40f, 0.03f);
-                handle.localRotation = Quaternion.Euler(10f, 0f, -15f);
-                ring.localPosition = new Vector3(hx + 0.08f, hy + 0.58f, 0.05f);
-                ring.localScale = new Vector3(0.10f, 0.10f, 0.10f);
-                ring.localRotation = Quaternion.identity;
-            }
-            else if (id.Contains("lasso"))
-            {
-                // 올가미: 짧은 막대 + 고리(디스크). net과 동일 edge-on 결함(옛 rot(0,0,70)은 법선이
-                // 대부분 ±X) → 고리를 X축 -20°로 눕혀 부감 카메라에서 또렷한 원으로 보이게.
-                SetMesh(handle, PrimitiveType.Cylinder);
-                SetMesh(ring, PrimitiveType.Cylinder);
-                handle.localPosition = new Vector3(hx, hy + 0.13f, 0f);
-                handle.localScale = new Vector3(0.04f, 0.25f, 0.04f);
-                handle.localRotation = Quaternion.Euler(20f, 0f, -12f);
-                ring.localPosition = new Vector3(hx + 0.06f, hy + 0.42f, 0.06f);
-                ring.localScale = new Vector3(0.28f, 0.02f, 0.28f);
-                ring.localRotation = Quaternion.Euler(-20f, 0f, 0f);
-            }
-            else if (id.Contains("shuriken"))
-            {
-                // 수리검: 납작한 별 — Cube 십자형
-                SetMesh(handle, PrimitiveType.Cube);
-                SetMesh(ring, PrimitiveType.Cube);
-                handle.localPosition = new Vector3(hx, hy, 0.10f);
-                handle.localScale = new Vector3(0.18f, 0.02f, 0.05f);
-                handle.localRotation = Quaternion.Euler(0f, 45f, 0f);
-                ring.localPosition = new Vector3(hx, hy, 0.10f);
-                ring.localScale = new Vector3(0.05f, 0.02f, 0.18f);
-                ring.localRotation = Quaternion.Euler(0f, 45f, 0f);
-            }
-            else if (id.Contains("cutlass") || id.Contains("sword"))
-            {
-                // 검: 박스 손잡이 + 긴 박스 칼날
-                SetMesh(handle, PrimitiveType.Cube);
-                SetMesh(ring, PrimitiveType.Cube);
-                handle.localPosition = new Vector3(hx, hy + 0.06f, 0.05f);
-                handle.localScale = new Vector3(0.05f, 0.10f, 0.05f);
-                handle.localRotation = Quaternion.identity;
-                ring.localPosition = new Vector3(hx, hy + 0.32f, 0.05f);
-                ring.localScale = new Vector3(0.04f, 0.40f, 0.10f);
-                ring.localRotation = Quaternion.identity;
-            }
-            else if (id.Contains("web_shooter"))
-            {
-                // 발사기: 손목 박스 + 구체 발사구
-                SetMesh(handle, PrimitiveType.Cube);
-                SetMesh(ring, PrimitiveType.Sphere);
-                handle.localPosition = new Vector3(hx, hy + 0.08f, 0.05f);
-                handle.localScale = new Vector3(0.08f, 0.06f, 0.12f);
-                handle.localRotation = Quaternion.identity;
-                ring.localPosition = new Vector3(hx, hy + 0.08f, 0.15f);
-                ring.localScale = new Vector3(0.04f, 0.04f, 0.04f);
-                ring.localRotation = Quaternion.identity;
-            }
-            else if (id.Contains("magnify"))
-            {
-                // 돋보기: 가는 막대 + 렌즈(디스크). 렌즈를 X축 -20°로 눕혀 부감 카메라에서 정원에
-                // 가깝게. 옛 rot(60,0,0)은 법선이 위로 너무 서(투영 ~12%) 얇은 타원으로 찌그러짐.
-                SetMesh(handle, PrimitiveType.Cylinder);
-                SetMesh(ring, PrimitiveType.Cylinder);
-                handle.localPosition = new Vector3(hx, hy + 0.05f, 0.10f);
-                handle.localScale = new Vector3(0.03f, 0.18f, 0.03f);
-                handle.localRotation = Quaternion.Euler(35f, 0f, 0f);
-                ring.localPosition = new Vector3(hx, hy + 0.22f, 0.20f);
-                ring.localScale = new Vector3(0.16f, 0.02f, 0.16f);
-                ring.localRotation = Quaternion.Euler(-20f, 0f, 0f);
-            }
-            else if (id.Contains("camera"))
-            {
-                // 카메라: 박스 본체 + 원통 렌즈
-                SetMesh(handle, PrimitiveType.Cube);
-                SetMesh(ring, PrimitiveType.Cylinder);
-                handle.localPosition = new Vector3(hx, hy + 0.05f, 0.18f);
-                handle.localScale = new Vector3(0.16f, 0.10f, 0.10f);
-                handle.localRotation = Quaternion.identity;
-                ring.localPosition = new Vector3(hx, hy + 0.05f, 0.26f);
-                ring.localScale = new Vector3(0.07f, 0.07f, 0.06f);
-                ring.localRotation = Quaternion.Euler(90f, 0f, 0f);
-            }
-            else
-            {
-                // 기본 잠자리채: 막대 + 망(디스크). 핵심: 망 디스크를 X축 -20°로 눕혀 법선이
-                // 위-카메라쪽(0,0.94,-0.34)을 향하게 함. 옛 rot(0,0,90)은 법선이 ±X(옆)라 부감
-                // 카메라(시선 0,-0.8,0.6)에서 edge-on(테두리만)으로 collapse → 망이 사라지고
-                // 손잡이 막대만 남던 "막대기 뒤에 보임" 회귀의 직접 원인. -20°는 플레이어가
-                // 어느 방향을 보든 57~95% 가시라 회전에 강건(법선 Y성분 우세).
-                SetMesh(handle, PrimitiveType.Cylinder);
-                SetMesh(ring, PrimitiveType.Cylinder);
-                handle.localPosition = new Vector3(hx, hy + 0.22f, 0.02f);
-                handle.localScale = new Vector3(0.04f, 0.40f, 0.04f);
-                handle.localRotation = Quaternion.Euler(20f, 0f, -15f);
-                ring.localPosition = new Vector3(hx + 0.05f, hy + 0.62f, 0.06f);
-                ring.localScale = new Vector3(0.20f, 0.02f, 0.20f);
-                ring.localRotation = Quaternion.Euler(-20f, 0f, 0f);
-            }
+            OutfitShapeLibrary.Apply(player.transform, slot, recipe, primary, secondary);
         }
 
         private void ApplyPartColor(GameObject root, string partName, Color color)

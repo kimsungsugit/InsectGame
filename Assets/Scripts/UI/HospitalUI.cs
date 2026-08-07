@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using InsectGame.Core;
 using InsectGame.Data;
+using InsectGame.Dex;   // DexBrowseLayout — 목록 뷰포트 컬링 계산 공유
 using UnityEngine;
 
 namespace InsectGame.UI
@@ -212,7 +213,13 @@ namespace InsectGame.UI
                 view,
                 GUIStyle.none,
                 GUIStyle.none);
-            for (int i = 0; i < owned.Count; i++)
+            // 화면에 걸치는 줄만 그린다 — DrawInsectRow가 개체마다 3D 썸네일을 요청하므로,
+            // 컬링하지 않으면 한 뷰포트 분량짜리 캐시가 영구 스래싱한다(2026-08-06 audit).
+            DexBrowseLayout.GetVisibleRowRange(
+                scroll.y, listArea.height, rowH, 8f, owned.Count,
+                out int firstVisible, out int lastVisible);
+
+            for (int i = firstVisible; i <= lastVisible; i++)
                 DrawInsectRow(new Rect(0, i * (rowH + 8f), view.width, rowH), owned[i]);
             GUI.EndScrollView();
 

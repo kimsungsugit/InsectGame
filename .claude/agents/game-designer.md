@@ -61,7 +61,8 @@ tools:
 1v1: 데미지 = (basePower + Lv×2) × atkMultiplier × defRatio
   atkMultiplier: 0.3~3.0 (버프/디버프)
   defRatio: 0.5~2.5 (atk/def)
-레이드: 보스 HP×5, ATK×1.5, DEF×1.3
+레이드: 보스 HP×8.5(`GameConstants.Battle.RaidBossHpMultiplier`), ATK×1.5, DEF×1.3
+  ※HP 배율은 비-리더가 자기 스킬을 쓰게 되면서(팀 화력 ~1.7배) 5→8.5로 올렸다 — **라운드 수를 유지하려는 값**이지 난이도 상향이 아니다
   유나이트: 1.5배 보너스, 2마리 이상 생존 조건
 ```
 

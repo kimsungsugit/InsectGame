@@ -22,7 +22,6 @@ developer_instructions = """
 - `Assets/Scripts/UI/LoginUI.cs` - 로그인 화면
 - `Assets/Scripts/UI/CashShopUI.cs` - 캐시샵 화면
 - `Assets/Scripts/UI/CharacterOutfitUI.cs` - 의상 UI
-- `Assets/Scripts/UI/CharacterViewerUI.cs` - 캐릭터 뷰어
 - `Assets/Scripts/UI/QuickAccessBarUI.cs` - 퀵액세스 바
 - `Assets/Scripts/UI/TutorialQuestUI.cs` - 튜토리얼 퀘스트 UI
 - `Assets/Scripts/UI/WorldLobbyUI.cs` - 월드 로비

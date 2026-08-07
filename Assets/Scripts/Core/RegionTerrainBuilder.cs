@@ -10,26 +10,50 @@ namespace InsectGame.Core
     /// </summary>
     public class RegionTerrainBuilder : MonoBehaviour
     {
+        /// <summary>
+        /// 지형 배치 난수의 고정 시드. <b>월드가 실행마다 같은 모양이 되게 한다.</b>
+        ///
+        /// 이 클래스는 <c>Random.Range</c>를 87번 부르는데 시드가 없으면 Unity 전역 난수의
+        /// 시작 상태가 실행마다 달라, 나무·통나무·바위·죽은나무·생울타리·아치기둥·폐허 벽/기둥
+        /// <b>9종이 매번 다른 자리에 선다</b>. 그 9종은 collider를 남기는 것들이라
+        /// (<c>PlayerMovement.IsBlockedPosition</c>의 OverlapSphere가 막는다) 단순한 장식이 아니라
+        /// <b>지나갈 수 있는 길 자체가 실행마다 바뀐다</b>. 어제 걷던 길이 오늘 막히고,
+        /// 그런 종류의 버그는 재시작하면 사라져 재현조차 되지 않는다.
+        /// </summary>
+        private const int TerrainLayoutSeed = 20260807;
+
         public void BuildAllRegions(RegionData[] regions)
         {
-            foreach (var r in regions)
+            // 배치 난수만 시드로 가두고 끝나면 되돌린다. **전역 상태를 복원하지 않으면**
+            // 스폰·IV·포획 판정까지 결정론이 되어 훨씬 나쁜 문제가 된다.
+            // 빌드 도중 예외가 나도 반드시 되돌아가도록 finally에 둔다.
+            Random.State prevRandomState = Random.state;
+            Random.InitState(TerrainLayoutSeed);
+            try
             {
-                Vector3 c = r.centerPosition;
-                float rad = r.radius;
-                switch (r.regionId)
+                foreach (var r in regions)
                 {
-                    case "meadow": BuildMeadowTerrain(c, rad); break;
-                    case "pond": BuildPondTerrain(c, rad); break;
-                    case "forest": BuildForestTerrain(c, rad); break;
-                    case "swamp": BuildSwampTerrain(c, rad); break;
-                    case "mountain": BuildMountainTerrain(c, rad); break;
-                    case "garden": BuildGardenTerrain(c, rad); break;
-                    case "ruins": BuildRuinsTerrain(c, rad); break;
+                    Vector3 c = r.centerPosition;
+                    float rad = r.radius;
+                    switch (r.regionId)
+                    {
+                        case "meadow": BuildMeadowTerrain(c, rad); break;
+                        case "pond": BuildPondTerrain(c, rad); break;
+                        case "forest": BuildForestTerrain(c, rad); break;
+                        case "swamp": BuildSwampTerrain(c, rad); break;
+                        case "mountain": BuildMountainTerrain(c, rad); break;
+                        case "garden": BuildGardenTerrain(c, rad); break;
+                        case "ruins": BuildRuinsTerrain(c, rad); break;
+                    }
                 }
+                // 옛은 리전 경계가 빈 공간이라 어디서든 자유 이동 가능 + "네모 박스" 인상.
+                // 각 리전 외곽에 fence + 인접 리전으로 향하는 gateway(좁은 통로) 생성.
+                BuildBoundaries(regions);
             }
-            // 옛은 리전 경계가 빈 공간이라 어디서든 자유 이동 가능 + "네모 박스" 인상.
-            // 각 리전 외곽에 fence + 인접 리전으로 향하는 gateway(좁은 통로) 생성.
-            BuildBoundaries(regions);
+            finally
+            {
+                Random.state = prevRandomState;
+            }
         }
 
         // ======= 리전 경계 fence + gateway =======

@@ -17,7 +17,8 @@ tools:
 ### UI 모듈 (전체)
 - `Assets/Scripts/UI/MainMenuManager.cs` - 메인 메뉴 (Start/Settings/Exit)
 - `Assets/Scripts/UI/BattleScreenUI.cs` - 1v1 배틀 화면 (모놀리스, Phase 상태머신) ※배틀 로직은 battle-dev, 시각연출은 visual-dev
-- `Assets/Scripts/UI/RaidBattleUI.cs` - 레이드 화면 (모놀리스, Phase 상태머신) ※배틀 로직은 battle-dev, 시각연출은 visual-dev
+- `Assets/Scripts/UI/RaidBattleUI.cs` - 레이드 화면 상태기계 (Phase 전이·입력·컨트롤러 이벤트) ※배틀 로직은 battle-dev, 시각연출은 visual-dev
+- `Assets/Scripts/UI/RaidBattleUI.Draw.cs` - 위의 렌더 절반 partial (GUIStyle 캐시 + Draw* 전부) ※AOE·유나이트 이펙트는 visual-dev
 - `Assets/Scripts/UI/CaptureChoiceUI.cs` - 포획/배틀 선택 허브 (11개 의존성) ※포획 로직은 capture-dev
 - `Assets/Scripts/UI/CapturePopupUI.cs` - 포획 팝업 UI
 - `Assets/Scripts/UI/PlayUIConfig.cs` + `PlayUIRefs.cs` - UI 설정/참조
@@ -33,13 +34,14 @@ tools:
 - `Assets/Scripts/UI/LoginUI.cs` - 로그인 화면
 - `Assets/Scripts/UI/CashShopUI.cs` - 캐시샵 화면
 - `Assets/Scripts/UI/CharacterOutfitUI.cs` - 의상 UI
-- `Assets/Scripts/UI/CharacterViewerUI.cs` - 캐릭터 뷰어
 - `Assets/Scripts/UI/QuickAccessBarUI.cs` - 퀵액세스 바
 - `Assets/Scripts/UI/SocialPvpUI.cs` - 소셜 PvP 로비·스킬 선택 UI
 - `Assets/Scripts/UI/TutorialQuestUI.cs` - 튜토리얼 퀘스트 UI
 - `Assets/Scripts/UI/GuidedTutorialController.cs` - 첫 몇 단계 강제 가이드 오버레이(코치 배너+시작 프리즈) ※퀘스트 이벤트는 TutorialQuestManager(Core)
 - `Assets/Scripts/UI/WorldLobbyUI.cs` - 월드 로비
 - `Assets/Scripts/UI/CharacterPortraitRenderer.cs` - 통합 캐릭터 포트레이트 렌더러
+- `Assets/Scripts/UI/InsectVisual.cs` - 곤충 그림 단일 진입점(3D 썸네일 or 2D 폴백 판단) ※렌더는 InsectModelPreviewRenderer(visual-dev)
+- `Assets/Scripts/UI/UIShapes.cs` - 2D 폴백 도형 원시요소(원·캡슐·실루엣) ※색은 UITheme 토큰
 - `Assets/Scripts/UI/UIHelper.cs` - UI 유틸리티
 - `Assets/Scripts/UI/UIScale.cs` - 1920×1080 기준 가상 좌표계 / GUI.matrix 자동 스케일링
 - `Assets/Scripts/UI/UISafeLayout.cs` - 세이프에어리어 + 세로 마진 배치 하네스 (패널 Rect의 단일 출처, `rules/ui-layout.md`)

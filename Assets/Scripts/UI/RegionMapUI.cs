@@ -647,7 +647,13 @@ namespace InsectGame.UI
                 viewRect,
                 GUIStyle.none,
                 GUIStyle.none);
-            for (int i = 0; i < region.insectIds.Length; i++)
+            // 화면에 걸치는 줄만 그린다 — DrawDexItem이 포획한 종마다 3D 썸네일을 요청하므로,
+            // 컬링하지 않으면 한 뷰포트 분량짜리 캐시가 영구 스래싱한다(2026-08-06 audit).
+            DexBrowseLayout.GetVisibleRowRange(
+                dexScroll.y, listArea.height, itemH - 4f, 4f, region.insectIds.Length,
+                out int firstVisible, out int lastVisible);
+
+            for (int i = firstVisible; i <= lastVisible; i++)
                 DrawDexItem(new Rect(0, i * itemH, viewRect.width, itemH - 4f), region.insectIds[i]);
             GUI.EndScrollView();
         }

@@ -8,6 +8,8 @@ namespace InsectGame.Battle
     {
         LeaderSkill,
         SupportAssist,
+        /// <summary>리더가 아닌 팀원이 <b>자기 스킬</b>을 쓴 행동. 스킬이 없거나 전부 쿨다운이면 <see cref="SupportAssist"/>로 폴백한다.</summary>
+        SupportSkill,
         UniteContribution,
         BossSingle,
         BossArea,
@@ -26,6 +28,18 @@ namespace InsectGame.Battle
         Ongoing,
         Victory,
         Defeat
+    }
+
+    /// <summary>
+    /// 팀 스탠스 — 리더가 아닌 팀원의 AI 성향. 플레이어가 1탭으로 바꾸고 바꿀 때까지 유지된다.
+    /// 5슬롯을 매 라운드 직접 지정하면 세로 모바일에서 라운드당 10탭이 되므로, 조작은 리더 선택만
+    /// 남기고 나머지는 이 성향으로 조종한다(평소 추가 탭 0, 보스 예고를 읽었을 때만 1탭).
+    /// </summary>
+    public enum RaidTeamStance
+    {
+        Assault,   // 총공격 — 피해 우선
+        Guard,     // 수비 — 방어·기절·디버프 우선
+        Support    // 지원 — 회복 우선
     }
 
     public enum RaidRoundStage
@@ -71,8 +85,23 @@ namespace InsectGame.Battle
         // 버프·디버프가 스택 상한(GameConstants.Battle.MaxBuffStacks)에 걸려 값이 바뀌지 않았음.
         // 턴은 이미 소비됐으므로 UI가 "이미 최대치"를 알려야 한다.
         public bool Capped { get; internal set; }
+        /// <summary>
+        /// 기절 스킬이 <b>명중까지 성공</b>했음. 예전엔 컨트롤러가 <c>effectType == Stun</c>만 보고
+        /// 무조건 <c>bossStunned = true</c>로 했다 — 1v1은 <c>LandsHit</c>를 통과해야 하는데 레이드만
+        /// 무조건 걸려서, 명중 60%짜리 기절기가 레이드에선 100%였다.
+        /// 실제 기절 여부(연속 기절 면역 등)는 컨트롤러가 이 값을 받아 최종 판정한다.
+        /// </summary>
+        public bool StunApplied { get; internal set; }
         public bool IsLeader => Kind == RaidActionKind.LeaderSkill;
-        public bool IsSupport => Kind == RaidActionKind.SupportAssist;
+        /// <summary>
+        /// 리더가 아닌 팀원의 행동 — <b>기본 지원 공격과 자기 스킬을 모두 포함한다.</b>
+        /// 호출부(<c>RaidBattleUI</c>의 볼리 연출 두 곳)가
+        /// <c>if (action.Damage &lt;= 0 &amp;&amp; !action.IsSupport) continue;</c>로 거르므로,
+        /// 여기에 <see cref="RaidActionKind.SupportSkill"/>을 빠뜨리면 <b>0딜 버프·힐·기절 서포트가
+        /// 연출에서 통째로 사라진다</b>(피해가 없어서 앞 조건에 걸린다).
+        /// </summary>
+        public bool IsSupport => Kind == RaidActionKind.SupportAssist
+            || Kind == RaidActionKind.SupportSkill;
         public bool IsUnite => Kind == RaidActionKind.UniteContribution;
     }
 

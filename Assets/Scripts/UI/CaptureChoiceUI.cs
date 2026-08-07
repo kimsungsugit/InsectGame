@@ -110,8 +110,9 @@ namespace InsectGame.UI
                 }
                 if (isRaid && (key == KeyCode.R || key == KeyCode.Alpha1 || key == KeyCode.Alpha3))
                 {
+                    // 버튼과 같은 조건 — 키 입력으로 비활성 버튼을 우회하면 안 된다.
                     bool hasFullTeam = teamManager != null && teamManager.FilledSlots >= 5;
-                    if (hasFullTeam)
+                    if (hasFullTeam && CountBattleReadyTeamMembers() > 0)
                         StartRaidBattle();
                 }
                 if (key == KeyCode.Escape)
@@ -217,8 +218,11 @@ namespace InsectGame.UI
                 float raidBtnY = py + 290;
 
                 bool hasFullTeam = teamManager != null && teamManager.FilledSlots >= 5;
-                GUI.backgroundColor = hasFullTeam ? new Color(0.7f, 0.2f, 0.05f) : new Color(0.3f, 0.3f, 0.3f);
-                GUI.enabled = hasFullTeam;
+                // 전원 기절이면 시작해도 아무도 행동할 수 없어 레이드가 잠긴다(StartRaidBattle 주석 참조).
+                int readyCount = CountBattleReadyTeamMembers();
+                bool canRaid = hasFullTeam && readyCount > 0;
+                GUI.backgroundColor = canRaid ? new Color(0.7f, 0.2f, 0.05f) : new Color(0.3f, 0.3f, 0.3f);
+                GUI.enabled = canRaid;
                 string raidButtonText = UIScale.IsMobileLayout ? "레이드 시작" : "레이드 시작 [R]";
                 if (GUI.Button(new Rect(raidBtnX, raidBtnY, raidBtnW, raidBtnH), raidButtonText, btnStyle))
                 {
@@ -226,16 +230,36 @@ namespace InsectGame.UI
                 }
                 GUI.enabled = true;
 
+                // 안내는 한 줄만 — 편성 부족 > 전원 기절 > 일부 기절 순으로 더 급한 것을 보여준다.
+                string raidNotice = null;
+                Color raidNoticeCol = new Color(1f, 0.4f, 0.15f);
                 if (!hasFullTeam)
                 {
-                    GUIStyle raidReq = new GUIStyle(GUI.skin.label)
-                    { fontSize = 26, alignment = TextAnchor.MiddleCenter };
-                    raidReq.normal.textColor = new Color(1f, 0.4f, 0.15f);
                     int filled = teamManager != null ? teamManager.FilledSlots : 0;
-                    GUI.Label(new Rect(raidBtnX, raidBtnY + raidBtnH + 8, raidBtnW, 34),
-                        UIScale.IsMobileLayout
-                            ? $"팀 편성 필요 ({filled}/5) · 메뉴에서 배틀팀 편성"
-                            : $"팀 편성 필요 ({filled}/5)  T키로 편성", raidReq);
+                    raidNotice = UIScale.IsMobileLayout
+                        ? $"팀 편성 필요 ({filled}/5) · 메뉴에서 배틀팀 편성"
+                        : $"팀 편성 필요 ({filled}/5)  T키로 편성";
+                }
+                else if (readyCount <= 0)
+                {
+                    raidNotice = "팀 전원이 기절했습니다 — 병원에서 치료 후 도전하세요";
+                }
+                else if (readyCount < BattleTeamManager.MaxSlots)
+                {
+                    raidNotice = $"기절 {BattleTeamManager.MaxSlots - readyCount}마리 · 전투 가능 {readyCount}/{BattleTeamManager.MaxSlots}";
+                    raidNoticeCol = new Color(1f, 0.75f, 0.25f);
+                }
+
+                if (raidNotice != null)
+                {
+                    GUIStyle raidReq = new GUIStyle(GUI.skin.label)
+                    { fontSize = 26, alignment = TextAnchor.UpperCenter, wordWrap = true };
+                    raidReq.normal.textColor = raidNoticeCol;
+                    // 버튼 폭(340)이 아니라 패널 폭을 쓴다 — "팀 전원이 기절했습니다 …" 같은 한 줄은
+                    // 340px에 못 들어가고, 한국어 폰트가 커지는 모바일에서 특히 잘렸다.
+                    // 2줄 높이를 주고 그래도 넘치면 LabelFit이 글자를 줄여 맞춘다(ui-layout.md).
+                    UIHelper.LabelFit(new Rect(px + 20f, raidBtnY + raidBtnH + 10f, panelW - 40f, 68f),
+                        raidNotice, raidReq);
                 }
             }
             else
@@ -545,8 +569,33 @@ namespace InsectGame.UI
             battleController.StartBattle(playerInsect, playerLevel, savedTarget, equippedSkills: equippedSkills, playerPid: playerPid);
         }
 
+        /// <summary>
+        /// 배틀팀 5슬롯 중 <b>지금 싸울 수 있는</b>(기절이 아닌) 곤충 수. 1v1의 출격 가드
+        /// (<see cref="DrawTeamSlotChoice"/>의 `pid.IsFainted`)와 같은 기준을 레이드 진입에 적용한다.
+        /// </summary>
+        private int CountBattleReadyTeamMembers()
+        {
+            if (teamManager == null || collection == null) return 0;
+
+            int ready = 0;
+            for (int i = 0; i < BattleTeamManager.MaxSlots; i++)
+            {
+                string instanceId = teamManager.GetSlot(i);
+                if (string.IsNullOrEmpty(instanceId)) continue;
+                PlayerInsectData pid = collection.GetByInstanceId(instanceId);
+                if (pid != null && !pid.IsFainted) ready++;
+            }
+            return ready;
+        }
+
         private void StartRaidBattle()
         {
+            // 전원 기절이면 시작하지 않는다 — 레이드는 팀이 행동해야 보스 턴이 오고(ResolveBossResponse)
+            // 패배 판정도 그 안에만 있어서, 살아 있는 슬롯이 하나도 없으면 ActiveSlot이 -1로 남아
+            // 어떤 스킬도 못 쓰고 종료도 안 되는 **영구 정지**가 된다.
+            // Hide() **앞에서** 막는다 — 뒤에 두면 패널이 닫혀 안내 문구까지 사라진다.
+            if (CountBattleReadyTeamMembers() <= 0) return;
+
             InsectEntity savedTarget = targetInsect;
             Hide();
             if (raidController == null || savedTarget == null || teamManager == null || collection == null) return;

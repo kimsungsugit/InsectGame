@@ -14,6 +14,56 @@ namespace InsectGame.Core
         Accessory
     }
 
+    /// <summary>
+    /// 슬롯별 장착 itemId 묶음. "실제로 입지 않고 이 조합만 그려봐"를 표현한다 —
+    /// 미리보기 마네킹과 입어보기(try-on)가 이걸 넘긴다.
+    /// 세이브에 들어가지 않으므로 [System.Serializable]이 아니다(실장착은 PlayerPrefs 2키가 단일 출처).
+    /// </summary>
+    public sealed class OutfitLoadout
+    {
+        public const int SlotCount = 8;   // OutfitSlot 개수. OutfitLoadoutTests가 enum과 일치를 고정한다.
+
+        private readonly string[] items = new string[SlotCount];
+
+        public string Get(OutfitSlot slot)
+        {
+            int i = (int)slot;
+            return (i >= 0 && i < SlotCount) ? items[i] : null;
+        }
+
+        public void Set(OutfitSlot slot, string itemId)
+        {
+            int i = (int)slot;
+            if (i >= 0 && i < SlotCount) items[i] = itemId;
+        }
+
+        public void Clear()
+        {
+            for (int i = 0; i < SlotCount; i++) items[i] = null;
+        }
+
+        /// <summary>프리뷰 재렌더 판정용. 조합이 그대로면 다시 그리지 않는다.</summary>
+        public int Hash()
+        {
+            int h = 17;
+            for (int i = 0; i < SlotCount; i++)
+                h = h * 31 + (items[i] != null ? items[i].GetHashCode() : 0);
+            return h;
+        }
+
+        /// <summary>현재 장착 상태를 그대로 복사한다. try-on은 여기서 한 슬롯만 덮어쓴다.</summary>
+        public void CopyFrom(CharacterOutfitManager mgr)
+        {
+            Clear();
+            if (mgr == null) return;
+            for (int i = 0; i < SlotCount; i++)
+            {
+                OutfitItem item = mgr.GetEquipped((OutfitSlot)i);
+                items[i] = item != null ? item.itemId : null;
+            }
+        }
+    }
+
     [System.Serializable]
     public struct OutfitStatBonus
     {

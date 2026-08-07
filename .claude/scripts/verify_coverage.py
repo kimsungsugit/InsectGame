@@ -28,8 +28,12 @@ ROOT = os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
 AGENT_DIR = os.path.join(ROOT, ".claude", "agents")
 COORD_MD = os.path.join(ROOT, ".claude", "rules", "agent-coordination.md")
 
-_PATH = re.compile(r"Assets/(?:Scripts|Editor)/[A-Za-z0-9_/]+\.cs")
-_BARE = re.compile(r"`([A-Za-z0-9_]+\.cs)`")
+# 스템 중간의 점을 허용한다 — `RaidBattleUI.Draw.cs` 같은 partial 분할 파일.
+# 예전엔 `[A-Za-z0-9_/]+\.cs`라 점이 든 이름이 **아무 경고 없이 매칭에서 빠졌다**.
+# 그런 파일은 agents/*.md에 제대로 적어둬도 파서엔 안 보여, coordination 표가 우연히
+# 받아주지 않으면 "미할당"으로 뜨거나(거짓 양성) 공유 표기가 통째로 사라진다(거짓 음성).
+_PATH = re.compile(r"Assets/(?:Scripts|Editor)/[A-Za-z0-9_/]+(?:\.[A-Za-z0-9_]+)*\.cs")
+_BARE = re.compile(r"`([A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*\.cs)`")
 
 
 class MappingBroken(Exception):

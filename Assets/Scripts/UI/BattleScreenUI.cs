@@ -562,6 +562,16 @@ namespace InsectGame.UI
             {
                 EndBattle();
             }
+
+            // 탭 래치 차단 — `Input.GetMouseButtonDown`과 같은 한 프레임 수명으로 맞춘다.
+            // `wantMouseClick`은 OnGUI(:MouseDown)가 세우는데 소거는 SwapSelect/PlayerTurn/TurnAnnounce
+            // 분기 **안**에서만 했다. Intro·PlayerAttack·EnemyAttack·Result에서 탭하면 true로 남는다.
+            // 하필 Intro 종료와 PlayerTurn 처리가 **같은 Update 패스**에 있어(위 Intro 전이 → PlayerTurn 블록),
+            // 인트로 중 탭이 곧바로 다음 줄에서 소비된다 — 그것도 **지난 전투의** `escapeRect`/`basicAtkRect`로.
+            // 두 Rect는 EndBattle이 지우지 않아 화면상 같은 자리에 남아 있으므로, 2번째 전투부터
+            // **인트로 중 도주 버튼 근처를 탭하면 턴을 보기도 전에 도주가 실행됐다.**
+            // (같은 결함을 RaidBattleUI에서 먼저 고쳤다 — 2026-08-06 audit.)
+            wantMouseClick = false;
         }
 
         // 다음 턴을 알리는 중앙 배너 시작. 종료 후 nextPhase로 전이(triggerEnemy면 적 연출 발동).
@@ -3404,6 +3414,17 @@ namespace InsectGame.UI
                 playerStats = null;
                 enemyStats = null;
                 skillBtnCount = 0;
+                // 입력 표면도 함께 비운다. `skillBtnCount`만 0으로 두던 자리인데, 히트 테스트는
+                // `basicAtkRect.width > 0` / `escapeRect.width > 0`로 하므로 이 둘이 남으면 다음 전투
+                // 첫 프레임의 오탭을 지난 전투 좌표로 받는다(위 Update 말미 주석 참조).
+                basicAtkRect = new Rect(0, 0, 0, 0);
+                escapeRect = new Rect(0, 0, 0, 0);
+                for (int i = 0; i < swapBtnRects.Length; i++)
+                {
+                    swapBtnRects[i] = new Rect(0, 0, 0, 0);
+                    swapBtnAvail[i] = false;
+                }
+                wantMouseClick = false;
                 faintedInsectIds.Clear();
                 currentInsectId = null;
             }
@@ -3490,6 +3511,14 @@ namespace InsectGame.UI
                 case SkillEffectType.Damage: return new Color(0.9f, 0.35f, 0.3f);
                 case SkillEffectType.BuffAttack: return new Color(0.3f, 0.8f, 0.4f);
                 case SkillEffectType.DebuffAttack: return new Color(0.7f, 0.4f, 0.9f);
+                // 아래 4종은 d3d90cf가 SkillEffectType에 추가했는데 여기만 빠져 전부 회색으로 떨어졌다.
+                // 같은 커밋이 라벨 switch 2개(SkillTypeLabel/SkillPowerLabel)는 7종 전부 채웠고,
+                // 레이드(`RaidBattleUI.Draw.GetSkillColor`)도 7종을 갖고 있다 — 1v1 색만 3종에 멈춰 있었다.
+                // 값은 그 레이드 팔레트와 맞춘다(같은 스킬이 화면마다 다른 색이면 그게 더 나쁘다).
+                case SkillEffectType.Heal: return new Color(0.35f, 0.92f, 0.62f);
+                case SkillEffectType.DefenseBuff: return new Color(0.35f, 0.68f, 1f);
+                case SkillEffectType.Stun: return new Color(1f, 0.86f, 0.25f);
+                case SkillEffectType.PoisonDot: return new Color(0.68f, 0.35f, 0.88f);
                 default: return Color.gray;
             }
         }

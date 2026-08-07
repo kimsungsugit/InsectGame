@@ -123,13 +123,31 @@ namespace InsectGame.UI
             else
             {
                 // 안쪽은 사각형, 바깥 테두리만 타원으로 깎아 중간값을 만든다.
-                float ix = rect.width * 0.5f * (1f - r);
-                float iy = rect.height * 0.5f * (1f - r);
+                //
+                // ★ 인셋은 roundness에 **비례**한다. 예전엔 `(1f - r)`이라 방향이 뒤집혀 있었다 —
+                // r이 클수록(둥글어야 할수록) 덮는 사각형이 커져 **각지게** 보이고, r이 작을수록
+                // 사각형이 조각으로 줄어 **둥글게** 보였다. 정확히 반대다.
+                // 경계값으로 확인하면 지금이 맞다: r→0이면 인셋 0 → 사각형이 disc를 전부 덮어 각지고,
+                // r→1이면 인셋 0.5 → 덮을 사각형이 없어 disc 그대로 타원이다(양쪽 분기와 연속).
+                float inset = BlendInsetRatio(r);
+                float ix = rect.width * inset;
+                float iy = rect.height * inset;
                 GUI.DrawTexture(rect, Disc);
                 GUI.DrawTexture(new Rect(rect.x + ix, rect.y + iy,
                     rect.width - ix * 2f, rect.height - iy * 2f), Texture2D.whiteTexture);
             }
             GUI.color = prev;
+        }
+
+        /// <summary>
+        /// 중간 roundness에서 disc 위에 덮는 안쪽 사각형의 <b>변당 인셋 비율</b>(0~0.5).
+        ///
+        /// 0이면 사각형이 disc를 전부 덮어 각지고, 0.5면 덮을 게 없어 disc 그대로 타원이다.
+        /// 그리기는 테스트할 수 없으니 이 수식만 떼어 고정한다 — 부호가 뒤집혔던 자리라 방향이 중요하다.
+        /// </summary>
+        internal static float BlendInsetRatio(float roundness)
+        {
+            return Mathf.Clamp01(roundness) * 0.5f;
         }
 
         /// <summary>

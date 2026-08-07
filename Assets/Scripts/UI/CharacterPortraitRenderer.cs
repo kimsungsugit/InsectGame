@@ -5,7 +5,7 @@ namespace InsectGame.UI
 {
     /// <summary>
     /// 통합 캐릭터 포트레이트 렌더러.
-    /// LoginUI, CharacterViewerUI, CharacterOutfitUI 등 모든 곳에서 동일한 캐릭터를 그립니다.
+    /// LoginUI, CharacterOutfitUI, CashShopUI, NpcDialogueUI 등 모든 곳에서 동일한 캐릭터를 그립니다.
     /// 약 6.4등신 슬림·갸름형 — 필드 3D 캐릭터(BuildPlayerVisual)와 동일한 비례.
     /// </summary>
     public static class CharacterPortraitRenderer
@@ -322,7 +322,7 @@ namespace InsectGame.UI
             cacheValid = true;
         }
 
-        /// <summary>CharacterViewerUI용: 장착 의상 기반 그리기</summary>
+        /// <summary>장착 의상 기반 그리기 — CharacterOutfitUI(3D 마네킹 폴백)·CashShopUI가 쓴다.</summary>
         public static void DrawWithOutfit(float cx, float cy, float scale, float swayX = 0f)
         {
             EnsureSubscribed();
@@ -367,7 +367,14 @@ namespace InsectGame.UI
             DrawBackpackWithSlot(cx, cy, scale, gender, swayX, mgr);
 
             // 의상별 형태 분기 (모자/도구 마커 + Accessory 오버레이)
-            DrawOutfitAccessories(cx, cy, scale, swayX, mgr, hatId, bagId, toolId, accId);
+            DrawOutfitAccessories(cx, cy, scale, swayX, mgr, gender, hatId, bagId, toolId, accId);
+
+            // 주변 색 복원 — 이 세 헬퍼는 전부 `DrawCol`로 끝나 GUI.color를 마지막 파츠 색으로 남긴다
+            // (`Draw`는 스스로 복원하지만 그 뒤에 셋이 더 붙는다). 복원을 빠뜨리면 **호출부의 다음 그리기가
+            // 그 색으로 곱해진다** — 상점의 "보유 재화 / 💎 / 🪙" 라벨이 장착한 악세서리 색으로
+            // 물들었다(기본 악세서리 색이 거의 검정이라 라벨이 안 보이는 수준까지 간다).
+            // 공개 진입점이 스스로 되돌린다 — 호출부가 이 사정을 알 필요가 없어야 한다.
+            GUI.color = Color.white;
         }
 
         private static void DrawBackpackWithSlot(float cx, float cy, float scale, int gender, float swayX, CharacterOutfitManager mgr)
@@ -407,7 +414,7 @@ namespace InsectGame.UI
             return item != null && item.secondaryColor.a > 0.01f ? item.secondaryColor : fallback;
         }
 
-        // 캐릭터 미리보기 옆에 도구 silhouette 표시 — CharacterOutfitManager.ApplyToolShape 분기와 정합.
+        // 캐릭터 미리보기 옆에 도구 silhouette 표시 — OutfitShapeLibrary의 도구 레시피 분기와 정합.
         // 좌표: 오른팔 옆(cx + bodyW*0.5 + armW + offset). 필드 손 ±0.34 위치 시각 매칭.
         private static void DrawCharacterTool(float cx, float swayX, float bodyW, float headY, float headH, float s,
             string id, Color c, Color sec)
@@ -502,11 +509,17 @@ namespace InsectGame.UI
         }
 
         // Draw 호출 후 호출. 특수 itemId에만 형태를 덮어 그림.
+        /// <remarks>
+        /// <paramref name="gender"/>는 <b>호출부가 캐시에서 준다</b>. 예전엔 여기서
+        /// `PlayerPrefs.GetInt(SaveScope.PrefsKey(...))`를 직접 읽었는데, 이 메서드는 OnGUI 패스마다
+        /// 돌므로 위 <see cref="OutfitCache"/>가 막으려던 바로 그 비용을 한 자리에서 되살리고 있었다
+        /// (`PrefsKey`는 `baseKey + "." + uid` 문자열까지 매번 새로 만든다).
+        /// 값은 이미 <c>cache.gender</c>에 있다.
+        /// </remarks>
         private static void DrawOutfitAccessories(float cx, float cy, float scale, float swayX,
-            CharacterOutfitManager mgr, string hatId, string bagId, string toolId, string accId = "")
+            CharacterOutfitManager mgr, int gender, string hatId, string bagId, string toolId, string accId = "")
         {
             // 공용 비례 헬퍼 — Draw와 자동 동기
-            int gender = PlayerPrefs.GetInt(InsectGame.Core.SaveScope.PrefsKey("InsectGame.Character.Gender"), 0);
             Proportions p = CalculateProportions(cy, scale, gender);
             float s = p.s;
             float headW = p.headW, headH = p.headH, neckH = p.neckH;
@@ -534,15 +547,12 @@ namespace InsectGame.UI
                     DrawCol(hatCol, headX - 10f * s, headY - 1f * s, headW + 20f * s, 4f * s);
                     DrawCol(hatDark, headX + 2f * s, headY - 7f * s, headW - 4f * s, 7f * s);
                 }
-                else if (hatId == "hat_beanie")
-                {
-                    // 비니: 챙 없는 둥근 모자
-                    DrawCol(hatCol, headX, headY - 6f * s, headW, 8f * s);
-                    DrawCol(hatDark, headX, headY - 1f * s, headW, 2f * s);
-                }
                 else
                 {
                     // 기본 형태 (캡 스타일)
+                    // 옛 "hat_beanie" 분기가 여기 있었으나 그런 itemId는 카탈로그에 없어 죽은 코드였다
+                    // (같은 분기가 DrawHatPreview에도 복제돼 있었다). 지금은 형태의 단일 출처가
+                    // OutfitShapeLibrary이고, 레시피 id가 실재하는지는 EditMode 테스트가 강제한다.
                     DrawCol(hatCol, headX - 4f * s, headY - 1f * s, headW + 8f * s, 3f * s);
                     DrawCol(hatDark, headX + 1f * s, headY - headH * 0.20f, headW - 2f * s, headH * 0.22f);
                 }
@@ -569,7 +579,10 @@ namespace InsectGame.UI
                 }
             }
 
-            // ── Accessory (PlayerVisualBuilder.ApplyAccessory와 동일 분기) ──
+            // ── Accessory ──
+            // 2D 도트 캐릭터의 단순화된 표현이다. 형태의 단일 출처는 OutfitShapeLibrary이고
+            // 카드 아이콘(DrawItemPreview)은 이미 그쪽을 읽는다. 이 도트 캐릭터는 S3에서
+            // 3D 마네킹 프리뷰로 교체되므로 여기서는 기존 단순 분기를 그대로 둔다.
             if (!string.IsNullOrEmpty(accId) && accId != "acc_none")
             {
                 Color accCol = GetEquipColor(mgr, OutfitSlot.Accessory, new Color(0.1f, 0.1f, 0.1f));
@@ -660,6 +673,16 @@ namespace InsectGame.UI
             Color prevCol = GUI.color;
             GUI.color = Color.white;
 
+            // 형태의 단일 출처는 OutfitShapeLibrary다 — 레시피가 있으면 그 3D 파츠를 정사영해 그린다.
+            // 그래야 카드 그림과 실제 착용 모습이 어긋나지 않는다(예전엔 카드에만 목도리 분기가 있어
+            // "카드는 목도리, 캐릭터는 가슴 큐브"였다). 레시피가 없는 아이템은 아래 슬롯별 폴백.
+            if (OutfitShapeLibrary.TryGet(slot, id, out OutfitRecipe recipe))
+            {
+                DrawRecipePreview(r, recipe, primary, secondary);
+                GUI.color = prevCol;
+                return;
+            }
+
             switch (slot)
             {
                 case OutfitSlot.Hat: DrawHatPreview(r, id, primary, secondary); break;
@@ -673,6 +696,130 @@ namespace InsectGame.UI
             }
 
             GUI.color = prevCol;
+        }
+
+        // ── 레시피 정사영 (3D 파츠 → 2D 카드 아이콘) ──────────────────────
+        //
+        // 3D 프리뷰 카메라와 같은 정면 직교 투영이다: 화면 가로=월드 X, 세로=월드 Y(아래로 증가),
+        // 깊이 Z는 그리는 순서와 음영에만 쓴다. 파츠가 몇 개 안 되므로 정렬은 무할당 삽입정렬.
+
+        private const float RecipeFrameFill = 0.86f;
+        private static readonly int[] recipeOrder = new int[32];
+
+        /// <summary>
+        /// 파츠의 화면 투영 크기. X/Y축 회전이 있으면 두께(Z)가 화면 쪽으로 눕는다 —
+        /// 이걸 빼먹으면 잠자리채 망(두께 0.02 디스크를 X축 -20°로 눕힌 것)이 높이 0.02짜리
+        /// 실선으로 그려져 사실상 사라진다. 3D에서 edge-on collapse를 막은 것과 같은 문제다.
+        /// </summary>
+        internal static Vector2 ProjectedSize(OutfitPart p)
+        {
+            float ex = p.euler.x * Mathf.Deg2Rad;
+            float ey = p.euler.y * Mathf.Deg2Rad;
+            float w = Mathf.Abs(p.scale.x * Mathf.Cos(ey)) + Mathf.Abs(p.scale.z * Mathf.Sin(ey));
+            float h = Mathf.Abs(p.scale.y * Mathf.Cos(ex)) + Mathf.Abs(p.scale.z * Mathf.Sin(ex));
+            return new Vector2(w, h);
+        }
+
+        /// <summary>Z축 회전까지 반영한 화면 AABB의 절반 크기.</summary>
+        internal static Vector2 RotatedExtent(OutfitPart p)
+        {
+            Vector2 s = ProjectedSize(p);
+            float ez = p.euler.z * Mathf.Deg2Rad;
+            float c = Mathf.Abs(Mathf.Cos(ez));
+            float n = Mathf.Abs(Mathf.Sin(ez));
+            return new Vector2((s.x * c + s.y * n) * 0.5f, (s.x * n + s.y * c) * 0.5f);
+        }
+
+        /// <summary>레시피 전체의 XY 바운드(월드 단위). 카드 안에 꽉 채워 넣기 위한 프레이밍 기준.</summary>
+        internal static Rect RecipeBounds(OutfitPart[] parts)
+        {
+            if (parts == null || parts.Length == 0) return new Rect(0f, 0f, 1f, 1f);
+
+            float minX = float.MaxValue, maxX = float.MinValue;
+            float minY = float.MaxValue, maxY = float.MinValue;
+            for (int i = 0; i < parts.Length; i++)
+            {
+                Vector2 e = RotatedExtent(parts[i]);
+                minX = Mathf.Min(minX, parts[i].pos.x - e.x);
+                maxX = Mathf.Max(maxX, parts[i].pos.x + e.x);
+                minY = Mathf.Min(minY, parts[i].pos.y - e.y);
+                maxY = Mathf.Max(maxY, parts[i].pos.y + e.y);
+            }
+            return new Rect(minX, minY, Mathf.Max(0.0001f, maxX - minX), Mathf.Max(0.0001f, maxY - minY));
+        }
+
+        /// <summary>프리미티브를 2D로 옮길 때의 둥글기. Cube는 각지게, 구·눕힌 디스크는 타원.</summary>
+        internal static float RecipeRoundness(OutfitPart p)
+        {
+            switch (p.prim)
+            {
+                case PrimitiveType.Sphere:
+                case PrimitiveType.Capsule:
+                    return 1f;
+                case PrimitiveType.Cylinder:
+                    // 눕힌 디스크(높이 ≪ 지름)는 기울어진 정사영이 타원이다. 세운 원통은 위아래만 둥근 막대.
+                    return p.scale.y < p.scale.x * 0.35f ? 1f : 0.8f;
+                default:
+                    return 0.12f;
+            }
+        }
+
+        private static void DrawRecipePreview(Rect r, OutfitRecipe recipe, Color primary, Color secondary)
+        {
+            OutfitPart[] parts = recipe != null ? recipe.parts : null;
+            if (parts == null || parts.Length == 0) return;
+
+            Rect b = RecipeBounds(parts);
+            float k = Mathf.Min(r.width * RecipeFrameFill / b.width, r.height * RecipeFrameFill / b.height);
+            float ox = r.x + r.width * 0.5f - (b.x + b.width * 0.5f) * k;
+            float oy = r.y + r.height * 0.5f + (b.y + b.height * 0.5f) * k;   // 화면 y는 아래로 증가
+
+            int n = Mathf.Min(parts.Length, recipeOrder.Length);
+            SortRecipeByDepth(parts, n);
+
+            for (int i = 0; i < n; i++)
+            {
+                OutfitPart p = parts[recipeOrder[i]];
+                Vector2 s = ProjectedSize(p);
+                float w = Mathf.Max(1f, s.x * k);
+                float h = Mathf.Max(1f, s.y * k);
+                Rect pr = new Rect(ox + p.pos.x * k - w * 0.5f, oy - p.pos.y * k - h * 0.5f, w, h);
+
+                Color c = OutfitShapeLibrary.ResolveColor(p, primary, secondary);
+                // 뒤쪽 파츠는 살짝 어둡게 — 평면 실루엣이 겹칠 때 앞뒤가 읽힌다.
+                if (p.pos.z < -0.02f) c = Color.Lerp(c, Color.black, 0.22f);
+
+                if (Mathf.Abs(p.euler.z) > 0.5f)
+                {
+                    Matrix4x4 prev = GUI.matrix;
+                    // GUI 회전은 시계방향이 +. 화면 y가 뒤집혀 있어 월드 +Z 회전은 화면에서 반시계다.
+                    GUIUtility.RotateAroundPivot(-p.euler.z, pr.center);
+                    UIShapes.Part(pr, c, RecipeRoundness(p));
+                    GUI.matrix = prev;
+                }
+                else
+                {
+                    UIShapes.Part(pr, c, RecipeRoundness(p));
+                }
+            }
+        }
+
+        /// <summary>z 오름차순(뒤 → 앞) 그리기 순서를 recipeOrder에 채운다. OnGUI 경로라 무할당.</summary>
+        private static void SortRecipeByDepth(OutfitPart[] parts, int n)
+        {
+            for (int i = 0; i < n; i++) recipeOrder[i] = i;
+            for (int i = 1; i < n; i++)
+            {
+                int key = recipeOrder[i];
+                float kz = parts[key].pos.z;
+                int j = i - 1;
+                while (j >= 0 && parts[recipeOrder[j]].pos.z > kz)
+                {
+                    recipeOrder[j + 1] = recipeOrder[j];
+                    j--;
+                }
+                recipeOrder[j + 1] = key;
+            }
         }
 
         private static void DrawHatPreview(Rect r, string id, Color c, Color sec)
@@ -697,14 +844,9 @@ namespace InsectGame.UI
                 DrawCol(c, cx - headW * 0.85f, top + r.height * 0.02f, headW * 1.7f, r.height * 0.07f);
                 DrawCol(dark, cx - headW * 0.42f, top - r.height * 0.13f, headW * 0.85f, r.height * 0.15f);
             }
-            else if (id.Contains("beanie"))
-            {
-                DrawCol(c, cx - headW * 0.55f, top - r.height * 0.13f, headW * 1.1f, r.height * 0.18f);
-                DrawCol(dark, cx - headW * 0.55f, top - r.height * 0.02f, headW * 1.1f, r.height * 0.04f);
-            }
             else
             {
-                // 기본 캡
+                // 기본 캡. 옛 "beanie" 분기는 카탈로그에 없는 itemId라 도달 불가였다 — 제거.
                 DrawCol(c, cx - headW * 0.6f, top, headW * 1.2f, r.height * 0.06f);
                 DrawCol(dark, cx - headW * 0.5f, top - r.height * 0.15f, headW, r.height * 0.15f);
             }

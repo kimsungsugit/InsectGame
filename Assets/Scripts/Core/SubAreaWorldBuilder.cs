@@ -62,6 +62,15 @@ namespace InsectGame.Core
 
         // 메인 월드 오브젝트 숨김/복원용
         private readonly List<GameObject> hiddenMainObjects = new List<GameObject>();
+
+        /// <summary>
+        /// 이번 서브에리어 빌드가 만든 런타임 머티리얼. <b>subAreaRoot를 Destroy해도 이건 안 지워진다</b> —
+        /// <c>new Material(...)</c>은 GameObject가 아니라 별개 오브젝트라 명시적으로 파괴해야 한다.
+        /// 한 번 지을 때마다 <c>Mat()</c>이 41번 불리고, 서브에리어는 25m 이탈·[E] 재진입으로
+        /// 세션 내내 반복해서 들락거리므로 방치하면 계속 쌓인다.
+        /// (같은 이유로 <c>NpcVisualBuilder.CleanupMaterials</c>·<c>PlayerVisualBuilder.SafeDestroyMat</c>가 있다.)
+        /// </summary>
+        private readonly List<Material> runtimeMaterials = new List<Material>();
         // Update의 Y 안전망용 player transform 캐싱 — 매 프레임 GameObject.Find 회귀 차단
         private Transform cachedPlayerTransform;
 
@@ -98,6 +107,29 @@ namespace InsectGame.Core
         {
             if (regionManager != null)
                 regionManager.SubAreaChanged -= OnSubAreaChanged;
+        }
+
+        // 씬 전환·종료로 이 컴포넌트가 죽을 때 마지막 빌드가 남아 있으면 그 머티리얼도 함께 정리한다.
+        private void OnDestroy()
+        {
+            DestroySubAreaWorld();
+        }
+
+        /// <summary>
+        /// 서브에리어 빌드 파기 — GameObject 트리와 <b>런타임 머티리얼을 함께</b> 지운다.
+        /// 예전엔 <c>Destroy(subAreaRoot)</c>만 해서 오브젝트는 사라지고 머티리얼은 남았다.
+        /// </summary>
+        private void DestroySubAreaWorld()
+        {
+            if (subAreaRoot != null)
+            {
+                Destroy(subAreaRoot);
+                subAreaRoot = null;
+            }
+
+            for (int i = 0; i < runtimeMaterials.Count; i++)
+                if (runtimeMaterials[i] != null) Destroy(runtimeMaterials[i]);
+            runtimeMaterials.Clear();
         }
 
         private void Update()
@@ -317,8 +349,8 @@ namespace InsectGame.Core
             // 메인 월드 숨기기
             HideMainWorld();
 
-            // 서브에리어 생성
-            if (subAreaRoot != null) Destroy(subAreaRoot);
+            // 서브에리어 생성 (이전 빌드가 남아 있으면 머티리얼까지 함께 파기)
+            DestroySubAreaWorld();
             subAreaRoot = new GameObject($"SubArea_{subArea.subAreaId}");
             subAreaRoot.transform.position = SubAreaOrigin;
 
@@ -455,11 +487,7 @@ namespace InsectGame.Core
             currentSubArea = null;
 
             // 서브에리어 파괴
-            if (subAreaRoot != null)
-            {
-                Destroy(subAreaRoot);
-                subAreaRoot = null;
-            }
+            DestroySubAreaWorld();
 
             // 메인 월드 복원
             ShowMainWorld();
@@ -1195,6 +1223,7 @@ namespace InsectGame.Core
             if (shader == null) shader = Shader.Find("Sprites/Default");
             Material mat = shader != null ? new Material(shader) : new Material(Shader.Find("Hidden/InternalErrorShader"));
             mat.color = color;
+            runtimeMaterials.Add(mat);   // 빌드 파기 때 함께 정리 — 안 하면 진입할 때마다 41개씩 샌다
             return mat;
         }
 

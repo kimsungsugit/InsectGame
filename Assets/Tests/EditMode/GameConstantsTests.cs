@@ -1,5 +1,6 @@
 #if UNITY_EDITOR
 using NUnit.Framework;
+using InsectGame.Battle;
 using InsectGame.Core;
 using InsectGame.Data;
 
@@ -109,6 +110,27 @@ namespace InsectGame.Tests
         public void Battle_UniteGaugeMax_Is100()
         {
             Assert.AreEqual(100f, GameConstants.Battle.UniteGaugeMax);
+        }
+
+        /// <summary>
+        /// 서포트 배율과 보스 HP 배율은 <b>짝으로 움직인다</b> — 서포트가 세지면 라운드 수를 지키려고
+        /// 보스 HP도 같이 올라간다. 둘 중 하나만 고치면 레이드 길이가 조용히 바뀌므로 여기 함께 고정한다.
+        /// </summary>
+        [Test]
+        public void Battle_RaidSupportSkillPowerMultiplier_IsBelowLeader()
+        {
+            Assert.Greater(GameConstants.Battle.RaidSupportSkillPowerMultiplier, 0f);
+            Assert.Less(GameConstants.Battle.RaidSupportSkillPowerMultiplier, 1f,
+                "리더 우위(1.0)를 넘으면 리더를 고르는 의미가 사라진다");
+            Assert.Greater(GameConstants.Battle.RaidSupportSkillPowerMultiplier,
+                RaidRoundResolver.SupportAssistPowerMultiplier,
+                "스킬 폴백(기본 지원 공격)보다는 세야 스킬을 쓰는 보람이 있다");
+        }
+
+        [Test]
+        public void Battle_RaidBossHpMultiplier_RaisedWithTeamFirepower()
+        {
+            Assert.AreEqual(8.5f, GameConstants.Battle.RaidBossHpMultiplier);
         }
 
         [Test]

@@ -45,6 +45,19 @@ namespace InsectGame.Battle
         public int RewardCandy { get; private set; }
         public int RewardExp { get; private set; }
 
+        /// <summary>
+        /// 비-리더 팀원 AI의 성향. 플레이어가 1탭으로 바꾸고 바꿀 때까지 유지된다 —
+        /// 5슬롯을 매 라운드 직접 지정하면 세로 모바일에서 라운드당 10탭이 되기 때문이다.
+        /// </summary>
+        public RaidTeamStance TeamStance { get; private set; } = RaidTeamStance.Assault;
+
+        public void SetStance(RaidTeamStance stance)
+        {
+            if (TeamStance == stance) return;
+            TeamStance = stance;
+            RaidUpdated?.Invoke();
+        }
+
         public float UniteGauge { get; private set; }
         public const float UniteGaugeMax = GameConstants.Battle.UniteGaugeMax;
         public bool CanUniteAttack => CanSubmitTeamCommand
@@ -68,12 +81,39 @@ namespace InsectGame.Battle
         // 0이면 다음 의도가 AOE. AOE 후 2로 설정되어 단일 공격 2회를 거친 뒤 다시 AOE.
         private int bossCooldown;
         private bool bossStunned;   // 팀 Stun 스킬로 보스 다음 턴 스킵(P4)
+        /// <summary>
+        /// 0보다 크면 이번 라운드엔 기절이 걸리지 않는다 — <b>연속 기절 잠금 방지</b>.
+        /// 보스가 기절로 한 턴을 건너뛴 직후에만 켜지고 라운드마다 1씩 준다.
+        /// 리더 1명만 스킬을 쓰던 시절엔 필요 없었지만, 팀 5마리가 각자 스킬을 쓰게 되면
+        /// 기절기를 여럿 들고 매 라운드 재시도해 보스를 영구히 묶을 수 있다.
+        /// </summary>
+        private int bossStunImmuneRounds;
+
+        /// <summary>
+        /// 보스 HP가 절반 이하로 떨어지면 켜지는 <b>1회 래치</b>. 회복해도 풀리지 않는다 —
+        /// 켜졌다 꺼졌다 하면 플레이어가 "지금 어느 국면인지"를 읽을 수 없다.
+        /// 격노하면 전체공격 간격이 2→1로 줄고 단일 피해에 배율이 붙는다.
+        /// </summary>
+        public bool BossEnraged { get; private set; }
+
+        private void UpdateBossPhase()
+        {
+            if (BossEnraged || BossStats == null || BossStats.MaxHp <= 0) return;
+            float ratio = BossStats.CurrentHp / (float)BossStats.MaxHp;
+            if (ratio <= GameConstants.Battle.RaidBossEnrageHpRatio)
+                BossEnraged = true;
+        }
         private bool bossShinyAtStart; // 시작 시점 스냅샷 — 도주/풀 재사용된 라이브 보스 참조로 이로치 오등록 방지
         private RaidRoundStage roundStage = RaidRoundStage.Completed;
         private IRaidRandomSource randomSource = new UnityRaidRandomSource();
         private bool raidEndedRaised;
 
-        public void StartRaid(InsectEntity bossEntity,
+        /// <summary>
+        /// 레이드를 시작한다. 시작하지 못했으면 <c>false</c>(인자 부적합 또는 <b>팀 전원 기절</b>).
+        /// 실패 시 상태를 건드리지 않고 <see cref="RaidUpdated"/>도 발화하지 않는다 —
+        /// 발화하면 <c>RaidBattleUI</c>가 Intro로 들어가 조작 불가 화면이 열린다.
+        /// </summary>
+        public bool StartRaid(InsectEntity bossEntity,
             InsectData[] teamInsects, int[] teamLevels,
             PlayerInsectData[] teamPids, InsectSkill[][] teamSkills)
         {
@@ -81,7 +121,7 @@ namespace InsectGame.Battle
                 || teamInsects == null || teamLevels == null
                 || teamInsects.Length == 0 || teamLevels.Length < teamInsects.Length)
             {
-                return;
+                return false;
             }
 
             BossEntity = bossEntity;
@@ -92,7 +132,12 @@ namespace InsectGame.Battle
             InsectData bd = bossEntity.Data;
 
             InsectBattleStats rawBoss = new InsectBattleStats(bd, bossEntity.Level);
-            BossStats = new RaidBossStats(bd, bossEntity.Level, rawBoss.MaxHp * 5, rawBoss.Attack * 3 / 2, rawBoss.Defense * 13 / 10);
+            BossStats = new RaidBossStats(
+                bd,
+                bossEntity.Level,
+                Mathf.RoundToInt(rawBoss.MaxHp * GameConstants.Battle.RaidBossHpMultiplier),
+                rawBoss.Attack * 3 / 2,
+                rawBoss.Defense * 13 / 10);
 
             int count = teamInsects.Length;
             TeamStats = new InsectBattleStats[count];
@@ -118,6 +163,24 @@ namespace InsectGame.Battle
                 TeamCooldowns[i] = new int[sc];
             }
 
+            // 전원 기절(HP 0)이면 시작하지 않는다. 진짜 HP는 지속 HP 시드(InsectBattleStats) 때문에
+            // TeamStats를 만들어봐야 알 수 있어 판정이 여기에 있다.
+            // 시작해버리면 ActiveSlot이 -1로 남아 CanUseSkill이 늘 false → 팀이 행동 못 함 →
+            // 보스 턴(ResolveBossResponse)도 오지 않고, 패배 판정이 그 안에만 있어 **영구 정지**한다.
+            // 위에서 이미 건 SetEngaged(true)를 되돌리고 만들던 상태를 전부 비운다.
+            if (FindFirstAlive() < 0)
+            {
+                bossEntity.SetEngaged(false);
+                BossEntity = null;
+                BossStats = null;
+                TeamStats = null;
+                TeamData = null;
+                TeamPids = null;
+                TeamSkills = null;
+                TeamCooldowns = null;
+                return false;
+            }
+
             TurnNumber = 0;
             ActiveSlot = FindFirstAlive();
             IsActive = true;
@@ -132,6 +195,9 @@ namespace InsectGame.Battle
             UniteSlotDamages = null;
             bossCooldown = 0;
             bossStunned = false;
+            bossStunImmuneRounds = 0;
+            BossEnraged = false;
+            TeamStance = RaidTeamStance.Assault;
             LastBossSkill = null;
             RewardCandy = 0;
             RewardExp = 0;
@@ -141,6 +207,7 @@ namespace InsectGame.Battle
 
             PrepareNextBossIntent();
             RaidUpdated?.Invoke();
+            return true;
         }
 
         public void SelectSlot(int slot)
@@ -186,13 +253,13 @@ namespace InsectGame.Battle
                 TeamStats.Length);
 
             RaidActionResult leaderAction = RaidRoundResolver.ResolveLeaderSkill(
-                leaderSlot, skillIndex, leader, BossStats, skill, randomSource);
+                leaderSlot, skillIndex, leader, BossStats, TeamStats, skill, randomSource);
             result.AddTeamAction(leaderAction);
-            if (skill.effectType == SkillEffectType.Stun)
-                bossStunned = true;
+            bool stunLanded = leaderAction.StunApplied;
 
-            // 선택한 리더 외 생존 팀원은 같은 러시에 기본 지원 공격으로 참여한다.
-            // 슬롯 순서로 계산하여 RNG와 오버킬 배분도 항상 결정론적으로 유지한다.
+            // 선택한 리더 외 생존 팀원도 **자기 스킬**로 같은 러시에 참여한다.
+            // 슬롯 순서로 계산하여 RNG와 오버킬 배분도 항상 결정론적으로 유지한다
+            // (RaidSupportPlanner도 난수를 쓰지 않는다 — 동점은 최저 인덱스).
             for (int i = 0; i < TeamStats.Length; i++)
             {
                 if (i == leaderSlot || TeamStats[i] == null
@@ -201,8 +268,46 @@ namespace InsectGame.Battle
                     continue;
                 }
 
-                result.AddTeamAction(
-                    RaidRoundResolver.ResolveSupportAssist(i, TeamStats[i], BossStats));
+                // TeamSkills는 호출부가 준 배열을 그대로 들고 있다 — 길이 보장은 계약이지 코드가 아니다.
+                // `CanUseSkill`이 리더 경로에서 이미 같은 가드를 하므로 여기도 맞춘다(현재 유일한 호출부인
+                // CaptureChoiceUI는 항상 MaxSlots 길이를 채우므로 지금은 도달하지 않는다).
+                InsectSkill[] slotSkills = TeamSkills != null && i < TeamSkills.Length
+                    ? TeamSkills[i]
+                    : null;
+                int supportIndex = RaidSupportPlanner.SelectSupportSkillIndex(
+                    i, TeamStats[i], slotSkills, TeamCooldowns[i],
+                    BossStats, TeamStats, result.BossIntent, TeamStance,
+                    // 이번 라운드엔 기절이 안 걸린다는 걸 플래너도 알아야 한다 —
+                    // 모르면 기절기를 든 팀원들이 나란히 저항당할 시도를 한다.
+                    bossStunImmuneRounds > 0);
+
+                if (supportIndex < 0)
+                {
+                    // 스킬이 없거나 전부 쿨다운·0점 — 예전의 기본 지원 공격으로 폴백.
+                    result.AddTeamAction(
+                        RaidRoundResolver.ResolveSupportAssist(i, TeamStats[i], BossStats));
+                    continue;
+                }
+
+                InsectSkill supportSkill = slotSkills[supportIndex];
+                RaidActionResult supportAction = RaidRoundResolver.ResolveSupportSkill(
+                    i, supportIndex, TeamStats[i], BossStats, TeamStats, supportSkill, randomSource);
+                result.AddTeamAction(supportAction);
+                if (supportAction.StunApplied) stunLanded = true;
+
+                // 쿨다운 배선 — 배열(TeamCooldowns)과 TickCooldowns는 원래 슬롯별로 있었는데
+                // **세팅하는 곳이 리더뿐**이라 비-리더 칸이 늘 0이었다. 이제 걸리면 다음 라운드에
+                // 플래너가 자연히 다른 스킬로 돈다(로테이션을 따로 만들 필요가 없다).
+                TeamCooldowns[i][supportIndex] = supportSkill.cooldownTurns;
+            }
+
+            // 기절은 팀 전체에서 한 번만 판정한다 — 명중(리졸버의 StunApplied)과 면역 둘 다 통과해야 한다.
+            // 예전엔 리더의 effectType만 보고 무조건 걸어서 명중률을 무시했다.
+            bool stunResisted = false;
+            if (stunLanded)
+            {
+                if (bossStunImmuneRounds > 0) stunResisted = true;
+                else bossStunned = true;
             }
 
             TeamCooldowns[leaderSlot][skillIndex] = skill.cooldownTurns;
@@ -221,6 +326,8 @@ namespace InsectGame.Battle
             LastWasUnite = false;
             UniteSlotDamages = null;
             LastActionText = BuildTeamRushText(result);
+            if (stunResisted)
+                LastActionText += "\n보스가 기절에 저항했다!";
 
             if (BossStats.CurrentHp <= 0)
                 result.EndState = RaidRoundEndState.Victory;
@@ -260,11 +367,19 @@ namespace InsectGame.Battle
                 LastHitSlot = -1;
                 BossUsedAoe = false;
                 LastActionText += "\n보스가 기절해 움직이지 못한다!";
+                // 다음 라운드엔 기절이 안 걸린다 — 연속 기절로 보스를 영구히 묶는 것을 막는다.
+                bossStunImmuneRounds = 2;   // 이번 라운드 말미에 1이 줄어 다음 라운드만 면역
+                // **bossCooldown은 건드리지 않는다.** 스킵된 전체공격은 소비되지 않고 다음 라운드에
+                // 다시 예고된다("막았다"가 아니라 "미뤘다"). 예전엔 갱신이 아래 else 안에만 있어서
+                // 결과가 같아 보였지만 의미가 정반대였다 — AOE 예고 턴마다 기절을 맞추면
+                // bossCooldown이 0에 머물러 보스가 전체공격을 **영원히 예고만** 했다.
+                // 이제 위 면역이 연속 시도를 끊어 반드시 다음 라운드에 실행된다.
             }
             else
             {
                 RaidActionResult bossAction = RaidRoundResolver.ResolveBossIntent(
-                    intent, BossStats, TeamStats, result.BossDamageBySlot);
+                    intent, BossStats, TeamStats, result.BossDamageBySlot,
+                    BossEnraged ? GameConstants.Battle.RaidBossEnragedDamageMultiplier : 1f);
                 result.BossAction = bossAction;
                 result.BossResponseResolved = true;
                 for (int i = 0; i < result.BossDamageBySlot.Length; i++)
@@ -272,7 +387,9 @@ namespace InsectGame.Battle
 
                 bool area = intent != null && intent.IsArea;
                 if (area)
-                    bossCooldown = 2;
+                    bossCooldown = BossEnraged
+                        ? GameConstants.Battle.RaidBossEnragedAreaInterval
+                        : GameConstants.Battle.RaidBossAreaInterval;
                 else if (bossCooldown > 0)
                     bossCooldown--;
 
@@ -309,6 +426,7 @@ namespace InsectGame.Battle
 
             RaidRoundResult completed = CurrentRoundResult;
             TickCooldowns();
+            if (bossStunImmuneRounds > 0) bossStunImmuneRounds--;
             TurnNumber++;
             completed.RoundNumber = TurnNumber;
             completed.Stage = RaidRoundStage.Completed;
@@ -341,8 +459,9 @@ namespace InsectGame.Battle
                 return;
             }
 
+            UpdateBossPhase();
             InsectSkill signature = GetUnlockedBossSignature(
-                BossStats.Data, BossStats.Level);
+                BossStats.Data, BossStats.Level, TurnNumber);
             NextBossIntent = RaidRoundResolver.CreateBossIntent(
                 TurnNumber + 1,
                 BossStats,
@@ -380,18 +499,41 @@ namespace InsectGame.Battle
                 : $"\n{BossStats.Data.displayName}의 {intent.DisplayName}!";
         }
 
-        private static InsectSkill GetUnlockedBossSignature(InsectData data, int level)
+        /// <summary>
+        /// 해금된 시그니처 스킬을 <paramref name="rotation"/>으로 순환해 하나 고른다.
+        ///
+        /// 예전엔 learnset의 <b>첫 항목만 영구 반환</b>해서 보스가 매 턴 같은 기술만 썼다 —
+        /// 한 번 싸우면 다 본 것이 됐다. 난수가 아니라 라운드 번호로 도는 이유는 예고(intent)와
+        /// 실행이 같은 객체를 공유하는 결정론을 깨지 않기 위해서다.
+        /// <b>시그니처가 하나뿐이면 결과가 예전과 완전히 같다</b> — 무위험 폴백.
+        /// </summary>
+        private static InsectSkill GetUnlockedBossSignature(InsectData data, int level, int rotation)
         {
             if (data == null || data.learnset == null) return null;
+
+            int count = 0;
+            foreach (InsectLearnableSkill learnable in data.learnset)
+                if (IsUnlockedSignature(learnable, level)) count++;
+            if (count == 0) return null;
+
+            int pick = count > 1 ? ((rotation % count) + count) % count : 0;
+            int seen = 0;
             foreach (InsectLearnableSkill learnable in data.learnset)
             {
-                if (learnable != null
-                    && learnable.skill != null
-                    && learnable.skill.isSignatureSkill
-                    && learnable.learnLevel <= level)
-                    return learnable.skill;
+                if (!IsUnlockedSignature(learnable, level)) continue;
+                if (seen == pick) return learnable.skill;
+                seen++;
             }
+
             return null;
+        }
+
+        private static bool IsUnlockedSignature(InsectLearnableSkill learnable, int level)
+        {
+            return learnable != null
+                && learnable.skill != null
+                && learnable.skill.isSignatureSkill
+                && learnable.learnLevel <= level;
         }
 
         private void TickCooldowns()

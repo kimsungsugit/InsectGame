@@ -38,9 +38,12 @@ namespace InsectGame.Battle
         private bool playingSkill;
         public bool IsPlayingSkill => playingSkill;
 
-        // 레이드 보스 공격 시 대상 팀 슬롯(피격 슬롯) — RaidBattleUI가 BossAttack 연출 전 지정. -1이면 첫 유효 팀.
-        private int bossAttackTargetSlot = -1;
-        public void SetBossAttackTargetSlot(int slot) { bossAttackTargetSlot = slot; }
+        // `bossAttackTargetSlot` 필드와 `SetBossAttackTargetSlot`가 여기 있었다. 유일한 호출부
+        // (`RaidBattleUI.TriggerBossAttackEffect`)가 5f0776f의 라운드 파이프라인 교체로 죽으면서
+        // **쓰는 쪽 없이 읽히기만 하는 필드**가 됐다 — 초기값이 있어 컴파일 경고도 나지 않는다.
+        // 대상 지정은 `PlayRaidBossAttack(element, isAoe, targetSlot, onComplete)`의 매개변수로 옮겨갔다.
+        // 되살리지 말 것: 지금 호출해도 `PlayRaidBossAttack`의 인자 분기가 먼저 이겨 아무 효과가 없다
+        // (호출부 0인 `RaidRoundModels.SetBossDamage`를 제거했던 것과 같은 함정).
 
         public bool IsActive => isActive;
         public Vector3 ArenaCenter => arenaCenter;
@@ -796,10 +799,9 @@ namespace InsectGame.Battle
 
             if (isRaid)
             {
-                // 레이드: 팀 뒤쪽 높은 곳에서 보스를 올려보는 각도
-                // 보스의 거대함과 위압감을 강조
-                camPos = arenaCenter + new Vector3(0f, 4f, -7.5f);
-                lookTarget = bossBattlePos + Vector3.up * 0.8f;
+                // 레이드: 팀 뒤쪽 높은 곳에서 보스를 **정면으로** 본다.
+                // 좌표는 실제 배치(팀 호 중심·보스 위치)에서 파생한다 — 값을 두 곳에 적지 않는다.
+                ComputeRaidCameraFraming(playerBattlePos, bossBattlePos, out camPos, out lookTarget);
             }
             else
             {
@@ -815,10 +817,45 @@ namespace InsectGame.Battle
             CameraFollower follower = cam.GetComponent<CameraFollower>();
             if (follower != null)
             {
-                follower.EnterBattleMode(playerBattlePos, enemyBattlePos);
-                cam.transform.position = camPos;
-                cam.transform.LookAt(lookTarget);
+                if (isRaid)
+                {
+                    // 팔로워에게 이 구도를 그대로 넘긴다. 좌표 쌍 오버로드를 쓰면 팔로워가 대결 축의
+                    // **측면**에 카메라를 놓고 LateUpdate가 매 프레임 그걸 적용해, 위에서 잡은 정면
+                    // 구도가 같은 프레임에 덮인다(레이드가 옆에서 보이던 원인).
+                    follower.EnterBattleModeFramed(camPos, lookTarget);
+                }
+                else
+                {
+                    // 1v1은 팔로워의 측면 구도를 그대로 쓴다(사용자 선택 — 레이드만 정면으로 바꿨다).
+                    // 그래서 아래 두 줄은 이 프레임 한 번만 유효하고 곧 팔로워 값으로 덮인다.
+                    follower.EnterBattleMode(playerBattlePos, enemyBattlePos);
+                    cam.transform.position = camPos;
+                    cam.transform.LookAt(lookTarget);
+                }
             }
+        }
+
+        // 레이드 카메라 구도 — 눈으로 보고 조정하는 값이다.
+        // 보스를 더 크게/작게 보고 싶으면 RaidCamBackDistance만 움직이면 된다.
+        private const float RaidCamBackDistance = 5.0f;   // 팀 호 중심에서 뒤로
+        private const float RaidCamHeight = 4.6f;         // 팀 발치 기준 높이
+        private const float RaidCamLookBias = 0.5f;       // 시선 지점(팀→보스 보간). 클수록 보스가 화면 위로
+        private const float RaidCamLookLift = 0.6f;       // 시선 지점을 바닥에서 살짝 띄운다
+
+        /// <summary>
+        /// 팀 뒤 위쪽에서 보스를 정면으로 보는 카메라 구도. 화면 상단-중앙에 보스,
+        /// 하단 전경에 팀 뒷모습이 오도록 팀→보스 축 <b>뒤쪽</b>에 카메라를 놓는다.
+        /// 순수 계산이라 <c>RaidCameraFramingTests</c>가 측면 구도 회귀를 고정한다.
+        /// </summary>
+        public static void ComputeRaidCameraFraming(
+            Vector3 teamPos, Vector3 bossPos, out Vector3 camPos, out Vector3 lookTarget)
+        {
+            Vector3 axis = bossPos - teamPos;
+            axis.y = 0f;   // 수평 성분만 — 보스가 팀보다 높이 서 있어도 카메라가 기울지 않게
+            axis = axis.sqrMagnitude > 0.0001f ? axis.normalized : Vector3.forward;
+
+            camPos = teamPos - axis * RaidCamBackDistance + Vector3.up * RaidCamHeight;
+            lookTarget = Vector3.Lerp(teamPos, bossPos, RaidCamLookBias) + Vector3.up * RaidCamLookLift;
         }
 
         // ===== 3D Skill Effect System =====
@@ -870,12 +907,12 @@ namespace InsectGame.Battle
             StartCoroutine(SkillAttackCoroutine(isPlayerAttacking, element, onImpact, isMelee));
         }
 
-        // 레이드 보스 공격 대상 팀 모델 — 지정 슬롯(피격) 우선, 없거나 파괴됐으면 첫 유효 팀 모델.
+        // 레이드 보스 공격 대상 팀 모델의 **폴백** — 첫 유효 팀 모델.
+        // 피격 슬롯 지정은 호출부가 `PlayRaidBossAttack`의 targetSlot 인자로 넘기고 그쪽이 먼저 처리한다.
+        // 여기까지 오는 건 그 인자가 범위 밖이거나 해당 모델이 이미 파괴된 경우뿐이다.
         private GameObject ResolveBossTarget()
         {
             if (teamModels == null) return null;
-            if (bossAttackTargetSlot >= 0 && bossAttackTargetSlot < teamModels.Length && teamModels[bossAttackTargetSlot] != null)
-                return teamModels[bossAttackTargetSlot];
             for (int i = 0; i < teamModels.Length; i++)
                 if (teamModels[i] != null) return teamModels[i];
             return null;
@@ -2004,7 +2041,7 @@ namespace InsectGame.Battle
             Destroy(p);
         }
 
-        private static Material CreateTransparentMaterial(Color color)
+        private Material CreateTransparentMaterial(Color color)
         {
             Material mat = CreateSafeMaterial(color);
             mat.SetFloat("_Mode", 3);
@@ -2310,7 +2347,6 @@ namespace InsectGame.Battle
             // StopAllCoroutines가 SkillAttackCoroutine을 종료점 도달 전에 죽이면 playingSkill이 true로
             // 고착 → 다음 배틀 PhaseAnimDone이 2s 상한까지 지연. 강제 리셋으로 차단.
             playingSkill = false;
-            bossAttackTargetSlot = -1;
             if (arenaRoot != null)
             {
                 Destroy(arenaRoot);
@@ -2322,6 +2358,11 @@ namespace InsectGame.Battle
             teamModels = null;
             activeEffectTexts.Clear();
             rendererCache.Clear();
+
+            // 이 전투가 만든 머티리얼 일괄 파기 — GameObject를 지워도 머티리얼은 남는다.
+            for (int i = 0; i < runtimeMaterials.Count; i++)
+                if (runtimeMaterials[i] != null) Destroy(runtimeMaterials[i]);
+            runtimeMaterials.Clear();
         }
 
         public void HighlightTeamMember(int index)
@@ -2344,7 +2385,18 @@ namespace InsectGame.Battle
             }
         }
 
-        private static Material CreateSafeMaterial(Color color)
+        /// <summary>
+        /// 이 전투가 만든 런타임 머티리얼. <b><c>Destroy(gameObject)</c>는 머티리얼을 지우지 않는다</b> —
+        /// 같은 저장소가 <c>OutfitShapeLibrary.TrimContainer</c>에서 GameObject보다 머티리얼을 먼저 파괴하고
+        /// <c>PlayerVisualBuilder.SafeDestroyMat</c>·<c>NpcVisualBuilder.CleanupMaterials</c>를 두는 이유다.
+        ///
+        /// 여기선 <b>스킬 연출마다</b> 이펙트 오브젝트(링·스파크·구름·기둥…)가 새로 나고 그때마다
+        /// 머티리얼도 새로 난다. 오브젝트는 코루틴이 지우지만 머티리얼은 아무도 안 지워서, 전투가 길수록
+        /// 계속 쌓였다. 전투 종료에 한 번에 정리해 누수를 <b>전투 1회 수명</b>으로 가둔다.
+        /// </summary>
+        private readonly List<Material> runtimeMaterials = new List<Material>();
+
+        private Material CreateSafeMaterial(Color color)
         {
             Shader shader = Shader.Find("Standard");
             if (shader == null) shader = Shader.Find("Universal Render Pipeline/Lit");
@@ -2352,6 +2404,7 @@ namespace InsectGame.Battle
             if (shader == null) shader = Shader.Find("Sprites/Default");
             Material mat = shader != null ? new Material(shader) : new Material(Shader.Find("Hidden/InternalErrorShader"));
             mat.color = color;
+            runtimeMaterials.Add(mat);   // CleanupArena가 일괄 파기 — 안 하면 연출마다 샌다
             return mat;
         }
     }

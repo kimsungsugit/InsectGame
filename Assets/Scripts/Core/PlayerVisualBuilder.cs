@@ -1,15 +1,47 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace InsectGame.Core
 {
     /// <summary>
-    /// 필드 3D 플레이어 캐릭터의 프로시저럴 생성/외형 갱신 담당.
-    /// - 6.4등신 슬림 비례 (CharacterPortraitRenderer와 일관)
-    /// - CharacterOutfitManager.OutfitChanged 구독 → 머티리얼 색만 갱신 (재생성 X)
-    /// - 8개 슬롯 시각 매핑 + Accessory 시각 노드 추가
-    /// 노드 이름은 PlayerMovement.cs(transform.Find)와 CharacterOutfitManager.ApplyToCharacter()가
-    /// 의존하므로 변경하지 말 것: Body/Shirt/ArmL/ArmR/HandL/HandR/LegL/LegR/BootL/BootR/
-    /// Backpack/NetHandle/NetRing/Cap/CapBrim/HeadPivot.
+    /// 캐릭터 외형 중 <b>의상이 아닌</b> 부분(성별·머리·얼굴). PlayerPrefs가 정하는 값들을 한 덩어리로 묶어
+    /// <see cref="PlayerVisualBuilder.BuildForPreview"/>가 주입받을 수 있게 한다 —
+    /// 프리뷰 마네킹은 PlayerPrefs를 직접 읽지 않고 이걸 받는다.
+    /// </summary>
+    public struct AppearanceSpec
+    {
+        public int gender;
+        public int hairStyle;
+        public int hairColor;
+        public int faceType;
+
+        public static AppearanceSpec FromPlayerPrefs()
+        {
+            return new AppearanceSpec
+            {
+                gender = PlayerPrefs.GetInt(SaveScope.PrefsKey("InsectGame.Character.Gender"), 0),
+                hairStyle = PlayerPrefs.GetInt(SaveScope.PrefsKey("InsectGame.Character.HairStyle"), 0),
+                hairColor = PlayerPrefs.GetInt(SaveScope.PrefsKey("InsectGame.Character.HairColor"), 0),
+                faceType = PlayerPrefs.GetInt(SaveScope.PrefsKey("InsectGame.Character.FaceType"), 0),
+            };
+        }
+
+        /// <summary>프리뷰 썸네일 캐시 키용. 외형이 바뀌면 구운 썸네일이 전부 낡는다.</summary>
+        public int Hash()
+        {
+            return ((gender * 31 + hairStyle) * 31 + hairColor) * 31 + faceType;
+        }
+    }
+
+    /// <summary>
+    /// 3D 플레이어 캐릭터의 프로시저럴 생성/외형 갱신 담당. 필드의 실제 플레이어와
+    /// 의상 미리보기용 마네킹(<see cref="BuildForPreview"/>)이 같은 코드로 지어진다.
+    /// - 치비 ~3.5등신 비례
+    /// - CharacterOutfitManager.OutfitChanged 구독 → ApplyToCharacter가 색·형태 갱신 (재생성 X)
+    /// 노드 이름은 PlayerMovement.cs(transform.Find), CharacterOutfitManager.ApplyToCharacter(),
+    /// OutfitShapeLibrary의 bind/hideNodes가 의존하므로 변경하지 말 것:
+    /// Body/Shirt/ArmL/ArmR/HandL/HandR/LegL/LegR/BootL/BootR/
+    /// Backpack/NetHandle/NetRing/Cap/CapBrim/HatRoot/HeadPivot.
     /// </summary>
     public class PlayerVisualBuilder : MonoBehaviour
     {
@@ -17,7 +49,18 @@ namespace InsectGame.Core
         // CharacterPortraitRenderer: headW=24/headH=30, bodyW=42(38)/bodyH=62, legW=13/legH=95.
         // 3D 변환: 캡슐 본래 폭 1m → 0.5×0.5면 정사이즈, 옛 0.78×0.66은 과체중.
 
-        // ── 슬롯별 머티리얼 캐시 (RefreshOutfitColors가 사용) ──
+        /// <summary>
+        /// <see cref="MakeMaterial"/>가 만든 <b>모든</b> 런타임 머티리얼. 정리의 단일 출처다.
+        ///
+        /// 예전엔 아래 슬롯 필드 11개만 <c>OnDestroy</c>에 손으로 나열했는데, 얼굴·머리 장식이
+        /// 만드는 6~9개(눈·동공·하이라이트·눈썹·코·입 + 여성 홍조·속눈썹 + 올림머리 리본)는
+        /// <b>지역 변수라 목록에 오르지 못했다</b> — 마네킹을 다시 지을 때마다 그만큼씩 샜다.
+        /// 생성 지점이 <c>MakeMaterial</c> 하나뿐이므로 거기서 등록하면 호출 20여 곳을
+        /// 건드리지 않고 전부 덮인다(<c>BattleArenaController.runtimeMaterials</c>와 같은 형태).
+        /// </summary>
+        private readonly List<Material> runtimeMaterials = new List<Material>();
+
+        // ── 슬롯별 머티리얼 참조 (BuildAll이 여러 노드에 같은 것을 물릴 때 씀) ──
         private Material hatMat;       // Cap + CapBrim
         private Material topMat;       // Shirt
         private Material bottomMat;    // LegL + LegR
@@ -27,8 +70,7 @@ namespace InsectGame.Core
         private Material backpackStrapMat; // Backpack 어깨끈 (어둡게)
         private Material toolMat;      // NetHandle
         private Material toolRingMat;  // NetRing
-        private Material accessoryMat; // Accessory 노드들
-        private Material skinMat;      // Neck/Head/Hand/Ear 등 피부 노출 부위
+        private Material skinMat;      // Neck/Head/Hand/Ear/Nose 등 피부 노출 부위
         private Material hairMat;      // Hair (PlayerPrefs HairColor)
 
         // ── 노드 참조 (SetActive on/off에 사용) ──
@@ -40,26 +82,54 @@ namespace InsectGame.Core
         private GameObject backpackStrap;
         private GameObject toolHandle;
         private GameObject toolRing;
-        private GameObject accessoryRoot;     // 부모 컨테이너
-        private GameObject accGlassesL;
-        private GameObject accGlassesR;
-        private GameObject accNecklace;
-        private GameObject accBadge;          // 가슴팍 기본 큐브
 
         private bool subscribedToOutfit;
+        private bool builtOnce;
+        private bool previewMode;
+        private AppearanceSpec look;
 
         private void Awake()
         {
+            // 프리뷰 마네킹은 비활성 상태에서 BuildForPreview로 이미 지어진 뒤 활성화된다 —
+            // 그때 뒤늦게 발화하는 Awake가 두 번째 몸을 짓지 않게 막는다.
+            if (builtOnce) return;
+            look = AppearanceSpec.FromPlayerPrefs();
             BuildAll();
+            builtOnce = true;
+        }
+
+        /// <summary>
+        /// 의상 미리보기용 마네킹을 짓는다. <b>GameObject가 비활성일 때 호출할 것</b> —
+        /// AddComponent는 활성 오브젝트면 즉시 Awake를 발화시켜 PlayerPrefs 외형으로 먼저 지어버린다.
+        ///
+        /// <code>
+        /// GameObject go = new GameObject("OutfitMannequin");
+        /// go.SetActive(false);                                    // ← Awake 억제
+        /// go.AddComponent&lt;PlayerVisualBuilder&gt;().BuildForPreview(spec);
+        /// go.SetActive(true);                                     // Awake는 builtOnce로 스킵
+        /// </code>
+        /// </summary>
+        public void BuildForPreview(AppearanceSpec spec)
+        {
+            if (builtOnce) return;
+            previewMode = true;
+            look = spec;
+            BuildAll();
+            builtOnce = true;
         }
 
         private void OnEnable()
         {
+            // 마네킹은 OutfitChanged를 구독하면 안 된다 — 그 핸들러가 mgr.ApplyToCharacter()를 부르고,
+            // 그 안의 GameObject.Find("Player")가 실제 플레이어를 찾아 옷을 다시 입힌다.
+            // 마네킹을 하나 만들 때마다 씬 전체 스캔 + 실플레이어 갱신이 도는 조용한 버그가 된다.
+            if (previewMode) return;
             TrySubscribeOutfitChanged();
         }
 
         private void Start()
         {
+            if (previewMode) return;
             // OutfitManager가 Awake 순서상 늦게 살아있을 수 있어 Start에서도 1회 시도
             TrySubscribeOutfitChanged();
             // 초기 외형 동기화 (저장된 장착 반영)
@@ -84,35 +154,36 @@ namespace InsectGame.Core
             // 머티리얼을 가리켜 캐릭터가 검은색/분홍색으로 렌더링됨 (회귀 보고됨).
             // → 안전한 destroy: 자식 노드 중 이 머티리얼을 sharedMaterial로 쓰는 게 있으면 스킵.
             //   (player가 영구 객체라 누수 영향 실질적 0)
-            SafeDestroyMat(ref hatMat);
-            SafeDestroyMat(ref topMat);
-            SafeDestroyMat(ref bottomMat);
-            SafeDestroyMat(ref outerwearMat);
-            SafeDestroyMat(ref shoesMat);
-            SafeDestroyMat(ref backpackMat);
-            SafeDestroyMat(ref backpackStrapMat);
-            SafeDestroyMat(ref toolMat);
-            SafeDestroyMat(ref toolRingMat);
-            SafeDestroyMat(ref accessoryMat);
-            SafeDestroyMat(ref skinMat);
-            SafeDestroyMat(ref hairMat);
+            //
+            // 마네킹은 파괴가 정상 수명이다 — 여기서 강제로 지우지 않으면 다시 지을 때마다
+            // 머티리얼 17~20개(성별·머리 스타일에 따라)가 영구히 샌다.
+            // 조회는 목록 전체에 대해 **한 번만** 한다(예전엔 필드마다 11번 돌았다).
+            MeshRenderer[] renderers = previewMode ? null : GetComponentsInChildren<MeshRenderer>(true);
+            for (int i = 0; i < runtimeMaterials.Count; i++)
+                SafeDestroyMat(runtimeMaterials[i], renderers);
+            runtimeMaterials.Clear();
+
+            hatMat = topMat = bottomMat = outerwearMat = shoesMat = null;
+            backpackMat = backpackStrapMat = toolMat = toolRingMat = null;
+            skinMat = hairMat = null;
         }
 
-        private void SafeDestroyMat(ref Material m)
+        /// <summary>
+        /// <paramref name="renderers"/>가 null이면(마네킹) 무조건 파기한다. 위 주석의 검정/마젠타
+        /// 회귀는 영구 객체인 실플레이어에서 ApplyToCharacter 전에 캐시를 지웠을 때만 나는 문제라
+        /// 곧 사라질 마네킹엔 해당하지 않는다.
+        /// </summary>
+        private void SafeDestroyMat(Material m, MeshRenderer[] renderers)
         {
             if (m == null) return;
+            if (renderers == null) { Destroy(m); return; }
+
             // sharedMaterial로 아직 사용 중인지 확인 — 사용 중이면 Unity가 자체 cleanup
-            var renderers = GetComponentsInChildren<MeshRenderer>(true);
             for (int i = 0; i < renderers.Length; i++)
             {
-                if (renderers[i] != null && renderers[i].sharedMaterial == m)
-                {
-                    m = null;
-                    return;
-                }
+                if (renderers[i] != null && renderers[i].sharedMaterial == m) return;
             }
             Destroy(m);
-            m = null;
         }
 
         private void TrySubscribeOutfitChanged()
@@ -125,7 +196,13 @@ namespace InsectGame.Core
         }
 
         private static bool shaderDiagLogged;
-        private static Material MakeMaterial(Color color)
+
+        /// <summary>
+        /// 이 클래스가 런타임 머티리얼을 만드는 <b>유일한 지점</b>. 만든 것은 전부
+        /// <see cref="runtimeMaterials"/>에 등록돼 <c>OnDestroy</c>가 일괄 정리한다 —
+        /// static이면 등록할 곳이 없어 인스턴스 메서드다.
+        /// </summary>
+        private Material MakeMaterial(Color color)
         {
             // Unity 6 + Built-in Pipeline 환경 가정. Standard 못 찾으면 URP/Unlit 순으로 fallback.
             // 최종 fallback도 실패하면 캐릭터가 검정/마젠타 → 진단 로그로 알림.
@@ -155,6 +232,7 @@ namespace InsectGame.Core
             mat.color = color;
             // URP 환경 호환: _BaseColor property도 함께 설정 (Standard는 무시)
             if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", color);
+            runtimeMaterials.Add(mat);
             return mat;
         }
 
@@ -174,9 +252,8 @@ namespace InsectGame.Core
             backpackStrapMat = MakeMaterial(new Color(0.7f, 0.45f, 0.14f));
             toolMat = MakeMaterial(new Color(0.6f, 0.4f, 0.2f));            // 잠자리채 손잡이
             toolRingMat = MakeMaterial(new Color(0.95f, 0.92f, 0.88f));     // 잠자리채 망
-            accessoryMat = MakeMaterial(new Color(0.1f, 0.1f, 0.1f));       // 악세서리
 
-            int gender = PlayerPrefs.GetInt(SaveScope.PrefsKey("InsectGame.Character.Gender"), 0);
+            int gender = look.gender;
 
             // 미리보기(CharacterPortraitRenderer)는 직사각형 몸통 (bodyW=42, bodyH=62, X:Y≈0.68).
             // 옛 Capsule은 위아래 반구로 통처럼 둥글어 미리보기 대비 뚱뚱하게 보임 → Cube로 변경.
@@ -264,8 +341,8 @@ namespace InsectGame.Core
             BuildEars(headPivot, skinMat);
 
             // ── 머리카락 ──
-            int hairStyle = PlayerPrefs.GetInt(SaveScope.PrefsKey("InsectGame.Character.HairStyle"), 0);
-            int hairColorIdx = PlayerPrefs.GetInt(SaveScope.PrefsKey("InsectGame.Character.HairColor"), 0);
+            int hairStyle = look.hairStyle;
+            int hairColorIdx = look.hairColor;
             Color[] hairColors = {
                 new Color(0.12f, 0.08f, 0.05f),
                 new Color(0.35f, 0.2f, 0.1f),
@@ -380,10 +457,10 @@ namespace InsectGame.Core
             backpackStrap.GetComponent<MeshRenderer>().material = backpackStrapMat;
             Object.Destroy(backpackStrap.GetComponent<Collider>());
 
-            // ── 도구 (NetHandle/NetRing) — CharacterOutfitManager.ApplyToolShape가 이름 의존 ──
-            // 기본 좌표 = ApplyToolShape의 net(기본 잠자리채) else 분기 최종값과 일치시킴.
+            // ── 도구 (NetHandle/NetRing) — OutfitShapeLibrary의 도구 레시피가 이름 의존(bind) ──
+            // 기본 좌표 = 레시피 테이블의 기본 잠자리채(else 분기) 값과 일치시킴.
             // 옛 좌표(handle 0.55,1.62,-0.18 / ring 0.82,2.28,-0.1 머리높이·뒤쪽)는 stale 레거시로,
-            // ApplyToolShape이 첫 프레임 전 덮어쓰지만 도구 미장착/early-return 시 머리 위 뒤에 망이
+            // 레시피가 첫 프레임 전 덮어쓰지만 도구 미장착/early-return 시 머리 위 뒤에 망이
             // 둥둥 뜨는 잠재버그였음. 단일 출처화 + 안전망 이중 목적.
             toolHandle = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
             toolHandle.name = "NetHandle";
@@ -403,8 +480,8 @@ namespace InsectGame.Core
             toolRing.GetComponent<MeshRenderer>().material = toolRingMat;
             Object.Destroy(toolRing.GetComponent<Collider>());
 
-            // ── 악세서리 (신규) ──
-            BuildAccessoryNodes();
+            // 악세서리는 미리 만들지 않는다 — OutfitShapeLibrary의 레시피가 장착 시점에
+            // 루트 아래 OP_Accessory 컨테이너로 필요한 파츠만 만든다.
         }
 
         private void BuildFace(GameObject headPivot, float headScale, int gender)
@@ -462,7 +539,7 @@ namespace InsectGame.Core
             hlR.GetComponent<MeshRenderer>().material = hlMat;
             Object.Destroy(hlR.GetComponent<Collider>());
 
-            int faceType = PlayerPrefs.GetInt(SaveScope.PrefsKey("InsectGame.Character.FaceType"), 0);
+            int faceType = look.faceType;
             Material browMat = MakeMaterial(new Color(0.2f, 0.15f, 0.1f));
             GameObject browL = GameObject.CreatePrimitive(PrimitiveType.Cube);
             browL.name = "BrowL";
@@ -480,7 +557,9 @@ namespace InsectGame.Core
             browR.GetComponent<MeshRenderer>().material = browMat;
             Object.Destroy(browR.GetComponent<Collider>());
 
-            Material skinMat = MakeMaterial(new Color(0.92f, 0.78f, 0.62f));
+            // 코는 몸의 피부 머티리얼을 그대로 쓴다. 예전엔 여기서 같은 색으로 **하나 더** 만들면서
+            // 이름까지 필드와 같아(지역 변수가 필드를 가림) 피부색을 한 곳에서 바꾸려 하면
+            // 코만 옛 색으로 남는 함정이었다. BuildAll이 이 메서드보다 먼저 필드를 채운다.
             GameObject nose = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             nose.name = "Nose";
             nose.transform.SetParent(headPivot.transform, false);
@@ -782,132 +861,25 @@ namespace InsectGame.Core
         }
 
         // ──────────────────────────────────────────────
-        //  Accessory: 안경/목걸이/배지(기본 큐브) 세 가지를 미리 생성하고
-        //  itemId에 따라 SetActive 분기.
-        // ──────────────────────────────────────────────
-        private void BuildAccessoryNodes()
-        {
-            accessoryRoot = new GameObject("AccessoryRoot");
-            accessoryRoot.transform.SetParent(transform, false);
-            accessoryRoot.transform.localPosition = Vector3.zero;
-
-            // 안경: 치비 눈 월드높이(headPivot 1.22 + 눈 local×0.60 ≈ 1.20)에 맞춤. 옛 Y2.20은
-            // 캐릭터 키 2.38 기준이라 치비에서 머리 위 ~1유닛 허공에 떴음. 커진 눈에 맞춰 렌즈도 확대.
-            accGlassesL = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            accGlassesL.name = "AccGlassesL";
-            accGlassesL.transform.SetParent(accessoryRoot.transform, false);
-            accGlassesL.transform.localPosition = new Vector3(-0.072f, 1.20f, 0.21f);
-            accGlassesL.transform.localScale = new Vector3(0.10f, 0.09f, 0.02f);
-            accGlassesL.GetComponent<MeshRenderer>().material = accessoryMat;
-            Object.Destroy(accGlassesL.GetComponent<Collider>());
-
-            accGlassesR = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            accGlassesR.name = "AccGlassesR";
-            accGlassesR.transform.SetParent(accessoryRoot.transform, false);
-            accGlassesR.transform.localPosition = new Vector3(0.072f, 1.20f, 0.21f);
-            accGlassesR.transform.localScale = new Vector3(0.10f, 0.09f, 0.02f);
-            accGlassesR.GetComponent<MeshRenderer>().material = accessoryMat;
-            Object.Destroy(accGlassesR.GetComponent<Collider>());
-
-            // 목걸이/펜던트: 목/쇄골(치비 목 ~1.0). 옛 Y1.88 → 1.00.
-            accNecklace = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            accNecklace.name = "AccNecklace";
-            accNecklace.transform.SetParent(accessoryRoot.transform, false);
-            accNecklace.transform.localPosition = new Vector3(0f, 1.00f, 0.20f);
-            accNecklace.transform.localScale = new Vector3(0.06f, 0.06f, 0.06f);
-            accNecklace.GetComponent<MeshRenderer>().material = accessoryMat;
-            Object.Destroy(accNecklace.GetComponent<Collider>());
-
-            // 기본 배지: 가슴팍(치비 Body Y0.77 앞면 ~0.85). 옛 Y1.65 → 0.85.
-            accBadge = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            accBadge.name = "AccBadge";
-            accBadge.transform.SetParent(accessoryRoot.transform, false);
-            accBadge.transform.localPosition = new Vector3(0f, 0.85f, 0.20f);
-            accBadge.transform.localScale = new Vector3(0.10f, 0.10f, 0.04f);
-            accBadge.GetComponent<MeshRenderer>().material = accessoryMat;
-            Object.Destroy(accBadge.GetComponent<Collider>());
-
-            // 초기 상태: 모두 숨김 (RefreshOutfitColors에서 itemId에 맞춰 켬)
-            accGlassesL.SetActive(false);
-            accGlassesR.SetActive(false);
-            accNecklace.SetActive(false);
-            accBadge.SetActive(false);
-        }
-
-        // ──────────────────────────────────────────────
-        //  OutfitChanged 핸들러: 머티리얼 색 + Accessory 노드 가시성 갱신.
-        //  GameObject 재생성 X.
+        //  OutfitChanged 핸들러: 8슬롯 전부를 ApplyToCharacter가 처리한다.
+        //  GameObject 재생성 X (레시피의 spawn 파츠만 갈아끼워진다).
         // ──────────────────────────────────────────────
         public void RefreshOutfitColors()
         {
+            // 마네킹은 실장착이 아니라 호출부가 지정한 로드아웃을 입는다(ApplyToCharacter 오버로드).
+            if (previewMode) return;
+
             CharacterOutfitManager mgr = CharacterOutfitManager.Instance;
             if (mgr == null) return;
 
-            // 7개 슬롯 (Hat/Top/Bottom/Outerwear/Shoes/Backpack/Tool): ApplyToCharacter가 노드별
-            // 머티리얼 색 + 알파 0 시 SetActive(false) 적용. 게임 시작 시점에도 저장 의상 동기화.
+            // 노드별 머티리얼 색 + 알파 0 시 SetActive(false) + 슬롯별 형태 레시피.
+            // 게임 시작 시점에도 저장 의상 동기화.
+            //
+            // 악세서리도 여기 포함된다. 예전엔 ApplyToCharacter가 7슬롯만 다루고 Accessory는
+            // 이 클래스가 미리 만든 4노드(AccGlassesL/R·AccNecklace·AccBadge) 중 하나를 켜는
+            // 별도 경로였는데, 15종 중 8종이 else로 떨어져 날개·오라·후광이 전부 같은
+            // 가슴팍 큐브로 보였다. 지금은 OutfitShapeLibrary가 형태의 단일 출처다.
             mgr.ApplyToCharacter();
-
-            // Accessory: ApplyToCharacter에 미포함이라 PlayerVisualBuilder가 자체 노드로 처리.
-            ApplyAccessory(mgr.GetEquipped(OutfitSlot.Accessory));
-        }
-
-        private void ApplyAccessory(OutfitItem item)
-        {
-            if (accessoryRoot == null) return;
-
-            // 모두 꺼두고 itemId에 맞는 노드만 켠다.
-            if (accGlassesL != null) accGlassesL.SetActive(false);
-            if (accGlassesR != null) accGlassesR.SetActive(false);
-            if (accNecklace != null) accNecklace.SetActive(false);
-            if (accBadge != null) accBadge.SetActive(false);
-
-            if (item == null) return;
-            if (item.primaryColor.a < 0.01f) return; // acc_none
-
-            string id = item.itemId ?? "";
-            Color c = item.primaryColor;
-
-            if (id.Contains("glasses") || id.Contains("visor") || id.Contains("eyepatch"))
-            {
-                if (accGlassesL != null)
-                {
-                    accGlassesL.SetActive(true);
-                    SetColor(accGlassesL, c);
-                }
-                if (accGlassesR != null)
-                {
-                    accGlassesR.SetActive(true);
-                    // eyepatch는 한쪽만
-                    if (id.Contains("eyepatch")) accGlassesR.SetActive(false);
-                    else SetColor(accGlassesR, c);
-                }
-            }
-            else if (id.Contains("necklace") || id.Contains("pendant") || id.Contains("orb") || id.Contains("crystal_orb"))
-            {
-                if (accNecklace != null)
-                {
-                    accNecklace.SetActive(true);
-                    SetColor(accNecklace, c);
-                }
-            }
-            else
-            {
-                // 스카프/배지/엠블럼/완장/머플러/반다나/날개/오라/후광/네온/도그태그 등 기본 가슴팍 큐브
-                if (accBadge != null)
-                {
-                    accBadge.SetActive(true);
-                    SetColor(accBadge, c);
-                }
-            }
-        }
-
-        private static void SetColor(GameObject go, Color c)
-        {
-            MeshRenderer mr = go.GetComponent<MeshRenderer>();
-            if (mr == null) return;
-            Material mat = mr.material;
-            if (mat == null) return;
-            mat.color = c;
         }
     }
 }

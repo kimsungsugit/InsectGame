@@ -77,6 +77,33 @@ namespace InsectGame.Core
             battleRot = Quaternion.LookRotation(mid + Vector3.up * 0.5f - battlePos);
         }
 
+        /// <summary>
+        /// 배틀 카메라를 <b>호출부가 지정한 구도</b>로 진입한다 — 구도의 단일 출처가 호출부가 된다.
+        /// </summary>
+        /// <remarks>
+        /// 좌표 쌍을 받는 <see cref="EnterBattleMode(Vector3,Vector3)"/>는 대결 축의 <b>측면</b>
+        /// (<c>Cross(dir, up)</c>)에 카메라를 놓고 그 값을 <c>battlePos</c>에 넣는데,
+        /// <c>LateUpdate</c>가 매 프레임 그걸 카메라에 적용한다. 그래서 <c>BattleArenaController</c>가
+        /// 잡아둔 정면 구도가 같은 프레임에 덮여 사라졌다 — <b>레이드가 옆에서 보이던 원인</b>이다.
+        /// 구도를 스스로 계산하는 쪽(1v1)과 넘겨받는 쪽(레이드)을 분리해 둘이 서로를 덮지 않게 한다.
+        /// (시그니처가 같아 오버로드가 안 되므로 이름을 나눴다.)
+        /// </remarks>
+        public void EnterBattleModeFramed(Vector3 camPos, Vector3 lookTarget)
+        {
+            battleMode = true;
+            focusTimer = 0f;   // 진행 중 시네마틱 포커스 취소(배틀 카메라 우선)
+            focusReleasing = false;
+            normalPos = transform.position;
+            normalRot = transform.rotation;
+
+            battlePos = camPos;
+            Vector3 toTarget = lookTarget - camPos;
+            // 카메라와 시선 지점이 겹치면 LookRotation이 0벡터를 받아 회전이 무너진다.
+            battleRot = toTarget.sqrMagnitude > 0.0001f
+                ? Quaternion.LookRotation(toTarget)
+                : transform.rotation;
+        }
+
         public void ExitBattleMode()
         {
             battleMode = false;

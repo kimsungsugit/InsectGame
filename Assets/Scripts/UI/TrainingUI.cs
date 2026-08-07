@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using InsectGame.Core;
 using InsectGame.Data;
+using InsectGame.Dex;   // DexBrowseLayout — 도감이 쓰는 순수 뷰포트 컬링 계산을 공유한다
 using UnityEngine;
 
 namespace InsectGame.UI
@@ -231,7 +232,41 @@ namespace InsectGame.UI
             return cachedOwned;
         }
 
-        private void HandleInsectUpdated(PlayerInsectData _) { ownedCacheDirty = true; }
+        /// <summary>
+        /// 목록 한 줄의 정보 문구("Lv.n | 스킬 a/b | 장착 c/d | 크기") 캐시.
+        /// 개체마다 <b>문자열 2개</b>(크기 접미 + 본문 보간)와 크기 계산이 들던 자리인데, 호출부가
+        /// 목록 루프 안이라 개체 수 × OnGUI 패스마다 반복됐다(60마리면 패스당 120개).
+        /// 값은 레벨·습득/장착 수·크기에서만 파생되고 그 변화는 전부 <c>InsectUpdated</c>로 오므로,
+        /// 보유 목록 캐시와 <b>같은 신호로 함께</b> 비운다.
+        /// </summary>
+        private readonly Dictionary<string, string> ownedInfoCache = new Dictionary<string, string>();
+
+        private string OwnedInfoLine(PlayerInsectData pid, InsectData data)
+        {
+            string key = pid.instanceId;
+            if (string.IsNullOrEmpty(key)) return BuildOwnedInfoLine(pid, data);
+            if (ownedInfoCache.TryGetValue(key, out string cached)) return cached;
+
+            string built = BuildOwnedInfoLine(pid, data);
+            ownedInfoCache[key] = built;
+            return built;
+        }
+
+        private static string BuildOwnedInfoLine(PlayerInsectData pid, InsectData data)
+        {
+            int learned = pid.learnedSkillIds != null ? pid.learnedSkillIds.Count : 0;
+            string sizeStr = data != null
+                ? "  |  " + InsectSizeCalculator.SizeLabel(InsectSizeCalculator.SizeMm(data, pid))
+                : string.Empty;
+            return $"Lv.{pid.level}  |  스킬: {learned}/{PlayerInsectData.MaxLearnedSkills}"
+                + $"  |  장착: {pid.EquippedCount()}/{PlayerInsectData.MaxEquipSlots}{sizeStr}";
+        }
+
+        private void HandleInsectUpdated(PlayerInsectData _)
+        {
+            ownedCacheDirty = true;
+            ownedInfoCache.Clear();   // 레벨업·스킬 습득·장착 변경이 전부 이 신호로 온다
+        }
 
         private void OnEnable()
         {
@@ -361,7 +396,15 @@ namespace InsectGame.UI
                 GUIStyle.none,
                 GUIStyle.none);
 
-            for (int i = 0; i < owned.Count; i++)
+            // 화면에 걸치는 줄만 그린다. IMGUI 스크롤뷰엔 가상화가 없어서, 컬링하지 않으면 보유 곤충
+            // 전부에 대해 아래 `InsectVisual.Draw`가 3D 썸네일을 요청한다 — 캐시는 한 뷰포트 분량(24칸)이라
+            // 60마리를 매 패스 훑으면 LRU가 절대 안정되지 않고 렌더러가 프레임마다 곤충 모델을
+            // 만들었다 부순다(도감에서 P0였던 것과 같은 구조, 2026-08-06 audit).
+            DexBrowseLayout.GetVisibleRowRange(
+                scrollPos.y, area.height, itemH - 3f, 3f, owned.Count,
+                out int firstVisible, out int lastVisible);
+
+            for (int i = firstVisible; i <= lastVisible; i++)
             {
                 PlayerInsectData pid = owned[i];
                 InsectData data = collection.GetInsectData(pid.insectId);
@@ -382,12 +425,8 @@ namespace InsectGame.UI
                 string name = data != null ? data.displayName : pid.insectId;
                 GUI.Label(new Rect(r.x + 120, r.y + 14, r.width - 290, 44), name, insectSelectNameStyle);
 
-                int learned = pid.learnedSkillIds != null ? pid.learnedSkillIds.Count : 0;
-                string sizeStr = data != null
-                    ? "  |  " + InsectSizeCalculator.SizeLabel(InsectSizeCalculator.SizeMm(data, pid))
-                    : string.Empty;
                 GUI.Label(new Rect(r.x + 120, r.y + 66, r.width - 290, 38),
-                    $"Lv.{pid.level}  |  스킬: {learned}/{PlayerInsectData.MaxLearnedSkills}  |  장착: {pid.EquippedCount()}/{PlayerInsectData.MaxEquipSlots}{sizeStr}", insectSelectInfoStyle);
+                    OwnedInfoLine(pid, data), insectSelectInfoStyle);
 
                 GUI.backgroundColor = TrainBtnGreenCol;
                 float trainH = UIScale.IsMobileLayout ? 64f : 52f;

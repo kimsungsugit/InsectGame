@@ -63,6 +63,90 @@ namespace InsectGame.Dex
             return rows * Mathf.Max(0f, cardHeight) + Mathf.Max(0, rows - 1) * Mathf.Max(0f, gap);
         }
 
+        /// <summary>
+        /// 스크롤 뷰포트에 실제로 걸치는 행 구간 <c>[first, last]</c>. 항목이 없으면 first &gt; last.
+        ///
+        /// IMGUI 스크롤뷰에는 가상화가 없어서 <b>호출부가 컬링하지 않으면 화면 밖 항목까지 전부
+        /// 그려진다.</b> 도감은 그 위에 3D 썸네일 캐시가 얹혀 있어 대가가 특히 크다 —
+        /// 128종을 매 패스 요청하는데 캐시는 한 뷰포트 분량(24칸)이라, 적중이 LRU를 훑고 지나가
+        /// 캐시가 절대 안정되지 않는다. 그러면 <c>InsectModelPreviewRenderer</c>가 프레임마다
+        /// 곤충 모델을 통째로 만들었다 부수고 RenderTexture를 create/Release 한다.
+        /// (그 렌더러가 "프레임당 1개만 렌더한다"고 못박은 전제가 호출부에서 깨져 있었다.)
+        ///
+        /// 위아래로 <paramref name="overscanRows"/>행씩 여유를 둬 스크롤 중 빈칸이 보이지 않게 한다.
+        /// </summary>
+        public static void GetVisibleRowRange(
+            float scrollY,
+            float viewportHeight,
+            float cardHeight,
+            float gap,
+            int rowCount,
+            out int first,
+            out int last,
+            int overscanRows = 1)
+        {
+            first = 0;
+            last = -1;
+            if (rowCount <= 0) return;
+
+            float stride = Mathf.Max(0.0001f, cardHeight + Mathf.Max(0f, gap));
+            int over = Mathf.Max(0, overscanRows);
+
+            int top = Mathf.FloorToInt(Mathf.Max(0f, scrollY) / stride) - over;
+            int bottom = Mathf.FloorToInt((Mathf.Max(0f, scrollY) + Mathf.Max(0f, viewportHeight)) / stride) + over;
+
+            first = Mathf.Clamp(top, 0, rowCount - 1);
+            last = Mathf.Clamp(bottom, 0, rowCount - 1);
+        }
+
+        /// <summary>행 구간을 항목 인덱스 구간으로 옮긴다. 마지막 행이 덜 찼을 때 상한을 넘지 않는다.</summary>
+        public static void GetVisibleItemRange(
+            float scrollY,
+            float viewportHeight,
+            float cardHeight,
+            float gap,
+            int itemCount,
+            int columns,
+            out int firstItem,
+            out int lastItem,
+            int overscanRows = 1)
+        {
+            firstItem = 0;
+            lastItem = -1;
+            if (itemCount <= 0) return;
+
+            int safeColumns = Mathf.Max(1, columns);
+            int rows = Mathf.CeilToInt(itemCount / (float)safeColumns);
+
+            GetVisibleRowRange(scrollY, viewportHeight, cardHeight, gap, rows,
+                out int firstRow, out int lastRow, overscanRows);
+            if (lastRow < firstRow) return;
+
+            firstItem = firstRow * safeColumns;
+            lastItem = Mathf.Min(itemCount - 1, (lastRow + 1) * safeColumns - 1);
+        }
+
+        /// <summary>
+        /// 도감 번호 라벨 "NO. 001" — 인덱스 하나에서만 파생되므로 세션 내내 불변이다.
+        ///
+        /// 그런데 호출부(<c>DexScreenUI.DrawDexTile</c>)는 타일마다, 그리고 <b>OnGUI 패스마다</b>
+        /// 이 문자열을 새로 만들고 있었다(IMGUI는 한 프레임에 Layout·Repaint·입력마다 패스가 돈다).
+        /// 미리 구워두고 인덱스로 꺼낸다 — 128종이면 배열 한 번, 그 뒤로는 할당 0.
+        /// </summary>
+        private static string[] numberLabels;
+
+        public static string NumberLabel(int index)
+        {
+            if (index < 0) return "";
+            if (numberLabels == null || numberLabels.Length <= index)
+            {
+                string[] grown = new string[Mathf.Max(index + 1, 128)];
+                for (int i = 0; i < grown.Length; i++) grown[i] = $"NO. {i + 1:D3}";
+                numberLabels = grown;
+            }
+            return numberLabels[index];
+        }
+
         public static float GetItemContentHeight(
             int rowCount,
             float headerHeight,

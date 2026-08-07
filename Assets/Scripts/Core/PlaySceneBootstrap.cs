@@ -468,6 +468,10 @@ namespace InsectGame.Core
 
             InsectGame.UI.CharacterOutfitUI outfitUi = EnsureComponent<InsectGame.UI.CharacterOutfitUI>("UI/CharacterOutfitUI");
             outfitUi.AutoWire(outfitManager, outfitBonus);
+            // 의상 미리보기를 2D 도트에서 3D 마네킹으로 — 카드 그림과 실제 착용 모습이 같아진다.
+            // 곤충 프리뷰와 리그를 공유하지 않는다(레이어 29 / 원점 -5200): 같은 레이어면 두 카메라가
+            // 서로의 모델을 찍고 두 광원이 겹쳐 도감 조명이 두 배가 된다.
+            outfitUi.AutoWire(EnsureComponent<CharacterModelPreviewRenderer>("UI/CharacterModelPreview"));
 
             if (buildWorld)
             {
@@ -521,9 +525,8 @@ namespace InsectGame.Core
             gachaBox.AutoWire(database); // PickRandomInsect 결과 검증 + DisplayName 캐싱
 
             InsectGame.UI.CashShopUI cashShopUI = EnsureComponent<InsectGame.UI.CashShopUI>("UI/CashShopUI");
-            InsectGame.UI.CharacterViewerUI viewerUI = EnsureComponent<InsectGame.UI.CharacterViewerUI>("UI/CharacterViewerUI");
 
-            quickBar.AutoWire(viewerUI, outfitUi, cashShopUI);
+            quickBar.AutoWire(outfitUi, cashShopUI);
             quickBar.AutoWire(questUi);
 
             // 마스터 계정이면 보석 99999 지급

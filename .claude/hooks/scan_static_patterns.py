@@ -152,8 +152,9 @@ def null_guard_spans(body):
        GameObject.Find 회귀 차단"이라 써둔 자리에서 발화했다. 가드 안은 첫 호출 1회만 돈다.
 
     2. `if (GUI.Button(...)) { ... }` — IMGUI 클릭 핸들러. OnGUI 안에 있지만 **클릭한
-       프레임에만** 실행된다. CharacterViewerUI가 버튼 콜백에서 FindFirstObjectByType을
-       부르는 걸 매 프레임 조회로 오보고했다. GUILayout.Button / RepeatButton도 같다.
+       프레임에만** 실행된다. (지금은 삭제된) CharacterViewerUI가 버튼 콜백에서
+       FindFirstObjectByType을 부르는 걸 매 프레임 조회로 오보고했다.
+       GUILayout.Button / RepeatButton도 같다.
 
     3. `UIHelper.CachedStyle("key", () => { ... })` — 캐시 팩토리 람다. UIHelper.cs의
        CachedStyle은 캐시 미스일 때만 factory()를 부르므로 키당 1회 실행이다. 이 훅이

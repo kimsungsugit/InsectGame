@@ -37,6 +37,8 @@ OnGUI의 Rect 좌표와 레이아웃은 **ui-dev 영역**입니다. 여기서는
 
 ### 캐릭터/의상 비주얼
 - `Assets/Scripts/Core/CharacterOutfitManager.cs` - 의상 관리
+- `Assets/Scripts/Core/OutfitShapeLibrary.cs` - 의상 파츠 레시피(itemId → OutfitPart[]) 형태의 단일 출처 ※스키마·앵커 확장은 data-architect 공유
+- `Assets/Scripts/Core/CharacterModelPreviewRenderer.cs` - 의상 미리보기용 3D 마네킹 리그·썸네일 렌더 ※화면 배치는 ui-dev
 - `Assets/Scripts/Core/OutfitBonusProvider.cs` - 의상 보너스
 - `Assets/Scripts/Core/CameraFollower.cs` - 카메라 팔로우
 
@@ -46,7 +48,8 @@ OnGUI의 Rect 좌표와 레이아웃은 **ui-dev 영역**입니다. 여기서는
 
 ### 시각 연출 참조 (주담당: ui-dev)
 - `Assets/Scripts/UI/BattleScreenUI.cs` - 배틀 시각 연출 부분 (쉐이크, HP바, 속성 이펙트)
-- `Assets/Scripts/UI/RaidBattleUI.cs` - 레이드 시각 연출 부분
+- `Assets/Scripts/UI/RaidBattleUI.cs` - 레이드 시각 연출 부분(상태기계 절반 — 연출 타이밍 상수가 여기 있다)
+- `Assets/Scripts/UI/RaidBattleUI.Draw.cs` - 레이드 렌더 절반 partial: AOE·유나이트 이펙트·HP바·속성 임팩트 ※레이아웃은 ui-dev
 - `Assets/Scripts/NPC/NpcVisualBuilder.cs` - NPC 프로시저럴 모델 빌더
 - `Assets/Scripts/NPC/NpcWalkAnimator.cs` - NPC 걷기 애니메이션
 - `Assets/Scripts/Core/VillageBuilder.cs` - 마을 프로시저럴 지형/건물

@@ -19,6 +19,16 @@ namespace InsectGame.UI
     /// 렌더러 참조는 정적 훅으로 받는다 — <c>PlaySceneBootstrap</c>이
     /// <c>InsectEntity.FleePreventChanceProvider</c>를 같은 방식으로 주입하는 선례가 있고,
     /// 새 싱글턴을 늘리지 않는다(<c>rules/unity-csharp.md</c>).
+    ///
+    /// ★ 목록에서 부를 때는 반드시 뷰포트 컬링을 먼저 하라
+    /// -------------------------------------------------
+    /// 썸네일 캐시는 <b>한 뷰포트 분량(24칸)</b>이고 적중할 때마다 LRU를 갱신한다. IMGUI 스크롤뷰엔
+    /// 가상화가 없으므로, 호출부가 컬링하지 않고 60마리를 매 패스 훑으면 24칸이 절대 안정되지 않아
+    /// 렌더러가 <b>프레임마다 곤충 모델을 통째로 만들었다 부수고</b> RenderTexture를 create/Release 한다.
+    /// 계산은 <c>DexBrowseLayout.GetVisibleRowRange</c>(행) / <c>GetVisibleItemRange</c>(그리드)를 쓴다.
+    ///
+    /// 이 결함은 <b>썸네일 도입(726795a) 한 번에 6개 화면에서 동시에</b> 생겼고, 2026-08-06 audit이
+    /// 도감·훈련·팀편성·보유곤충·병원·지역맵을 차례로 고쳤다. 새 목록을 만들 때 같은 실수를 반복하지 말 것.
     /// </summary>
     public static class InsectVisual
     {

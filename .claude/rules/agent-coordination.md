@@ -14,9 +14,12 @@ description: 공유 파일별 에이전트 수정 경계와 충돌 방지 절차
 | `BattleScreenUI.cs` | ui-dev | OnGUI 레이아웃, Rect 좌표, 색상, 화면 전환 |
 | | battle-dev | Phase 로직, 데미지 표시 계산, 턴 진행 |
 | | visual-dev | 쉐이크 효과, HP바 보간, 속성 이펙트 렌더링 |
-| `RaidBattleUI.cs` | ui-dev | OnGUI 레이아웃, 팀 선택 패널, 결과 화면 |
-| | battle-dev | 레이드 Phase 로직, 유나이트 게이지, 보스 턴 |
-| | visual-dev | AOE 연출, 유나이트 이펙트, HP바 |
+| `RaidBattleUI.cs` (상태기계 절반) | ui-dev | OnGUI 입력 디스패치, 페이즈별 그리기 분기 |
+| | battle-dev | 레이드 Phase 전이, 유나이트 게이지, 보스 턴, 컨트롤러 이벤트 핸들러 |
+| | visual-dev | **연출 타이밍 상수**(`UniteRushMinDuration`·`BossTelegraphDuration` 등) |
+| `RaidBattleUI.Draw.cs` (렌더 절반) | ui-dev | 레이아웃, Rect 좌표, 팀 선택 패널, 결과 화면, GUIStyle 캐시 |
+| | battle-dev | 데미지 표시 계산 |
+| | visual-dev | AOE 연출, 유나이트 이펙트, HP바, 속성 임팩트 |
 | `BattleTeamUI.cs` | ui-dev | 슬롯 레이아웃, 드래그 상호작용 |
 | | battle-dev | 팀 유효성 검증, 전투력 표시 로직 |
 | `CaptureChoiceUI.cs` | ui-dev | 선택지 레이아웃, 키 안내 |
@@ -59,6 +62,8 @@ description: 공유 파일별 에이전트 수정 경계와 충돌 방지 절차
 | | game-designer | switch (region 진행 순서, 가디언) 분리 유지 |
 | `CashShopManager.cs` | architect | gems 이중 관리 동기화(wallet AutoWire), pendingSave/즉시 클라우드 저장 트리거 |
 | | game-designer | shopItems 가격/카테고리, 보석 패키지 구성 |
+| `OutfitShapeLibrary.cs` | visual-dev | 파츠 좌표·스케일·회전·PrimitiveType, 색 역할 매핑, 레시피 추가 |
+| | data-architect | OutfitRecipe/OutfitPart 스키마, OutfitAnchor enum 확장 |
 | `CharacterOutfitManager.cs` | data-architect | 8슬롯 enum, allOutfits 정의, LoadOwnership/SaveEquipment 직렬화 |
 | | game-designer | unlockedByDefault/price/gemPrice/statBonus 게임 디자인 수치 |
 | | visual-dev | ApplyToCharacter / ApplyPartColor / ApplyToolShape 좌표·색상 적용 |

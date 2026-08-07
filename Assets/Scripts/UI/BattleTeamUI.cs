@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using InsectGame.Core;
 using InsectGame.Data;
+using InsectGame.Dex;   // DexBrowseLayout — 목록 뷰포트 컬링 계산 공유
 using UnityEngine;
 
 namespace InsectGame.UI
@@ -293,7 +294,14 @@ namespace InsectGame.UI
                 viewRect,
                 GUIStyle.none,
                 GUIStyle.none);
-            for (int i = 0; i < owned.Count; i++)
+            // 화면에 걸치는 줄만 그린다 — 아래 DrawPickerItem이 개체마다 3D 썸네일을 요청하는데
+            // 캐시가 한 뷰포트 분량이라, 전 개체를 매 패스 훑으면 LRU가 안정되지 않아 렌더러가
+            // 프레임마다 곤충 모델을 만들었다 부순다(2026-08-06 audit, 도감·훈련과 같은 결함).
+            DexBrowseLayout.GetVisibleRowRange(
+                listScroll.y, listArea.height, itemH - 3f, 3f, owned.Count,
+                out int firstVisible, out int lastVisible);
+
+            for (int i = firstVisible; i <= lastVisible; i++)
             {
                 PlayerInsectData pid = owned[i];
                 InsectData data = collection.GetInsectData(pid.insectId);

@@ -11,7 +11,6 @@ namespace InsectGame.UI
         [SerializeField] private TrainingUI trainingUI;
         [SerializeField] private CollectionUI collectionUI;
         [SerializeField] private RegionMapUI regionMapUI;
-        [SerializeField] private CharacterViewerUI characterViewer;
         [SerializeField] private CharacterOutfitUI outfitUI;
         [SerializeField] private CashShopUI cashShopUI;
         [SerializeField] private TutorialQuestUI questUI;
@@ -58,7 +57,8 @@ namespace InsectGame.UI
             new ButtonDef { label = "컬렉션", key = "C", color = new Color(0.4f, 0.6f, 1f) },
             new ButtonDef { label = "퀘스트", key = "Q", color = new Color(0.3f, 0.9f, 0.7f) },
             new ButtonDef { label = "지도", key = "M", color = new Color(0.7f, 0.5f, 0.9f) },
-            new ButtonDef { label = "캐릭터", key = "V", color = new Color(0.9f, 0.6f, 0.8f) },
+            // '캐릭터'[V] 항목이 여기 있었다. 여는 화면(CharacterViewerUI)이 상점[F4]·의상[P]·
+            // 좌상단 PlayerStatusHUD의 완전한 중복이라 화면째 제거했다(사용자 요청).
             new ButtonDef { label = "의상", key = "P", color = new Color(0.8f, 0.7f, 1f) },
             new ButtonDef { label = "상점", key = "F4", color = new Color(1f, 0.4f, 0.4f) },
             new ButtonDef { label = "PVP", key = "F6", color = new Color(0.25f, 0.75f, 1f) },
@@ -74,10 +74,9 @@ namespace InsectGame.UI
             if (Input.GetKeyDown(KeyCode.C)) TryHotkey(3);
             if (Input.GetKeyDown(KeyCode.Q)) TryHotkey(4);
             if (Input.GetKeyDown(KeyCode.M)) TryHotkey(5);
-            if (Input.GetKeyDown(KeyCode.V)) TryHotkey(6);
-            if (Input.GetKeyDown(KeyCode.P)) TryHotkey(7);
-            if (Input.GetKeyDown(KeyCode.F4)) TryHotkey(8);
-            if (Input.GetKeyDown(KeyCode.F6)) TryHotkey(9);
+            if (Input.GetKeyDown(KeyCode.P)) TryHotkey(6);
+            if (Input.GetKeyDown(KeyCode.F4)) TryHotkey(7);
+            if (Input.GetKeyDown(KeyCode.F6)) TryHotkey(8);
         }
 
         private void OnGUI()
@@ -99,10 +98,9 @@ namespace InsectGame.UI
                     case KeyCode.C: handled = TryHotkey(3); break;
                     case KeyCode.Q: handled = TryHotkey(4); break;
                     case KeyCode.M: handled = TryHotkey(5); break;
-                    case KeyCode.V: handled = TryHotkey(6); break;
-                    case KeyCode.P: handled = TryHotkey(7); break;
-                    case KeyCode.F4: handled = TryHotkey(8); break;
-                    case KeyCode.F6: handled = TryHotkey(9); break;
+                    case KeyCode.P: handled = TryHotkey(6); break;
+                    case KeyCode.F4: handled = TryHotkey(7); break;
+                    case KeyCode.F6: handled = TryHotkey(8); break;
                 }
                 if (handled) e.Use();
             }
@@ -264,10 +262,9 @@ namespace InsectGame.UI
                 case 3: return collectionUI != null && collectionUI.IsOpen;
                 case 4: return questUI != null && questUI.IsOpen;
                 case 5: return regionMapUI != null && regionMapUI.IsOpen;
-                case 6: return characterViewer != null && characterViewer.IsOpen;
-                case 7: return outfitUI != null && outfitUI.IsOpen;
-                case 8: return cashShopUI != null && cashShopUI.IsOpen;
-                case 9: return socialPvpUI != null && socialPvpUI.IsOpen;
+                case 6: return outfitUI != null && outfitUI.IsOpen;
+                case 7: return cashShopUI != null && cashShopUI.IsOpen;
+                case 8: return socialPvpUI != null && socialPvpUI.IsOpen;
                 default: return false;
             }
         }
@@ -294,7 +291,7 @@ namespace InsectGame.UI
         /// IsInputBlocked는 battle/raid/frozen만 본다. "모든 모달이 SetFrozen을 거니
         /// frozen 하나로 커버된다"는 전제가 깨져 있었다 — SocialPvpUI와
         /// WorldFieldMultiplayerUI는 모달로 등록하면서 SetFrozen을 부르지 않는다.
-        /// 그래서 친구코드·채팅 입력에 N/T/G/C/Q/M/V/P를 치면 글자마다 화면이 토글되고,
+        /// 그래서 친구코드·채팅 입력에 N/T/G/C/Q/M/P를 치면 글자마다 화면이 토글되고,
         /// OnGUI의 e.Use()가 그 글자를 삼켜 입력조차 되지 않았다.
         /// (렌더 경로는 이 가드를 쓰면 안 된다 — 데스크톱 바가 통째로 사라지고
         ///  active 하이라이트 설계가 죽는다.)
@@ -320,10 +317,9 @@ namespace InsectGame.UI
                 case 3: if (collectionUI != null) collectionUI.Toggle(); break;
                 case 4: if (questUI != null) questUI.Toggle(); break;
                 case 5: if (regionMapUI != null) regionMapUI.Toggle(); break;
-                case 6: if (characterViewer != null) characterViewer.Toggle(); break;
-                case 7: if (outfitUI != null) outfitUI.Toggle(); break;
-                case 8: if (cashShopUI != null) cashShopUI.Toggle(); break;
-                case 9: if (socialPvpUI != null) socialPvpUI.Toggle(); break;
+                case 6: if (outfitUI != null) outfitUI.Toggle(); break;
+                case 7: if (cashShopUI != null) cashShopUI.Toggle(); break;
+                case 8: if (socialPvpUI != null) socialPvpUI.Toggle(); break;
             }
         }
 
@@ -337,9 +333,8 @@ namespace InsectGame.UI
             if (regionMapUI == null) regionMapUI = map;
         }
 
-        public void AutoWire(CharacterViewerUI viewer, CharacterOutfitUI outfit, CashShopUI cashShop)
+        public void AutoWire(CharacterOutfitUI outfit, CashShopUI cashShop)
         {
-            if (characterViewer == null) characterViewer = viewer;
             if (outfitUI == null) outfitUI = outfit;
             if (cashShopUI == null) cashShopUI = cashShop;
         }

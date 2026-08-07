@@ -484,8 +484,11 @@ namespace InsectGame.Core
             if (cachedArmL != null) cachedArmL.localRotation = Quaternion.Euler(swingDeg, 0f, 0f);
             if (cachedArmR != null) cachedArmR.localRotation = Quaternion.Euler(rightArmDeg, 0f, 0f);
 
-            // 도구 = 오른팔과 동일 X swing. walking=false면 swing=0이라 ApplyToolShape이 갓 설정한
-            // 좌표가 그대로 base로 캐싱됨 → 도구 변경 후에도 멈춤 1프레임에 자동 재동기.
+            // 도구 = 오른팔과 동일 X swing. walking=false면 swing=0이라 도구 레시피
+            // (OutfitShapeLibrary)가 갓 설정한 좌표가 그대로 base로 캐싱됨 →
+            // 도구 변경 후에도 멈춤 1프레임에 자동 재동기.
+            // 이 두 노드를 캐싱하기 때문에 도구 레시피는 반드시 bind 모드여야 한다 —
+            // 파괴·재생성하면 캐시가 파괴된 Transform을 가리켜 스윙이 죽는다.
             if (cachedNetHandle == null) cachedNetHandle = transform.Find("NetHandle");
             if (cachedNetRing == null) cachedNetRing = transform.Find("NetRing");
             // 잡기 스윙 중엔 base 재캐싱 금지 — 안 그러면 스윙된 회전이 base로 누적돼 도구가 드리프트.

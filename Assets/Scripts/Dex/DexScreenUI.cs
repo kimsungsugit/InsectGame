@@ -56,6 +56,14 @@ namespace InsectGame.Dex
         // 다른 앱처럼 보였다(나머지 화면은 전부 다크 네이비). 색을 토큰에서 끌어오면
         // 테마를 한 곳에서 돌릴 수 있고, 도감의 따뜻한 액센트(코랄/앰버/민트)는
         // UITheme으로 승격돼 이제 다른 화면도 같은 액센트를 쓴다.
+        /// <summary>
+        /// "발견만 됨"(아직 미포획) 타일의 곤충 그림 알파 — 포획 완료와 눈으로 구분되게 흐린 실루엣으로 그린다.
+        /// <b>색이 아니라 알파인 이유</b>: <see cref="InsectVisual"/>의 두 경로 중 알파만 양쪽이 지원한다.
+        /// 2D 폴백 <c>CapturePopupUI.DrawTypedInsectPortrait</c>는 색을 id·등급에서 스스로 뽑고 alpha만 받으므로,
+        /// 색 인자를 새로 뚫어도 3D 썸네일에만 먹고 폴백에선 무시돼 두 경로가 갈린다.
+        /// </summary>
+        private const float DiscoveredOnlyAlpha = 0.42f;
+
         private static UITheme T => UITheme.Instance;
 
         private static Color DexBgColor => T.surfaceBase;
@@ -357,6 +365,7 @@ namespace InsectGame.Dex
                 detailScroll = Vector2.zero;
                 detailDirectScroll.Reset();
                 previewShiny = false;
+                ownsShinyCacheId = null;   // 선택이 바뀌면 이로치 보유 판정을 다시 센다
             }
 
             // 상세는 이제 가로·세로 모두 중앙 모달이다 — 방향 조건이 없다.
@@ -620,7 +629,15 @@ namespace InsectGame.Dex
                 GUIStyle.none,
                 GUIStyle.none);
 
-            for (int i = 0; i < count; i++)
+            // 뷰포트에 걸치는 항목만 그린다. IMGUI 스크롤뷰엔 가상화가 없어 그냥 두면 128종을
+            // 매 패스 전부 처리하는데, 타일마다 3D 썸네일을 요청하므로 24칸짜리 LRU가 절대
+            // 안정되지 않는다 — 적중이 LRU를 훑고 지나가 미적중분이 계속 밀려나고, 렌더러가
+            // 프레임마다 곤충 모델을 통째로 만들었다 부수며 RenderTexture를 create/Release 한다.
+            DexBrowseLayout.GetVisibleItemRange(
+                listScroll.y, viewport.height, cardHeight, gap, count, columns,
+                out int firstVisible, out int lastVisible);
+
+            for (int i = firstVisible; i <= lastVisible; i++)
             {
                 InsectData insect = database.insects[i];
                 if (insect == null)
@@ -665,7 +682,7 @@ namespace InsectGame.Dex
 
             // 도감 번호(좌상) · 포획 상태(우상)
             GUI.Label(new Rect(rect.x + 14f, rect.y + 8f, w * 0.5f, h * 0.1f),
-                $"NO. {index + 1:D3}", cardNumberStyleCache);
+                DexBrowseLayout.NumberLabel(index), cardNumberStyleCache);
 
             float statusW = Mathf.Min(84f, w * 0.34f);
             float statusH = Mathf.Max(28f, h * 0.1f);
@@ -680,10 +697,11 @@ namespace InsectGame.Dex
             DrawRoundedRect(iconPanel, found ? Color.Lerp(DetailUnknownBg, rarityColor, 0.16f) : DetailUnknownBg);
             if (found)
             {
-                Color insectColor = caught
-                    ? UITheme.Instance.GetInsectColor(insect.insectId, insect.rarity)
-                    : Color.Lerp(rarityColor, T.textMuted, 0.68f);
-                InsectVisual.Draw(iconPanel.center.x, iconPanel.center.y, iconSize * 0.94f, insect, false, 1f);
+                // 여기 `insectColor`(포획이면 종 색, 발견만이면 muted 쪽으로 68% 보간)를 계산해 두고
+                // `InsectVisual.Draw`에 넘기지 못하고 있었다 — 그 API엔 색 인자가 없고 alpha만 있다.
+                // 그래서 "발견만 됨"이 포획 완료와 **똑같은 풀컬러**로 그려졌다. 알파로 옮긴다.
+                InsectVisual.Draw(iconPanel.center.x, iconPanel.center.y, iconSize * 0.94f, insect, false,
+                    caught ? 1f : DiscoveredOnlyAlpha);
             }
             else
             {
@@ -696,7 +714,9 @@ namespace InsectGame.Dex
             cardNameStyleCache.normal.textColor = found
                 ? caught ? rarityColor : CaughtNameCol
                 : UnknownQCol;
-            GUI.Label(new Rect(textX, rect.y + h * 0.60f, textW, h * 0.14f),
+            // 이름 길이는 데이터가 정하는데 상자는 타일 크기 고정이다 — 6열(≈206px)에서 긴 이름이
+            // 말줄임 없이 잘렸다. 같은 파일의 상세·아이템 탭은 이미 LabelFit을 쓴다(ui-layout.md).
+            UIHelper.LabelFit(new Rect(textX, rect.y + h * 0.60f, textW, h * 0.14f),
                 found ? insect.displayName : "???", cardNameStyleCache);
 
             cardMetaStyleCache.normal.textColor = found ? SubCol : SubMissingCol;
@@ -1147,7 +1167,12 @@ namespace InsectGame.Dex
                 GUIStyle.none,
                 GUIStyle.none);
 
-            for (int i = 0; i < owned.Count; i++)
+            // 도감 그리드와 같은 이유로 뷰포트 컬링 — 여기는 카드마다 GetInsectData까지 부른다.
+            DexBrowseLayout.GetVisibleItemRange(
+                ownedScroll.y, listViewport.height, cardH, gap, owned.Count, cols,
+                out int firstOwned, out int lastOwned);
+
+            for (int i = firstOwned; i <= lastOwned; i++)
             {
                 PlayerInsectData pid = owned[i];
                 InsectData data = insectCollection.GetInsectData(pid.insectId);
@@ -1175,7 +1200,8 @@ namespace InsectGame.Dex
 
             if (data != null)
             {
-                Color ic = UITheme.Instance.GetInsectColor(data.insectId, data.rarity);
+                // 보유 곤충은 전부 포획 완료라 감쇠가 없다 — 여기 있던 `ic`도 그리드 타일과 같은
+                // "계산만 하고 못 넘기는 색"이었고, 이쪽은 넘길 곳조차 없어 그냥 죽은 지역 변수였다.
                 DrawRoundedRect(new Rect(x + 20f, y + 40f, 74f, 94f), DetailUnknownBg);
                 InsectVisual.Draw(x + 57f, y + h / 2f + 4, 78f, data, pid != null && pid.isShiny, 1f);
             }
@@ -1183,7 +1209,8 @@ namespace InsectGame.Dex
             string name = data != null ? data.displayName : pid.insectId;
             ownedNameCache.normal.textColor = rc;
             // 이름 폭은 우측 등급 컬럼(x+w-90) 앞까지로 제한 — 겹침 방지.
-            GUI.Label(new Rect(x + 108, y + 12, w - 204, 52), name, ownedNameCache);
+            // 좁아진 그 폭에 데이터가 정하는 이름을 넣으므로 LabelFit으로 줄여 맞춘다(ui-layout.md).
+            UIHelper.LabelFit(new Rect(x + 108, y + 12, w - 204, 52), name, ownedNameCache);
 
             string rStr = data != null ? GetRarityLabel(data.rarity) : "?";
             // IV%는 우하단(x+w-90, y+82)과 아래 IV 상세줄에 이미 표시되므로 중간줄에선 생략 —
@@ -1506,15 +1533,29 @@ namespace InsectGame.Dex
             }
         }
 
-        // 선택된 종의 색다른(이로치) 개체를 플레이어가 보유 중인지 — 선택 곤충 1종에 대해서만 호출(저빈도).
+        // 선택된 종의 색다른(이로치) 개체 보유 여부. 선택된 종 하나에 대한 판정이지만
+        // 호출부(DrawDetail)는 상세 모달이 열려 있는 동안 **매 OnGUI 패스** 돈다 —
+        // "저빈도"라 적혀 있던 옛 주석을 믿고 GetAllOwned()로 새 List를 만들어 전수 스캔했다.
+        // 선택이 바뀔 때만 다시 세도록 캐시한다(SelectIndex가 무효화).
+        private string ownsShinyCacheId;
+        private bool ownsShinyCacheValue;
+
         private bool OwnsShiny(string insectId)
         {
             if (insectCollection == null || string.IsNullOrEmpty(insectId)) return false;
+            if (ownsShinyCacheId == insectId) return ownsShinyCacheValue;
+
+            bool found = false;
             List<PlayerInsectData> owned = insectCollection.GetAllOwned();
-            if (owned == null) return false;
-            for (int i = 0; i < owned.Count; i++)
-                if (owned[i] != null && owned[i].isShiny && owned[i].insectId == insectId) return true;
-            return false;
+            if (owned != null)
+            {
+                for (int i = 0; i < owned.Count && !found; i++)
+                    if (owned[i] != null && owned[i].isShiny && owned[i].insectId == insectId) found = true;
+            }
+
+            ownsShinyCacheId = insectId;
+            ownsShinyCacheValue = found;
+            return found;
         }
 
         public void AutoWire(InsectDatabase db, DexController dex)

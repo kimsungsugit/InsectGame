@@ -729,6 +729,37 @@ namespace InsectGame.UI
         // ------------------------------------------------------------------
         // 4. Detail panel (full quest list, toggled via QuickAccessBar)
         // ------------------------------------------------------------------
+        // 스토리/서브 분리 결과. 퀘스트 배열은 `TutorialQuestManager.Initialize()`가 코드로 만드는
+        // 고정 31개라 분류가 세션 내내 불변인데, 예전엔 상세 패널이 열려 있는 동안 **OnGUI 패스마다**
+        // List 2개를 새로 만들고 31개를 다시 갈랐다(IMGUI는 한 프레임에 Layout·Repaint·입력마다 패스가 돈다).
+        // 무효화 키는 원본 배열의 참조 자체 — 매니저가 다시 초기화되면 배열이 바뀌므로 자동으로 다시 갈린다.
+        private List<TutorialQuest> storyQuestCache;
+        private List<TutorialQuest> sideQuestCache;
+        private TutorialQuest[] questPartitionSource;
+
+        private void EnsureQuestPartition(TutorialQuest[] allQuests)
+        {
+            if (ReferenceEquals(questPartitionSource, allQuests)
+                && storyQuestCache != null && sideQuestCache != null)
+            {
+                return;
+            }
+
+            if (storyQuestCache == null) storyQuestCache = new List<TutorialQuest>();
+            if (sideQuestCache == null) sideQuestCache = new List<TutorialQuest>();
+            storyQuestCache.Clear();
+            sideQuestCache.Clear();
+
+            foreach (TutorialQuest q in allQuests)
+            {
+                if (q == null) continue;
+                if (q.category == QuestCategory.Side) sideQuestCache.Add(q);
+                else storyQuestCache.Add(q);
+            }
+
+            questPartitionSource = allQuests;
+        }
+
         private void DrawDetailPanel()
         {
             if (questManager == null) return;
@@ -779,14 +810,10 @@ namespace InsectGame.UI
             TutorialQuest[] allQuests = questManager.GetAllQuests();
             if (allQuests == null || allQuests.Length == 0) return;
 
-            // \uc2a4\ud1a0\ub9ac/\uc11c\ube0c \ubd84\ub9ac \u2014 \uc11c\ube0c\ub294 \ubc30\uc5f4 \ub4a4\ucabd\uc5d0 \uc815\uc758\ub428.
-            List<TutorialQuest> story = new List<TutorialQuest>();
-            List<TutorialQuest> side = new List<TutorialQuest>();
-            foreach (TutorialQuest q in allQuests)
-            {
-                if (q.category == QuestCategory.Side) side.Add(q);
-                else story.Add(q);
-            }
+            // \uc2a4\ud1a0\ub9ac/\uc11c\ube0c \ubd84\ub9ac \u2014 \uc11c\ube0c\ub294 \ubc30\uc5f4 \ub4a4\ucabd\uc5d0 \uc815\uc758\ub428. \uacb0\uacfc\ub294 \uce90\uc2dc\ub41c\ub2e4(\uc544\ub798 \ucc38\uc870).
+            EnsureQuestPartition(allQuests);
+            List<TutorialQuest> story = storyQuestCache;
+            List<TutorialQuest> side = sideQuestCache;
 
             float rowH = QuestListLayout.RowHeight;
             float headH = QuestListLayout.SectionHeaderHeight;

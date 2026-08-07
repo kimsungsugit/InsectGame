@@ -126,13 +126,15 @@ namespace InsectGame.Tests
             InsectBattleStats attacker = MakeStats();
             InsectBattleStats boss = MakeStats();
 
+            // team = null이면 시전자만 받는다 — 이 테스트가 재는 건 상한 판정이지 전파 범위가 아니다.
+            // 팀 전파는 RaidTeamEffectTests가 따로 고정한다.
             for (int i = 0; i < GameConstants.Battle.MaxBuffStacks; i++)
             {
-                RaidActionResult ok = RaidRoundResolver.ResolveLeaderSkill(0, 0, attacker, boss, buff, null);
+                RaidActionResult ok = RaidRoundResolver.ResolveLeaderSkill(0, 0, attacker, boss, null, buff, null);
                 Assert.IsFalse(ok.Capped, $"{i + 1}번째는 상한이 아니어야 한다");
             }
 
-            RaidActionResult capped = RaidRoundResolver.ResolveLeaderSkill(0, 0, attacker, boss, buff, null);
+            RaidActionResult capped = RaidRoundResolver.ResolveLeaderSkill(0, 0, attacker, boss, null, buff, null);
             Assert.IsTrue(capped.Capped);
             Assert.AreEqual(0.6f, attacker.AttackBonus, 0.0001f);
 

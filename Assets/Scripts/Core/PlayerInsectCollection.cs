@@ -435,14 +435,35 @@ namespace InsectGame.Core
             return bySpecies != null ? bySpecies.instanceId : null;
         }
 
+        // insectId → InsectData 색인. database.insects의 개수가 바뀌면 다시 만든다.
+        private Dictionary<string, InsectData> insectDataIndex;
+        private int insectDataIndexSourceCount = -1;
+
+        /// <summary>
+        /// 종 데이터 조회. 예전엔 <c>database.insects.Find(람다)</c>라 <b>호출마다</b> 캡처 클로저가
+        /// 할당되고 128종을 선형 탐색했다 — 도감 보유 탭이 카드마다 이걸 부르고 OnGUI는 프레임당
+        /// 여러 패스라 60마리 보유 시 패스당 120개 할당 + 7,680회 문자열 비교였다.
+        /// (같은 함정을 <c>InsectModelPreviewRenderer</c>는 for 루프로 일부러 피하고 있다.)
+        /// </summary>
         public InsectData GetInsectData(string insectId)
         {
-            if (database == null || string.IsNullOrEmpty(insectId))
+            if (database == null || database.insects == null || string.IsNullOrEmpty(insectId))
             {
                 return null;
             }
 
-            return database.insects.Find(item => item != null && item.insectId == insectId);
+            if (insectDataIndex == null || insectDataIndexSourceCount != database.insects.Count)
+            {
+                insectDataIndex = new Dictionary<string, InsectData>(database.insects.Count);
+                for (int i = 0; i < database.insects.Count; i++)
+                {
+                    InsectData d = database.insects[i];
+                    if (d != null && !string.IsNullOrEmpty(d.insectId)) insectDataIndex[d.insectId] = d;
+                }
+                insectDataIndexSourceCount = database.insects.Count;
+            }
+
+            return insectDataIndex.TryGetValue(insectId, out InsectData found) ? found : null;
         }
 
         public InsectSkill[] GetEquippedSkills(PlayerInsectData data)
