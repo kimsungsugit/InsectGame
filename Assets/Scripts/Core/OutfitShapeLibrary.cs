@@ -313,6 +313,32 @@ namespace InsectGame.Core
             }
         }
 
+        /// <summary>
+        /// 이 루트가 들고 있는 <b>살아 있는</b> spawn 파츠의 머티리얼을 전부 파기한다.
+        ///
+        /// <see cref="TrimContainer"/>는 <b>남는</b> 파츠만 지우므로, 루트가 통째로 파괴될 때
+        /// 마지막까지 쓰이던 파츠의 머티리얼은 아무도 지우지 않는다 — 마네킹은 <b>파괴가 정상 수명</b>이라
+        /// (프리뷰가 각도를 바꿀 때마다 다시 짓는다) 그때마다 샌다.
+        /// <c>PlayerVisualBuilder.OnDestroy</c>가 자기 <c>runtimeMaterials</c>만 도는 것과 같은
+        /// 사각지대이고, 여기가 <b>그 목록에 없는 두 번째 생성 지점</b>이다(<see cref="CreatePartMaterial"/>).
+        ///
+        /// bind 파츠는 건드리지 않는다 — 그 노드의 머티리얼 소유자는 PlayerVisualBuilder다(이중 파기 방지).
+        /// spawn 파츠만 <see cref="SpawnPrefix"/> 이름을 갖는다는 사실로 가른다.
+        /// </summary>
+        public static void DestroySpawnedMaterials(Transform root)
+        {
+            if (root == null) return;
+
+            MeshRenderer[] renderers = root.GetComponentsInChildren<MeshRenderer>(true);
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                MeshRenderer r = renderers[i];
+                if (r == null || r.sharedMaterial == null) continue;
+                if (!r.gameObject.name.StartsWith(SpawnPrefix)) continue;
+                Object.Destroy(r.sharedMaterial);
+            }
+        }
+
         /// <summary>남는 spawn 파츠를 파괴한다. 머티리얼은 GameObject와 함께 사라지지 않으므로 같이 지운다.</summary>
         private static void TrimContainer(Transform container, int used)
         {

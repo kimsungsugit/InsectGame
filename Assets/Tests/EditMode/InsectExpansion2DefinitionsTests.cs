@@ -1,7 +1,9 @@
 #if UNITY_EDITOR
 using System.Collections.Generic;
+using System.IO;
 using System.Text.RegularExpressions;
 using NUnit.Framework;
+using UnityEngine;
 using InsectGame.Core;
 using InsectGame.Data;
 
@@ -169,6 +171,67 @@ namespace InsectGame.Tests
             {
                 Assert.IsTrue(pooled.Contains(id), $"{id}: 어떤 리전/서브에리어 풀에도 배정되지 않음");
             }
+        }
+
+        // ── 부트스트랩과의 "짝" 규칙 ──
+        //
+        // 위 NewSeeds_HabitatTags_AreKnown은 **시드 쪽만** 자기 하드코딩 목록과 맞춰 본다.
+        // 짝의 반대편(PlaySceneBootstrap)이 무너져도 통과하므로, 아래 둘이 그쪽을 본다.
+        // 분기 사슬은 private 인스턴스 메서드라 여기서 실행할 수 없어 소스를 읽는다 —
+        // InsectPortraitRoutingTests가 같은 이유로 같은 방식을 쓴다.
+
+        private const string BootstrapSourcePath = "Scripts/Core/PlaySceneBootstrap.cs";
+
+        private static string ReadBootstrapSource()
+        {
+            string path = Path.Combine(Application.dataPath, BootstrapSourcePath);
+            Assert.IsTrue(File.Exists(path),
+                $"{BootstrapSourcePath}: 파일을 못 찾았다 — 경로가 바뀌었으면 이 테스트도 고칠 것");
+            return File.ReadAllText(path);
+        }
+
+        [Test]
+        public void EveryHabitatTag_HasZoneFallback_InBootstrap()
+        {
+            // habitat이 InferPrimaryType의 zone 폴백에서 빠지면 그 리전 종이 **전부 조용히 Bug 속성**으로
+            // 떨어진다(에러도 경고도 없다). 속성은 상성 계산의 입력이라 전투가 통째로 어긋난다.
+            // 시드 파일 상단 주석이 "한쪽만 고치면"이라고 경고하는 바로 그 방향이다.
+            string source = ReadBootstrapSource();
+
+            HashSet<string> habitats = new HashSet<string>();
+            foreach (InsectSeed seed in InsectExpansion2Definitions.CreateAll())
+            {
+                habitats.Add(seed.habitat);
+            }
+
+            Assert.Greater(habitats.Count, 0, "전제: 2막 시드가 habitat 태그를 갖는다");
+            foreach (string habitat in habitats)
+            {
+                StringAssert.Contains(
+                    $"zone == \"{habitat}\"",
+                    source,
+                    $"habitat '{habitat}'에 대응하는 zone 폴백이 InferPrimaryType에 없다");
+            }
+        }
+
+        [Test]
+        public void EveryEpicAndLegendary_HasSignatureSkillCase()
+        {
+            // Epic/Legendary는 전용기를 갖는다. 부트스트랩 switch에서 빠지면 default
+            // "궁극 생태 해방"으로 조용히 떨어져 **상위 종의 전용기가 전부 같은 이름**이 된다.
+            // 그 switch 위 주석이 경고하지만 지금까지 검사하는 곳이 없었다.
+            string source = ReadBootstrapSource();
+
+            List<string> missing = new List<string>();
+            foreach (InsectSeed seed in InsectExpansion2Definitions.CreateAll())
+            {
+                if (seed.rarity != InsectRarity.Epic && seed.rarity != InsectRarity.Legendary) continue;
+                if (!source.Contains($"case \"{seed.id}\":")) missing.Add(seed.id);
+            }
+
+            CollectionAssert.IsEmpty(missing,
+                "전용기 case가 없는 Epic/Legendary — default 이름으로 떨어진다: "
+                + string.Join(", ", missing));
         }
     }
 }

@@ -8,8 +8,12 @@ namespace InsectGame.NPC
     /// 간부는 <b>고정 상대·고정 레벨</b>이라야 서사의 벽으로 기능한다 — 준비가 덜 되면 진다.
     ///
     /// 순수 데이터라 MonoBehaviour 밖에 둔다(EditMode 테스트가 씬 없이 표를 검증한다).
-    /// 곤충 ID·아이템 ID는 각각 InsectExpansion2Definitions / ItemDatabase에 실재해야 하며,
-    /// <c>NpcBossDuelTests</c>가 그 정합을 고정한다.
+    /// 곤충 ID·아이템 ID는 각각 InsectExpansion2Definitions / ItemDatabase에 실재해야 한다.
+    /// <b>고정하는 곳이 둘로 나뉜다</b>: 곤충·레벨·앵커·유일성은 <c>NpcBossDuelTests</c>가,
+    /// <b>보상 아이템 실재성은 <c>quest_lint.py</c></b>가 본다(아이템 ID가 캡처아이템·상점
+    /// 진열/지급·ItemDatabase 네 소스의 합집합이라 그 레지스트리를 이미 모으는 쪽에 붙였다 —
+    /// C#에서 다시 모으면 사본이 생겨 어긋난다). 오타를 물면 런타임엔 조용히 실패해
+    /// 승리 보상만 사라지므로 배포 전에 걸러야 한다.
     ///
     /// 먹(<c>ledger_ink</c>)은 여기 없다 — 잿불 골짜기에서 이탈해 아군이 되므로 싸울 상대가 아니다.
     /// </summary>

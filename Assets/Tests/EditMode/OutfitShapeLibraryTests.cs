@@ -213,6 +213,32 @@ namespace InsectGame.Tests
                 AssertBindNamesKnown(r);
         }
 
+        [Test]
+        public void BindNames_NeverStartWithSpawnPrefix()
+        {
+            // `DestroySpawnedMaterials`는 노드 이름의 `OP_` 접두 하나로 "누가 만든 머티리얼인가"를
+            // 가른다 — spawn 파츠는 OutfitShapeLibrary가, bind 노드는 PlayerVisualBuilder가 소유한다.
+            // bind 노드가 그 접두를 쓰면 **남의 머티리얼을 이중으로 파기**해 캐릭터가 분홍색이 된다
+            // (PlayerVisualBuilder.OnDestroy 주석이 적어 둔 검정/마젠타 회귀와 같은 자리).
+            foreach (OutfitShapeLibrary.ToolEntry e in OutfitShapeLibrary.ToolEntries)
+                AssertBindNamesAreNotSpawnPrefixed(e.recipe);
+            foreach (OutfitRecipe r in OutfitShapeLibrary.ExactRecipeValues())
+                AssertBindNamesAreNotSpawnPrefixed(r);
+        }
+
+        private static void AssertBindNamesAreNotSpawnPrefixed(OutfitRecipe recipe)
+        {
+            if (recipe == null || recipe.parts == null) return;
+            for (int i = 0; i < recipe.parts.Length; i++)
+            {
+                OutfitPart p = recipe.parts[i];
+                if (!p.IsBind) continue;
+                Assert.IsFalse(
+                    p.bindName.StartsWith(OutfitShapeLibrary.SpawnPrefix),
+                    $"bind 노드 '{p.bindName}'가 spawn 접두({OutfitShapeLibrary.SpawnPrefix})를 쓴다");
+            }
+        }
+
         /// <summary>
         /// bind 파츠의 색 역할은 ApplyToCharacter가 ApplyPartColor로 넣는 색과 일치해야 한다 —
         /// bind 경로는 형태만 담당하고 색은 안 건드리므로, role이 어긋나면 조용히 무시된다.

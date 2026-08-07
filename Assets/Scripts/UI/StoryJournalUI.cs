@@ -222,9 +222,45 @@ namespace InsectGame.UI
             DrawBeatList(new Rect(px + 20f + tabW + 16f, bodyY, pw - 40f - tabW - 16f, bodyH));
         }
 
+        // 탭 라벨과 챕터별 열람 수는 **저널을 열어 둔 동안 바뀌지 않는다** —
+        // 다시 읽기(ShowStoryReplay)는 seen을 마킹하지 않기 때문이다.
+        // 매 패스 다시 세면 챕터 15개가 각자 자기 비트를 훑고, 그 안의 HasSeen이
+        // `seenBeatIds.Contains`(List O(진행도))라 **비트 72개 × 진행도만큼의 문자열 비교**가 든다.
+        // 다 본 세이브면 패스당 5천 회가 넘고 OnGUI는 프레임당 두 패스 이상이다.
+        // 무효화 키는 SeenCount — 저널 밖에서 비트를 하나 더 열람하면 자동으로 다시 굽는다.
+        private string[] tabLabelCache;
+        private bool[] tabUntouchedCache;
+        private int tabCacheSeenCount = -1;
+        private int tabCacheChapterCount = -1;
+
+        private void EnsureTabCache()
+        {
+            int seenCount = storyDirector != null ? storyDirector.SeenCount : 0;
+            if (tabLabelCache != null
+                && tabCacheChapterCount == chapterIds.Count
+                && tabCacheSeenCount == seenCount)
+            {
+                return;
+            }
+
+            tabCacheSeenCount = seenCount;
+            tabCacheChapterCount = chapterIds.Count;
+            tabLabelCache = new string[chapterIds.Count];
+            tabUntouchedCache = new bool[chapterIds.Count];
+            for (int i = 0; i < chapterIds.Count; i++)
+            {
+                string chapter = chapterIds[i];
+                int done = SeenIn(chapter);
+                int total = beatsByChapter[chapter].Count;
+                tabLabelCache[i] = $"{ChapterLabel(chapter)}  {done}/{total}";
+                tabUntouchedCache[i] = done == 0;   // 배경색 판정 — 세는 일을 두 번 하지 않는다
+            }
+        }
+
         private void DrawChapterTabs(Rect area)
         {
             if (chapterIds == null) return;
+            EnsureTabCache();
             float rowH = Mathf.Max(UIScale.MinTouchHeight, 52f);
             float gap = 6f;
             // 챕터가 늘어도 영역 안에 들어오도록 행 높이를 줄인다 — 15개 안팎이라 스크롤보다 낫다
@@ -239,16 +275,14 @@ namespace InsectGame.UI
             for (int i = 0; i < chapterIds.Count; i++)
             {
                 string chapter = chapterIds[i];
-                int done = SeenIn(chapter);
-                int total = beatsByChapter[chapter].Count;
                 bool selected = chapter == selectedChapter;
-                bool untouched = done == 0;
+                bool untouched = tabUntouchedCache[i];
 
                 GUI.backgroundColor = selected
                     ? UITheme.Instance.tabSelected
                     : (untouched ? UITheme.Instance.btnDisabled : UITheme.Instance.tabNormal);
                 if (GUI.Button(new Rect(area.x, y, area.width, rowH),
-                        $"{ChapterLabel(chapter)}  {done}/{total}", tabStyle))
+                        tabLabelCache[i], tabStyle))
                 {
                     selectedChapter = chapter;
                     scroll = Vector2.zero;

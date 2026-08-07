@@ -163,6 +163,12 @@ namespace InsectGame.Core
                 SafeDestroyMat(runtimeMaterials[i], renderers);
             runtimeMaterials.Clear();
 
+            // spawn 의상 파츠(OP_*)의 머티리얼은 **여기 목록에 없다** — 생성 지점이
+            // OutfitShapeLibrary.CreatePartMaterial로 따로 있기 때문이다. 그쪽 TrimContainer는
+            // 갈아입을 때 '남는' 파츠만 지우므로, 마지막까지 입고 있던 파츠는 루트가 통째로
+            // 파괴되는 이 순간에 함께 지워야 한다(위 17~20개와 같은 이유).
+            OutfitShapeLibrary.DestroySpawnedMaterials(transform);
+
             hatMat = topMat = bottomMat = outerwearMat = shoesMat = null;
             backpackMat = backpackStrapMat = toolMat = toolRingMat = null;
             skinMat = hairMat = null;

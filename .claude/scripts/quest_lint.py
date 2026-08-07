@@ -28,6 +28,35 @@ except Exception:
     pass
 
 
+def extract_boss_duel_rewards():
+    """`NpcBossDuels`의 (storyNpcId, rewardItemId) 목록.
+
+    표가 C# 하드코딩 배열이라 소스를 읽는다(퀘스트 배열과 같은 형태).
+    추출이 0건이면 표가 비었거나 파서가 낡은 것이므로 `ExtractorBroken`을 던진다 —
+    빈 목록을 "위반 0건"으로 읽으면 검사가 조용히 죽는다(이 파일의 관통 원칙).
+    """
+    path = os.path.join("Assets", "Scripts", "NPC", "NpcBossDuels.cs")
+    if not os.path.exists(path):
+        raise ExtractorBroken(f"{path}: 파일 없음 — 경로가 바뀌었으면 이 추출기도 고칠 것")
+
+    with io.open(path, encoding="utf-8", errors="replace") as f:
+        src = f.read()
+
+    # new BossDuel { ... storyNpcId = "x" ... rewardItemId = "y" ... } — 필드 순서에 의존하지
+    # 않도록 블록을 먼저 자르고 그 안에서 각각 찾는다.
+    out = []
+    for block in re.findall(r"new\s+BossDuel\s*\{(.*?)\}", src, re.S):
+        npc = re.search(r'storyNpcId\s*=\s*"([^"]+)"', block)
+        item = re.search(r'rewardItemId\s*=\s*"([^"]+)"', block)
+        if npc and item:
+            out.append((npc.group(1), item.group(1)))
+
+    if not out:
+        raise ExtractorBroken(
+            "NpcBossDuels에서 대결을 하나도 못 읽었다 — 표 구조가 바뀌었는지 확인할 것")
+    return out
+
+
 def notify_called_in_gameplay(method: str) -> bool:
     """게임플레이 코드(TutorialQuestManager 밖)에서 `.method(`가 호출되나.
 
@@ -109,6 +138,19 @@ def evaluate_signals() -> list:
                     f"{len(bad_item)}건 ({bad_item})" if bad_item
                     else f"0건 (아이템 {len(item_ids)}종 대조)",
                     "FAIL" if bad_item else "PASS"))
+
+    # 4b. 보스 대결 보상 아이템 ID → 아이템 존재 (NpcBossDuels)
+    # 퀘스트 보상과 같은 함정을 공유한다: 오타를 물어도 런타임엔 조용히 실패해 승리 보상이
+    # 사라진다. `NpcBossDuels` 주석은 "아이템 ID는 ItemDatabase에 실재해야 하며
+    # NpcBossDuelTests가 그 정합을 고정한다"고 적었지만, 그 테스트는 실제로는
+    # **비어 있지 않은지만** 본다. 아이템 ID 레지스트리를 이미 여기서 모으고 있으므로
+    # (여러 소스의 합집합이라 C# 쪽에서 다시 모으면 사본이 생긴다) 검사도 여기 둔다.
+    boss_rewards = extract_boss_duel_rewards()
+    bad_boss = [f"{npc}:{item}" for npc, item in boss_rewards if item not in item_ids]
+    signals.append(("보스 대결 보상 아이템 ID 존재", "0건 미존재",
+                    f"{len(bad_boss)}건 ({bad_boss})" if bad_boss
+                    else f"0건 (대결 {len(boss_rewards)}건 대조)",
+                    "FAIL" if bad_boss else "PASS"))
 
     # 5. QuestType ↔ 진행 배선 — 배열이 쓰는 각 QuestType이 IncrementProgress에 닿는가.
     #    q_team류 회귀(이벤트 미등록/호출부 누락으로 퀘스트 영구 정지)를 잡는 핵심 검사.
