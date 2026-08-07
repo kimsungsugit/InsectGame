@@ -177,6 +177,9 @@ namespace InsectGame.UI
 
         // GetAllOwned 매 프레임 호출 회피 — InsectUpdated 이벤트 시 invalidate.
         private List<PlayerInsectData> cachedOwned;
+        // 목록 행의 정보·스탯 문자열. cachedOwned와 같은 순간에 함께 굽는다(아래 BuildRowTextCache).
+        private string[] cachedRowInfo;
+        private string[] cachedRowStats;
         private bool ownedCacheDirty = true;
 
         private void InitItemStyles()
@@ -198,9 +201,52 @@ namespace InsectGame.UI
             if (ownedCacheDirty || cachedOwned == null)
             {
                 cachedOwned = insectCollection.GetAllOwned();
+                BuildRowTextCache();
                 ownedCacheDirty = false;
             }
             return cachedOwned;
+        }
+
+        /// <summary>
+        /// 목록 행의 정보·스탯 문자열을 미리 굽는다. 값이 전부 (종·개체·레벨) 파생이라 불변인데
+        /// 예전엔 <see cref="DrawInsectItem"/>이 <b>행마다 매 OnGUI 패스</b>에 다시 만들었다 —
+        /// enum <c>ToString</c>(박싱) + <c>SizeLabel</c> + 보간 2개로 행당 4개다. 뷰포트 컬링을
+        /// 넣은 뒤에도 "보이는 행 × 패스 수"만큼 계속 나온다(OnGUI는 Layout·Repaint·입력마다 돈다).
+        ///
+        /// 무효화는 이미 있는 <c>ownedCacheDirty</c>가 맡는다 — 포획·레벨업·치료·진화가 전부
+        /// <c>InsectUpdated</c>를 쏘므로 레벨이 바뀌면 문자열도 함께 다시 굽힌다.
+        /// (형제 화면인 RegionMapUI·TrainingUI가 같은 결함을 같은 방식으로 이미 고쳤다.)
+        /// </summary>
+        private void BuildRowTextCache()
+        {
+            int n = cachedOwned != null ? cachedOwned.Count : 0;
+            if (cachedRowInfo == null || cachedRowInfo.Length < n)
+            {
+                cachedRowInfo = new string[n];
+                cachedRowStats = new string[n];
+            }
+
+            for (int i = 0; i < n; i++)
+            {
+                PlayerInsectData pid = cachedOwned[i];
+                if (pid == null)
+                {
+                    cachedRowInfo[i] = string.Empty;
+                    cachedRowStats[i] = string.Empty;
+                    continue;
+                }
+
+                InsectData data = insectCollection.GetInsectData(pid.insectId);
+                string rarityStr = data != null ? data.rarity.ToString() : "?";
+                // 크기는 #코드를 대신하는 개체 구분 축이라 목록 줄에 함께 보여준다.
+                string sizeStr = data != null
+                    ? "  |  " + InsectSizeCalculator.SizeLabel(InsectSizeCalculator.SizeMm(data, pid))
+                    : string.Empty;
+                cachedRowInfo[i] = $"Lv.{pid.level}  |  {rarityStr}  |  IV: {pid.IVPercent * 100:0}%{sizeStr}";
+                cachedRowStats[i] = data != null
+                    ? $"HP:{pid.ivHp} ATK:{pid.ivAtk} DEF:{pid.ivDef}"
+                    : string.Empty;
+            }
         }
 
         private void HandleInsectUpdated(PlayerInsectData _) { ownedCacheDirty = true; }
@@ -256,12 +302,13 @@ namespace InsectGame.UI
                 insectCollection.InsectUpdated -= HandleInsectUpdated;
         }
 
-        private void Update() { }
+        // 빈 `Update()`와 빈 `DrawToggleButton()`이 여기 있었다. 전자는 본문이 없어도 Unity가
+        // 매 프레임 managed→native 호출을 하고, 후자는 `OnGUI` 첫 줄에서 `isOpen` 검사보다
+        // **앞에** 불려 닫혀 있을 때도 매 패스 돌았다. 둘 다 하는 일이 없어 제거했다
+        // (퀵바 진입점은 `QuickAccessBarUI`가 맡는다).
 
         private void OnGUI()
         {
-            DrawToggleButton();
-
             if (!isOpen) return;
 
             UIScale.Begin();
@@ -270,10 +317,6 @@ namespace InsectGame.UI
             else
                 DrawPanel();
             UIScale.End();
-        }
-
-        private void DrawToggleButton()
-        {
         }
 
         private void DrawPanel()
@@ -363,7 +406,11 @@ namespace InsectGame.UI
             {
                 PlayerInsectData pid = owned[i];
                 InsectData data = insectCollection.GetInsectData(pid.insectId);
-                if (DrawInsectItem(new Rect(0, i * itemH, viewRect.width, itemH - 4), pid, data))
+                // 문자열은 BuildRowTextCache가 미리 구웠다. 길이 가드는 캐시와 목록이 어긋난
+                // 한 프레임(다음 GetCachedOwned가 맞춘다)에 대한 안전망이다.
+                string rowInfo = cachedRowInfo != null && i < cachedRowInfo.Length ? cachedRowInfo[i] : string.Empty;
+                string rowStats = cachedRowStats != null && i < cachedRowStats.Length ? cachedRowStats[i] : string.Empty;
+                if (DrawInsectItem(new Rect(0, i * itemH, viewRect.width, itemH - 4), pid, data, rowInfo, rowStats))
                 {
                     selectedInstanceId = pid.instanceId;
                     detailScrollPos = Vector2.zero;
@@ -373,7 +420,8 @@ namespace InsectGame.UI
             GUI.EndScrollView();
         }
 
-        private bool DrawInsectItem(Rect rect, PlayerInsectData pid, InsectData data)
+        private bool DrawInsectItem(Rect rect, PlayerInsectData pid, InsectData data,
+            string infoText, string statsText)
         {
             bool clicked = false;
             Color rarityColor = data != null ? GetRarityColor(data.rarity) : Color.gray;
@@ -393,22 +441,17 @@ namespace InsectGame.UI
             GUI.color = Color.white;
             GUI.Label(new Rect(rect.x + 138, rect.y + 12, rect.width - 320, 48), displayName, itemNameStyle);
 
-            string rarityStr = data != null ? data.rarity.ToString() : "?";
-            // 크기는 #코드를 대신하는 개체 구분 축이라 목록 줄에 함께 보여준다.
-            string sizeStr = data != null ? "  |  " + InsectSizeCalculator.SizeLabel(
-                InsectSizeCalculator.SizeMm(data, pid)) : string.Empty;
-            GUI.Label(new Rect(rect.x + 138, rect.y + 66, rect.width - 320, 40),
-                $"Lv.{pid.level}  |  {rarityStr}  |  IV: {pid.IVPercent * 100:0}%{sizeStr}", itemInfoStyle);
+            GUI.Label(new Rect(rect.x + 138, rect.y + 66, rect.width - 320, 40), infoText, itemInfoStyle);
 
             string gradeStr = CapturePopupUI.GetGradeLabel(pid.Grade);
             Color gradeCol = UITheme.Instance.GetGradeColor(pid.Grade);
             itemGradeStyle.normal.textColor = gradeCol;
             GUI.Label(new Rect(rect.x + rect.width - 170, rect.y + 12, 150, 54), gradeStr, itemGradeStyle);
 
-            if (data != null)
+            if (!string.IsNullOrEmpty(statsText))
             {
                 GUI.Label(new Rect(rect.x + 138, rect.y + 112, rect.width - 320, 34),
-                    $"HP:{pid.ivHp} ATK:{pid.ivAtk} DEF:{pid.ivDef}", itemStatMiniStyle);
+                    statsText, itemStatMiniStyle);
             }
 
             GUI.backgroundColor = ItemViewBlueCol;

@@ -116,6 +116,7 @@ namespace InsectGame.Core
         private readonly List<WorldChatMessage> messages = new List<WorldChatMessage>();
         private readonly List<WorldInviteSnapshot> invites = new List<WorldInviteSnapshot>();
         private PlayerMovement localPlayer;
+        private PlayerProgressController progressController;
         private float syncTimer;
         private float lobbyRefreshTimer;
         private bool syncInFlight;
@@ -278,7 +279,7 @@ namespace InsectGame.Core
                     action = "joinWorld",
                     worldId = worldId,
                     displayName = AuthManager.Instance.DisplayName,
-                    level = PlayerPrefs.GetInt("player_level", 1),
+                    level = LocalPlayerLevel,
                     x = position.x,
                     y = position.y,
                     z = position.z,
@@ -324,7 +325,7 @@ namespace InsectGame.Core
                 {
                     action = "syncWorld",
                     worldId = CurrentWorld.worldId,
-                    level = PlayerPrefs.GetInt("player_level", 1),
+                    level = LocalPlayerLevel,
                     x = position.x,
                     y = position.y,
                     z = position.z,
@@ -413,6 +414,31 @@ namespace InsectGame.Core
         private void CacheLocalPlayer()
         {
             if (localPlayer == null) localPlayer = FindFirstObjectByType<PlayerMovement>();
+        }
+
+        /// <summary>
+        /// 다른 플레이어에게 보이는 내 레벨. <b>파일 기반 진행도가 단일 출처</b>다.
+        ///
+        /// 예전엔 여기서 <c>PlayerPrefs.GetInt("player_level", 1)</c>만 읽었는데, 그 키는
+        /// <b>옛 저장소</b>라 <c>CloudSaveManager.ApplySaveData</c>가 클라우드 복원 때 한 번
+        /// 쓰는 것 말고는 아무도 갱신하지 않는다 — 레벨업은 <c>player_progress.json</c>에만 남는다.
+        /// 그래서 신규·로컬 플레이는 온라인 필드에서 <b>영원히 Lv.1</b>로 보이고, 복원한 계정은
+        /// 복원 시점 값으로 굳었다(로비·필드 라벨·근처 탐험가 배너·친구 목록 4곳에 그대로 노출).
+        ///
+        /// <c>CloudSaveManager</c>가 <b>같은 이유로 이미 진행도 컨트롤러를 우선</b>하고 있다
+        /// (그 파일 상단 주석이 "옛은 PlayerPrefs를 읽어 실제 시스템과 어긋났다"고 적어둔 바로 그것).
+        /// 이 클래스만 그 정정에서 빠져 있었다 — 폴백 식까지 그쪽과 맞춘다.
+        /// </summary>
+        private int LocalPlayerLevel
+        {
+            get
+            {
+                if (progressController == null)
+                    progressController = FindFirstObjectByType<PlayerProgressController>();
+                return progressController != null
+                    ? progressController.Level
+                    : PlayerPrefs.GetInt("player_level", 1);
+            }
         }
 
         private bool CanStartRequest()

@@ -23,6 +23,18 @@ namespace InsectGame.Spawning
         private int cachedMoveStyle = -1;     // 0 일반/1 날개비행/2 점프 — 빌드마다 -1 리셋 후 첫 Update에서 산출
         private Transform cachedGroundMarker; // 지면 마커: 상하 이동 상쇄용(곤충이 떠도 마커는 지면 고정)
         private Transform cachedGrass;        // 풀숲 은신 더미(지상 곤충) — 곤충이 움직여도 제자리 고정
+        // 날개 캐시 — WingL/R 탐색과 종별 날갯짓 파라미터를 빌드마다 한 번만 정한다.
+        // 옛 AnimateWings는 **매 프레임** transform.Find 2회 + insectId.Contains 최대 10회를 다시 했다.
+        // 특히 날개가 없는 종(기어다니는 곤충)은 그 Find가 영원히 실패해 매 프레임 자식 전체를 훑었다 —
+        // 실패하는 Find가 가장 비싸다. 위 cachedMoveStyle/cachedGroundMarker와 같은 형태로 맞춘다.
+        private Transform cachedWingL;
+        private Transform cachedWingR;
+        private float wingSpeed;
+        private float wingAmplitude;
+        private bool wingsResolved;
+        // NameLabel은 **배틀 모델엔 아예 없다**(BuildForBattle이 CreateNameLabel을 부르지 않는다).
+        // null 검사만으로 재시도하면 그 경우 매 프레임 Find가 영원히 실패하므로 찾았는지를 따로 든다.
+        private bool nameLabelResolved;
         // 경계/도주(긴장감) 상태
         private int alertState;               // 0 평온 / 1 경계(주시·떨림) / 2 도주
         private float patience;               // 경계 인내심(0이면 도주)
@@ -67,6 +79,10 @@ namespace InsectGame.Spawning
             cachedMoveStyle = -1;
             cachedGroundMarker = null;
             cachedGrass = null;
+            cachedWingL = null;
+            cachedWingR = null;
+            wingsResolved = false;
+            nameLabelResolved = false;
             alertState = 0;
             fleeTimer = 0f;
             engaged = false;
@@ -96,6 +112,10 @@ namespace InsectGame.Spawning
             cachedMoveStyle = -1;
             cachedGroundMarker = null;
             cachedGrass = null;
+            cachedWingL = null;
+            cachedWingR = null;
+            wingsResolved = false;
+            nameLabelResolved = false;
             alertState = 0;
             fleeTimer = 0f;
             engaged = false;
@@ -135,7 +155,13 @@ namespace InsectGame.Spawning
             if (cachedMainCam == null) cachedMainCam = Camera.main;
             if (cachedMainCam != null)
             {
-                if (cachedNameLabel == null) cachedNameLabel = transform.Find("NameLabel");
+                // 배틀 모델엔 NameLabel이 없다 — null 재시도로 두면 그 개체는 매 프레임 Find가
+                // 영원히 실패한다(실패하는 Find가 자식 전체를 훑어 가장 비싸다). 1회만 찾는다.
+                if (!nameLabelResolved)
+                {
+                    nameLabelResolved = true;
+                    cachedNameLabel = transform.Find("NameLabel");
+                }
                 if (cachedNameLabel != null)
                     cachedNameLabel.rotation = cachedMainCam.transform.rotation;
             }
@@ -452,28 +478,41 @@ namespace InsectGame.Spawning
 
         private void AnimateWings()
         {
-            Transform wl = transform.Find("WingL");
-            Transform wr = transform.Find("WingR");
-            if (wl == null || wr == null) return;
+            if (!wingsResolved) ResolveWings();
+            if (cachedWingL == null || cachedWingR == null) return;
+
+            float angle = Mathf.Sin(Time.time * wingSpeed + wingPhase) * wingAmplitude;
+            cachedWingL.localRotation = Quaternion.Euler(0f, 0f, angle);
+            cachedWingR.localRotation = Quaternion.Euler(0f, 0f, -angle);
+        }
+
+        /// <summary>
+        /// 날개 노드와 종별 날갯짓 파라미터를 빌드당 <b>한 번</b> 정한다. 모델은
+        /// <c>Initialize</c>/<c>BuildForBattle</c>이 동기로 다 지은 뒤에야 첫 Update가 돌므로
+        /// 여기서 못 찾았다면 이 개체엔 날개가 없는 것이다 — 그래서 실패해도 다시 찾지 않는다
+        /// (`wingsResolved`를 맨 먼저 세운다). 풀 재사용 시엔 두 진입점이 함께 리셋한다.
+        /// </summary>
+        private void ResolveWings()
+        {
+            wingsResolved = true;
+            cachedWingL = transform.Find("WingL");
+            cachedWingR = transform.Find("WingR");
+            if (cachedWingL == null || cachedWingR == null) return;
 
             string id = data != null ? data.insectId ?? "" : "";
             // 날갯짓 강화(빠르고 크게) — 정적이던 필드 곤충에 생동감.
-            float speed = 9f;
-            float amplitude = 34f;
+            wingSpeed = 9f;
+            wingAmplitude = 34f;
             if (id.Contains("butterfly") || id.Contains("moth") || id.Contains("luna") || id.Contains("atlas"))
-            { speed = 5f; amplitude = 48f; }
+            { wingSpeed = 5f; wingAmplitude = 48f; }
             else if (id.Contains("damselfly"))
-            { speed = 7f; amplitude = 42f; }
+            { wingSpeed = 7f; wingAmplitude = 42f; }
             else if (id.Contains("bee") || id.Contains("dragonfly"))
-            { speed = 16f; amplitude = 30f; }
+            { wingSpeed = 16f; wingAmplitude = 30f; }
             else if (id.Contains("wasp") || id.Contains("hornet"))
-            { speed = 18f; amplitude = 27f; }
+            { wingSpeed = 18f; wingAmplitude = 27f; }
             else if (id.Contains("mosquito") || id.Contains("fly"))
-            { speed = 22f; amplitude = 24f; }
-
-            float angle = Mathf.Sin(Time.time * speed + wingPhase) * amplitude;
-            wl.localRotation = Quaternion.Euler(0f, 0f, angle);
-            wr.localRotation = Quaternion.Euler(0f, 0f, -angle);
+            { wingSpeed = 22f; wingAmplitude = 24f; }
         }
 
         private void BuildModel()
