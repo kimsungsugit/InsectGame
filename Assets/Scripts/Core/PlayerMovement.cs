@@ -13,6 +13,14 @@ namespace InsectGame.Core
 
         private RegionManager regionManager;
         private OutfitBonusProvider outfitBonus;
+
+        // 장애물 검사 버퍼 — IsBlockedPosition이 이동 중 **매 프레임 2회** 불린다(다음 위치 차단
+        // 판정 + 끼임 감지). Physics.OverlapSphere는 호출마다 Collider[]를 새로 할당하므로
+        // 그대로 두면 걷는 내내 GC가 돈다. NonAlloc + 고정 버퍼로 바꾼다.
+        // 16이면 반경 0.4~0.5m 구에 겹칠 콜라이더로 충분하고, 넘쳐도 잘릴 뿐 오판정은 없다
+        // (버퍼가 찬다 = 이미 막을 것을 찾았다는 뜻이라 판정 결과가 바뀌지 않는다).
+        private const int ObstacleBufferSize = 16;
+        private readonly Collider[] obstacleBuffer = new Collider[ObstacleBufferSize];
         private PlayerStartPose mainWorldSafePose = PlayerStartPlacement.FallbackPose;
         private bool frozen;
         private float frozenTimer;
@@ -553,9 +561,10 @@ namespace InsectGame.Core
 
             // 지형 장애물 체크: 본인 CapsuleCollider 직접 참조로 확실히 제외.
             // (옛 IsChildOf만으로는 새 CapsuleCollider center 변경 이후 충돌 회귀가 발생)
-            Collider[] hits = Physics.OverlapSphere(pos + Vector3.up * 1.4f, 0.4f);
-            foreach (var h in hits)
+            int hitCount = Physics.OverlapSphereNonAlloc(pos + Vector3.up * 1.4f, 0.4f, obstacleBuffer);
+            for (int i = 0; i < hitCount; i++)
             {
+                Collider h = obstacleBuffer[i];
                 if (h == null || h.isTrigger) continue;
                 if (h.gameObject == gameObject) continue;
                 if (h.transform.IsChildOf(transform)) continue;
@@ -618,12 +627,15 @@ namespace InsectGame.Core
             return fallbackCenter + new Vector3(0f, 0.5f, 0f);
         }
 
+        // 안전 위치 탐색용 — 후보를 여러 개 훑으므로 한 번의 복구에서 여러 번 불린다.
+        // IsBlockedPosition과 같은 버퍼를 쓴다: 둘은 호출이 겹치지 않는다(끼임 판정이 끝난 뒤에야
+        // RecoverToSafePosition이 불린다). 중첩 호출을 만들면 서로의 결과를 덮으니 주의.
         private bool IsClearAt(Vector3 pos)
         {
-            Collider[] hits = Physics.OverlapSphere(pos + Vector3.up * 1.0f, 0.5f);
-            for (int i = 0; i < hits.Length; i++)
+            int hitCount = Physics.OverlapSphereNonAlloc(pos + Vector3.up * 1.0f, 0.5f, obstacleBuffer);
+            for (int i = 0; i < hitCount; i++)
             {
-                Collider h = hits[i];
+                Collider h = obstacleBuffer[i];
                 if (h == null || h.isTrigger) continue;
                 if (h.gameObject == gameObject) continue;
                 if (h.transform.IsChildOf(transform)) continue;
