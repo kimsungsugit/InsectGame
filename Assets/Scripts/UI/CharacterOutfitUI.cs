@@ -719,7 +719,10 @@ namespace InsectGame.UI
                             s.wordWrap = true;
                             return s;
                         });
-                        GUI.Label(hintRect, item.unlockCondition, hintStyle);
+                        // 원문 토큰("region_garden"·"level_15")을 그대로 그리면 한국어 게임에
+                        // 영문 식별자가 노출된다. 사람이 읽는 문장으로 바꾸고, 길이가 데이터에서
+                        // 오므로 고정 26px 상자에 맞춰 폰트를 줄인다(rules/ui-layout.md의 LabelFit).
+                        UIHelper.LabelFit(hintRect, DescribeUnlockCondition(item.unlockCondition), hintStyle);
                     }
                 }
             }
@@ -844,6 +847,59 @@ namespace InsectGame.UI
                 case OutfitSlot.Accessory: return "*";
                 default: return "?";
             }
+        }
+
+        // ── 해금 조건 문구 ──
+
+        // regionId → 표시명. RegionDefinitions에서 1회만 파생한다(이름을 여기 박으면 낡는다).
+        private static Dictionary<string, string> regionNameCache;
+
+        /// <summary>
+        /// <c>OutfitItem.unlockCondition</c>의 원문 토큰을 사람이 읽는 문장으로 바꾼다.
+        ///
+        /// 이 값은 UI에 그대로 그려지던 자리다 — 한국어 게임에서 "region_garden"·"level_15"가
+        /// 카드에 노출됐다. 알 수 없는 형식은 토큰을 그대로 돌려주므로, 새 조건 형식을 추가해도
+        /// 화면이 비지는 않는다(대신 여기 분기를 늘려 문장을 붙일 것).
+        ///
+        /// <b>해금 판정은 여기서 하지 않는다.</b> 현재 저장소에 <c>unlockCondition</c>을 평가해
+        /// 소유를 부여하는 코드가 없어 조건부 의상 4벌은 획득 불가 상태다 — 그 배선은 해금 시점을
+        /// 정하는 게임 디자인 결정이라 별건이다. 이 메서드는 표시만 고친다.
+        /// </summary>
+        internal static string DescribeUnlockCondition(string condition)
+        {
+            if (string.IsNullOrEmpty(condition)) return "";
+
+            if (condition.StartsWith("region_"))
+            {
+                string regionId = condition.Substring("region_".Length);
+                return $"{RegionDisplayName(regionId)} 도달 시 해금";
+            }
+            if (condition.StartsWith("level_"))
+            {
+                string lv = condition.Substring("level_".Length);
+                return int.TryParse(lv, out int n) ? $"Lv.{n} 달성 시 해금" : condition;
+            }
+            if (condition.StartsWith("quest_"))
+            {
+                return "특정 퀘스트 완료 시 해금";
+            }
+            return condition;   // 미지의 형식 — 토큰이라도 보여 준다
+        }
+
+        private static string RegionDisplayName(string regionId)
+        {
+            if (string.IsNullOrEmpty(regionId)) return "특정 지역";
+            if (regionNameCache == null)
+            {
+                regionNameCache = new Dictionary<string, string>();
+                foreach (Data.RegionData r in RegionDefinitions.CreateAll())
+                {
+                    if (r != null && !string.IsNullOrEmpty(r.regionId))
+                        regionNameCache[r.regionId] = r.displayName;
+                }
+            }
+            return regionNameCache.TryGetValue(regionId, out string name) && !string.IsNullOrEmpty(name)
+                ? name : regionId;
         }
     }
 }
