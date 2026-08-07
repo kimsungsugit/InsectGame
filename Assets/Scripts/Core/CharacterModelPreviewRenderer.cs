@@ -246,9 +246,24 @@ namespace InsectGame.Core
             List<ThumbId> evicted = EvictKeys(thumbOrder, ThumbCacheMax);
             for (int i = 0; i < evicted.Count; i++)
             {
-                if (thumbs.TryGetValue(evicted[i], out RenderTexture rt) && rt != null) rt.Release();
+                if (thumbs.TryGetValue(evicted[i], out RenderTexture rt)) DisposeRT(rt);
                 thumbs.Remove(evicted[i]);
             }
+        }
+
+        /// <summary>
+        /// 렌더 텍스처를 <b>완전히</b> 놓는다.
+        ///
+        /// <c>Release()</c>는 GPU 리소스만 반환하고 <b>객체 자체는 남긴다</b>(다시 <c>Create()</c>하면
+        /// 되살아나는 게 그 설계다). 캐시에서 버리는 텍스처는 다시 쓰지 않으므로 객체까지 파기해야
+        /// 한다 — 안 그러면 참조만 끊긴 껍데기가 쌓여 씬 전환(UnloadUnusedAssets) 전까지 남는다.
+        /// 축출은 24장 상한을 넘을 때마다, 전체 무효화는 외형을 바꿀 때마다 일어난다.
+        /// </summary>
+        private void DisposeRT(RenderTexture rt)
+        {
+            if (rt == null) return;
+            rt.Release();
+            Destroy(rt);
         }
 
         // ── 리그 / 마네킹 ──
@@ -459,7 +474,7 @@ namespace InsectGame.Core
         private void ReleaseThumbs()
         {
             foreach (KeyValuePair<ThumbId, RenderTexture> pair in thumbs)
-                if (pair.Value != null) pair.Value.Release();
+                DisposeRT(pair.Value);
             thumbs.Clear();
             thumbOrder.Clear();
             queueSlots.Clear();
@@ -468,9 +483,16 @@ namespace InsectGame.Core
 
         private void OnDestroy()
         {
-            if (currentRT != null) currentRT.Release();
+            DisposeRT(currentRT);
             currentRT = null;
             ReleaseThumbs();
+
+            // 마네킹은 씬 루트에 서 있다(부모가 없다) — 이 컴포넌트가 죽어도 따라 사라지지 않아
+            // 고아 GameObject로 남는다. 외형이 바뀔 때만 `Destroy(mannequin)`이 있고 수명 종료
+            // 경로엔 없었다. 파괴하면 그쪽 PlayerVisualBuilder.OnDestroy가 머티리얼과
+            // spawn 의상 파츠까지 연쇄로 정리한다.
+            if (mannequin != null) Destroy(mannequin);
+            mannequin = null;
         }
     }
 }

@@ -174,10 +174,24 @@ namespace InsectGame.Dex
             List<string> evicted = EvictKeys(thumbOrder, ThumbCacheMax);
             for (int i = 0; i < evicted.Count; i++)
             {
-                if (thumbs.TryGetValue(evicted[i], out RenderTexture rt) && rt != null)
-                    rt.Release();
+                if (thumbs.TryGetValue(evicted[i], out RenderTexture rt)) DisposeRT(rt);
                 thumbs.Remove(evicted[i]);
             }
+        }
+
+        /// <summary>
+        /// 렌더 텍스처를 <b>완전히</b> 놓는다.
+        ///
+        /// <c>Release()</c>는 GPU 리소스만 반환하고 <b>객체 자체는 남긴다</b>(다시 <c>Create()</c>하면
+        /// 되살아나는 게 그 설계다). 캐시에서 버리는 텍스처는 다시 쓰지 않으므로 객체까지 파기해야
+        /// 한다 — 안 그러면 참조만 끊긴 껍데기가 쌓여 씬 전환 전까지 남는다.
+        /// 형제인 <c>CharacterModelPreviewRenderer</c>도 같은 헬퍼를 갖는다(같은 결함이 양쪽에 있었다).
+        /// </summary>
+        private void DisposeRT(RenderTexture rt)
+        {
+            if (rt == null) return;
+            rt.Release();
+            Destroy(rt);
         }
 
         private void EnsureRig()
@@ -277,12 +291,12 @@ namespace InsectGame.Dex
 
         private void OnDestroy()
         {
-            if (currentRT != null) currentRT.Release();
+            DisposeRT(currentRT);
             currentRT = null;
 
             // 썸네일 캐시도 전부 해제한다 — 예전엔 RT 하나만 풀었다.
             foreach (KeyValuePair<string, RenderTexture> pair in thumbs)
-                if (pair.Value != null) pair.Value.Release();
+                DisposeRT(pair.Value);
             thumbs.Clear();
             thumbOrder.Clear();
             thumbQueue.Clear();
