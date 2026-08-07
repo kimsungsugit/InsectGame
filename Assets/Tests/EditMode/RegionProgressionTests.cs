@@ -228,6 +228,30 @@ namespace InsectGame.Tests
         }
 
         [Test]
+        public void EveryRegion_HasExplicitSpawnLevelRange()
+        {
+            // PlaySceneBootstrap.GetRegionLevelRange는 리전별 필드 스폰 레벨 폭을 switch로 정한다.
+            // case를 빠뜨리면 default 5로 떨어져 그 리전만 유독 좁은 대역이 되는데, 에러도 안 나고
+            // 화면상 티도 잘 안 나서 오래 남는다 — 2막 6지역이 실제로 그렇게 묶여 있었다.
+            string path = System.IO.Path.Combine(
+                UnityEngine.Application.dataPath, "Scripts/Core/PlaySceneBootstrap.cs");
+            Assert.IsTrue(System.IO.File.Exists(path), "PlaySceneBootstrap.cs를 못 찾았다");
+            string src = System.IO.File.ReadAllText(path);
+
+            int idx = src.IndexOf("private int GetRegionLevelRange");
+            Assert.Greater(idx, -1,
+                "GetRegionLevelRange 선언을 못 찾았다 — 이름이 바뀌었으면 이 테스트도 고칠 것");
+            int end = src.IndexOf("\n        private ", idx + 30);
+            string body = end > idx ? src.Substring(idx, end - idx) : src.Substring(idx);
+
+            foreach (RegionData r in RegionDefinitions.CreateAll())
+            {
+                StringAssert.Contains($"case \"{r.regionId}\"", body,
+                    $"{r.regionId}: GetRegionLevelRange에 case가 없어 default 5로 떨어진다");
+            }
+        }
+
+        [Test]
         public void SubAreaIds_AreGloballyUnique()
         {
             // SubAreaEnter 스토리 트리거가 subAreaId 하나로 매칭하므로 중복되면 엉뚱한 리전에서 발화한다.

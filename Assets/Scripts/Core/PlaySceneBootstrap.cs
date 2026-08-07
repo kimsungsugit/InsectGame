@@ -3722,6 +3722,14 @@ namespace InsectGame.Core
             return points.ToArray();
         }
 
+        /// <summary>
+        /// 리전 필드 스폰 레벨의 폭 — 상한은 <c>requiredLevel + 이 값</c>이다.
+        ///
+        /// **리전을 추가하면 여기 case도 추가할 것.** 빠뜨리면 default 5로 떨어져 그 리전만
+        /// 유독 좁은 레벨대가 된다 — 에러도 안 나고 화면상 티도 잘 안 나서 오래 남는다
+        /// (2막 6지역이 실제로 그렇게 47/51/55/59/63/67에 묶여 있었다).
+        /// 그래서 미등록 리전은 조용히 넘기지 않고 경고를 남긴다.
+        /// </summary>
         private int GetRegionLevelRange(string regionId)
         {
             switch (regionId)
@@ -3733,7 +3741,18 @@ namespace InsectGame.Core
                 case "mountain": return 12;   // Lv.28~40
                 case "garden": return 17;     // Lv.18~35
                 case "ruins": return 14;      // Lv.36~50
-                default: return 5;
+                // ── 2막(ver2) — Docs/StoryBible.md의 리전 표와 같은 대역 ──
+                case "hollow": return 6;      // Lv.42~48
+                case "dunes": return 6;       // Lv.46~52
+                case "frostline": return 6;   // Lv.50~56
+                case "emberfall": return 6;   // Lv.54~60
+                case "canopy": return 6;      // Lv.58~64
+                case "nameless": return 8;    // Lv.62~70
+                default:
+                    Debug.LogWarning(
+                        $"[Bootstrap] GetRegionLevelRange에 '{regionId}' case가 없습니다 — "
+                        + "기본값 5로 스폰 레벨대가 좁아집니다. RegionDefinitions에 리전을 추가했다면 여기도 추가하세요.");
+                    return 5;
             }
         }
 
