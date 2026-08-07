@@ -107,6 +107,21 @@ namespace InsectGame.Tests
             Assert.AreEqual(legacyPh, ph, Delta);
             Assert.AreEqual(legacyPy, py, Delta);
         }
+
+        [Test]
+        public void MinimapStackBelowY_SitsJustUnderMinimapPanel()
+        {
+            // 퀘스트 칩은 예전에 `ContentTop + 380f`로 미니맵 기하(150 + 220)를 손으로 베껴
+            // 갖고 있었다. 미니맵 크기를 바꾸면 조용히 겹치거나 벌어지므로 관계를 고정한다.
+            // 두 값 모두 같은 ContentTop을 쓰므로 화면 상태와 무관하게 상쇄된다.
+            float minimapBottomOffset = MinimapUI.TopOffset + MinimapUI.PanelSize;
+            float stackOffset = MinimapUI.StackBelowY - UISafeLayout.ContentTop;
+
+            Assert.GreaterOrEqual(stackOffset, minimapBottomOffset,
+                "미니맵 아래 HUD가 미니맵 위로 파고든다");
+            Assert.LessOrEqual(stackOffset - minimapBottomOffset, 24f,
+                "미니맵과 아래 HUD 사이가 너무 벌어졌다");
+        }
     }
 }
 #endif

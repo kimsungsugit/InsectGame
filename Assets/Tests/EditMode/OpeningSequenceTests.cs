@@ -255,6 +255,29 @@ namespace InsectGame.Tests
             }
         }
 
+        [Test]
+        public void CalculateSkipButtonRect_AllSafeAreas_IsBottomCenteredPill()
+        {
+            // 우상단 각진 버튼에서 하단 중앙 알약으로 옮겼다. 되돌아가지 않게 의도를 고정한다.
+            Rect[] safeAreas =
+            {
+                new Rect(0f, 0f, 1920f, 1080f),
+                new Rect(0f, 0f, 1080f, 1920f),
+                new Rect(48f, 72f, 984f, 1776f)
+            };
+
+            for (int i = 0; i < safeAreas.Length; i++)
+            {
+                Rect safeArea = safeAreas[i];
+                Rect button = OpeningSceneController.CalculateSkipButtonRect(safeArea);
+
+                Assert.AreEqual(safeArea.center.x, button.center.x, 1f, "가로 중앙 정렬이 아니다");
+                Assert.Greater(button.yMin, safeArea.y + safeArea.height * 0.5f,
+                    "하단 절반을 벗어났다 — 타이틀·아트워크를 가린다");
+                Assert.Greater(button.width, button.height * 2f, "알약 비례가 아니다");
+            }
+        }
+
         private static OpeningSequenceState StateAt(float elapsed)
         {
             OpeningSequenceState state = new OpeningSequenceState();

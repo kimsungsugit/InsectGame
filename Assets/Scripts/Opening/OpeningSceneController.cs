@@ -1,5 +1,6 @@
 using System;
 using InsectGame.Core;
+using InsectGame.UI;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -582,20 +583,54 @@ namespace InsectGame.Opening
             GUI.color = previous;
         }
 
+        /// <summary>
+        /// 하단 중앙 반투명 알약. 예전엔 우상단에 <b>금색 사각형 + 2px 안쪽 어두운 사각형</b>을
+        /// 겹쳐 그린 각진 이중 테두리였다 — 그 베벨이 "옛날 느낌"의 정체였다.
+        ///
+        /// 지금은 영상이 비치는 유리판 위에 글자를 얹고, 남은 재생 시간을 얇은 앰버 바로
+        /// 보여준다. 위치를 하단 중앙으로 내린 것은 타이틀(상단 7.5%)과 아트워크를 가리지
+        /// 않으면서도 엄지가 닿는 자리이기 때문이다.
+        /// </summary>
         private void DrawSkipButton(Rect safeRect, float alpha)
         {
             EnsureStyles();
             float shortSide = Mathf.Min(safeRect.width, safeRect.height);
             Rect buttonRect = CalculateSkipButtonRect(safeRect);
+            float radius = buttonRect.height * 0.5f;   // 완전한 알약
 
-            skipButtonStyle.fontSize = Mathf.RoundToInt(Mathf.Clamp(shortSide * 0.023f, 18f, 28f));
+            skipButtonStyle.fontSize = Mathf.RoundToInt(Mathf.Clamp(shortSide * 0.026f, 18f, 32f));
+
+            Event current = Event.current;
+            bool hovered = current != null && buttonRect.Contains(current.mousePosition);
+
             Color previous = GUI.color;
-            DrawSolid(buttonRect, new Color(0.92f, 0.7f, 0.22f, alpha * 0.92f));
-            DrawSolid(
-                new Rect(buttonRect.x + 2f, buttonRect.y + 2f, buttonRect.width - 4f, buttonRect.height - 4f),
-                new Color(0.025f, 0.18f, 0.19f, alpha * 0.92f));
             GUI.color = new Color(1f, 1f, 1f, alpha);
-            bool clicked = GUI.Button(buttonRect, "건너뛰기  ▶", skipButtonStyle);
+
+            // 유리판 — 바깥 테두리(밝은 반투명) 위에 본체(어두운 반투명)를 1.5px 물려 얹는다.
+            UISurface.Rounded(buttonRect, new Color(1f, 1f, 1f, hovered ? 0.34f : 0.22f), radius);
+            UISurface.Rounded(
+                new Rect(buttonRect.x + 1.5f, buttonRect.y + 1.5f, buttonRect.width - 3f, buttonRect.height - 3f),
+                new Color(0.02f, 0.05f, 0.07f, hovered ? 0.58f : 0.46f),
+                radius);
+
+            // 남은 재생 시간 — 알약 안쪽 아래에 얇게. 얇은 것은 각진 채로 두고(Flat),
+            // 둥근 모서리를 뚫지 않게 긴 축을 반경만큼 물린다(rules/ui-layout.md).
+            float trackInset = radius * 0.7f;
+            float trackW = buttonRect.width - trackInset * 2f;
+            if (trackW > 0f && sequence != null)
+            {
+                float progress = Mathf.Clamp01(sequence.Elapsed / OpeningSequenceState.Duration);
+                Rect track = new Rect(trackInset + buttonRect.x, buttonRect.yMax - 9f, trackW, 3f);
+                DrawSolid(track, new Color(1f, 1f, 1f, alpha * 0.18f));
+                DrawSolid(
+                    new Rect(track.x, track.y, track.width * progress, track.height),
+                    new Color(1f, 0.82f, 0.36f, alpha * (hovered ? 0.95f : 0.8f)));
+            }
+
+            // 글자는 진행바를 피해 살짝 위로.
+            GUI.color = new Color(1f, 1f, 1f, alpha);
+            GUI.Label(new Rect(buttonRect.x, buttonRect.y - 3f, buttonRect.width, buttonRect.height), "건너뛰기 ▶", skipButtonStyle);
+            bool clicked = GUI.Button(buttonRect, GUIContent.none, GUIStyle.none);
             GUI.color = previous;
 
             if (clicked && sequence != null && sequence.TrySkip())
@@ -749,17 +784,25 @@ namespace InsectGame.Opening
                 safeArea.height);
         }
 
+        /// <summary>
+        /// 스킵 알약의 자리 — <b>하단 중앙</b>. 예전엔 우상단이었는데, 그 위치는
+        /// 타이틀·아트워크와 시선을 다투면서도 한 손 조작에서는 가장 먼 모서리였다.
+        ///
+        /// 세로 마진이 가로보다 큰 것은 제스처바(safeArea가 걷어내지 못하는 기기가 있다)와
+        /// 겹치지 않게 하기 위해서다. 높이 하한 56은 터치 타깃 최소치로
+        /// <c>OpeningSequenceTests</c>가 고정한다.
+        /// </summary>
         internal static Rect CalculateSkipButtonRect(Rect safeRect)
         {
             float shortSide = Mathf.Min(safeRect.width, safeRect.height);
-            float margin = Mathf.Round(Mathf.Clamp(shortSide * 0.024f, 16f, 28f));
-            float width = Mathf.Round(Mathf.Clamp(shortSide * 0.16f, 144f, 192f));
-            float height = Mathf.Round(Mathf.Clamp(shortSide * 0.06f, 56f, 72f));
+            float margin = Mathf.Round(Mathf.Clamp(shortSide * 0.045f, 20f, 56f));
+            float width = Mathf.Round(Mathf.Clamp(shortSide * 0.30f, 200f, 300f));
+            float height = Mathf.Round(Mathf.Clamp(shortSide * 0.062f, 56f, 76f));
             width = Mathf.Min(width, Mathf.Max(1f, safeRect.width - margin * 2f));
             height = Mathf.Min(height, Mathf.Max(1f, safeRect.height - margin * 2f));
             return new Rect(
-                safeRect.xMax - margin - width,
-                safeRect.y + margin,
+                safeRect.x + (safeRect.width - width) * 0.5f,
+                safeRect.yMax - margin - height,
                 width,
                 height);
         }

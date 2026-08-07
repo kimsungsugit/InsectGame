@@ -10,6 +10,24 @@ namespace InsectGame.UI
     /// </summary>
     public class MinimapUI : MonoBehaviour
     {
+        /// <summary>미니맵 패널 한 변(가상 단위).</summary>
+        public const float PanelSize = 220f;
+
+        /// <summary>ContentTop에서 미니맵 상단까지 — 좌상단 HUD 닫힘 탭 아래.</summary>
+        public const float TopOffset = 150f;
+
+        /// <summary>
+        /// 미니맵 아래에 붙는 좌측 HUD의 y. <see cref="TutorialQuestUI"/> 퀘스트 칩이 쓴다.
+        ///
+        /// 예전엔 그쪽이 <c>ContentTop + 380f</c>로 이 기하를 **베껴** 갖고 있었다.
+        /// 380은 150+220+10을 손으로 더한 값이라, 미니맵 크기나 위치를 바꾸면
+        /// 조용히 겹치거나 벌어진다. 값의 출처를 여기 하나로 둔다.
+        /// </summary>
+        public static float StackBelowY => UISafeLayout.ContentTop + TopOffset + PanelSize + UITheme.Space.S;
+
+        /// <summary>미니맵 좌변 x. 아래에 붙는 HUD가 좌변을 맞추는 데 쓴다.</summary>
+        public static float LeftX => UIScale.VirtualSafeLeft + 16f;
+
         [SerializeField] private float worldRadius = 45f; // 미니맵이 커버하는 월드 반경(m)
 
         private Transform player;
@@ -56,25 +74,19 @@ namespace InsectGame.UI
             EnsureAssets();
             UIScale.Begin();
 
-            float size = 220f;
-            float x = UIScale.VirtualSafeLeft + 16f;
-            float y = UISafeLayout.ContentTop + 150f; // 좌상단 HUD(ContentTop) 닫힘 탭 아래
+            float size = PanelSize;
+            float x = LeftX;
+            float y = UISafeLayout.ContentTop + TopOffset; // 좌상단 HUD(ContentTop) 닫힘 탭 아래
             Rect rect = new Rect(x, y, size, size);
             float cx = x + size / 2f;
             float cy = y + size / 2f;
             float mapRadius = size / 2f - 12f;
 
-            // 배경 + 테두리
-            GUI.color = new Color(0.04f, 0.06f, 0.1f, 0.78f);
-            GUI.DrawTexture(rect, Texture2D.whiteTexture);
-            GUI.color = new Color(0.3f, 0.5f, 0.8f, 0.9f);
-            GUI.DrawTexture(new Rect(x, y, size, 3f), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(x, y + size - 3f, size, 3f), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(x, y, 3f, size), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(x + size - 3f, y, 3f, size), Texture2D.whiteTexture);
+            // 배경 — 아래에 붙는 퀘스트 칩과 같은 서피스를 쓴다(각진 4줄 테두리였다).
+            UISurface.HudCard(rect);
 
             GUI.color = Color.white;
-            GUI.Label(new Rect(x, y + 4f, size, 22f), "미니맵", labelStyle);
+            GUI.Label(new Rect(x, y + 6f, size, 24f), "미니맵", labelStyle);
 
             // 곤충 점 (월드 +Z = 미니맵 위쪽)
             Vector3 pp = player.position;

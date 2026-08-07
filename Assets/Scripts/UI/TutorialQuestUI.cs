@@ -117,7 +117,8 @@ namespace InsectGame.UI
         private GUIStyle questDescStyleCache;
         private GUIStyle questProgStyleCache;
         private GUIStyle questHintStyleCache;
-        private GUIStyle panelBtnStyleCache; // 숨기기/복원 작은 버튼 공용
+        private GUIStyle panelBtnStyleCache;        // 상세 팝업의 GUI.Button용 (button 파생)
+        private GUIStyle panelSurfaceBtnStyleCache; // 칩의 UISurface.Button용 (label 파생)
         private bool questPanelStylesReady;
 
         // 알림(Notification) 캐시 - 일시 표시이나 OnGUI 매 호출 시 GC 차단
@@ -185,6 +186,13 @@ namespace InsectGame.UI
 
             panelBtnStyleCache = new GUIStyle(GUI.skin.button)
             { fontSize = 18, fontStyle = FontStyle.Bold };
+
+            // UISurface.Button 전용 — 라벨은 GUI.Label로 그려지므로 **label 파생**이어야 한다.
+            // button 파생을 넘기면 style.normal.background(유니티 기본 회색 상자)가
+            // 둥근 서피스 위에 겹쳐 그려져서 없애려던 옛날 버튼이 그대로 남는다.
+            panelSurfaceBtnStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 20, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            panelSurfaceBtnStyleCache.normal.textColor = UITheme.Instance.textPrimary;
         }
 
         private void InitNotifStyles()
@@ -396,18 +404,20 @@ namespace InsectGame.UI
 
             InitQuestPanelStyles();
 
+            UITheme theme = UITheme.Instance;
             bool guideLock = guided != null && guided.IsGuiding;
-            float chipX = 20f + UIScale.VirtualSafeLeft;
+            // 미니맵과 좌변을 맞춘다 — 예전엔 20 vs 16으로 4px 어긋나 있었다.
+            float chipX = MinimapUI.LeftX;
 
             // 숨김: 작은 복원 버튼만. 단 강제 가이드 중엔 숨김 무시(칩 강제 표시).
             if (tutorialHidden && !guideLock)
             {
-                float rW = UIScale.IsMobileLayout ? 230f : 172f;
-                float rH = UIScale.IsMobileLayout ? 54f : 38f;
+                float rW = UIScale.IsMobileLayout ? 230f : 190f;
+                float rH = UIScale.IsMobileLayout ? 56f : 40f;
                 float rY = UIScale.IsMobileLayout
-                    ? UISafeLayout.ContentTop + 380f   // 모바일: 미니맵 아래
-                    : UISafeLayout.BottomY(rH);        // 데스크톱: 좌하단
-                if (GUI.Button(new Rect(chipX, rY, rW, rH), "▼ 퀘스트 보기", panelBtnStyleCache))
+                    ? MinimapUI.StackBelowY        // 모바일: 미니맵 아래
+                    : UISafeLayout.BottomY(rH);    // 데스크톱: 좌하단
+                if (UISurface.Button(new Rect(chipX, rY, rW, rH), "▼ 퀘스트 보기", theme.surfaceRaised, panelSurfaceBtnStyleCache))
                     SetTutorialHidden(false);
                 return;
             }
@@ -419,27 +429,30 @@ namespace InsectGame.UI
             // 컴팩트 칩 — 제목+진행바만. 좌하단(조작법 제거로 빈 자리)/모바일은 미니맵 아래.
             float chipW = UIScale.IsMobileLayout
                 ? Mathf.Min(500f, UIScale.VirtualScreenWidth - UIScale.VirtualSafeLeft - UIScale.VirtualSafeRight - 40f)
-                : 360f;
-            float cpad = 10f;
-            float ctitleH = 30f;
-            float cbarH = done ? 0f : 26f;
-            float chipH = cpad + ctitleH + cbarH + cpad;
+                : 400f;
+            float cpad = UITheme.Space.S;
+            // 행 높이는 폰트에서 파생한다. 예전엔 fontSize 28을 30px 상자에 그려서
+            // 한글 글자(줄높이 ≈ fontSize×1.35)가 위아래로 깎여 나갔다 — "짤려 보임"의 정체.
+            float ctitleH = Mathf.Ceil(questTitleStyleCache.fontSize * 1.35f);
+            float cbarH = done ? 0f : Mathf.Ceil(questProgStyleCache.fontSize * 1.35f);
+            float crowGap = done ? 0f : UITheme.Space.XS;
+            float chipH = cpad + ctitleH + crowGap + cbarH + cpad;
             float chipY = UIScale.IsMobileLayout
-                ? UISafeLayout.ContentTop + 380f   // 모바일: 미니맵 아래
+                ? MinimapUI.StackBelowY            // 모바일: 미니맵 아래
                 : UISafeLayout.BottomY(chipH);     // 데스크톱: 좌하단
             Rect chipRect = new Rect(chipX, chipY, chipW, chipH);
 
-            // 배경 + 골드 상단 바
-            GUI.color = new Color(0.05f, 0.08f, 0.15f, 0.9f);
-            GUI.DrawTexture(chipRect, Texture2D.whiteTexture);
-            GUI.color = new Color(0.9f, 0.75f, 0.2f, 1f);
-            GUI.DrawTexture(new Rect(chipRect.x, chipRect.y, chipRect.width, 3f), Texture2D.whiteTexture);
-            GUI.color = Color.white;
+            // 배경 — 미니맵과 같은 반투명 서피스. 각진 사각형 직접 칠하기는 금지(rules/ui-layout.md).
+            UISurface.HudCard(chipRect);
+            // 앰버 액센트 — 둥근 모서리를 뚫지 않게 긴 축을 반경만큼 물린다.
+            UISurface.Flat(
+                new Rect(chipRect.x + UITheme.Radius.Card, chipRect.y + 3f, chipRect.width - UITheme.Radius.Card * 2f, 4f),
+                theme.accentAmber);
 
             // 숨기기 버튼(우상단) — 강제 가이드 중엔 숨김 불가(버튼 미표시).
-            float cClose = UIScale.IsMobileLayout ? 44f : 26f;
-            Rect cxRect = new Rect(chipRect.xMax - cClose - 6f, chipRect.y + 6f, cClose, cClose);
-            if (!guideLock && GUI.Button(cxRect, "X", panelBtnStyleCache))
+            float cClose = UIScale.IsMobileLayout ? 44f : 30f;
+            Rect cxRect = new Rect(chipRect.xMax - cClose - 8f, chipRect.y + 8f, cClose, cClose);
+            if (!guideLock && UISurface.Button(cxRect, "✕", theme.surfaceRaised, panelSurfaceBtnStyleCache))
             {
                 SetTutorialHidden(true);
                 return;
@@ -447,32 +460,34 @@ namespace InsectGame.UI
 
             if (done)
             {
-                GUI.Label(chipRect, "✨ 모든 튜토리얼 완료!", doneStyleCache);
+                UIHelper.LabelFit(
+                    new Rect(chipRect.x + cpad, chipRect.y + cpad, chipRect.width - cpad * 2f - cClose, ctitleH),
+                    "✨ 모든 튜토리얼 완료!", doneStyleCache);
                 return;
             }
 
-            float ax = chipRect.x + 12f;
+            float ax = chipRect.x + cpad + 2f;
             float ay = chipRect.y + cpad;
-            float aw = chipRect.width - 24f;
+            float aw = chipRect.width - (cpad + 2f) * 2f;
 
-            // 제목 (X 버튼 폭 확보) — 누르면 중앙 상세 팝업
-            GUI.Label(new Rect(ax, ay, aw - cClose - 8f, ctitleH), "★ " + act.title, questTitleStyleCache);
-            ay += ctitleH;
+            // 제목 (X 버튼 폭 확보) — 누르면 중앙 상세 팝업.
+            // 퀘스트 제목은 데이터가 길이를 정하는데 상자는 고정이다 → LabelFit으로 줄여 맞춘다.
+            // questTitleStyle은 wordWrap이 꺼져 있어 넘치면 세로가 아니라 **가로**로 잘렸다.
+            UIHelper.LabelFit(new Rect(ax, ay, aw - cClose - 8f, ctitleH), "★ " + act.title, questTitleStyleCache);
+            ay += ctitleH + crowGap;
 
-            // 진행 바
+            // 진행 바 — 진행바는 얇으므로 Flat(각진 채움)이 맞다.
             int ccur = questManager.ActiveProgress;
             int ctgt = act.targetCount;
             float cratio = ctgt > 0 ? Mathf.Clamp01((float)ccur / ctgt) : 0f;
-            float cbarW = aw - 66f;
-            GUI.color = new Color(0.12f, 0.12f, 0.18f, 1f);
-            GUI.DrawTexture(new Rect(ax, ay + 2f, cbarW, 18f), Texture2D.whiteTexture);
+            float ccountW = 84f;   // "100/100"이 21px에서 ≈74px — 예전 60px는 카운트 자체가 잘렸다
+            float cbarW = aw - ccountW - UITheme.Space.S;
+            float cbarThick = 10f;
+            float cbarY = ay + (cbarH - cbarThick) * 0.5f;
+            UISurface.Flat(new Rect(ax, cbarY, cbarW, cbarThick), theme.surfaceBase);
             if (cratio > 0f)
-            {
-                GUI.color = new Color(0.2f, 0.75f, 0.3f, 1f);
-                GUI.DrawTexture(new Rect(ax, ay + 2f, cbarW * cratio, 18f), Texture2D.whiteTexture);
-            }
-            GUI.color = Color.white;
-            GUI.Label(new Rect(ax + cbarW + 8f, ay, 60f, 26f), ccur + "/" + ctgt, questProgStyleCache);
+                UISurface.Flat(new Rect(ax, cbarY, cbarW * cratio, cbarThick), theme.accentMint);
+            UIHelper.LabelFit(new Rect(ax + cbarW + UITheme.Space.S, ay, ccountW, cbarH), ccur + "/" + ctgt, questProgStyleCache);
 
             // 칩 클릭(우상단 X 제외) → 중앙 상세 팝업 열기
             Event ce = Event.current;

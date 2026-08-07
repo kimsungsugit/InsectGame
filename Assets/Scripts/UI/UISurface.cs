@@ -158,6 +158,20 @@ namespace InsectGame.UI
             Card(rect, t.surfaceCard, t.surfaceBorder);
         }
 
+        /// <summary>HUD 표면 불투명도 — 뒤의 월드가 비치되 글자 대비는 유지되는 값.</summary>
+        public const float HudSurfaceAlpha = 0.9f;
+
+        /// <summary>
+        /// 필드 HUD용 <b>반투명</b> 카드 — 미니맵·퀘스트 칩처럼 월드 위에 얹히는 패널.
+        /// 모달 카드와 달리 불투명하면 시야를 가리므로 표면 토큰의 <b>알파만</b> 낮춘다
+        /// (색을 새로 정하지 않는다 — 토큰이 바뀌면 HUD도 같이 따라간다).
+        /// </summary>
+        public static void HudCard(Rect rect)
+        {
+            UITheme t = UITheme.Instance;
+            Card(rect, new Color(t.surfaceCard.r, t.surfaceCard.g, t.surfaceCard.b, HudSurfaceAlpha), t.surfaceBorder);
+        }
+
         /// <summary>
         /// 그림자 + 호버 밝기가 있는 버튼. 라벨은 <paramref name="style"/>로 그리고
         /// 클릭 판정은 투명 <c>GUI.Button</c>이 받는다.
