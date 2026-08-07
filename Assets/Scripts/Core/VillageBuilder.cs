@@ -656,6 +656,13 @@ namespace InsectGame.Core
                 case "mountain": BuildStoneHut(outpost); break;
                 case "garden": BuildFlowerPergola(outpost); break;
                 case "ruins": BuildTentCamp(outpost); break;
+                // ── 2막(ver2) ── 없으면 사막·빙하·화산에 전부 통나무집이 선다.
+                case "hollow": BuildBlankMarkerCamp(outpost); break;
+                case "dunes": BuildCaravanTent(outpost); break;
+                case "frostline": BuildIceShelter(outpost); break;
+                case "emberfall": BuildBasaltShelter(outpost); break;
+                case "canopy": BuildTreetopHut(outpost); break;
+                case "nameless": BuildStoneCairn(outpost); break;
                 default: BuildLogCabin(outpost); break;
             }
 
@@ -676,6 +683,84 @@ namespace InsectGame.Core
                 regionId = region.regionId,
                 wanderRadius = 6f
             });
+
+            BuildOutpostFacilities(region, outpost, result);
+        }
+
+        /// <summary>
+        /// 2막 거점의 편의시설. <b>모래언덕(전반)·우듬지(후반) 두 곳에만</b> 둔다.
+        ///
+        /// 2막 리전은 Lv.42~70인데 상점·병원이 전부 초원 본마을에만 있어서, 회복하려면
+        /// 매번 초원까지 왕복해야 했다. 그렇다고 6리전 전부에 두면 마을의 특별함이 없어지고
+        /// 리전을 옮겨 다닐 이유도 사라진다 — 두 거점이 그 사이다.
+        /// 가챠는 초원 전용으로 남긴다.
+        ///
+        /// 서사와도 맞는다: 모래언덕은 명부회 창고 앞 보급지, 우듬지는 꽃밭 떡밥을 회수하는
+        /// 지점이라 둘 다 사람이 머무는 곳이다.
+        /// </summary>
+        private void BuildOutpostFacilities(Data.RegionData region, Transform outpost, VillageBuildResult result)
+        {
+            bool shop, hospital, training;
+            switch (region.regionId)
+            {
+                case "dunes": shop = true; hospital = true; training = false; break;
+                case "canopy": shop = true; hospital = true; training = true; break;
+                default: return;
+            }
+
+            if (shop)
+            {
+                BuildOutpostStall(outpost, "ShopStall", new Vector3(-4.6f, 0f, 0.6f),
+                    new Color(0.72f, 0.34f, 0.26f), "상점");
+                AddOutpostInteraction(region, outpost, result, "shop", new Vector3(-4.6f, 0f, 2.9f),
+                    "상점", InteractionKind.ItemShop);
+            }
+            if (hospital)
+            {
+                BuildOutpostStall(outpost, "HospitalStall", new Vector3(4.6f, 0f, 0.6f),
+                    new Color(0.88f, 0.90f, 0.92f), "병원");
+                AddOutpostInteraction(region, outpost, result, "hospital", new Vector3(4.6f, 0f, 2.9f),
+                    "병원", InteractionKind.Hospital);
+            }
+            if (training)
+            {
+                BuildOutpostStall(outpost, "TrainingStall", new Vector3(0f, 0f, 6.4f),
+                    new Color(0.36f, 0.52f, 0.72f), "훈련소");
+                AddOutpostInteraction(region, outpost, result, "training", new Vector3(0f, 0f, 4.4f),
+                    "훈련소", InteractionKind.Training);
+            }
+        }
+
+        // 상호작용 id는 리전마다 달라야 한다 — 같은 id가 둘이면 뒤엣것이 앞엣것을 가린다.
+        private void AddOutpostInteraction(Data.RegionData region, Transform outpost,
+            VillageBuildResult result, string suffix, Vector3 localPos, string label, InteractionKind kind)
+        {
+            result.interactions.Add(new InteractionPointDef
+            {
+                id = $"outpost_{region.regionId}_{suffix}",
+                worldPosition = outpost.TransformPoint(localPos),
+                radius = InteractionRadius,
+                label = label,
+                kind = kind
+            });
+        }
+
+        /// <summary>거점 시설 가판 — 기둥 2개 + 차양 + 카운터 + 간판. 리전 테마와 무관한 공통 형태.</summary>
+        private void BuildOutpostStall(Transform outpost, string name, Vector3 localPos, Color accent, string label)
+        {
+            Transform stall = Child(outpost, name, localPos);
+            Color post = new Color(0.42f, 0.32f, 0.20f);
+
+            Prim(PrimitiveType.Cylinder, "PostL", stall,
+                new Vector3(-1.3f, 1.05f, 0f), Vector3.zero, new Vector3(0.11f, 1.05f, 0.11f), post);
+            Prim(PrimitiveType.Cylinder, "PostR", stall,
+                new Vector3(1.3f, 1.05f, 0f), Vector3.zero, new Vector3(0.11f, 1.05f, 0.11f), post);
+            Prim(PrimitiveType.Cube, "Awning", stall,
+                new Vector3(0f, 2.18f, 0.5f), new Vector3(-12f, 0f, 0f), new Vector3(3.0f, 0.09f, 1.9f), accent);
+            // 카운터 — 콜라이더 유지(뒤로 통과 못 하게).
+            Prim(PrimitiveType.Cube, "Counter", stall,
+                new Vector3(0f, 0.48f, -0.35f), Vector3.zero, new Vector3(2.7f, 0.95f, 0.55f), post, keepCollider: true);
+            CreateSign(stall, label, new Vector3(0f, 2.75f, 0.1f), 2.0f);
         }
 
         /// <summary>
@@ -797,6 +882,199 @@ namespace InsectGame.Core
         }
 
         /// <summary>swamp — 수상 오두막: 기둥 4개 위 마루 + 벽 + 사다리.</summary>
+        // ================= 2막(ver2) 전초기지 =================
+        // 리전마다 상처의 모양이 다르다 — 건물이 그걸 먼저 말한다.
+
+        /// <summary>텅 빈 들 — 글자가 지워진 표지판들과 천막 하나. 이름을 잃은 땅.</summary>
+        private void BuildBlankMarkerCamp(Transform outpost)
+        {
+            Transform camp = Child(outpost, "BlankMarkerCamp", new Vector3(0f, 0f, -2.5f));
+            Color stone = new Color(0.52f, 0.51f, 0.47f);
+            Color cloth = new Color(0.58f, 0.56f, 0.50f);
+            Color pole = new Color(0.36f, 0.33f, 0.28f);
+
+            // 글자 없는 비석 3개 — 서로 다른 각도로 기울여 방치된 인상을 준다.
+            float[] markerX = { -2.1f, 0.2f, 2.0f };
+            float[] markerTilt = { -13f, 6f, 17f };
+            for (int i = 0; i < 3; i++)
+            {
+                Prim(PrimitiveType.Cube, $"BlankMarker_{i}", camp,
+                    new Vector3(markerX[i], 0.85f, 0.9f - i * 0.5f), new Vector3(0f, 0f, markerTilt[i]),
+                    new Vector3(0.72f, 1.7f, 0.14f), stone, keepCollider: true);
+            }
+
+            // 한쪽으로 기운 천막(lean-to) — 기둥 둘에 천 한 장.
+            Prim(PrimitiveType.Cylinder, "LeanPoleL", camp,
+                new Vector3(-1.3f, 0.9f, -1.6f), Vector3.zero, new Vector3(0.12f, 0.9f, 0.12f), pole);
+            Prim(PrimitiveType.Cylinder, "LeanPoleR", camp,
+                new Vector3(1.3f, 0.55f, -1.6f), Vector3.zero, new Vector3(0.12f, 0.55f, 0.12f), pole);
+            Prim(PrimitiveType.Cube, "LeanCloth", camp,
+                new Vector3(0f, 1.5f, -1.9f), new Vector3(0f, 0f, 18f), new Vector3(3.0f, 0.08f, 2.2f), cloth);
+        }
+
+        /// <summary>모래언덕 — 대상(隊商) 천막과 화물 상자. 명부회 창고 앞 보급지.</summary>
+        private void BuildCaravanTent(Transform outpost)
+        {
+            Transform camp = Child(outpost, "CaravanTent", new Vector3(0f, 0f, -2.6f));
+            Color canvas = new Color(0.78f, 0.68f, 0.46f);
+            Color shade = new Color(0.62f, 0.52f, 0.34f);
+            Color crate = new Color(0.46f, 0.34f, 0.20f);
+
+            // 원뿔 천막 — 콜라이더 유지(통행 차단).
+            Prim(PrimitiveType.Cylinder, "TentBody", camp,
+                new Vector3(0f, 0.85f, 0f), Vector3.zero, new Vector3(1.9f, 0.85f, 1.9f), canvas, keepCollider: true);
+            Prim(PrimitiveType.Cube, "TentCap", camp,
+                new Vector3(0f, 1.95f, 0f), new Vector3(0f, 45f, 0f), new Vector3(1.5f, 0.5f, 1.5f), shade);
+            Prim(PrimitiveType.Cylinder, "TentPole", camp,
+                new Vector3(0f, 2.4f, 0f), Vector3.zero, new Vector3(0.07f, 0.5f, 0.07f), crate);
+
+            // 차양 — 천막 앞으로 뻗은 그늘막.
+            Prim(PrimitiveType.Cylinder, "AwningPoleL", camp,
+                new Vector3(-1.7f, 0.85f, 2.4f), Vector3.zero, new Vector3(0.09f, 0.85f, 0.09f), crate);
+            Prim(PrimitiveType.Cylinder, "AwningPoleR", camp,
+                new Vector3(1.7f, 0.85f, 2.4f), Vector3.zero, new Vector3(0.09f, 0.85f, 0.09f), crate);
+            Prim(PrimitiveType.Cube, "Awning", camp,
+                new Vector3(0f, 1.72f, 1.6f), new Vector3(-9f, 0f, 0f), new Vector3(3.8f, 0.07f, 2.6f), shade);
+
+            // 화물 상자 3개 — 명부회가 곤충을 실어 나른 흔적.
+            Prim(PrimitiveType.Cube, "Crate_0", camp,
+                new Vector3(-2.4f, 0.35f, 0.4f), new Vector3(0f, 14f, 0f), new Vector3(0.7f, 0.7f, 0.7f), crate, keepCollider: true);
+            Prim(PrimitiveType.Cube, "Crate_1", camp,
+                new Vector3(-2.3f, 1.0f, 0.3f), new Vector3(0f, -8f, 0f), new Vector3(0.6f, 0.6f, 0.6f), crate);
+            Prim(PrimitiveType.Cube, "Crate_2", camp,
+                new Vector3(2.4f, 0.35f, -0.3f), new Vector3(0f, -21f, 0f), new Vector3(0.72f, 0.7f, 0.72f), crate, keepCollider: true);
+        }
+
+        /// <summary>서릿길 — 얼음벽 대피소. 눈처마가 얹힌 반원 벽.</summary>
+        private void BuildIceShelter(Transform outpost)
+        {
+            Transform shelter = Child(outpost, "IceShelter", new Vector3(0f, 0f, -2.5f));
+            Color ice = new Color(0.72f, 0.83f, 0.90f);
+            Color deepIce = new Color(0.55f, 0.70f, 0.82f);
+            Color snow = new Color(0.93f, 0.95f, 0.98f);
+
+            // 얼음 블록을 호(弧)로 세운다 — 바람을 막는 반원 벽.
+            for (int i = 0; i < 5; i++)
+            {
+                float a = Mathf.Lerp(200f, 340f, i / 4f) * Mathf.Deg2Rad;
+                Prim(PrimitiveType.Cube, $"IceBlock_{i}", shelter,
+                    new Vector3(Mathf.Cos(a) * 2.2f, 0.6f, Mathf.Sin(a) * 2.2f),
+                    new Vector3(0f, -Mathf.Lerp(200f, 340f, i / 4f), 0f),
+                    new Vector3(1.1f, 1.2f, 0.45f), i % 2 == 0 ? ice : deepIce, keepCollider: true);
+            }
+            // 두 번째 단 — 낮게 얹어 벽에 두께를 준다.
+            for (int i = 0; i < 4; i++)
+            {
+                float a = Mathf.Lerp(212f, 328f, i / 3f) * Mathf.Deg2Rad;
+                Prim(PrimitiveType.Cube, $"IceBlockTop_{i}", shelter,
+                    new Vector3(Mathf.Cos(a) * 2.15f, 1.45f, Mathf.Sin(a) * 2.15f),
+                    new Vector3(0f, -Mathf.Lerp(212f, 328f, i / 3f), 0f),
+                    new Vector3(1.0f, 0.7f, 0.42f), deepIce);
+            }
+            // 눈처마 — 벽 위에 얹힌 눈.
+            Prim(PrimitiveType.Cube, "SnowCap", shelter,
+                new Vector3(0f, 1.92f, -1.5f), new Vector3(4f, 0f, 0f), new Vector3(4.2f, 0.16f, 1.7f), snow);
+        }
+
+        /// <summary>잿불 골짜기 — 현무암 판을 세운 은신처. 지붕에 재가 쌓였다.</summary>
+        private void BuildBasaltShelter(Transform outpost)
+        {
+            Transform shelter = Child(outpost, "BasaltShelter", new Vector3(0f, 0f, -2.5f));
+            Color basalt = new Color(0.20f, 0.18f, 0.19f);
+            Color ash = new Color(0.44f, 0.41f, 0.38f);
+            Color ember = new Color(0.72f, 0.28f, 0.12f);
+
+            // 육각 기둥 느낌의 현무암 판 — 높이를 달리해 절리(節理)처럼 보이게.
+            float[] slabX = { -1.8f, -0.6f, 0.6f, 1.8f };
+            float[] slabH = { 1.5f, 1.9f, 1.7f, 1.3f };
+            for (int i = 0; i < 4; i++)
+            {
+                Prim(PrimitiveType.Cube, $"BasaltSlab_{i}", shelter,
+                    new Vector3(slabX[i], slabH[i] * 0.5f, -1.2f), new Vector3(0f, (i - 1.5f) * 6f, 0f),
+                    new Vector3(1.15f, slabH[i], 0.42f), basalt, keepCollider: true);
+            }
+            // 측벽 2장.
+            Prim(PrimitiveType.Cube, "BasaltSideL", shelter,
+                new Vector3(-2.2f, 0.75f, -0.1f), new Vector3(0f, 78f, 0f), new Vector3(1.9f, 1.5f, 0.4f), basalt, keepCollider: true);
+            Prim(PrimitiveType.Cube, "BasaltSideR", shelter,
+                new Vector3(2.2f, 0.75f, -0.1f), new Vector3(0f, -78f, 0f), new Vector3(1.9f, 1.5f, 0.4f), basalt, keepCollider: true);
+            // 재 덮인 지붕.
+            Prim(PrimitiveType.Cube, "AshRoof", shelter,
+                new Vector3(0f, 1.95f, -0.6f), new Vector3(-7f, 0f, 0f), new Vector3(4.6f, 0.14f, 2.6f), ash);
+            // 잉걸 — 벽 틈에서 새는 열.
+            Prim(PrimitiveType.Cube, "EmberCrack", shelter,
+                new Vector3(0f, 0.35f, -0.95f), Vector3.zero, new Vector3(2.2f, 0.09f, 0.1f), ember);
+        }
+
+        /// <summary>우듬지 — 나무 위 오두막. 사다리로 오른다.</summary>
+        private void BuildTreetopHut(Transform outpost)
+        {
+            Transform hut = Child(outpost, "TreetopHut", new Vector3(0f, 0f, -2.6f));
+            Color trunk = new Color(0.34f, 0.26f, 0.17f);
+            Color plank = new Color(0.48f, 0.40f, 0.26f);
+            Color leafRoof = new Color(0.24f, 0.46f, 0.26f);
+
+            // 굵은 줄기 — 오두막을 떠받친다.
+            Prim(PrimitiveType.Cylinder, "Trunk", hut,
+                new Vector3(0f, 1.4f, 0f), Vector3.zero, new Vector3(0.55f, 1.4f, 0.55f), trunk, keepCollider: true);
+            // 보조 기둥 3개.
+            for (int i = 0; i < 3; i++)
+            {
+                float a = (90f + i * 120f) * Mathf.Deg2Rad;
+                Prim(PrimitiveType.Cylinder, $"Prop_{i}", hut,
+                    new Vector3(Mathf.Cos(a) * 1.25f, 1.25f, Mathf.Sin(a) * 1.25f),
+                    Vector3.zero, new Vector3(0.13f, 1.25f, 0.13f), trunk);
+            }
+            Prim(PrimitiveType.Cube, "Deck", hut,
+                new Vector3(0f, 2.75f, 0f), Vector3.zero, new Vector3(3.4f, 0.16f, 3.2f), plank);
+            Prim(PrimitiveType.Cube, "Cabin", hut,
+                new Vector3(0f, 3.6f, -0.2f), Vector3.zero, new Vector3(2.4f, 1.6f, 2.2f), plank);
+            // 잎으로 인 지붕.
+            Prim(PrimitiveType.Cube, "LeafRoof", hut,
+                new Vector3(0f, 4.55f, -0.2f), new Vector3(9f, 0f, 0f), new Vector3(3.0f, 0.14f, 2.7f), leafRoof);
+            // 난간 — 데크 앞쪽.
+            Prim(PrimitiveType.Cube, "Rail", hut,
+                new Vector3(0f, 3.15f, 1.55f), Vector3.zero, new Vector3(3.3f, 0.08f, 0.08f), plank);
+            // 밧줄 사다리 — 가로대만.
+            for (int i = 0; i < 6; i++)
+            {
+                Prim(PrimitiveType.Cube, $"RopeRung_{i}", hut,
+                    new Vector3(0f, 0.45f + i * 0.42f, 1.85f), Vector3.zero,
+                    new Vector3(0.66f, 0.06f, 0.06f), plank);
+            }
+        }
+
+        /// <summary>
+        /// 이름 없는 자리 — 건물이 아니라 <b>흔적</b>이다. 돌을 쌓아 올린 무지(cairn) 하나.
+        /// 여기까지 온 사람들이 이름 대신 돌을 하나씩 얹었다.
+        /// </summary>
+        private void BuildStoneCairn(Transform outpost)
+        {
+            Transform cairn = Child(outpost, "StoneCairn", new Vector3(0f, 0f, -2.4f));
+            Color dark = new Color(0.31f, 0.30f, 0.32f);
+            Color pale = new Color(0.55f, 0.54f, 0.53f);
+
+            // 아래는 넓고 위로 갈수록 좁아지는 돌무지 6단.
+            for (int i = 0; i < 6; i++)
+            {
+                float t = i / 5f;
+                float w = Mathf.Lerp(1.5f, 0.34f, t);
+                Prim(PrimitiveType.Cube, $"CairnStone_{i}", cairn,
+                    new Vector3(Mathf.Sin(i * 2.1f) * 0.12f, 0.22f + i * 0.42f, Mathf.Cos(i * 1.7f) * 0.12f),
+                    new Vector3(0f, i * 27f, (i % 2 == 0 ? 4f : -5f)),
+                    new Vector3(w, 0.42f, w * 0.9f),
+                    i % 2 == 0 ? dark : pale, keepCollider: i == 0);
+            }
+            // 둘러 놓은 작은 돌들 — 나중에 온 사람들의 몫.
+            for (int i = 0; i < 7; i++)
+            {
+                float a = i * (360f / 7f) * Mathf.Deg2Rad;
+                Prim(PrimitiveType.Cube, $"OfferStone_{i}", cairn,
+                    new Vector3(Mathf.Cos(a) * 2.0f, 0.13f, Mathf.Sin(a) * 2.0f),
+                    new Vector3(0f, i * 41f, 0f), new Vector3(0.34f, 0.26f, 0.30f), pale);
+            }
+        }
+
         private void BuildStiltHut(Transform outpost)
         {
             Transform hut = Child(outpost, "StiltHut", new Vector3(0f, 0f, -2.5f));
