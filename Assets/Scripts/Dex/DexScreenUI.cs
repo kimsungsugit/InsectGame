@@ -1371,7 +1371,9 @@ namespace InsectGame.Dex
                 GUI.color = dark;
                 UIShapes.Part(new Rect(cx - 6 * s, cy - 12 * s, 12 * s, 7 * s), GUI.color);
             }
-            else if (id.Contains("bee"))
+            // "beetle"이 "bee"를 품는다 — 가드가 없으면 아래 stag/rhinoceros 분기까지 못 가고
+            // 딱정벌레가 전부 벌로 그려진다(InsectEntity.BuildModel의 같은 가드와 짝).
+            else if (id.Contains("bee") && !id.Contains("beetle"))
             {
                 GUI.color = col;
                 UIShapes.Part(new Rect(cx - 10 * s, cy - 7 * s, 20 * s, 14 * s), GUI.color);

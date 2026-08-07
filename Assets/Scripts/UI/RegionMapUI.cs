@@ -40,7 +40,11 @@ namespace InsectGame.UI
         // 리전 간 공간 인접(길). RegionData.connections는 전부 null이라 여기서 토폴로지 유지. 정적이라 프레임당 할당 없음.
         private static readonly string[,] Connections = {
             {"meadow","pond"}, {"meadow","forest"}, {"meadow","swamp"}, {"meadow","garden"},
-            {"mountain","ruins"}, {"forest","swamp"}, {"forest","mountain"}
+            {"mountain","ruins"}, {"forest","swamp"}, {"forest","mountain"},
+            // ── 2막(ver2) ── 유적 너머로 이어지는 사슬. 빠뜨리면 지도에 길이 안 그려져
+            // 신규 리전이 허공에 뜬 섬으로 보인다.
+            {"ruins","hollow"}, {"hollow","dunes"}, {"dunes","frostline"},
+            {"frostline","emberfall"}, {"emberfall","canopy"}, {"canopy","nameless"}
         };
 
         private struct RaidBossMarker

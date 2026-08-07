@@ -9,8 +9,11 @@ namespace InsectGame.Tests
     [TestFixture]
     public class RegionDefinitionsScaleTests
     {
-        // 베이스 Ground(±310)와 경계벽(±320) 안에 모든 리전이 들어와야 한다.
-        private const float BoundaryLimit = 310f;
+        // 경계벽(WorldTerrainBuilder.mapSize 520, 두께 3 → 내면 ±518.5) 안에 모든 리전이
+        // 들어와야 한다. 벽 밖에 놓인 리전은 걸어서 도달할 수 없다.
+        // 2막(ver2) 6지역 추가로 옛 ±310에서 넓혔다 — 지면(Ground Plane 스케일 108 = ±540)이
+        // 벽보다 넓어야 벽 앞에 무바닥 구간이 안 생긴다.
+        private const float BoundaryLimit = 518f;
 
         private static RegionData Get(RegionData[] regions, string id)
         {
@@ -37,9 +40,10 @@ namespace InsectGame.Tests
         }
 
         [Test]
-        public void CreateAll_RegionCount_Is7()
+        public void CreateAll_RegionCount_Is13()
         {
-            Assert.AreEqual(7, RegionDefinitions.CreateAll().Length);
+            // 1막 7 + 2막(ver2) 6 = 13.
+            Assert.AreEqual(13, RegionDefinitions.CreateAll().Length);
         }
 
         [Test]

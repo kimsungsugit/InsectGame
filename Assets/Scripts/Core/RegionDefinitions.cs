@@ -342,9 +342,12 @@ namespace InsectGame.Core
                         "centipede_ruin", "jewel_beetle_azure", "moth_shadow", "wasp_gold",
                         "scarab_pharaoh", "butterfly_midnight", "hornet_emperor"
                     },
-                    guardianInsectId = null,
-                    guardianDisplayName = null,
-                    guardianLevel = 0,
+                    // 1막에는 수문장이 없어 유적이 종착지였다. 2막을 열려면 여기 고리가 필요하다 —
+                    // RegionManager.DefeatGuardian이 유일한 리전 해금 경로이기 때문이다.
+                    // 이 격파가 '봉인이 열린 날'이자 텅 빈 들(hollow)로 가는 문이다.
+                    guardianInsectId = "scarab_pharaoh",
+                    guardianDisplayName = "유적의 파수꾼 파라오풍뎅이",
+                    guardianLevel = 42,
                     subAreas = new SubAreaData[]
                     {
                         new SubAreaData
@@ -369,6 +372,317 @@ namespace InsectGame.Core
                             exclusiveInsectIds = new[] { "beetle_hercules", "leaf_insect_phantom" },
                             minLevel = 38,
                             maxLevel = 48,
+                            environmentType = "underground"
+                        }
+                    }
+                },
+
+                // ═══════ 2막(ver2) — "장부에 없는 땅" ═══════
+                // 1막 7지역은 고대인의 기록에 있던 땅이고, 아래 6지역은 기록에서 지워졌거나
+                // 애초에 오르지 못한 땅이다. 서사는 Docs/StoryBible.md가 단일 출처.
+                // 배치는 유적(0,140) 너머 북동~북서로 호를 그린다 — 인접 리전끼리 반지름 합보다
+                // 멀게 두어 겹침이 없다(WorldScale이 전부에 일괄 적용되므로 상대 기하는 보존된다).
+
+                // ── 텅 빈 들: Lv.42~48, 잦아듦이 가장 먼저 훑고 간 폐허 초원 ──
+                new RegionData
+                {
+                    regionId = "hollow",
+                    displayName = "텅 빈 들",
+                    description = "소리가 없는 들판 — 잦아듦이 가장 먼저 훑고 간 자리입니다.",
+                    themeColor = new Color(0.55f, 0.55f, 0.5f),
+                    centerPosition = new Vector3(100f, 0f, 165f),
+                    radius = 45f,
+                    // 아래 풀은 신규 6종 + 초원·습지 종 재활용 8종이다. 재활용이 의도다 —
+                    // 신규 종으로 채우면 '텅 빈' 들이 오히려 풍요로워 보인다.
+                    // (주석을 requiredLevel과 insectIds **사이**에 두지 말 것 —
+                    //  game_facts.region_pools()의 정규식이 `requiredLevel = N,\s*insectIds`를
+                    //  붙어 있는 것으로 보고 읽어서, 사이에 주석이 끼면 그 리전을 통째로 건너뛰고
+                    //  다음 리전 값을 잘못 가져온다. 실제로 hollow가 dunes 풀로 읽혔다.)
+                    requiredLevel = 42,
+                    insectIds = new[]
+                    {
+                        "cricket_hush", "moth_ashen", "beetle_husk", "spider_threadbare",
+                        "mantis_hollow", "moth_forgotten",
+                        "moth_brown", "aphid_colony", "beetle_dung", "earwig_common",
+                        "pill_bug_garden", "stick_insect_long", "mantis_dead_leaf", "moth_shadow"
+                    },
+                    guardianInsectId = "mantis_hollow",
+                    guardianDisplayName = "텅 빈 들의 사마귀",
+                    guardianLevel = 48,
+                    subAreas = new SubAreaData[]
+                    {
+                        new SubAreaData
+                        {
+                            subAreaId = "hollow_silence",
+                            displayName = "침묵의 자리",
+                            description = "소리가 완전히 멎은 곳 — 이름을 잃은 것들이 머뭅니다.",
+                            centerPosition = new Vector3(92f, 0f, 178f),
+                            radius = 12f,
+                            exclusiveInsectIds = new[] { "mantis_hollow", "moth_forgotten" },
+                            minLevel = 44,
+                            maxLevel = 50,
+                            environmentType = "fog"
+                        },
+                        new SubAreaData
+                        {
+                            subAreaId = "hollow_burrow",
+                            displayName = "마른 굴",
+                            description = "말라붙은 땅굴 — 껍질만 남은 곤충이 숨어 있습니다.",
+                            centerPosition = new Vector3(112f, 0f, 154f),
+                            radius = 10f,
+                            exclusiveInsectIds = new[] { "spider_threadbare", "beetle_husk" },
+                            minLevel = 42,
+                            maxLevel = 48,
+                            environmentType = "underground"
+                        }
+                    }
+                },
+                // ── 모래언덕: Lv.46~52, 명부회 전진기지 ──
+                new RegionData
+                {
+                    regionId = "dunes",
+                    displayName = "모래언덕",
+                    description = "기록이 모래에 묻힌 땅 — 누군가 곤충을 상자째 실어 나른 자국이 있습니다.",
+                    themeColor = new Color(0.88f, 0.76f, 0.45f),
+                    centerPosition = new Vector3(190f, 0f, 105f),
+                    radius = 48f,
+                    requiredLevel = 46,
+                    insectIds = new[]
+                    {
+                        "beetle_sand", "cricket_dune", "fly_sand", "pill_bug_desert",
+                        "bee_digger", "antlion_dune", "grasshopper_locust",
+                        "spider_camel", "scarab_sand", "wasp_hawk",
+                        "centipede_sand", "hornet_dune",
+                        "grasshopper_rock", "pill_bug_rock"
+                    },
+                    guardianInsectId = "hornet_dune",
+                    guardianDisplayName = "모래언덕의 장수말벌",
+                    guardianLevel = 52,
+                    subAreas = new SubAreaData[]
+                    {
+                        new SubAreaData
+                        {
+                            subAreaId = "dunes_vault",
+                            displayName = "모래 아래 창고",
+                            description = "모래에 반쯤 묻힌 저장고 — 상자마다 이름표가 붙어 있습니다.",
+                            centerPosition = new Vector3(178f, 0f, 118f),
+                            radius = 12f,
+                            exclusiveInsectIds = new[] { "hornet_dune", "centipede_sand" },
+                            minLevel = 48,
+                            maxLevel = 54,
+                            environmentType = "underground"
+                        },
+                        new SubAreaData
+                        {
+                            subAreaId = "dunes_pit",
+                            displayName = "개미귀신 구덩이",
+                            description = "깔때기 모양 함정이 늘어선 사면 — 발을 헛디디면 빠져나오기 어렵습니다.",
+                            centerPosition = new Vector3(205f, 0f, 92f),
+                            radius = 10f,
+                            exclusiveInsectIds = new[] { "antlion_dune", "spider_camel", "scarab_sand" },
+                            minLevel = 46,
+                            maxLevel = 52,
+                            environmentType = "cave"
+                        }
+                    }
+                },
+                // ── 서릿길: Lv.50~56, 얼어붙어 시간이 멈춘 땅 ──
+                new RegionData
+                {
+                    regionId = "frostline",
+                    displayName = "서릿길",
+                    description = "얼음이 시간을 붙들어 둔 땅 — 여기 기록만은 한 번도 바래지 않았습니다.",
+                    themeColor = new Color(0.72f, 0.86f, 0.95f),
+                    centerPosition = new Vector3(215f, 0f, 205f),
+                    radius = 45f,
+                    requiredLevel = 50,
+                    insectIds = new[]
+                    {
+                        "pill_bug_frost", "cricket_frost", "moth_snow", "beetle_rime",
+                        "spider_frost", "stag_beetle_glacier", "butterfly_snowveil",
+                        "mantis_icicle", "moth_aurora",
+                        "ladybug_alpine", "cicada_mountain", "caterpillar_pine",
+                        "beetle_longhorn_alpine", "butterfly_apollo"
+                    },
+                    guardianInsectId = "moth_aurora",
+                    guardianDisplayName = "서릿길의 오로라나방",
+                    guardianLevel = 56,
+                    subAreas = new SubAreaData[]
+                    {
+                        new SubAreaData
+                        {
+                            subAreaId = "frostline_archive",
+                            displayName = "얼음 서고",
+                            description = "얼음 벽에 옛 기록이 그대로 갇혀 있는 곳 — 글자가 아직 선명합니다.",
+                            centerPosition = new Vector3(205f, 0f, 215f),
+                            radius = 12f,
+                            exclusiveInsectIds = new[] { "moth_aurora", "butterfly_snowveil" },
+                            minLevel = 52,
+                            maxLevel = 58,
+                            environmentType = "cave"
+                        },
+                        new SubAreaData
+                        {
+                            subAreaId = "frostline_ridge",
+                            displayName = "서리 능선",
+                            description = "바람이 얼음 알갱이를 실어 나르는 능선 — 시야가 자주 하얗게 지워집니다.",
+                            centerPosition = new Vector3(228f, 0f, 193f),
+                            radius = 10f,
+                            exclusiveInsectIds = new[] { "mantis_icicle", "stag_beetle_glacier" },
+                            minLevel = 50,
+                            maxLevel = 56,
+                            environmentType = "peak"
+                        }
+                    }
+                },
+                // ── 잿불 골짜기: Lv.54~60, 기록이 불타 없어진 땅 ──
+                new RegionData
+                {
+                    regionId = "emberfall",
+                    displayName = "잿불 골짜기",
+                    description = "재가 식지 않는 골짜기 — 기록이 통째로 불타 빈칸이 가장 두껍게 겹친 곳입니다.",
+                    themeColor = new Color(0.62f, 0.28f, 0.22f),
+                    // (120,255)에서 (128,262)로 옮겼다 — 옛 위치는 사슬상 이웃도 아닌 hollow와
+                    // 0.8m 겹쳤다(거리 92.2 < 반경합 93). 겹치면 RegionManager.ContainsPoint가
+                    // 먼저 걸린 리전을 돌려줘 그 띠에서 BGM·스폰 풀이 튄다.
+                    // RegionProgressionTests.SecondActRegions_DoNotOverlapAnyRegion이 고정한다.
+                    centerPosition = new Vector3(128f, 0f, 262f),
+                    radius = 48f,
+                    requiredLevel = 54,
+                    insectIds = new[]
+                    {
+                        "beetle_cinder", "cricket_ember", "fly_ash", "centipede_ember",
+                        "wasp_ash", "cicada_ember", "beetle_longhorn_char",
+                        "mantis_ember", "hornet_magma",
+                        "beetle_click", "centipede_red", "moth_shadow",
+                        "wasp_night", "cicada_ancient"
+                    },
+                    guardianInsectId = "hornet_magma",
+                    guardianDisplayName = "잿불 골짜기의 용암말벌",
+                    guardianLevel = 60,
+                    subAreas = new SubAreaData[]
+                    {
+                        new SubAreaData
+                        {
+                            subAreaId = "emberfall_kiln",
+                            displayName = "무너진 가마",
+                            description = "한때 무언가를 구워내던 가마 — 지금은 갱도가 조금씩 내려앉고 있습니다.",
+                            centerPosition = new Vector3(110f, 0f, 266f),
+                            radius = 12f,
+                            exclusiveInsectIds = new[] { "hornet_magma", "mantis_ember" },
+                            minLevel = 56,
+                            maxLevel = 62,
+                            environmentType = "cave"
+                        },
+                        new SubAreaData
+                        {
+                            subAreaId = "emberfall_vent",
+                            displayName = "잿불 굴뚝",
+                            description = "땅속에서 열기가 올라오는 갈라진 틈 — 재가 아래에서 위로 흐릅니다.",
+                            centerPosition = new Vector3(132f, 0f, 244f),
+                            radius = 10f,
+                            exclusiveInsectIds = new[] { "centipede_ember", "cicada_ember" },
+                            minLevel = 54,
+                            maxLevel = 60,
+                            environmentType = "underground"
+                        }
+                    }
+                },
+                // ── 우듬지: Lv.58~64, 꽃밭과 같은 예비 울타리 (2막에서 유일하게 풍성한 땅) ──
+                new RegionData
+                {
+                    regionId = "canopy",
+                    displayName = "우듬지",
+                    description = "거대수 수관층 — 여기 곤충들은 한 번도 이름을 잃은 적이 없습니다.",
+                    themeColor = new Color(0.30f, 0.68f, 0.38f),
+                    centerPosition = new Vector3(15f, 0f, 265f),
+                    radius = 50f,
+                    requiredLevel = 58,
+                    insectIds = new[]
+                    {
+                        "aphid_canopy", "caterpillar_silk", "ladybug_canopy", "bee_stingless",
+                        "katydid_canopy", "stick_insect_canopy", "butterfly_crown",
+                        "mantis_canopy", "butterfly_worldtree",
+                        "butterfly_azure", "butterfly_monarch", "luna_moth_silver",
+                        "beetle_longhorn_rosalia", "cricket_tree"
+                    },
+                    guardianInsectId = "butterfly_worldtree",
+                    guardianDisplayName = "우듬지의 세계수나비",
+                    guardianLevel = 64,
+                    subAreas = new SubAreaData[]
+                    {
+                        new SubAreaData
+                        {
+                            subAreaId = "canopy_crown",
+                            displayName = "가장 높은 가지",
+                            description = "거대수 꼭대기 — 여기서는 아래 세계가 전부 내려다보입니다.",
+                            centerPosition = new Vector3(5f, 0f, 277f),
+                            radius = 12f,
+                            exclusiveInsectIds = new[] { "butterfly_worldtree", "mantis_canopy" },
+                            minLevel = 60,
+                            maxLevel = 66,
+                            environmentType = "peak"
+                        },
+                        new SubAreaData
+                        {
+                            subAreaId = "canopy_bough",
+                            displayName = "겹친 가지 속",
+                            description = "잎이 몇 겹으로 겹쳐 빛이 잘게 쪼개지는 곳입니다.",
+                            centerPosition = new Vector3(30f, 0f, 252f),
+                            radius = 10f,
+                            exclusiveInsectIds = new[] { "stick_insect_canopy", "katydid_canopy", "butterfly_crown" },
+                            minLevel = 58,
+                            maxLevel = 64,
+                            environmentType = "deep_forest"
+                        }
+                    }
+                },
+                // ── 이름 없는 자리: Lv.62~70, 최종 지역 ──
+                // GetNextRegionId에 case를 넣지 않는다(여기가 끝). ver3를 붙일 때 여기 case가 생긴다.
+                new RegionData
+                {
+                    regionId = "nameless",
+                    displayName = "이름 없는 자리",
+                    description = "어느 지도에도 적히지 않은 땅 — 이름을 빼앗긴 것들이 모입니다.",
+                    themeColor = new Color(0.34f, 0.32f, 0.40f),
+                    centerPosition = new Vector3(-80f, 0f, 225f),
+                    radius = 42f,
+                    requiredLevel = 62,
+                    insectIds = new[]
+                    {
+                        "moth_pale", "cricket_still", "spider_blank", "beetle_unwritten",
+                        "centipede_pale", "mantis_blank", "butterfly_erased",
+                        "moth_effaced", "mantis_unnamed",
+                        "mantis_hollow", "moth_forgotten", "spider_threadbare",
+                        "moth_shadow", "butterfly_midnight"
+                    },
+                    guardianInsectId = "mantis_unnamed",
+                    guardianDisplayName = "이름 없는 사마귀",
+                    guardianLevel = 70,
+                    subAreas = new SubAreaData[]
+                    {
+                        new SubAreaData
+                        {
+                            subAreaId = "nameless_ledger",
+                            displayName = "장부의 방",
+                            description = "명부회가 옮겨 온 장부가 벽을 메운 곳 — 이름이 빼곡한데 아무 소리도 없습니다.",
+                            centerPosition = new Vector3(-90f, 0f, 235f),
+                            radius = 12f,
+                            exclusiveInsectIds = new[] { "moth_effaced", "butterfly_erased" },
+                            minLevel = 64,
+                            maxLevel = 70,
+                            environmentType = "temple"
+                        },
+                        new SubAreaData
+                        {
+                            subAreaId = "nameless_core",
+                            displayName = "빈칸",
+                            description = "아무것도 새겨지지 않은 자리 — 그것이 서려던 곳입니다.",
+                            centerPosition = new Vector3(-68f, 0f, 214f),
+                            radius = 10f,
+                            exclusiveInsectIds = new[] { "mantis_unnamed", "mantis_blank" },
+                            minLevel = 66,
+                            maxLevel = 72,
                             environmentType = "underground"
                         }
                     }

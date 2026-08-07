@@ -15,7 +15,7 @@ namespace InsectGame.NPC
     /// 대결은 야생 전투가 아니므로 <see cref="InsectBattleController.StartDuel"/>로 들어간다
     /// (포획 롤·야생 아이템 드랍 없음). 승리 아이템은 여기서 준다.
     /// </summary>
-    public class NpcDuelController : MonoBehaviour
+    public class NpcDuelController : MonoBehaviour, ICloudReloadable
     {
         // 결과와 무관하게 같은 아이에게 다시 도전하기까지의 대기 시간. 연속 파밍 차단.
         private const float DuelCooldownSeconds = 90f;
@@ -33,6 +33,18 @@ namespace InsectGame.NPC
         // 진행 중인 대결의 상대 — DuelEnded에서 보상·쿨다운을 걸 대상.
         private CatcherKidNpc activeKid;
         private InsectRarity activeRarity = InsectRarity.Common;
+
+        // 명부회 간부 보스 대결 — 아이 대결과 완료 처리가 달라 별도 상태로 둔다.
+        // 비어 있지 않으면 진행 중인 대결이 보스전이라는 뜻이다(activeKid는 그때 null).
+        private string activeBossId = string.Empty;
+        private readonly System.Collections.Generic.HashSet<string> defeatedBosses =
+            new System.Collections.Generic.HashSet<string>();
+        // 패배 후 재도전 대기 — 보스별 해제 시각(Time.time 기준).
+        private readonly System.Collections.Generic.Dictionary<string, float> bossRetryAt =
+            new System.Collections.Generic.Dictionary<string, float>();
+        private bool bossStateLoaded;
+
+        private static string DefeatedBossKey => SaveScope.PrefsKey("InsectGame.DefeatedLedgerBosses");
 
         /// <summary>직전 대결 결과 문구 — WorldInteractionController가 잠깐 띄운다.</summary>
         public string LastResultText { get; private set; } = string.Empty;
@@ -59,6 +71,89 @@ namespace InsectGame.NPC
         {
             if (battleController != null)
                 battleController.DuelEnded -= OnDuelEnded;
+        }
+
+        // ── 명부회 간부 보스 대결 ──
+
+        private void EnsureBossState()
+        {
+            if (bossStateLoaded) return;
+            bossStateLoaded = true;
+            string csv = PlayerPrefs.GetString(DefeatedBossKey, string.Empty);
+            if (string.IsNullOrEmpty(csv)) return;
+            foreach (string id in csv.Split(','))
+            {
+                string trimmed = id.Trim();
+                if (trimmed.Length > 0) defeatedBosses.Add(trimmed);
+            }
+        }
+
+        private void SaveBossState()
+        {
+            PlayerPrefs.SetString(DefeatedBossKey, string.Join(",", defeatedBosses));
+            PlayerPrefs.Save();
+        }
+
+        /// <summary>
+        /// 클라우드 로드가 PlayerPrefs를 갈아끼운 뒤 인메모리 격파 기록을 다시 읽는다.
+        /// 이게 없으면 다른 기기에서 이긴 간부가 이 기기에선 여전히 미격파로 남아
+        /// 같은 보스와 다시 싸우고 보상도 다시 받는다(RegionManager의 해금 상태와 같은 이유).
+        /// </summary>
+        public void ReloadFromDisk()
+        {
+            defeatedBosses.Clear();
+            bossRetryAt.Clear();
+            bossStateLoaded = false;
+            EnsureBossState();
+        }
+
+        /// <summary>이 간부를 이미 이겼는가 — 이겼으면 다시 도전할 수 없다(대사만 남는다).</summary>
+        public bool IsBossDefeated(string storyNpcId)
+        {
+            EnsureBossState();
+            return !string.IsNullOrEmpty(storyNpcId) && defeatedBosses.Contains(storyNpcId);
+        }
+
+        /// <summary>
+        /// 지금 이 간부에게 도전할 수 있는가. 표에 없거나 이미 이겼거나 재도전 쿨다운 중이면 false.
+        /// WorldInteractionController가 프롬프트 표시 여부 판정에도 그대로 쓴다.
+        /// </summary>
+        public bool CanBossDuel(string storyNpcId, float time)
+        {
+            if (battleController == null || database == null) return false;
+            if (!NpcBossDuels.TryGet(storyNpcId, out NpcBossDuels.BossDuel duel)) return false;
+            if (IsBossDefeated(storyNpcId)) return false;
+            if (bossRetryAt.TryGetValue(storyNpcId, out float readyAt) && time < readyAt) return false;
+            // 상대 곤충이 DB에 없으면(데이터 오타) 프롬프트를 띄우지 않는다 — 눌러도 안 열리는 버튼 방지.
+            if (database.GetById(duel.insectId) == null) return false;
+            return FindPlayerLeader() != null;
+        }
+
+        /// <summary>간부 대결 시작. 성공하면 true — 이후 흐름은 기존 배틀 화면이 처리한다.</summary>
+        public bool TryStartBossDuel(string storyNpcId, float time)
+        {
+            if (!CanBossDuel(storyNpcId, time)) return false;
+            NpcBossDuels.TryGet(storyNpcId, out NpcBossDuels.BossDuel duel);
+
+            PlayerInsectData leader = FindPlayerLeader();
+            InsectData leaderData = leader != null ? database.GetById(leader.insectId) : null;
+            InsectData enemyData = database.GetById(duel.insectId);
+            if (leaderData == null || enemyData == null) return false;
+
+            InsectSkill[] equipped = collection != null ? collection.GetEquippedSkills(leader) : null;
+
+            // 아이 대결과 달리 레벨을 플레이어에 맞추지 않는다 — 고정 레벨이라야 벽으로 기능한다.
+            if (!battleController.StartDuel(
+                    leaderData, leader.level, enemyData, duel.level,
+                    equippedSkills: equipped, playerPid: leader))
+            {
+                return false;
+            }
+
+            activeKid = null;
+            activeBossId = storyNpcId;
+            activeRarity = enemyData.rarity;
+            return true;
         }
 
         /// <summary>
@@ -100,6 +195,13 @@ namespace InsectGame.NPC
 
         private void OnDuelEnded(bool playerWon)
         {
+            // 보스전은 완료 처리가 다르다 — 먼저 갈라내고 아이 대결 경로는 그대로 둔다.
+            if (!string.IsNullOrEmpty(activeBossId))
+            {
+                OnBossDuelEnded(playerWon);
+                return;
+            }
+
             CatcherKidNpc kid = activeKid;
             activeKid = null;
             if (kid != null) kid.MarkDuelFinished(Time.time, DuelCooldownSeconds);
@@ -121,6 +223,36 @@ namespace InsectGame.NPC
             SetResult(string.IsNullOrEmpty(itemName)
                 ? "대결 승리!"
                 : $"대결 승리! {itemName} ×{count} 획득");
+        }
+
+        private void OnBossDuelEnded(bool playerWon)
+        {
+            string bossId = activeBossId;
+            activeBossId = string.Empty;
+            if (!NpcBossDuels.TryGet(bossId, out NpcBossDuels.BossDuel duel)) return;
+
+            if (!playerWon)
+            {
+                // 패배해도 영구 차단은 하지 않는다 — 쿨다운 뒤 재도전. 벽이지 막다른 길이 아니다.
+                bossRetryAt[bossId] = Time.time + duel.retryCooldownSeconds;
+                SetResult($"{duel.displayName}에게 밀렸다… 다시 준비하자");
+                return;
+            }
+
+            EnsureBossState();
+            if (defeatedBosses.Add(bossId)) SaveBossState();
+            bossRetryAt.Remove(bossId);
+
+            if (!string.IsNullOrEmpty(duel.rewardItemId) && duel.rewardCount > 0 && itemInventory != null)
+                itemInventory.AddItem(duel.rewardItemId, duel.rewardCount);
+
+            // 간부전도 '동네 최강자' 서브 퀘스트에 센다 — 아이 대결과 같은 1v1 듀얼이다.
+            TutorialQuestManager.Instance?.NotifyNpcDuelWon();
+
+            string itemName = ResolveItemName(duel.rewardItemId);
+            SetResult(string.IsNullOrEmpty(itemName)
+                ? $"{duel.displayName}을(를) 이겼다!"
+                : $"{duel.displayName}을(를) 이겼다! {itemName} ×{duel.rewardCount} 획득");
         }
 
         // ── 보상 ──

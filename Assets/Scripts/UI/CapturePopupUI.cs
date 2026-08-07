@@ -329,7 +329,10 @@ namespace InsectGame.UI
                 PortraitDragonfly(cx, cy, s, bodyCol, darkCol, lightCol, alpha);
             else if (id.Contains("dragonfly") || id.Contains("ancient"))
                 PortraitDragonfly(cx, cy, s, bodyCol, darkCol, lightCol, alpha);
-            else if (id.Contains("bee") || id.Contains("wasp") || id.Contains("hornet"))
+            // **"beetle"이 "bee"를 품는다** — 가드가 없으면 사슴벌레·장수풍뎅이·헤라클레스를 포함한
+            // 딱정벌레 31종이 전부 벌로 그려진다(포획 직후 이 팝업이 잡은 곤충을 보여주는 자리다).
+            // InsectEntity.BuildModel은 같은 가드를 갖고 있었는데 이쪽만 빠져 있었다.
+            else if ((id.Contains("bee") && !id.Contains("beetle")) || id.Contains("wasp") || id.Contains("hornet"))
                 PortraitBee(cx, cy, s, bodyCol, darkCol, lightCol, alpha);
             else if (id.Contains("firefly"))
                 PortraitFirefly(cx, cy, s, bodyCol, darkCol, lightCol, alpha);

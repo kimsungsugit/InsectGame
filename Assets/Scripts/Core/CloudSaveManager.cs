@@ -385,6 +385,10 @@ namespace InsectGame.Core
                     SaveScope.PrefsKey("InsectGame.UnlockedRegions"), "meadow"),
                 defeatedGuardians = PlayerPrefs.GetString(
                     SaveScope.PrefsKey("InsectGame.DefeatedGuardians"), ""),
+                // 명부회 간부 격파 기록(NpcDuelController). 빠뜨리면 기기를 바꿀 때마다 같은 간부와
+                // 다시 싸울 수 있고 승리 보상도 다시 받는다 — defeatedGuardians와 완전히 동형이다.
+                defeatedBosses = PlayerPrefs.GetString(
+                    SaveScope.PrefsKey("InsectGame.DefeatedLedgerBosses"), ""),
                 // 퀘스트는 계정별 키에서 읽어 현재 계정의 진행만 클라우드에 올린다(교차 오염 방지).
                 questProgress = PlayerPrefs.GetString(
                     AuthManager.ScopedKey(GameConstants.PrefsKeys.QuestProgress), ""),
@@ -481,6 +485,8 @@ namespace InsectGame.Core
                 data.unlockedRegions ?? "meadow");
             PlayerPrefs.SetString(SaveScope.PrefsKey("InsectGame.DefeatedGuardians"),
                 data.defeatedGuardians ?? "");
+            PlayerPrefs.SetString(SaveScope.PrefsKey("InsectGame.DefeatedLedgerBosses"),
+                data.defeatedBosses ?? "");
             // 클라우드 퀘스트 데이터를 현재 계정의 계정별 키에 적용(이후 ReloadFromDisk가 인메모리 갱신).
             PlayerPrefs.SetString(AuthManager.ScopedKey(GameConstants.PrefsKeys.QuestProgress),
                 data.questProgress ?? "");
@@ -628,6 +634,7 @@ namespace InsectGame.Core
             sb.Append(","); AppendStringField(sb, "ownedOutfits", data.ownedOutfits);
             sb.Append(","); AppendStringField(sb, "unlockedRegions", data.unlockedRegions);
             sb.Append(","); AppendStringField(sb, "defeatedGuardians", data.defeatedGuardians);
+            sb.Append(","); AppendStringField(sb, "defeatedBosses", data.defeatedBosses);
             sb.Append(","); AppendStringField(sb, "questProgress", data.questProgress);
             sb.Append(","); AppendStringField(sb, "questCompleted", data.questCompleted);
             sb.Append(","); AppendStringField(sb, "activeQuest", data.activeQuest);
@@ -671,6 +678,7 @@ namespace InsectGame.Core
             data.ownedOutfits = ExtractStringValue(json, "ownedOutfits");
             data.unlockedRegions = ExtractStringValue(json, "unlockedRegions");
             data.defeatedGuardians = ExtractStringValue(json, "defeatedGuardians");
+            data.defeatedBosses = ExtractStringValue(json, "defeatedBosses");
             data.questProgress = ExtractStringValue(json, "questProgress");
             data.questCompleted = ExtractStringValue(json, "questCompleted");
             data.activeQuest = ExtractStringValue(json, "activeQuest");
@@ -831,6 +839,9 @@ namespace InsectGame.Core
         public string ownedOutfits;
         public string unlockedRegions;
         public string defeatedGuardians;
+        // 명부회 간부 격파 기록(CSV). 기본값 ""이라 옛 클라우드 문서에 없어도 무해하다
+        // — 아무도 안 이긴 상태로 시작하고, 로컬에 기록이 있으면 다음 업로드에 실린다.
+        public string defeatedBosses;
         public string questProgress;
         public string questCompleted;
         public string activeQuest;

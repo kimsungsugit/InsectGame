@@ -92,6 +92,12 @@ def evaluate_signals() -> list:
             bad_target.append(f"{b['beatId']}:LevelReach({param}=비정수)")
         elif ttype == "NpcTalk" and param not in npc_ids:
             bad_target.append(f"{b['beatId']}:NpcTalk({param}=월드 미배치)")
+        elif ttype == "GuardianDefeat" and param not in region_ids:
+            # param은 수문장을 가진 리전 ID다. 오타면 그 비트는 조용히 영영 미발화한다.
+            bad_target.append(f"{b['beatId']}:GuardianDefeat({param})")
+        elif ttype == "DexProgress" and not param.isdigit():
+            # param은 "이름을 새긴 종 수" 임계값(정수). LevelReach와 같은 형태다.
+            bad_target.append(f"{b['beatId']}:DexProgress({param}=비정수)")
     signals.append(("트리거 param 대상 존재", "0건 미존재",
                     f"{len(bad_target)}건 ({bad_target})" if bad_target else "0건",
                     "FAIL" if bad_target else "PASS"))
@@ -172,6 +178,36 @@ def evaluate_signals() -> list:
     else:
         judge7, val7 = "PASS", "0건 (requiredRegion 실존·무param 전부 가드)"
     signals.append(("requiredRegionId 정합 (리전 게이트)", "0건 미존재·무가드", val7, judge7))
+
+    # 8. 일생 1회 트리거의 스파인 사용 — GuardianDefeat는 leaf 전용이어야 한다.
+    #    RegionManager.DefeatGuardian이 idempotent 가드로 리전당 정확히 1회만 이벤트를 쏜다.
+    #    그 순간 prereq가 미충족이면 그 비트는 영영 안 열리고, 뒤 비트가 그걸 prereq로 삼고
+    #    있으면 캠페인이 거기서 영구 정지한다. QuestComplete와 같은 부류다.
+    #
+    #    QuestComplete도 같은 부류다. 1막 ch1 체인(ch1_first_capture→…→ch1_guardian_call)이
+    #    한때 그렇게 엮여 있어 튜토리얼을 마친 세이브는 라온 소개를 포함한 5비트를 영영 못 봤다.
+    #    2026-08-07에 전부 재발화 트리거(CaptureInsect/LevelReach/BattleWin + requiredRegionId)로
+    #    옮겨 부채를 청산했다. 지금은 0건이며, 다시 늘면 측정값에 드러난다.
+    #    FAIL로 승격하지 않는 이유: leaf로 쓰는 QuestComplete는 정상이고(놓쳐도 체인이 안 끊긴다),
+    #    이 검사는 "prereq로 쓰였는가"만 본다 — 그 조건이면 GuardianDefeat와 달리 즉시 위험하진 않다.
+    prereq_targets = {b.get("prerequisiteBeatId") for b in beats if b.get("prerequisiteBeatId")}
+    once_only = []
+    grandfathered = 0
+    for b in beats:
+        ttype = (b.get("trigger") or {}).get("type")
+        if b["beatId"] not in prereq_targets:
+            continue
+        if ttype == "GuardianDefeat":
+            once_only.append(f"{b['beatId']}({ttype})")
+        elif ttype == "QuestComplete":
+            grandfathered += 1
+    note = f" / QuestComplete 기존 {grandfathered}건은 1막 유예" if grandfathered else ""
+    signals.append((
+        "일생 1회 트리거의 스파인 사용 (GuardianDefeat leaf 강제)",
+        "0건",
+        (f"{len(once_only)}건 ({once_only})" if once_only else "0건") + note,
+        "FAIL" if once_only else "PASS",
+    ))
 
     return signals
 

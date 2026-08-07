@@ -113,11 +113,46 @@ namespace InsectGame.NPC
             };
         }
 
-        /// <summary>스토리 NPC(어르신/라온/세라) 고정 외형 — 구분되는 실루엣. seed 대신 storyNpcId로 결정.</summary>
+        /// <summary>
+        /// 스토리 NPC 고정 외형 — 구분되는 실루엣. seed 대신 storyNpcId로 결정.
+        /// 동행자(어르신/라온/세라)와 명부회 4인(관장·집게·저울·먹).
+        /// **여기에 case를 빠뜨리면 그 NPC가 default(마을 어르신) 외형으로 뜬다** —
+        /// <see cref="NpcManager.StoryNpcDisplayName"/>의 이름 switch와 짝이다(둘 다 등록할 것).
+        /// 명부회는 아이보리 상의 + 남색 하의로 제복처럼 통일하고 머리·모자로 개체를 가른다
+        /// (세라의 보라 상의와 겹치지 않게 함).
+        /// </summary>
         public static NpcAppearance StoryNpcAppearance(string storyNpcId)
         {
             switch (storyNpcId)
             {
+                case "ledger_chief": // 하월(관장) — 백발·모자 없음. 명부회 수장
+                    return new NpcAppearance
+                    {
+                        isChild = false, hairStyle = 1, hasHat = false,
+                        hair = HairPalette[3], top = TopPalette[5], bottom = BottomPalette[0],
+                        skin = SkinPalette[1], hat = HatPalette[1],
+                    };
+                case "ledger_grip": // 집게 — 포획반장. 짧은머리 + 붉은 모자
+                    return new NpcAppearance
+                    {
+                        isChild = false, hairStyle = 0, hasHat = true,
+                        hair = HairPalette[0], top = TopPalette[5], bottom = BottomPalette[0],
+                        skin = SkinPalette[3], hat = HatPalette[3],
+                    };
+                case "ledger_scale": // 저울 — 분류관. 올림머리 + 모자 없음
+                    return new NpcAppearance
+                    {
+                        isChild = false, hairStyle = 2, hasHat = false,
+                        hair = HairPalette[4], top = TopPalette[5], bottom = BottomPalette[0],
+                        skin = SkinPalette[2], hat = HatPalette[1],
+                    };
+                case "ledger_ink": // 먹 — 필경사. 올림머리 + 청회 모자
+                    return new NpcAppearance
+                    {
+                        isChild = false, hairStyle = 2, hasHat = true,
+                        hair = HairPalette[0], top = TopPalette[5], bottom = BottomPalette[0],
+                        skin = SkinPalette[0], hat = HatPalette[1],
+                    };
                 case "catcher_rival": // 라온 — 곤충잡이 아이(뜰채·모자·밝은 상의)
                     return new NpcAppearance
                     {

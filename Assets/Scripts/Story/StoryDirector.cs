@@ -20,6 +20,8 @@ namespace InsectGame.Story
         private PlayerProgressController progressController;
         private PlayerInsectCollection insectCollection;
         private TutorialQuestManager questManager;
+        // DexProgress 트리거 소스. 다른 의존성과 생성 순서가 달라 별도 AutoWire로 받는다.
+        private InsectGame.Dex.DexController dexController;
         // 보상 지급 의존성 — 트리거 소스와 분리해 별도 AutoWire(keyGuide/quickBar 다중 AutoWire 관례).
         private PlayerCandyInventory candyInventory;
         private PlayerItemInventory itemInventory;
@@ -62,6 +64,15 @@ namespace InsectGame.Story
         // 스토리 NPC(어르신/라온/세라)에게 다가가 대화 시 발화. param=storyNpcId. 이벤트 소스는
         // WorldInteractionController가 OnNpcTalked를 호출하는 것(구독 대신 직접 진입점).
         private const string TriggerNpcTalk = "NpcTalk";
+        // 수문장 격파. param=regionId. 소스는 RegionManager.GuardianDefeated.
+        // **일생 리전당 1회만 발화한다**(DefeatGuardian의 idempotent 가드) — QuestComplete와 같은
+        // 부류라 이 트리거를 쓰는 비트는 **leaf 전용**이다. 어떤 비트의 prerequisiteBeatId도
+        // 되어선 안 된다. 스파인에 걸면 그 순간 prereq가 미충족인 세이브는 캠페인이 영구 정지한다.
+        private const string TriggerGuardianDefeat = "GuardianDefeat";
+        // 도감에 이름을 새긴 종 수가 임계에 닿으면 발화. param=정수 임계값.
+        // LevelReach와 같은 누적형이라 **재발화 트리거다** — 임계를 넘긴 뒤 도감이 갱신될 때마다
+        // 다시 평가되므로 스파인에 걸어도 안전하다(GuardianDefeat와 다르다).
+        private const string TriggerDexProgress = "DexProgress";
 
         // 트리거 평가 + 진행/보상 지급에 필요한 참조 주입. Bootstrap이 호출.
         public void AutoWire(RegionManager region, InsectBattleController battle,
@@ -80,6 +91,16 @@ namespace InsectGame.Story
         {
             if (candyInventory == null) candyInventory = candy;
             if (itemInventory == null) itemInventory = items;
+        }
+
+        /// <summary>
+        /// DexProgress 트리거 소스. <b>Start보다 먼저 불려야 한다</b> — 구독이 Start에서
+        /// 한 번만 걸리므로 그 뒤에 주입하면 이 타입 비트가 영영 발화하지 않는다.
+        /// Bootstrap은 다른 AutoWire와 같은 자리에서 부른다.
+        /// </summary>
+        public void AutoWire(InsectGame.Dex.DexController dex)
+        {
+            if (dexController == null) dexController = dex;
         }
 
         private void Awake()
@@ -112,6 +133,7 @@ namespace InsectGame.Story
             {
                 regionManager.RegionChanged += OnRegionChanged;
                 regionManager.SubAreaChanged += OnSubAreaChanged;
+                regionManager.GuardianDefeated += OnGuardianDefeated;
             }
             if (battleController != null)
                 battleController.BattleEnded += OnBattleEnded;
@@ -122,6 +144,8 @@ namespace InsectGame.Story
                 progressController.ProgressChanged += OnProgressChanged;
             if (insectCollection != null)
                 insectCollection.InsectCaptured += OnInsectCaptured;
+            if (dexController != null)
+                dexController.DexUpdated += OnDexUpdated;
         }
 
         private void UnsubscribeEvents()
@@ -133,6 +157,7 @@ namespace InsectGame.Story
             {
                 regionManager.RegionChanged -= OnRegionChanged;
                 regionManager.SubAreaChanged -= OnSubAreaChanged;
+                regionManager.GuardianDefeated -= OnGuardianDefeated;
             }
             if (battleController != null)
                 battleController.BattleEnded -= OnBattleEnded;
@@ -142,6 +167,8 @@ namespace InsectGame.Story
                 progressController.ProgressChanged -= OnProgressChanged;
             if (insectCollection != null)
                 insectCollection.InsectCaptured -= OnInsectCaptured;
+            if (dexController != null)
+                dexController.DexUpdated -= OnDexUpdated;
         }
 
         // --- 이벤트 핸들러 → 중앙 평가 ---
@@ -159,6 +186,18 @@ namespace InsectGame.Story
         private void OnBattleEnded(bool playerWon)
         {
             if (playerWon) EvaluateTriggers(TriggerBattleWin, null);
+        }
+
+        private void OnGuardianDefeated(string regionId)
+        {
+            if (!string.IsNullOrEmpty(regionId)) EvaluateTriggers(TriggerGuardianDefeat, regionId);
+        }
+
+        private void OnDexUpdated(InsectGame.Dex.DexSaveData _)
+        {
+            // 발견이 아니라 **포획해 이름을 새긴 종 수**다 — 2막의 "빈칸이 메워진다"가 곧 이 값이다.
+            int count = dexController != null ? dexController.CapturedSpeciesCount : 0;
+            EvaluateTriggers(TriggerDexProgress, count.ToString());
         }
 
         private void OnQuestCompleted(TutorialQuest quest)
@@ -210,7 +249,8 @@ namespace InsectGame.Story
                     case TriggerQuestComplete:
                     case TriggerSubAreaEnter:
                     case TriggerNpcTalk:
-                        // param 완전 일치(리전/퀘스트/서브에리어 ID / 스토리 NPC ID).
+                    case TriggerGuardianDefeat:
+                        // param 완전 일치(리전/퀘스트/서브에리어 ID / 스토리 NPC ID / 수문장 리전 ID).
                         matches = !string.IsNullOrEmpty(beat.trigger.param)
                             && beat.trigger.param == eventParam;
                         break;
@@ -224,7 +264,9 @@ namespace InsectGame.Story
                         matches = string.IsNullOrEmpty(beat.trigger.param);
                         break;
                     case TriggerLevelReach:
-                        // 현재 레벨(eventParam) >= 임계 레벨(beat.trigger.param).
+                    case TriggerDexProgress:
+                        // 현재 값(eventParam) >= 임계값(beat.trigger.param).
+                        // LevelReach는 트레이너 레벨, DexProgress는 이름을 새긴 종 수.
                         matches = int.TryParse(beat.trigger.param, out int need)
                             && int.TryParse(eventParam, out int cur)
                             && cur >= need;
@@ -330,6 +372,19 @@ namespace InsectGame.Story
             return progress != null && progress.seenBeatIds != null
                 && progress.seenBeatIds.Contains(beatId);
         }
+
+        /// <summary>
+        /// 이 비트를 이미 열람했는가 — 스토리 저널(StoryJournalUI)이 잠금/다시보기를 가른다.
+        /// 진행 자체는 여전히 이 클래스만 쓴다(읽기 전용 노출).
+        /// </summary>
+        public bool HasSeen(string beatId)
+        {
+            return IsSeen(beatId);
+        }
+
+        /// <summary>열람한 비트 수 — 저널 헤더의 진행률 표시용.</summary>
+        public int SeenCount => progress != null && progress.seenBeatIds != null
+            ? progress.seenBeatIds.Count : 0;
 
         // 보상 지급 — TutorialQuestManager.CompleteQuest 패턴 동일(null 시 경고 후 계속).
         private void GrantReward(StoryReward reward)

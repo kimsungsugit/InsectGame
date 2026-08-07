@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using System.Linq;
 using UnityEngine;
 
 namespace InsectGame.Core
@@ -10,6 +9,8 @@ namespace InsectGame.Core
 
         private OutfitItem[] allOutfits;
         private Dictionary<string, OutfitItem> outfitLookup;
+        // 슬롯별 사전 분류 — GetItemsForSlot이 OnGUI 경로라 매 패스 LINQ를 돌 수 없다.
+        private Dictionary<OutfitSlot, OutfitItem[]> slotLookup;
         private Dictionary<OutfitSlot, string> equippedItems;
         private HashSet<string> ownedItems;
 
@@ -59,6 +60,23 @@ namespace InsectGame.Core
             foreach (OutfitItem item in allOutfits)
             {
                 outfitLookup[item.itemId] = item;
+            }
+
+            // 슬롯별 캐시 1회 구성 (GetItemsForSlot의 매 프레임 LINQ 제거).
+            Dictionary<OutfitSlot, List<OutfitItem>> bySlot = new Dictionary<OutfitSlot, List<OutfitItem>>();
+            foreach (OutfitItem item in allOutfits)
+            {
+                if (!bySlot.TryGetValue(item.slot, out List<OutfitItem> list))
+                {
+                    list = new List<OutfitItem>();
+                    bySlot[item.slot] = list;
+                }
+                list.Add(item);
+            }
+            slotLookup = new Dictionary<OutfitSlot, OutfitItem[]>(bySlot.Count);
+            foreach (KeyValuePair<OutfitSlot, List<OutfitItem>> pair in bySlot)
+            {
+                slotLookup[pair.Key] = pair.Value.ToArray();
             }
 
             equippedItems = new Dictionary<OutfitSlot, string>();
@@ -531,9 +549,20 @@ namespace InsectGame.Core
             return null;
         }
 
+        /// <summary>
+        /// 슬롯별 의상 목록. <b>CharacterOutfitUI.OnGUI가 매 패스 부른다</b>(Layout+Repaint라
+        /// 프레임당 2회 이상). 옛 구현은 여기서 <c>allOutfits.Where(...).ToArray()</c>를 돌려
+        /// 95벌을 매번 훑고 배열을 새로 할당했다 — 의상 패널을 열어 둔 동안 계속 GC를 만든다.
+        /// 카탈로그는 <see cref="BuildCatalog"/>가 만든 뒤 런타임에 바뀌지 않으므로 Initialize에서
+        /// 한 번만 갈라 캐시한다. 반환 배열은 읽기 전용으로 다룰 것(호출부가 정렬·수정하면 캐시가 오염된다).
+        /// </summary>
         public OutfitItem[] GetItemsForSlot(OutfitSlot slot)
         {
-            return allOutfits.Where(o => o.slot == slot).ToArray();
+            if (slotLookup != null && slotLookup.TryGetValue(slot, out OutfitItem[] cached))
+            {
+                return cached;
+            }
+            return System.Array.Empty<OutfitItem>();
         }
 
         public bool IsOwned(string itemId)

@@ -23,9 +23,13 @@ namespace InsectGame.NPC
         // VillageBuilder는 본마을(주민 8)을 먼저 넣고 전초기지를 리전 순서로 뒤에 붙인다
         // — 캡이 10이면 swamp/mountain/garden/ruins 전초기지 4곳이 오두막·모닥불만 있고
         // 주민이 영구히 0명이 된다(잡기 아이도 mountain 몫이 누락).
-        // 앵커: 주민 14(본마을 8 + 전초기지 6) / 잡기 아이 7(meadow 2 + KidSpots 5).
-        [SerializeField] private int villagerCount = 14;
-        [SerializeField] private int catcherKidCount = 7;
+        //
+        // 2막(ver2)에서 리전이 7→13이 되며 전초기지가 6→12로 늘었다.
+        // 앵커: 주민 20(본마을 8 + 전초기지 12) / 잡기 아이 10(meadow 2 + KidSpots 8).
+        // SyncSpawns가 Mathf.Min(캡, 앵커수)를 쓰므로 캡이 앵커보다 커도 무해하다 —
+        // 모자랄 때만 조용히 잘리므로 캡은 넉넉한 쪽으로 둔다.
+        [SerializeField] private int villagerCount = 20;
+        [SerializeField] private int catcherKidCount = 10;
         [SerializeField] private float kidCatchCooldownSeconds = NpcCatchRules.DefaultCatchCooldownSeconds;
 
         private InsectSpawner spawner;
@@ -228,12 +232,19 @@ namespace InsectGame.NPC
             return npc;
         }
 
+        // 스토리 NPC 표시명. **여기에 case가 없으면 그 NPC는 "마을 어르신"으로 뜬다** —
+        // NpcVisualBuilder.StoryNpcAppearance의 외형 switch와 짝이라 둘을 함께 등록해야 한다.
         private static string StoryNpcDisplayName(string storyId)
         {
             switch (storyId)
             {
                 case "catcher_rival": return "라온";
                 case "ruins_scholar": return "세라";
+                // 명부회(2막) — 관장만 진명, 간부는 코드네임으로 부른다.
+                case "ledger_chief": return "관장 하월";
+                case "ledger_grip": return "집게";
+                case "ledger_scale": return "저울";
+                case "ledger_ink": return "먹";
                 default: return "마을 어르신";
             }
         }

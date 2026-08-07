@@ -1132,7 +1132,9 @@ namespace InsectGame.UI
                 DrawDragonfly(cx, cy, s, dir, bodyCol, darkCol, lightCol);
             else if (id.Contains("dragonfly"))
                 DrawDragonfly(cx, cy, s, dir, bodyCol, darkCol, lightCol);
-            else if (id.Contains("bee") || id.Contains("wasp") || id.Contains("hornet"))
+            // "beetle"이 "bee"를 품는다 — 가드가 없으면 아래 stag/rhinoceros/hercules 분기까지
+            // 못 가고 딱정벌레가 전부 벌로 그려진다(InsectEntity.BuildModel의 같은 가드와 짝).
+            else if ((id.Contains("bee") && !id.Contains("beetle")) || id.Contains("wasp") || id.Contains("hornet"))
                 DrawBee(cx, cy, s, dir, bodyCol, darkCol, lightCol);
             else if (id.Contains("firefly"))
                 DrawFirefly(cx, cy, s, dir, bodyCol, darkCol, lightCol);

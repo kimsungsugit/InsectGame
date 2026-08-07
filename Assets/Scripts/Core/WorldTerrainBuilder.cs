@@ -313,8 +313,12 @@ namespace InsectGame.Core
         private void BuildMapBoundary()
         {
             Material boundaryMat = CreateMat(new Color(0.3f, 0.35f, 0.25f));
-            // WorldScale 1.5 확장 후 최원점(ruins z=277.5) + 전초기지 여유분 커버.
-            float mapSize = 320f;
+            // 2막(ver2) 6지역 추가로 월드가 북·동으로 뻗었다. 최원점은 canopy(z=397.5, r=75)의
+            // 472.5 — 옛 320이면 canopy/emberfall/frostline/nameless가 벽 **바깥**에 놓여
+            // 도달 불가 지역이 된다. 여유 47.5를 두고 520.
+            // **PlaySceneBootstrap.EnsureGround의 Ground Plane 스케일과 짝이다** —
+            // 지면이 벽보다 좁으면 벽 앞이 무바닥(무한 낙하)이 된다.
+            float mapSize = 520f;
             float wallHeight = 15f;
 
             string[] names = { "Boundary_N", "Boundary_S", "Boundary_E", "Boundary_W" };
@@ -349,6 +353,21 @@ namespace InsectGame.Core
 
             Material stonePath = CreateMat(new Color(0.5f, 0.45f, 0.4f));
             CreateSimplePath("Path_Mountain_Ruins", GetCenter(regions, "mountain"), GetCenter(regions, "ruins"), 3f, stonePath);
+
+            // ── 2막(ver2) 사슬 ── RegionMapUI.Connections와 같은 토폴로지를 월드에도 깐다.
+            // 지도에는 길이 있는데 땅에는 없으면 어디로 가야 할지 알 수 없다.
+            // 색을 바래게 둔 건 이 길들이 오래 방치된 땅으로 이어지기 때문이다.
+            Material fadedPath = CreateMat(new Color(0.46f, 0.44f, 0.38f));
+            string[,] act2Chain =
+            {
+                { "ruins", "hollow" }, { "hollow", "dunes" }, { "dunes", "frostline" },
+                { "frostline", "emberfall" }, { "emberfall", "canopy" }, { "canopy", "nameless" }
+            };
+            for (int i = 0; i < act2Chain.GetLength(0); i++)
+            {
+                string a = act2Chain[i, 0], b = act2Chain[i, 1];
+                CreateSimplePath($"Path_{a}_{b}", GetCenter(regions, a), GetCenter(regions, b), 2.5f, fadedPath);
+            }
         }
 
         private void CreateSimplePath(string name, Vector3 from, Vector3 to, float width, Material mat)

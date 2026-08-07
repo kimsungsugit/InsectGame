@@ -33,14 +33,19 @@ FAIL 0을 확인한다.**
 }
 ```
 
-**trigger.type (기존 8종)**: RegionEnter, QuestComplete, LevelReach, CaptureInsect,
-BattleWin, SubAreaEnter, Immediate, NpcTalk. `param`은 그 타입의 대상 ID:
+**trigger.type (기존 9종)**: RegionEnter, QuestComplete, LevelReach, CaptureInsect,
+BattleWin, SubAreaEnter, Immediate, NpcTalk, GuardianDefeat. `param`은 그 타입의 대상 ID:
 - RegionEnter/SubAreaEnter → 리전 ID (meadow/pond/…)
 - QuestComplete → questId (q_approach 등)
 - CaptureInsect → 곤충 ID (비우면 아무 포획)
 - LevelReach → 정수 레벨
-- NpcTalk → 스토리 NPC ID (village_elder/catcher_rival/ruins_scholar). WorldInteractionController가
-  스토리 NPC 대화 시 `StoryDirector.OnNpcTalked`로 발화(구독 아닌 직접 진입점)
+- NpcTalk → 스토리 NPC ID (village_elder/catcher_rival/ruins_scholar/ledger_ink 등 VillageBuilder에
+  앵커가 있는 것). WorldInteractionController가 스토리 NPC 대화 시 `StoryDirector.OnNpcTalked`로
+  발화(구독 아닌 직접 진입점)
+- GuardianDefeat → 리전 ID. 소스는 `RegionManager.GuardianDefeated`.
+  **일생에 리전당 딱 한 번만 발화한다**(`DefeatGuardian`의 idempotent 가드) — QuestComplete와
+  같은 부류라 **leaf 전용**이다. 어떤 비트의 `prerequisiteBeatId`도 되어선 안 된다.
+  story_lint 검사 8이 이걸 FAIL로 강제한다
 
 ## Phase 2: 트리거 판정 — 배선 범위가 갈린다
 
@@ -115,10 +120,11 @@ Dictionary 비결정 — 그럴 땐 prereq로 한 번에 하나만 적격이 되
 python -X utf8 .claude/scripts/story_lint.py
 ```
 
-7검사가 전부 PASS여야 한다(FAIL 0, WARN 0):
+8검사가 전부 PASS여야 한다(FAIL 0, WARN 0):
 - beatId 중복 / prerequisite 무결성(끊김·순환) / 트리거 param 대상 존재 /
   분기 도달성(choices.nextBeatId) / onComplete 보상·unlock ID 존재 /
-  **트리거 배선 정합(JSON↔StoryDirector)** / **requiredRegionId 정합(리전 게이트)**
+  **트리거 배선 정합(JSON↔StoryDirector)** / **requiredRegionId 정합(리전 게이트)** /
+  **일생 1회 트리거의 스파인 사용**(GuardianDefeat가 어느 비트의 prereq도 아닐 것)
 
 특히 **트리거 배선 정합**이 FAIL이면 Phase 2의 StoryDirector 등록이 누락된 것 —
 "switch case 없음" / "이벤트 발화 지점 없음" 진단으로 해당 지점을 채운다.

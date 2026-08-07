@@ -44,6 +44,10 @@ PATHS = {
     "insect_curve": "Assets/Scripts/Data/InsectLevelCurve.cs",
     "bootstrap": "Assets/Scripts/Core/PlaySceneBootstrap.cs",
     "insect_expansion": "Assets/Scripts/Data/InsectExpansionDefinitions.cs",
+    # 2막(ver2) 곤충 시드. 1막 확장과 파일이 갈린 이유는 InsectExpansion2Definitions 주석 참조.
+    # 곤충 ID를 읽는 곳(all_insect_ids / field_roster)은 두 파일을 **모두** 봐야 한다 —
+    # 한쪽만 보면 2막 종이 통째로 "존재하지 않는 ID"로 잘못 보고된다.
+    "insect_expansion2": "Assets/Scripts/Data/InsectExpansion2Definitions.cs",
     "region_defs": "Assets/Scripts/Core/RegionDefinitions.cs",
     "tutorial_data": "Assets/Scripts/Core/TutorialQuestData.cs",
     "npc_dialogue": "Assets/Scripts/NPC/NpcDialogueDatabase.cs",
@@ -343,7 +347,7 @@ def field_roster() -> dict:
     """{insectId: (rarity, spawnWeight)} — 필드 스폰되는 곤충 전체(weight>0).
 
     출처: PlaySceneBootstrap.CreateStableInsect(id, name, InsectRarity.X, weight, ...) +
-    InsectExpansionDefinitions.new InsectSeed(id, name, InsectRarity.X, weight, ...).
+    InsectExpansion(2)Definitions.new InsectSeed(id, name, InsectRarity.X, weight, ...).
     가챠 전용(weight=0)은 필드 스폰이 없으므로 제외한다. InsectSpawner.GetWeightedRandom이
     이 spawnWeight로 후보를 뽑으므로, 리전 내 실제 조우 등급 분포의 단일 출처다.
     """
@@ -351,6 +355,7 @@ def field_roster() -> dict:
     for key, pat in (
         ("bootstrap", r'CreateStableInsect\("([^"]+)",\s*"[^"]+",\s*InsectRarity\.(\w+),\s*([\d.]+)f'),
         ("insect_expansion", r'new InsectSeed\("([^"]+)",\s*"[^"]+",\s*InsectRarity\.(\w+),\s*([\d.]+)f'),
+        ("insect_expansion2", r'new InsectSeed\("([^"]+)",\s*"[^"]+",\s*InsectRarity\.(\w+),\s*([\d.]+)f'),
     ):
         for _id, rarity, w in re.findall(pat, _read(key)):
             weight = float(w)
@@ -372,6 +377,7 @@ def all_insect_ids() -> set:
     for key, pat in (
         ("bootstrap", r'CreateStableInsect\("([^"]+)"'),
         ("insect_expansion", r'new InsectSeed\("([^"]+)"'),
+        ("insect_expansion2", r'new InsectSeed\("([^"]+)"'),
     ):
         ids |= set(re.findall(pat, _read(key)))
     block = re.search(r"gachaExclusives\s*=.*?\{(.*?)\n\s{8}\};", _read("gacha"), re.DOTALL)

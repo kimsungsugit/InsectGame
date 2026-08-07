@@ -44,6 +44,13 @@ namespace InsectGame.Core
                         case "mountain": BuildMountainTerrain(c, rad); break;
                         case "garden": BuildGardenTerrain(c, rad); break;
                         case "ruins": BuildRuinsTerrain(c, rad); break;
+                        // ── 2막(ver2) ── 여기 case가 빠지면 지형이 안 그려져 평지로 뜬다.
+                        case "hollow": BuildHollowTerrain(c, rad); break;
+                        case "dunes": BuildDunesTerrain(c, rad); break;
+                        case "frostline": BuildFrostlineTerrain(c, rad); break;
+                        case "emberfall": BuildEmberfallTerrain(c, rad); break;
+                        case "canopy": BuildCanopyTerrain(c, rad); break;
+                        case "nameless": BuildNamelessTerrain(c, rad); break;
                     }
                 }
                 // 옛은 리전 경계가 빈 공간이라 어디서든 자유 이동 가능 + "네모 박스" 인상.
@@ -996,6 +1003,498 @@ namespace InsectGame.Core
                 head.transform.localScale = new Vector3(0.32f, 0.32f, 0.32f);
                 Apply(head, statueMossMat);
                 Destroy(head.GetComponent<Collider>());
+            }
+        }
+
+        // ======= 텅 빈 들: 색이 빠진 폐허 초원 + 쓰러진 울타리 + 빈 표석 =======
+        // 초원(BuildMeadowTerrain)과 같은 소품군을 쓰되 채도를 걷어내고 개수를 줄인다 —
+        // "다른 땅"이 아니라 "초원이 죽은 모습"이어야 한다.
+        private void BuildHollowTerrain(Vector3 c, float rad)
+        {
+            Material dirtMat = Mat(new Color(0.46f, 0.44f, 0.38f));
+            Material deadWoodMat = Mat(new Color(0.38f, 0.34f, 0.30f));
+            Material paleGrassMat = Mat(new Color(0.52f, 0.54f, 0.44f));
+            Material slabMat = Mat(new Color(0.58f, 0.57f, 0.55f));
+
+            // 낮게 눌린 마른 언덕 — 초원의 절반 높이(hs * 0.5f → 0.28f)
+            int hillCount = ScaleCount(4, rad, 45f);
+            for (int i = 0; i < hillCount; i++)
+            {
+                float a = i * Mathf.PI * 2f / hillCount + 0.6f;
+                float d = rad * Random.Range(0.25f, 0.6f);
+                Vector3 pos = c + new Vector3(Mathf.Cos(a) * d, 0f, Mathf.Sin(a) * d);
+                float hs = Random.Range(4f, 7f);
+
+                GameObject hill = Prim(PrimitiveType.Sphere, $"Scenery_HollowRidge_{i}");
+                hill.transform.position = pos + new Vector3(0f, -hs * 0.3f, 0f);
+                hill.transform.localScale = new Vector3(hs * 2.2f, hs * 0.28f, hs * 2.2f);
+                Apply(hill, dirtMat);
+                Destroy(hill.GetComponent<Collider>());
+            }
+
+            // 죽은 그루터기 — 가지 없는 몸통만
+            int stumpCount = ScaleCount(7, rad, 45f);
+            for (int i = 0; i < stumpCount; i++)
+            {
+                float a = Random.Range(0f, Mathf.PI * 2f);
+                float d = rad * Random.Range(0.2f, 0.8f);
+                Vector3 pos = c + new Vector3(Mathf.Cos(a) * d, 0f, Mathf.Sin(a) * d);
+                float h = Random.Range(0.7f, 1.6f);
+
+                GameObject stump = Prim(PrimitiveType.Cylinder, $"Scenery_HollowStump_{i}");
+                stump.transform.position = pos + new Vector3(0f, h * 0.5f, 0f);
+                stump.transform.localScale = new Vector3(0.5f, h * 0.5f, 0.5f);
+                stump.transform.rotation = Quaternion.Euler(Random.Range(-9f, 9f), 0f, Random.Range(-9f, 9f));
+                Apply(stump, deadWoodMat);
+                Destroy(stump.GetComponent<Collider>());
+            }
+
+            // 쓰러진 울타리 — 눕힌 각재 2~3개가 한 무리
+            int fenceCount = ScaleCount(5, rad, 45f);
+            for (int i = 0; i < fenceCount; i++)
+            {
+                float a = Random.Range(0f, Mathf.PI * 2f);
+                float d = rad * Random.Range(0.3f, 0.75f);
+                Vector3 spot = c + new Vector3(Mathf.Cos(a) * d, 0f, Mathf.Sin(a) * d);
+                float yaw = Random.Range(0f, 180f);
+                int rails = Random.Range(2, 4);
+                for (int j = 0; j < rails; j++)
+                {
+                    GameObject rail = Prim(PrimitiveType.Cube, $"Scenery_HollowFence_{i}_{j}");
+                    rail.transform.position = spot + new Vector3(Random.Range(-1.2f, 1.2f), 0.12f, Random.Range(-1.2f, 1.2f));
+                    rail.transform.localScale = new Vector3(2.6f, 0.16f, 0.28f);
+                    rail.transform.rotation = Quaternion.Euler(0f, yaw + Random.Range(-25f, 25f), Random.Range(-6f, 6f));
+                    Apply(rail, deadWoodMat);
+                    Destroy(rail.GetComponent<Collider>());
+                }
+            }
+
+            // 빛바랜 풀 무리 — 초원 들꽃의 자리에 색 없는 낮은 덩어리만 남는다
+            int tuftCount = ScaleCount(8, rad, 45f);
+            for (int i = 0; i < tuftCount; i++)
+            {
+                float a = Random.Range(0f, Mathf.PI * 2f);
+                float d = rad * Random.Range(0.15f, 0.8f);
+                Vector3 clusterCenter = c + new Vector3(Mathf.Cos(a) * d, 0f, Mathf.Sin(a) * d);
+                int blades = Random.Range(3, 6);
+                for (int j = 0; j < blades; j++)
+                {
+                    GameObject tuft = Prim(PrimitiveType.Sphere, $"Scenery_HollowTuft_{i}_{j}");
+                    float ts = Random.Range(0.25f, 0.45f);
+                    tuft.transform.position = clusterCenter
+                        + new Vector3(Random.Range(-1f, 1f), ts * 0.3f, Random.Range(-1f, 1f));
+                    tuft.transform.localScale = new Vector3(ts, ts * 0.55f, ts);
+                    Apply(tuft, paleGrassMat);
+                    Destroy(tuft.GetComponent<Collider>());
+                }
+            }
+
+            // 빈 표석 — 아무것도 새겨지지 않은 판석. 이 리전의 상징물(빈칸)
+            int slabCount = ScaleCount(3, rad, 45f);
+            for (int i = 0; i < slabCount; i++)
+            {
+                float a = Random.Range(0f, Mathf.PI * 2f);
+                float d = rad * Random.Range(0.3f, 0.65f);
+                Vector3 pos = c + new Vector3(Mathf.Cos(a) * d, 0f, Mathf.Sin(a) * d);
+
+                GameObject slab = Prim(PrimitiveType.Cube, $"Scenery_HollowSlab_{i}");
+                slab.transform.position = pos + new Vector3(0f, 0.75f, 0f);
+                slab.transform.localScale = new Vector3(1.1f, 1.5f, 0.22f);
+                slab.transform.rotation = Quaternion.Euler(Random.Range(-7f, 7f), Random.Range(0f, 360f), Random.Range(-5f, 5f));
+                Apply(slab, slabMat);
+                Destroy(slab.GetComponent<Collider>());
+            }
+        }
+
+        // ======= 모래언덕: 사구 능선 + 바위 노두 + 마른 관목 + 명부회 화물 =======
+        private void BuildDunesTerrain(Vector3 c, float rad)
+        {
+            Material sandMat = Mat(new Color(0.86f, 0.74f, 0.46f));
+            Material sandShadeMat = Mat(new Color(0.72f, 0.60f, 0.36f));
+            Material rockMat = Mat(new Color(0.60f, 0.50f, 0.40f));
+            Material shrubMat = Mat(new Color(0.48f, 0.46f, 0.30f));
+            Material crateMat = Mat(new Color(0.55f, 0.42f, 0.26f));
+
+            // 사구 능선 — 길게 늘인 낮은 구를 같은 방향으로 눕혀 바람 결을 만든다
+            int duneCount = ScaleCount(6, rad, 48f);
+            for (int i = 0; i < duneCount; i++)
+            {
+                float a = i * Mathf.PI * 2f / duneCount + 0.2f;
+                float d = rad * Random.Range(0.2f, 0.65f);
+                Vector3 pos = c + new Vector3(Mathf.Cos(a) * d, 0f, Mathf.Sin(a) * d);
+                float ds = Random.Range(6f, 11f);
+
+                GameObject dune = Prim(PrimitiveType.Sphere, $"Scenery_Dune_{i}");
+                dune.transform.position = pos + new Vector3(0f, -ds * 0.32f, 0f);
+                dune.transform.localScale = new Vector3(ds * 3f, ds * 0.42f, ds * 1.4f);
+                dune.transform.rotation = Quaternion.Euler(0f, 35f, 0f);
+                Apply(dune, i % 3 == 0 ? sandShadeMat : sandMat);
+                Destroy(dune.GetComponent<Collider>());
+            }
+
+            // 바위 노두 — 모래 위로 솟은 각진 덩어리
+            int rockCount = ScaleCount(6, rad, 48f);
+            for (int i = 0; i < rockCount; i++)
+            {
+                float a = Random.Range(0f, Mathf.PI * 2f);
+                float d = rad * Random.Range(0.25f, 0.8f);
+                Vector3 pos = c + new Vector3(Mathf.Cos(a) * d, 0f, Mathf.Sin(a) * d);
+                float rs = Random.Range(1.4f, 3.2f);
+
+                GameObject rock = Prim(PrimitiveType.Cube, $"Scenery_DuneRock_{i}");
+                rock.transform.position = pos + new Vector3(0f, rs * 0.35f, 0f);
+                rock.transform.localScale = new Vector3(rs * 1.4f, rs * 0.8f, rs);
+                rock.transform.rotation = Quaternion.Euler(Random.Range(-12f, 12f), Random.Range(0f, 360f), Random.Range(-12f, 12f));
+                Apply(rock, rockMat);
+                Destroy(rock.GetComponent<Collider>());
+            }
+
+            // 마른 관목 — 가느다란 가지 몇 개가 한 포기
+            int shrubCount = ScaleCount(8, rad, 48f);
+            for (int i = 0; i < shrubCount; i++)
+            {
+                float a = Random.Range(0f, Mathf.PI * 2f);
+                float d = rad * Random.Range(0.2f, 0.8f);
+                Vector3 spot = c + new Vector3(Mathf.Cos(a) * d, 0f, Mathf.Sin(a) * d);
+                int twigs = Random.Range(3, 6);
+                for (int j = 0; j < twigs; j++)
+                {
+                    GameObject twig = Prim(PrimitiveType.Cylinder, $"Scenery_DuneShrub_{i}_{j}");
+                    float th = Random.Range(0.35f, 0.75f);
+                    twig.transform.position = spot + new Vector3(Random.Range(-0.4f, 0.4f), th * 0.5f, Random.Range(-0.4f, 0.4f));
+                    twig.transform.localScale = new Vector3(0.07f, th * 0.5f, 0.07f);
+                    twig.transform.rotation = Quaternion.Euler(Random.Range(-28f, 28f), Random.Range(0f, 360f), Random.Range(-28f, 28f));
+                    Apply(twig, shrubMat);
+                    Destroy(twig.GetComponent<Collider>());
+                }
+            }
+
+            // 반쯤 묻힌 화물 상자 — 명부회가 곤충을 실어 나른 자국. 이 리전의 서사 소품
+            int crateCount = ScaleCount(4, rad, 48f);
+            for (int i = 0; i < crateCount; i++)
+            {
+                float a = Random.Range(0f, Mathf.PI * 2f);
+                float d = rad * Random.Range(0.3f, 0.7f);
+                Vector3 spot = c + new Vector3(Mathf.Cos(a) * d, 0f, Mathf.Sin(a) * d);
+                int stack = Random.Range(2, 4);
+                float yaw = Random.Range(0f, 360f);
+                for (int j = 0; j < stack; j++)
+                {
+                    GameObject crate = Prim(PrimitiveType.Cube, $"Scenery_DuneCrate_{i}_{j}");
+                    // 아래 상자일수록 모래에 깊이 잠긴다(y가 음수에서 올라온다)
+                    crate.transform.position = spot
+                        + new Vector3(Random.Range(-0.5f, 0.5f), -0.35f + j * 0.85f, Random.Range(-0.5f, 0.5f));
+                    crate.transform.localScale = new Vector3(1.1f, 0.8f, 1.1f);
+                    crate.transform.rotation = Quaternion.Euler(Random.Range(-8f, 8f), yaw + Random.Range(-20f, 20f), Random.Range(-8f, 8f));
+                    Apply(crate, crateMat);
+                    Destroy(crate.GetComponent<Collider>());
+                }
+            }
+        }
+
+        // ======= 서릿길: 눈 언덕 + 얼음 기둥 + 언 나무 =======
+        private void BuildFrostlineTerrain(Vector3 c, float rad)
+        {
+            Material snowMat = Mat(new Color(0.90f, 0.93f, 0.96f));
+            Material iceMat = Mat(new Color(0.66f, 0.84f, 0.92f, 0.72f));
+            SetTransparent(iceMat);
+            Material rockMat = Mat(new Color(0.52f, 0.56f, 0.60f));
+            Material frozenWoodMat = Mat(new Color(0.44f, 0.48f, 0.52f));
+
+            // 눈 언덕 — 초원 언덕과 같은 형태를 흰색으로. 완만해 걸어 오를 수 있다
+            int driftCount = ScaleCount(5, rad, 45f);
+            for (int i = 0; i < driftCount; i++)
+            {
+                float a = i * Mathf.PI * 2f / driftCount + 0.4f;
+                float d = rad * Random.Range(0.22f, 0.6f);
+                Vector3 pos = c + new Vector3(Mathf.Cos(a) * d, 0f, Mathf.Sin(a) * d);
+                float ds = Random.Range(5f, 9f);
+
+                GameObject drift = Prim(PrimitiveType.Sphere, $"Scenery_SnowDrift_{i}");
+                drift.transform.position = pos + new Vector3(0f, -ds * 0.28f, 0f);
+                drift.transform.localScale = new Vector3(ds * 2.4f, ds * 0.45f, ds * 2f);
+                Apply(drift, snowMat);
+                Destroy(drift.GetComponent<Collider>());
+            }
+
+            // 얼음 기둥 — 위로 갈수록 가늘어지는 반투명 기둥. 이 리전의 상징물(얼어붙은 기록)
+            int pillarCount = ScaleCount(7, rad, 45f);
+            for (int i = 0; i < pillarCount; i++)
+            {
+                float a = Random.Range(0f, Mathf.PI * 2f);
+                float d = rad * Random.Range(0.2f, 0.78f);
+                Vector3 pos = c + new Vector3(Mathf.Cos(a) * d, 0f, Mathf.Sin(a) * d);
+                float h = Random.Range(2.2f, 4.6f);
+
+                GameObject shaft = Prim(PrimitiveType.Cylinder, $"Scenery_IcePillar_{i}");
+                shaft.transform.position = pos + new Vector3(0f, h * 0.5f, 0f);
+                shaft.transform.localScale = new Vector3(0.8f, h * 0.5f, 0.8f);
+                shaft.transform.rotation = Quaternion.Euler(Random.Range(-6f, 6f), 0f, Random.Range(-6f, 6f));
+                Apply(shaft, iceMat);
+                Destroy(shaft.GetComponent<Collider>());
+
+                GameObject cap = Prim(PrimitiveType.Sphere, $"Scenery_IcePillarTip_{i}");
+                cap.transform.position = pos + new Vector3(0f, h + 0.15f, 0f);
+                cap.transform.localScale = new Vector3(0.55f, 0.9f, 0.55f);
+                Apply(cap, iceMat);
+                Destroy(cap.GetComponent<Collider>());
+            }
+
+            // 언 나무 — 잎 없이 몸통과 가지 두어 개만
+            int treeCount = ScaleCount(6, rad, 45f);
+            for (int i = 0; i < treeCount; i++)
+            {
+                float a = Random.Range(0f, Mathf.PI * 2f);
+                float d = rad * Random.Range(0.25f, 0.8f);
+                Vector3 pos = c + new Vector3(Mathf.Cos(a) * d, 0f, Mathf.Sin(a) * d);
+                float h = Random.Range(2.4f, 4f);
+
+                GameObject trunk = Prim(PrimitiveType.Cylinder, $"Scenery_FrozenTree_{i}");
+                trunk.transform.position = pos + new Vector3(0f, h * 0.5f, 0f);
+                trunk.transform.localScale = new Vector3(0.32f, h * 0.5f, 0.32f);
+                Apply(trunk, frozenWoodMat);
+                Destroy(trunk.GetComponent<Collider>());
+
+                int branches = Random.Range(2, 4);
+                for (int j = 0; j < branches; j++)
+                {
+                    GameObject branch = Prim(PrimitiveType.Cylinder, $"Scenery_FrozenBranch_{i}_{j}");
+                    branch.transform.position = pos + new Vector3(0f, h * Random.Range(0.55f, 0.9f), 0f);
+                    branch.transform.localScale = new Vector3(0.14f, Random.Range(0.5f, 0.9f), 0.14f);
+                    branch.transform.rotation = Quaternion.Euler(Random.Range(55f, 82f), Random.Range(0f, 360f), 0f);
+                    Apply(branch, frozenWoodMat);
+                    Destroy(branch.GetComponent<Collider>());
+                }
+            }
+
+            // 눈 덮인 바위 — 각진 덩어리 위에 흰 뚜껑
+            int rockCount = ScaleCount(5, rad, 45f);
+            for (int i = 0; i < rockCount; i++)
+            {
+                float a = Random.Range(0f, Mathf.PI * 2f);
+                float d = rad * Random.Range(0.2f, 0.75f);
+                Vector3 pos = c + new Vector3(Mathf.Cos(a) * d, 0f, Mathf.Sin(a) * d);
+                float rs = Random.Range(1.2f, 2.6f);
+
+                GameObject rock = Prim(PrimitiveType.Cube, $"Scenery_FrostRock_{i}");
+                rock.transform.position = pos + new Vector3(0f, rs * 0.35f, 0f);
+                rock.transform.localScale = new Vector3(rs * 1.3f, rs * 0.7f, rs);
+                rock.transform.rotation = Quaternion.Euler(Random.Range(-10f, 10f), Random.Range(0f, 360f), Random.Range(-10f, 10f));
+                Apply(rock, rockMat);
+                Destroy(rock.GetComponent<Collider>());
+
+                GameObject cap = Prim(PrimitiveType.Sphere, $"Scenery_FrostRockCap_{i}");
+                cap.transform.position = pos + new Vector3(0f, rs * 0.68f, 0f);
+                cap.transform.localScale = new Vector3(rs * 1.25f, rs * 0.28f, rs * 0.95f);
+                Apply(cap, snowMat);
+                Destroy(cap.GetComponent<Collider>());
+            }
+        }
+
+        // ======= 잿불 골짜기: 굳은 용암 바위 + 재 더미 + 불탄 나무 =======
+        private void BuildEmberfallTerrain(Vector3 c, float rad)
+        {
+            Material basaltMat = Mat(new Color(0.20f, 0.18f, 0.18f));
+            Material ashMat = Mat(new Color(0.44f, 0.41f, 0.39f));
+            Material charMat = Mat(new Color(0.16f, 0.13f, 0.12f));
+            Material emberMat = Mat(new Color(0.85f, 0.34f, 0.14f));
+            SetEmissive(emberMat, new Color(0.85f, 0.30f, 0.08f));
+
+            // 굳은 용암 지대 — 낮고 넓은 검은 판
+            int flowCount = ScaleCount(5, rad, 48f);
+            for (int i = 0; i < flowCount; i++)
+            {
+                float a = i * Mathf.PI * 2f / flowCount + 0.5f;
+                float d = rad * Random.Range(0.2f, 0.6f);
+                Vector3 pos = c + new Vector3(Mathf.Cos(a) * d, 0f, Mathf.Sin(a) * d);
+                float fs = Random.Range(6f, 10f);
+
+                GameObject flow = Prim(PrimitiveType.Sphere, $"Scenery_LavaFlow_{i}");
+                flow.transform.position = pos + new Vector3(0f, -fs * 0.34f, 0f);
+                flow.transform.localScale = new Vector3(fs * 2.6f, fs * 0.38f, fs * 1.8f);
+                flow.transform.rotation = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
+                Apply(flow, basaltMat);
+                Destroy(flow.GetComponent<Collider>());
+            }
+
+            // 잿불 틈 — 굳은 용암 사이로 보이는 자체 발광 이음매
+            int seamCount = ScaleCount(6, rad, 48f);
+            for (int i = 0; i < seamCount; i++)
+            {
+                float a = Random.Range(0f, Mathf.PI * 2f);
+                float d = rad * Random.Range(0.2f, 0.7f);
+                Vector3 pos = c + new Vector3(Mathf.Cos(a) * d, 0.04f, Mathf.Sin(a) * d);
+
+                GameObject seam = Prim(PrimitiveType.Cube, $"Scenery_EmberSeam_{i}");
+                seam.transform.position = pos;
+                seam.transform.localScale = new Vector3(Random.Range(2.5f, 5.5f), 0.06f, Random.Range(0.2f, 0.45f));
+                seam.transform.rotation = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
+                Apply(seam, emberMat);
+                Destroy(seam.GetComponent<Collider>());
+            }
+
+            // 재 더미 — 회색 원뿔 대용(눌린 구)
+            int moundCount = ScaleCount(7, rad, 48f);
+            for (int i = 0; i < moundCount; i++)
+            {
+                float a = Random.Range(0f, Mathf.PI * 2f);
+                float d = rad * Random.Range(0.25f, 0.8f);
+                Vector3 pos = c + new Vector3(Mathf.Cos(a) * d, 0f, Mathf.Sin(a) * d);
+                float ms = Random.Range(1.2f, 2.4f);
+
+                GameObject mound = Prim(PrimitiveType.Sphere, $"Scenery_AshMound_{i}");
+                mound.transform.position = pos + new Vector3(0f, ms * 0.18f, 0f);
+                mound.transform.localScale = new Vector3(ms * 1.8f, ms * 0.6f, ms * 1.8f);
+                Apply(mound, ashMat);
+                Destroy(mound.GetComponent<Collider>());
+            }
+
+            // 불탄 나무 — 위가 부러진 검은 몸통. 가지는 없다
+            int snagCount = ScaleCount(8, rad, 48f);
+            for (int i = 0; i < snagCount; i++)
+            {
+                float a = Random.Range(0f, Mathf.PI * 2f);
+                float d = rad * Random.Range(0.2f, 0.82f);
+                Vector3 pos = c + new Vector3(Mathf.Cos(a) * d, 0f, Mathf.Sin(a) * d);
+                float h = Random.Range(1.6f, 3.8f);
+
+                GameObject snag = Prim(PrimitiveType.Cylinder, $"Scenery_BurntSnag_{i}");
+                snag.transform.position = pos + new Vector3(0f, h * 0.5f, 0f);
+                snag.transform.localScale = new Vector3(0.34f, h * 0.5f, 0.34f);
+                snag.transform.rotation = Quaternion.Euler(Random.Range(-11f, 11f), 0f, Random.Range(-11f, 11f));
+                Apply(snag, charMat);
+                Destroy(snag.GetComponent<Collider>());
+            }
+        }
+
+        // ======= 우듬지: 거대수 기둥 + 잎 덮개 + 공중 뿌리 =======
+        // 2막에서 유일하게 "살아 있는" 리전 — 채도와 소품 밀도를 다른 2막 리전보다 높게 둔다.
+        private void BuildCanopyTerrain(Vector3 c, float rad)
+        {
+            Material barkMat = Mat(new Color(0.36f, 0.28f, 0.20f));
+            Material leafMat = Mat(new Color(0.24f, 0.58f, 0.28f));
+            Material leafLightMat = Mat(new Color(0.42f, 0.74f, 0.36f));
+            Material mossMat = Mat(new Color(0.32f, 0.48f, 0.26f));
+
+            // 거대수 기둥 — 아주 굵은 원기둥. 이 리전의 뼈대
+            int trunkCount = ScaleCount(5, rad, 50f);
+            for (int i = 0; i < trunkCount; i++)
+            {
+                float a = i * Mathf.PI * 2f / trunkCount + 0.35f;
+                float d = rad * Random.Range(0.25f, 0.7f);
+                Vector3 pos = c + new Vector3(Mathf.Cos(a) * d, 0f, Mathf.Sin(a) * d);
+                float h = Random.Range(9f, 15f);
+                float w = Random.Range(2.2f, 3.4f);
+
+                GameObject trunk = Prim(PrimitiveType.Cylinder, $"Scenery_GreatTrunk_{i}");
+                trunk.transform.position = pos + new Vector3(0f, h * 0.5f, 0f);
+                trunk.transform.localScale = new Vector3(w, h * 0.5f, w);
+                Apply(trunk, barkMat);
+                Destroy(trunk.GetComponent<Collider>());
+
+                // 잎 덮개 — 위로 갈수록 작아지는 구 3겹
+                for (int j = 0; j < 3; j++)
+                {
+                    GameObject crown = Prim(PrimitiveType.Sphere, $"Scenery_GreatCrown_{i}_{j}");
+                    float cs = (w * 3.6f) * (1f - j * 0.22f);
+                    crown.transform.position = pos + new Vector3(
+                        Random.Range(-0.8f, 0.8f), h * (0.78f + j * 0.14f), Random.Range(-0.8f, 0.8f));
+                    crown.transform.localScale = new Vector3(cs, cs * 0.6f, cs);
+                    Apply(crown, j == 2 ? leafLightMat : leafMat);
+                    Destroy(crown.GetComponent<Collider>());
+                }
+
+                // 공중 뿌리 — 기둥에서 비스듬히 땅으로 내려오는 가는 기둥
+                int roots = Random.Range(3, 6);
+                for (int j = 0; j < roots; j++)
+                {
+                    GameObject root = Prim(PrimitiveType.Cylinder, $"Scenery_AerialRoot_{i}_{j}");
+                    float rh = Random.Range(2.5f, 4.5f);
+                    float ra = Random.Range(0f, Mathf.PI * 2f);
+                    root.transform.position = pos + new Vector3(
+                        Mathf.Cos(ra) * w * 1.1f, rh * 0.5f, Mathf.Sin(ra) * w * 1.1f);
+                    root.transform.localScale = new Vector3(0.16f, rh * 0.5f, 0.16f);
+                    root.transform.rotation = Quaternion.Euler(Random.Range(-18f, 18f), 0f, Random.Range(-18f, 18f));
+                    Apply(root, barkMat);
+                    Destroy(root.GetComponent<Collider>());
+                }
+            }
+
+            // 이끼 둔덕 — 바닥을 초록으로 채워 "살아 있는 땅"임을 알린다
+            int mossCount = ScaleCount(9, rad, 50f);
+            for (int i = 0; i < mossCount; i++)
+            {
+                float a = Random.Range(0f, Mathf.PI * 2f);
+                float d = rad * Random.Range(0.15f, 0.82f);
+                Vector3 pos = c + new Vector3(Mathf.Cos(a) * d, 0f, Mathf.Sin(a) * d);
+                float ms = Random.Range(1.4f, 3f);
+
+                GameObject mound = Prim(PrimitiveType.Sphere, $"Scenery_MossMound_{i}");
+                mound.transform.position = pos + new Vector3(0f, ms * 0.12f, 0f);
+                mound.transform.localScale = new Vector3(ms * 2f, ms * 0.42f, ms * 2f);
+                Apply(mound, mossMat);
+                Destroy(mound.GetComponent<Collider>());
+            }
+        }
+
+        // ======= 이름 없는 자리: 빈 석판 원형 배치 + 색이 빠진 땅 =======
+        // 소품을 일부러 적게 둔다 — 채워지지 않은 자리가 이 리전의 주제다.
+        private void BuildNamelessTerrain(Vector3 c, float rad)
+        {
+            Material voidGroundMat = Mat(new Color(0.30f, 0.29f, 0.33f));
+            Material slabMat = Mat(new Color(0.46f, 0.45f, 0.50f));
+            Material palePillarMat = Mat(new Color(0.58f, 0.57f, 0.62f));
+
+            // 색이 빠진 지반 — 넓고 아주 낮은 판 몇 장
+            int plateCount = ScaleCount(4, rad, 42f);
+            for (int i = 0; i < plateCount; i++)
+            {
+                float a = i * Mathf.PI * 2f / plateCount;
+                float d = rad * Random.Range(0.2f, 0.55f);
+                Vector3 pos = c + new Vector3(Mathf.Cos(a) * d, 0f, Mathf.Sin(a) * d);
+                float ps = Random.Range(7f, 11f);
+
+                GameObject plate = Prim(PrimitiveType.Sphere, $"Scenery_VoidPlate_{i}");
+                plate.transform.position = pos + new Vector3(0f, -ps * 0.36f, 0f);
+                plate.transform.localScale = new Vector3(ps * 2.6f, ps * 0.4f, ps * 2.4f);
+                Apply(plate, voidGroundMat);
+                Destroy(plate.GetComponent<Collider>());
+            }
+
+            // 빈 석판 원형 배치 — 유적 신전 벽의 이곳 판본. 전부 아무것도 새겨져 있지 않다
+            int ringCount = 12;
+            float ringRadius = rad * 0.42f;
+            for (int i = 0; i < ringCount; i++)
+            {
+                float a = i * Mathf.PI * 2f / ringCount;
+                Vector3 pos = c + new Vector3(Mathf.Cos(a) * ringRadius, 0f, Mathf.Sin(a) * ringRadius);
+                float h = Random.Range(2.4f, 3.6f);
+
+                GameObject slab = Prim(PrimitiveType.Cube, $"Scenery_BlankSlab_{i}");
+                slab.transform.position = pos + new Vector3(0f, h * 0.5f, 0f);
+                slab.transform.localScale = new Vector3(1.5f, h, 0.3f);
+                // 원 중심을 바라보게 세운다 — 무언가를 둘러싸고 있던 배치
+                slab.transform.rotation = Quaternion.Euler(
+                    Random.Range(-4f, 4f), -a * Mathf.Rad2Deg, Random.Range(-3f, 3f));
+                Apply(slab, slabMat);
+                Destroy(slab.GetComponent<Collider>());
+            }
+
+            // 창백한 기둥 — 원 안쪽에 드문드문. 무엇을 받치던 것인지 알 수 없다
+            int pillarCount = ScaleCount(3, rad, 42f);
+            for (int i = 0; i < pillarCount; i++)
+            {
+                float a = Random.Range(0f, Mathf.PI * 2f);
+                float d = rad * Random.Range(0.1f, 0.3f);
+                Vector3 pos = c + new Vector3(Mathf.Cos(a) * d, 0f, Mathf.Sin(a) * d);
+                float h = Random.Range(4f, 6.5f);
+
+                GameObject pillar = Prim(PrimitiveType.Cylinder, $"Scenery_PalePillar_{i}");
+                pillar.transform.position = pos + new Vector3(0f, h * 0.5f, 0f);
+                pillar.transform.localScale = new Vector3(0.9f, h * 0.5f, 0.9f);
+                pillar.transform.rotation = Quaternion.Euler(Random.Range(-5f, 5f), 0f, Random.Range(-5f, 5f));
+                Apply(pillar, palePillarMat);
+                Destroy(pillar.GetComponent<Collider>());
             }
         }
 

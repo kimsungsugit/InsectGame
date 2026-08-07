@@ -512,6 +512,7 @@ namespace InsectGame.Core
                 EnsureComponent<InsectGame.Story.StoryDirector>("World/StoryDirector");
             storyDirector.AutoWire(regionMgr, battleController, progress, insectCollection, questManager);
             storyDirector.AutoWire(candyInventory, itemInventory);
+            storyDirector.AutoWire(dex);   // DexProgress 트리거 소스 — Start 전에 주입해야 구독이 걸린다
             cloudSave.RegisterReloadable(storyDirector);
 
             // 캐시 상점 + 가챠 시스템
@@ -573,6 +574,9 @@ namespace InsectGame.Core
                     EnsureComponent<InsectGame.NPC.NpcDuelController>("World/NpcDuelController");
                 npcDuel.AutoWire(battleController, battleTeam, insectCollection, database,
                     itemInventory, itemDatabase, regionMgr);
+                // 명부회 간부 격파 기록은 PlayerPrefs라, 클라우드 로드 후 인메모리 캐시를 다시 읽어야
+                // 다른 기기의 격파가 반영된다(RegionManager 해금 상태와 같은 이유).
+                cloudSave.RegisterReloadable(npcDuel);
                 worldInteract.AutoWire(npcDuel);
 
                 InsectGame.UI.NpcDialogueUI npcDialogue =
@@ -580,6 +584,13 @@ namespace InsectGame.Core
                 npcDialogue.AutoWire(playerMov);
                 npcDialogue.AutoWire(storyDirector); // 스토리 비트 lines[] 모달 렌더 + 닫힘 시 완료 콜백
                 worldInteract.AutoWire(npcDialogue);
+
+                // 스토리 저널 — 챕터별 진행 열람 + 다시 읽기(NpcDialogueUI 렌더러 재사용).
+                // 퀵바 [J] 진입점은 아래 quickBar.AutoWire(storyJournal)에서 붙는다.
+                InsectGame.UI.StoryJournalUI storyJournal =
+                    EnsureComponent<InsectGame.UI.StoryJournalUI>("UI/StoryJournalUI");
+                storyJournal.AutoWire(storyDirector, npcDialogue);
+                quickBar.AutoWire(storyJournal);
 
                 // 스폰은 배선 완료 후 (컬링 타깃/예약 시스템이 준비된 상태에서)
                 if (villageResult != null)
@@ -765,9 +776,10 @@ namespace InsectGame.Core
             GameObject ground = GameObject.CreatePrimitive(PrimitiveType.Plane);
             ground.name = "Ground";
             ground.transform.position = Vector3.zero;
-            // WorldScale 1.5 확장 후 최원점(mountain -255 / ruins 277.5)과 경계벽 내면(±318.5)을
-            // 전부 덮도록 ±320 — 벽 앞까지 걸어가도 무바닥(무한 낙하) 구간이 없어야 한다.
-            ground.transform.localScale = new Vector3(64f, 1f, 64f);
+            // 2막(ver2) 확장 후 최원점(canopy z=472.5)과 경계벽 내면(±518.5)을 전부 덮도록 ±540
+            // — 벽 앞까지 걸어가도 무바닥(무한 낙하) 구간이 없어야 한다.
+            // Plane 원본은 10×10이라 스케일 108 = ±540. mapSize(WorldTerrainBuilder 520)보다 커야 한다.
+            ground.transform.localScale = new Vector3(108f, 1f, 108f);
             ground.GetComponent<MeshRenderer>().material = baseMat;
 
             // 회색필드 진단: Plane 빌트인 메시가 null이면 지형이 안 보이고 "MeshCollider does not have a valid mesh"
@@ -2921,6 +2933,13 @@ namespace InsectGame.Core
                 database.insects.Add(CreateStableInsect(seed.id, seed.name, seed.rarity, seed.weight, seed.difficulty, seed.desc, seed.habitat));
             }
 
+            // 2막(ver2) 확장 — "장부에 없는 땅" 6지역 서식종. 파일이 갈린 이유는
+            // InsectExpansion2Definitions 주석 참조(1막 확장의 개수 고정 테스트 보호).
+            foreach (InsectSeed seed in InsectExpansion2Definitions.CreateAll())
+            {
+                database.insects.Add(CreateStableInsect(seed.id, seed.name, seed.rarity, seed.weight, seed.difficulty, seed.desc, seed.habitat));
+            }
+
             return database;
         }
 
@@ -3116,6 +3135,20 @@ namespace InsectGame.Core
             if (zone == "Mountain")
                 return InsectElement.Earth;
             if (zone == "Ruins")
+                return InsectElement.Dark;
+            // 2막 리전 태그 — InsectExpansion2Definitions의 habitat와 짝. 한쪽만 고치면
+            // 오타가 조용히 Bug로 떨어져 속성 설계가 통째로 무의미해진다.
+            if (zone == "Hollow")
+                return InsectElement.Dark;
+            if (zone == "Dunes")
+                return InsectElement.Earth;
+            if (zone == "Frostline")
+                return InsectElement.Water;
+            if (zone == "Emberfall")
+                return InsectElement.Metal;
+            if (zone == "Canopy")
+                return InsectElement.Leaf;
+            if (zone == "Nameless")
                 return InsectElement.Dark;
             return InsectElement.Bug;
         }
@@ -3352,6 +3385,21 @@ namespace InsectGame.Core
                 case "butterfly_midnight": name = "그믐밤 여왕무"; element = InsectElement.Dark; break;
                 case "hornet_emperor": name = "황제의 처형침"; element = InsectElement.Poison; break;
                 case "mantis_gold_temple": name = "황금 신전 단두참"; element = InsectElement.Metal; break;
+                // ── 2막(ver2) Epic+ 전용기 — InsectExpansion2Definitions와 짝.
+                //    element는 InferPrimaryType/InferSecondaryType가 그 ID에 주는 값 중 하나여야 한다
+                //    (누락하면 default "궁극 생태 해방"으로 조용히 떨어져 전용기가 전부 같은 이름이 된다).
+                case "mantis_hollow": name = "공허의 낫질"; element = InsectElement.Leaf; break;
+                case "moth_forgotten": name = "잊힌 인분무"; element = InsectElement.Wind; break;
+                case "centipede_sand": name = "모래 굴진 강타"; element = InsectElement.Earth; break;
+                case "hornet_dune": name = "사구 강철침"; element = InsectElement.Metal; break;
+                case "mantis_icicle": name = "고드름 단두참"; element = InsectElement.Leaf; break;
+                case "moth_aurora": name = "극광 인분무"; element = InsectElement.Wind; break;
+                case "mantis_ember": name = "잿불 낫질"; element = InsectElement.Leaf; break;
+                case "hornet_magma": name = "용암 관통침"; element = InsectElement.Metal; break;
+                case "mantis_canopy": name = "우듬지 단두참"; element = InsectElement.Leaf; break;
+                case "butterfly_worldtree": name = "세계수 천공무"; element = InsectElement.Wind; break;
+                case "moth_effaced": name = "지워진 인분무"; element = InsectElement.Wind; break;
+                case "mantis_unnamed": name = "이름 없는 일격"; element = InsectElement.Leaf; break;
                 default: name = "궁극 생태 해방"; break;
             }
 

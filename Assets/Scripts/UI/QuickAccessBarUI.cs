@@ -15,6 +15,7 @@ namespace InsectGame.UI
         [SerializeField] private CashShopUI cashShopUI;
         [SerializeField] private TutorialQuestUI questUI;
         [SerializeField] private SocialPvpUI socialPvpUI;
+        [SerializeField] private StoryJournalUI storyJournalUI;
 
         // 전투/포획/미니게임 등 입력 차단용 신호 (CaptureInputController와 동일).
         [SerializeField] private BattleScreenUI battleScreen;
@@ -62,6 +63,9 @@ namespace InsectGame.UI
             new ButtonDef { label = "의상", key = "P", color = new Color(0.8f, 0.7f, 1f) },
             new ButtonDef { label = "상점", key = "F4", color = new Color(1f, 0.4f, 0.4f) },
             new ButtonDef { label = "PVP", key = "F6", color = new Color(0.25f, 0.75f, 1f) },
+            // 스토리 저널 — 60비트로 늘어난 서사의 진행 상황을 보는 유일한 창구.
+            // 인덱스가 TryHotkey의 switch case 번호다(9). 배열·Update·OnGUI 3곳이 짝이다.
+            new ButtonDef { label = "이야기", key = "J", color = new Color(1f, 0.79f, 0.3f) },
         };
 
         private void Update()
@@ -77,6 +81,7 @@ namespace InsectGame.UI
             if (Input.GetKeyDown(KeyCode.P)) TryHotkey(6);
             if (Input.GetKeyDown(KeyCode.F4)) TryHotkey(7);
             if (Input.GetKeyDown(KeyCode.F6)) TryHotkey(8);
+            if (Input.GetKeyDown(KeyCode.J)) TryHotkey(9);
         }
 
         private void OnGUI()
@@ -101,6 +106,7 @@ namespace InsectGame.UI
                     case KeyCode.P: handled = TryHotkey(6); break;
                     case KeyCode.F4: handled = TryHotkey(7); break;
                     case KeyCode.F6: handled = TryHotkey(8); break;
+                    case KeyCode.J: handled = TryHotkey(9); break;
                 }
                 if (handled) e.Use();
             }
@@ -265,6 +271,7 @@ namespace InsectGame.UI
                 case 6: return outfitUI != null && outfitUI.IsOpen;
                 case 7: return cashShopUI != null && cashShopUI.IsOpen;
                 case 8: return socialPvpUI != null && socialPvpUI.IsOpen;
+                case 9: return storyJournalUI != null && storyJournalUI.IsOpen;
                 default: return false;
             }
         }
@@ -320,6 +327,7 @@ namespace InsectGame.UI
                 case 6: if (outfitUI != null) outfitUI.Toggle(); break;
                 case 7: if (cashShopUI != null) cashShopUI.Toggle(); break;
                 case 8: if (socialPvpUI != null) socialPvpUI.Toggle(); break;
+                case 9: if (storyJournalUI != null) storyJournalUI.Toggle(); break;
             }
         }
 
@@ -342,6 +350,11 @@ namespace InsectGame.UI
         public void AutoWire(TutorialQuestUI quest)
         {
             if (questUI == null) questUI = quest;
+        }
+
+        public void AutoWire(StoryJournalUI journal)
+        {
+            if (storyJournalUI == null) storyJournalUI = journal;
         }
 
         public void AutoWire(SocialPvpUI social)

@@ -96,6 +96,25 @@ namespace InsectGame.Dex
             return lookup.TryGetValue(insectId, out record);
         }
 
+        /// <summary>
+        /// 실제로 포획해 이름을 새긴 종의 수 — 발견(조우)만 한 종은 세지 않는다(<see cref="HasRecord"/> 기준).
+        /// StoryDirector의 DexProgress 트리거가 읽는 값이다. 2막 서사에서 "빈칸이 메워진다"가
+        /// 곧 이 숫자라, 발견 수가 아니라 포획 수여야 의미가 맞는다.
+        /// </summary>
+        public int CapturedSpeciesCount
+        {
+            get
+            {
+                if (saveData == null || saveData.records == null) return 0;
+                int n = 0;
+                for (int i = 0; i < saveData.records.Count; i++)
+                {
+                    if (saveData.records[i] != null && saveData.records[i].capturedCount > 0) n++;
+                }
+                return n;
+            }
+        }
+
         public DexSaveData GetSaveData()
         {
             return saveData;

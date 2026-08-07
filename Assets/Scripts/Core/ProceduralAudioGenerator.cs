@@ -43,6 +43,14 @@ namespace InsectGame.Core
                 case "explore_mountain": clip = GenerateRegionBGM("Mountain", 105, new[] { G4, A4, C5, D5, E5, G5 }, new[] { G3, D4, A4, G3 }, 167); break;
                 case "explore_garden":   clip = GenerateRegionBGM("Garden", 120, new[] { C5, D5, E5, G5, A5, C6 }, new[] { F4 * 0.5f, A2, G3, C3 }, 73); break;
                 case "explore_ruins":    clip = GenerateRegionBGM("Ruins", 80,  new[] { D4, F4, G4, A4, C5, D5 }, new[] { D2, A2, F4 * 0.5f, D2 }, 199); break;
+                // ── 2막(ver2) ── 여기 case가 없으면 LogWarning + null이라 그 리전만 무음이 된다.
+                // 텅 빈 들은 느리고 베이스가 거의 움직이지 않는다(정체). 모래언덕은 건조한 고음 위주.
+                case "explore_hollow":   clip = GenerateRegionBGM("Hollow", 68, new[] { A2 * 2f, C4, D4, E4, G4, A4 }, new[] { A2, A2, G3, A2 }, 211); break;
+                case "explore_dunes":    clip = GenerateRegionBGM("Dunes", 92,  new[] { D4, E4, G4, A4, C5, D5 }, new[] { D2, D2, A2, G3 }, 233); break;
+                case "explore_frostline": clip = GenerateRegionBGM("Frostline", 62, new[] { E4, G4, B4, D5, E5, G5 }, new[] { E3, E3, B3, E3 }, 251); break;
+                case "explore_emberfall": clip = GenerateRegionBGM("Emberfall", 88, new[] { C4, D4, F4, G4, C5, D5 }, new[] { D1 * 2f, C3, G3, C3 }, 277); break;
+                case "explore_canopy":   clip = GenerateRegionBGM("Canopy", 112, new[] { G4, A4, B4, D5, E5, G5 }, new[] { G3, D4, E4, C3 }, 307); break;
+                case "explore_nameless": clip = GenerateRegionBGM("Nameless", 58, new[] { C4, D4, F4, G4, B4, C5 }, new[] { D1, D1, C3, D1 }, 331); break;
                 default:
                     Debug.LogWarning($"[ProceduralAudio] Unknown BGM type: {type}");
                     return null;

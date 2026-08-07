@@ -40,7 +40,17 @@ namespace InsectGame.Core
             { "swamp", 45f },
             { "mountain", 225f },
             { "garden", 110f },
-            { "ruins", 330f }
+            { "ruins", 330f },
+            // 2막(ver2) — hollow 서브 122°/318° → 230°, dunes 서브 133°/319° → 40°.
+            // 미등록이면 ChooseOutpostPosition이 기본 90°로 떨어져 서브에리어 입구와 겹칠 수 있다.
+            { "hollow", 230f },
+            { "dunes", 40f },
+            // frostline 서브 135°/317° → 230°, emberfall 서브 132°/318° → 230°.
+            { "frostline", 230f },
+            { "emberfall", 230f },
+            // canopy 서브 130°/319° → 230°, nameless 서브 135°/318° → 230°.
+            { "canopy", 230f },
+            { "nameless", 230f }
         };
 
         /// <summary>잡기 아이(CatcherKid) 배치 — 리전 중심 부근 개활지 (서브에리어/전초기지 회피 각도).</summary>
@@ -50,7 +60,12 @@ namespace InsectGame.Core
             ("forest", 20f, 0.30f),
             ("garden", 340f, 0.35f),
             ("swamp", 0f, 0.35f),
-            ("mountain", 30f, 0.30f)
+            ("mountain", 30f, 0.30f),
+            // 2막(ver2) — 텅 빈 들·잿불 골짜기·이름 없는 자리에는 두지 않는다.
+            // 곤충이 없는 땅, 라온이 다치는 곳, 최종 지역에 채집 아이가 서 있으면 톤이 무너진다.
+            ("dunes", 200f, 0.34f),
+            ("frostline", 200f, 0.34f),
+            ("canopy", 200f, 0.34f)
         };
 
         // 머티리얼 캐시 — 색상당 1개 생성 공유
@@ -133,6 +148,121 @@ namespace InsectGame.Core
                     position = Polar(storyForest.centerPosition, 90f, storyForest.radius * 0.22f),
                     kind = NpcKind.StoryNpc, regionId = "forest",
                     storyNpcId = "ruins_scholar", wanderRadius = 0f
+                });
+            }
+
+            // ── 2막(ver2) 동행자 배치 ──
+            // 같은 storyNpcId를 여러 리전에 두어도 안전하다 — NpcManager.SpawnStoryNpc가
+            // 앵커 index로 npcId를 구분하고, NpcTalk 트리거는 storyNpcId 하나만 보므로
+            // 어느 개체에 말을 걸든 그 NPC의 비트 체인이 이어진다.
+            // 배치 자체가 서사를 실어 나른다 — 라온은 잿불 골짜기에서 다쳐 이탈하므로
+            // 그 뒤 리전에는 앵커를 두지 않고 최종 리전에서만 복귀한다.
+            //
+            // **헬퍼로 묶지 않고 리터럴을 반복하는 이유**: game_facts.story_npc_ids()가
+            // `storyNpcId = "..."` 형태를 정규식으로 읽어 story_lint 검사 3(NpcTalk 대상 존재)을
+            // 돌린다. 헬퍼 인자로 넘기면 그 추출기에 잡히지 않아 월드에 배치된 NPC가
+            // "미배치"로 잘못 보고된다.
+            Data.RegionData storyHollow = FindRegion(regions, "hollow");
+            if (storyHollow != null)
+            {
+                result.npcAnchors.Add(new NpcSpawnAnchor
+                {
+                    // 20°/0.30R — 두 서브에리어(침묵의 자리 121°, 마른 굴 318°) 진입 반경 밖.
+                    // 서브에리어 안에 서 있으면 말을 걸려다 구역에 빨려 들어간다.
+                    position = Polar(storyHollow.centerPosition, 20f, storyHollow.radius * 0.30f),
+                    kind = NpcKind.StoryNpc, regionId = "hollow",
+                    storyNpcId = "ruins_scholar", wanderRadius = 0f
+                });
+            }
+            Data.RegionData storyDunes = FindRegion(regions, "dunes");
+            if (storyDunes != null)
+            {
+                result.npcAnchors.Add(new NpcSpawnAnchor
+                {
+                    position = Polar(storyDunes.centerPosition, 250f, storyDunes.radius * 0.26f),
+                    kind = NpcKind.StoryNpc, regionId = "dunes",
+                    storyNpcId = "catcher_rival", wanderRadius = 0f
+                });
+                // 집게 — 보스 대결 상대(NpcBossDuels). 라온 반대편에 세워 둘이 겹치지 않게 한다.
+                result.npcAnchors.Add(new NpcSpawnAnchor
+                {
+                    // 60°/0.22R — 서브에리어(창고 133°, 구덩이 319°) 진입 반경 밖.
+                    position = Polar(storyDunes.centerPosition, 60f, storyDunes.radius * 0.22f),
+                    kind = NpcKind.StoryNpc, regionId = "dunes",
+                    storyNpcId = "ledger_grip", wanderRadius = 0f
+                });
+            }
+            Data.RegionData storyFrostline = FindRegion(regions, "frostline");
+            if (storyFrostline != null)
+            {
+                result.npcAnchors.Add(new NpcSpawnAnchor
+                {
+                    position = Polar(storyFrostline.centerPosition, 20f, storyFrostline.radius * 0.30f),
+                    kind = NpcKind.StoryNpc, regionId = "frostline",
+                    storyNpcId = "ruins_scholar", wanderRadius = 0f
+                });
+                // 저울 — 보스 대결 상대. 세라와 마주 보게 반대편에 둔다(옛 동문의 대치).
+                result.npcAnchors.Add(new NpcSpawnAnchor
+                {
+                    position = Polar(storyFrostline.centerPosition, 200f, storyFrostline.radius * 0.26f),
+                    kind = NpcKind.StoryNpc, regionId = "frostline",
+                    storyNpcId = "ledger_scale", wanderRadius = 0f
+                });
+            }
+            Data.RegionData storyEmberfall = FindRegion(regions, "emberfall");
+            if (storyEmberfall != null)
+            {
+                // 라온의 마지막 배치 — 여기서 다쳐 이탈하므로 canopy에는 두지 않는다.
+                result.npcAnchors.Add(new NpcSpawnAnchor
+                {
+                    position = Polar(storyEmberfall.centerPosition, 250f, storyEmberfall.radius * 0.26f),
+                    kind = NpcKind.StoryNpc, regionId = "emberfall",
+                    storyNpcId = "catcher_rival", wanderRadius = 0f
+                });
+                // 먹은 여기서 이탈해 아군이 된다 — ch10_echo(NpcTalk ledger_ink)의 월드 배치.
+                // 이 앵커가 없으면 story_lint 검사 3이 "월드 미배치"로 FAIL한다.
+                result.npcAnchors.Add(new NpcSpawnAnchor
+                {
+                    position = Polar(storyEmberfall.centerPosition, 60f, storyEmberfall.radius * 0.28f),
+                    kind = NpcKind.StoryNpc, regionId = "emberfall",
+                    storyNpcId = "ledger_ink", wanderRadius = 0f
+                });
+            }
+            Data.RegionData storyCanopy = FindRegion(regions, "canopy");
+            if (storyCanopy != null)
+            {
+                // 라온은 여기 없다(잿불 골짜기에서 부상). 세라만 동행한다.
+                result.npcAnchors.Add(new NpcSpawnAnchor
+                {
+                    position = Polar(storyCanopy.centerPosition, 20f, storyCanopy.radius * 0.30f),
+                    kind = NpcKind.StoryNpc, regionId = "canopy",
+                    storyNpcId = "ruins_scholar", wanderRadius = 0f
+                });
+            }
+            Data.RegionData storyNameless = FindRegion(regions, "nameless");
+            if (storyNameless != null)
+            {
+                result.npcAnchors.Add(new NpcSpawnAnchor
+                {
+                    position = Polar(storyNameless.centerPosition, 20f, storyNameless.radius * 0.30f),
+                    kind = NpcKind.StoryNpc, regionId = "nameless",
+                    storyNpcId = "ruins_scholar", wanderRadius = 0f
+                });
+                // 라온 복귀 — ch12_echo(NpcTalk catcher_rival)가 여기서 열린다.
+                result.npcAnchors.Add(new NpcSpawnAnchor
+                {
+                    position = Polar(storyNameless.centerPosition, 250f, storyNameless.radius * 0.26f),
+                    kind = NpcKind.StoryNpc, regionId = "nameless",
+                    storyNpcId = "catcher_rival", wanderRadius = 0f
+                });
+                // 관장 하월 — 마지막 보스 대결 상대.
+                // 70°/0.30R — 서브에리어 둘(장부의 방 135°, 빈칸 318°)의 진입 반경을 모두 피하고,
+                // 세라(20°)·라온(250°)과도 10m 이상 떨어진다.
+                result.npcAnchors.Add(new NpcSpawnAnchor
+                {
+                    position = Polar(storyNameless.centerPosition, 70f, storyNameless.radius * 0.30f),
+                    kind = NpcKind.StoryNpc, regionId = "nameless",
+                    storyNpcId = "ledger_chief", wanderRadius = 0f
                 });
             }
 

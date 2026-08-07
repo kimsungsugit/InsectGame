@@ -41,6 +41,17 @@ namespace InsectGame.Core
         public event System.Action<SubAreaData> SubAreaChanged;
         public event System.Action<SubAreaData> SubAreaProximityChanged;
 
+        /// <summary>
+        /// 수문장을 처음 쓰러뜨렸을 때 그 regionId로 발화. StoryDirector의 GuardianDefeat 트리거 소스.
+        ///
+        /// <b>일생에 리전당 딱 한 번만 울린다</b> — <see cref="DefeatGuardian"/>이 idempotent 가드로
+        /// 중복 격파를 무시하기 때문이다. 그래서 이 트리거를 쓰는 스토리 비트는 **leaf 전용**이다:
+        /// 발화 순간 prereq가 미충족이면 그 비트는 영영 열리지 않고, 뒤 비트가 그걸 prereq로 삼고
+        /// 있으면 캠페인이 거기서 영구 정지한다(QuestComplete와 정확히 같은 함정).
+        /// 스파인은 RegionEnter/SubAreaEnter 같은 재발화 트리거에 건다.
+        /// </summary>
+        public event System.Action<string> GuardianDefeated;
+
         public void SetSubAreaSticky(bool sticky, string exitedId = null)
         {
             subAreaSticky = sticky;
@@ -218,6 +229,11 @@ namespace InsectGame.Core
             }
 
             SaveUnlockState();
+
+            // 해금·저장이 끝난 뒤에 알린다 — 구독자(StoryDirector)가 발화 시점에
+            // IsRegionAccessible 같은 상태를 읽어도 이미 갱신된 값을 보게 한다.
+            // 위 idempotent 가드 덕에 리전당 정확히 1회만 울린다.
+            GuardianDefeated?.Invoke(regionId);
         }
 
         public RegionData GetRegionWithGuardianNear(Vector3 position, float searchRadius = 15f)
@@ -258,6 +274,15 @@ namespace InsectGame.Core
                 case "forest": return "swamp";
                 case "swamp": return "mountain";
                 case "mountain": return "ruins";
+                // ── 2막(ver2) ── 유적 수문장 격파가 '봉인이 열린 날'이자 2막의 문이다.
+                // 1막에서는 ruins가 종착지라 여기 case가 없었다.
+                case "ruins": return "hollow";
+                case "hollow": return "dunes";
+                case "dunes": return "frostline";
+                case "frostline": return "emberfall";
+                case "emberfall": return "canopy";
+                case "canopy": return "nameless";
+                // nameless는 종착지 — ver3를 붙일 때 여기 case가 생긴다.
                 default: return null;
             }
         }
@@ -272,6 +297,14 @@ namespace InsectGame.Core
                 case "mountain": return "swamp";
                 case "ruins": return "mountain";
                 case "garden": return "meadow";
+                // ── 2막(ver2) ── 빠뜨리면 GetGuardianPosition의 fromCenter가 원점(0,0,0)이 되어
+                // 수문장이 맵 한복판과 리전 사이 엉뚱한 자리에 스폰된다(add-region 시나리오 E).
+                case "hollow": return "ruins";
+                case "dunes": return "hollow";
+                case "frostline": return "dunes";
+                case "emberfall": return "frostline";
+                case "canopy": return "emberfall";
+                case "nameless": return "canopy";
                 default: return null;
             }
         }

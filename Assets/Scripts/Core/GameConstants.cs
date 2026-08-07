@@ -64,9 +64,13 @@ namespace InsectGame.Core
         }
 
         // ── 레벨링 ──
+        // 이 Fallback 3종이 **실제로 도는 경로**다 — InsectLevelCurve(.asset)가 프로젝트에 없어
+        // PlayerInsectCollection의 curve가 늘 null이고, SO의 지수 곡선은 미사용이다.
+        // 캔디 비용은 선형(4 + 2×(L-1))이라 Lv.80까지 누적 약 6,600으로 완만하다.
         public static class Leveling
         {
-            public const int FallbackMaxLevel = 50;
+            // 2막(ver2) 6지역이 Lv.42~70 구간을 쓴다. PlayerProgressController.maxLevel과 같은 값.
+            public const int FallbackMaxLevel = 80;
             public const int FallbackBaseCandyCost = 4;
             public const int FallbackCandyCostGrowth = 2;
         }

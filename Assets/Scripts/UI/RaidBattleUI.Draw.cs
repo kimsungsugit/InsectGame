@@ -481,7 +481,9 @@ namespace InsectGame.UI
                 DrawBossMantis(cx, cy, s, col, darkCol, lightCol);
             else if (id.Contains("dragonfly") || id.Contains("damselfly"))
                 DrawBossDragonfly(cx, cy, s, col, darkCol, lightCol);
-            else if (id.Contains("bee") || id.Contains("wasp") || id.Contains("hornet"))
+            // "beetle"이 "bee"를 품는다 — 가드가 없으면 아래 stag/rhinoceros/hercules 분기까지
+            // 못 가고 딱정벌레가 전부 벌로 그려진다(InsectEntity.BuildModel의 같은 가드와 짝).
+            else if ((id.Contains("bee") && !id.Contains("beetle")) || id.Contains("wasp") || id.Contains("hornet"))
                 DrawBossBee(cx, cy, s, col, darkCol, lightCol);
             else if (id.Contains("stag") || id.Contains("rhinoceros") || id.Contains("hercules"))
                 DrawBossHornBeetle(cx, cy, s, col, darkCol, lightCol);
@@ -891,7 +893,9 @@ namespace InsectGame.UI
                 GUI.DrawTexture(new Rect(cx - 28 * s, cy - 14 * s + wingFlap, 12 * s, 18 * s), Texture2D.whiteTexture);
                 GUI.DrawTexture(new Rect(cx + 16 * s, cy - 14 * s - wingFlap, 12 * s, 18 * s), Texture2D.whiteTexture);
             }
-            else if (id.Contains("bee") || id.Contains("wasp") || id.Contains("hornet"))
+            // "beetle"이 "bee"를 품는다 — 가드가 없으면 아래 stag/rhinoceros/hercules 분기까지
+            // 못 가고 딱정벌레가 전부 벌로 그려진다(InsectEntity.BuildModel의 같은 가드와 짝).
+            else if ((id.Contains("bee") && !id.Contains("beetle")) || id.Contains("wasp") || id.Contains("hornet"))
             {
                 // Stripes on body
                 GUI.color = new Color(0.1f, 0.1f, 0.05f, alpha * 0.7f);

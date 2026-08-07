@@ -31,6 +31,10 @@ namespace InsectGame.UI
         private InsectGame.Story.StoryBeat currentBeat;
         private InsectGame.Story.StoryLine[] storyLines;
         private bool storyMode;
+        // 다시보기 — 저널에서 이미 열람한 비트를 다시 읽는 중. storyMode는 켠 채로 두어
+        // 화자명·초상 렌더를 그대로 쓰되, 닫을 때 CompleteBeat만 건너뛴다.
+        // **이 플래그가 없으면 다시 읽을 때마다 onComplete 보상이 재지급된다.**
+        private bool storyReplay;
 
         public bool IsOpen => isOpen;
 
@@ -77,6 +81,7 @@ namespace InsectGame.UI
 
             currentBeat = beat;
             storyMode = true;
+            storyReplay = false;
             storyLines = beat.lines.ToArray();
             lines = new string[storyLines.Length];
             for (int i = 0; i < storyLines.Length; i++)
@@ -86,6 +91,19 @@ namespace InsectGame.UI
             openedFrame = Time.frameCount;
             ModalUIRegistry.Register(this);
             if (playerMovement != null) playerMovement.SetFrozen(true);
+        }
+
+        /// <summary>
+        /// 이미 열람한 비트를 저널에서 다시 읽는다 — <see cref="ShowStory"/>와 렌더는 같고
+        /// 닫을 때 <c>CompleteBeat</c>만 부르지 않는다(보상 재지급·seen 재기록 방지).
+        /// <b>미열람 비트에는 절대 쓰지 말 것</b> — 대사를 보여주면서 seen 마킹은 안 되므로
+        /// 나중에 정상 트리거로 한 번 더 뜬다. 호출부(StoryJournalUI)가 열람 여부를 걸러야 한다.
+        /// </summary>
+        public void ShowStoryReplay(InsectGame.Story.StoryBeat beat)
+        {
+            if (beat == null || beat.lines == null || beat.lines.Count == 0) return;
+            ShowStory(beat);
+            storyReplay = true;   // ShowStory가 false로 돌려놓은 뒤에 켠다
         }
 
         /// <summary>대화 시작 — WorldInteractionController가 호출.</summary>
@@ -120,13 +138,16 @@ namespace InsectGame.UI
             lines = null;
 
             // 스토리 비트였으면 완료 콜백(보상/seen). 상태를 먼저 비워 CompleteBeat 재진입에 안전.
+            // 저널 다시보기(storyReplay)는 이미 열람·보상 완료된 비트라 콜백을 건너뛴다.
             if (storyMode)
             {
                 InsectGame.Story.StoryBeat done = currentBeat;
+                bool replay = storyReplay;
                 storyMode = false;
+                storyReplay = false;
                 currentBeat = null;
                 storyLines = null;
-                if (storyDirector != null && done != null)
+                if (!replay && storyDirector != null && done != null)
                     storyDirector.CompleteBeat(done.beatId);
             }
         }

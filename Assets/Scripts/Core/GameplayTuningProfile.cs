@@ -15,11 +15,12 @@ namespace InsectGame.Core
         [Range(5f, 180f)] public float subAreaRespawnSeconds = 45f;
 
         [Header("NPC")]
-        // VillageBuilder가 저작하는 앵커 수와 맞춘다(주민 14 = 본마을 8 + 전초기지 6,
-        // 잡기 아이 7 = meadow 2 + KidSpots 5). 이보다 작으면 SyncSpawns가 앞에서부터
+        // VillageBuilder가 저작하는 앵커 수와 맞춘다(2막 기준 주민 20 = 본마을 8 + 전초기지 12,
+        // 잡기 아이 10 = meadow 2 + KidSpots 8). 이보다 작으면 SyncSpawns가 앞에서부터
         // 잘라 뒤쪽 리전 전초기지에 주민이 0명이 된다 — 앵커를 늘렸다면 여기도 같이 올릴 것.
-        [Range(0, 16)] public int villagerCount = 14;
-        [Range(0, 10)] public int catcherKidCount = 7;
+        // **ApplyTuning이 NpcManager의 직렬화 값을 덮어쓰므로 여기만 낮으면 그쪽 수정이 무효가 된다.**
+        [Range(0, 28)] public int villagerCount = 20;
+        [Range(0, 16)] public int catcherKidCount = 10;
         [Range(10f, 120f)] public float kidCatchCooldownSeconds = 45f;
 
         [Header("Capture")]

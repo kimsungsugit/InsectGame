@@ -19,7 +19,15 @@ namespace InsectGame.Core
         ExploreSwamp,
         ExploreMountain,
         ExploreGarden,
-        ExploreRuins
+        ExploreRuins,
+        // 2막(ver2) 리전 BGM — BgmTypeToString / RegionIdToBgmType /
+        // ProceduralAudioGenerator.GetBGM 세 곳을 함께 등록해야 소리가 난다.
+        ExploreHollow,
+        ExploreDunes,
+        ExploreFrostline,
+        ExploreEmberfall,
+        ExploreCanopy,
+        ExploreNameless
     }
 
     public enum SfxType
@@ -472,6 +480,12 @@ namespace InsectGame.Core
                 case BgmType.ExploreMountain: return "explore_mountain";
                 case BgmType.ExploreGarden: return "explore_garden";
                 case BgmType.ExploreRuins: return "explore_ruins";
+                case BgmType.ExploreHollow: return "explore_hollow";
+                case BgmType.ExploreDunes: return "explore_dunes";
+                case BgmType.ExploreFrostline: return "explore_frostline";
+                case BgmType.ExploreEmberfall: return "explore_emberfall";
+                case BgmType.ExploreCanopy: return "explore_canopy";
+                case BgmType.ExploreNameless: return "explore_nameless";
                 default: return "explore";
             }
         }
@@ -493,6 +507,12 @@ namespace InsectGame.Core
                 case "mountain": return BgmType.ExploreMountain;
                 case "garden": return BgmType.ExploreGarden;
                 case "ruins": return BgmType.ExploreRuins;
+                case "hollow": return BgmType.ExploreHollow;
+                case "dunes": return BgmType.ExploreDunes;
+                case "frostline": return BgmType.ExploreFrostline;
+                case "emberfall": return BgmType.ExploreEmberfall;
+                case "canopy": return BgmType.ExploreCanopy;
+                case "nameless": return BgmType.ExploreNameless;
                 default: return BgmType.Explore;
             }
         }

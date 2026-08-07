@@ -5,7 +5,10 @@ namespace InsectGame.Core
 {
     public class PlayerProgressController : MonoBehaviour
     {
-        [SerializeField] private int maxLevel = 50;
+        // 2막(ver2) 6지역이 Lv.42~70 구간을 쓴다. 1막만 있던 시절의 50은 mountain 수문장(45)에
+        // 이미 붙어 있어 신규 지역을 얹을 여유가 없었다. XP 곡선은 선형(50 + 15×(L-1))이라
+        // 상한을 올려도 후반이 지수로 폭발하지 않는다.
+        [SerializeField] private int maxLevel = 80;
         [SerializeField] private int baseXpToLevel = 50;
         [SerializeField] private int xpGrowthPerLevel = 15;
 

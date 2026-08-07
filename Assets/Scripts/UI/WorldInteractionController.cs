@@ -290,7 +290,17 @@ namespace InsectGame.UI
                     && storyDirector.OnNpcTalked(currentVillager.StoryNpcId);
                 if (storyFired && cameraFollower != null)
                     cameraFollower.FocusOn(currentVillager.transform.position, 2.5f);   // 첫 조우 줌인
-                if (!storyFired && dialogue != null) dialogue.Show(currentVillager);
+
+                // 명부회 간부는 대사가 끝난 다음 말을 걸면 대결로 이어진다.
+                // 순서가 중요하다 — 첫 대화에서 곧바로 싸움을 걸면 그 인물이 누구인지 모르는 채로
+                // 전투에 들어간다. storyFired가 false여야(= 소개 비트를 이미 봤어야) 도전이 열린다.
+                // **early return 금지** — 아래 재스캔 정리를 건너뛰면 전투 중에도 상호작용
+                // 프롬프트가 화면에 남는다.
+                bool bossDuelStarted = !storyFired && currentVillager.IsStoryNpc
+                    && duelController != null
+                    && duelController.TryStartBossDuel(currentVillager.StoryNpcId, Time.time);
+
+                if (!storyFired && !bossDuelStarted && dialogue != null) dialogue.Show(currentVillager);
             }
             else if (currentPoint != null)
             {
