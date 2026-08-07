@@ -222,6 +222,8 @@
 
 - [x] PlayerMovement 재감사 (P1:1, 2026-08-07) — **걷는 내내 매 프레임 `Collider[]`를 2개씩 할당했다.** `IsBlockedPosition`이 `Physics.OverlapSphere`(할당형)를 쓰는데, Update가 이동 중 **두 번** 부른다 — 다음 위치 차단 판정(`nextPos`)과 끼임 감지(`transform.position`). 초당 120개 배열이 GC로 가는 셈이라 모바일에서 특히 나쁘다. `OverlapSphereNonAlloc` + 고정 버퍼(16)로 바꿨고, 같은 형태였던 `IsClearAt`(안전 위치 탐색이라 한 번의 복구에서 여러 번 돈다)도 같은 버퍼를 쓰게 했다 — **둘은 호출이 겹치지 않는다**(끼임 판정이 끝난 뒤에야 `RecoverToSafePosition`이 불린다). 버퍼가 차도 오판정이 없다: 가득 찼다는 건 이미 막을 것을 찾았다는 뜻이라 결과가 바뀌지 않는다. **거짓양성으로 제외 2건**: ①이번 세션에 월드 경계를 320→520으로 넓혀 이동 제한이 낡았을까 봤으나, PlayerMovement엔 좌표 클램프가 **없다** — 경계는 `WorldTerrainBuilder`가 세운 물리 벽이 담당하므로 자동으로 따라간다. ②`IsBlockedPosition`의 `foreach (regionManager.Regions)`가 리전 7→13으로 두 배가 됐지만 `ContainsPoint`는 곱셈 두 번이라 프레임당 13회는 무시할 수준이다. **통과 확인**: 리전 잠금이 이동 단계에서 실제로 강제되고(`IsRegionAccessible`, 서브에리어 안에서는 좌표계가 달라 의도적으로 건너뛴다), OnGUI 스타일 3종이 캐시 필드이며, 클릭 이동 raycast가 `try-finally`로 player layer를 복원한다(본인 raycast 통과 회귀 방어 흔적)
 
+- [x] BattleTeamUI 재감사 (P1:2, 2026-08-07) — **①화면 전체가 한국어인데 이 화면만 영어로 남아 있었다**: 제목 `"BATTLE TEAM"`, 피커 제목 `"Select Insect for Slot {n}"`, 뒤로 버튼 `"< Back"`. 퀵바(`QuickAccessBarUI`)와 HUD(`PlayerStatusHUD`)가 이 화면을 **"배틀팀"**으로 부르고 있어 같은 말로 맞췄다. 화살표는 ASCII `<`를 유지했다 — 그 라벨에서 이미 렌더되던 글자라 폰트 아틀라스가 확실하다(전각 `＜`로 바꿨다가 되돌렸다). **②빈 `Update() { }`** — 본문이 없어도 Unity는 매 프레임 managed→native 호출을 한다. `CollectionUI` 재감사(같은 날)가 지운 것과 같은 것이라 지우고 되살리지 말라는 주석을 남겼다. **거짓양성으로 제외 3건**: ①score 102의 실체인 `new GUIStyle` 11개는 전부 `teamStylesInit` 가드 뒤다 — **이번 큐에서만 여섯 번째로 나온 같은 형태**(LoginUI·TrainingUI·CollectionUI·CashShopUI·CharacterOutfitUI에 이어). ②피커 목록이 개체마다 `$"Lv.{n} | CP {n}"`을 매 패스 만들지만 `DexBrowseLayout.GetVisibleRowRange`로 **이미 컬링돼** 보이는 행에만 돈다(CollectionUI 라운드가 넣은 방어가 여기선 처음부터 있었다). ③슬롯 5칸의 `$"Lv.{lv} | {data.rarity} | CP {cp}"`는 enum 박싱을 포함하나 **5개 고정**이라, 목록 규모를 P1로 봤던 라운드가 "한 번에 개체 하나~다섯 행"을 명시적으로 제외한 것과 같은 크기다. **통과 확인**: `CloseModal`과 `OnDisable`이 `isOpen`·`selectingSlot`·`directScroll`·레지스트리를 동일하게 정리해 stale 모달이 남지 않는다
+
 ## Uncovered (우선순위순)
 
 **2026-08-03: `audit_candidates.py`가 재감사 후보도 낸다.**
@@ -238,9 +240,25 @@ git numstat으로 그 이후 변경량을 재서 `MIN_RECHURN`(40줄) 이상 바
 "감사 이후 무엇이 달라졌는가"를 말하지 않는다. git을 못 읽으면 재감사를 건너뛰고
 신규 후보만 내며 그 사실을 출력에 적는다.
 
-아래는 그 스크립트가 뽑은 큐다(`--emit-md --top 6`). 전체 재감사 후보는 55개.
+아래는 그 스크립트가 뽑은 큐다. **2026-08-07에 큐가 0이 되어 재생성했다**(`--emit-md` 상위 15).
+2막 작업으로 생긴 신규 파일 3개가 후보에 올라온 게 이번 재생성의 특징이다 —
+`StoryJournalUI`·`InsectExpansion2Definitions`·`NpcBossDuels`는 한 번도 감사된 적이 없다.
 
-- [ ] BattleTeamUI 재감사 (UI/BattleTeamUI.cs, 380줄, score 102) — 2026-05-21 감사 이후 2026-08-07까지 487줄 변경
+- [ ] StoryJournalUI (UI/StoryJournalUI.cs, 400줄, score 41) — 프레임 할당 10, 싱글턴 참조 11
+- [ ] InsectExpansion2Definitions (Data/InsectExpansion2Definitions.cs, 119줄, score 0) — 표면 점검
+- [ ] NpcBossDuels (NPC/NpcBossDuels.cs, 90줄, score 0) — 표면 점검
+- [ ] OutfitShapeLibrary 재감사 (Core/OutfitShapeLibrary.cs, 1054줄, score 0) — 2026-08-06 감사 이후 2026-08-07까지 1053줄 변경
+- [ ] CharacterModelPreviewRenderer 재감사 (Core/CharacterModelPreviewRenderer.cs, 477줄, score 19) — 2026-08-06 감사 이후 2026-08-07까지 476줄 변경
+- [ ] PlayerStatusHUD 재감사 (UI/PlayerStatusHUD.cs, 508줄, score 98) — 2026-05-21 감사 이후 2026-08-04까지 451줄 변경
+- [ ] GachaBoxManager 재감사 (Core/GachaBoxManager.cs, 345줄, score 8) — 2026-05-20 감사 이후 2026-07-18까지 291줄 변경
+- [ ] CameraFollower 재감사 (Core/CameraFollower.cs, 341줄, score 0) — 2026-05-21 감사 이후 2026-08-07까지 287줄 변경
+- [ ] WorldLobbyUI 재감사 (UI/WorldLobbyUI.cs, 534줄, score 94) — 2026-05-27 감사 이후 2026-08-03까지 267줄 변경
+- [ ] AudioManager 재감사 (Core/AudioManager.cs, 585줄, score 13) — 2026-05-21 감사 이후 2026-08-07까지 263줄 변경
+- [ ] PlayerInsectCollection 재감사 (Core/PlayerInsectCollection.cs, 732줄, score 24) — 2026-05-21 감사 이후 2026-08-07까지 256줄 변경
+- [ ] RaidSupportPlanner 재감사 (Battle/RaidSupportPlanner.cs, 253줄, score 0) — 2026-08-06 감사 이후 2026-08-07까지 252줄 변경
+- [ ] CashShopManager 재감사 (Core/CashShopManager.cs, 323줄, score 14) — 2026-05-22 감사 이후 2026-07-19까지 239줄 변경
+- [ ] RaidRoundResolver 재감사 (Battle/RaidRoundResolver.cs, 515줄, score 0) — 2026-08-03 감사 이후 2026-08-07까지 234줄 변경
+- [ ] RegionManager 재감사 (Core/RegionManager.cs, 342줄, score 19) — 2026-05-20 감사 이후 2026-08-07까지 207줄 변경
 
 score 0은 "OnGUI/Update 표면이 없다"는 뜻일 뿐 clean이라는 뜻이 아니다 —
 직전 10라운드가 거의 전부 score 0이었는데 P0 1건·P1 6건이 나왔다.
@@ -260,8 +278,8 @@ score 0은 "OnGUI/Update 표면이 없다"는 뜻일 뿐 clean이라는 뜻이 �
 > 개수를 두 곳에 적었다가 실제로 어긋났다 — 상단은 "최근 10건", 여기는 "최근 3건만 둔다"라고
 > 서로 다른 말을 하는 동안 23건이 쌓여 47KB가 됐다(2026-08-03 정리).
 
+- 2026-08-07: BattleTeamUI **재감사** (2026-05-21 감사 이후 487줄 변경, 큐 1순위, score 102) — **P1:2 처리. 이 라운드로 큐가 0이 되어 재생성했다**(상위 15, 신규 파일 3개 포함). ①화면 전체가 한국어인데 이 화면만 영어였다(`"BATTLE TEAM"`·`"Select Insect for Slot {n}"`·`"< Back"`) — 퀵바와 HUD가 이 화면을 "배틀팀"이라 부르므로 같은 말로 맞췄다. 화살표는 ASCII `<` 유지(전각으로 바꿨다가 폰트 아틀라스 확실성 때문에 되돌렸다). ②빈 `Update() { }` 제거 — 본문이 없어도 매 프레임 managed→native 호출이 든다(같은 날 CollectionUI 라운드가 지운 것과 동일). **거짓양성 3건 제외**: score 102의 GUIStyle 11개는 `teamStylesInit` 가드 뒤로 **이번 큐에서만 여섯 번째 같은 형태** / 피커 목록은 이미 `GetVisibleRowRange`로 컬링됨 / 슬롯 문자열은 5개 고정이라 기존 라운드가 명시적으로 제외한 규모. 검증: error CS 0, ci_check 8검사 통과, PlayMode 444/444.
 - 2026-08-07: PlayerMovement **재감사** (2026-05-27 감사 이후 515줄 변경, 큐 1순위, score 23) — **P1:1 처리. 걷는 내내 매 프레임 `Collider[]`를 2개씩 할당했다.** `IsBlockedPosition`이 할당형 `Physics.OverlapSphere`를 쓰는데 Update가 이동 중 두 번 부른다(다음 위치 차단 + 끼임 감지) — 초당 120개 배열이 GC로 간다. `OverlapSphereNonAlloc` + 고정 버퍼(16)로 바꾸고 같은 형태의 `IsClearAt`도 같은 버퍼를 공유하게 했다(둘은 호출이 겹치지 않는다 — 끼임 판정 후에야 복구가 돈다). 버퍼가 차도 오판정 없음: 가득 찼다 = 이미 막을 것을 찾았다는 뜻. **거짓양성 2건 제외**: 월드 경계를 320→520으로 넓힌 게 이동 제한과 어긋날까 봤으나 이 파일엔 좌표 클램프가 없고 물리 벽이 담당한다 / 리전 순회가 7→13이 됐지만 `ContainsPoint`는 곱셈 두 번이라 무시할 수준. 검증: error CS 0, ci_check 8검사 통과, PlayMode 444/444.
 - 2026-08-07: InsectSpawner **재감사** (2026-05-22 감사 이후 518줄 변경, 큐 1순위, score 26) — **P1:1 처리. 스포너 본체는 clean이었고 결함은 그것을 먹이는 부트스트랩에 있었다.** `GetRegionLevelRange`가 ver1 7지역만 아는 switch + `default: 5`라, 2막 6지역의 필드 스폰 상한이 47/51/55/59/63/67에 묶여 있었다(의도 48/52/56/60/64/70). 6 case를 바이블 대역대로 넣고 **default에 LogWarning**을 붙여 다음 사람이 알아채게 했다. **거짓양성 3건 제외 — 전부 내가 세운 가설이었고 코드를 읽어 철회했다**(먼 리전 낭비 스폰은 55m 거리 게이트가 이미 막고, 스폰포인트 밀도는 반경 비례라 리전 수와 무관하며, 리전 필터 할당은 5초 스로틀 뒤에만 돈다). 이 라운드의 교훈은 **"의심스러운 구조를 발견해도 방어 코드를 먼저 찾아라"**다 — 세 번 다 이미 방어가 있었고 주석이 이유까지 적어 뒀다. 검증: error CS 0, ci_check 8검사 통과, PlayMode 444/444.
 - 2026-08-07: CharacterOutfitUI **재감사** (2026-05-27 감사 이후 595줄 변경, 큐 1순위, score 155) — **P1:1 처리.** 잠긴 의상 카드에 `unlockCondition` 원문 토큰이 그대로 그려져 한국어 화면에 `region_garden`·`level_15`가 노출됐다(조건부 4벌 전부). `DescribeUnlockCondition`으로 문장화하되 지역명은 `RegionDefinitions`에서 파생하고, 그리는 쪽은 `LabelFit`으로 바꿨다(고정 26px + wordWrap이라 한국어로 길어지면 잘리는 자리였다). `OutfitUnlockConditionTextTests` 5검사로 고정. **직전 CharacterOutfitManager 라운드의 P2와 겹치지만 다른 것을 고쳤다** — 그쪽은 해금 **판정**이 없다는 것이고 게임 디자인 결정이 섞여 그대로 남았다, 여기서 고친 건 **표시**뿐이다. 거짓양성 2건 제외(score 155의 GUIStyle 12개는 `stylesInitialized` 가드 뒤 — 이번 큐에서만 다섯 번째 같은 형태 / 호버 툴팁 문자열은 한 번에 카드 하나라 CollectionUI 라운드가 이미 제외한 규모). 검증: error CS 0, ci_check 8검사 통과, PlayMode 443/443.
 - 2026-08-07: AuthManager **재감사** (2026-05-20 감사 이후 630줄 변경, 큐 1순위, score 3) — **인증 코어 clean, 드리프트 1건 처리.** 토큰 로깅 0건 / `ClearAuth` 완전 / `Logout`의 플러시-후-무효화 순서 / `DeleteAccount`의 PII 부활 차단 — 급소는 전부 정상이었다. 처리한 건 `ApplyMasterPrivileges`의 **하드코딩 리전 목록**으로, 2막 6지역을 얹으며 해금 6·격파 7건이 누락돼 마스터 계정이 2막에서만 진행을 못 건너뛰었다. `RegionDefinitions`에서 파생하도록 바꾸고 테스트로 고정. **증상은 P2급인데 처리한 이유는 고치는 방법이 단일 출처 파생이라 위험이 0이고, 두면 리전 추가마다 같은 자리가 또 낡기 때문이다.** 검증: error CS 0, ci_check 8검사 통과.
-- 2026-08-07: CapturePopupUI **재감사** (2026-05-27 감사 이후 657줄 변경, 큐 1순위, score 76) — **P1:1을 5개 파일에서 처리.** `"beetle"` ⊃ `"bee"`인데 bee 분기가 stag/rhinoceros/hercules/longhorn보다 앞이라 **딱정벌레 31종이 전 화면에서 벌로 그려졌다**(포획 팝업·도감·1v1·레이드 2곳). `InsectEntity.BuildModel`만 가드를 갖고 있었다 — **같은 규칙이 5곳에 복제된 구조 자체가 결함의 원인**이라, 고치는 김에 `InsectPortraitRoutingTests`로 소스에서 조건식을 읽어 가드 누락을 고정했다. 거짓양성 1건 제외(`ResolveWings`의 bee 분기는 날갯짓 파라미터라 무해). 검증: error CS 0, ci_check 8검사 통과.

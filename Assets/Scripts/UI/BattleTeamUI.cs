@@ -125,7 +125,8 @@ namespace InsectGame.UI
             ModalUIRegistry.Unregister(this);
         }
 
-        private void Update() { }
+        // 빈 Update()가 있었다 — 본문이 없어도 Unity는 매 프레임 managed→native 호출을 한다.
+        // CollectionUI 재감사(2026-08-07)가 같은 것을 지웠다. 되살리지 말 것.
 
         private void OnGUI()
         {
@@ -154,7 +155,9 @@ namespace InsectGame.UI
             GUI.DrawTexture(new Rect(px + 3f, py + 84, panelW - 6f, 5), Texture2D.whiteTexture);
 
             GUI.color = Color.white;
-            GUI.Label(new Rect(px, py + 14, panelW - 72, 58), "BATTLE TEAM", teamTitleCache);
+            // 화면 전체가 한국어인데 이 세 곳(제목·피커 제목·뒤로)만 영어로 남아 있었다.
+            // 퀵바·HUD가 이 화면을 "배틀팀"으로 부르므로 같은 말을 쓴다.
+            GUI.Label(new Rect(px, py + 14, panelW - 72, 58), "배틀팀", teamTitleCache);
 
             float closeH = SkillUILayout.GetTouchHeight(UIScale.IsMobileLayout, 52f, 64f);
             if (GUI.Button(new Rect(px + panelW - 80f, py + 10f, 70f, closeH), "X", teamCloseCache))
@@ -268,10 +271,11 @@ namespace InsectGame.UI
 
             GUI.color = Color.white;
             GUI.Label(new Rect(px + 130, py + 14, panelW - 260, 58),
-                $"Select Insect for Slot {selectingSlot + 1}", pickerTitleCache);
+                $"{selectingSlot + 1}번 슬롯에 넣을 곤충 선택", pickerTitleCache);
 
             float backH = SkillUILayout.GetTouchHeight(UIScale.IsMobileLayout, 52f, 64f);
-            if (GUI.Button(new Rect(px + 14, py + 10f, 150f, backH), "< Back", pickerBackCache))
+            // 화살표는 ASCII '<' 그대로 둔다 — 이 라벨에서 이미 렌더되던 글자라 폰트 아틀라스가 확실하다.
+            if (GUI.Button(new Rect(px + 14, py + 10f, 150f, backH), "< 뒤로", pickerBackCache))
             {
                 selectingSlot = -1;
                 directScroll.Reset();
