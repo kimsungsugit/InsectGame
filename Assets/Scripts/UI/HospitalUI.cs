@@ -181,16 +181,27 @@ namespace InsectGame.UI
                 if (GUI.Button(new Rect(px + 184f, ty, 150f, topControlH), $"캔디 {candies}", toggleStyle)) payWithCoins = false;
 
                 // 전체 치료 — 부상 곤충 전부를 HP+상태까지 한 번에. 개별 합산 대비 HealAllDiscount 할인.
+                // **감당 가능한지를 누르기 전에 보여준다.** 예전엔 배경색만 흐리고 GUI.enabled는 true라
+                // 눌리는 것처럼 반응했고, 실패는 패널 맨 아래 2초짜리 문구로만 알렸다 —
+                // "눌러도 아무 일이 없다"로 읽힌다(실제 사용자 보고). 상점 카드가 "보석 부족"을
+                // 버튼에 직접 띄우는 것과 같은 형태로 맞춘다.
                 int injured = InjuredCount();
                 int allCost = HealAllCost();
-                GUI.backgroundColor = injured > 0
+                int purse = Purse();
+                string curName = payWithCoins ? "코인" : "캔디";
+                bool canAffordAll = injured > 0 && purse >= allCost;
+                string allLabel = injured <= 0
+                    ? "전체 치료 불필요"
+                    : canAffordAll
+                        ? $"전체 치료 {allCost} {curName}"
+                        : $"{curName} {allCost} 필요";
+                GUI.backgroundColor = canAffordAll
                     ? new Color(0.25f, 0.62f, 0.42f)
                     : UITheme.Instance.btnDisabled;
-                string allLabel = injured > 0
-                    ? $"전체 치료 {allCost} {(payWithCoins ? "코인" : "캔디")}"
-                    : "전체 치료 불필요";
-                if (GUI.Button(new Rect(px + 342f, ty, 258f, topControlH), allLabel, toggleStyle) && injured > 0)
+                GUI.enabled = canAffordAll;
+                if (GUI.Button(new Rect(px + 342f, ty, 258f, topControlH), allLabel, toggleStyle))
                     TryHealAll(allCost);
+                GUI.enabled = true;
                 GUI.backgroundColor = Color.white;
 
                 GUI.Label(new Rect(px + 610f, ty, pw - 636f, topControlH),
@@ -225,8 +236,16 @@ namespace InsectGame.UI
 
             if (feedbackTimer > 0f && !string.IsNullOrEmpty(feedback))
             {
-                feedbackStyle.normal.textColor = new Color(0.5f, 1f, 0.6f, Mathf.Clamp01(feedbackTimer));
-                GUI.Label(new Rect(px, py + ph - 44f, pw, 32f), feedback, feedbackStyle);
+                // 곤충 목록 위에 겹치는 자리라 배경 없이는 카드에 묻혀 읽히지 않는다 —
+                // 실패 사유가 안 보이면 "눌러도 반응이 없다"로 읽힌다.
+                float alpha = Mathf.Clamp01(feedbackTimer);
+                Rect fr = new Rect(px + 20f, py + ph - 52f, pw - 40f, 40f);
+                UISurface.Card(fr,
+                    new Color(0.06f, 0.08f, 0.12f, alpha * 0.94f),
+                    UITheme.Instance.surfaceBorder);
+                GUI.color = Color.white;
+                feedbackStyle.normal.textColor = new Color(0.5f, 1f, 0.6f, alpha);
+                GUI.Label(fr, feedback, feedbackStyle);
             }
         }
 
@@ -306,20 +325,43 @@ namespace InsectGame.UI
                 int lostHp = maxHp - curHp;
                 int cost = HealCost(lostHp, pid);
                 string curLabel = payWithCoins ? "코인" : "캔디";
+                // 전체 치료 버튼과 같은 규칙 — 감당 못 하는 버튼은 눌리지 않고, 얼마가 필요한지 보인다.
+                bool canAfford = Purse() >= cost;
+                bool canGem = wallet != null && wallet.Gems >= FullHealGems;
                 float actionH = UIScale.IsMobileLayout ? UIScale.MinTouchHeight : 44f;
                 float actionGap = UIScale.IsMobileLayout ? 6f : 4f;
                 float actionTop = rect.y + (rect.height - actionH * 2f - actionGap) * 0.5f;
-                GUI.backgroundColor = UITheme.Instance.btnPrimary;
-                if (GUI.Button(new Rect(bx, actionTop, 176f, actionH), $"치료 {cost} {curLabel}", btnStyle))
+
+                GUI.backgroundColor = canAfford ? UITheme.Instance.btnPrimary : UITheme.Instance.btnDisabled;
+                GUI.enabled = canAfford;
+                if (GUI.Button(
+                    new Rect(bx, actionTop, 176f, actionH),
+                    canAfford ? $"치료 {cost} {curLabel}" : $"{curLabel} {cost} 필요",
+                    btnStyle))
                     TryHeal(pid, cost);
-                GUI.backgroundColor = new Color(0.55f, 0.35f, 0.85f);
+
+                GUI.backgroundColor = canGem ? new Color(0.55f, 0.35f, 0.85f) : UITheme.Instance.btnDisabled;
+                GUI.enabled = canGem;
                 if (GUI.Button(
                     new Rect(bx, actionTop + actionH + actionGap, 176f, actionH),
                     $"젬 {FullHealGems} 즉시",
                     btnStyle))
                     TryGemHeal(pid);
+
+                GUI.enabled = true;
                 GUI.backgroundColor = Color.white;
             }
+        }
+
+        /// <summary>
+        /// 현재 결제 수단(코인/캔디)의 보유량. 치료 버튼이 <b>누르기 전에</b> 감당 가능 여부를
+        /// 보이는 데 쓴다 — 눌러야 알 수 있으면 실패가 "반응 없음"으로 읽힌다.
+        /// </summary>
+        private int Purse()
+        {
+            return payWithCoins
+                ? (wallet != null ? wallet.Coins : 0)
+                : (candyInventory != null ? candyInventory.Candies : 0);
         }
 
         // 치료가 필요한 곤충 수 — HP가 깎였거나 독/마비 상태.
