@@ -450,8 +450,9 @@ namespace InsectGame.Core
             statusHud.AutoWire(progress, candyInventory, insectCollection, itemInventory, dex, battleTeam, regionMgr);
             statusHud.AutoWire(wallet);
 
-            // 좌상단 소형 미니맵(플레이어 중심 레이더, 곤충 위치) — 자기 충족형이라 AutoWire 불필요.
-            EnsureComponent<InsectGame.UI.MinimapUI>("UI/Minimap");
+            // 좌상단 소형 미니맵(플레이어 중심 레이더, 곤충 위치) — 곤충 탐색은 자기 충족형이고,
+            // 메인퀘스트 목표 쐐기만 아래쪽 StoryObjectiveTracker에서 주입받는다.
+            InsectGame.UI.MinimapUI minimapUi = EnsureComponent<InsectGame.UI.MinimapUI>("UI/Minimap");
 
             CharacterOutfitManager outfitManager = EnsureComponent<CharacterOutfitManager>("World/CharacterOutfit");
             outfitManager.AutoWire(wallet);
@@ -591,6 +592,14 @@ namespace InsectGame.Core
                     EnsureComponent<InsectGame.UI.StoryJournalUI>("UI/StoryJournalUI");
                 storyJournal.AutoWire(storyDirector, npcDialogue);
                 quickBar.AutoWire(storyJournal);
+
+                // 메인퀘스트 목표 추적 + 자동 주행. npcManager 뒤에 와야 한다 — 목표 NPC를
+                // 그 목록에서 찾는다. HUD(퀘스트 칩·미니맵)는 이 컴포넌트만 읽는다.
+                InsectGame.Story.StoryObjectiveTracker objectiveTracker =
+                    EnsureComponent<InsectGame.Story.StoryObjectiveTracker>("World/StoryObjectiveTracker");
+                objectiveTracker.AutoWire(storyDirector, npcManager, regionMgr, playerMov, player.transform);
+                questUi.AutoWire(objectiveTracker);      // 퀘스트 칩 아래 목표 행
+                minimapUi.AutoWire(objectiveTracker);    // 미니맵 목표 방향 쐐기
 
                 // 스폰은 배선 완료 후 (컬링 타깃/예약 시스템이 준비된 상태에서)
                 if (villageResult != null)

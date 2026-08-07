@@ -32,6 +32,23 @@ namespace InsectGame.Core
         private string blockedRegionName;
         private float blockedMsgTimer;
 
+        // ── 자동 주행(메인퀘스트 목표로 이동) ──
+        // 클릭 이동(clickTarget/movingToClick)을 그대로 재사용한다. 키보드·조이스틱 입력이
+        // movingToClick을 끄는 기존 동작이 곧 "이동 중 조작하면 즉시 해제"라서 공짜로 따라온다.
+        // 다른 점은 둘뿐 — 도착 반경이 넓고(대화 사거리), 막혔을 때 포기하지 않고 우회한다.
+        private bool autoRunning;
+        private float autoRunArriveRadius;
+        // 우회가 계속 실패하면 영원히 벽을 밀게 된다 — 누적 시간이 넘으면 포기하고 알린다.
+        private float autoRunBlockedTimer;
+        private const float AutoRunGiveUpSeconds = 3f;
+        // 사방이 막힌 건 아닌데 도착도 못 하는 경우(큰 바위를 빙빙 돎)를 잡는 정체 감지.
+        // 목표까지 최단 거리가 갱신되면 리셋된다.
+        private float autoRunStallTimer;
+        private float autoRunBestDistance = float.MaxValue;
+        private const float AutoRunStallSeconds = 5f;
+        /// <summary>자동 주행이 우회에 실패해 스스로 멈췄다 — HUD가 안내 문구를 띄운다.</summary>
+        public event System.Action AutoRunFailed;
+
         private bool guiKeyW, guiKeyA, guiKeyS, guiKeyD;
         private bool guiKeyUp, guiKeyDown, guiKeyLeft, guiKeyRight;
         private bool guiEscPressed;
@@ -271,11 +288,13 @@ namespace InsectGame.Core
             if (hasKeyboard)
             {
                 movingToClick = false;
+                if (autoRunning) EndAutoRun();   // 조작하면 자동 주행 즉시 해제
                 direction = new Vector3(h, 0f, v).normalized;
             }
             else if (hasJoystick)
             {
                 movingToClick = false;
+                if (autoRunning) EndAutoRun();
                 Vector3 jd = new Vector3(joystickInput.x, 0f, joystickInput.y);
                 if (jd.sqrMagnitude > 1f) jd.Normalize(); // 반경 초과만 클램프 — 아날로그 속도 유지
                 direction = jd;
@@ -284,14 +303,19 @@ namespace InsectGame.Core
             {
                 Vector3 toTarget = clickTarget - transform.position;
                 toTarget.y = 0f;
-                if (toTarget.magnitude < 0.5f)
+                float remaining = toTarget.magnitude;
+                // 자동 주행은 대화 사거리에서 멈춘다. 클릭 이동의 0.5m를 그대로 쓰면 NPC 콜라이더에
+                // 코를 박고서야 도착 판정이 나 "다 왔는데 말이 안 걸린다"로 보인다.
+                if (remaining < (autoRunning ? autoRunArriveRadius : 0.5f))
                 {
                     movingToClick = false;
+                    if (autoRunning) EndAutoRun();
                     direction = Vector3.zero;
                 }
                 else
                 {
                     direction = toTarget.normalized;
+                    if (autoRunning) direction = SteerAroundObstacles(direction, remaining);
                 }
             }
             else
@@ -333,7 +357,9 @@ namespace InsectGame.Core
             {
                 move.x = 0f;
                 move.z = 0f;
-                movingToClick = false;
+                // 클릭 이동은 여기서 포기한다. 자동 주행은 포기하지 않는다 — SteerAroundObstacles가
+                // 다음 프레임에 우회로를 찾고, 정말 사방이 막혔을 때만 스스로 멈춘다.
+                if (!autoRunning) movingToClick = false;
             }
 
             // 모바일 끼임 안전망 — 현재 위치 자체가 콜라이더 안(embedded)인데 이동 시도가 계속되면 자동 탈출.
@@ -644,6 +670,94 @@ namespace InsectGame.Core
                 return false;
             }
             return true;
+        }
+
+        // ================= 자동 주행 =================
+
+        /// <summary>자동 주행 중인가 — HUD가 버튼 라벨을 "이동 취소"로 바꾼다.</summary>
+        public bool IsAutoRunning => autoRunning;
+
+        /// <summary>
+        /// 목표 지점까지 자동으로 걸어간다. <paramref name="arriveRadius"/>는 도착 판정 반경으로,
+        /// 대화가 걸리는 거리를 넘겨야 "도착했는데 말이 안 걸린다"가 안 생긴다.
+        /// frozen(모달·대화 중)이면 시작하지 않는다.
+        /// </summary>
+        public void BeginAutoRun(Vector3 worldTarget, float arriveRadius)
+        {
+            if (frozen) return;
+            clickTarget = new Vector3(worldTarget.x, transform.position.y, worldTarget.z);
+            movingToClick = true;
+            autoRunning = true;
+            autoRunArriveRadius = Mathf.Max(0.5f, arriveRadius);
+            autoRunBlockedTimer = 0f;
+            autoRunStallTimer = 0f;
+            autoRunBestDistance = float.MaxValue;
+            hasReceivedInput = true;   // 조작 안내 배너를 닫는다(클릭 이동과 동일)
+        }
+
+        /// <summary>사용자가 취소하거나 목표가 사라졌을 때. 이벤트는 쏘지 않는다.</summary>
+        public void CancelAutoRun()
+        {
+            if (!autoRunning) return;
+            movingToClick = false;
+            EndAutoRun();
+        }
+
+        // 주행 상태만 정리한다. movingToClick은 호출부 사정에 따라 다르므로 건드리지 않는다
+        // (도착 시엔 이미 꺼져 있고, 입력 취소 경로에선 그쪽이 먼저 껐다).
+        private void EndAutoRun()
+        {
+            autoRunning = false;
+            autoRunBlockedTimer = 0f;
+            autoRunStallTimer = 0f;
+        }
+
+        // 목표 방향이 막혔으면 좌우로 틀어 우회로를 찾는다. 0°(직진)부터 시도하므로
+        // 열려 있으면 그대로 직진한다. 전부 막히면 잠시 밀어 보다가 포기한다.
+        private static readonly float[] AutoRunSteerAngles = { 0f, 30f, -30f, 60f, -60f, 90f, -90f };
+
+        private Vector3 SteerAroundObstacles(Vector3 desired, float remainingDistance)
+        {
+            // 목표에 가까워지고 있으면 정체 타이머를 되돌린다. 이게 없으면 큰 바위를 빙 도는 동안
+            // 매 방향이 열려 있어 blockedTimer는 0인데 영영 도착하지 못하는 경우를 못 잡는다.
+            if (remainingDistance < autoRunBestDistance - 0.5f)
+            {
+                autoRunBestDistance = remainingDistance;
+                autoRunStallTimer = 0f;
+            }
+            else
+            {
+                autoRunStallTimer += Time.deltaTime;
+                if (autoRunStallTimer >= AutoRunStallSeconds)
+                {
+                    GiveUpAutoRun();
+                    return desired;
+                }
+            }
+
+            float probe = Mathf.Max(1.2f, moveSpeed * 0.35f);
+            for (int i = 0; i < AutoRunSteerAngles.Length; i++)
+            {
+                Vector3 dir = Quaternion.AngleAxis(AutoRunSteerAngles[i], Vector3.up) * desired;
+                // IsClearAt은 IsBlockedPosition과 버퍼를 공유하지만 둘은 **순차** 호출이라 안전하다
+                // (여기서 다 쓴 뒤에야 아래쪽 이동 적용부가 IsBlockedPosition을 부른다). 중첩만 금물.
+                if (IsClearAt(transform.position + dir * probe))
+                {
+                    autoRunBlockedTimer = 0f;
+                    return dir;
+                }
+            }
+
+            autoRunBlockedTimer += Time.deltaTime;
+            if (autoRunBlockedTimer >= AutoRunGiveUpSeconds) GiveUpAutoRun();
+            return desired;
+        }
+
+        private void GiveUpAutoRun()
+        {
+            movingToClick = false;
+            EndAutoRun();
+            AutoRunFailed?.Invoke();
         }
 
         public void AutoWire(RegionManager rm)

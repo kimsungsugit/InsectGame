@@ -16,7 +16,9 @@ namespace InsectGame.UI
     public class WorldInteractionController : MonoBehaviour
     {
         private const float ScanInterval = 0.15f;
-        private const float VillagerTalkRadius = 3f;
+        // internal — StoryObjectiveTracker가 자동 주행 도착 반경을 여기서 파생시킨다.
+        // 사본을 두면 이 값이 바뀔 때 "도착했는데 말이 안 걸린다"가 조용히 생긴다.
+        internal const float VillagerTalkRadius = 3f;
         // 아이는 돌아다니므로 주민보다 조금 넉넉하게 — 쫓아가서 말 걸기가 덜 답답하다.
         private const float KidDuelRadius = 3.5f;
         private const float ResultToastSeconds = 3.5f;

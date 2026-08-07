@@ -34,9 +34,19 @@ namespace InsectGame.UI
         private InsectEntity[] insects;
         private float refreshTimer;
 
+        // 메인퀘스트 목표 방향 쐐기 — 위치·이름은 전부 저쪽이 푼다(UI는 그리기만).
+        private InsectGame.Story.StoryObjectiveTracker objectiveTracker;
+
         private GUIStyle labelStyle;
+        private GUIStyle wedgeStyle;
         private Texture2D dotTex;
         private bool ready;
+
+        /// <summary>메인퀘스트 목표 쐐기 소스. 미주입이면 쐐기만 안 그린다(미니맵 자체는 정상).</summary>
+        public void AutoWire(InsectGame.Story.StoryObjectiveTracker tracker)
+        {
+            if (objectiveTracker == null) objectiveTracker = tracker;
+        }
 
         private void EnsureAssets()
         {
@@ -45,6 +55,9 @@ namespace InsectGame.UI
             labelStyle = new GUIStyle(GUI.skin.label)
             { fontSize = 16, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             labelStyle.normal.textColor = new Color(0.7f, 0.85f, 1f);
+            wedgeStyle = new GUIStyle(GUI.skin.label)
+            { fontSize = 22, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            wedgeStyle.normal.textColor = UITheme.Instance.accentAmber;
             // 소프트 디스크는 UIShapes가 소유한다 — 여기 있던 MakeDisc는 하드 엣지라
             // 확대 시 계단이 보였다(RegionMapUI 사본은 소프트였다). 공용판으로 통일.
             dotTex = UIShapes.Disc;
@@ -105,6 +118,9 @@ namespace InsectGame.UI
                 }
             }
 
+            // 메인퀘스트 목표 쐐기 — 곤충 점 위, 플레이어 아래에 그려 셋이 겹쳐도 읽힌다.
+            DrawObjectiveWedge(cx, cy, mapRadius);
+
             // 플레이어(중심) + 진행방향 점
             GUI.color = new Color(0.4f, 0.85f, 1f, 1f);
             GUI.DrawTexture(new Rect(cx - 7f, cy - 7f, 14f, 14f), dotTex);
@@ -121,5 +137,30 @@ namespace InsectGame.UI
             UIScale.End();
         }
 
+        /// <summary>
+        /// 목표 방향 쐐기. 미니맵 반경(worldRadius) 안이면 실제 위치에, 밖이면 <b>테두리에 붙여</b>
+        /// 방향만 알려 준다 — 밖에 있다고 안 그리면 "목표가 멀 때는 아무 안내도 없는" 상태가 된다.
+        /// </summary>
+        private void DrawObjectiveWedge(float cx, float cy, float mapRadius)
+        {
+            if (objectiveTracker == null || !objectiveTracker.HasObjective
+                || !objectiveTracker.HasWorldTarget) return;
+
+            Vector3 dir = objectiveTracker.DirectionToTarget;
+            if (dir.sqrMagnitude < 0.0001f) return;
+
+            // 월드 +Z가 미니맵 위쪽이므로 화면 벡터는 (x, -z)다.
+            float dist = objectiveTracker.DistanceToTarget;
+            float mapped = Mathf.Min(dist, worldRadius) / worldRadius * mapRadius;
+            float wx = cx + dir.x * mapped;
+            float wy = cy - dir.z * mapped;
+
+            // 위를 향한 "▲"를 목표 쪽으로 돌린다. GUI 회전은 시계방향이 양수라 atan2(x, z)가 그대로 각도.
+            float angle = Mathf.Atan2(dir.x, dir.z) * Mathf.Rad2Deg;
+            Matrix4x4 saved = GUI.matrix;
+            GUIUtility.RotateAroundPivot(angle, new Vector2(wx, wy));
+            GUI.Label(new Rect(wx - 14f, wy - 14f, 28f, 28f), "▲", wedgeStyle);
+            GUI.matrix = saved;
+        }
     }
 }

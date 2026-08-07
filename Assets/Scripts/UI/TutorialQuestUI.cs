@@ -119,6 +119,21 @@ namespace InsectGame.UI
         private GUIStyle questHintStyleCache;
         private GUIStyle panelBtnStyleCache;        // 상세 팝업의 GUI.Button용 (button 파생)
         private GUIStyle panelSurfaceBtnStyleCache; // 칩의 UISurface.Button용 (label 파생)
+        private GUIStyle objectiveStyleCache;       // 목표 행 (label 파생 — UISurface.Button에 넘긴다)
+        private GUIStyle objectiveStatusStyleCache; // 목표 행 아래 일시 안내
+
+        // 메인퀘스트 목표 행. 위치·이름·거리는 전부 트래커가 풀어 준다(UI는 그리기만).
+        private InsectGame.Story.StoryObjectiveTracker objectiveTracker;
+        // 칩(또는 숨김 버튼)이 끝나는 y — 목표 행이 그 아래에 붙는다. 칩 높이가 상태마다
+        // 달라(완료/숨김/진행 중) 상수로 둘 수 없어, 그린 쪽이 실제 값을 남긴다.
+        private float objectiveRowTop;
+        private bool objectiveRowVisible;
+        // 목표 행 문자열 캐시 — OnGUI 매 프레임 보간 문자열 할당 차단.
+        private string objectiveLabelCache;
+        private string objectiveLabelSource;
+        private int objectiveLabelDistance = int.MinValue;
+        private bool objectiveLabelRunning;
+        private bool objectiveLabelCanRun;
         private bool questPanelStylesReady;
 
         // 알림(Notification) 캐시 - 일시 표시이나 OnGUI 매 호출 시 GC 차단
@@ -193,6 +208,14 @@ namespace InsectGame.UI
             panelSurfaceBtnStyleCache = new GUIStyle(GUI.skin.label)
             { fontSize = 20, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             panelSurfaceBtnStyleCache.normal.textColor = UITheme.Instance.textPrimary;
+
+            objectiveStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 22, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
+            objectiveStyleCache.normal.textColor = UITheme.Instance.textPrimary;
+
+            objectiveStatusStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 19, alignment = TextAnchor.MiddleLeft, wordWrap = false };
+            objectiveStatusStyleCache.normal.textColor = UITheme.Instance.accentAmber;
         }
 
         private void InitNotifStyles()
@@ -388,6 +411,7 @@ namespace InsectGame.UI
             else
             {
                 DrawQuestPanel();
+                DrawObjectiveRow();   // 칩 아래 — 상세 팝업보다 먼저 그려 팝업이 위에 오게 한다
                 if (activeDetailOpen) DrawActiveQuestDetail();
             }
             DrawCompletionNotification();
@@ -404,6 +428,10 @@ namespace InsectGame.UI
 
             InitQuestPanelStyles();
 
+            // 칩이 실제로 그려진 경로에서만 다시 켠다 — 활성 퀘스트도 완료도 없으면 칩 자체가
+            // 없으므로 목표 행이 허공에 뜨면 안 된다.
+            objectiveRowVisible = false;
+
             UITheme theme = UITheme.Instance;
             bool guideLock = guided != null && guided.IsGuiding;
             // 미니맵과 좌변을 맞춘다 — 예전엔 20 vs 16으로 4px 어긋나 있었다.
@@ -417,6 +445,8 @@ namespace InsectGame.UI
                 float rY = UIScale.IsMobileLayout
                     ? MinimapUI.StackBelowY        // 모바일: 미니맵 아래
                     : UISafeLayout.BottomY(rH);    // 데스크톱: 좌하단
+                objectiveRowTop = rY + rH + UITheme.Space.XS;
+                objectiveRowVisible = true;
                 if (UISurface.Button(new Rect(chipX, rY, rW, rH), "▼ 퀘스트 보기", theme.surfaceRaised, panelSurfaceBtnStyleCache))
                     SetTutorialHidden(false);
                 return;
@@ -441,6 +471,8 @@ namespace InsectGame.UI
                 ? MinimapUI.StackBelowY            // 모바일: 미니맵 아래
                 : UISafeLayout.BottomY(chipH);     // 데스크톱: 좌하단
             Rect chipRect = new Rect(chipX, chipY, chipW, chipH);
+            objectiveRowTop = chipRect.yMax + UITheme.Space.XS;
+            objectiveRowVisible = true;
 
             // 배경 — 미니맵과 같은 반투명 서피스. 각진 사각형 직접 칠하기는 금지(rules/ui-layout.md).
             UISurface.HudCard(chipRect);
@@ -496,6 +528,73 @@ namespace InsectGame.UI
             {
                 SetActiveDetailOpen(true);
                 ce.Use();
+            }
+        }
+
+        // ------------------------------------------------------------------
+        // 1a-2. 메인퀘스트 목표 행 — 칩 바로 아래. 누르면 자동 주행 시작/취소.
+        // ------------------------------------------------------------------
+        private void DrawObjectiveRow()
+        {
+            if (!objectiveRowVisible || objectiveTracker == null || !objectiveTracker.HasObjective) return;
+
+            UITheme theme = UITheme.Instance;
+            float x = MinimapUI.LeftX;
+            float w = UIScale.IsMobileLayout
+                ? Mathf.Min(500f, UIScale.VirtualScreenWidth - UIScale.VirtualSafeLeft - UIScale.VirtualSafeRight - 40f)
+                : 400f;
+            float h = Mathf.Ceil(objectiveStyleCache.fontSize * 1.35f) + UITheme.Space.S * 2f;
+            Rect row = new Rect(x, objectiveRowTop, w, h);
+
+            bool running = objectiveTracker.IsRunning;
+            bool canRun = objectiveTracker.HasWorldTarget;
+
+            // 문자열 조립은 매 프레임 할당이다. 거리는 반올림해 표시하므로(소수점이 떨리면 못 읽는다)
+            // 실제로 바뀌는 건 1초에 몇 번뿐 — 그 값이 바뀔 때만 다시 만든다.
+            int shownDistance = canRun && !running ? Mathf.RoundToInt(objectiveTracker.DistanceToTarget) : -1;
+            string trackerLabel = objectiveTracker.Label;
+            if (objectiveLabelCache == null
+                || shownDistance != objectiveLabelDistance
+                || running != objectiveLabelRunning
+                || canRun != objectiveLabelCanRun
+                || !ReferenceEquals(trackerLabel, objectiveLabelSource))
+            {
+                objectiveLabelDistance = shownDistance;
+                objectiveLabelRunning = running;
+                objectiveLabelCanRun = canRun;
+                objectiveLabelSource = trackerLabel;
+                objectiveLabelCache =
+                    !canRun ? "◈ " + trackerLabel          // 갈 곳이 없는 목표 — 안내만, 버튼 아님
+                    : running ? "■ 이동 취소"
+                    : $"▶ {trackerLabel} · {shownDistance}m";
+            }
+            string label = objectiveLabelCache;
+
+            if (canRun)
+            {
+                Color bg = running ? theme.accentCoral : theme.surfaceRaised;
+                if (UISurface.Button(row, string.Empty, bg, panelSurfaceBtnStyleCache))
+                    objectiveTracker.Toggle();
+                // 라벨은 좌측 정렬이라 UISurface.Button의 중앙 정렬 스타일을 쓰지 않고 따로 그린다.
+                UIHelper.LabelFit(
+                    new Rect(row.x + UITheme.Space.M, row.y, row.width - UITheme.Space.M * 2f, row.height),
+                    label, objectiveStyleCache);
+            }
+            else
+            {
+                UISurface.HudCard(row);
+                UIHelper.LabelFit(
+                    new Rect(row.x + UITheme.Space.M, row.y, row.width - UITheme.Space.M * 2f, row.height),
+                    label, objectiveStyleCache);
+            }
+
+            // 일시 안내(길 막힘 / 다른 리전) — 행 아래 한 줄.
+            string status = objectiveTracker.StatusMessage;
+            if (!string.IsNullOrEmpty(status))
+            {
+                UIHelper.LabelFit(
+                    new Rect(row.x + UITheme.Space.XS, row.yMax + 2f, row.width - UITheme.Space.XS * 2f, 30f),
+                    status, objectiveStatusStyleCache);
             }
         }
 
@@ -1051,6 +1150,14 @@ namespace InsectGame.UI
         public void AutoWire(GuidedTutorialController guidedController)
         {
             if (guided == null) guided = guidedController;
+        }
+
+        /// <summary>
+        /// 메인퀘스트 목표 행 소스. 미주입이면 행만 안 그린다(퀘스트 칩은 정상 동작).
+        /// </summary>
+        public void AutoWire(InsectGame.Story.StoryObjectiveTracker tracker)
+        {
+            if (objectiveTracker == null) objectiveTracker = tracker;
         }
 
         /// <summary>보상 아이템의 표시명 조회용. 미주입이면 목록·배너에 아이템 ID가 그대로 나온다.</summary>

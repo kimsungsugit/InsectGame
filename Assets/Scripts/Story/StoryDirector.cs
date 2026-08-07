@@ -54,25 +54,25 @@ namespace InsectGame.Story
         public event Action<StoryBeat> StoryBeatCompleted;
 
         // 트리거 타입 상수(닫힌 enum). JSON trigger.type과 반드시 일치. EvaluateTriggers switch가 전 케이스 처리.
-        private const string TriggerRegionEnter = "RegionEnter";
-        private const string TriggerQuestComplete = "QuestComplete";
-        private const string TriggerLevelReach = "LevelReach";
-        private const string TriggerCaptureInsect = "CaptureInsect";
-        private const string TriggerBattleWin = "BattleWin";
-        private const string TriggerSubAreaEnter = "SubAreaEnter";
-        private const string TriggerImmediate = "Immediate";
+        internal const string TriggerRegionEnter = "RegionEnter";
+        internal const string TriggerQuestComplete = "QuestComplete";
+        internal const string TriggerLevelReach = "LevelReach";
+        internal const string TriggerCaptureInsect = "CaptureInsect";
+        internal const string TriggerBattleWin = "BattleWin";
+        internal const string TriggerSubAreaEnter = "SubAreaEnter";
+        internal const string TriggerImmediate = "Immediate";
         // 스토리 NPC(어르신/라온/세라)에게 다가가 대화 시 발화. param=storyNpcId. 이벤트 소스는
         // WorldInteractionController가 OnNpcTalked를 호출하는 것(구독 대신 직접 진입점).
-        private const string TriggerNpcTalk = "NpcTalk";
+        internal const string TriggerNpcTalk = "NpcTalk";
         // 수문장 격파. param=regionId. 소스는 RegionManager.GuardianDefeated.
         // **일생 리전당 1회만 발화한다**(DefeatGuardian의 idempotent 가드) — QuestComplete와 같은
         // 부류라 이 트리거를 쓰는 비트는 **leaf 전용**이다. 어떤 비트의 prerequisiteBeatId도
         // 되어선 안 된다. 스파인에 걸면 그 순간 prereq가 미충족인 세이브는 캠페인이 영구 정지한다.
-        private const string TriggerGuardianDefeat = "GuardianDefeat";
+        internal const string TriggerGuardianDefeat = "GuardianDefeat";
         // 도감에 이름을 새긴 종 수가 임계에 닿으면 발화. param=정수 임계값.
         // LevelReach와 같은 누적형이라 **재발화 트리거다** — 임계를 넘긴 뒤 도감이 갱신될 때마다
         // 다시 평가되므로 스파인에 걸어도 안전하다(GuardianDefeat와 다르다).
-        private const string TriggerDexProgress = "DexProgress";
+        internal const string TriggerDexProgress = "DexProgress";
 
         // 트리거 평가 + 진행/보상 지급에 필요한 참조 주입. Bootstrap이 호출.
         public void AutoWire(RegionManager region, InsectBattleController battle,
@@ -365,6 +365,54 @@ namespace InsectGame.Story
             if (progress.seenBeatIds == null) progress.seenBeatIds = new List<string>();
             if (!progress.seenBeatIds.Contains(beatId))
                 progress.seenBeatIds.Add(beatId);
+            objectiveDirty = true;   // 진행이 바뀌면 "다음 목표"도 바뀐다
+        }
+
+        // ------------------------------------------------------------------
+        // 다음 목표 도출 — HUD 목표 행 / 미니맵 쐐기 / 자동 주행이 소비.
+        // ------------------------------------------------------------------
+
+        // 스파인 집합은 Story.json에서만 나온다(진행과 무관) — StoryService 캐시가 정적이라 1회면 족하다.
+        private HashSet<string> spineBeatIdsCache;
+        // 목표는 HUD가 매 프레임 묻는다. 72비트를 프레임마다 훑지 않도록 캐시하고
+        // 진행이 바뀔 때(MarkSeen/클라우드 재적재)만 무효화한다.
+        private bool objectiveDirty = true;
+        private StoryObjective cachedObjective;
+
+        /// <summary>
+        /// 지금 이야기를 잇는 목표 하나. 없으면(전부 열람했거나 prereq가 전부 미충족) false.
+        /// 선택 규칙과 결정성은 <see cref="StoryObjectiveResolver.SelectObjectiveBeat"/>에 있다.
+        /// </summary>
+        public bool TryGetCurrentObjective(out StoryObjective objective)
+        {
+            if (objectiveDirty)
+            {
+                RecomputeObjective();
+                objectiveDirty = false;
+            }
+            objective = cachedObjective;
+            return objective.IsValid;
+        }
+
+        private void RecomputeObjective()
+        {
+            if (spineBeatIdsCache == null)
+                spineBeatIdsCache = StoryObjectiveResolver.CollectSpineBeatIds(StoryService.AllBeats());
+
+            StoryBeat beat = StoryObjectiveResolver.SelectObjectiveBeat(
+                StoryService.AllBeats(), IsSeen, spineBeatIdsCache);
+
+            if (beat == null || beat.trigger == null)
+            {
+                cachedObjective = default;
+                return;
+            }
+
+            cachedObjective = new StoryObjective(
+                beat.beatId,
+                StoryObjectiveResolver.KindOf(beat.trigger.type),
+                beat.trigger.param,
+                beat.requiredRegionId);
         }
 
         private bool IsSeen(string beatId)
@@ -458,6 +506,8 @@ namespace InsectGame.Story
         public void ReloadFromDisk()
         {
             progress = Load();
+            // 클라우드에서 다른 기기의 진행이 내려오면 목표도 달라진다 — 캐시를 버린다.
+            objectiveDirty = true;
         }
     }
 }
