@@ -111,6 +111,41 @@ float px = panel.x, py = panel.y, pw = panel.width, ph = panel.height;
 **비율 배치(`VirtualScreenHeight * 0.08f`)는 금지가 아니다** — 아레나·연출 좌표가 그렇게 잡혀 있고
 잘림의 원인이 아니다. 다만 그 자리에 고정 높이 패널을 놓는다면 `Mathf.Clamp(비율값, ContentTop, ContentBottom - h)`로 가둔다.
 
+## `GUILayout.BeginArea`는 중첩하지 않는다 — 한 화면에 하나
+
+Unity는 Area 중첩을 지원하지 않는다("Areas cannot be nested"). 그런데 이 저장소의 화면은
+`OnGUI`가 패널 영역을 열고(`GUILayout.BeginArea(contentArea)`) 그리기 헬퍼가 그 안에서
+또 여는 형태로 어긋나기 쉽다 — **호출이 서로 다른 메서드에 흩어져 있어 눈에 안 띈다.**
+
+```csharp
+// Before — 스크롤 콘텐츠 좌표계를 직접 리셋하려다 Area를 중첩했다
+Rect viewport = GUILayoutUtility.GetRect(1f, 1f, GUILayout.ExpandWidth(true), GUILayout.ExpandHeight(true));
+position = GUI.BeginScrollView(viewport, position, new Rect(0f, 0f, contentWidth, contentHeight));
+GUILayout.BeginArea(new Rect(0f, 0f, contentWidth, contentHeight));   // ← 바깥에 이미 Area가 열려 있다
+DrawTabContent();
+GUILayout.EndArea();
+GUI.EndScrollView();
+
+// After — 레이아웃 스크롤뷰가 좌표계·콘텐츠 높이·뷰포트를 스스로 관리한다
+position = GUILayout.BeginScrollView(position, GUILayout.ExpandWidth(true), GUILayout.ExpandHeight(true));
+GUILayout.BeginVertical();
+DrawTabContent();
+GUILayout.EndVertical();
+GUILayout.EndScrollView();
+```
+
+**증상이 조용하다**: 컴파일도 되고 예외도 없고 바깥 위젯(탭 버튼·헤더)은 멀쩡히 그려진다.
+안쪽 내용만 통째로 사라진다. 2026-08-08에 한 커밋이 두 화면에 같은 구조를 심어
+`CashShopUI`(상점 3탭 전부 빈칸)와 `SocialPvpUI`(친구·랭크전·배틀 3탭)가 함께 죽었다.
+
+터치 드래그(`UIDirectScroll`)가 화면 좌표 뷰포트를 요구하는 게 원래 `GUI.BeginScrollView`를
+쓴 이유였다. 레이아웃 스크롤뷰는 자기 `Rect`를 돌려주지 않으므로 `EndScrollView` 직후
+`GUILayoutUtility.GetLastRect()`로 재서 **다음 프레임에 쓴다** — 한 프레임 늦지만 패널 크기는
+매 프레임 바뀌지 않는다. 콘텐츠 높이도 같은 방법으로 안쪽 `BeginVertical`/`EndVertical`에서 잰다.
+
+`ui_layout_lint.py`가 **파일당 `GUILayout.BeginArea` 2회 이상**을 중첩 의심으로 잡는다.
+순차로 두 번 여는 합법 코드가 생기면 스크립트의 `NESTED_AREA_EXEMPT`에 근거와 함께 올린다.
+
 ## 면제 파일 (`EXEMPT_FILES`)
 
 - `UISafeLayout.cs` / `UIScale.cs` / `SafeArea.cs` / `SafeAreaPanel.cs` — 하네스 자신

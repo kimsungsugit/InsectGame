@@ -265,6 +265,12 @@ namespace InsectGame.UI
         {
             if (GachaBoxManager.Instance != null)
                 GachaBoxManager.Instance.BoxOpened -= OnBoxOpened;
+            // isOpen을 남겨 두면 **레지스트리엔 없는데 열린 것으로 아는** 상태가 된다 —
+            // ESC가 이 모달을 건너뛰어 안 닫히고, 다음 [F4]는 여는 대신 닫는 쪽으로 간다.
+            // 오프닝 다시보기가 UI 루트를 통째로 껐다 켜므로 실제로 도달하는 경로다
+            // (StoryJournalUI·NpcDialogueUI가 같은 이유로 같은 처리를 한다).
+            isOpen = false;
+            showingGachaResult = false;
             ResetAllTabScrolls();
             ModalUIRegistry.Unregister(this);
         }
@@ -446,58 +452,66 @@ namespace InsectGame.UI
             tabDirectScrolls[tab].Reset();
         }
 
+        /// <summary>직전 Repaint에 잰 탭별 스크롤뷰 영역(패널 로컬 좌표). 터치 드래그 판정에만 쓴다.</summary>
+        private readonly Rect[] tabViewports = new Rect[3];
+
+        /// <summary>
+        /// 탭 콘텐츠를 스크롤 영역에 그린다.
+        ///
+        /// <b>레이아웃 스크롤뷰(<c>GUILayout.BeginScrollView</c>)를 쓴다.</b> 한때
+        /// <c>GUI.BeginScrollView</c> + 그 안의 <c>GUILayout.BeginArea</c>로 좌표계를 직접 리셋했는데,
+        /// <c>OnGUI</c>가 이미 <c>GUILayout.BeginArea(contentArea)</c>를 열어 둔 상태라 <b>Area 중첩</b>이 됐다.
+        /// Unity는 Area 중첩을 지원하지 않는다("Areas cannot be nested") — 레이아웃 그룹 스택이 어긋나
+        /// <b>탭 버튼은 그려지는데 그 아래 카드가 하나도 나오지 않았다</b>(세 탭 전부).
+        /// 스크롤 위치·콘텐츠 높이·뷰포트는 레이아웃 시스템이 스스로 관리하므로 여기서 잴 필요가 없다.
+        /// </summary>
         private void DrawScrollableTab(Rect contentArea)
         {
             int tab = Mathf.Clamp(selectedTab, 0, tabNames.Length - 1);
-            Rect viewport = GUILayoutUtility.GetRect(
-                1f,
-                1f,
+
+            // 터치 드래그(UIDirectScroll)는 **화면 좌표** 뷰포트가 필요한데 레이아웃 스크롤뷰는
+            // 자기 Rect를 돌려주지 않는다. 직전 Repaint에 재둔 값을 쓴다 — 한 프레임 늦지만
+            // 패널 크기는 매 프레임 바뀌지 않는다(회전 시 한 프레임만 어긋난다).
+            Vector2 position = tabScrollPositions[tab];
+            Rect measured = tabViewports[tab];
+            if (measured.height > 1f)
+            {
+                Rect directViewport = new Rect(
+                    contentArea.x + measured.x,
+                    contentArea.y + measured.y,
+                    measured.width,
+                    measured.height);
+                float horizontalPosition = position.x;
+                tabDirectScrolls[tab].Handle(
+                    ref position,
+                    directViewport,
+                    Mathf.Max(measured.height, tabContentHeights[tab]),
+                    UIScale.IsMobileLayout ? 72f : 52f);
+                position.x = horizontalPosition;
+            }
+
+            position = GUILayout.BeginScrollView(
+                position,
                 GUILayout.ExpandWidth(true),
                 GUILayout.ExpandHeight(true));
-            Rect directViewport = new Rect(
-                contentArea.x + viewport.x,
-                contentArea.y + viewport.y,
-                viewport.width,
-                viewport.height);
 
-            float contentHeight = tabContentHeights[tab] > 0f
-                ? Mathf.Max(viewport.height, tabContentHeights[tab])
-                : Mathf.Max(viewport.height, 4096f);
-            float contentWidth = Mathf.Max(
-                viewport.width - 20f,
-                !UIScale.IsMobileLayout && tab == 2 ? 960f
-                    : !UIScale.IsMobileLayout ? 840f
-                    : viewport.width - 20f);
-
-            Vector2 position = tabScrollPositions[tab];
-            float horizontalPosition = position.x;
-            tabDirectScrolls[tab].Handle(
-                ref position,
-                directViewport,
-                contentHeight,
-                UIScale.IsMobileLayout ? 72f : 52f);
-            position.x = horizontalPosition;
-
-            position = GUI.BeginScrollView(
-                viewport,
-                position,
-                new Rect(0f, 0f, contentWidth, contentHeight));
-            GUILayout.BeginArea(new Rect(0f, 0f, contentWidth, contentHeight));
-
+            GUILayout.BeginVertical();
             switch (tab)
             {
                 case 0: DrawGemTab(); break;
                 case 1: DrawItemTab(); break;
                 case 2: DrawGachaTab(); break;
             }
-
-            GUILayout.Space(1f);
-            Rect contentEnd = GUILayoutUtility.GetLastRect();
+            GUILayout.EndVertical();
+            // 콘텐츠 높이 — 위 수직 그룹의 Rect가 곧 그려진 높이다(터치 드래그의 스크롤 한계용).
             if (Event.current.type == EventType.Repaint)
-                tabContentHeights[tab] = Mathf.Max(viewport.height, contentEnd.yMax + 12f);
+                tabContentHeights[tab] = GUILayoutUtility.GetLastRect().height;
 
-            GUILayout.EndArea();
-            GUI.EndScrollView();
+            GUILayout.EndScrollView();
+
+            if (Event.current.type == EventType.Repaint)
+                tabViewports[tab] = GUILayoutUtility.GetLastRect();
+
             tabScrollPositions[tab] = position;
         }
 

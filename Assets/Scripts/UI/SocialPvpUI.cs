@@ -240,48 +240,61 @@ namespace InsectGame.UI
             pageDirectScrolls[index].Reset();
         }
 
+        /// <summary>직전 Repaint에 잰 페이지별 스크롤뷰 영역(패널 로컬 좌표). 터치 드래그 판정에만 쓴다.</summary>
+        private readonly Rect[] pageViewports = new Rect[3];
+
+        /// <summary>
+        /// 페이지 콘텐츠를 스크롤 영역에 그린다.
+        ///
+        /// <b>레이아웃 스크롤뷰(<c>GUILayout.BeginScrollView</c>)를 쓴다.</b> 한때
+        /// <c>GUI.BeginScrollView</c> + 그 안의 <c>GUILayout.BeginArea</c>로 좌표계를 직접 리셋했는데,
+        /// <c>DrawPanel</c>이 이미 <c>GUILayout.BeginArea(contentArea)</c>를 열어 둔 상태라 <b>Area 중첩</b>이
+        /// 됐다. Unity는 Area 중첩을 지원하지 않는다 — 레이아웃 그룹 스택이 어긋나 <b>탭 버튼은
+        /// 그려지는데 그 아래 내용이 하나도 나오지 않는다</b>. <c>CashShopUI</c>가 같은 형태로 실제
+        /// 증상을 냈고(상점 3탭 전부 빈칸), 같은 커밋이 이쪽에도 같은 구조를 심었다.
+        /// </summary>
         private void DrawScrollablePage(Rect contentArea)
         {
             int index = (int)page;
-            Rect viewport = GUILayoutUtility.GetRect(
-                1f,
-                1f,
+
+            // 터치 드래그(UIDirectScroll)는 **화면 좌표** 뷰포트가 필요한데 레이아웃 스크롤뷰는
+            // 자기 Rect를 돌려주지 않는다. 직전 Repaint에 재둔 값을 쓴다 — 한 프레임 늦지만
+            // 패널 크기는 매 프레임 바뀌지 않는다.
+            Vector2 position = pageScrollPositions[index];
+            Rect measured = pageViewports[index];
+            if (measured.height > 1f)
+            {
+                Rect directViewport = new Rect(
+                    contentArea.x + measured.x,
+                    contentArea.y + measured.y,
+                    measured.width,
+                    measured.height);
+                pageDirectScrolls[index].Handle(
+                    ref position,
+                    directViewport,
+                    Mathf.Max(measured.height, pageContentHeights[index]),
+                    UIScale.IsMobileLayout ? 72f : 52f);
+            }
+
+            position = GUILayout.BeginScrollView(
+                position,
                 GUILayout.ExpandWidth(true),
                 GUILayout.ExpandHeight(true));
-            Rect directViewport = new Rect(
-                contentArea.x + viewport.x,
-                contentArea.y + viewport.y,
-                viewport.width,
-                viewport.height);
 
-            float contentHeight = pageContentHeights[index] > 0f
-                ? Mathf.Max(viewport.height, pageContentHeights[index])
-                : Mathf.Max(viewport.height, 4096f);
-            float contentWidth = Mathf.Max(1f, viewport.width - 20f);
-            Vector2 position = pageScrollPositions[index];
-
-            pageDirectScrolls[index].Handle(
-                ref position,
-                directViewport,
-                contentHeight,
-                UIScale.IsMobileLayout ? 72f : 52f);
-            position = GUI.BeginScrollView(
-                viewport,
-                position,
-                new Rect(0f, 0f, contentWidth, contentHeight));
-            GUILayout.BeginArea(new Rect(0f, 0f, contentWidth, contentHeight));
-
+            GUILayout.BeginVertical();
             if (page == Page.Friends) DrawFriends();
             else if (page == Page.Ranked) DrawRanked();
             else DrawBattle();
-
-            GUILayout.Space(1f);
-            Rect contentEnd = GUILayoutUtility.GetLastRect();
+            GUILayout.EndVertical();
+            // 콘텐츠 높이 — 위 수직 그룹의 Rect가 곧 그려진 높이다(터치 드래그의 스크롤 한계용).
             if (Event.current.type == EventType.Repaint)
-                pageContentHeights[index] = Mathf.Max(viewport.height, contentEnd.yMax + 12f);
+                pageContentHeights[index] = GUILayoutUtility.GetLastRect().height;
 
-            GUILayout.EndArea();
-            GUI.EndScrollView();
+            GUILayout.EndScrollView();
+
+            if (Event.current.type == EventType.Repaint)
+                pageViewports[index] = GUILayoutUtility.GetLastRect();
+
             pageScrollPositions[index] = position;
         }
 
