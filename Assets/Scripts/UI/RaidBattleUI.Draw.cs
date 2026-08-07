@@ -56,10 +56,8 @@ namespace InsectGame.UI
         private GUIStyle teamHpLvStyleCache;        // DrawTeamHpBars level
         private GUIStyle introBossNameStyleCache;   // DrawIntro boss name
         private GUIStyle introSubStyleCache;        // DrawIntro subtitle
-        private GUIStyle insectSelHeaderStyleCache; // DrawInsectSelector header
-        private GUIStyle insectSelKeyStyleCache;    // DrawInsectSelector key
-        private GUIStyle insectSelNameStyleCache;   // DrawInsectSelector name
-        private GUIStyle insectSelHpStyleCache;     // DrawInsectSelector hp
+        // 곤충 선택 패널(DrawInsectSelector)의 스타일 4개는 함께 사라졌다 —
+        // 순차 턴에서는 차례가 슬롯 순서로 정해져 고를 패널 자체가 없다.
         private GUIStyle skillSelHeaderStyleCache;  // DrawSkillSelector header
         private GUIStyle skillSelKeyStyleCache;     // DrawSkillSelector key
         private GUIStyle skillSelNameStyleCache;    // DrawSkillSelector name
@@ -166,19 +164,6 @@ namespace InsectGame.UI
 
             introSubStyleCache = new GUIStyle(GUI.skin.label)
             { fontSize = 22, alignment = TextAnchor.MiddleCenter };
-
-            insectSelHeaderStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 26, fontStyle = FontStyle.Bold };
-            insectSelHeaderStyleCache.normal.textColor = new Color(1f, 0.85f, 0.3f);
-
-            insectSelKeyStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 24, fontStyle = FontStyle.Bold };
-
-            insectSelNameStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 22, fontStyle = FontStyle.Bold };
-
-            insectSelHpStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 19, fontStyle = FontStyle.Bold };
 
             skillSelHeaderStyleCache = new GUIStyle(GUI.skin.label)
             {
@@ -1008,7 +993,9 @@ namespace InsectGame.UI
                 var stats = raidController.TeamStats[i];
                 if (stats == null) continue;
                 bool alive = stats.CurrentHp > 0;
-                bool sel = (i == selectedSlot);
+                // 순차 턴이라 "지금 차례"가 곧 선택이다 — 컨트롤러의 ActiveSlot이 단일 출처.
+                bool sel = alive && i == raidController.ActiveSlot;
+                bool acted = raidController.HasActedThisRound(i);
                 float bx = startX + i * (barW + 10);
 
                 GUI.color = sel ? new Color(0.1f, 0.12f, 0.22f, 0.95f) : new Color(0.05f, 0.06f, 0.10f, alive ? 0.92f : 0.5f);
@@ -1018,10 +1005,19 @@ namespace InsectGame.UI
                 GUI.color = sel ? new Color(1f, 0.85f, 0.2f) : (alive ? rarityCol : new Color(0.3f, 0.3f, 0.3f));
                 GUI.DrawTexture(new Rect(bx, y, barW, 4), Texture2D.whiteTexture);
 
-                teamHpNameStyleCache.normal.textColor = alive ? Color.white : new Color(0.4f, 0.4f, 0.4f);
+                // 행동을 마친 팀원은 한 겹 어둡게 덮어 "이번 라운드엔 끝났다"를 보여준다.
+                if (acted && alive)
+                {
+                    GUI.color = new Color(0f, 0f, 0f, 0.42f);
+                    GUI.DrawTexture(new Rect(bx, y, barW, barH), Texture2D.whiteTexture);
+                }
                 GUI.color = Color.white;
+
+                teamHpNameStyleCache.normal.textColor = alive ? Color.white : new Color(0.4f, 0.4f, 0.4f);
+                // 차례 표시가 곧 팀 레이드의 진행 상황이다: ▶ 지금 / ✓ 완료 / 번호만 대기.
+                string turnMark = !alive ? $"{i + 1}." : sel ? "▶" : acted ? "✓" : $"{i + 1}.";
                 UIHelper.LabelFit(new Rect(bx + 8, y + 6, barW - 16, 22),
-                    $"{i + 1}. {stats.Data.displayName}", teamHpNameStyleCache);
+                    $"{turnMark} {stats.Data.displayName}", teamHpNameStyleCache);
 
                 float hbX = bx + 8;
                 float hbY = y + 32;
@@ -1189,94 +1185,6 @@ namespace InsectGame.UI
             GUI.color = Color.white;
         }
 
-        private void DrawInsectSelector()
-        {
-            bool mobile = UIScale.IsMobileLayout;
-            bool portrait = UIScale.IsPortrait;   // 레이아웃 형태는 방향 기준 — 가로 모바일 세로형 패널의 곤충 가림 방지
-            float panelW = UIScale.VirtualScreenWidth;
-            float panelH = UISafeLayout.ClampHeight(portrait ? 380f : 200f);
-            // 제스처바(하단 세이프 인셋) + 세로 마진 위로. 배경은 바닥까지 채워 빈틈 방지.
-            float panelY = UISafeLayout.ContentBottom - panelH;
-
-            GUI.color = new Color(0.04f, 0.05f, 0.10f, 0.97f);
-            GUI.DrawTexture(new Rect(0, panelY, panelW, UIScale.VirtualScreenHeight - panelY), Texture2D.whiteTexture);
-            GUI.color = new Color(1f, 0.6f, 0.15f);
-            GUI.DrawTexture(new Rect(0, panelY, panelW, 4), Texture2D.whiteTexture);
-            GUI.color = Color.white;
-
-            DrawStanceChips(panelY, panelW);
-            // 헤더 폭은 스탠스 칩 앞까지만 — 겹치면 긴 문구가 칩 아래로 깔린다.
-            float headerW = Mathf.Max(120f, stanceRects[0].x - 30f - UITheme.Space.S);
-            UIHelper.LabelFit(new Rect(30, panelY + 10, headerW, 32),
-                mobile ? "공격할 곤충을 선택하세요" : "공격할 곤충을 선택하세요 [1-5]:", insectSelHeaderStyleCache);
-
-            int count = raidController.TeamStats != null ? raidController.TeamStats.Length : 0;
-            float btnW = portrait ? (panelW - 84f) / 3f : Mathf.Min(240, (panelW - 60) / Mathf.Max(count, 1));
-            float btnH = portrait ? 136f : 120f;
-            float baseBtnY = panelY + 52f;
-            float btnY = baseBtnY;
-            float startX = 30;
-
-            for (int i = 0; i < count; i++)
-            {
-                var stats = raidController.TeamStats[i];
-                if (stats == null) continue;
-                bool alive = stats.CurrentHp > 0;
-                float bx = portrait
-                    ? startX + (i % 3) * (btnW + 12f)
-                    : startX + i * (btnW + 12f);
-                if (portrait) btnY = baseBtnY + (i / 3) * (btnH + 12f);
-
-                Color bgCol = alive ? new Color(0.08f, 0.10f, 0.20f) : new Color(0.06f, 0.04f, 0.04f);
-                if (i == selectedSlot && alive) bgCol = new Color(0.12f, 0.15f, 0.30f);
-                GUI.color = bgCol;
-                GUI.DrawTexture(new Rect(bx, btnY, btnW, btnH), Texture2D.whiteTexture);
-
-                Color rarityCol = UITheme.Instance.GetInsectRarityColor(stats.Data.rarity);
-                GUI.color = alive ? rarityCol : new Color(0.3f, 0.3f, 0.3f);
-                GUI.DrawTexture(new Rect(bx, btnY, btnW, 4), Texture2D.whiteTexture);
-                if (alive)
-                {
-                    GUI.DrawTexture(new Rect(bx, btnY, 2, btnH), Texture2D.whiteTexture);
-                    GUI.DrawTexture(new Rect(bx + btnW - 2, btnY, 2, btnH), Texture2D.whiteTexture);
-                }
-
-                if (!mobile)
-                {
-                    insectSelKeyStyleCache.normal.textColor = alive ? new Color(1f, 0.85f, 0.3f) : new Color(0.4f, 0.4f, 0.4f);
-                    GUI.color = alive ? new Color(0.15f, 0.12f, 0.05f) : new Color(0.06f, 0.06f, 0.06f);
-                    GUI.DrawTexture(new Rect(bx + 8, btnY + 8, 32, 32), Texture2D.whiteTexture);
-                    GUI.color = Color.white;
-                    GUI.Label(new Rect(bx + 8, btnY + 8, 32, 32), $"{i + 1}", insectSelKeyStyleCache);
-                }
-
-                insectSelNameStyleCache.normal.textColor = alive ? Color.white : new Color(0.35f, 0.35f, 0.35f);
-                UIHelper.LabelFit(new Rect(bx + 8, btnY + 44, btnW - 16, 26), stats.Data.displayName, insectSelNameStyleCache);
-
-                float hpRatio = stats.MaxHp > 0 ? (float)stats.CurrentHp / stats.MaxHp : 0;
-                insectSelHpStyleCache.normal.textColor = alive ? (hpRatio > 0.5f ? new Color(0.3f, 0.9f, 0.4f) : new Color(0.95f, 0.5f, 0.2f))
-                    : new Color(0.5f, 0.2f, 0.2f);
-                GUI.Label(new Rect(bx + 8, btnY + 76, btnW - 16, 24),
-                    alive ? $"HP {stats.CurrentHp}/{stats.MaxHp}" : "KO", insectSelHpStyleCache);
-
-                Vector2 mouseGui = UIScale.VirtualMousePosition;
-                bool hovered = alive && new Rect(bx, btnY, btnW, btnH).Contains(mouseGui);
-                if (hovered)
-                {
-                    GUI.color = new Color(1f, 1f, 1f, 0.06f);
-                    GUI.DrawTexture(new Rect(bx, btnY, btnW, btnH), Texture2D.whiteTexture);
-                    GUI.color = Color.white;
-                }
-
-                insectBtnRects[i] = new Rect(bx, btnY, btnW, btnH);
-                insectBtnUsable[i] = alive;
-            }
-            insectBtnCount = count;
-
-            float uniteX = portrait ? startX + 2f * (btnW + 12f) : startX + count * (btnW + 12f) + 20f;
-            float uniteY = portrait ? baseBtnY + btnH + 12f : baseBtnY;
-            DrawUniteButton(uniteX, uniteY, btnH);
-        }
         private void DrawSkillSelector()
         {
             if (selectedSlot < 0 || raidController.TeamStats == null || selectedSlot >= raidController.TeamStats.Length) return;
@@ -1299,10 +1207,21 @@ namespace InsectGame.UI
             GUI.DrawTexture(new Rect(0, panelY, panelW, 4), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
+            // 스탠스 칩은 곤충 선택 패널이 사라지면서 이리로 옮겨왔다 — 자동 위임의 성향을 정하는
+            // 유일한 조작이라 스킬 화면에 있어야 한다(차례를 소비하지 않는다).
+            DrawStanceChips(panelY, panelW);
+
             skillSelHeaderStyleCache.fontSize = mobile ? 27 : 26;
-            GUI.Label(new Rect(30, panelY + 8, panelW - 60f, 48),
-                mobile ? $"{stats.Data.displayName}의 기술을 선택하세요"
-                    : $"{stats.Data.displayName}의 스킬 [Q/W/E/R]  |  ESC: 돌아가기", skillSelHeaderStyleCache);
+            // 헤더 폭은 스탠스 칩 앞까지만 — 겹치면 긴 문구가 칩 아래로 깔린다.
+            float headerW = Mathf.Max(140f, stanceRects[0].x - 30f - UITheme.Space.S);
+            int actOrder = raidController.ActedThisRound + 1;
+            int actTotal = Mathf.Max(actOrder, raidController.RoundActorCount);
+            // 곤충 이름 길이는 데이터가 정하므로 고정 상자에 그대로 넣으면 잘린다.
+            UIHelper.LabelFit(new Rect(30, panelY + 8, headerW, 44),
+                mobile
+                    ? $"{actOrder}/{actTotal}  {stats.Data.displayName}의 차례"
+                    : $"{actOrder}/{actTotal}  {stats.Data.displayName}의 차례 [Q/W/E/R]  |  A 자동 · S 전원자동",
+                skillSelHeaderStyleCache);
 
             int count = skills != null ? Mathf.Min(skills.Length, 4) : 0;
             float btnW = portrait ? (panelW - 76f) * 0.5f : Mathf.Min(300, (panelW - 80) / Mathf.Max(count, 1));
@@ -1428,10 +1347,75 @@ namespace InsectGame.UI
                 GUI.Label(new Rect(0, btnY, panelW, btnH), "스킬 없음", skillSelNoSkillStyleCache);
             }
 
+            // 마지막 줄: [자동] [전원 자동] [합체공격].
+            // 셋 다 `DrawUniteButton`이 쓰는 3등분 폭 (panelW-84)/3에 맞춰 간격 12로 떨어진다.
             if (portrait)
-                DrawUniteButton(startX, baseBtnY + 2f * (btnH + 14f), 90f);
+            {
+                float rowY = baseBtnY + 2f * (btnH + 14f);
+                float rowW = (panelW - 84f) / 3f;
+                DrawAutoButtons(startX, rowY, rowW, 90f, stacked: false);
+                DrawUniteButton(startX + 2f * (rowW + 12f), rowY, 90f);
+            }
             else
-                DrawUniteButton(startX + count * (btnW + 14) + 20, baseBtnY, btnH);
+            {
+                float sideX = startX + count * (btnW + 14f) + 20f;
+                DrawAutoButtons(sideX, baseBtnY, 160f, 62f, stacked: true);
+                DrawUniteButton(sideX, baseBtnY + 144f, 76f);
+            }
+        }
+
+        /// <summary>
+        /// 자동 위임 버튼 둘 — 이 곤충만(A) / 남은 전원(S).
+        /// 순차 턴에서는 라운드당 조작이 팀원 수만큼이라, 직접 고를 곤충만 고르고 나머지는
+        /// 맡길 수 있어야 한다. 위력은 직접 고를 때보다 낮다(<c>RaidSupportSkillPowerMultiplier</c>).
+        /// </summary>
+        private void DrawAutoButtons(float x, float y, float w, float h, bool stacked)
+        {
+            bool ready = raidController != null && raidController.CanSubmitTeamCommand;
+            autoBtnVisible = ready;
+            if (!ready)
+            {
+                autoBtnRect = Rect.zero;
+                autoAllBtnRect = Rect.zero;
+                return;
+            }
+
+            bool mobile = UIScale.IsMobileLayout;
+            autoBtnRect = DrawAutoButton(x, y, w, h,
+                "자동", mobile ? "이 곤충" : "[A] 이 곤충", new Color(0.14f, 0.32f, 0.28f));
+
+            float nx = stacked ? x : x + w + 12f;
+            float ny = stacked ? y + h + 10f : y;
+            bool multiple = raidController.RemainingActors > 1;
+            autoAllBtnRect = DrawAutoButton(nx, ny, w, h,
+                "전원 자동",
+                mobile
+                    ? (multiple ? $"남은 {raidController.RemainingActors}마리" : "남은 전원")
+                    : "[S] 남은 전원",
+                new Color(0.26f, 0.20f, 0.38f));
+        }
+
+        private Rect DrawAutoButton(float x, float y, float w, float h,
+            string label, string hint, Color baseCol)
+        {
+            Rect rect = new Rect(x, y, w, h);
+            bool hovered = rect.Contains(UIScale.VirtualMousePosition);
+
+            GUI.color = hovered
+                ? new Color(baseCol.r * 1.6f, baseCol.g * 1.6f, baseCol.b * 1.6f, 0.97f)
+                : new Color(baseCol.r, baseCol.g, baseCol.b, 0.95f);
+            GUI.DrawTexture(rect, Texture2D.whiteTexture);
+
+            GUI.color = new Color(0.55f, 0.82f, 0.95f, 0.8f);
+            GUI.DrawTexture(new Rect(x, y, w, 3), Texture2D.whiteTexture);
+            GUI.color = Color.white;
+
+            // 합체 버튼과 스타일 캐시를 공유한다 — OnGUI에서 GUIStyle을 새로 만들지 않기 위해서다.
+            GUI.Label(new Rect(x, y + 8, w, 28), label, uniteBtnLabelStyleCache);
+            uniteBtnKeyHintStyleCache.normal.textColor = new Color(0.82f, 0.92f, 1f, 0.85f);
+            GUI.Label(new Rect(x, y + 36, w, 22), hint, uniteBtnKeyHintStyleCache);
+
+            return rect;
         }
         // 스킬 효과 타입 라벨(신규 타입 포함).
         private static string RaidSkillTypeLabel(SkillEffectType t)
@@ -1619,6 +1603,35 @@ namespace InsectGame.UI
             }
         }
 
+        /// <summary>
+        /// 팀원 하나가 방금 한 행동을 슬롯 기여 표시에 <b>더한다</b>. 순차 턴에서는 라운드가 끝나기 전에
+        /// 한 마리씩 들어오므로, 라운드 전체를 한 번에 굽는 <see cref="BuildSlotContributions"/> 대신
+        /// 이쪽이 매 행동마다 불린다 — 지금까지 누가 무엇을 했는지가 화면에 그대로 쌓인다.
+        /// (라운드 경계에서 <c>slotContribText</c>를 비우는 쪽은 <c>OnRaidRoundCompleted</c>다.)
+        /// </summary>
+        private void AddSlotContribution(RaidActionResult action)
+        {
+            int teamCount = raidController != null && raidController.TeamStats != null
+                ? raidController.TeamStats.Length
+                : 0;
+            if (teamCount <= 0 || action == null) return;
+
+            if (slotContribText == null || slotContribText.Length != teamCount)
+                slotContribText = new string[teamCount];
+            if (slotHealText == null || slotHealText.Length != teamCount)
+                slotHealText = new string[teamCount];
+
+            if (action.SourceSlot >= 0 && action.SourceSlot < slotContribText.Length)
+                slotContribText[action.SourceSlot] = ContributionLabel(action);
+
+            // 회복만 **받은 슬롯**에 따로 적는다(시전자와 대상이 다를 수 있다).
+            if (action.Healing > 0
+                && action.TargetSlot >= 0 && action.TargetSlot < slotHealText.Length)
+            {
+                slotHealText[action.TargetSlot] = "+" + action.Healing;
+            }
+        }
+
         private static string ContributionLabel(RaidActionResult action)
         {
             if (action.KnockedOut) return "FINISH!";
@@ -1731,11 +1744,12 @@ namespace InsectGame.UI
                 float bossX = sw * 0.5f;
                 float bossY = sh * 0.12f;
 
-                // 실제 선택한 리더 스킬을 사용한다. 이전 구현은 항상 skills[0]을 읽어
-                // 선택한 기술과 2D/3D 속성 이펙트가 어긋났다.
+                // 방금 행동한 그 곤충의 스킬을 쓴다. 순차 턴에서 라운드의 첫 행동(리더)을 읽으면
+                // 3번째 곤충이 때리는데 1번째 곤충의 속성 이펙트가 터진다.
+                // 합체공격은 개별 행동이 없어 `lastMemberAction`이 null이라 라운드 쪽으로 폴백한다.
                 Color skillColor = new Color(0.3f, 0.7f, 1f);
                 InsectElement element = InsectElement.Bug;
-                RaidActionResult leaderAction = FindLeaderAction(activeRound);
+                RaidActionResult leaderAction = lastMemberAction ?? FindLeaderAction(activeRound);
                 if (leaderAction != null)
                 {
                     skillColor = GetSkillColor(leaderAction.EffectType);

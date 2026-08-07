@@ -18,6 +18,12 @@ namespace InsectGame.Battle
 
         public event Action RaidUpdated;
         public event Action<bool> RaidEnded;
+        /// <summary>
+        /// 팀원 <b>한 마리</b>가 행동을 마쳤다. 라운드마다 생존 수만큼 발화한다 —
+        /// UI가 이 곤충 하나의 공격 연출을 돌리는 신호다.
+        /// </summary>
+        public event Action<RaidActionResult> RaidMemberActionResolved;
+        /// <summary>팀 <b>전원</b>이 행동을 마쳐 보스 차례로 넘어간다. 라운드당 한 번.</summary>
         public event Action<RaidRoundResult> RaidTeamRushResolved;
         public event Action<RaidRoundResult> RaidBossResponseResolved;
         public event Action<RaidRoundResult> RaidRoundCompleted;
@@ -34,6 +40,11 @@ namespace InsectGame.Battle
         public InsectEntity BossEntity { get; private set; }
 
         public int TurnNumber { get; private set; }
+        /// <summary>
+        /// <b>지금 행동할 차례인 팀 슬롯.</b> 라운드가 시작되면 앞 슬롯부터 하나씩 옮겨가고,
+        /// 생존 팀원이 모두 행동하면 -1이 된다(그때 보스 차례로 넘어간다).
+        /// 예전엔 "플레이어가 고른 리더"였고 나머지 4마리는 같은 순간에 자동으로 딸려 나갔다.
+        /// </summary>
         public int ActiveSlot { get; private set; }
         public bool IsActive { get; private set; }
         public string LastActionText { get; private set; }
@@ -67,7 +78,13 @@ namespace InsectGame.Battle
         public RaidBossIntent NextBossIntent { get; private set; }
         public RaidRoundResult CurrentRoundResult { get; private set; }
         public RaidRoundStage RoundStage => roundStage;
-        public bool CanSubmitTeamCommand => IsActive && roundStage == RaidRoundStage.Ready;
+        /// <summary>
+        /// 지금 팀 커맨드를 받을 수 있는가. <b><see cref="ActiveSlot"/>이 유효할 것</b>도 조건이다 —
+        /// 순차 턴에서는 마지막 팀원이 행동을 마치면 슬롯이 -1이 되고 그 순간부터 보스 차례다.
+        /// </summary>
+        public bool CanSubmitTeamCommand => IsActive
+            && roundStage == RaidRoundStage.Ready
+            && ActiveSlot >= 0;
         public bool IsAwaitingBossResponse => IsActive
             && roundStage == RaidRoundStage.TeamResolved
             && CurrentRoundResult != null
@@ -107,6 +124,59 @@ namespace InsectGame.Battle
         private RaidRoundStage roundStage = RaidRoundStage.Completed;
         private IRaidRandomSource randomSource = new UnityRaidRandomSource();
         private bool raidEndedRaised;
+
+        // ── 순차 팀 턴 ──
+        // 팀 5마리가 한 라운드 안에서 **하나씩 차례로** 행동한다. 예전엔 리더 한 마리의 스킬만
+        // 고르면 나머지가 같은 순간에 자동으로 딸려 나가 "팀 레이드"로 읽히지 않았다.
+        /// <summary>이번 라운드에 이미 행동을 마친 슬롯. 라운드가 시작될 때마다 비운다.</summary>
+        private bool[] actedThisRound;
+        /// <summary>행동이 하나씩 쌓이는 이번 라운드의 결과. Ready 단계 내내 살아 있다.</summary>
+        private RaidRoundResult roundInProgress;
+        /// <summary>
+        /// 이번 라운드에 기절이 <b>명중</b>했는가. 팀 전체에서 한 번만 판정하므로
+        /// (여럿이 기절기를 들어도 보스가 여러 번 묶이지는 않는다) 팀 턴이 끝날 때 소비한다.
+        /// </summary>
+        private bool roundStunLanded;
+
+        /// <summary>이번 라운드에 행동을 마친 팀원 수 — UI의 "2/5" 표기용.</summary>
+        public int ActedThisRound
+        {
+            get
+            {
+                if (actedThisRound == null || TeamStats == null) return 0;
+                int c = 0;
+                for (int i = 0; i < actedThisRound.Length && i < TeamStats.Length; i++)
+                    if (actedThisRound[i] && TeamStats[i] != null) c++;
+                return c;
+            }
+        }
+
+        /// <summary>이번 라운드에 행동할 팀원 총수(이미 행동한 쪽 + 아직 살아서 남은 쪽).</summary>
+        public int RoundActorCount => ActedThisRound + RemainingActors;
+
+        /// <summary>이 슬롯이 이번 라운드에 이미 행동했는가 — UI가 팀 목록에 "✓"를 찍는 데 쓴다.</summary>
+        public bool HasActedThisRound(int slot)
+        {
+            return actedThisRound != null
+                && slot >= 0 && slot < actedThisRound.Length
+                && actedThisRound[slot];
+        }
+
+        /// <summary>아직 행동하지 않은 생존 팀원 수. 0이면 보스 차례다.</summary>
+        public int RemainingActors
+        {
+            get
+            {
+                if (TeamStats == null || actedThisRound == null) return 0;
+                int c = 0;
+                for (int i = 0; i < TeamStats.Length; i++)
+                {
+                    if (i < actedThisRound.Length && actedThisRound[i]) continue;
+                    if (TeamStats[i] != null && TeamStats[i].CurrentHp > 0) c++;
+                }
+                return c;
+            }
+        }
 
         /// <summary>
         /// 레이드를 시작한다. 시작하지 못했으면 <c>false</c>(인자 부적합 또는 <b>팀 전원 기절</b>).
@@ -204,18 +274,59 @@ namespace InsectGame.Battle
             CurrentRoundResult = null;
             roundStage = RaidRoundStage.Ready;
             raidEndedRaised = false;
+            actedThisRound = null;
+            roundInProgress = null;
+            roundStunLanded = false;
 
             PrepareNextBossIntent();
+            BeginRound();   // 첫 라운드를 연다 — ActiveSlot이 첫 생존 슬롯에 선다
             RaidUpdated?.Invoke();
             return true;
         }
 
+        /// <summary>
+        /// 행동 순서를 앞당겨 <paramref name="slot"/>부터 시키고 싶을 때. <b>이미 이번 라운드에
+        /// 행동한 슬롯으로는 돌아갈 수 없다</b> — 허용하면 한 곤충이 한 라운드에 여러 번 때린다.
+        /// </summary>
         public void SelectSlot(int slot)
         {
             if (!CanSubmitTeamCommand) return;
             if (slot < 0 || slot >= TeamStats.Length) return;
-            if (TeamStats[slot].CurrentHp <= 0) return;
+            if (TeamStats[slot] == null || TeamStats[slot].CurrentHp <= 0) return;
+            if (actedThisRound != null && slot < actedThisRound.Length && actedThisRound[slot]) return;
             ActiveSlot = slot;
+        }
+
+        /// <summary>
+        /// 라운드를 연다 — 행동 기록을 비우고 첫 행동자를 세운 뒤 빈 결과를 만든다.
+        /// <see cref="PrepareNextBossIntent"/> <b>뒤에</b> 불러야 한다(결과가 보스 예고를 안고 태어난다).
+        /// </summary>
+        private void BeginRound()
+        {
+            int count = TeamStats != null ? TeamStats.Length : 0;
+            if (actedThisRound == null || actedThisRound.Length != count)
+                actedThisRound = new bool[count];
+            else
+                for (int i = 0; i < count; i++) actedThisRound[i] = false;
+
+            roundStunLanded = false;
+            ActiveSlot = FindNextActor();
+            roundInProgress = new RaidRoundResult(
+                TurnNumber + 1, ActiveSlot, -1, false, NextBossIntent, count);
+            CurrentRoundResult = roundInProgress;
+            roundStage = RaidRoundStage.Ready;
+        }
+
+        /// <summary>이번 라운드에 아직 행동하지 않은 첫 생존 슬롯. 없으면 -1(=보스 차례).</summary>
+        private int FindNextActor()
+        {
+            if (TeamStats == null || actedThisRound == null) return -1;
+            for (int i = 0; i < TeamStats.Length; i++)
+            {
+                if (i < actedThisRound.Length && actedThisRound[i]) continue;
+                if (TeamStats[i] != null && TeamStats[i].CurrentHp > 0) return i;
+            }
+            return -1;
         }
 
         public bool CanUseSkill(int skillIndex)
@@ -237,107 +348,169 @@ namespace InsectGame.Battle
             ResolveTeamCommand(skillIndex);
         }
 
+        /// <summary>
+        /// <b>지금 차례인 팀원 하나</b>가 고른 스킬을 쓴다. 예전엔 이 호출 한 번에 리더 + 나머지
+        /// 생존 팀원 전원이 같은 순간에 행동했고(팀 러시), 그래서 플레이어가 조종하는 건
+        /// 사실상 한 마리뿐이었다. 지금은 슬롯 하나만 소비하고 차례가 다음으로 넘어간다.
+        /// </summary>
         public RaidRoundResult ResolveTeamCommand(int skillIndex)
         {
             if (!CanUseSkill(skillIndex)) return null;
 
-            int leaderSlot = ActiveSlot;
-            InsectBattleStats leader = TeamStats[leaderSlot];
-            InsectSkill skill = TeamSkills[leaderSlot][skillIndex];
-            RaidRoundResult result = new RaidRoundResult(
-                TurnNumber + 1,
-                leaderSlot,
-                skillIndex,
-                false,
-                NextBossIntent,
-                TeamStats.Length);
+            int slot = ActiveSlot;
+            InsectSkill skill = TeamSkills[slot][skillIndex];
+            RaidActionResult action = RaidRoundResolver.ResolveLeaderSkill(
+                slot, skillIndex, TeamStats[slot], BossStats, TeamStats, skill, randomSource);
+            TeamCooldowns[slot][skillIndex] = skill.cooldownTurns;
+            return CommitMemberAction(slot, action);
+        }
 
-            RaidActionResult leaderAction = RaidRoundResolver.ResolveLeaderSkill(
-                leaderSlot, skillIndex, leader, BossStats, TeamStats, skill, randomSource);
-            result.AddTeamAction(leaderAction);
-            bool stunLanded = leaderAction.StunApplied;
+        /// <summary>
+        /// 지금 차례인 팀원을 <b>AI에게 맡긴다</b>. 어느 스킬을 쓸지는 <see cref="RaidSupportPlanner"/>가
+        /// 현재 <see cref="TeamStance"/>로 고르고, 위력은 직접 고를 때보다 낮다
+        /// (<c>GameConstants.Battle.RaidSupportSkillPowerMultiplier</c>) — 직접 조작이 유리해야
+        /// 위임이 "조작을 줄이는 선택지"로 남고 늘 옳은 답이 되지 않는다.
+        /// </summary>
+        public RaidRoundResult ResolveAutoCommand()
+        {
+            if (!CanSubmitTeamCommand) return null;
 
-            // 선택한 리더 외 생존 팀원도 **자기 스킬**로 같은 러시에 참여한다.
-            // 슬롯 순서로 계산하여 RNG와 오버킬 배분도 항상 결정론적으로 유지한다
-            // (RaidSupportPlanner도 난수를 쓰지 않는다 — 동점은 최저 인덱스).
-            for (int i = 0; i < TeamStats.Length; i++)
+            int slot = ActiveSlot;
+            if (TeamStats[slot] == null || TeamStats[slot].CurrentHp <= 0) return null;
+
+            // TeamSkills는 호출부가 준 배열을 그대로 들고 있다 — 길이 보장은 계약이지 코드가 아니다.
+            InsectSkill[] slotSkills = TeamSkills != null && slot < TeamSkills.Length
+                ? TeamSkills[slot]
+                : null;
+            int pick = RaidSupportPlanner.SelectSupportSkillIndex(
+                slot, TeamStats[slot], slotSkills, TeamCooldowns[slot],
+                BossStats, TeamStats,
+                roundInProgress != null ? roundInProgress.BossIntent : NextBossIntent,
+                TeamStance,
+                // 이번 라운드엔 기절이 안 걸린다는 걸 플래너도 알아야 한다 —
+                // 모르면 기절기를 든 팀원이 저항당할 시도를 고른다.
+                bossStunImmuneRounds > 0);
+
+            RaidActionResult action;
+            if (pick < 0)
             {
-                if (i == leaderSlot || TeamStats[i] == null
-                    || TeamStats[i].CurrentHp <= 0)
-                {
-                    continue;
-                }
-
-                // TeamSkills는 호출부가 준 배열을 그대로 들고 있다 — 길이 보장은 계약이지 코드가 아니다.
-                // `CanUseSkill`이 리더 경로에서 이미 같은 가드를 하므로 여기도 맞춘다(현재 유일한 호출부인
-                // CaptureChoiceUI는 항상 MaxSlots 길이를 채우므로 지금은 도달하지 않는다).
-                InsectSkill[] slotSkills = TeamSkills != null && i < TeamSkills.Length
-                    ? TeamSkills[i]
-                    : null;
-                int supportIndex = RaidSupportPlanner.SelectSupportSkillIndex(
-                    i, TeamStats[i], slotSkills, TeamCooldowns[i],
-                    BossStats, TeamStats, result.BossIntent, TeamStance,
-                    // 이번 라운드엔 기절이 안 걸린다는 걸 플래너도 알아야 한다 —
-                    // 모르면 기절기를 든 팀원들이 나란히 저항당할 시도를 한다.
-                    bossStunImmuneRounds > 0);
-
-                if (supportIndex < 0)
-                {
-                    // 스킬이 없거나 전부 쿨다운·0점 — 예전의 기본 지원 공격으로 폴백.
-                    result.AddTeamAction(
-                        RaidRoundResolver.ResolveSupportAssist(i, TeamStats[i], BossStats));
-                    continue;
-                }
-
-                InsectSkill supportSkill = slotSkills[supportIndex];
-                RaidActionResult supportAction = RaidRoundResolver.ResolveSupportSkill(
-                    i, supportIndex, TeamStats[i], BossStats, TeamStats, supportSkill, randomSource);
-                result.AddTeamAction(supportAction);
-                if (supportAction.StunApplied) stunLanded = true;
-
-                // 쿨다운 배선 — 배열(TeamCooldowns)과 TickCooldowns는 원래 슬롯별로 있었는데
-                // **세팅하는 곳이 리더뿐**이라 비-리더 칸이 늘 0이었다. 이제 걸리면 다음 라운드에
-                // 플래너가 자연히 다른 스킬로 돈다(로테이션을 따로 만들 필요가 없다).
-                TeamCooldowns[i][supportIndex] = supportSkill.cooldownTurns;
+                // 스킬이 없거나 전부 쿨다운·0점 — 기본 지원 공격으로 폴백.
+                action = RaidRoundResolver.ResolveSupportAssist(slot, TeamStats[slot], BossStats);
+            }
+            else
+            {
+                InsectSkill picked = slotSkills[pick];
+                action = RaidRoundResolver.ResolveSupportSkill(
+                    slot, pick, TeamStats[slot], BossStats, TeamStats, picked, randomSource);
+                TeamCooldowns[slot][pick] = picked.cooldownTurns;
             }
 
-            // 기절은 팀 전체에서 한 번만 판정한다 — 명중(리졸버의 StunApplied)과 면역 둘 다 통과해야 한다.
-            // 예전엔 리더의 effectType만 보고 무조건 걸어서 명중률을 무시했다.
-            bool stunResisted = false;
-            if (stunLanded)
-            {
-                if (bossStunImmuneRounds > 0) stunResisted = true;
-                else bossStunned = true;
-            }
+            return CommitMemberAction(slot, action);
+        }
 
-            TeamCooldowns[leaderSlot][skillIndex] = skill.cooldownTurns;
-            if (result.TotalDamageToBoss > 0)
+        /// <summary>
+        /// 남은 팀원 <b>전부</b>를 AI에게 맡겨 이번 라운드의 팀 턴을 닫는다. 1탭짜리 조작 절약이고,
+        /// 결과는 개편 전의 "리더만 고르면 나머지 자동"과 같은 자리다.
+        /// 반환은 마지막으로 갱신된 라운드 결과(한 명도 처리하지 못했으면 null).
+        /// </summary>
+        public RaidRoundResult ResolveAutoRemaining()
+        {
+            RaidRoundResult last = null;
+            // 슬롯 수만큼만 돈다 — 호출 하나가 반드시 슬롯 하나를 소비하므로 무한루프가 없다.
+            int guard = TeamStats != null ? TeamStats.Length : 0;
+            while (guard-- > 0 && CanSubmitTeamCommand)
             {
+                RaidRoundResult resolved = ResolveAutoCommand();
+                if (resolved == null) break;
+                last = resolved;
+            }
+            return last;
+        }
+
+        /// <summary>
+        /// 팀원 하나의 행동을 이번 라운드에 적는다 — 게이지·표시 문구를 갱신하고,
+        /// 다음 행동자가 있으면 차례를 넘기고 없으면 팀 턴을 닫는다.
+        /// 세 진입점(직접 선택·자동 위임·스킬 없음 폴백)이 전부 여기로 모인다.
+        /// </summary>
+        private RaidRoundResult CommitMemberAction(int slot, RaidActionResult action)
+        {
+            RaidRoundResult round = roundInProgress;
+            if (round == null || action == null) return null;
+
+            round.AddTeamAction(action);
+            if (slot >= 0 && actedThisRound != null && slot < actedThisRound.Length)
+                actedThisRound[slot] = true;
+            if (action.StunApplied) roundStunLanded = true;
+
+            if (action.Damage > 0)
+            {
+                // 라운드가 5행동으로 쪼개졌으므로 고정분(예전 12)도 나눠 준다.
+                // 그대로 두면 라운드마다 게이지가 5배로 차 합체공격이 매 라운드 열린다.
                 UniteGauge = Mathf.Min(
-                    UniteGauge + 12f + result.TotalDamageToBoss * 0.15f,
+                    UniteGauge + 2.5f + action.Damage * 0.15f,
                     UniteGaugeMax);
             }
 
-            LastDamageToBoss = result.TotalDamageToBoss;
+            LastDamageToBoss = action.Damage;
             LastDamageToTeam = 0;
             LastHitSlot = -1;
             BossUsedAoe = false;
             LastBossSkill = null;
             LastWasUnite = false;
             UniteSlotDamages = null;
-            LastActionText = BuildTeamRushText(result);
+            LastActionText = BuildMemberActionText(action);
+
+            RaidMemberActionResolved?.Invoke(action);
+
+            if (BossStats.CurrentHp <= 0)
+            {
+                round.EndState = RaidRoundEndState.Victory;
+                FinishTeamPhase(round);
+                return round;
+            }
+
+            int next = FindNextActor();
+            if (next >= 0)
+            {
+                ActiveSlot = next;
+                RaidUpdated?.Invoke();
+                return round;
+            }
+
+            FinishTeamPhase(round);
+            return round;
+        }
+
+        /// <summary>
+        /// 팀 전원이 행동을 마쳤다 — 기절을 한 번만 판정하고 보스 차례로 넘긴다.
+        /// 합체공격도 팀 턴을 통째로 소비하므로 같은 자리를 지난다.
+        /// </summary>
+        /// <param name="summaryText">
+        /// 라운드 요약 문구. null이면 기본 요약을 쓴다 — 합체공격만 자기 문구를 넘긴다.
+        /// </param>
+        private void FinishTeamPhase(RaidRoundResult round, string summaryText = null)
+        {
+            // 기절은 팀 전체에서 한 번만 판정한다 — 명중(리졸버의 StunApplied)과 면역 둘 다 통과해야 한다.
+            // 예전엔 리더의 effectType만 보고 무조건 걸어서 명중률을 무시했다.
+            bool stunResisted = false;
+            if (roundStunLanded)
+            {
+                if (bossStunImmuneRounds > 0) stunResisted = true;
+                else bossStunned = true;
+            }
+            roundStunLanded = false;
+
+            ActiveSlot = -1;
+            LastDamageToBoss = round.TotalDamageToBoss;
+            LastActionText = summaryText ?? BuildTeamRoundText(round);
             if (stunResisted)
                 LastActionText += "\n보스가 기절에 저항했다!";
 
-            if (BossStats.CurrentHp <= 0)
-                result.EndState = RaidRoundEndState.Victory;
-
-            result.Stage = RaidRoundStage.TeamResolved;
-            CurrentRoundResult = result;
+            round.Stage = RaidRoundStage.TeamResolved;
+            CurrentRoundResult = round;
             roundStage = RaidRoundStage.TeamResolved;
-            RaidTeamRushResolved?.Invoke(result);
+            RaidTeamRushResolved?.Invoke(round);
             RaidUpdated?.Invoke();
-            return result;
         }
 
         public RaidRoundResult ResolveBossResponse()
@@ -406,12 +579,8 @@ namespace InsectGame.Battle
             if (FindFirstAlive() < 0)
                 result.EndState = RaidRoundEndState.Defeat;
 
-            if (ActiveSlot >= 0 && ActiveSlot < TeamStats.Length
-                && TeamStats[ActiveSlot] != null && TeamStats[ActiveSlot].CurrentHp <= 0)
-            {
-                int next = FindFirstAlive();
-                if (next >= 0) ActiveSlot = next;
-            }
+            // 기절한 슬롯을 건너뛰는 처리는 여기 없다 — 다음 라운드를 여는 `BeginRound`가
+            // 생존 슬롯만 골라 `ActiveSlot`을 다시 세운다(순차 턴에서는 그쪽이 단일 출처다).
 
             result.Stage = RaidRoundStage.BossResolved;
             roundStage = RaidRoundStage.BossResolved;
@@ -440,8 +609,8 @@ namespace InsectGame.Battle
                 return true;
             }
 
-            roundStage = RaidRoundStage.Ready;
             PrepareNextBossIntent();
+            BeginRound();   // 다음 라운드 — 행동 기록을 비우고 첫 생존 슬롯에 차례를 준다
             RaidUpdated?.Invoke();
             return true;
         }
@@ -468,26 +637,38 @@ namespace InsectGame.Battle
                 TeamStats,
                 bossCooldown,
                 signature,
-                randomSource);
+                randomSource,
+                GameConstants.Battle.RaidBossUsesAreaAttack);
         }
 
-        private static string BuildTeamRushText(RaidRoundResult result)
+        /// <summary>팀원 하나가 방금 한 행동의 한 줄 설명. 순차 턴이라 라운드마다 여러 번 갱신된다.</summary>
+        private string BuildMemberActionText(RaidActionResult action)
+        {
+            if (action == null) return string.Empty;
+
+            string actor = SlotDisplayName(action.SourceSlot);
+            if (action.Missed) return $"{actor}의 {action.DisplayName}! 빗나갔다!";
+            if (action.Capped) return $"{actor}의 {action.DisplayName}! 이미 최대치다!";   // 턴은 소비됐다
+            if (action.Healing > 0) return $"{actor}의 {action.DisplayName}! HP {action.Healing} 회복!";
+            if (action.Damage > 0) return $"{actor}의 {action.DisplayName}! {action.Damage} 피해!";
+            return $"{actor}의 {action.DisplayName}!";
+        }
+
+        /// <summary>팀 전원이 행동을 마친 뒤의 라운드 요약.</summary>
+        private static string BuildTeamRoundText(RaidRoundResult result)
         {
             if (result == null || result.TeamActions.Count == 0)
                 return string.Empty;
+            return $"팀 {result.TeamActions.Count}마리 행동 완료!  TOTAL {result.TotalDamageToBoss}";
+        }
 
-            RaidActionResult leader = result.TeamActions[0];
-            string leaderText;
-            if (leader.Missed)
-                leaderText = $"{leader.DisplayName}! 빗나갔다!";
-            else if (leader.Capped)
-                leaderText = $"{leader.DisplayName}! 이미 최대치다!";   // 스택 상한 — 턴은 소비됐다
-            else
-                leaderText = $"{leader.DisplayName}!";
-            int supports = Mathf.Max(0, result.TeamActions.Count - 1);
-            return supports > 0
-                ? $"{leaderText}\n팀 러시! 지원 {supports}마리"
-                : leaderText;
+        private string SlotDisplayName(int slot)
+        {
+            if (TeamStats == null || slot < 0 || slot >= TeamStats.Length) return "팀원";
+            InsectBattleStats stats = TeamStats[slot];
+            return stats != null && stats.Data != null
+                ? stats.Data.displayName
+                : $"팀원 {slot + 1}";
         }
 
         private string BuildBossResponseText(RaidBossIntent intent)
@@ -629,7 +810,7 @@ namespace InsectGame.Battle
                 ActiveSlot,
                 -1,
                 true,
-                NextBossIntent,
+                roundInProgress != null ? roundInProgress.BossIntent : NextBossIntent,
                 TeamStats.Length);
             List<string> names = new List<string>();
             for (int i = 0; i < TeamStats.Length; i++)
@@ -641,11 +822,14 @@ namespace InsectGame.Battle
                 names.Add(attacker.Data != null ? attacker.Data.displayName : $"팀원 {i + 1}");
             }
 
+            // 합체공격은 팀 턴을 통째로 소비한다 — 아직 차례가 오지 않았던 팀원도 여기에 참여했다.
+            // 표시하지 않으면 합체 직후 남은 슬롯들이 한 번 더 행동해 한 라운드에 두 번 때린다.
+            if (actedThisRound != null)
+                for (int i = 0; i < actedThisRound.Length; i++) actedThisRound[i] = true;
+
             UniteGauge = 0f;
             LastWasUnite = true;
-            LastDamageToBoss = result.TotalDamageToBoss;
             UniteSlotDamages = result.UniteSlotDamages;
-            LastActionText = $"★ 합체공격! {string.Join(" + ", names)} ★";
             BossUsedAoe = false;
             LastBossSkill = null;
             LastDamageToTeam = 0;
@@ -654,11 +838,8 @@ namespace InsectGame.Battle
             if (BossStats.CurrentHp <= 0)
                 result.EndState = RaidRoundEndState.Victory;
 
-            result.Stage = RaidRoundStage.TeamResolved;
-            CurrentRoundResult = result;
-            roundStage = RaidRoundStage.TeamResolved;
-            RaidTeamRushResolved?.Invoke(result);
-            RaidUpdated?.Invoke();
+            roundInProgress = result;
+            FinishTeamPhase(result, $"★ 합체공격! {string.Join(" + ", names)} ★");
             return result;
         }
 

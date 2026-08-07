@@ -75,7 +75,7 @@ namespace InsectGame.Tests
             Assert.IsTrue(started, "한 마리라도 살아 있으면 레이드는 가능하다");
             Assert.IsTrue(raid.IsActive);
             Assert.AreEqual(1, raid.AliveCount());
-            Assert.AreEqual(3, raid.ActiveSlot, "리더는 생존 슬롯이어야 한다");
+            Assert.AreEqual(3, raid.ActiveSlot, "첫 행동자는 생존 슬롯이어야 한다");
         }
 
         [Test]

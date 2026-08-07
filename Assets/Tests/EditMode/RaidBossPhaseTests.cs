@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Reflection;
 using InsectGame.Battle;
+using InsectGame.Core;
 using InsectGame.Data;
 using InsectGame.Spawning;
 using NUnit.Framework;
@@ -59,13 +60,33 @@ namespace InsectGame.Tests
         [Test]
         public void Enraged_ShortensAreaAttackInterval()
         {
-            // 평상시 전체공격 간격과 격노 후 간격을 같은 방식으로 재서 비교한다.
-            int calm = RoundsBetweenAreaAttacks(enrage: false);
-            int enraged = RoundsBetweenAreaAttacks(enrage: true);
+            // 전체공격은 지금 꺼져 있지만(`GameConstants.Battle.RaidBossUsesAreaAttack`)
+            // 간격 상수와 실행 경로는 그대로 살아 있다 — 되돌릴 때를 위해 관계를 고정한다.
+            // 예전엔 실제 라운드를 돌려 예고까지의 간격을 셌는데, 스위치가 꺼진 지금 그 루프는
+            // 영원히 전체공격 예고를 만나지 못한다(테스트가 멈춘다).
+            Assert.Greater(
+                GameConstants.Battle.RaidBossAreaInterval,
+                GameConstants.Battle.RaidBossEnragedAreaInterval,
+                "격노하면 전체공격이 더 자주 와야 한다");
+            Assert.GreaterOrEqual(GameConstants.Battle.RaidBossEnragedAreaInterval, 1,
+                "간격이 0이면 전체공격만 반복해 단일 공격이 사라진다");
+        }
 
-            Assert.Greater(calm, enraged, "격노하면 전체공격이 더 자주 와야 한다");
-            Assert.AreEqual(GameConstantsAreaInterval + 1, calm);
-            Assert.AreEqual(GameConstantsEnragedAreaInterval + 1, enraged);
+        [Test]
+        public void BossIntent_AreaSwitchOff_KeepsSingleTargetEvenAtCountdownZero()
+        {
+            RaidBattleController raid = Raid(SignatureCount(0));
+
+            RaidBossIntent blocked = RaidRoundResolver.CreateBossIntent(
+                1, raid.BossStats, raid.TeamStats, 0, null,
+                new LowestSlotRandomSource(), allowAreaAttack: false);
+            RaidBossIntent allowed = RaidRoundResolver.CreateBossIntent(
+                1, raid.BossStats, raid.TeamStats, 0, null,
+                new LowestSlotRandomSource(), allowAreaAttack: true);
+
+            Assert.IsFalse(blocked.IsArea, "스위치가 꺼지면 카운트다운이 0이어도 단일 대상이다");
+            Assert.GreaterOrEqual(blocked.TargetSlot, 0, "단일 공격은 대상 슬롯을 정해야 한다");
+            Assert.IsTrue(allowed.IsArea, "스위치를 켜면 예전 동작 그대로다");
         }
 
         [Test]
@@ -108,43 +129,21 @@ namespace InsectGame.Tests
             }
         }
 
-        private const int GameConstantsAreaInterval = 2;
-        private const int GameConstantsEnragedAreaInterval = 1;
-
-        /// <summary>전체공격이 실행된 뒤 다음 전체공격 예고까지 걸리는 라운드 수.</summary>
-        private int RoundsBetweenAreaAttacks(bool enrage)
-        {
-            RaidBattleController raid = Raid(SignatureCount(0));
-            if (enrage)
-            {
-                raid.BossStats.ApplyDamage(raid.BossStats.MaxHp * 6 / 10);
-                RunRound(raid);   // 1라운드 예고는 전체공격 — 여기서 격노가 켜진다
-                Assert.IsTrue(raid.BossEnraged);
-            }
-
-            // 전체공격이 실제로 실행되는 라운드까지 진행한다.
-            while (raid.NextBossIntent == null
-                || raid.NextBossIntent.Kind != RaidBossIntentKind.AreaAttack)
-            {
-                RunRound(raid);
-            }
-
-            RunRound(raid);   // 그 전체공격을 실행 → 쿨다운이 걸린다
-
-            int rounds = 1;
-            while (raid.NextBossIntent == null
-                || raid.NextBossIntent.Kind != RaidBossIntentKind.AreaAttack)
-            {
-                RunRound(raid);
-                rounds++;
-            }
-
-            return rounds;
-        }
-
+        /// <summary>
+        /// 라운드 하나를 끝까지 돌린다 — <b>팀 전원이 차례로</b> 행동해야 보스 차례가 온다.
+        /// 예전엔 커맨드 한 번이 팀 전체를 움직여서 이 헬퍼도 한 줄이었다.
+        /// </summary>
         private void RunRound(RaidBattleController raid)
         {
-            Assert.IsNotNull(raid.ResolveTeamCommand(0), "팀 커맨드가 받아들여져야 한다");
+            int guard = raid.TeamStats.Length + 1;
+            bool acted = false;
+            while (guard-- > 0 && raid.CanSubmitTeamCommand)
+            {
+                Assert.IsNotNull(raid.ResolveTeamCommand(0), "팀 커맨드가 받아들여져야 한다");
+                acted = true;
+            }
+
+            Assert.IsTrue(acted, "팀이 한 번은 행동해야 라운드가 진행된다");
             raid.ResolveBossResponse();
             Assert.IsTrue(raid.CompleteRoundPresentation());
         }

@@ -31,8 +31,9 @@ namespace InsectGame.Battle
         // 곤충이 화면에서 과대해 하향(카메라·battlePos·FOV·아레나 지오메트리는 불변 = "모델만 축소").
         // 보스는 위압 비율 유지, 팀은 5마리 호 배치라 더 작게.
         private const float BattleInsectScale = 1.1f;   // 1v1 플레이어/적 (기존 1.5)
-        private const float BossInsectScale = 1.85f;    // 레이드 보스 (기존 2.5)
-        private const float TeamInsectScale = 0.8f;     // 레이드 팀원 (기존 1.0)
+        // 레이드 카메라를 눈높이로 낮추고 뒤로 물리면서 두 대상 모두 멀어졌다 — 그만큼 키운다.
+        private const float BossInsectScale = 2.3f;     // 레이드 보스 (기존 1.85)
+        private const float TeamInsectScale = 1.0f;     // 레이드 팀원 (기존 0.8)
 
         // 스킬 연출 코루틴 진행 여부 — UI 페이즈 전이를 연출 길이에 맞춰 게이팅(BattleScreenUI.PhaseAnimDone).
         private bool playingSkill;
@@ -112,9 +113,12 @@ namespace InsectGame.Battle
             // 아레나를 필드와 완전 분리된 위치에 생성 (필드 오브젝트와 겹침 방지)
             arenaCenter = new Vector3(1000f, 0f, 1000f);
 
-            // 보스: 멀리 위에, 팀: 가까이 아래 — 올려보는 구도
-            bossBattlePos = arenaCenter + new Vector3(0f, 1.2f, 4f);
-            playerBattlePos = arenaCenter + new Vector3(0f, 0.5f, -3.5f);
+            // 보스: 멀리 위에, 팀: 가까이 아래 — 올려보는 구도.
+            // 간격을 7.5 → 5로 좁히고 보스를 1.2 → 2.2로 높였다. 카메라가 팀 뒤에서 볼 때
+            // 둘의 **화면상 높이 차**가 줄어 팀과 보스가 함께 하단 스킬 패널 위쪽에 들어온다.
+            // 예전 배치는 팀이 화면 아래 80% 부근에 떨어져 패널에 통째로 가려졌다.
+            bossBattlePos = arenaCenter + new Vector3(0f, 2.2f, 3f);
+            playerBattlePos = arenaCenter + new Vector3(0f, 0.5f, -2f);
             enemyBattlePos = bossBattlePos;
 
             arenaRoot = new GameObject("RaidArena");
@@ -137,8 +141,9 @@ namespace InsectGame.Battle
             {
                 if (teamInsects[i] == null) continue;
                 float t = count > 1 ? (float)i / (count - 1) : 0.5f;
-                float x = Mathf.Lerp(-2.5f, 2.5f, t);
-                float z = -3.5f + Mathf.Abs(t - 0.5f) * 2f; // 양 끝이 약간 뒤로
+                float x = Mathf.Lerp(-2.6f, 2.6f, t);
+                // 호 중심은 playerBattlePos에서 파생한다 — 좌표를 두 곳에 적지 않는다.
+                float z = playerBattlePos.z - arenaCenter.z + Mathf.Abs(t - 0.5f) * 1.2f;
                 Vector3 pos = arenaCenter + new Vector3(x, 0.5f, z);
                 teamModels[i] = CreateBattleInsect(teamInsects[i], teamLevels[i], false, pos, TeamInsectScale);
                 teamModels[i].name = $"RaidInsect_Team_{i}";
@@ -216,20 +221,38 @@ namespace InsectGame.Battle
             centerLine.GetComponent<MeshRenderer>().material = lineMat;
             Object.Destroy(centerLine.GetComponent<Collider>());
 
-            // 아레나 경계벽 — 필드가 보이지 않도록 차단
+            // 경기장 바깥 지면 — 밝은 원판(반지름 4)과 경계벽 사이의 빈 공간을 메운다.
+            // 이게 없으면 카메라를 뒤로 물린 만큼 원판 밖으로 필드가 비쳐 보인다.
+            GameObject outerGround = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+            outerGround.name = "ArenaOuterGround";
+            outerGround.transform.SetParent(arenaRoot.transform, false);
+            outerGround.transform.localPosition = new Vector3(0f, -0.2f, 0f);
+            outerGround.transform.localScale = new Vector3(ArenaWallSpan * 2.2f, 0.1f, ArenaWallSpan * 2.2f);
+            outerGround.GetComponent<MeshRenderer>().material =
+                CreateSafeMaterial(new Color(0.07f, 0.10f, 0.06f));
+            Object.Destroy(outerGround.GetComponent<Collider>());
+
+            // 아레나 경계벽 — 필드가 보이지 않도록 차단.
+            // **카메라보다 멀리** 세운다: 전투 카메라는 1v1이 z≈-6.5, 레이드가 z≈-9.5로 아레나 뒤에
+            // 서는데 예전 벽은 ±5에 있었다. 그래서 카메라가 남쪽 벽의 **바깥 면**을 정면으로 마주 봐
+            // 화면이 통째로 벽에 막혔다 — 레이드에서 곤충이 하나도 보이지 않던 원인이다.
+            // 벽을 옮길 때는 `RaidCamBackDistance`/1v1 카메라 오프셋보다 크게 유지할 것.
             Material wallMat = CreateSafeMaterial(new Color(0.2f, 0.35f, 0.18f));
             string[] wallNames = { "WallN", "WallS", "WallE", "WallW" };
+            float span = ArenaWallSpan;
+            float thick = 0.4f;
+            float wallH = ArenaWallHeight;
             Vector3[] wallPositions = {
-                new Vector3(0f, 2.5f, 5f),
-                new Vector3(0f, 2.5f, -5f),
-                new Vector3(5f, 2.5f, 0f),
-                new Vector3(-5f, 2.5f, 0f)
+                new Vector3(0f, wallH * 0.5f, span),
+                new Vector3(0f, wallH * 0.5f, -span),
+                new Vector3(span, wallH * 0.5f, 0f),
+                new Vector3(-span, wallH * 0.5f, 0f)
             };
             Vector3[] wallScales = {
-                new Vector3(10f, 5f, 0.2f),
-                new Vector3(10f, 5f, 0.2f),
-                new Vector3(0.2f, 5f, 10f),
-                new Vector3(0.2f, 5f, 10f)
+                new Vector3(span * 2f, wallH, thick),
+                new Vector3(span * 2f, wallH, thick),
+                new Vector3(thick, wallH, span * 2f),
+                new Vector3(thick, wallH, span * 2f)
             };
             for (int i = 0; i < 4; i++)
             {
@@ -242,6 +265,14 @@ namespace InsectGame.Battle
                 Object.Destroy(wall.GetComponent<Collider>());
             }
         }
+
+        /// <summary>
+        /// 아레나 경계벽까지의 거리. <b>전투 카메라가 이 안에 들어와야</b> 벽이 시야를 막지 않는다 —
+        /// 레이드 카메라는 팀 뒤 <see cref="RaidCamBackDistance"/>에 서므로 그보다 넉넉히 크다.
+        /// 공개인 이유는 <c>RaidCameraFramingTests</c>가 그 관계를 고정하기 때문이다.
+        /// </summary>
+        public const float ArenaWallSpan = 13f;
+        public const float ArenaWallHeight = 10f;
 
         private void CreateBattleLight()
         {
@@ -837,10 +868,16 @@ namespace InsectGame.Battle
 
         // 레이드 카메라 구도 — 눈으로 보고 조정하는 값이다.
         // 보스를 더 크게/작게 보고 싶으면 RaidCamBackDistance만 움직이면 된다.
-        private const float RaidCamBackDistance = 5.0f;   // 팀 호 중심에서 뒤로
-        private const float RaidCamHeight = 4.6f;         // 팀 발치 기준 높이
+        //
+        // 높이를 4.6 → 1.1로 낮춘 이유: 카메라가 팀보다 4.6m 위에서 22도로 내려다보면
+        // 가까운 팀은 화면 아래 80% 부근, 먼 보스는 60% 부근에 떨어진다. 하단 스킬 패널이
+        // 세로에서 화면의 1/3을 덮으므로 팀 5마리가 통째로 그 뒤에 숨었다. 눈높이에 가깝게
+        // 낮추고 뒤로 물리면 팀과 보스의 화면상 높이 차가 6도 안으로 좁혀져 둘 다 패널 위에 남는다.
+        // (거리는 `ArenaWallSpan`보다 작아야 한다 — 넘으면 카메라가 경계벽 밖으로 나간다.)
+        private const float RaidCamBackDistance = 7.5f;   // 팀 호 중심에서 뒤로
+        private const float RaidCamHeight = 1.1f;         // 팀 발치 기준 높이
         private const float RaidCamLookBias = 0.5f;       // 시선 지점(팀→보스 보간). 클수록 보스가 화면 위로
-        private const float RaidCamLookLift = 0.6f;       // 시선 지점을 바닥에서 살짝 띄운다
+        private const float RaidCamLookLift = 0f;         // 시선 지점 높이 보정(팀↔보스 보간값 그대로)
 
         /// <summary>
         /// 팀 뒤 위쪽에서 보스를 정면으로 보는 카메라 구도. 화면 상단-중앙에 보스,

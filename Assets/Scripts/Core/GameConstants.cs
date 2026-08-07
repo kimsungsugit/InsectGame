@@ -127,6 +127,18 @@ namespace InsectGame.Core
             /// <summary>전체공격 사이에 끼는 단일 턴 수. 평소 2, 격노 시 1.</summary>
             public const int RaidBossAreaInterval = 2;
             public const int RaidBossEnragedAreaInterval = 1;
+
+            /// <summary>
+            /// 보스가 <b>전체공격(AOE)</b>을 예고하는가. <c>false</c>면 항상 단일 대상 하나만 노린다
+            /// (위 두 간격 상수와 <c>bossCooldown</c>은 그대로 도는데 의도 생성에서만 걸러진다).
+            ///
+            /// 왜 껐나: 팀 턴이 <b>곤충 5마리 순차 행동</b>으로 바뀌면서 라운드가 길어졌는데,
+            /// 전체공격은 라운드 한 번에 5마리 전원을 깎아 평균 팀 피해가 단일의 <b>2.17배</b>였다
+            /// (2라운드마다 5명×2/3위력). 레이드엔 부활·교체·아이템이 없어 되돌릴 수단도 없다.
+            /// AOE 코드 경로(<c>RaidRoundResolver.ResolveBossIntent</c>의 <c>IsArea</c> 분기)는
+            /// 그대로 살아 있다 — 여기만 <c>true</c>로 되돌리면 예전 동작이다.
+            /// </summary>
+            public const bool RaidBossUsesAreaAttack = false;
         }
 
         // ── 기본 설정값 ──

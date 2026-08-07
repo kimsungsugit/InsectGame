@@ -43,14 +43,21 @@ namespace InsectGame.Battle
                 skill.accuracy, 0f, (random ?? SharedRandom).Next01());
         }
 
+        /// <param name="allowAreaAttack">
+        /// <c>false</c>면 카운트다운이 끝나도 전체공격을 예고하지 않고 단일 대상으로 간다.
+        /// 호출부(<c>RaidBattleController</c>)가 <c>GameConstants.Battle.RaidBossUsesAreaAttack</c>를
+        /// 그대로 넘긴다 — 스위치는 상수 하나뿐이고 AOE 실행 경로
+        /// (<see cref="ResolveBossIntent"/>의 <c>IsArea</c> 분기)는 손대지 않는다.
+        /// </param>
         public static RaidBossIntent CreateBossIntent(int roundNumber,
             InsectBattleStats boss, InsectBattleStats[] team, int roundsUntilAreaAttack,
-            InsectSkill signatureSkill, IRaidRandomSource random)
+            InsectSkill signatureSkill, IRaidRandomSource random,
+            bool allowAreaAttack = true)
         {
             IRaidRandomSource source = random ?? SharedRandom;
             InsectData bossData = boss != null ? boss.Data : null;
 
-            if (roundsUntilAreaAttack <= 0)
+            if (allowAreaAttack && roundsUntilAreaAttack <= 0)
             {
                 return new RaidBossIntent
                 {

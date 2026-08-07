@@ -16,8 +16,8 @@ namespace InsectGame.Tests
     public class RaidCameraFramingTests
     {
         // 실제 아레나 배치(BattleArenaController.SetupRaidBattle)와 같은 상대 좌표.
-        private static readonly Vector3 TeamPos = new Vector3(0f, 0.5f, -3.5f);
-        private static readonly Vector3 BossPos = new Vector3(0f, 1.2f, 4f);
+        private static readonly Vector3 TeamPos = new Vector3(0f, 0.5f, -2f);
+        private static readonly Vector3 BossPos = new Vector3(0f, 2.2f, 3f);
 
         [Test]
         public void ComputeRaidCameraFraming_PlacesCameraBehindTeam()
@@ -79,6 +79,45 @@ namespace InsectGame.Tests
 
             Assert.IsFalse(float.IsNaN(camPos.x) || float.IsNaN(camPos.y) || float.IsNaN(camPos.z));
             Assert.Greater((camPos - lookTarget).magnitude, 0.5f, "카메라와 시선 지점이 겹치면 안 된다");
+        }
+
+        [Test]
+        public void ComputeRaidCameraFraming_StaysInsideArenaWalls()
+        {
+            BattleArenaController.ComputeRaidCameraFraming(
+                TeamPos, BossPos, out Vector3 camPos, out _);
+
+            // 카메라가 경계벽 밖으로 나가면 벽의 **바깥 면**을 정면으로 마주 본다 —
+            // 화면이 통째로 벽에 막혀 곤충이 하나도 보이지 않는다(실제로 그랬다).
+            Assert.Less(Mathf.Abs(camPos.z), BattleArenaController.ArenaWallSpan, "z");
+            Assert.Less(Mathf.Abs(camPos.x), BattleArenaController.ArenaWallSpan, "x");
+            Assert.Less(camPos.y, BattleArenaController.ArenaWallHeight,
+                "벽보다 높으면 벽 너머 필드가 비친다");
+        }
+
+        [Test]
+        public void ComputeRaidCameraFraming_KeepsTeamAndBossVerticallyClose()
+        {
+            BattleArenaController.ComputeRaidCameraFraming(
+                TeamPos, BossPos, out Vector3 camPos, out _);
+
+            float teamAngle = VerticalAngle(camPos, TeamPos);
+            float bossAngle = VerticalAngle(camPos, BossPos);
+
+            // 세로 화면의 하단 1/3은 스킬 패널이 덮는다. 팀과 보스의 화면상 높이 차가 벌어지면
+            // 하나를 화면에 맞추는 순간 다른 하나가 패널 뒤로 들어간다 — 팀 5마리가 그렇게 사라졌다
+            // (옛 구도는 25도 차이였다). 수직 FOV 60도 기준 12도 = 화면 높이의 1/5.
+            Assert.Less(Mathf.Abs(bossAngle - teamAngle), 12f,
+                "팀과 보스가 화면에서 너무 멀리 떨어지면 하단 UI가 한쪽을 가린다");
+            Assert.Greater(bossAngle, teamAngle, "보스가 팀보다 화면 위에 있어야 한다");
+        }
+
+        /// <summary>수평면 대비 올려다본 각도(도). 양수면 카메라보다 위.</summary>
+        private static float VerticalAngle(Vector3 from, Vector3 to)
+        {
+            Vector3 delta = to - from;
+            float horizontal = new Vector2(delta.x, delta.z).magnitude;
+            return Mathf.Atan2(delta.y, horizontal) * Mathf.Rad2Deg;
         }
 
         private static Vector3 HorizontalAxis(Vector3 from, Vector3 to)
