@@ -53,6 +53,77 @@ namespace InsectGame.UI
         // 하드코딩 문자열이 실제 분포와 어긋나 확률 공시 위반(구글플레이/한국 게임법)되던 회귀 차단.
         private readonly Dictionary<string, string> gachaRateTextCache = new Dictionary<string, string>();
 
+        /// <summary>
+        /// 카드 라벨 리치텍스트 캐시. 품목 데이터(이름·설명·수량·보석가)는 불변인데 예전엔
+        /// OnGUI 패스마다 다시 만들었다 — 아이템 탭 기준 <b>패스당 36개</b>이고 OnGUI는
+        /// 프레임당 여러 패스를 돈다(위 <see cref="gachaRateTextCache"/>와 같은 방식).
+        ///
+        /// 키는 <c>itemId</c> 하나로 충분하다 — 세 탭의 품목 집합이 겹치지 않는다:
+        /// 보석팩은 <c>GetGemPackages()</c>, 아이템 탭은 <c>gemPrice &gt; 0</c>만(보석팩은 0이라 제외),
+        /// 가챠는 <c>box_*</c>(카테고리가 GachaBox라 아이템 탭에 안 잡힌다).
+        /// </summary>
+        private struct CardText
+        {
+            public string title;    // 이름(굵게)
+            public string sub;      // 수량 배지 — 없으면 null
+            public string desc;     // 설명
+            public string price;    // 💎 보석가 — 실결제 카드엔 없다(null, 아래 주석 참조)
+        }
+
+        private readonly Dictionary<string, CardText> cardTextCache = new Dictionary<string, CardText>();
+        private bool cardTextMobile;
+
+        /// <summary>
+        /// <c>&lt;size=…&gt;</c> 태그가 모바일/데스크톱에 따라 다르므로 레이아웃이 바뀌면(회전 등)
+        /// 캐시를 통째로 버린다. 안 버리면 회전 후에도 옛 글자 크기가 그대로 남는다.
+        /// </summary>
+        private void EnsureCardTextLayout(bool mobile)
+        {
+            if (cardTextMobile == mobile) return;
+            cardTextMobile = mobile;
+            cardTextCache.Clear();
+        }
+
+        private CardText GetGemCardText(CashShopItem item)
+        {
+            if (cardTextCache.TryGetValue(item.itemId, out CardText cached)) return cached;
+            CardText t;
+            t.title = $"<size=31><b>{item.displayName}</b></size>";
+            t.sub = null;
+            t.desc = $"<size={(cardTextMobile ? 21 : 16)}>{item.description}</size>";
+            // **실결제 가격은 캐시하지 않는다.** GetRealMoneyPriceText는 IAP 모듈이 준비되면
+            // 폴백가(priceKRW)에서 스토어 현지화가로 바뀐다 — 굳히면 결제 화면에 틀린 가격이 남는다.
+            // 카드당 1개뿐이라 매 패스 만들어도 이 캐시가 없애려는 규모(카드당 3~4개)가 아니다.
+            t.price = null;
+            cardTextCache[item.itemId] = t;
+            return t;
+        }
+
+        private CardText GetItemCardText(CashShopItem item)
+        {
+            if (cardTextCache.TryGetValue(item.itemId, out CardText cached)) return cached;
+            CardText t;
+            t.title = $"<size=28><b>{item.displayName}</b></size>";
+            t.sub = item.rewardCount > 1 ? $"<size=23>x{item.rewardCount}</size>" : null;
+            t.desc = $"<size={(cardTextMobile ? 20 : 15)}>{item.description}</size>";
+            // 보석가는 품목 데이터라 불변 — 실결제 가격과 달리 캐시해도 안전하다.
+            t.price = $"<size=26><b>💎 {item.gemPrice}</b></size>";
+            cardTextCache[item.itemId] = t;
+            return t;
+        }
+
+        private CardText GetBoxCardText(string boxId, string title, int price)
+        {
+            if (cardTextCache.TryGetValue(boxId, out CardText cached)) return cached;
+            CardText t;
+            t.title = $"<size=31><b>{title}</b></size>";
+            t.sub = null;
+            t.desc = null;   // 확률표는 gachaRateTextCache가 따로 든다(공시 정합성 때문에 출처가 다르다)
+            t.price = $"<size=28><b>💎 {price}</b></size>";
+            cardTextCache[boxId] = t;
+            return t;
+        }
+
         private static readonly Color GachaPriceAffordCol = new Color(0.4f, 0.7f, 1f);
         private static readonly Color GachaRateGrayCol = new Color(0.85f, 0.85f, 0.85f);
         private static readonly Color GachaCandyPinkCol = new Color(1f, 0.6f, 0.8f);
@@ -439,6 +510,7 @@ namespace InsectGame.UI
 
             GUILayout.Space(20);
             bool mobile = UIScale.IsMobileLayout;
+            EnsureCardTextLayout(mobile);
             if (!mobile)
             {
                 GUILayout.BeginHorizontal();
@@ -505,9 +577,11 @@ namespace InsectGame.UI
             GUILayout.FlexibleSpace();
             GUILayout.EndHorizontal();
 
-            GUILayout.Label($"<size=31><b>{item.displayName}</b></size>", shopCenterBoldStyle);
+            // 라벨은 GetGemCardText가 품목당 1회만 굽는다(실결제 가격은 예외 — 아래 참조).
+            CardText text = GetGemCardText(item);
+            GUILayout.Label(text.title, shopCenterBoldStyle);
             // 설명은 데스크톱 좁은 카드(260px)에서 잘림 방지 위해 모바일에서만 크게.
-            GUILayout.Label($"<size={(mobile ? 21 : 16)}>{item.description}</size>", yellowDescStyle);
+            GUILayout.Label(text.desc, yellowDescStyle);
 
             GUILayout.FlexibleSpace();
             // 실결제 모듈 준비 시 스토어 현지화 가격(실제 청구액과 일치), 아니면 priceKRW 폴백.
@@ -538,6 +612,7 @@ namespace InsectGame.UI
             CashShopItem[] items = CashShopManager.Instance.GetItemsByCategory(CashItemCategory.MinigameItem);
             int gems = CashShopManager.Instance.Gems;
             bool mobile = UIScale.IsMobileLayout;
+            EnsureCardTextLayout(mobile);
             int col = 0;
 
             GUILayout.Space(10);
@@ -576,18 +651,19 @@ namespace InsectGame.UI
             float cardW = mobile ? Mathf.Min(520f, UIScale.VirtualScreenWidth * 0.82f) : 260f;
             GUILayout.BeginVertical(GUI.skin.box, GUILayout.Width(cardW), GUILayout.Height(mobile ? 330f : 260f));
 
-            GUILayout.Label($"<size=28><b>{item.displayName}</b></size>", shopCenterBoldStyle);
-            if (item.rewardCount > 1)
-                GUILayout.Label($"<size=23>x{item.rewardCount}</size>", itemRewardCountStyle);
+            CardText text = GetItemCardText(item);
+            GUILayout.Label(text.title, shopCenterBoldStyle);
+            if (text.sub != null)
+                GUILayout.Label(text.sub, itemRewardCountStyle);
             // 긴 설명 — 데스크톱 좁은 카드에서 잘림 방지 위해 모바일에서만 크게.
-            GUILayout.Label($"<size={(mobile ? 20 : 15)}>{item.description}</size>", itemDescGrayStyle);
+            GUILayout.Label(text.desc, itemDescGrayStyle);
 
             GUILayout.FlexibleSpace();
 
             bool canAfford = currentGems >= item.gemPrice;
             // itemPriceStyle 재사용 + textColor 동적 갱신.
             itemPriceStyle.normal.textColor = canAfford ? GachaPriceAffordCol : Color.red;
-            GUILayout.Label($"<size=26><b>💎 {item.gemPrice}</b></size>", itemPriceStyle);
+            GUILayout.Label(text.price, itemPriceStyle);
 
             GUILayout.Space(6);
 
@@ -628,6 +704,7 @@ namespace InsectGame.UI
             InitGachaStyles();
             int gems = CashShopManager.Instance.Gems;
             bool mobile = UIScale.IsMobileLayout;
+            EnsureCardTextLayout(mobile);
 
             GUILayout.Space(15);
             if (!mobile)
@@ -708,7 +785,8 @@ namespace InsectGame.UI
             GUILayout.EndHorizontal();
             GUI.color = Color.white;
 
-            GUILayout.Label($"<size=31><b>{title}</b></size>", boxCenterBoldStyle);
+            CardText text = GetBoxCardText(boxId, title, price);
+            GUILayout.Label(text.title, boxCenterBoldStyle);
 
             GUILayout.Space(12);
 
@@ -720,7 +798,7 @@ namespace InsectGame.UI
             bool canAfford = currentGems >= price;
             // 스타일 재사용 + textColor만 동적 갱신 (BattleScreenUI/DexScreenUI 패턴)
             boxPriceStyle.normal.textColor = canAfford ? GachaPriceAffordCol : Color.red;
-            GUILayout.Label($"<size=28><b>💎 {price}</b></size>", boxPriceStyle);
+            GUILayout.Label(text.price, boxPriceStyle);
 
             GUILayout.Space(8);
 
