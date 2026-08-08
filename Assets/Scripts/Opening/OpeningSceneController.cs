@@ -485,6 +485,10 @@ namespace InsectGame.Opening
             if (next >= 0 && blend > 0f)
                 DrawImageOrFallback(screenRect, openingImages[next], next, blend);
 
+            // 비네트 → 곤충 → 빛 순서. 곤충은 배경 앞을 지나는 그림자라 빛보다 뒤에 있어야
+            // 빛이 곤충 위로 떠오르는 것처럼 보인다.
+            DrawVignette(screenRect, 1f - sequence.FadeAlpha);
+            DrawDriftingInsects(screenRect, sequence.Elapsed, 1f - sequence.FadeAlpha);
             DrawFloatingLights(screenRect, sequence.Elapsed, 1f - sequence.FadeAlpha);
 
             float titleAlpha = sequence.TitleAlpha * (1f - sequence.FadeAlpha);
@@ -619,17 +623,24 @@ namespace InsectGame.Opening
             float width = safeRect.width - 64f;
             float height = narrationStyle.fontSize * 2.6f;
             // 건너뛰기 알약이 하단 마진 위에 서므로 그보다 충분히 위에 둔다.
-            float y = safeRect.yMax - safeRect.height * 0.30f - height * 0.5f;
+            // **알파에 따라 아래에서 떠오른다** — 제자리에서 밝아지기만 하면 슬라이드처럼 보인다.
+            float rise = (1f - alpha) * height * 0.45f;
+            float y = safeRect.yMax - safeRect.height * 0.30f - height * 0.5f + rise;
             Rect rect = new Rect(safeRect.x + 32f, y, width, height);
 
             Color previous = GUI.color;
-            // 밝은 배경(노을·풀밭)에서도 읽히게 어두운 띠를 깐다.
-            GUI.color = new Color(0f, 0f, 0f, 0.42f * alpha);
-            GUI.DrawTexture(rect, Texture2D.whiteTexture);
 
-            GUI.color = new Color(0f, 0f, 0f, 0.85f * alpha);
+            // 검은 띠 대신 **글자 뒤에만 번지는 발광**을 깐다. 각진 띠는 자막을 자막처럼
+            // 보이게 하는데, 여기서 원하는 건 화면에 스며든 문장이다.
+            // 비네트가 이미 아래를 눌러 뒀으므로 이 정도로도 밝은 배경에서 읽힌다.
+            float glowH = height * 1.15f;
+            UIShapes.Ellipse(
+                new Rect(rect.center.x - width * 0.42f, rect.center.y - glowH * 0.5f, width * 0.84f, glowH),
+                new Color(0f, 0f, 0f, 0.5f * alpha));
+
+            GUI.color = new Color(0f, 0f, 0f, 0.9f * alpha);
             GUI.Label(new Rect(rect.x + 2f, rect.y + 3f, rect.width, rect.height), text, narrationStyle);
-            GUI.color = new Color(1f, 1f, 1f, alpha);
+            GUI.color = new Color(1f, 0.98f, 0.92f, alpha);
             GUI.Label(rect, text, narrationStyle);
             GUI.color = previous;
         }
@@ -804,28 +815,115 @@ namespace InsectGame.Opening
                 height);
         }
 
+        /// <summary>
+        /// 가장자리를 눌러 시선을 가운데로 모은다. 정지 이미지는 네 귀퉁이가 다 보여서
+        /// 평평해 보이는데, 비네트 하나로 깊이가 생긴다. 위아래를 더 어둡게 해
+        /// 타이틀·자막이 얹힐 자리를 미리 만든다.
+        /// </summary>
+        private static void DrawVignette(Rect screenRect, float alpha)
+        {
+            if (alpha <= 0f) return;
+
+            const int Bands = 10;
+            float bandH = screenRect.height * 0.22f / Bands;
+            for (int i = 0; i < Bands; i++)
+            {
+                float t = 1f - i / (float)(Bands - 1);   // 가장자리에서 가장 진하다
+                Color col = new Color(0f, 0f, 0f, 0.38f * t * t * alpha);
+                DrawSolid(new Rect(screenRect.x, screenRect.y + bandH * i, screenRect.width, bandH + 1f), col);
+                DrawSolid(new Rect(screenRect.x, screenRect.yMax - bandH * (i + 1), screenRect.width, bandH + 1f), col);
+            }
+        }
+
+        /// <summary>
+        /// 떠다니는 빛. 예전엔 <c>DrawSolid</c>(흰 텍스처)라 <b>각진 사각형 24개</b>였다 —
+        /// 반딧불이라기보다 픽셀 덩어리로 보였다. <see cref="UIShapes.Disc"/>는 가장자리가
+        /// 부드러운 원이라 같은 코드량으로 훨씬 빛처럼 보인다.
+        /// </summary>
         private static void DrawFloatingLights(Rect screenRect, float elapsed, float overallAlpha)
         {
             if (overallAlpha <= 0f)
                 return;
 
-            for (int i = 0; i < 12; i++)
+            for (int i = 0; i < 18; i++)
             {
                 float phase = i * 2.173f;
                 float baseX = ((i * 0.6180339f + 0.09f) % 1f) * screenRect.width;
                 float baseY = ((i * 0.371f + 0.12f) % 1f) * screenRect.height;
-                float x = screenRect.x + baseX + Mathf.Sin(elapsed * 0.31f + phase) * screenRect.width * 0.018f;
-                float y = screenRect.y + baseY + Mathf.Sin(elapsed * 0.23f + phase * 0.77f) * screenRect.height * 0.026f;
-                float pulse = 0.5f + 0.5f * Mathf.Sin(elapsed * 1.1f + phase);
-                float size = 2.5f + (i % 4) * 1.2f + pulse * 2f;
-                float alpha = overallAlpha * (0.08f + pulse * 0.18f);
+                // 위로 천천히 떠오르며 좌우로 흔들린다 — 제자리 진동보다 살아 있어 보인다.
+                float rise = ((elapsed * 0.045f + i * 0.137f) % 1f) * screenRect.height;
+                float x = screenRect.x + baseX + Mathf.Sin(elapsed * 0.62f + phase) * screenRect.width * 0.02f;
+                float y = screenRect.y + Mathf.Repeat(baseY - rise, screenRect.height);
+                float pulse = 0.5f + 0.5f * Mathf.Sin(elapsed * 1.6f + phase);
+                float size = 3f + (i % 4) * 1.4f + pulse * 2.5f;
+                float alpha = overallAlpha * (0.10f + pulse * 0.24f);
 
-                DrawSolid(
-                    new Rect(x - size, y - size, size * 2f, size * 2f),
-                    new Color(1f, 0.67f, 0.18f, alpha * 0.28f));
-                DrawSolid(
-                    new Rect(x - size * 0.32f, y - size * 0.32f, size * 0.64f, size * 0.64f),
-                    new Color(1f, 0.9f, 0.48f, alpha));
+                // 넓은 헤일로 + 밝은 심지 — 두 겹이라야 발광체로 읽힌다.
+                UIShapes.Ellipse(
+                    new Rect(x - size * 2.2f, y - size * 2.2f, size * 4.4f, size * 4.4f),
+                    new Color(1f, 0.72f, 0.24f, alpha * 0.22f));
+                UIShapes.Ellipse(
+                    new Rect(x - size * 0.5f, y - size * 0.5f, size, size),
+                    new Color(1f, 0.94f, 0.62f, alpha));
+            }
+        }
+
+        /// <summary>
+        /// 화면을 가로지르는 곤충 실루엣.
+        ///
+        /// <b>곤충 게임 오프닝인데 곤충이 한 마리도 없었다.</b> 정지 이미지와 자막만으로는
+        /// 무엇에 관한 게임인지 그림으로 전달되지 않는다. 3D 썸네일(<c>InsectVisual</c>)은
+        /// <c>InsectDatabase</c>가 필요해 오프닝 씬에서 쓸 수 없으므로, <c>UIShapes</c>로
+        /// 몸통·날개·더듬이를 직접 그린다 — 배경 앞을 지나는 그림자라 형태만 있으면 된다.
+        ///
+        /// 날갯짓은 세로 스케일을 흔들어 표현한다(가로를 흔들면 앞뒤로 기우는 것처럼 보인다).
+        /// </summary>
+        private static void DrawDriftingInsects(Rect screenRect, float elapsed, float overallAlpha)
+        {
+            if (overallAlpha <= 0f) return;
+
+            for (int i = 0; i < 5; i++)
+            {
+                // 저마다 다른 속도·높이·크기로 지나간다. 같은 속도면 벽지처럼 보인다.
+                float speed = 0.055f + i * 0.021f;
+                float t = (elapsed * speed + i * 0.31f) % 1.35f;   // 1.0을 넘겨 화면 밖 여백을 둔다
+                if (t > 1.15f) continue;                            // 잠깐 비는 구간 — 줄줄이 지나가지 않게
+
+                bool leftward = i % 2 == 1;
+                float px = leftward
+                    ? screenRect.xMax - t * (screenRect.width + 160f) + 80f
+                    : screenRect.x + t * (screenRect.width + 160f) - 80f;
+                float py = screenRect.y + screenRect.height * (0.22f + i * 0.13f)
+                    + Mathf.Sin(elapsed * 1.3f + i * 1.7f) * screenRect.height * 0.035f;
+
+                float scale = Mathf.Min(screenRect.width, screenRect.height) * (0.020f + (i % 3) * 0.008f);
+                float alpha = overallAlpha * 0.34f;
+                Color body = new Color(0.05f, 0.06f, 0.09f, alpha);
+
+                // 날갯짓 — 위아래로 눌렸다 펴진다.
+                float flap = 0.35f + 0.65f * Mathf.Abs(Mathf.Sin(elapsed * 11f + i * 2.1f));
+                float wingW = scale * 1.5f;
+                float wingH = scale * 0.85f * flap;
+                float dir = leftward ? -1f : 1f;
+
+                UIShapes.Ellipse(
+                    new Rect(px - wingW * 0.5f - dir * scale * 0.2f, py - wingH, wingW, wingH),
+                    new Color(body.r, body.g, body.b, alpha * 0.55f));
+                UIShapes.Ellipse(
+                    new Rect(px - wingW * 0.5f - dir * scale * 0.2f, py, wingW, wingH),
+                    new Color(body.r, body.g, body.b, alpha * 0.4f));
+
+                // 몸통 — 진행 방향으로 길다.
+                UIShapes.Ellipse(
+                    new Rect(px - scale * 0.9f, py - scale * 0.22f, scale * 1.8f, scale * 0.44f), body);
+                // 머리 + 더듬이
+                float headX = px + dir * scale * 0.85f;
+                UIShapes.Ellipse(
+                    new Rect(headX - scale * 0.24f, py - scale * 0.24f, scale * 0.48f, scale * 0.48f), body);
+                UIShapes.Capsule(
+                    new Vector2(headX, py - scale * 0.1f),
+                    new Vector2(headX + dir * scale * 0.6f, py - scale * 0.5f),
+                    Mathf.Max(1f, scale * 0.09f), body);
             }
         }
 

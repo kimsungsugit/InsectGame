@@ -137,6 +137,38 @@ namespace InsectGame.Story
                 case StoryObjectiveKind.EnterSubArea: ResolveSubAreaTarget(); break;
                 default: ResolveFreeform(); break;
             }
+
+            TryAutoStartFirstObjective();
+        }
+
+        // 캠페인 첫 목표를 한 번 자동으로 태워 보냈는가.
+        private bool firstObjectiveAutoStarted;
+
+        /// <summary>
+        /// <b>캠페인 첫 목표에서만</b> 자동 주행을 스스로 시작한다.
+        ///
+        /// 처음 하는 사람은 곤충을 잡고 나서 "이제 뭘 하지"로 멈춘다 — 목표 행에 어르신이
+        /// 떠도 그걸 눌러야 한다는 걸 모른다. 첫 한 번만 태워 보내면 "저기로 가면 되는구나"를
+        /// 몸으로 배운다. 그 뒤부터는 직접 누른다.
+        ///
+        /// 판정을 <c>SeenCount == 0</c>으로 하는 것은 <b>beatId를 박지 않기 위해서다</b> —
+        /// 스토리를 하나도 안 봤다는 건 곧 캠페인 첫 목표라는 뜻이고, 이야기를 고쳐도 안 낡는다.
+        /// 한 번 시작하면 다시 걸지 않는다(길이 막혀 멈췄는데 또 끌고 가면 갇힌 기분이 든다).
+        /// </summary>
+        private void TryAutoStartFirstObjective()
+        {
+            if (firstObjectiveAutoStarted) return;
+            if (!hasObjective || !hasWorldTarget) return;
+            if (storyDirector == null || storyDirector.SeenCount > 0) return;
+            if (playerMovement == null || playerMovement.IsFrozen || playerMovement.IsAutoRunning) return;
+            // 대화·모달 중이면 조작을 뺏지 않는다.
+            if (ModalUIRegistry.IsAnyOpen()) return;
+            if (!TargetInCurrentRegion) return;
+
+            // **플래그를 먼저 세운다** — Toggle이 내부에서 Refresh를 다시 부르고, 그 Refresh가
+            // 이 메서드를 또 부른다. 플래그가 뒤에 있으면 그 자리에서 무한 재귀가 된다.
+            firstObjectiveAutoStarted = true;
+            Toggle();
         }
 
         // 같은 storyNpcId가 여러 리전에 서 있다(라온은 초원·모래언덕·잿불·이름없는자리 4곳).
