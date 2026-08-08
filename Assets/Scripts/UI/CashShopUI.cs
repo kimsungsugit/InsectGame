@@ -495,7 +495,15 @@ namespace InsectGame.UI
                 GUILayout.ExpandWidth(true),
                 GUILayout.ExpandHeight(true));
 
-            GUILayout.BeginVertical();
+            // **콘텐츠 최소 폭을 명시한다.** 데스크톱 카드 가로배치는 뷰포트보다 넓다 —
+            // 가챠 상자 3장이 300×3 + 간격 45 = 945px인데 콘텐츠 영역은 812px다.
+            // 안 주면 레이아웃이 카드를 뷰포트에 욱여넣어 **찌그러뜨린다**(상자가 안 보인다는 증상).
+            // 옛 `GUI.BeginScrollView` 경로는 contentWidth를 960/840으로 직접 줘서 가로 스크롤이
+            // 생겼는데, 레이아웃 스크롤뷰로 바꾸며 그 지정이 빠진 것이 회귀였다.
+            float minContentW = UIScale.IsMobileLayout ? 0f : (tab == 2 ? 960f : 840f);
+            if (minContentW > 0f) GUILayout.BeginVertical(GUILayout.MinWidth(minContentW));
+            else GUILayout.BeginVertical();
+
             switch (tab)
             {
                 case 0: DrawGemTab(); break;
