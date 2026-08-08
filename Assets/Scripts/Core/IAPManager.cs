@@ -252,7 +252,10 @@ namespace InsectGame.Core
             }
 
             if (verified == null || !verified.success || CashShopManager.Instance == null
-                || !CashShopManager.Instance.ApplyVerifiedGemBalance(product.definition.id, verified.gems))
+                // newlyGranted를 함께 넘긴다 — 이미 청구된 토큰의 재검증이면 서버가 false와
+                // 마지막 PATCH 시점 잔액을 준다. 그걸 절대 세팅하면 그 사이 로컬 젬 변동이 뒤집힌다.
+                || !CashShopManager.Instance.ApplyVerifiedGemBalance(
+                    product.definition.id, verified.gems, verified.newlyGranted))
             {
                 verifyingOrders.Remove(orderKey);
                 CompletePending(product.definition.id, false);

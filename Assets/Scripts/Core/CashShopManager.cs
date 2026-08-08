@@ -162,22 +162,34 @@ namespace InsectGame.Core
         /// 서버가 Google Play 구매 토큰을 검증하고 Firestore에서 원자적으로 계산한 잔액을 반영한다.
         /// 클라이언트가 rewardCount를 직접 더하지 않아 재전달/재시작 시 중복 지급되지 않는다.
         /// </summary>
-        public bool ApplyVerifiedGemBalance(string productId, int verifiedBalance)
+        public bool ApplyVerifiedGemBalance(string productId, int verifiedBalance, bool newlyGranted = true)
         {
             CashShopItem item = GetItem(productId);
             if (item == null || item.priceKRW <= 0 || !item.itemId.StartsWith("gem_"))
                 return false;
 
-            int safeBalance = Mathf.Max(0, verifiedBalance);
-            if (wallet != null)
+            // **이번에 실제로 지급됐을 때만 잔액을 절대 세팅한다.**
+            // 서버는 이미 청구된 토큰을 재검증하면 `newlyGranted: false`와 함께
+            // **마지막 PATCH 시점의 클라우드 잔액**을 돌려준다(재시작 시 미확정 주문을 다시
+            // 검증하는 정상 경로다). 그걸 그대로 덮어쓰면 그 사이 로컬에서 번 젬은 증발하고
+            // 쓴 젬은 되살아난다 — 지급이 없었으므로 잔액도 건드리지 않는 것이 맞다.
+            //
+            // verifiedBalance 음수는 "미상"이다(Firestore에 gems 필드가 없는 신규 문서).
+            // 예전엔 Max(0, ...)로 클램프해서 **결제 직후 잔액이 통째로 0이 됐다** —
+            // CloudSaveManager가 같은 필드에 -1 센티넬 + `>= 0` 가드를 두는 것과 정반대였다.
+            bool balanceKnown = verifiedBalance >= 0;
+            if (newlyGranted && balanceKnown)
             {
-                wallet.SetGems(safeBalance);
-                gems = wallet.Gems;
-            }
-            else
-            {
-                gems = safeBalance;
-                SaveGems();
+                if (wallet != null)
+                {
+                    wallet.SetGems(verifiedBalance);
+                    gems = wallet.Gems;
+                }
+                else
+                {
+                    gems = verifiedBalance;
+                    SaveGems();
+                }
             }
 
             GemsChanged?.Invoke();
