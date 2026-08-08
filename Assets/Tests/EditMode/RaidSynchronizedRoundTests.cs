@@ -440,6 +440,76 @@ namespace InsectGame.Tests
         }
 
         [Test]
+        public void CanUniteAttack_CountsRemainingActors_NotAliveCount()
+        {
+            // 게이트와 참가 규칙이 같은 수를 봐야 한다. 살아있는 마릿수로 판정하면
+            // 마지막 슬롯 차례에도 버튼이 열려 게이지 100을 **1마리분**에 태운다
+            // (슬롯 0에서 쓰면 5마리분 — 같은 게이지가 5배 값을 한다).
+            InsectSkill skill = CreateSkill("hit", SkillEffectType.Damage, 1, 0);
+            RaidBattleController raid = CreateRaid(
+                CreateData("boss", 10000, 30, 100),
+                CreateTeam(5, 500, 60, 80),
+                new[] { skill });
+
+            for (int i = 0; i < 4; i++) raid.ResolveTeamCommand(0);
+            Assert.AreEqual(4, raid.ActiveSlot, "전제: 슬롯 0~3이 행동했고 마지막 한 마리만 남았다");
+            Assert.AreEqual(5, raid.AliveCount(), "전제: 팀 턴 중엔 아무도 죽지 않는다");
+            Assert.AreEqual(1, raid.RemainingActors);
+
+            SetUniteGauge(raid, RaidBattleController.UniteGaugeMax);
+
+            Assert.IsFalse(raid.CanUniteAttack,
+                "참가자가 1마리뿐이면 합체가 열려선 안 된다(게이지만 태우고 평범한 스킬보다 약하다)");
+        }
+
+        [Test]
+        public void CanUniteAttack_StillOpens_WhenTwoActorsRemain()
+        {
+            InsectSkill skill = CreateSkill("hit", SkillEffectType.Damage, 1, 0);
+            RaidBattleController raid = CreateRaid(
+                CreateData("boss", 10000, 30, 100),
+                CreateTeam(5, 500, 60, 80),
+                new[] { skill });
+
+            for (int i = 0; i < 3; i++) raid.ResolveTeamCommand(0);
+            Assert.AreEqual(2, raid.RemainingActors, "전제: 두 마리가 남았다");
+
+            SetUniteGauge(raid, RaidBattleController.UniteGaugeMax);
+
+            Assert.IsTrue(raid.CanUniteAttack, "2마리 이상 남으면 여전히 발동할 수 있어야 한다");
+            Assert.AreEqual(2, raid.ResolveUniteCommand().TeamActions.Count);
+        }
+
+        [Test]
+        public void CanUseSkill_RejectsSlotThatAlreadyActed()
+        {
+            // RaidMemberActionResolved 발화 시점에는 ActiveSlot이 아직 방금 행동한 슬롯이고
+            // roundStage도 Ready라 CanSubmitTeamCommand가 true다. 그 창에서 커맨드를 받으면
+            // 한 곤충이 라운드에 두 번 때린다 — ResolveUniteCommand는 막고 있던 위험이다.
+            InsectSkill skill = CreateSkill("hit", SkillEffectType.Damage, 1, 0);
+            RaidBattleController raid = CreateRaid(
+                CreateData("boss", 10000, 30, 100),
+                CreateTeam(5, 500, 60, 80),
+                new[] { skill });
+
+            bool checkedInsideHandler = false;
+            raid.RaidMemberActionResolved += _ =>
+            {
+                // 이 순간 ActiveSlot은 아직 0(방금 행동한 슬롯)이다.
+                checkedInsideHandler = true;
+                Assert.IsTrue(raid.HasActedThisRound(raid.ActiveSlot),
+                    "전제: 이벤트 시점의 ActiveSlot은 이미 행동을 마쳤다");
+                Assert.IsFalse(raid.CanUseSkill(0),
+                    "이미 행동한 슬롯으로 스킬을 또 쓸 수 있으면 한 라운드에 두 번 때린다");
+            };
+
+            raid.ResolveTeamCommand(0);
+
+            Assert.IsTrue(checkedInsideHandler, "핸들러가 실제로 불렸어야 검사가 의미를 갖는다");
+            Assert.IsTrue(raid.CanUseSkill(0), "차례가 넘어간 뒤에는 다시 사용 가능해야 한다");
+        }
+
+        [Test]
         public void ResolveUniteCommand_MidRound_CarriesOverDamageAlreadyDealt()
         {
             // 합체는 roundInProgress를 새 결과로 갈아끼운다 — 이월하지 않으면 합체 이전

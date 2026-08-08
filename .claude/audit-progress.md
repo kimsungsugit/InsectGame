@@ -260,46 +260,24 @@
 
 - [x] RegionManager 재감사 · 후속 (**P0:1**, P1:1, 2026-08-08) — **다른 세션이 같은 라운드를 동시에 돌려 `984e3cb`로 먼저 커밋했다. 겹치지 않고 짝을 이룬다** — 그쪽은 진행 사슬의 세 번째 사본(`RegionManager` switch)을 테스트로 묶었고, 이쪽은 **좌표의 네 번째 사본**을 찾았다. **P0: 실물 수문장이 지도 마커와 다른 자리에 서 있었다.** `PlaySceneBootstrap.GetGuardianWorldPosition`이 `RegionManager.GetGuardianPosition`의 낡은 사본이었다 — 같은 공식(`(이전 리전 중심 + 이 리전 중심)/2`)을 쓰면서 이전 리전 switch만 자체 보유해 **ver1 5개 case에서 멈춰 있었다**. 그래서 `ruins`와 2막 6리전은 `prevId`가 null → 원점 기준 → 실물이 `center/2`에 섰다(최대 105m 오차, `dunes` 수문장은 연못 안, `canopy`는 유적 안). 지도 마커(`RegionMapUI`)와 목표 추적기(`StoryObjectiveTracker`)는 `RegionManager` 쪽을 쓰므로 **가리키는 곳에 아무것도 없다** — `ruins` 수문장은 2막의 유일한 문이라 에러 없이 조용히 진행이 막힌다. 사본을 삭제하고 `CreateGuardians`가 `RegionManager`를 직접 물어보게 했다(단일 출처화). **P1: 2막 서브에리어 4종에 조명 프로필이 없었다 — 이건 내가 Phase C에서 만든 누락이다.** `SubAreaWorldBuilder`에 `vault`/`archive`/`kiln`/`ledger` 지오메트리를 넣으면서 `SubAreaEnvironment.GetProfileForType`을 빠뜨려 전부 `default`(야외 주광)로 떨어졌다 — 밀폐 공간을 지어 놓고 바깥 햇빛을 쬐는 꼴인데 지오메트리만 보면 티가 안 난다. **검출력 실측**: 4종을 제거하니 신규 테스트가 정확히 그 넷을 지목했다. 좌표 사본 재발도 소스 검사로 고정했다(`private Vector3 GetGuardianWorldPosition` 부재 + `regionMgr.GetGuardianPosition(r)` 존재). **다른 세션이 확인한 것(재점검 불필요)**: 진행 체인 13리전 전부 배선, `ruins`→`hollow` 해금, `GuardianDefeated` 구독 짝, PlayerPrefs 직렬화, 서브에리어 sticky의 리전 수 비의존, `ReloadFromDisk`가 이벤트를 안 쏘지만 소비자가 라이브 조회라 무해
 
+- [x] RaidBattleController 재감사 (P1:2 + 문서결함:1, 2026-08-08) — 순차 행동 전환(590줄 변경) 후속. 이 세션이 반복해 만난 **"짝 규칙을 한쪽 입구만 지킨다"**가 여기서 두 번 나왔다. **①합체 게이트가 참가 규칙과 다른 수를 봤다**: `ResolveUniteCommand`는 이미 행동한 슬롯을 참가에서 빼는데(빼지 않으면 한 라운드 2회 공격 — 주석이 근거를 적어 뒀다) `CanUniteAttack`은 `AliveCount() >= 2`로 판정했다. 게이지는 행동마다 차서 보통 슬롯 3~4 차례에 100에 닿으므로, 마지막 슬롯에서 [F]를 누르면 **참가자 1마리**분만 나오고 게이지 100이 통째로 소각된다 — 같은 게이지를 슬롯 0에서 쓰면 5마리분이라 **가치가 5배** 차이나고, 1마리분은 그 곤충의 평범한 스킬보다도 약했다. `RemainingActors >= 2`로 교체. **②`CanUseSkill`에만 `HasActedThisRound` 검사가 없었다**: `RaidMemberActionResolved` 발화 시점에는 `ActiveSlot`이 아직 **방금 행동한 슬롯**이고 `roundStage`도 `Ready`라 `CanSubmitTeamCommand`가 true다. 그 창에서 커맨드를 넣는 구독자가 생기면 한 곤충이 라운드에 두 번 때린다(현재 구독자는 없어 잠재 결함). 형제 입구인 `ResolveUniteCommand`는 막고 있었다. **③`RaidBossHpMultiplier = 8.5`의 산출 근거가 무효화됐다**: 주석은 "리더 1×1.0 + 서포트 4×0.6 = 3.4유닛" 전제로 뽑은 값이라 명시하는데, 지금은 `ResolveTeamCommand`가 **전 슬롯**을 `ResolveLeaderSkill`(배율 1.0)로 태워 **5.0유닛(+47%)**이고 AOE도 꺼졌다. **값은 바꾸지 않았다** — 사용자가 "레이드가 너무 세다"고 해 AOE를 껐으므로 HP를 올리면 그 요청을 되돌리는 셈이다. 주석에 현재 상태와 그 판단을 적고, 조일 때는 이 숫자가 아니라 서포트/리더 배율 구분부터 재설계하라고 남겼다. **Explore가 정상 확인한 경로(재보고 불필요)**: 팀 페이즈 중엔 아군이 죽지 않아 `BeginRound`가 전멸 상태로 열릴 수 없고, `raidEndedRaised`가 `RaidEnded` 중복을 막으며, 종료 후 `IsActive=false`가 커맨드 전체를 닫는다. 쿨다운은 `CompleteRoundPresentation`에서 **라운드당 1회**만 감소(순차 전환으로 5배 빨라지지 않았다), `AudioManager.Instance`는 전부 null 가드, `PersistTeamHp`는 전 슬롯 순회, `OnEnable`/`OnDisable` 구독 짝 6개 모두 정상
+
 ## Uncovered (우선순위순)
 
-**2026-08-03: `audit_candidates.py`가 재감사 후보도 낸다.**
-
-예전엔 `stem in reviewed`(원문 substring)로 **이름이 한 번이라도 문서에 스치면 영구 제외**했다.
-"처리했는데 그 뒤로 바뀐 파일"이라는 개념이 없어서, 감사 이후 수정된 파일이 76개인데도
-"후보 0건"을 냈다. 그 사각지대에 있던 `InsectBattleController`(2026-05-20 감사 후
-StartDuel·버프 상한·DuelEnded 유입)를 손으로 꺼내 돌렸더니 곧바로 P1이 나왔다 —
-의상·아이템 보너스가 전투 첫 턴에 안 붙는 결함이었다. 그래서 스크립트를 고쳤다.
-
-이제 진척 문서의 **항목 머리**에서 감사일을 읽고(프로즈에 스친 이름은 세지 않는다),
-git numstat으로 그 이후 변경량을 재서 `MIN_RECHURN`(40줄) 이상 바뀐 파일을 되살린다.
-**재감사 우선순위는 점수가 아니라 변경량이다** — 점수는 파일의 성격을 말할 뿐
-"감사 이후 무엇이 달라졌는가"를 말하지 않는다. git을 못 읽으면 재감사를 건너뛰고
-신규 후보만 내며 그 사실을 출력에 적는다.
-
-아래는 그 스크립트가 뽑은 큐다. **2026-08-07에 큐가 0이 되어 재생성했다**(`--emit-md` 상위 15).
-2막 작업으로 생긴 신규 파일 3개가 후보에 올라온 게 이번 재생성의 특징이다 —
-`StoryJournalUI`·`InsectExpansion2Definitions`·`NpcBossDuels`는 한 번도 감사된 적이 없다.
-
-
-- [ ] StoryObjectiveTracker (Story/StoryObjectiveTracker.cs, 275줄, score 0) — 표면 점검
-- [ ] RaidBattleController 재감사 (Battle/RaidBattleController.cs, 965줄, score 0) — 2026-08-06 감사 이후 2026-08-08까지 590줄 변경
-- [ ] VillageBuilder 재감사 (Core/VillageBuilder.cs, 1302줄, score 0) — 2026-07-17 감사 이후 2026-08-08까지 479줄 변경
-- [ ] TutorialQuestUI 재감사 (UI/TutorialQuestUI.cs, 1221줄, score 169) — 2026-08-06 감사 이후 2026-08-08까지 408줄 변경
-- [ ] RaidBattleUI 재감사 (UI/RaidBattleUI.cs, 839줄, score 23) — 2026-08-07 감사 이후 2026-08-08까지 399줄 변경
-- [ ] SubAreaWorldBuilder 재감사 (Core/SubAreaWorldBuilder.cs, 1482줄, score 48) — 2026-08-06 감사 이후 2026-08-08까지 284줄 변경
-- [ ] HospitalUI 재감사 (UI/HospitalUI.cs, 508줄, score 44) — 2026-07-19 감사 이후 2026-08-08까지 244줄 변경
-- [ ] SocialPvpUI 재감사 (UI/SocialPvpUI.cs, 586줄, score 62) — 2026-07-17 감사 이후 2026-08-08까지 199줄 변경
-- [ ] NpcDialogueUI 재감사 (UI/NpcDialogueUI.cs, 350줄, score 24) — 2026-07-17 감사 이후 2026-08-07까지 190줄 변경
-- [ ] CaptureMinigameController 재감사 (Capture/CaptureMinigameController.cs, 436줄, score 36) — 2026-05-20 감사 이후 2026-08-03까지 184줄 변경
-- [ ] BattleArenaController 재감사 (Battle/BattleArenaController.cs, 2449줄, score 54) — 2026-08-06 감사 이후 2026-08-08까지 160줄 변경
-- [ ] PlaySceneBootstrap 재감사 (Core/PlaySceneBootstrap.cs, 5001줄, score 228) — 2026-08-03 감사 이후 2026-08-08까지 144줄 변경
-- [ ] NpcDuelController 재감사 (NPC/NpcDuelController.cs, 392줄, score 4) — 2026-08-03 감사 이후 2026-08-08까지 142줄 변경
-
-score 0은 "OnGUI/Update 표면이 없다"는 뜻일 뿐 clean이라는 뜻이 아니다 —
-직전 10라운드가 거의 전부 score 0이었는데 P0 1건·P1 6건이 나왔다.
-큐가 비면 `python -X utf8 .claude/scripts/audit_candidates.py --emit-md`로 재생성.
-
-(`verify_coverage.py`는 미할당 0 — 담당 에이전트 매핑은 별개로 완전하다.)
+- [ ] VillageBuilder 재감사 (Core/VillageBuilder.cs, 1302줄) — 2026-07-17 감사 이후 479줄 변경
+- [ ] BattleArenaController 재감사 (Battle/BattleArenaController.cs, 2449줄) — 2026-08-06 감사 이후 160줄 변경
+- [ ] PlaySceneBootstrap 재감사 (Core/PlaySceneBootstrap.cs, 5005줄) — 2026-08-03 감사 이후 154줄 변경
+- [ ] SubAreaWorldBuilder 재감사 (Core/SubAreaWorldBuilder.cs, 1482줄) — 2026-08-06 감사 이후 284줄 변경
+- [ ] CaptureMinigameController 재감사 (Capture/CaptureMinigameController.cs, 436줄) — 2026-05-20 감사 이후 184줄 변경
+- [ ] NpcDuelController 재감사 (NPC/NpcDuelController.cs, 392줄) — 2026-08-03 감사 이후 142줄 변경
+- [ ] HospitalUI 재감사 (UI/HospitalUI.cs, 508줄) — 2026-07-19 감사 이후 244줄 변경
+- [ ] RaidBattleUI 재감사 (UI/RaidBattleUI.cs, 839줄) — 2026-08-07 감사 이후 399줄 변경
+- [ ] SocialPvpUI 재감사 (UI/SocialPvpUI.cs, 586줄) — 2026-07-17 감사 이후 199줄 변경
+- [ ] NpcDialogueUI 재감사 (UI/NpcDialogueUI.cs, 350줄) — 2026-07-17 감사 이후 190줄 변경
+- [ ] TrainingManager 재감사 (Core/TrainingManager.cs, 239줄) — 2026-05-21 감사 이후 139줄 변경
+- [ ] TutorialQuestUI 재감사 (UI/TutorialQuestUI.cs, 1229줄) — 2026-08-06 감사 이후 426줄 변경
+- [ ] BattleTeamUI 재감사 (UI/BattleTeamUI.cs, 516줄) — 2026-08-07 감사 이후 148줄 변경
+- [ ] InsectBrowseSort (UI/InsectBrowseSort.cs, 135줄) — 신규 파일 표면 점검
 
 ## Round Log
 
@@ -308,11 +286,11 @@ score 0은 "OnGUI/Update 표면이 없다"는 뜻일 뿐 clean이라는 뜻이 �
 
 > 이 로그는 **쓰기 전용**이다 — audit 스킬 Step 4가 추가하지만 어느 단계도 읽지 않는다.
 > 그런데 Step 1이 이 파일을 통째로 Read하므로 쌓아두면 매 라운드 컨텍스트를 먹는다.
+- 2026-08-08: RaidBattleController **재감사** (순차 행동 전환 후속, 590줄 변경) — P1:2 + 문서결함:1 처리. 두 P1 모두 **"짝 규칙을 한쪽 입구만 지킨다"** 형태다: ①`CanUniteAttack`이 `AliveCount()`를 봐서 실제 참가자가 1마리인데도 열려 게이지 100을 1마리분에 태웠다(→`RemainingActors`), ②`CanUseSkill`에 `HasActedThisRound` 검사가 없어 `RaidMemberActionResolved` 창에서 한 곤충이 두 번 행동할 수 있었다(형제 입구는 막고 있었다). ③`RaidBossHpMultiplier=8.5`는 산출 근거가 무효화됐으나 **값은 유지** — 사용자가 요청한 난이도 하향을 되돌리지 않기 위해. 주석에 현재 화력(3.4→5.0유닛)과 판단 근거 기록. P2 5건은 사용자 결정 위임(합체 시 이전 액션 소실·연출 하이라이트 1슬롯 밀림·keyLabels 프레임 할당·미호출 연출 헬퍼 2개). 검증: 컴파일 0 error, ci_check 통과, PlayMode 555/555(+3 신규).
 - 2026-08-08: RegionManager 재감사 **후속** (다른 세션이 984e3cb로 같은 라운드를 먼저 커밋 — 겹치지 않고 짝을 이룬다) — **P0:1, P1:1 처리.** 그쪽은 진행 사슬의 세 번째 사본을 테스트로 묶었고, 이쪽은 **좌표의 네 번째 사본**을 찾았다. ①**실물 수문장이 지도 마커와 다른 자리에 서 있었다** — `PlaySceneBootstrap.GetGuardianWorldPosition`이 `RegionManager.GetGuardianPosition`의 낡은 사본으로, 같은 공식을 쓰면서 이전 리전 switch만 ver1 5개에서 멈춰 있었다. ruins와 2막 6리전은 원점 기준이 되어 최대 105m 어긋났다(dunes는 연못 안, canopy는 유적 안). ruins는 2막의 유일한 문이라 **지도가 가리키는 곳에 아무것도 없으면 조용히 진행이 막힌다**. 사본 삭제 + RegionManager 직접 조회로 단일 출처화. ②**2막 서브에리어 4종에 조명 프로필이 없었다 — 내가 Phase C에서 만든 누락이다.** 지오메트리만 넣고 `SubAreaEnvironment.GetProfileForType`을 빠뜨려 전부 야외 주광으로 떨어졌다(밀폐 공간에 햇빛). **검출력 실측**: 4종 제거 시 정확히 그 넷을 지목. 좌표 사본 재발도 소스 검사로 고정. 검증: error CS 0, ci_check 8검사 통과, PlayMode 541/541.
 - 2026-08-08: 컷신 3파일 **신규 감사** (CutsceneData·CutsceneLibrary + 인접 CutsceneDirector, 큐 1·2순위) — **clean P0/P1, 파일 수정 0건.** 이 세션이 다른 영역에서 반복 지적한 "짝 규칙 무검사"가 여기엔 이미 적용돼 있다: `story_lint` 검사 9번이 JSON↔Library cutsceneId를 **양방향**(실재성 + switch 미배선)으로 보고, 테스트 15건이 타임라인 경계를 `EveryInstantIsCoveredExactlyOnce`까지 덮으며, 디렉터는 재진입 가드 + 모든 종료 경로를 `Stop` 하나로 모으고 `OnDisable`도 그걸 부른다(배틀 카메라는 **구도까지** 기억해 복원). **거짓양성 2건 철회**: TotalDuration↔TryGetShot의 0 보정 불일치(실제 duration이 전부 양수고 종료 판정은 후자만 쓴다) / UI 루트 토글로 영구 frozen(World 루트라 대상 아님 + OnDisable이 복구). 검증: 코드 변경이 없어 기존 PlayMode 539/539 유효, ci_check 통과.
 - 2026-08-08: RegionManager **재감사** (2026-05-20 감사 이후 207줄 변경, **큐 2순위 — 1순위 `RaidRoundResolver`는 다른 세션이 미커밋으로 편집 중이라 건너뛰었다**) — **P1:1 처리. 진행 사슬이 세 곳에 적혀 있는데 둘만 대조하고 있었다.** 런타임 switch(③)가 빠져도 데이터(①)↔테스트 사본(②)만 맞으면 전부 통과했다 — Next 누락은 **진행 영구 차단**, Prev 누락은 수문장이 맵 한복판에 스폰. 소스에서 메서드 본문을 잘라 양방향 대조하는 테스트 3건을 추가했다. **자체 발견 1건**: 파일 전체 검색으로 짰다가 두 switch가 서로의 역방향이라 종착지 검사가 거짓 실패 — 중괄호 균형으로 본문만 자르도록 고쳤다. **검출력은 간선 삭제·주입 3종으로 실측**. 거짓양성 1건 철회(PlayerPrefs 키는 이미 `SaveScope.PrefsKey` 스코프). 검증: error CS 0, PlayMode 539/539.
 - 2026-08-08: RaidRoundResolver **재감사** (2026-08-03 이후 234줄 변경, 큐 1순위, score 0) — **P1:1, P2:1 처리. 리졸버 자신은 순차 턴 개편과 정합했고 결함은 그것을 부르는 컨트롤러의 합체 경로에 있었다** (직전 라운드가 "주변이 바뀌었는데 이 파일만 안 바뀜"이었다면 이번은 그 반대다). ①**합체를 라운드 중간에 쓰면 이미 행동한 슬롯이 한 라운드에 두 번 때린다** — 개편 전엔 합체가 팀 턴을 대체했지만 지금은 게이지가 슬롯마다 차올라 팀 턴 도중에 100을 넘고 `CanUniteAttack`은 `ActiveSlot`을 안 본다. **컨트롤러 주석이 반대쪽 절반만 막고 있었다**("아직 차례가 안 온 팀원"은 처리, 이미 행동한 쪽은 미처리). `HasActedThisRound(i)` 한 줄 + 합체 이전 피해 이월(새 결과 객체로 갈아끼우며 버려져 라운드 집계·UI 기여도가 과소 표시됐다). ②**P2: `allowAreaAttack` 기본값이 `true`** — 인자를 빠뜨린 새 호출부가 조용히 AOE를 부활시키고 그 경로는 rageMultiplier를 무시해 곧 전멸이다. 필수 인자로 전환(컴파일 오류 0 = 모든 호출부가 이미 넘기고 있었다). **검출력 실측**: 두 수정을 되돌리니 신규 테스트 2건이 각자의 결함을 정확히 검출. **정합 확인**: 리졸버는 라운드 상태를 안 들고 전부 호출 시점 라이브 읽기 / 기절은 컨트롤러가 라운드당 1회 소비 / `LowestHpAlly`가 죽은 슬롯을 거르고 플래너와 같은 함수를 쓴다 / 버프 스택은 대상별 `TryStack*`으로 상한에서 정확히 멈춘다. 검증: error CS 0, ci_check 8검사 통과, PlayMode 536/536.
-- 2026-08-08: CashShopManager **재감사** (2026-05-22 이후 239줄 변경, 큐 1순위, score 14) — **P1:2 처리 + P1:1 보고만. 재화를 다루는 파일이라 결함이 곧 손실이다.** ①**젬 소비가 클라우드에 확정되지 않아 복제가 가능했다** — 서버 IAP 지급이 Firestore `gems`(클라이언트 PATCH로만 갱신)를 읽어 더하는데, `PurchaseWithGems`가 `SaveToCloud()`를 안 불러서 자동저장 전에 결제하면 **차감 전 잔액**에 보너스가 붙는다. 지급 경로 둘은 이미 저장하고 **소비 경로만 빠진 비대칭**이었다. ②**재검증이 로컬 잔액을 뒤집었다** — 이미 청구된 토큰은 서버가 `newlyGranted: false` + 마지막 PATCH 시점 잔액을 주는데 그걸 절대 세팅해서, 그 사이 번 젬은 증발하고 쓴 젬은 되살아났다. `newlyGranted`는 **DTO에 이미 있었고 호출부가 안 넘기고 있었다**. 같은 메서드의 `Max(0, verifiedBalance)`도 함께 고쳤다 — 신규 문서(gems 필드 부재)면 **결제 직후 잔액이 통째로 0**이 됐다(CloudSaveManager가 같은 필드에 `-1` 센티넬을 두는 것과 정반대). ③**보고만**: 레거시 젬 마이그레이션이 로그인 전 전역 지갑에 병합한 뒤 PlayerPrefs 키를 지운다. 키 삭제만 막으면 다음 AutoWire에서 또 병합돼 **젬 복제**가 되고, 시점을 옮기려면 AutoWire가 부트 1회인 구조를 바꿔야 한다 — 재화가 걸려 자동 처리하지 않았다. **결함 아님**: 클라우드 5지점 전부 배선 / 구매 원자성(사전 검증 + 차분 환불, 이중 환불 없음) / 중복 구매 가드 2종. 검증: error CS 0, ci_check 8검사 통과, PlayMode 534/534.
 > 영역별 처리 이력은 위 Covered 인덱스가 이미 갖고 있다.
 >
 > 개수를 두 곳에 적었다가 실제로 어긋났다 — 상단은 "최근 10건", 여기는 "최근 3건만 둔다"라고

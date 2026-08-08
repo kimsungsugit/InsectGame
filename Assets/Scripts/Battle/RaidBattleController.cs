@@ -71,8 +71,17 @@ namespace InsectGame.Battle
 
         public float UniteGauge { get; private set; }
         public const float UniteGaugeMax = GameConstants.Battle.UniteGaugeMax;
+        /// <summary>
+        /// 합체공격을 쓸 수 있는가. 조건이 <see cref="AliveCount"/>가 아니라
+        /// <see cref="RemainingActors"/>인 것이 핵심이다 — <see cref="ResolveUniteCommand"/>는
+        /// <b>이번 라운드에 이미 행동한 슬롯을 참가에서 뺀다</b>(빼지 않으면 한 라운드에 두 번 때린다).
+        /// 게이지는 행동마다 차므로 보통 슬롯 3~4의 차례에 100에 닿는데, 그때 살아있는 마릿수로
+        /// 판정하면 실제 참가자가 1명뿐인 상황에서도 버튼이 열려 게이지 100을 1마리분에 태운다
+        /// (같은 게이지를 슬롯 0에서 쓰면 5마리분이라 가치가 5배 차이 난다 — 그 1마리의 평범한
+        /// 스킬보다도 약했다). 참가 규칙과 발동 조건은 같은 수를 봐야 한다.
+        /// </summary>
         public bool CanUniteAttack => CanSubmitTeamCommand
-            && UniteGauge >= UniteGaugeMax && AliveCount() >= 2;
+            && UniteGauge >= UniteGaugeMax && RemainingActors >= 2;
         public bool LastWasUnite { get; private set; }
         public int[] UniteSlotDamages { get; private set; }
         public RaidBossIntent NextBossIntent { get; private set; }
@@ -332,6 +341,12 @@ namespace InsectGame.Battle
         public bool CanUseSkill(int skillIndex)
         {
             if (!CanSubmitTeamCommand || ActiveSlot < 0) return false;
+            // 이미 행동한 슬롯은 다시 못 쓴다. 정상 흐름에서는 ActiveSlot이 미행동 슬롯만 가리키지만,
+            // RaidMemberActionResolved가 발화하는 순간에는 아직 ActiveSlot이 **방금 행동한 슬롯**이고
+            // roundStage도 Ready라 CanSubmitTeamCommand가 true다 — 그 핸들러에서 커맨드를 넣는
+            // 구독자가 생기면 한 곤충이 라운드에 두 번 때린다. ResolveUniteCommand는 같은 위험을
+            // HasActedThisRound로 막고 있었는데 이쪽 입구에만 그 검사가 없었다.
+            if (HasActedThisRound(ActiveSlot)) return false;
             // 방어: 활성 슬롯이 기절/무효면 행동 불가(죽은 멤버 공격 방지). 정상 흐름은 보스턴 후 자동 전환됨.
             if (ActiveSlot >= TeamStats.Length || TeamStats[ActiveSlot] == null
                 || TeamStats[ActiveSlot].CurrentHp <= 0) return false;
