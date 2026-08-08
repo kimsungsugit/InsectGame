@@ -1,5 +1,6 @@
 #if UNITY_EDITOR
 using System.Collections.Generic;
+using System.IO;
 using NUnit.Framework;
 using InsectGame.Core;
 using InsectGame.Data;
@@ -19,7 +20,9 @@ namespace InsectGame.Tests
     {
         /// <summary>
         /// 메인 진행 사슬. <b>RegionManager.GetNextRegionId의 switch가 권위 있는 출처</b>이고
-        /// (private이라 직접 호출 불가) 이 배열은 그 사본이다. switch를 고치면 여기도 고칠 것.
+        /// (private이라 직접 호출 불가) 이 배열은 그 사본이다.
+        /// <b>사본이 어긋나면 아래 세 테스트가 잡는다</b> — 예전엔 "switch를 고치면 여기도 고칠 것"이라고
+        /// 사람에게 부탁만 했고, 그래서 ③(런타임 switch)이 빠져도 ①↔②만 맞으면 전부 통과했다.
         /// garden은 meadow 수문장 격파 시 별도 해금되는 분기라 사슬에서 빠진다.
         /// </summary>
         private static readonly string[] MainChain =
@@ -265,6 +268,90 @@ namespace InsectGame.Tests
                         $"서브에리어 ID 중복: {sub.subAreaId} ({r.regionId})");
                 }
             }
+        }
+
+        // ── 사슬은 세 곳에 적혀 있다 ──
+        //
+        // ① RegionDefinitions(데이터) ② 위 MainChain(이 파일) ③ RegionManager의
+        // Get{Next,Previous}RegionId switch(런타임 진행). 위 테스트들은 ①↔②만 대조한다.
+        // ③이 빠지면 리전을 추가해도 전부 통과하는데,
+        //   - Next 누락 → 수문장을 잡아도 다음 리전이 안 열린다(진행 영구 차단)
+        //   - Prev 누락 → GetGuardianPosition의 fromCenter가 원점이 되어 수문장이 엉뚱한 자리에 선다
+        // 둘 다 런타임엔 아무 에러도 없이 조용히 막힌다. switch가 private이라 실행할 수 없어
+        // 소스를 읽는다(InsectPortraitRoutingTests가 같은 이유로 같은 방식을 쓴다).
+
+        private const string RegionManagerSourcePath = "Scripts/Core/RegionManager.cs";
+
+        /// <summary>
+        /// 메서드 하나의 본문만 잘라 온다. <b>파일 전체에서 찾으면 안 된다</b> — 두 switch가
+        /// 서로의 역방향이라 `case "nameless": return "canopy";`(Prev)가 Next 검사에 걸린다.
+        /// 실제로 그렇게 썼다가 종착지 검사가 거짓 실패했다.
+        /// </summary>
+        private static string ReadMethodBody(string signature)
+        {
+            string path = Path.Combine(Application.dataPath, RegionManagerSourcePath);
+            Assert.IsTrue(File.Exists(path),
+                $"{RegionManagerSourcePath}: 파일을 못 찾았다 — 경로가 바뀌었으면 이 테스트도 고칠 것");
+            string source = File.ReadAllText(path);
+
+            int start = source.IndexOf(signature, System.StringComparison.Ordinal);
+            Assert.Greater(start, -1, $"{signature}를 못 찾았다 — 시그니처가 바뀌었는가?");
+
+            int open = source.IndexOf('{', start);
+            Assert.Greater(open, -1, $"{signature}의 본문 시작을 못 찾았다");
+
+            int depth = 0;
+            for (int i = open; i < source.Length; i++)
+            {
+                if (source[i] == '{') depth++;
+                else if (source[i] == '}')
+                {
+                    depth--;
+                    if (depth == 0) return source.Substring(open, i - open + 1);
+                }
+            }
+
+            Assert.Fail($"{signature}의 중괄호가 닫히지 않았다");
+            return string.Empty;
+        }
+
+        [Test]
+        public void MainChain_MatchesRegionManagerForwardSwitch()
+        {
+            string body = ReadMethodBody("private string GetNextRegionId");
+            for (int i = 0; i + 1 < MainChain.Length; i++)
+            {
+                StringAssert.Contains(
+                    $"case \"{MainChain[i]}\": return \"{MainChain[i + 1]}\";",
+                    body,
+                    $"GetNextRegionId에 {MainChain[i]} → {MainChain[i + 1]} 배선이 없다 — 그 지점에서 진행이 막힌다");
+            }
+        }
+
+        [Test]
+        public void MainChain_MatchesRegionManagerBackwardSwitch()
+        {
+            string body = ReadMethodBody("private string GetPreviousRegionId");
+            for (int i = 0; i + 1 < MainChain.Length; i++)
+            {
+                StringAssert.Contains(
+                    $"case \"{MainChain[i + 1]}\": return \"{MainChain[i]}\";",
+                    body,
+                    $"GetPreviousRegionId에 {MainChain[i + 1]} → {MainChain[i]} 배선이 없다 — 수문장 스폰 좌표가 원점으로 떨어진다");
+            }
+        }
+
+        [Test]
+        public void LastRegion_HasNoForwardEdge()
+        {
+            // 종착지에 Next가 생기면 정의되지 않은 리전으로 보낸다(해금은 되는데 갈 곳이 없다).
+            // ver3를 붙일 때는 MainChain에 먼저 추가하고 나서 switch를 잇는 순서가 된다.
+            string body = ReadMethodBody("private string GetNextRegionId");
+            string last = MainChain[MainChain.Length - 1];
+            StringAssert.DoesNotContain(
+                $"case \"{last}\": return \"",
+                body,
+                $"{last}는 사슬의 끝인데 다음 리전 배선이 있다 — MainChain을 먼저 늘릴 것");
         }
     }
 }
