@@ -278,6 +278,68 @@ namespace InsectGame.Tests
             }
         }
 
+        [Test]
+        public void Narration_DoesNotOverlapTitle()
+        {
+            // 타이틀은 6.2s에 뜬다. 앞의 두 줄이 거기까지 남아 있으면 글자가 겹쳐 둘 다 못 읽는다.
+            Assert.LessOrEqual(OpeningSequenceState.Narration2End, OpeningSequenceState.TitleStart + 0.01f,
+                "두 번째 내레이션이 타이틀과 겹친다");
+            // 세 번째 줄은 타이틀이 자리잡은 뒤(TitleHold 8s) 얹는 것이 의도다.
+            Assert.GreaterOrEqual(OpeningSequenceState.Narration3Start, OpeningSequenceState.TitleHoldStart,
+                "세 번째 내레이션이 타이틀이 자리잡기 전에 뜬다");
+        }
+
+        [Test]
+        public void Narration_EndsBeforeSequenceEnds()
+        {
+            // 마지막 줄이 페이드아웃(9.2s~10s) 뒤까지 남으면 검은 화면에 글자만 뜬다.
+            Assert.LessOrEqual(OpeningSequenceState.Narration3End, OpeningSequenceState.Duration,
+                "내레이션이 오프닝보다 늦게 끝난다");
+        }
+
+        [Test]
+        public void Narration_LinesDoNotOverlapEachOther()
+        {
+            Assert.Less(OpeningSequenceState.Narration1End, OpeningSequenceState.Narration2Start,
+                "1번과 2번 내레이션이 겹친다");
+            Assert.Less(OpeningSequenceState.Narration2End, OpeningSequenceState.Narration3Start,
+                "2번과 3번 내레이션이 겹친다");
+        }
+
+        [Test]
+        public void GetNarration_ReturnsCorrectLineAtEachWindow()
+        {
+            AssertNarrationAt((OpeningSequenceState.Narration1Start + OpeningSequenceState.Narration1End) * 0.5f, 0);
+            AssertNarrationAt((OpeningSequenceState.Narration2Start + OpeningSequenceState.Narration2End) * 0.5f, 1);
+            AssertNarrationAt((OpeningSequenceState.Narration3Start + OpeningSequenceState.Narration3End) * 0.5f, 2);
+
+            // 창 사이 공백과 시작 전에는 아무것도 안 뜬다.
+            AssertNarrationAt(0.2f, -1);
+            AssertNarrationAt((OpeningSequenceState.Narration1End + OpeningSequenceState.Narration2Start) * 0.5f, -1);
+        }
+
+        [Test]
+        public void GetNarration_FadesInAndOutWithinEachWindow()
+        {
+            // 창 경계에서 알파가 0에 가깝고 가운데서 1이어야 툭 튀지 않는다.
+            OpeningSequenceState atStart = StateAt(OpeningSequenceState.Narration1Start + 0.02f);
+            atStart.GetNarration(out int i1, out float aStart);
+            OpeningSequenceState atMid = StateAt(
+                (OpeningSequenceState.Narration1Start + OpeningSequenceState.Narration1End) * 0.5f);
+            atMid.GetNarration(out _, out float aMid);
+
+            Assert.AreEqual(0, i1);
+            Assert.Less(aStart, 0.2f, "시작에서 알파가 이미 높다 — 페이드 인이 없다");
+            Assert.AreEqual(1f, aMid, 0.01f, "가운데서 완전히 보이지 않는다");
+        }
+
+        private static void AssertNarrationAt(float elapsed, int expectedIndex)
+        {
+            OpeningSequenceState state = StateAt(elapsed);
+            state.GetNarration(out int index, out _);
+            Assert.AreEqual(expectedIndex, index, $"경과 {elapsed:F2}s의 내레이션 줄이 다르다");
+        }
+
         private static OpeningSequenceState StateAt(float elapsed)
         {
             OpeningSequenceState state = new OpeningSequenceState();

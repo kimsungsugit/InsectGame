@@ -185,6 +185,49 @@ namespace InsectGame.Opening
             }
         }
 
+        /// <summary>
+        /// 스토리 내레이션 — 오프닝이 게임 소개("발견하고, 성장시키고")만 하고 <b>무슨 이야기인지는
+        /// 한 마디도 안 했다.</b> 처음 켠 사람이 몰입할 근거가 없었다.
+        ///
+        /// 타이틀(6.2s)과 겹치지 않게 앞의 두 줄은 그 전에 끝내고, 세 번째 줄만 타이틀이
+        /// 자리잡은 뒤(8.2s) 얹는다 — 마지막 줄이 게임의 목적을 말하므로 타이틀과 함께 남는다.
+        /// </summary>
+        public const float Narration1Start = 0.9f;
+        public const float Narration1End = 3.0f;
+        public const float Narration2Start = 3.3f;
+        public const float Narration2End = 5.9f;
+        public const float Narration3Start = 8.2f;
+        public const float Narration3End = 9.6f;
+        private const float NarrationFade = 0.45f;
+
+        /// <summary>
+        /// 지금 보여줄 내레이션 줄(0~2)과 그 알파. 없으면 index가 -1.
+        /// 순수 계산이라 <c>OpeningSequenceTests</c>가 씬 없이 고정한다.
+        /// </summary>
+        public void GetNarration(out int index, out float alpha)
+        {
+            if (TryNarration(0, Narration1Start, Narration1End, out index, out alpha)) return;
+            if (TryNarration(1, Narration2Start, Narration2End, out index, out alpha)) return;
+            if (TryNarration(2, Narration3Start, Narration3End, out index, out alpha)) return;
+            index = -1;
+            alpha = 0f;
+        }
+
+        private bool TryNarration(int slot, float start, float end, out int index, out float alpha)
+        {
+            index = -1;
+            alpha = 0f;
+            if (elapsed < start || elapsed >= end) return false;
+
+            float sinceStart = elapsed - start;
+            float untilEnd = end - elapsed;
+            index = slot;
+            alpha = Clamp01(Min(sinceStart, untilEnd) / NarrationFade);
+            return true;
+        }
+
+        private static float Min(float a, float b) => a < b ? a : b;
+
         public float FadeAlpha
         {
             get

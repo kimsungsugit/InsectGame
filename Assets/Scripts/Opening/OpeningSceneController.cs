@@ -29,6 +29,21 @@ namespace InsectGame.Opening
         private const string KoreanTitleText = "곤충탐험";
         private const string SubtitleText = "발견하고, 성장시키고, 함께 모험하세요";
 
+        /// <summary>
+        /// 오프닝 내레이션 — <b>이 게임이 무슨 이야기인지</b>를 처음 켠 사람에게 알린다.
+        /// 예전엔 부제 한 줄("발견하고, 성장시키고")뿐이라 서사가 전혀 전달되지 않았다.
+        ///
+        /// 세 줄로 1막의 전제를 세운다: 사라짐 → 그것을 노리는 자들 → 플레이어가 할 일.
+        /// 답을 주지 않고 질문만 남긴다 — 답은 마을 어르신이 한다.
+        /// 순서·시각은 <see cref="OpeningSequenceState"/>의 Narration* 상수가 정한다.
+        /// </summary>
+        private static readonly string[] NarrationLines =
+        {
+            "곤충이 사라지고 있다.",
+            "그리고 그것을 남김없이 거두려는 자들이 있다.",
+            "사라지는 이름을 기록하는 일 — 거기서부터 시작된다.",
+        };
+
         private static readonly string[] ImagePaths =
         {
             GlowPath,
@@ -68,6 +83,7 @@ namespace InsectGame.Opening
         private GUIStyle koreanTitleStyle;
         private GUIStyle subtitleStyle;
         private GUIStyle skipButtonStyle;
+        private GUIStyle narrationStyle;
         private GUIStyle errorStyle;
         private GUIStyle retryStyle;
 
@@ -476,6 +492,11 @@ namespace InsectGame.Opening
             if (titleAlpha > 0f)
                 DrawTitle(safeRect, titleAlpha);
 
+            sequence.GetNarration(out int narrationIndex, out float narrationAlpha);
+            if (narrationIndex >= 0 && narrationIndex < NarrationLines.Length)
+                DrawNarration(safeRect, NarrationLines[narrationIndex],
+                    narrationAlpha * (1f - sequence.FadeAlpha));
+
             if (sequence.CanSkip)
                 DrawSkipButton(safeRect, 1f - sequence.FadeAlpha);
 
@@ -580,6 +601,36 @@ namespace InsectGame.Opening
             GUI.Label(englishRect, EnglishTitleText, titleStyle);
             GUI.Label(koreanRect, KoreanTitleText, koreanTitleStyle);
             GUI.Label(subtitleRect, SubtitleText, subtitleStyle);
+            GUI.color = previous;
+        }
+
+        /// <summary>
+        /// 스토리 내레이션 — 화면 아래쪽 1/3에 한 줄. 타이틀은 위쪽 7.5%라 겹치지 않는다.
+        /// 건너뛰기 알약(하단 중앙)보다 위에 두어 서로 침범하지 않게 한다.
+        /// </summary>
+        private void DrawNarration(Rect safeRect, string text, float alpha)
+        {
+            if (alpha <= 0f || string.IsNullOrEmpty(text)) return;
+
+            EnsureStyles();
+            float shortSide = Mathf.Min(safeRect.width, safeRect.height);
+            narrationStyle.fontSize = Mathf.RoundToInt(Mathf.Clamp(shortSide * 0.038f, 20f, 44f));
+
+            float width = safeRect.width - 64f;
+            float height = narrationStyle.fontSize * 2.6f;
+            // 건너뛰기 알약이 하단 마진 위에 서므로 그보다 충분히 위에 둔다.
+            float y = safeRect.yMax - safeRect.height * 0.30f - height * 0.5f;
+            Rect rect = new Rect(safeRect.x + 32f, y, width, height);
+
+            Color previous = GUI.color;
+            // 밝은 배경(노을·풀밭)에서도 읽히게 어두운 띠를 깐다.
+            GUI.color = new Color(0f, 0f, 0f, 0.42f * alpha);
+            GUI.DrawTexture(rect, Texture2D.whiteTexture);
+
+            GUI.color = new Color(0f, 0f, 0f, 0.85f * alpha);
+            GUI.Label(new Rect(rect.x + 2f, rect.y + 3f, rect.width, rect.height), text, narrationStyle);
+            GUI.color = new Color(1f, 1f, 1f, alpha);
+            GUI.Label(rect, text, narrationStyle);
             GUI.color = previous;
         }
 
@@ -691,6 +742,14 @@ namespace InsectGame.Opening
                 fontStyle = FontStyle.Bold,
                 padding = new RectOffset(18, 18, 8, 8)
             };
+
+            narrationStyle = new GUIStyle(GUI.skin.label)
+            {
+                alignment = TextAnchor.MiddleCenter,
+                fontStyle = FontStyle.Normal,
+                wordWrap = true
+            };
+            narrationStyle.normal.textColor = Color.white;
             skipButtonStyle.normal.textColor = Color.white;
             skipButtonStyle.hover.textColor = new Color(1f, 0.9f, 0.5f);
             skipButtonStyle.active.textColor = new Color(1f, 0.8f, 0.25f);

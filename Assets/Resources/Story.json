@@ -5,7 +5,7 @@
       "chapterId": "ch1",
       "order": 0,
       "prerequisiteBeatId": "",
-      "requiredQuestId": "q_dex",
+      "requiredQuestId": "q_approach",
       "trigger": {
         "type": "NpcTalk",
         "param": "village_elder"
