@@ -218,6 +218,19 @@ namespace InsectGame.UI
             objectiveStatusStyleCache.normal.textColor = UITheme.Instance.accentAmber;
         }
 
+        /// <summary>
+        /// 한 줄짜리 라벨이 <b>안 잘리는</b> 최소 상자 높이. 한글 줄높이는 대략
+        /// <c>fontSize × 1.35</c>이라 그보다 낮은 Rect에 그리면 위아래가 깎인다.
+        ///
+        /// <b>상자 높이를 숫자로 적지 말 것.</b> 폰트를 키우는 순간 전부 어긋나는데
+        /// 컴파일도 되고 예외도 없어서 조용히 잘린다 — 2026-08-08에 폰트를 1.25배 올리면서
+        /// 실제로 10곳이 그렇게 깨졌다(퀘스트 완료 알림·상세 패널 헤더·보상 줄).
+        /// </summary>
+        private static float RowH(GUIStyle style)
+        {
+            return Mathf.Ceil(style.fontSize * 1.35f);
+        }
+
         private void InitNotifStyles()
         {
             if (notifStylesReady) return;
@@ -466,10 +479,8 @@ namespace InsectGame.UI
                 ? Mathf.Min(500f, UIScale.VirtualScreenWidth - UIScale.VirtualSafeLeft - UIScale.VirtualSafeRight - 40f)
                 : 400f;
             float cpad = UITheme.Space.S;
-            // 행 높이는 폰트에서 파생한다. 예전엔 fontSize 28을 30px 상자에 그려서
-            // 한글 글자(줄높이 ≈ fontSize×1.35)가 위아래로 깎여 나갔다 — "짤려 보임"의 정체.
-            float ctitleH = Mathf.Ceil(questTitleStyleCache.fontSize * 1.35f);
-            float cbarH = done ? 0f : Mathf.Ceil(questProgStyleCache.fontSize * 1.35f);
+            float ctitleH = RowH(questTitleStyleCache);
+            float cbarH = done ? 0f : RowH(questProgStyleCache);
             float crowGap = done ? 0f : UITheme.Space.XS;
             float chipH = cpad + ctitleH + crowGap + cbarH + cpad;
             float chipY = UIScale.IsMobileLayout
@@ -598,7 +609,8 @@ namespace InsectGame.UI
             if (!string.IsNullOrEmpty(status))
             {
                 UIHelper.LabelFit(
-                    new Rect(row.x + UITheme.Space.XS, row.yMax + 2f, row.width - UITheme.Space.XS * 2f, 30f),
+                    new Rect(row.x + UITheme.Space.XS, row.yMax + 2f,
+                        row.width - UITheme.Space.XS * 2f, RowH(objectiveStatusStyleCache)),
                     status, objectiveStatusStyleCache);
             }
         }
@@ -747,9 +759,20 @@ namespace InsectGame.UI
                 slideOffset = 0f;
             }
 
+            InitNotifStyles();
+
+            // \ud589 \ub192\uc774\u00b7\ud328\ub110 \ub192\uc774\ub97c **\ud3f0\ud2b8\uc5d0\uc11c \ud30c\uc0dd**\ud55c\ub2e4. \uace0\uc815 \uc22b\uc790\ub85c \ub450\uba74 \ud3f0\ud2b8\ub97c \ud0a4\uc6b0\ub294 \uc21c\uac04
+            // \ud55c\uae00 \uae00\uc790(\uc904\ub192\uc774 \u2248 fontSize\u00d71.35)\uac00 \uc704\uc544\ub798\ub85c \uae4e\uc778\ub2e4 \u2014 \uc544\ub798 \ud018\uc2a4\ud2b8 \ubc30\ub108\uac00 \uc774\ubbf8
+            // \uac19\uc740 \uc774\uc720\ub85c \ud30c\uc0dd\uc2dd\uc744 \uc4f0\uace0 \uc788\ub294\ub370 \uc774 \uc54c\ub9bc \ud328\ub110\ub9cc \uc0c1\uc218\ub85c \ub0a8\uc544 \uc2e4\uc81c\ub85c \uc798\ub838\ub2e4.
+            float headH = RowH(compHeaderStyleCache);
+            float titleH = RowH(compTitleStyleCache);
+            float rewH = RowH(rewardStyleCache);
+            bool hasReward = !string.IsNullOrEmpty(completedRewardText);
+
             float availW = UIScale.VirtualScreenWidth - UIScale.VirtualSafeLeft - UIScale.VirtualSafeRight;
-            float panelW = Mathf.Min(520f, availW - 24f);
-            float panelH = UISafeLayout.ClampHeight(150f);
+            float panelW = Mathf.Min(640f, availW - 24f);
+            float panelH = UISafeLayout.ClampHeight(
+                12f + headH + 6f + titleH + (hasReward ? 6f + rewH : 0f) + 14f);
             float panelX = UIScale.VirtualSafeLeft + (availW - panelW) * 0.5f;
             float panelY = UISafeLayout.ContentTop + slideOffset;
 
@@ -764,22 +787,23 @@ namespace InsectGame.UI
 
             GUI.color = new Color(1f, 1f, 1f, alpha);
 
-            InitNotifStyles();
-
             // "Quest Complete!" header \u2014 base \uce90\uc2dc + textColor alpha \ub3d9\uc801
+            float rowY = panelY + 12f;
             compHeaderStyleCache.normal.textColor = new Color(CompHeaderBaseCol.r, CompHeaderBaseCol.g, CompHeaderBaseCol.b, alpha);
-            GUI.Label(new Rect(panelX, panelY + 12f, panelW, 44f), "\u2713 \ud034\uc2a4\ud2b8 \uc644\ub8cc!", compHeaderStyleCache);
+            GUI.Label(new Rect(panelX, rowY, panelW, headH), "\u2713 \ud034\uc2a4\ud2b8 \uc644\ub8cc!", compHeaderStyleCache);
+            rowY += headH + 6f;
 
             // Quest title
             compTitleStyleCache.normal.textColor = new Color(CompTitleBaseCol.r, CompTitleBaseCol.g, CompTitleBaseCol.b, alpha);
-            GUI.Label(new Rect(panelX, panelY + 58f, panelW, 34f),
+            GUI.Label(new Rect(panelX, rowY, panelW, titleH),
                 "\"" + (completedQuestTitle ?? "") + "\"", compTitleStyleCache);
+            rowY += titleH + 6f;
 
             // \ubcf4\uc0c1 \u2014 \uc870\ub9bd\uc740 OnQuestCompleted\uc5d0\uc11c QuestRewardFormatter\uac00 \uc774\ubbf8 \ub05d\ub0c8\ub2e4.
-            if (!string.IsNullOrEmpty(completedRewardText))
+            if (hasReward)
             {
                 rewardStyleCache.normal.textColor = new Color(RewardBaseCol.r, RewardBaseCol.g, RewardBaseCol.b, alpha);
-                GUI.Label(new Rect(panelX, panelY + 96f, panelW, 32f),
+                GUI.Label(new Rect(panelX, rowY, panelW, rewH),
                     "\ubcf4\uc0c1: " + completedRewardText, rewardStyleCache);
             }
 
@@ -810,10 +834,20 @@ namespace InsectGame.UI
                 alpha = 1f;
             }
 
+            InitNotifStyles();
+
             bool hasDesc = !string.IsNullOrEmpty(newQuestDesc);
             float availW = UIScale.VirtualScreenWidth - UIScale.VirtualSafeLeft - UIScale.VirtualSafeRight;
-            float panelW = Mathf.Min(520f, availW - 24f);
-            float panelH = UISafeLayout.ClampHeight(hasDesc ? 132f : 54f);
+            float panelW = Mathf.Min(640f, availW - 24f);
+
+            // 높이는 전부 폰트에서 파생한다(RowH 주석 참조). 설명은 두 줄까지 잡는다 —
+            // 길이가 데이터에서 오므로 wordWrap이 접히는 경우가 있다.
+            float nqHeadH = RowH(newQuestStyleCache);
+            float nqDescH = RowH(newQuestDescStyleCache) * 2f;
+            float nqPromptH = RowH(newQuestPromptStyleCache);
+            float panelH = UISafeLayout.ClampHeight(
+                hasDesc ? 8f + nqHeadH + 6f + nqDescH + 6f + nqPromptH + 10f
+                        : 8f + nqHeadH + 10f);
             float panelX = UIScale.VirtualSafeLeft + (availW - panelW) * 0.5f;
             float panelY = UISafeLayout.ContentTop + 30f;   // 퀘스트 토스트(ContentTop) 아래로
 
@@ -824,24 +858,27 @@ namespace InsectGame.UI
             GUI.DrawTexture(new Rect(panelX, panelY, panelW, 2f), Texture2D.whiteTexture);
             GUI.DrawTexture(new Rect(panelX, panelY + panelH - 2f, panelW, 2f), Texture2D.whiteTexture);
 
-            InitNotifStyles();
             GUI.color = new Color(1f, 1f, 1f, alpha);
 
-            // \ud5e4\ub354: \ub2e4\uc74c \ub2e8\uacc4\uac00 "\ubb34\uc5c7"\uc778\uc9c0
+            // 헤더: 다음 단계가 "무엇"인지
+            float nqY = panelY + 8f;
             newQuestStyleCache.normal.textColor = new Color(NewQuestBaseCol.r, NewQuestBaseCol.g, NewQuestBaseCol.b, alpha);
-            GUI.Label(new Rect(panelX, panelY + 8f, panelW, 36f),
-                "\ub2e4\uc74c \ub2e8\uacc4 \u2192 \"" + (newQuestTitle ?? "") + "\"", newQuestStyleCache);
+            GUI.Label(new Rect(panelX, nqY, panelW, nqHeadH),
+                "다음 단계 \u2192 \"" + (newQuestTitle ?? "") + "\"", newQuestStyleCache);
+            nqY += nqHeadH + 6f;
 
             if (hasDesc)
             {
-                // \ubb34\uc5c7\uc744 "\ud574\uc57c \ud558\ub294\uc9c0"(\uc124\uba85)
+                // 무엇을 "해야 하는지"(설명) — 길이가 데이터에서 오므로 상자에 맞춰 줄인다.
                 newQuestDescStyleCache.normal.textColor = new Color(NewQuestDescCol.r, NewQuestDescCol.g, NewQuestDescCol.b, alpha);
-                GUI.Label(new Rect(panelX + 12f, panelY + 48f, panelW - 24f, 44f), newQuestDesc, newQuestDescStyleCache);
+                UIHelper.LabelFit(new Rect(panelX + 12f, nqY, panelW - 24f, nqDescH),
+                    newQuestDesc, newQuestDescStyleCache);
+                nqY += nqDescH + 6f;
 
-                // \uc9c4\ud589 \ub3c5\ub824
+                // 진행 독려
                 newQuestPromptStyleCache.normal.textColor = new Color(NewQuestPromptCol.r, NewQuestPromptCol.g, NewQuestPromptCol.b, alpha);
-                GUI.Label(new Rect(panelX, panelY + panelH - 34f, panelW, 28f),
-                    "\u25b6 \uc9c0\uae08 \uc9c4\ud589\ud574\ubcf4\uc138\uc694!", newQuestPromptStyleCache);
+                GUI.Label(new Rect(panelX, nqY, panelW, nqPromptH),
+                    "\u25b6 지금 진행해보세요!", newQuestPromptStyleCache);
             }
 
             GUI.color = Color.white;
@@ -907,7 +944,8 @@ namespace InsectGame.UI
             float detailCloseSize = UIScale.IsMobileLayout ? 56f : 48f;
 
             // Header
-            GUI.Label(new Rect(panelX + 18f, panelY + 12f, panelW - detailCloseSize - 40f, 44f),
+            GUI.Label(new Rect(panelX + 18f, panelY + 12f, panelW - detailCloseSize - 40f,
+                    RowH(detailHeaderStyleCache)),
                 "\u2605 \ud034\uc2a4\ud2b8 \ubaa9\ub85d", detailHeaderStyleCache);
 
             // Close button [X]
@@ -1113,25 +1151,29 @@ namespace InsectGame.UI
                 string desc = QuestDescription(quest);
                 if (!string.IsNullOrEmpty(desc))
                 {
-                    GUI.Label(new Rect(16f, ey, width - 32f, 52f), desc, detailDescStyleCache);
+                    UIHelper.LabelFit(new Rect(16f, ey, width - 32f, RowH(detailDescStyleCache) * 2f),
+                        desc, detailDescStyleCache);
                 }
-                ey += 56f;
+                ey += RowH(detailDescStyleCache) * 2f + 6f;
 
                 if (tgt > 0)
                 {
-                    GUI.Label(new Rect(16f, ey, 60f, 26f), "\uc9c4\ud589", detailRewardLabelStyleCache);
+                    float progLabelH = RowH(detailRewardLabelStyleCache);
+                    GUI.Label(new Rect(16f, ey, 60f, progLabelH), "\uc9c4\ud589", detailRewardLabelStyleCache);
                     UIHelper.DrawProgressBar(
                         new Rect(80f, ey + 9f, width - 176f, 8f),
                         cur / (float)tgt,
                         t.surfaceBase,
                         t.accentMint);
                     detailStatusStyleCache.normal.textColor = statusCol;
-                    GUI.Label(new Rect(width - 88f, ey, 72f, 26f), cur + " / " + tgt, detailStatusStyleCache);
+                    GUI.Label(new Rect(width - 88f, ey, 72f, RowH(detailStatusStyleCache)),
+                        cur + " / " + tgt, detailStatusStyleCache);
                 }
-                ey += 34f;
+                ey += RowH(detailRewardLabelStyleCache) + 8f;
 
-                GUI.Label(new Rect(16f, ey, 60f, 26f), "\ubcf4\uc0c1", detailRewardLabelStyleCache);
-                GUI.Label(new Rect(80f, ey, width - 96f, 26f),
+                float rewardRowH = RowH(detailRewardStyleCache);
+                GUI.Label(new Rect(16f, ey, 60f, rewardRowH), "\ubcf4\uc0c1", detailRewardLabelStyleCache);
+                GUI.Label(new Rect(80f, ey, width - 96f, rewardRowH),
                     string.IsNullOrEmpty(rewardText) ? "\uc5c6\uc74c" : rewardText, detailRewardStyleCache);
             }
 
