@@ -29,8 +29,9 @@ namespace InsectGame.Core
         ExploreCanopy,
         ExploreNameless,
         // 2막 보스 테마 — 명부회 간부(집게·저울)와 최종전(관장 하월·무명).
-        // 위 리전 BGM과 똑같이 3지점(BgmTypeToString / 아래 전환 호출부 /
-        // ProceduralAudioGenerator.GetBGM)을 함께 등록해야 소리가 난다.
+        // 등록은 **4지점**이다: BgmTypeToString / 전환 호출부 / ProceduralAudioGenerator.GetBGM /
+        // **전투 계열이면 IsCombatBgm**. 앞의 셋만 하면 소리는 나지만 긴장 램프(피치)가 빠진다 —
+        // 실제로 이 보스 2종이 그렇게 새어 2026-08-08 audit에서 잡혔다.
         BossLedger,
         BossFinal
     }
@@ -166,6 +167,20 @@ namespace InsectGame.Core
         // ── BGM ──
 
         private Coroutine deferredBgmCoroutine;
+
+        /// <summary>
+        /// 전투 계열 BGM인가 — 여기에만 <see cref="battleIntensity"/> 피치 램프가 걸린다.
+        /// 아니면 Update가 피치를 능동적으로 1.0으로 되돌린다.
+        ///
+        /// 예전엔 <c>Battle || RaidBattle</c>을 Update 안에 직접 적어 두어서, 보스 BGM 2종을
+        /// 추가할 때 <b>이 자리가 등록 목록에 없어</b> 조용히 빠졌다 — 벽으로 설계된 간부·최종전이
+        /// 유일하게 긴장 램프를 잃었다. 판정을 한 곳으로 모아 다음 곡을 추가할 때 여기만 보면 되게 한다.
+        /// </summary>
+        private static bool IsCombatBgm(BgmType type)
+            => type == BgmType.Battle
+            || type == BgmType.RaidBattle
+            || type == BgmType.BossLedger
+            || type == BgmType.BossFinal;
 
         public void PlayBGM(BgmType type)
         {
@@ -308,7 +323,7 @@ namespace InsectGame.Core
             // 배틀 BGM 인텐시티
             if (bgmSource.isPlaying)
             {
-                if (currentBgmType == BgmType.Battle || currentBgmType == BgmType.RaidBattle)
+                if (currentBgmType.HasValue && IsCombatBgm(currentBgmType.Value))
                 {
                     float targetPitch = Mathf.Lerp(1.0f, 1.10f, battleIntensity);
                     bgmSource.pitch = Mathf.MoveTowards(bgmSource.pitch, targetPitch, Time.deltaTime * 0.3f);

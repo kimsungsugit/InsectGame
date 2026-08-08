@@ -77,6 +77,32 @@ namespace InsectGame.Tests
         }
 
         [Test]
+        public void EveryCombatBgm_IsCoveredByIntensityRamp()
+        {
+            // 등록 4번째 지점. 앞의 셋(enum/문자열/생성기)만 하면 소리는 나지만 긴장 램프가 빠진다 —
+            // 보스 2종이 실제로 그렇게 샜다. 전투 계열 곡 이름을 규약으로 삼아 대조한다.
+            string audio = ReadCode(AudioManagerPath);
+
+            Match combat = Regex.Match(audio, @"IsCombatBgm\(BgmType type\)(.*?);", RegexOptions.Singleline);
+            Assert.IsTrue(combat.Success, "IsCombatBgm 파싱 실패 — 이 테스트가 무의미해졌다");
+
+            Match block = Regex.Match(audio, @"enum BgmType\s*\{(.*?)\}", RegexOptions.Singleline);
+            Assert.IsTrue(block.Success, "BgmType enum 블록 파싱 실패");
+
+            var missing = new List<string>();
+            foreach (string raw in block.Groups[1].Value.Split(','))
+            {
+                string name = raw.Trim();
+                // 전투 계열의 규약: Battle로 끝나거나 Boss로 시작한다.
+                bool isCombat = name == "Battle" || name.EndsWith("Battle") || name.StartsWith("Boss");
+                if (isCombat && !combat.Groups[1].Value.Contains($"BgmType.{name}")) missing.Add(name);
+            }
+
+            CollectionAssert.IsEmpty(missing,
+                $"전투 BGM인데 IsCombatBgm에 없다(긴장 램프 누락): {string.Join(", ", missing)}");
+        }
+
+        [Test]
         public void BossTable_HasExactlyOneFinalDuel()
         {
             // 최종전 플래그가 둘이면 간부전이 최종 테마로 나오고, 없으면 최종전이 간부 테마로 나온다.

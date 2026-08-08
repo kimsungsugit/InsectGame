@@ -641,7 +641,13 @@ namespace InsectGame.Core
             yield return null; // 추가 1프레임 (렌더링 안정화)
             if (audioManager != null)
             {
-                audioManager.PlayBGM(BgmType.Explore);
+                // **범용 Explore를 무조건 걸면 안 된다.** 이 코루틴은 2프레임 뒤에 도는데,
+                // 그 사이 frame 0의 RegionManager.Update가 이미 RegionChanged(meadow)를 쏴
+                // 리전 곡(ExploreMeadow)이 걸려 있다. PlayBGM의 조기 반환 가드는 "같은 곡이면
+                // 무시"라서 다른 곡인 이 호출은 그대로 통과해 **리전 곡을 덮어썼다** —
+                // 리전 곡 13개를 만들어 놓고 시작할 땐 늘 범용 곡이 나오던 이유다.
+                // RestoreExploreBGM은 마지막 리전 곡을 알고, 아직 없으면 Explore로 떨어진다.
+                audioManager.RestoreExploreBGM();
                 audioManager.PlayAmbient("day");
                 EnsureComponent<UIAudioBinder>("World/UIAudioBinder");
             }
