@@ -50,6 +50,19 @@ namespace InsectGame.Dex
         private GUIStyle listHeaderStyleCache, scrollHintStyleCache;
         private bool dexStylesInitialized;
 
+        /// <summary>
+        /// 한 줄짜리 라벨이 <b>안 잘리는</b> 최소 상자 높이. 한글 줄높이는 대략
+        /// <c>fontSize × 1.35</c>이라 그보다 낮은 Rect에 그리면 위아래가 깎인다.
+        ///
+        /// 리터럴 문구는 <c>text_fit_lint</c>의 대상이 아니라("길이를 데이터가 정하는 자리"만 본다)
+        /// 조용히 잘린다 — 36pt를 28px 상자에 그리던 자리가 실제로 둘 있었다.
+        /// <c>TutorialQuestUI.RowH</c>와 같은 계산이다.
+        /// </summary>
+        private static float LineH(GUIStyle style)
+        {
+            return Mathf.Ceil(style.fontSize * 1.35f);
+        }
+
         // 도감 팔레트 — 전부 UITheme 토큰에서 파생한다.
         //
         // 옛 버전은 밝은 크림/코랄 파스텔 47색을 여기에 직접 박아두었다. 그 결과 도감만
@@ -978,7 +991,9 @@ namespace InsectGame.Dex
                     previewShiny))
                     previewShiny = !previewShiny;
                 if (ownsShiny)
-                    GUI.Label(new Rect(boxX, boxY + previewSz - 112f, previewSz, 30f), "★ 색다른 개체 보유 중", caughtSCache);
+                    GUI.Label(
+                        new Rect(boxX, boxY + previewSz - 112f, previewSz, LineH(caughtSCache)),
+                        "★ 색다른 개체 보유 중", caughtSCache);
 
                 // 이후 모든 텍스트는 우측 컬럼에 그림 — x/w/cx/py만 재배치(폰트 스타일 불변).
                 x = boxX + previewSz + 30f;
@@ -1090,12 +1105,16 @@ namespace InsectGame.Dex
             }
             else
             {
-                GUI.Label(new Rect(infoBoxX, py + 10, infoBoxW, 28), "포획하면 상세 스탯을 확인할 수 있습니다", hintSCache);
+                // 상자 높이를 폰트에서 파생한다 — 36pt를 28px에 그려 위아래가 깎이고 있었다.
+                // 아래 행(발견 횟수)의 y도 그만큼 밀지 않으면 겹친다.
+                float hintH = LineH(hintSCache);
+                GUI.Label(new Rect(infoBoxX, py + 10, infoBoxW, hintH),
+                    "포획하면 상세 스탯을 확인할 수 있습니다", hintSCache);
 
                 if (record != null)
-                    DrawInfoRow(lx, py + 56, lw, "발견 횟수", $"{record.discoveredCount}회", labelSCache, valSCache);
+                    DrawInfoRow(lx, py + 18f + hintH, lw, "발견 횟수", $"{record.discoveredCount}회", labelSCache, valSCache);
 
-                py += 130;
+                py += Mathf.Max(130f, 92f + hintH);
             }
 
             if (!string.IsNullOrEmpty(ins.habitatHint))
