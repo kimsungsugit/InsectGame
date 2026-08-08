@@ -181,6 +181,15 @@ namespace InsectGame.Core
             }
 
             GemsChanged?.Invoke();
+
+            // **즉시 클라우드에 확정한다.** 아래 GrantGemPackage(에디터 전용)는 이걸 하는데
+            // 정작 릴리스의 유일한 지급 경로인 여기가 빠져 있었다 — 돈이 오간 직후 앱을 끄면
+            // 120초 자동저장을 못 만나고, 다음 실행의 클라우드 복원이 결제 전 잔액을 덮어쓴다.
+            // 서버가 권위 잔액을 들고 있어도 그건 재검증 시점 이야기고, 그 사이 사용자에겐
+            // "결제했는데 보석이 없다"로 보인다.
+            if (CloudSaveManager.Instance != null)
+                CloudSaveManager.Instance.SaveToCloud();
+
             ItemPurchased?.Invoke(item);
             return true;
         }
@@ -261,6 +270,15 @@ namespace InsectGame.Core
                 if (refund > 0) AddGems(refund);
                 return false;
             }
+
+            // **차감을 즉시 클라우드에 확정한다.** 서버 IAP 지급이 Firestore의 `gems`를 읽어
+            // `currentGems + rewardCount`로 계산하는데, 그 필드는 클라이언트 PATCH로만 갱신된다.
+            // 여기서 저장하지 않으면 젬을 쓴 뒤 자동저장(120초) 전에 젬 패키지를 결제할 때
+            // 서버가 **차감 전 잔액**에 보너스를 더해 확정한다 — 쓴 젬이 그대로 돌아오고
+            // 아이템은 남는 복제가 된다. 지급 경로(ApplyVerifiedGemBalance/GrantGemPackage)는
+            // 이미 저장하고 있었고 소비 경로만 빠져 있었다.
+            if (CloudSaveManager.Instance != null)
+                CloudSaveManager.Instance.SaveToCloud();
 
             ItemPurchased?.Invoke(item);
             return true;
