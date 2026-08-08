@@ -214,17 +214,21 @@ namespace InsectGame.Tests
             InsectBattleStats attacker = Stats("ally", 300, 60, 60);
             InsectBattleStats boss = Stats("boss", 9000, 120, 100);
             InsectBattleStats[] team = { attacker, attacker, attacker, attacker, attacker };
-            RaidBossIntent area = Intent(true, -1);
+            // **단일 대상 예고로 검증한다** — RaidBossUsesAreaAttack가 false라 프로덕션은
+            // AOE 예고를 절대 내지 않는다. AOE로만 검증하면 실제로 안 도는 분기를 고정하게 된다.
+            RaidBossIntent single = Intent(false, 1);
 
+            // Guard 스탠스 — 기절 가중치가 가장 높다(1.4). 단일 대상 예고에서 기절 가치는
+            // 전체공격의 alive배가 아니라 0.4배라, Assault로는 데미지가 이기는 게 정상이다.
             Assert.AreEqual(1, RaidSupportPlanner.SelectSupportSkillIndex(
                 1, attacker, new[] { hit, stun }, new[] { 0, 0 },
-                boss, team, area, RaidTeamStance.Assault, bossStunImmune: false),
-                "면역이 아니면 전체공격 예고에 기절이 최우선");
+                boss, team, single, RaidTeamStance.Guard, bossStunImmune: false),
+                "면역이 아니면 Guard 스탠스에서 기절을 고른다");
 
             Assert.AreEqual(0, RaidSupportPlanner.SelectSupportSkillIndex(
                 1, attacker, new[] { hit, stun }, new[] { 0, 0 },
-                boss, team, area, RaidTeamStance.Assault, bossStunImmune: true),
-                "면역이면 기절을 버리고 다른 걸 쓴다");
+                boss, team, single, RaidTeamStance.Guard, bossStunImmune: true),
+                "면역이면(또는 이번 라운드에 이미 명중했으면) 기절을 버리고 다른 걸 쓴다");
         }
 
         [Test]
@@ -236,14 +240,16 @@ namespace InsectGame.Tests
             InsectBattleStats attacker = Stats("ally", 300, 60, 60);
             InsectBattleStats boss = Stats("boss", 9000, 200, 100);
             InsectBattleStats[] team = { attacker, attacker };
-            RaidBossIntent area = Intent(true, -1);
+            // 단일 대상 예고 + **자기가 지목되지 않은** 슬롯. 프로덕션이 실제로 타는 경로이고,
+            // 옛 코드는 여기서 방어 버프를 0으로 버려 스탠스를 바꿔도 선택이 안 바뀌었다.
+            RaidBossIntent single = Intent(false, 0);
 
             int assault = RaidSupportPlanner.SelectSupportSkillIndex(
                 1, attacker, new[] { hit, guard }, new[] { 0, 0 },
-                boss, team, area, RaidTeamStance.Assault);
+                boss, team, single, RaidTeamStance.Assault);
             int guarded = RaidSupportPlanner.SelectSupportSkillIndex(
                 1, attacker, new[] { hit, guard }, new[] { 0, 0 },
-                boss, team, area, RaidTeamStance.Guard);
+                boss, team, single, RaidTeamStance.Guard);
 
             Assert.AreEqual(0, assault);
             Assert.AreEqual(1, guarded);

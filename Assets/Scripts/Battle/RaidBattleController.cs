@@ -389,7 +389,12 @@ namespace InsectGame.Battle
                 TeamStance,
                 // 이번 라운드엔 기절이 안 걸린다는 걸 플래너도 알아야 한다 —
                 // 모르면 기절기를 든 팀원이 저항당할 시도를 고른다.
-                bossStunImmuneRounds > 0);
+                //
+                // roundStunLanded도 함께 넘긴다: 기절은 팀 전체에서 **한 번만** 판정되는데
+                // (FinishTeamPhase가 bool 하나를 소비한다), 팀 턴이 순차가 되면서 슬롯 0이
+                // 맞히면 슬롯 1~4의 기절은 전부 확정 무의미해졌다. Guard 스탠스에서 기절
+                // 가중치가 가장 높아 그대로 골라지므로, "전원 자동"이면 라운드당 최대 4턴이 날아간다.
+                bossStunImmuneRounds > 0 || roundStunLanded);
 
             RaidActionResult action;
             if (pick < 0)

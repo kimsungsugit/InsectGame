@@ -100,15 +100,24 @@ namespace InsectGame.Battle
                     return Mathf.Min(healed, deficit) * Weight(stance, SkillRole.Heal);
                 }
 
-                // 방어 버프는 팀 전체에 간다(시전자 전액·아군 절반). 전체공격 예고면 전원이 맞으므로
-                // 값이 크고, 단일 예고면 지목된 슬롯이 자기일 때만 이번 라운드에 값이 있다.
+                // 방어 버프는 팀 전체에 간다(시전자 전액·아군 절반).
+                //
+                // **지목되지 않았다고 0으로 버리지 않는다.** 옛 코드는 `!incomingArea && !targetedAtMe`면
+                // 즉시 0이었는데, 보스 전체공격이 꺼지면서(RaidBossUsesAreaAttack = false)
+                // incomingArea가 상시 false가 됐다 — 그래서 **5명 중 지목된 1명 말고는 방어 버프를
+                // 영영 후보에 못 올렸다**. 레이드 버프는 만료가 없고(RaidRoundResolver의 의도된
+                // divergence) 팀 전체에 걸리므로 지목 여부와 무관하게 남은 라운드 내내 값이 있다 —
+                // 바로 아래 BuffAttack이 `×2f`로 다라운드 가치를 매기는 것과 같은 이유다.
                 case SkillEffectType.DefenseBuff:
                 {
-                    if (!incomingArea && !targetedAtMe) return 0f;
                     float room = BuffRoom(team, attacker, defense: true);
                     if (room <= 0f) return 0f;
 
-                    return boss.Attack * Mathf.Max(0f, skill.effectValue) * room
+                    // 이번 라운드에 실제로 맞는 쪽이 더 급하다 — 기존 가치를 그대로 두고,
+                    // 지목되지 않은 슬롯은 절반으로 본다(후보에는 오르되 뒤로 밀린다).
+                    float urgency = (incomingArea || targetedAtMe) ? 1f : 0.5f;
+
+                    return boss.Attack * Mathf.Max(0f, skill.effectValue) * room * urgency
                         * Weight(stance, SkillRole.Defense);
                 }
 
