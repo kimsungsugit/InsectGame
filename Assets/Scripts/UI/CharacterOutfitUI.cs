@@ -381,7 +381,10 @@ namespace InsectGame.UI
             if (Event.current.type == EventType.Repaint)
                 previewRotate += Time.deltaTime * 30f;
 
-            Rect panelRect = UISafeLayout.CenteredPanel(1200f, 820f);
+            // 데스크톱은 미리보기를 가운데 크게 두고 아이템을 양옆에 나눠 거는 3분할이라 폭이 더 든다
+            // (탭 + 좌 카드열 + 미리보기 + 우 카드열). 모바일 세로는 기존 1열 스택 그대로다.
+            Rect panelRect = UISafeLayout.CenteredPanel(
+                UIScale.IsMobileLayout ? 1200f : 1560f, 820f);
             float panelW = panelRect.width;
             float panelH = panelRect.height;
             bool mobile = UIScale.IsMobileLayout;
@@ -419,20 +422,32 @@ namespace InsectGame.UI
             int tabRows = mobile ? Mathf.CeilToInt(slots.Length / (float)tabsPerRow) : slots.Length;
             float tabBlockH = tabRows * (tabH + tabGap);
 
+            // ── 레이아웃 축 ──
+            // 데스크톱: [슬롯 탭][좌 카드열][미리보기 중앙][우 카드열]. 미리보기를 구석에 두면
+            // 아이템을 볼 때 시선이 좌우로 크게 움직인다 — 가운데 두고 카드가 감싸면 한눈에 든다.
+            // 모바일 세로: 탭 → 미리보기 스트립 → 그리드 1열 스택(기존 유지).
+            float tabX = x + 20f;
+            float gridX = mobile ? x + 20f : tabX + tabW + 16f;
+            float gridW = mobile ? panelW - 40f : panelW - (gridX - x) - 20f;
+
+            // 미리보기는 데스크톱에서 그리드 영역의 정중앙을 차지한다.
+            float previewW = mobile ? panelW - 40f : 440f;
+            float sideW = mobile ? 0f : Mathf.Max(0f, (gridW - previewW) * 0.5f);
+
             // ── 캐릭터 미리보기 ──
-            // 데스크톱은 좌측 세로 패널, 모바일 세로는 탭 아래 가로 스트립.
             // 예전엔 `if (!mobile)` 안에만 있어 모바일에서는 미리보기가 아예 없었다.
             // 모바일 y는 tabBlockH에서 파생한다 — 탭 높이를 바꿔도 겹치지 않게(값을 두 곳에 적지 않는다).
-            float charAreaX = x + 20f;
+            float charAreaX = mobile ? x + 20f : gridX + sideW;
             float charAreaY = mobile ? tabY + tabBlockH + 8f : y + 70f;
-            float charAreaW = mobile ? panelW - 40f : 360f;
+            float charAreaW = previewW;
             float charAreaH = mobile ? 300f : panelH - 90f;
 
             Rect charArea = new Rect(charAreaX, charAreaY, charAreaW, charAreaH);
+            // **그리드보다 먼저 그린다** — IMGUI는 먼저 그린 쪽이 이벤트를 먼저 받으므로,
+            // 뒤에 오는 스크롤뷰가 미리보기 위의 드래그(캐릭터 회전)를 가로채지 않는다.
             DrawCharacterPreview(charArea, mobile);
 
-            // ── 슬롯 탭 (데스크톱: 캐릭터 우측 / 모바일: 상단) ──
-            float tabX = mobile ? x + 20f : charAreaX + charAreaW + 20f;
+            // ── 슬롯 탭 (데스크톱: 좌측 세로 / 모바일: 상단) ──
             for (int i = 0; i < slots.Length; i++)
             {
                 Rect tabRect = mobile
@@ -488,12 +503,12 @@ namespace InsectGame.UI
                 }
             }
 
-            // ── 오른쪽 아이템 그리드 ──
+            // ── 아이템 그리드 ──
             // 모바일 그리드는 탭 2행 + 미리보기 스트립 아래에서 시작하고, 하단은 보너스 요약(-76)·
             // 재화(-44) 라벨과 겹치지 않게 84px 여백을 남긴다.
-            float gridX = mobile ? x + 20f : tabX + tabW + 20f;
+            // 데스크톱은 스크롤뷰가 미리보기까지 덮는 폭을 갖되 **가운데 구간엔 카드를 두지 않는다** —
+            // 그래야 좌우 카드가 한 스크롤을 공유한다(스크롤뷰를 둘로 쪼개면 따로 논다).
             float gridY = mobile ? charArea.yMax + 12f : y + 70f;
-            float gridW = mobile ? panelW - 40f : panelW - (gridX - x) - 20f;
             float gridH = Mathf.Max(1f, mobile ? panelH - (gridY - y) - 84f : panelH - 150f);
 
             OutfitItem[] items = outfitManager.GetItemsForSlot(selectedSlot);
@@ -501,15 +516,22 @@ namespace InsectGame.UI
             float cardW = mobile ? Mathf.Max(190f, (gridW - 38f) * 0.5f) : 200f;
             float cardH = mobile ? 316f : 284f;
             float cardGap = 14f;
-            int cols = Mathf.Max(1, Mathf.FloorToInt((gridW - 10) / (cardW + cardGap)));
-            int rows = Mathf.CeilToInt((float)items.Length / cols);
+            // 데스크톱은 한쪽 열 수를 세고 카드를 좌·우로 번갈아 채운다.
+            int cols = mobile
+                ? Mathf.Max(1, Mathf.FloorToInt((gridW - 10) / (cardW + cardGap)))
+                : Mathf.Max(1, Mathf.FloorToInt((sideW - 10) / (cardW + cardGap)));
+            int perSide = mobile ? items.Length : Mathf.CeilToInt(items.Length / 2f);
+            int rows = Mathf.CeilToInt((float)perSide / cols);
             float contentH = rows * (cardH + cardGap) + 10;
 
             hoverFoundThisPass = false;
 
             Rect viewRect = new Rect(gridX, gridY, gridW, gridH);
             Rect contentRect = new Rect(0, 0, gridW, contentH);
-            directScroll.Handle(ref scrollPos, viewRect, contentH, cardH * 0.3f);
+            // 미리보기 위에서는 스크롤을 잡지 않는다 — 그 자리 드래그는 캐릭터 회전이다.
+            bool pointerOverPreview = !mobile && charArea.Contains(UIScale.VirtualMousePosition);
+            directScroll.Handle(ref scrollPos, viewRect, contentH, cardH * 0.3f,
+                interactive: !pointerOverPreview);
             scrollPos = GUI.BeginScrollView(
                 viewRect,
                 scrollPos,
@@ -520,9 +542,13 @@ namespace InsectGame.UI
             for (int i = 0; i < items.Length; i++)
             {
                 OutfitItem item = items[i];
-                int col = i % cols;
-                int row = i / cols;
-                float cx = col * (cardW + cardGap) + 5;
+                // 데스크톱: 짝수는 왼쪽 열, 홀수는 오른쪽 열 — 미리보기를 사이에 두고 감싼다.
+                // 모바일: 예전처럼 한 덩어리로 흐른다.
+                int seat = mobile ? i : i / 2;
+                int col = seat % cols;
+                int row = seat / cols;
+                float bandX = mobile || (i % 2) == 0 ? 0f : sideW + previewW;
+                float cx = bandX + col * (cardW + cardGap) + 5;
                 float cy = row * (cardH + cardGap) + 5;
                 Rect cardRect = new Rect(cx, cy, cardW, cardH);
                 // 스크롤 뷰포트 밖 카드는 3D 썸네일을 요청하지 않는다 — 목록 전체를 굽느라

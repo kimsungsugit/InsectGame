@@ -600,6 +600,7 @@ namespace InsectGame.Core
                 objectiveTracker.AutoWire(storyDirector, npcManager, regionMgr, playerMov, player.transform);
                 questUi.AutoWire(objectiveTracker);      // 퀘스트 칩 아래 목표 행
                 minimapUi.AutoWire(objectiveTracker);    // 미니맵 목표 방향 쐐기
+                minimapUi.AutoWire(statusHud);           // 좌측 스택 가림 판정(펼침 패널이 덮는다)
 
                 // 스폰은 배선 완료 후 (컬링 타깃/예약 시스템이 준비된 상태에서)
                 if (villageResult != null)

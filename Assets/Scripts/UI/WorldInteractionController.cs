@@ -51,6 +51,14 @@ namespace InsectGame.UI
         private Texture2D circleFillTex;
         private Texture2D circleRingTex;
         private Rect interactButtonRect;            // 모바일 raw 터치 히트테스트용 (직전 OnGUI 갱신)
+        /// <summary>
+        /// 화면 중앙 접근 배너의 히트 영역. 우하단 원형 버튼은 엄지가 닿는 자리라 편하지만
+        /// <b>시선은 화면 가운데에 있다</b> — 건물 앞에 서고도 우하단을 못 찾는다는 보고가 있어
+        /// 같은 동작을 중앙에서도 바로 누를 수 있게 뒀다. 둘은 대체가 아니라 병행이다.
+        /// </summary>
+        private Rect centerButtonRect;
+        private GUIStyle centerLabelStyle;
+        private GUIStyle centerHintStyle;
 
         /// <summary>현재 대상(건물/주민)이 존재하고 최근접 곤충보다 가까우면 true.</summary>
         public bool HasPriorityTarget => hasPriorityTarget;
@@ -153,6 +161,11 @@ namespace InsectGame.UI
             // 모바일: 두 번째 손가락 raw 터치 (조이스틱이 첫 손가락 점유 시 합성 마우스 미동작 우회)
             if (Input.touchSupported && interactButtonRect.width > 0f
                 && FieldHudInput.TryGetTapInVirtualRect(interactButtonRect))
+                Activate();
+
+            // 화면 중앙 배너도 같은 대접을 받는다 — 우하단 원형 버튼과 둘 다 살아 있다.
+            if (Input.touchSupported && centerButtonRect.width > 0f
+                && FieldHudInput.TryGetTapInVirtualRect(centerButtonRect))
                 Activate();
         }
 
@@ -366,6 +379,8 @@ namespace InsectGame.UI
             // 프롬프트 — 화면 하단 중앙에서 좌측 오프셋 (잡기 버튼/미스 피드백과 겹침 회피)
             GUI.Label(new Rect(vw / 2f - 560f, UISafeLayout.ContentBottom - 96f, 640f, 44f), promptText, promptStyle);
 
+            DrawCenterButton(vw);
+
             // 원형 상호작용 버튼 — 잡기 버튼(우하단, 반경 96) 왼쪽에 배치
             float radius = 80f;
             float accountClear = 92f / UIScale.Scale; // CaptureInputController와 동일한 '계정' 버튼 회피 보정
@@ -390,6 +405,47 @@ namespace InsectGame.UI
                 Activate();
 
             UIScale.End();
+        }
+
+        /// <summary>
+        /// 화면 중앙 접근 배너. 플레이어 머리 위쯤(세로 58%)에 두어 캐릭터를 가리지 않으면서
+        /// 시선이 머무는 자리에 놓는다. 고정 높이라 세로 마진 안으로 clamp한다
+        /// (rules/ui-layout.md: 비율 배치는 허용, 다만 고정 높이는 가둔다).
+        /// </summary>
+        private void DrawCenterButton(float vw)
+        {
+            float w = Mathf.Min(560f, vw - 80f);
+            float h = UIScale.IsMobileLayout ? 132f : 108f;
+            float y = Mathf.Clamp(
+                UIScale.VirtualScreenHeight * 0.58f,
+                UISafeLayout.ContentTop,
+                UISafeLayout.ContentBottom - h);
+            Rect rect = new Rect((vw - w) * 0.5f, y, w, h);
+
+            centerButtonRect = rect;
+            FieldHudInput.RegisterBlockingRect(rect);   // 배너 위 탭이 클릭-이동으로 새지 않게
+
+            bool hovered = !Input.touchSupported && rect.Contains(UIScale.VirtualMousePosition);
+            float pulse = 0.72f + 0.28f * Mathf.Sin(Time.time * 4f);
+            Color accent = new Color(0.45f, 0.85f, 1f);
+
+            UISurface.Card(
+                rect,
+                hovered ? new Color(0.13f, 0.24f, 0.34f, 0.97f) : new Color(0.07f, 0.13f, 0.20f, 0.94f),
+                new Color(accent.r, accent.g, accent.b, pulse));
+            GUI.color = Color.white;
+
+            GUI.Label(new Rect(rect.x, rect.y + 14f, rect.width, 46f), buttonText, centerLabelStyle);
+            centerHintStyle.normal.textColor = new Color(0.72f, 0.88f, 1f, pulse);
+            GUI.Label(
+                new Rect(rect.x, rect.y + h - 46f, rect.width, 34f),
+                Input.touchSupported ? "탭하여 들어가기" : "[E] 또는 클릭",
+                centerHintStyle);
+
+            // 데스크탑만 GUI.Button — 터치는 Update의 raw 히트테스트가 처리한다(이중 발화 회피,
+            // 우하단 원형 버튼과 같은 규칙).
+            if (!Input.touchSupported && GUI.Button(rect, GUIContent.none, GUIStyle.none))
+                Activate();
         }
 
         private static string ShortButtonLabel(InteractionKind kind)
@@ -423,6 +479,21 @@ namespace InsectGame.UI
                 alignment = TextAnchor.MiddleCenter
             };
             buttonLabelStyle.normal.textColor = Color.white;
+
+            // 중앙 배너 — 우하단 원형 버튼보다 크게 잡는다. 시선이 머무는 자리라 여기가 주 진입점이다.
+            centerLabelStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 40,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleCenter
+            };
+            centerLabelStyle.normal.textColor = Color.white;
+
+            centerHintStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 24,
+                alignment = TextAnchor.MiddleCenter
+            };
         }
 
         private void EnsureCircleTex()

@@ -180,41 +180,41 @@ namespace InsectGame.UI
             questPanelStylesReady = true;
 
             doneStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 28, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, wordWrap = true };
+            { fontSize = 34, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, wordWrap = true };
             doneStyleCache.normal.textColor = DoneTextCol;
 
             questTitleStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 28, fontStyle = FontStyle.Bold };
+            { fontSize = 34, fontStyle = FontStyle.Bold };
             questTitleStyleCache.normal.textColor = QuestTitleCol;
 
             questDescStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 23, wordWrap = true };
+            { fontSize = 28, wordWrap = true };
             questDescStyleCache.normal.textColor = Color.white;
 
             questProgStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 21, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
+            { fontSize = 26, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
             questProgStyleCache.normal.textColor = Color.white;
 
             questHintStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 21, fontStyle = FontStyle.Italic, wordWrap = true };
+            { fontSize = 25, fontStyle = FontStyle.Italic, wordWrap = true };
             // hintStyle.normal.textColor는 alpha 동적이라 매 호출 갱신 (BattleScreenUI 패턴).
 
             panelBtnStyleCache = new GUIStyle(GUI.skin.button)
-            { fontSize = 18, fontStyle = FontStyle.Bold };
+            { fontSize = 22, fontStyle = FontStyle.Bold };
 
             // UISurface.Button 전용 — 라벨은 GUI.Label로 그려지므로 **label 파생**이어야 한다.
             // button 파생을 넘기면 style.normal.background(유니티 기본 회색 상자)가
             // 둥근 서피스 위에 겹쳐 그려져서 없애려던 옛날 버튼이 그대로 남는다.
             panelSurfaceBtnStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 20, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            { fontSize = 24, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             panelSurfaceBtnStyleCache.normal.textColor = UITheme.Instance.textPrimary;
 
             objectiveStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 22, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
+            { fontSize = 27, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
             objectiveStyleCache.normal.textColor = UITheme.Instance.textPrimary;
 
             objectiveStatusStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 19, alignment = TextAnchor.MiddleLeft, wordWrap = false };
+            { fontSize = 23, alignment = TextAnchor.MiddleLeft, wordWrap = false };
             objectiveStatusStyleCache.normal.textColor = UITheme.Instance.accentAmber;
         }
 
@@ -224,17 +224,17 @@ namespace InsectGame.UI
             notifStylesReady = true;
 
             compHeaderStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 34, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            { fontSize = 40, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             compTitleStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 26, alignment = TextAnchor.MiddleCenter };
+            { fontSize = 31, alignment = TextAnchor.MiddleCenter };
             rewardStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 23, alignment = TextAnchor.MiddleCenter };
+            { fontSize = 28, alignment = TextAnchor.MiddleCenter };
             newQuestStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 26, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            { fontSize = 31, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             newQuestDescStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 21, alignment = TextAnchor.MiddleCenter, wordWrap = true };
+            { fontSize = 26, alignment = TextAnchor.MiddleCenter, wordWrap = true };
             newQuestPromptStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 20, fontStyle = FontStyle.Italic, alignment = TextAnchor.MiddleCenter };
+            { fontSize = 24, fontStyle = FontStyle.Italic, alignment = TextAnchor.MiddleCenter };
             // 모두 textColor는 alpha 동적이라 매 호출 갱신.
         }
 
@@ -244,24 +244,24 @@ namespace InsectGame.UI
             detailStylesReady = true;
 
             detailHeaderStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 31, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
+            { fontSize = 37, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
             detailHeaderStyleCache.normal.textColor = QuestTitleCol;
 
             detailCloseStyleCache = new GUIStyle(GUI.skin.button)
-            { fontSize = 26, fontStyle = FontStyle.Bold };
+            { fontSize = 30, fontStyle = FontStyle.Bold };
             detailCloseStyleCache.normal.textColor = Color.white;
 
             detailRowStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 23, alignment = TextAnchor.MiddleLeft };
+            { fontSize = 28, alignment = TextAnchor.MiddleLeft };
             // textColor는 4분기(완료/활성/잠금/대기) 동적 갱신.
 
             detailStatusStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 21, alignment = TextAnchor.MiddleRight };
+            { fontSize = 25, alignment = TextAnchor.MiddleRight };
             // textColor 4분기 동적 갱신.
 
             detailRewardStyleCache = new GUIStyle(GUI.skin.label)
             {
-                fontSize = 19,
+                fontSize = 23,
                 fontStyle = FontStyle.Bold,
                 alignment = TextAnchor.MiddleLeft,
                 clipping = TextClipping.Clip
@@ -269,11 +269,11 @@ namespace InsectGame.UI
             detailRewardStyleCache.normal.textColor = UITheme.Instance.accentAmber;
 
             detailDescStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 20, wordWrap = true, alignment = TextAnchor.UpperLeft };
+            { fontSize = 24, wordWrap = true, alignment = TextAnchor.UpperLeft };
             detailDescStyleCache.normal.textColor = UITheme.Instance.textSecondary;
 
             detailRewardLabelStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 19, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
+            { fontSize = 23, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
             detailRewardLabelStyleCache.normal.textColor = UITheme.Instance.textMuted;
         }
 
@@ -431,6 +431,11 @@ namespace InsectGame.UI
             // 칩이 실제로 그려진 경로에서만 다시 켠다 — 활성 퀘스트도 완료도 없으면 칩 자체가
             // 없으므로 목표 행이 허공에 뜨면 안 된다.
             objectiveRowVisible = false;
+
+            // 모바일에서만 칩이 좌측 스택(미니맵 아래)에 있다. 그 자리가 상태 패널에 덮이면
+            // 그리지 않는다 — 안 그리면 보이지도 않는 목표 행 버튼이 클릭을 가로챈다.
+            // 데스크톱 칩은 좌하단이라 패널과 무관하므로 조건에 IsMobileLayout이 붙는다.
+            if (UIScale.IsMobileLayout && MinimapUI.LeftStackOccluded) return;
 
             UITheme theme = UITheme.Instance;
             bool guideLock = guided != null && guided.IsGuiding;
@@ -617,9 +622,11 @@ namespace InsectGame.UI
             GUI.color = Color.white;
 
             // 중앙 배치 + 콘텐츠 높이 동적(설명/힌트 잘림 방지)
+            // 폰트를 키운 만큼 폭도 넓힌다 — 폭을 그대로 두면 같은 문장이 줄 수만 늘어
+            // 세로로 길어진다(한국어는 같은 뜻을 더 긴 글자수로 쓴다).
             float panelW = UIScale.IsMobileLayout
-                ? Mathf.Min(600f, UIScale.VirtualScreenWidth - UIScale.VirtualSafeLeft - UIScale.VirtualSafeRight - 40f)
-                : 520f;
+                ? Mathf.Min(760f, UIScale.VirtualScreenWidth - UIScale.VirtualSafeLeft - UIScale.VirtualSafeRight - 40f)
+                : 700f;
             float pad = 16f;
             float wq = panelW - 32f;
             float titleH = 40f;
@@ -881,9 +888,9 @@ namespace InsectGame.UI
             InitDetailStyles();
 
             float panelW = UIScale.IsMobileLayout
-                ? Mathf.Min(600f, UIScale.VirtualScreenWidth - UIScale.VirtualSafeLeft - UIScale.VirtualSafeRight - 32f)
-                : 540f;
-            float panelH = UISafeLayout.ClampHeight(UIScale.IsMobileLayout ? 760f : 560f);
+                ? Mathf.Min(860f, UIScale.VirtualScreenWidth - UIScale.VirtualSafeLeft - UIScale.VirtualSafeRight - 32f)
+                : 820f;
+            float panelH = UISafeLayout.ClampHeight(UIScale.IsMobileLayout ? 900f : 680f);
             float panelX = (UIScale.VirtualScreenWidth - panelW) * 0.5f;
             float panelY = UISafeLayout.CenteredY(panelH);
 

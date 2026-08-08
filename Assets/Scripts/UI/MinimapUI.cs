@@ -28,6 +28,17 @@ namespace InsectGame.UI
         /// <summary>미니맵 좌변 x. 아래에 붙는 HUD가 좌변을 맞추는 데 쓴다.</summary>
         public static float LeftX => UIScale.VirtualSafeLeft + 16f;
 
+        /// <summary>
+        /// 좌측 스택(미니맵·퀘스트 칩·목표 행)이 지금 가려져 있는가.
+        /// <see cref="PlayerStatusHUD"/>의 펼침 패널이 이 영역을 통째로 덮으므로, 덮였으면
+        /// 그리지 않는다 — 안 그러면 보이지도 않는 버튼이 클릭을 가로챈다.
+        /// 미주입이면 false(가림 없음)라 패널이 없어도 정상 동작한다.
+        /// </summary>
+        public static bool LeftStackOccluded =>
+            statusHud != null && statusHud.IsExpanded;
+
+        private static PlayerStatusHUD statusHud;
+
         [SerializeField] private float worldRadius = 45f; // 미니맵이 커버하는 월드 반경(m)
 
         private Transform player;
@@ -46,6 +57,16 @@ namespace InsectGame.UI
         public void AutoWire(InsectGame.Story.StoryObjectiveTracker tracker)
         {
             if (objectiveTracker == null) objectiveTracker = tracker;
+        }
+
+        /// <summary>
+        /// 가림 판정 소스. static에 담는 것은 <see cref="LeftStackOccluded"/>를
+        /// <see cref="TutorialQuestUI"/>도 봐야 하는데 그쪽에 AutoWire를 하나 더 늘리지 않기
+        /// 위해서다 — 좌측 스택의 기하가 이미 이 클래스에 모여 있으므로 가림 여부도 같은 자리에 둔다.
+        /// </summary>
+        public void AutoWire(PlayerStatusHUD hud)
+        {
+            if (statusHud == null) statusHud = hud;
         }
 
         private void EnsureAssets()
@@ -83,6 +104,8 @@ namespace InsectGame.UI
             if (player == null) return;
             // 전체화면 모달(도감/배틀/포획선택 등)이 열려 있으면 숨김 — 필드 탐험 중에만.
             if (ModalUIRegistry.IsAnyOpen()) return;
+            // 좌상단 상태 패널이 펼쳐져 있으면 그 아래에 완전히 덮인다 — 그리지 않는다.
+            if (LeftStackOccluded) return;
 
             EnsureAssets();
             UIScale.Begin();

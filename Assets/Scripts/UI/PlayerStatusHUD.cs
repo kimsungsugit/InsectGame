@@ -35,6 +35,17 @@ namespace InsectGame.UI
         private GUIStyle tabHintStyle;
         private bool stylesInitialized;
 
+        /// <summary>
+        /// 좌상단 상태 패널이 펼쳐져 있는가.
+        ///
+        /// 펼침 패널은 x[safeL+20, safeL+500] × y[ContentTop, +540]로, 그 아래 좌측 스택
+        /// (미니맵 ContentTop+150, 퀘스트 칩·목표 행 ContentTop+380~)을 <b>통째로 덮는다</b>.
+        /// IMGUI는 겹침으로 입력을 막지 않으므로 덮인 버튼이 여전히 히트테스트된다 —
+        /// 안 보이는 버튼이 눌리는 셈이라 좌측 스택이 이 값을 보고 스스로 빠진다.
+        /// (데스크톱은 기본이 펼침이라 첫 프레임부터 해당된다.)
+        /// </summary>
+        public bool IsExpanded => expanded;
+
         private bool expanded = true;
         private bool mobileLayoutInitialized;
         private float xpBarAnim;
@@ -369,7 +380,22 @@ namespace InsectGame.UI
         {
             if (progress == null) progress = prog;
             if (candyInventory == null) candyInventory = candy;
-            if (insectCollection == null) insectCollection = collection;
+            if (insectCollection == null)
+            {
+                insectCollection = collection;
+                // **구독까지 여기서 해야 한다.** Bootstrap이 EnsureComponent → AutoWire 순서라
+                // AddComponent가 부르는 OnEnable 시점엔 insectCollection이 아직 null이고,
+                // 그쪽 `insectCollection != null` 가드가 거짓이라 구독이 통째로 건너뛰어진다.
+                // 그러면 ownedCountCacheDirty를 되살릴 경로가 없어져 COLLECTION의 "보유" 숫자가
+                // 첫 프레임 값에서 세션 내내 고정된다(곤충을 잡아도 안 변한다).
+                // 바로 아래 regionManager가 같은 이유로 이미 이 형태를 쓰고 있었는데 여기만 빠져 있었다.
+                if (insectCollection != null && !subscribedInsects)
+                {
+                    insectCollection.InsectUpdated += HandleInsectUpdated;
+                    subscribedInsects = true;
+                    ownedCountCacheDirty = true;
+                }
+            }
             if (itemInventory == null) itemInventory = items;
             if (dexController == null) dexController = dex;
             if (teamManager == null) teamManager = team;
@@ -486,20 +512,26 @@ namespace InsectGame.UI
             float sw = UIScale.VirtualScreenWidth;
 
             // 배경
+            // 세로 기준을 하네스로 — 이 배너만 y가 70/74/110으로 박혀 있어 노치 기기에서
+            // 상태바 뒤로 들어갔다(VirtualSafeTop이 130쯤이면 배너 전체가 가려진다).
+            // +70은 상단 중앙 관례를 그대로 지킨 값이다: ContentTop(토스트) → +30(퀘스트 토스트)
+            // → 여기(+70~142) → +150(가이드 코치 배너).
+            float ay = UISafeLayout.ContentTop + 70f;
+
             GUI.color = new Color(0f, 0f, 0f, 0.75f * alpha);
-            GUI.DrawTexture(new Rect(sw * 0.2f, 70, sw * 0.6f, 72), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(sw * 0.2f, ay, sw * 0.6f, 72), Texture2D.whiteTexture);
             // 상단 라인
             GUI.color = new Color(1f, 0.85f, 0.3f, 0.8f * alpha);
-            GUI.DrawTexture(new Rect(sw * 0.2f, 70, sw * 0.6f, 3), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(sw * 0.2f, ay, sw * 0.6f, 3), Texture2D.whiteTexture);
 
             // 서브에리어 이름 (캐시된 스타일 + 알파만 변경)
             alertNameStyle.normal.textColor = new Color(1f, 0.9f, 0.4f, alpha);
             GUI.color = Color.white;
-            GUI.Label(new Rect(sw * 0.2f, 74, sw * 0.6f, 38), subAreaAlertName, alertNameStyle);
+            GUI.Label(new Rect(sw * 0.2f, ay + 4f, sw * 0.6f, 38), subAreaAlertName, alertNameStyle);
 
             // 설명
             alertDescStyle.normal.textColor = new Color(0.8f, 0.8f, 0.8f, alpha * 0.9f);
-            GUI.Label(new Rect(sw * 0.2f, 110, sw * 0.6f, 26), subAreaAlertDesc, alertDescStyle);
+            GUI.Label(new Rect(sw * 0.2f, ay + 40f, sw * 0.6f, 26), subAreaAlertDesc, alertDescStyle);
 
             GUI.color = Color.white;
         }
