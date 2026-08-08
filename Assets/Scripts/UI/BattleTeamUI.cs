@@ -283,7 +283,8 @@ namespace InsectGame.UI
 
             if (collection == null) return;
 
-            List<PlayerInsectData> owned = collection.GetAllOwned();
+            // 매 OnGUI 패스라 List를 새로 만들지 않는다(보관하지 않으므로 재사용 버퍼가 안전).
+            IReadOnlyList<PlayerInsectData> owned = collection.OwnedView;
             float listY = py + 96;
             float listH = panelH - 106;
             float itemH = UIScale.IsMobileLayout ? 132f : 116f;

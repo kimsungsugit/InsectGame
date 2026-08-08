@@ -127,11 +127,21 @@ namespace InsectGame.Core
             }
         }
 
-        // 클라우드 로드 후 player_insects.json을 다시 읽어 보유 목록 갱신.
-        // 컬렉션 UI(IMGUI)는 매 프레임 읽어 자동 반영하므로 별도 이벤트 발화 불필요.
+        /// <summary>
+        /// 클라우드 로드 후 player_insects.json을 다시 읽어 보유 목록 갱신.
+        ///
+        /// <b>반드시 이벤트를 쏜다.</b> 옛 주석은 "컬렉션 UI가 매 프레임 읽어 자동 반영하므로
+        /// 발화 불필요"라고 했는데 그 전제가 낡았다 — 지금은 CollectionUI·HospitalUI·TrainingUI·
+        /// PlayerStatusHUD가 전부 보유 목록을 캐시하고 <c>InsectUpdated</c>로만 무효화한다.
+        /// 이 메서드는 saveData와 lookup을 통째로 새 객체로 바꾸므로, 알리지 않으면 열려 있던
+        /// UI가 <b>고아 PlayerInsectData</b>를 들고 남고 거기서 레벨업·치료를 하면 재화만 빠지고
+        /// 변경은 새 목록 저장에 묻혀 사라진다.
+        /// (구독 4곳이 전부 인자를 무시하므로 null 전달이 안전하다.)
+        /// </summary>
         public void ReloadFromDisk()
         {
             LoadAndIndex();
+            InsectUpdated?.Invoke(null);
         }
 
         public PlayerInsectData AddCapturedInsect(string insectId, int level)
@@ -400,6 +410,35 @@ namespace InsectGame.Core
 
             insect = saveData.insects[0];
             return insect != null;
+        }
+
+        // OwnedView 전용 재사용 버퍼 — 매 호출 Clear 후 다시 채운다.
+        private readonly List<PlayerInsectData> ownedViewBuffer = new List<PlayerInsectData>();
+
+        /// <summary>
+        /// 보유 목록의 <b>읽기 전용 뷰</b>. 매 프레임 도는 경로(OnGUI)에서 쓴다 —
+        /// <see cref="GetAllOwned"/>는 호출마다 List를 새로 만들어, 그걸 캐시 없이 OnGUI에서
+        /// 부르면 Layout·Repaint·입력마다 리스트가 하나씩 쌓인다.
+        ///
+        /// <b>반환값을 보관하지 말 것.</b> 다음 호출에 같은 버퍼가 덮인다. 보관해야 하면
+        /// <see cref="GetAllOwned"/>로 사본을 받고 <see cref="InsectUpdated"/>로 무효화하는
+        /// 기존 패턴(CollectionUI·TrainingUI·HospitalUI)을 따른다.
+        ///
+        /// 캐시가 아니라 버퍼인 이유: 캐시면 무효화 지점을 하나라도 빠뜨리는 순간 stale 목록이
+        /// 뜨는데, 그건 "안 보이는 곤충"이라 할당보다 훨씬 나쁜 결함이다.
+        /// </summary>
+        public IReadOnlyList<PlayerInsectData> OwnedView
+        {
+            get
+            {
+                ownedViewBuffer.Clear();
+                if (saveData == null || saveData.insects == null) return ownedViewBuffer;
+                foreach (PlayerInsectData d in saveData.insects)
+                {
+                    if (d != null) ownedViewBuffer.Add(d);
+                }
+                return ownedViewBuffer;
+            }
         }
 
         public List<PlayerInsectData> GetAllOwned()
@@ -715,7 +754,25 @@ namespace InsectGame.Core
                         continue;
                     }
 
-                    if (EnsureLevelSkills(data, GetInsectData(data.insectId)))
+                    InsectData insect = GetInsectData(data.insectId);
+
+                    // **지속 HP 센티넬 보정이 실제로 도는 자리는 여기다.**
+                    // LoadAndIndex의 EnsureHp는 부트에서 한 번도 실행되지 않는다 —
+                    // Bootstrap이 AddComponent로 이 컴포넌트를 만들어 Awake→LoadAndIndex가
+                    // AutoWire보다 먼저 돌고, 그 시점엔 database가 null이라 GetInsectData가
+                    // 전 개체에 null을 준다("insect null이면 다음 로드에 미룸" 분기로 전부 스킵).
+                    // 그 "다음 로드"도 순서가 같아 영영 오지 않는다.
+                    // 지금 증상이 없는 건 GetEffectiveHp가 음수를 풀피로 보고 IsFainted가 ==0이라
+                    // -1이 기절로 읽히지 않기 때문이지만, save-system.md는 이 보정이 동작한다고
+                    // 보증한다고 적어 뒀다. 가드 없는 소비자가 하나만 생겨도 그대로 터진다.
+                    if (insect != null)
+                    {
+                        int beforeHp = data.currentHp;
+                        data.EnsureHp(data.GetTotalHp(insect.baseHp));
+                        if (data.currentHp != beforeHp) needsSave = true;
+                    }
+
+                    if (EnsureLevelSkills(data, insect))
                     {
                         needsSave = true;
                     }

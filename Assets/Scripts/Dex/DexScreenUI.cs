@@ -1136,7 +1136,8 @@ namespace InsectGame.Dex
                 return;
             }
 
-            List<PlayerInsectData> owned = insectCollection.GetAllOwned();
+            // 매 OnGUI 패스라 List를 새로 만들지 않는다(보관하지 않으므로 재사용 버퍼가 안전).
+            IReadOnlyList<PlayerInsectData> owned = insectCollection.OwnedView;
             if (owned.Count == 0)
             {
                 DrawCentered(contentRect, "아직 포획한 곤충이 없습니다\n필드에서 곤충에 다가가 포획해 보세요!");
