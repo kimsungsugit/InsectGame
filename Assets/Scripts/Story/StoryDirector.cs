@@ -281,7 +281,8 @@ namespace InsectGame.Story
                 }
 
                 // 리전 게이트 — requiredRegionId가 채워진 비트는 현재 리전 일치 시에만 발화.
-                matches = matches && RegionGateSatisfied(beat);
+                // 퀘스트 게이트 — requiredQuestId가 채워진 비트는 그 튜토리얼을 마쳐야 발화.
+                matches = matches && RegionGateSatisfied(beat) && QuestGateSatisfied(beat);
 
                 if (matches)
                 {
@@ -301,6 +302,24 @@ namespace InsectGame.Story
             string current = regionManager != null && regionManager.CurrentRegion != null
                 ? regionManager.CurrentRegion.regionId : null;
             return beat.requiredRegionId == current;
+        }
+
+        /// <summary>
+        /// requiredQuestId가 채워진 비트는 그 튜토리얼 퀘스트를 <b>완료해야</b> 발화한다(비면 무제약).
+        ///
+        /// 튜토리얼과 스토리를 갈라 놓는 장치다. 예전엔 <c>ch1_intro</c>가 <c>Immediate</c>라
+        /// 게임을 켜자마자 마을 어르신의 "오, 드디어 왔구나!"가 떴다 — 만나지도 않았는데 인사를
+        /// 받는 셈이었고, 조작을 배우기도 전에 서사가 시작됐다. 이제 기본 조작을 익힌 뒤
+        /// 어르신을 찾아가야 이야기가 열린다.
+        ///
+        /// <b>questManager가 없으면 통과시킨다</b> — 게이트가 스토리를 영구히 막는 것보다
+        /// 조금 이르게 열리는 쪽이 낫다(진행 정지는 복구 수단이 없다).
+        /// </summary>
+        private bool QuestGateSatisfied(StoryBeat beat)
+        {
+            if (beat == null || string.IsNullOrEmpty(beat.requiredQuestId)) return true;
+            if (questManager == null) return true;
+            return questManager.IsQuestCompleted(beat.requiredQuestId);
         }
 
         private bool PrerequisiteSatisfied(StoryBeat beat)
@@ -399,8 +418,11 @@ namespace InsectGame.Story
             if (spineBeatIdsCache == null)
                 spineBeatIdsCache = StoryObjectiveResolver.CollectSpineBeatIds(StoryService.AllBeats());
 
+            // 퀘스트 게이트를 함께 넘긴다 — 안 넘기면 튜토리얼 중에 "마을 어르신에게 말 걸기"를
+            // 안내해 놓고 정작 가서 말을 걸면 아무 일도 안 일어난다.
             StoryBeat beat = StoryObjectiveResolver.SelectObjectiveBeat(
-                StoryService.AllBeats(), IsSeen, spineBeatIdsCache);
+                StoryService.AllBeats(), IsSeen, spineBeatIdsCache,
+                questManager != null ? questManager.IsQuestCompleted : (System.Func<string, bool>)null);
 
             if (beat == null || beat.trigger == null)
             {

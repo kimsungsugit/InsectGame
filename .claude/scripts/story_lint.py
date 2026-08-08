@@ -249,6 +249,27 @@ def evaluate_signals() -> list:
         "FAIL" if problems else "PASS",
     ))
 
+    # 10. requiredQuestId 실재성 — 존재하지 않는 questId를 물면 게이트가 영영 안 열려
+    #     그 비트와 뒤 체인 전체가 도달 불가가 된다. 런타임엔 조용히 false만 돌아온다.
+    #     ch1_intro가 이걸 써서 튜토리얼과 스토리를 가르므로, 오타 하나면 캠페인이 시작되지 않는다.
+    known_quests = {q["questId"] for q in game_facts.quest_defs() if q.get("questId")}
+    if not known_quests:
+        raise ExtractorBroken("TutorialQuestManager에서 questId를 하나도 찾지 못했다 — 추출기가 낡았다")
+
+    missing_quest = sorted(
+        f"{b['beatId']}→{b['requiredQuestId']}"
+        for b in beats
+        if b.get("requiredQuestId") and b["requiredQuestId"] not in known_quests)
+
+    gated = sum(1 for b in beats if b.get("requiredQuestId"))
+    signals.append((
+        "requiredQuestId 실재성 (퀘스트 게이트)",
+        "0건 미존재",
+        f"{len(missing_quest)}건 ({missing_quest})" if missing_quest
+        else f"0건 (게이트 {gated}건 / 퀘스트 {len(known_quests)}개)",
+        "FAIL" if missing_quest else "PASS",
+    ))
+
     return signals
 
 

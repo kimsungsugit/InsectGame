@@ -13,6 +13,8 @@ namespace InsectGame.Story
     /// </summary>
     public static class CutsceneLibrary
     {
+        /// <summary>1막 개막 — 마을 어르신에게 이야기를 듣기 직전, 초원을 둘러본다.</summary>
+        public const string StoryPrologue = "cs_story_prologue";
         /// <summary>2막 개막 — 유적 지하에서 봉인이 열리는 장면.</summary>
         public const string SealOpening = "cs_seal_opening";
         /// <summary>최종장 — 무명과의 대치.</summary>
@@ -22,10 +24,54 @@ namespace InsectGame.Story
         {
             switch (cutsceneId)
             {
+                case StoryPrologue: shots = BuildStoryPrologue(); return true;
                 case SealOpening: shots = BuildSealOpening(); return true;
                 case NamelessConfront: shots = BuildNamelessConfront(); return true;
                 default: shots = null; return false;
             }
+        }
+
+        /// <summary>
+        /// 1막 개막 — 조작을 익힌 플레이어가 마을 어르신을 찾아온 순간.
+        ///
+        /// <b>이야기가 시작되는 자리를 눈으로 보여준다.</b> 튜토리얼은 "어떻게 잡는가"를 가르쳤고,
+        /// 여기서 "왜 잡는가"로 넘어간다 — 카메라가 초원을 한 바퀴 둘러보며 곤충이 사라지고 있다는
+        /// 것을 먼저 보여주고, 그 다음 어르신의 대사가 이어진다.
+        ///
+        /// 대사가 <b>뒤에</b> 오므로(StoryBeatCompleted 재생) 여기서는 세계를 보여주기만 하고
+        /// 설명하지 않는다. 자막 세 줄이 그 이상 말하지 않는 이유다.
+        /// </summary>
+        private static CutsceneShot[] BuildStoryPrologue()
+        {
+            return new[]
+            {
+                // 1. 플레이어 어깨 너머에서 시작 — 지금까지 서 있던 자리를 확인시킨다.
+                new CutsceneShot(2.4f,
+                    camFrom: new Vector3(0f, 2.2f, -3.4f),
+                    camTo: new Vector3(-2.6f, 3.4f, -4.2f),
+                    lookAt: new Vector3(0f, 1.2f, 1.2f),
+                    subtitle: "곤충을 잡는 법은 몸이 먼저 익혔다."),
+
+                // 2. 초원을 옆으로 훑는다. 자막 없이 그림만 — 넓이를 느끼게 한다.
+                new CutsceneShot(2.2f,
+                    camFrom: new Vector3(-2.6f, 3.4f, -4.2f),
+                    camTo: new Vector3(3.2f, 4.0f, -3.0f),
+                    lookAt: new Vector3(0f, 1.0f, 3.0f)),
+
+                // 3. 높이 올라가 초원 전체를 담는다 — 사라지고 있는 것의 규모.
+                new CutsceneShot(2.8f,
+                    camFrom: new Vector3(3.2f, 4.0f, -3.0f),
+                    camTo: new Vector3(0.5f, 8.5f, -6.5f),
+                    lookAt: new Vector3(0f, 0.5f, 4.0f),
+                    subtitle: "그런데 어제 있던 것이 오늘은 보이지 않는다."),
+
+                // 4. 다시 내려와 어르신 쪽으로 — 대사로 넘어가는 다리.
+                new CutsceneShot(2.6f,
+                    camFrom: new Vector3(0.5f, 8.5f, -6.5f),
+                    camTo: new Vector3(0f, 2.6f, -3.6f),
+                    lookAt: new Vector3(0f, 1.4f, 1.0f),
+                    subtitle: "마을 어르신이 그 이야기를 알고 있다."),
+            };
         }
 
         /// <summary>

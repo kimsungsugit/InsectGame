@@ -5,9 +5,10 @@
       "chapterId": "ch1",
       "order": 0,
       "prerequisiteBeatId": "",
+      "requiredQuestId": "q_dex",
       "trigger": {
-        "type": "Immediate",
-        "param": ""
+        "type": "NpcTalk",
+        "param": "village_elder"
       },
       "speakerNpcId": "village_elder",
       "lines": [
@@ -35,6 +36,7 @@
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
       },
+      "cutsceneId": "cs_story_prologue",
       "oneShot": true
     },
     {

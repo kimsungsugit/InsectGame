@@ -17,6 +17,11 @@ namespace InsectGame.Story
         // 늦발화 얼룩(엉뚱한 리전에서 옛 비트가 뜨는 것) 차단. 비면 무제약 — JsonUtility 누락 필드는
         // 기본값(null)이라 기존 비트 전부 호환. story_lint 검사 7이 대상 존재·무가드 권고를 검증.
         public string requiredRegionId;
+        // 퀘스트 잠금(옵션). 채워지면 그 튜토리얼 퀘스트를 **완료해야** 발화한다.
+        // 스토리를 튜토리얼과 갈라 놓는 장치다 — ch1_intro가 이걸 써서, 기본 조작(이동·포획·
+        // 컬렉션·도감)을 익히기 전에는 마을 어르신이 이야기를 열어주지 않는다.
+        // 비면 무제약. JsonUtility는 JSON에 없는 필드를 건드리지 않으므로 기존 비트 전부 호환.
+        public string requiredQuestId;
         public StoryTrigger trigger;
         // 이름/초상만 참조(대사는 lines[]에 저작). NpcDialogueDatabase 앰비언트와 분리.
         public string speakerNpcId;

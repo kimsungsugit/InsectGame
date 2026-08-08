@@ -114,10 +114,16 @@ namespace InsectGame.Story
         /// 아무도 prerequisite로 지목하지 않아 스파인 집합에 없다. 스파인만 고집하면
         /// 최종장에서 목표가 사라진다.
         /// </summary>
+        /// <param name="isQuestDone">
+        /// 튜토리얼 퀘스트 완료 판정. <c>requiredQuestId</c>가 걸린 비트를 거르는 데 쓴다 —
+        /// 없으면 <b>잠긴 목표를 안내하게 된다</b>(튜토리얼 중에 "마을 어르신에게 말 걸기"가 뜨는데
+        /// 정작 가서 말을 걸면 아무 일도 안 일어난다). null이면 게이트를 무시한다.
+        /// </param>
         public static StoryBeat SelectObjectiveBeat(
             IEnumerable<StoryBeat> beats,
             System.Func<string, bool> isSeen,
-            HashSet<string> spineBeatIds)
+            HashSet<string> spineBeatIds,
+            System.Func<string, bool> isQuestDone = null)
         {
             if (beats == null || isSeen == null) return null;
 
@@ -130,6 +136,10 @@ namespace InsectGame.Story
                 if (isSeen(beat.beatId)) continue;
                 // prereq 미충족 = 아직 차례가 아니다.
                 if (!string.IsNullOrEmpty(beat.prerequisiteBeatId) && !isSeen(beat.prerequisiteBeatId))
+                    continue;
+                // 퀘스트 게이트 미충족 = 지금 가도 열리지 않는다. 안내하면 안 된다.
+                if (isQuestDone != null && !string.IsNullOrEmpty(beat.requiredQuestId)
+                    && !isQuestDone(beat.requiredQuestId))
                     continue;
 
                 int spine = spineBeatIds != null && spineBeatIds.Contains(beat.beatId) ? 0 : 1; // 0이 우선
