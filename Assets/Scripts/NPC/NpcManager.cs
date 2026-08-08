@@ -245,6 +245,10 @@ namespace InsectGame.NPC
                 case "ledger_grip": return "집게";
                 case "ledger_scale": return "저울";
                 case "ledger_ink": return "먹";
+                // 1막 하수 — 정체가 밝혀지기 전이라 **이름이 아니라 인상으로 부른다**.
+                // 2막에서 명부회 간부를 만나고 나서야 이들이 무엇이었는지 알게 된다.
+                case "ledger_thug_cord": return "검은 옷의 사내";
+                case "ledger_thug_rule": return "검은 옷의 여자";
                 default: return "마을 어르신";
             }
         }

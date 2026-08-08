@@ -2662,6 +2662,430 @@
         "unlockQuestId": ""
       },
       "oneShot": true
+    },
+    {
+      "beatId": "ch2_watchers",
+      "chapterId": "ch2",
+      "order": 10,
+      "prerequisiteBeatId": "ch1_reach_pond",
+      "requiredQuestId": "",
+      "trigger": {
+        "type": "NpcTalk",
+        "param": "ledger_thug_cord"
+      },
+      "requiredRegionId": "pond",
+      "speakerNpcId": "ledger_thug_cord",
+      "lines": [
+        {
+          "speaker": "검은 옷의 사내",
+          "text": "…네가 방금 잡은 거, 무슨 종이지?"
+        },
+        {
+          "speaker": "검은 옷의 사내",
+          "text": "아니, 됐다. 어차피 곧 전부 장부에 오를 테니."
+        },
+        {
+          "speaker": "라온",
+          "text": "뭐야 저 사람? 이름도 안 밝히고 곤충 종만 물어보네."
+        }
+      ],
+      "choices": [],
+      "onComplete": {
+        "rewardCandy": 8,
+        "rewardExp": 20,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
+      },
+      "cutsceneId": "",
+      "oneShot": true
+    },
+    {
+      "beatId": "ch2_emperor",
+      "chapterId": "ch2",
+      "order": 11,
+      "prerequisiteBeatId": "ch2_watchers",
+      "requiredQuestId": "",
+      "trigger": {
+        "type": "CaptureInsect",
+        "param": "dragonfly_emperor"
+      },
+      "requiredRegionId": "pond",
+      "speakerNpcId": "ruins_scholar",
+      "lines": [
+        {
+          "speaker": "세라",
+          "text": "왕잠자리. 이 연못에서 가장 오래 산 종이에요."
+        },
+        {
+          "speaker": "세라",
+          "text": "고대 기록에도 같은 이름이 있어요 — 천 년 전에도 이 물가를 돌았다는 뜻이죠."
+        },
+        {
+          "speaker": "세라",
+          "text": "그런 종이 사라지면, 사라지는 건 한 마리가 아니라 천 년이에요."
+        }
+      ],
+      "choices": [],
+      "onComplete": {
+        "rewardCandy": 20,
+        "rewardExp": 45,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
+      },
+      "cutsceneId": "",
+      "oneShot": true
+    },
+    {
+      "beatId": "ch3_warning",
+      "chapterId": "ch3",
+      "order": 12,
+      "prerequisiteBeatId": "ch3_reach_forest",
+      "requiredQuestId": "",
+      "trigger": {
+        "type": "NpcTalk",
+        "param": "ledger_thug_rule"
+      },
+      "requiredRegionId": "forest",
+      "speakerNpcId": "ledger_thug_rule",
+      "lines": [
+        {
+          "speaker": "검은 옷의 여자",
+          "text": "숲까지 왔군. 부지런하네."
+        },
+        {
+          "speaker": "검은 옷의 여자",
+          "text": "충고 하나 하지. 하나씩 만나고 다니는 건 느려. 그러다 다 놓쳐."
+        },
+        {
+          "speaker": "검은 옷의 여자",
+          "text": "전부 한 번에 거둬들이면 될 일을, 왜 그렇게 어렵게 하지?"
+        },
+        {
+          "speaker": "세라",
+          "text": "…지금 저 사람, 곤충을 \"거둬들인다\"고 했어요."
+        }
+      ],
+      "choices": [],
+      "onComplete": {
+        "rewardCandy": 10,
+        "rewardExp": 25,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
+      },
+      "cutsceneId": "",
+      "oneShot": true
+    },
+    {
+      "beatId": "ch3_stag",
+      "chapterId": "ch3",
+      "order": 13,
+      "prerequisiteBeatId": "ch3_warning",
+      "requiredQuestId": "",
+      "trigger": {
+        "type": "CaptureInsect",
+        "param": "stag_beetle"
+      },
+      "requiredRegionId": "forest",
+      "speakerNpcId": "catcher_rival",
+      "lines": [
+        {
+          "speaker": "라온",
+          "text": "사슴벌레! 숲의 왕이라 불리는 녀석이야."
+        },
+        {
+          "speaker": "라온",
+          "text": "근데 알아? 이 녀석은 나무 한 그루에 평생을 매여 살아. 그 나무가 없어지면 같이 없어져."
+        },
+        {
+          "speaker": "라온",
+          "text": "그러니까 잡는 것보다 어려운 건 — 그 나무를 남겨두는 거야."
+        }
+      ],
+      "choices": [],
+      "onComplete": {
+        "rewardCandy": 22,
+        "rewardExp": 50,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
+      },
+      "cutsceneId": "",
+      "oneShot": true
+    },
+    {
+      "beatId": "ch4_harvest",
+      "chapterId": "ch4",
+      "order": 15,
+      "prerequisiteBeatId": "ch4_reach_swamp",
+      "requiredQuestId": "",
+      "trigger": {
+        "type": "NpcTalk",
+        "param": "ledger_thug_cord"
+      },
+      "requiredRegionId": "swamp",
+      "speakerNpcId": "ledger_thug_cord",
+      "lines": [
+        {
+          "speaker": "검은 옷의 사내",
+          "text": "또 만났군. 여긴 볼 것도 없는데."
+        },
+        {
+          "speaker": "검은 옷의 사내",
+          "text": "…이 상자? 신경 쓸 것 없다. 습지 것들은 어차피 수가 많아."
+        },
+        {
+          "speaker": "검은 옷의 사내",
+          "text": "많은 건 세어도 티가 안 나거든. 그래서 여기부터 하는 거고."
+        },
+        {
+          "speaker": "세라",
+          "text": "상자가… 열 개는 넘어 보였어요. 저게 다 살아 있는 거라면."
+        }
+      ],
+      "choices": [],
+      "onComplete": {
+        "rewardCandy": 12,
+        "rewardExp": 30,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
+      },
+      "cutsceneId": "",
+      "oneShot": true
+    },
+    {
+      "beatId": "ch4_firefly",
+      "chapterId": "ch4",
+      "order": 16,
+      "prerequisiteBeatId": "ch4_harvest",
+      "requiredQuestId": "",
+      "trigger": {
+        "type": "CaptureInsect",
+        "param": "firefly_blue"
+      },
+      "requiredRegionId": "swamp",
+      "speakerNpcId": "ruins_scholar",
+      "lines": [
+        {
+          "speaker": "세라",
+          "text": "푸른 반딧불이에요. 습지에서만, 그것도 몇 주만 빛나요."
+        },
+        {
+          "speaker": "세라",
+          "text": "옛 기록엔 이 빛으로 밤길을 찾았다고 적혀 있어요."
+        },
+        {
+          "speaker": "세라",
+          "text": "이 아이들이 사라지면 그 기록은 읽을 수는 있어도 이해할 수 없는 글이 돼요."
+        }
+      ],
+      "choices": [],
+      "onComplete": {
+        "rewardCandy": 24,
+        "rewardExp": 55,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
+      },
+      "cutsceneId": "",
+      "oneShot": true
+    },
+    {
+      "beatId": "ch5_blocked",
+      "chapterId": "ch5",
+      "order": 18,
+      "prerequisiteBeatId": "ch5_reach_mountain",
+      "requiredQuestId": "",
+      "trigger": {
+        "type": "NpcTalk",
+        "param": "ledger_thug_rule"
+      },
+      "requiredRegionId": "mountain",
+      "speakerNpcId": "ledger_thug_rule",
+      "lines": [
+        {
+          "speaker": "검은 옷의 여자",
+          "text": "여기서부터는 그만 올라와."
+        },
+        {
+          "speaker": "검은 옷의 여자",
+          "text": "위쪽은 이미 정리가 끝났어. 네가 볼 건 없다는 뜻이야."
+        },
+        {
+          "speaker": "검은 옷의 여자",
+          "text": "…그 표정 뭐지? 우리가 나쁜 짓이라도 한다고 생각하나?"
+        },
+        {
+          "speaker": "검은 옷의 여자",
+          "text": "우리는 지키는 쪽이야. 다만 방법이 다를 뿐이지."
+        },
+        {
+          "speaker": "라온",
+          "text": "저 말… 어디서 많이 듣던 말투인데."
+        }
+      ],
+      "choices": [],
+      "onComplete": {
+        "rewardCandy": 14,
+        "rewardExp": 35,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
+      },
+      "cutsceneId": "",
+      "oneShot": true
+    },
+    {
+      "beatId": "ch5_apollo",
+      "chapterId": "ch5",
+      "order": 19,
+      "prerequisiteBeatId": "ch5_blocked",
+      "requiredQuestId": "",
+      "trigger": {
+        "type": "CaptureInsect",
+        "param": "butterfly_apollo"
+      },
+      "requiredRegionId": "mountain",
+      "speakerNpcId": "ruins_scholar",
+      "lines": [
+        {
+          "speaker": "세라",
+          "text": "아폴로나비. 고산에서만 살고, 산을 내려오면 죽어요."
+        },
+        {
+          "speaker": "세라",
+          "text": "옮겨 심을 수 없다는 뜻이에요 — 이 산이 이 종의 전부예요."
+        },
+        {
+          "speaker": "세라",
+          "text": "아까 그 사람들이 \"정리가 끝났다\"고 한 게… 이런 뜻은 아니었으면 좋겠어요."
+        }
+      ],
+      "choices": [],
+      "onComplete": {
+        "rewardCandy": 26,
+        "rewardExp": 60,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
+      },
+      "cutsceneId": "",
+      "oneShot": true
+    },
+    {
+      "beatId": "ch6_ledger_hint",
+      "chapterId": "ch6",
+      "order": 20,
+      "prerequisiteBeatId": "ch6_reach_ruins",
+      "requiredQuestId": "",
+      "trigger": {
+        "type": "NpcTalk",
+        "param": "ledger_thug_cord"
+      },
+      "requiredRegionId": "ruins",
+      "speakerNpcId": "ruins_scholar",
+      "lines": [
+        {
+          "speaker": "검은 옷의 사내",
+          "text": "유적까지 오다니. 끈질기군."
+        },
+        {
+          "speaker": "검은 옷의 사내",
+          "text": "좋아, 하나만 알려주지. 우리는 이름을 적는 사람들이다."
+        },
+        {
+          "speaker": "검은 옷의 사내",
+          "text": "빈칸이 재앙을 부르거든. 그래서 남김없이 채우는 거야 — 살아 있든 아니든."
+        },
+        {
+          "speaker": "세라",
+          "text": "빈칸이라니… 그 말, 어디서 나온 거죠? 그건 고대 기록의 용어예요."
+        },
+        {
+          "speaker": "세라",
+          "text": "저 사람들, 우리보다 이 유적을 먼저 읽었어요."
+        }
+      ],
+      "choices": [],
+      "onComplete": {
+        "rewardCandy": 16,
+        "rewardExp": 40,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
+      },
+      "cutsceneId": "",
+      "oneShot": true
+    },
+    {
+      "beatId": "ch6_relic",
+      "chapterId": "ch6",
+      "order": 21,
+      "prerequisiteBeatId": "ch6_ledger_hint",
+      "requiredQuestId": "",
+      "trigger": {
+        "type": "CaptureInsect",
+        "param": "scarab_relic"
+      },
+      "requiredRegionId": "ruins",
+      "speakerNpcId": "village_elder",
+      "lines": [
+        {
+          "speaker": "마을 어르신",
+          "text": "유물풍뎅이로구나. 고대인이 신전을 지키게 했다는 그 종이야."
+        },
+        {
+          "speaker": "마을 어르신",
+          "text": "천 년을 같은 자리에서 같은 일을 해 온 셈이지."
+        },
+        {
+          "speaker": "마을 어르신",
+          "text": "…네가 여기까지 왔다는 건, 이제 그 기록을 읽을 준비가 됐다는 뜻이겠구나."
+        }
+      ],
+      "choices": [],
+      "onComplete": {
+        "rewardCandy": 28,
+        "rewardExp": 70,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
+      },
+      "cutsceneId": "",
+      "oneShot": true
     }
   ]
 }

@@ -198,19 +198,41 @@ namespace InsectGame.UI
             }
 
             EnsureStyles();
+            // 스토리는 글씨도 크다 — 스타일은 1회 캐시라 크기만 매 프레임 지정한다
+            // (LabelFit이 넘칠 때 줄였다가 원복하므로 여기서 기준값을 다시 세워야 한다).
+            nameStyle.fontSize = storyMode ? 38 : 26;
+            lineStyle.fontSize = storyMode ? 34 : 24;
             UIScale.Begin();
 
-            // 하단 앵커 — 제스처바 + 세로 마진 위에 붙는다.
-            Rect panel = UISafeLayout.BottomPanel(920f, 210f);
+            // **스토리는 화면 가운데 크게, 일반 대화는 하단에.**
+            // 둘을 같은 하단 띠에 그리면 지금 보고 있는 것이 이야기인지 잡담인지 구분되지 않는다.
+            // 딤은 뒤 월드를 눌러 시선을 대사로 모으되, 완전히 가리지는 않는다 —
+            // "지금 어디서 듣고 있는지"가 보여야 장면이 이어진다.
+            Rect panel = storyMode
+                ? UISafeLayout.CenteredPanel(1180f, 560f)
+                : UISafeLayout.BottomPanel(920f, 210f);
             float panelW = panel.width;
             float panelH = panel.height;
             float px = panel.x;
             float py = panel.y;
 
-            // 패널 배경
-            GUI.color = new Color(0f, 0f, 0f, 0.82f);
-            GUI.DrawTexture(new Rect(px, py, panelW, panelH), panelTex);
-            GUI.color = Color.white;
+            if (storyMode)
+            {
+                UISurface.Dim(0.68f);
+                UISurface.Card(new Rect(px, py, panelW, panelH),
+                    new Color(0.04f, 0.05f, 0.10f, 0.97f), UITheme.Instance.accentAmber);
+                // 상단 액센트 — 둥근 모서리를 뚫지 않게 긴 축을 반경만큼 물린다(rules/ui-layout.md).
+                UISurface.Flat(
+                    new Rect(px + UITheme.Radius.Card, py + 3f,
+                        panelW - UITheme.Radius.Card * 2f, 5f),
+                    UITheme.Instance.accentAmber);
+            }
+            else
+            {
+                GUI.color = new Color(0f, 0f, 0f, 0.82f);
+                GUI.DrawTexture(new Rect(px, py, panelW, panelH), panelTex);
+                GUI.color = Color.white;
+            }
 
             // 이름 + 대사 — 스토리 모드는 라인별 speaker(없으면 비트 speakerNpcId), 아니면 NPC 이름.
             string npcName;
@@ -238,20 +260,27 @@ namespace InsectGame.UI
                 textX += off;
                 textW -= off;
             }
-            GUI.Label(new Rect(textX, py + 16f, textW, 34f), npcName, nameStyle);
-            // 대사 길이는 데이터가 정한다 — 88px 박스에 안 들어가면 폰트를 줄여 맞춘다.
+            // 중앙 패널은 훨씬 크므로 고정 오프셋을 그대로 쓰면 아래가 텅 빈다 — 높이에서 파생한다.
+            float nameH = storyMode ? 52f : 34f;
+            float nameY = py + (storyMode ? 30f : 16f);
+            float lineY = nameY + nameH + (storyMode ? 18f : 6f);
+            float btnBandH = storyMode ? 96f : 70f;
+            float lineH = Mathf.Max(40f, py + panelH - btnBandH - lineY);
+
+            GUI.Label(new Rect(textX, nameY, textW, nameH), npcName, nameStyle);
+            // 대사 길이는 데이터가 정한다 — 상자에 안 들어가면 폰트를 줄여 맞춘다.
             // 초상화가 붙는 스토리 대사는 textW까지 좁아져 더 쉽게 넘친다.
-            UIHelper.LabelFit(new Rect(textX, py + 56f, textW, 88f),
+            UIHelper.LabelFit(new Rect(textX, lineY, textW, lineH),
                 lines[Mathf.Clamp(lineIndex, 0, lines.Length - 1)], lineStyle);
 
             // 진행 표시 (n/총)
-            GUI.Label(new Rect(px + panelW - 120f, py + 16f, 92f, 30f),
+            GUI.Label(new Rect(px + panelW - 120f, nameY, 92f, 30f),
                 $"{lineIndex + 1}/{lines.Length}", nameStyle);
 
             // 버튼 — 마지막 줄이면 [닫기]만, 아니면 [다음]/[닫기]
-            float btnW = 170f;
-            float btnH = 56f;
-            float btnY = py + panelH - btnH - 14f;
+            float btnW = storyMode ? 220f : 170f;
+            float btnH = storyMode ? 72f : 56f;
+            float btnY = py + panelH - btnH - (storyMode ? 24f : 14f);
             bool isLast = lineIndex >= lines.Length - 1;
 
             if (!isLast)
@@ -273,9 +302,13 @@ namespace InsectGame.UI
                     out int hairStyle, out int faceType, out Color top, out Color hat))
                 return 0f;
 
-            float box = panelH - 24f;
-            float boxX = px + 14f;
-            float boxY = py + 12f;
+            // 중앙 패널은 세로로 길다 — panelH를 그대로 쓰면 초상화가 패널을 통째로 채운다.
+            // 정사각 상자를 상단에 붙이고 남는 세로는 대사가 쓴다.
+            float box = storyMode
+                ? Mathf.Min(300f, panelH * 0.52f)
+                : panelH - 24f;
+            float boxX = px + (storyMode ? 26f : 14f);
+            float boxY = py + (storyMode ? 26f : 12f);
 
             GUI.color = new Color(0.12f, 0.1f, 0.06f, 0.9f);
             GUI.DrawTexture(new Rect(boxX, boxY, box, box), panelTex);
@@ -306,6 +339,14 @@ namespace InsectGame.UI
                 case "village_elder": // 마을 어르신 — 따뜻한 상의, 모자, 밝은 머리
                     gender = 0; skinIdx = 1; hairIdx = 2; hairStyle = 0; faceType = 0;
                     top = new Color(0.85f, 0.7f, 0.4f); hat = new Color(0.55f, 0.35f, 0.25f); return true;
+                // 1막 하수 2인 — 검은 상의로 통일한다. 이름 대신 그 색이 이들의 정체다.
+                // 2막 간부와 같은 계열이라 나중에 "그때 그 옷"으로 회수된다.
+                case "ledger_thug_cord": // 끈 — 챙 깊은 모자로 얼굴을 가린다
+                    gender = 0; skinIdx = 2; hairIdx = 0; hairStyle = 0; faceType = 1;
+                    top = new Color(0.16f, 0.16f, 0.20f); hat = new Color(0.10f, 0.10f, 0.13f); return true;
+                case "ledger_thug_rule": // 자 — 모자 없이 묶은 머리
+                    gender = 1; skinIdx = 1; hairIdx = 3; hairStyle = 3; faceType = 1;
+                    top = new Color(0.16f, 0.16f, 0.20f); hat = new Color(0f, 0f, 0f, 0f); return true;
                 default:
                     gender = 0; skinIdx = 0; hairIdx = 0; hairStyle = 0; faceType = 0;
                     top = Color.white; hat = new Color(0f, 0f, 0f, 0f); return false;

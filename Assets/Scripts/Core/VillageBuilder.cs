@@ -151,6 +151,68 @@ namespace InsectGame.Core
                 });
             }
 
+            // ── 1막 악당 전조 — 검은 옷의 두 사람 ──
+            // 정체를 밝히지 않는다. 지역마다 한 명씩 세워 두고, 마주칠 때마다 하는 말이
+            // 조금씩 노골적으로 바뀐다(연못: 멀리서 관찰 → 유적: 대놓고 경고).
+            // 2막에서 명부회 간부를 만나면 "그때 그 옷"이 회수된다 — 같은 상의를 입힌 이유다.
+            //
+            // 배치는 서사 순서와 같다: 끈(연못·습지·유적) / 자(숲·산).
+            // 둘을 번갈아 두면 "한 명이 따라다니는" 게 아니라 "여럿이 조직적으로 움직인다"로 읽힌다.
+            //
+            // **storyNpcId는 반드시 리터럴로 쓴다** — game_facts가 `storyNpcId = "리터럴"`만
+            // 읽어 story_lint 검사 3(NpcTalk 대상이 월드에 있는가)을 돌린다. 루프나 헬퍼로
+            // 줄이면 그 리터럴이 파일에서 사라져 검사가 눈이 먼다(실제로 루프로 썼다가 잡혔다).
+            Data.RegionData thugPond = FindRegion(regions, "pond");
+            if (thugPond != null)
+            {
+                result.npcAnchors.Add(new NpcSpawnAnchor
+                {
+                    position = Polar(thugPond.centerPosition, 200f, thugPond.radius * 0.28f),
+                    kind = NpcKind.StoryNpc, regionId = "pond",
+                    storyNpcId = "ledger_thug_cord", wanderRadius = 0f
+                });
+            }
+            Data.RegionData thugForest = FindRegion(regions, "forest");
+            if (thugForest != null)
+            {
+                result.npcAnchors.Add(new NpcSpawnAnchor
+                {
+                    position = Polar(thugForest.centerPosition, 250f, thugForest.radius * 0.28f),
+                    kind = NpcKind.StoryNpc, regionId = "forest",
+                    storyNpcId = "ledger_thug_rule", wanderRadius = 0f
+                });
+            }
+            Data.RegionData thugSwamp = FindRegion(regions, "swamp");
+            if (thugSwamp != null)
+            {
+                result.npcAnchors.Add(new NpcSpawnAnchor
+                {
+                    position = Polar(thugSwamp.centerPosition, 140f, thugSwamp.radius * 0.28f),
+                    kind = NpcKind.StoryNpc, regionId = "swamp",
+                    storyNpcId = "ledger_thug_cord", wanderRadius = 0f
+                });
+            }
+            Data.RegionData thugMountain = FindRegion(regions, "mountain");
+            if (thugMountain != null)
+            {
+                result.npcAnchors.Add(new NpcSpawnAnchor
+                {
+                    position = Polar(thugMountain.centerPosition, 300f, thugMountain.radius * 0.28f),
+                    kind = NpcKind.StoryNpc, regionId = "mountain",
+                    storyNpcId = "ledger_thug_rule", wanderRadius = 0f
+                });
+            }
+            Data.RegionData thugRuins = FindRegion(regions, "ruins");
+            if (thugRuins != null)
+            {
+                result.npcAnchors.Add(new NpcSpawnAnchor
+                {
+                    position = Polar(thugRuins.centerPosition, 240f, thugRuins.radius * 0.28f),
+                    kind = NpcKind.StoryNpc, regionId = "ruins",
+                    storyNpcId = "ledger_thug_cord", wanderRadius = 0f
+                });
+            }
+
             // ── 2막(ver2) 동행자 배치 ──
             // 같은 storyNpcId를 여러 리전에 두어도 안전하다 — NpcManager.SpawnStoryNpc가
             // 앵커 index로 npcId를 구분하고, NpcTalk 트리거는 storyNpcId 하나만 보므로

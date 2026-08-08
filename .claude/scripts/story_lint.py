@@ -270,6 +270,43 @@ def evaluate_signals() -> list:
         "FAIL" if missing_quest else "PASS",
     ))
 
+    # 11. 특정 곤충 포획 목표가 그 리전에서 실제로 잡히는가.
+    #     CaptureInsect에 param을 주면 "그 종을 잡아야" 발화한다. 그런데 requiredRegionId까지
+    #     걸려 있으면 **그 리전 풀에 그 종이 없을 때 영영 발화하지 않는다** — 런타임엔 아무 신호도
+    #     없고 플레이어는 "왜 다음 이야기가 안 나오지"만 겪는다. 1막 확장이 이 형태를 5건 썼다.
+    pool_by_region = {rid: set(ids) for rid, _level, ids in game_facts.region_pools()}
+    # 서브에리어 전용 종도 그 리전에서 잡히므로 함께 센다.
+    region_src = game_facts._read("region_defs")
+    for m in re.finditer(r'regionId\s*=\s*"([a-z_]+)"(.*?)(?=regionId\s*=\s*"|\Z)', region_src, re.S):
+        rid, body = m.group(1), m.group(2)
+        if rid not in pool_by_region:
+            continue
+        for block in re.findall(r'exclusiveInsectIds\s*=\s*new\[\]\s*\{(.*?)\}', body, re.S):
+            pool_by_region[rid].update(re.findall(r'"([a-z_0-9]+)"', block))
+
+    unreachable_target = []
+    for b in beats:
+        trig = b.get("trigger") or {}
+        if trig.get("type") != "CaptureInsect":
+            continue
+        species = trig.get("param")
+        region = b.get("requiredRegionId")
+        if not species or not region:
+            continue
+        if species not in pool_by_region.get(region, set()):
+            unreachable_target.append(f"{b['beatId']}:{species}@{region}")
+
+    targeted = sum(1 for b in beats
+                   if (b.get("trigger") or {}).get("type") == "CaptureInsect"
+                   and (b.get("trigger") or {}).get("param"))
+    signals.append((
+        "특정 곤충 포획 목표의 서식 정합",
+        "0건 미서식",
+        f"{len(unreachable_target)}건 ({unreachable_target})" if unreachable_target
+        else f"0건 (지정 포획 {targeted}건)",
+        "FAIL" if unreachable_target else "PASS",
+    ))
+
     return signals
 
 

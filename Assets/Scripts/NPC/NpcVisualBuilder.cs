@@ -153,6 +153,23 @@ namespace InsectGame.NPC
                         hair = HairPalette[0], top = TopPalette[5], bottom = BottomPalette[0],
                         skin = SkinPalette[0], hat = HatPalette[1],
                     };
+                // 1막 하수 2인 — **간부와 같은 상의(TopPalette[5])를 입는다.** 그게 유일한 단서다.
+                // 2막에서 집게·저울을 만나면 "저 옷을 어디서 봤더라"가 되게 하려는 것이라
+                // 색을 다르게 하면 안 된다. 대신 모자로 둘을 구분한다.
+                case "ledger_thug_cord": // 끈 — 그물 담당. 챙 깊은 모자로 얼굴을 가린다
+                    return new NpcAppearance
+                    {
+                        isChild = false, hairStyle = 0, hasHat = true,
+                        hair = HairPalette[0], top = TopPalette[5], bottom = BottomPalette[0],
+                        skin = SkinPalette[2], hat = HatPalette[1],
+                    };
+                case "ledger_thug_rule": // 자 — 측량 담당. 모자 없이 묶은 머리
+                    return new NpcAppearance
+                    {
+                        isChild = false, hairStyle = 2, hasHat = false,
+                        hair = HairPalette[3], top = TopPalette[5], bottom = BottomPalette[0],
+                        skin = SkinPalette[1], hat = HatPalette[1],
+                    };
                 case "catcher_rival": // 라온 — 곤충잡이 아이(뜰채·모자·밝은 상의)
                     return new NpcAppearance
                     {
