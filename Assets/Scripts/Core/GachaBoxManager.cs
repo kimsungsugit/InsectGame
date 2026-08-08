@@ -86,6 +86,9 @@ namespace InsectGame.Core
         // 캐시 — GetInsectDisplayName이 매 가챠 결과마다 FindFirstObjectByType 호출하던 회귀 차단
         private InsectDatabase database;
 
+        /// <summary>도감 등록용 lazy 캐시. 위 <see cref="database"/>와 같은 이유·같은 형태다.</summary>
+        private Dex.DexController dexCache;
+
         // PickRandomInsect 결과 검증: data drift로 코드 상수의 ID가 DB에 없을 수 있음.
         // 옛은 검증 없이 AddCapturedInsect 호출 → DB에서 못 찾으면 에러 + 보상 일부만 지급.
         // 무효 ID면 fallback "beetle_basic"(Meadow Common, 항상 존재) 사용.
@@ -172,11 +175,14 @@ namespace InsectGame.Core
 
                 try
                 {
-                    Dex.DexController dex = FindFirstObjectByType<Dex.DexController>();
-                    if (dex != null)
+                    // 상자를 열 때마다 씬을 훑던 것을 1회로 — 바로 위 `database`와 같은 형태다
+                    // (그쪽만 캐시가 있고 여기는 빠져 있었다). 프레임 경로는 아니지만 조회 비용이
+                    // 씬 크기에 비례하고, 상자는 연속으로 여는 조작이다.
+                    if (dexCache == null) dexCache = FindFirstObjectByType<Dex.DexController>();
+                    if (dexCache != null)
                     {
-                        dex.RegisterEncounter(insectId);
-                        dex.RegisterCapture(insectId);
+                        dexCache.RegisterEncounter(insectId);
+                        dexCache.RegisterCapture(insectId);
                     }
                 }
                 catch (System.Exception e) { Debug.LogError($"[Gacha] 도감 등록 실패: {e.Message}"); }

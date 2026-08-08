@@ -24,6 +24,10 @@ namespace InsectGame.Story
         // 분기(옵션) — 데이터 모델만 보존(story_lint 검사 4). 현 렌더러는 lines[] 순차 표시.
         public List<StoryChoice> choices = new List<StoryChoice>();
         public StoryReward onComplete;
+        // 대사가 끝난 뒤 재생할 컷신(옵션). CutsceneLibrary의 ID여야 한다 — story_lint 검사 9가
+        // 실재성을 고정한다(오타는 런타임에 LogWarning만 찍고 조용히 안 나온다).
+        // JsonUtility는 JSON에 없는 필드를 건드리지 않으므로 기존 비트 전부 null로 남아 호환된다.
+        public string cutsceneId;
         public bool oneShot = true;
     }
 

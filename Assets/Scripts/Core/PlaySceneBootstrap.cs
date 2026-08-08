@@ -602,6 +602,12 @@ namespace InsectGame.Core
                 minimapUi.AutoWire(objectiveTracker);    // 미니맵 목표 방향 쐐기
                 minimapUi.AutoWire(statusHud);           // 좌측 스택 가림 판정(펼침 패널이 덮는다)
 
+                // 프로시저럴 컷신 — 스토리 비트의 대사가 끝난 뒤(StoryBeatCompleted) 재생한다.
+                // 카메라와 조작을 뺏으므로 복귀 보장이 급소다(CutsceneDirector.Stop 하나로 모임).
+                InsectGame.Story.CutsceneDirector cutscene =
+                    EnsureComponent<InsectGame.Story.CutsceneDirector>("World/CutsceneDirector");
+                cutscene.AutoWire(storyDirector, camFollower, playerMov, player.transform);
+
                 // 스폰은 배선 완료 후 (컬링 타깃/예약 시스템이 준비된 상태에서)
                 if (villageResult != null)
                 {

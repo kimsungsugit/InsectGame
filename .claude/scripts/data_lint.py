@@ -239,6 +239,57 @@ def extract_gacha_pools() -> dict:
     return {"pools": pools, "names": name_map}
 
 
+def extract_gacha_normal_pool() -> dict:
+    """GachaBoxManager의 `normalPool` — {티어: {insectId, ...}}.
+
+    `gachaExclusives`와 달리 여기 ID는 **일반 곤충**이라 접두가 없다. 티어별로 나뉜 이 배치가
+    곧 저가 박스의 상한이므로, DB 실제 rarity와 어긋나면 브론즈 상자가 상위 곤충을 흘린다.
+    """
+    content = _read_clean(PATHS["gacha_mgr"])
+    match = re.search(
+        r'normalPool\s*=\s*new\s+Dictionary<InsectRarity,\s*string\[\]>\s*\{(.*?)\n        \};',
+        content, re.DOTALL
+    )
+    if not match:
+        raise ExtractorBroken(
+            "GachaBoxManager에서 normalPool을 못 읽었다 — 사전 구조가 바뀌었는가?")
+
+    pools = {}
+    for m in re.finditer(r'InsectRarity\.(\w+),\s*new\[\]\s*\{(.*?)\}\s*\}', match.group(1), re.DOTALL):
+        pools[m.group(1)] = set(re.findall(r'"([^"]+)"', m.group(2)))
+    if not pools:
+        raise ExtractorBroken("normalPool에서 티어를 하나도 못 읽었다")
+    return pools
+
+
+def extract_insect_rarities() -> dict:
+    """{insectId: "Common"|...} — 곤충 등급의 실질 단일 출처 세 곳을 합친다.
+
+    시드 파일 둘(1막·2막 확장)과 부트스트랩의 `CreateStableInsect`(기본 종·가챠 전용).
+    셋 다 코드 하드코딩이라 `.asset`을 읽을 필요가 없다.
+    """
+    out = {}
+    seed_files = [
+        "Assets/Scripts/Data/InsectExpansionDefinitions.cs",
+        "Assets/Scripts/Data/InsectExpansion2Definitions.cs",
+    ]
+    for path in seed_files:
+        content = _read_clean(path)
+        for iid, rarity in re.findall(
+                r'new InsectSeed\(\s*"([^"]+)",\s*"[^"]*",\s*InsectRarity\.(\w+)', content):
+            out[iid] = rarity
+
+    boot = _read_clean(PATHS["bootstrap"])
+    for iid, rarity in re.findall(
+            r'CreateStableInsect\(\s*"([^"]+)",\s*"[^"]*",\s*InsectRarity\.(\w+)', boot):
+        out[iid] = rarity
+
+    if not out:
+        raise ExtractorBroken(
+            "곤충 등급을 하나도 못 읽었다 — 시드/CreateStableInsect 시그니처가 바뀌었는가?")
+    return out
+
+
 def extract_gacha_probabilities() -> dict:
     """{"bronze": [C상한, U상한, R상한, E상한], ...} 누적 임계값.
 
@@ -406,6 +457,35 @@ def evaluate_signals() -> list:
         "파생 유지 + 리터럴 0건",
         detail,
         judge
+    ))
+
+    # 10. 가챠 normalPool 티어 = 곤충 DB 실제 rarity
+    # GachaBoxManager 주석이 "각 티어의 ID는 InsectDatabase 실제 rarity와 일치해야 함
+    # (저가 박스가 상위 곤충을 누출하지 않도록)"이라 못박는데 검사하는 곳이 없었다.
+    # `GetDbRarity`는 결과 **표시**만 보정하고 **풀 선택은 바꾸지 않는다** — 배치가 어긋나면
+    # 브론즈 상자가 55% 확률로 상위 곤충을 흘리고, 그건 공시한 확률과 실제 분포가 갈리는 것이다.
+    # 위 9번이 지키는 건 "표기가 코드에서 파생되는가"이지 "그 코드가 옳은가"가 아니다.
+    pool_tiers = extract_gacha_normal_pool()
+    known_rarity = extract_insect_rarities()
+    tier_mismatch = []
+    unknown_ids = []
+    pooled_total = 0
+    for tier, ids in sorted(pool_tiers.items()):
+        for iid in sorted(ids):
+            pooled_total += 1
+            actual = known_rarity.get(iid)
+            if actual is None:
+                unknown_ids.append(f"{tier}:{iid}")
+            elif actual != tier:
+                tier_mismatch.append(f"{iid}(풀={tier} 실제={actual})")
+
+    problems = tier_mismatch + unknown_ids
+    signals.append((
+        "가챠 normalPool 티어 ↔ 곤충 실제 등급",
+        "0건 불일치",
+        f"{len(problems)}건 ({problems[:6]})" if problems
+        else f"0건 (풀 {pooled_total}종 × 등급 {len(known_rarity)}종 대조)",
+        "FAIL" if problems else "PASS"
     ))
 
     return signals

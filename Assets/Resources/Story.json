@@ -5,12 +5,24 @@
       "chapterId": "ch1",
       "order": 0,
       "prerequisiteBeatId": "",
-      "trigger": { "type": "Immediate", "param": "" },
+      "trigger": {
+        "type": "Immediate",
+        "param": ""
+      },
       "speakerNpcId": "village_elder",
       "lines": [
-        { "speaker": "마을 어르신", "text": "오, 드디어 왔구나! 이 초원에 새 곤충 친구를 찾으러 온 게로군." },
-        { "speaker": "마을 어르신", "text": "그런데 말이다… 요즘 초원의 곤충들이 하나둘 자취를 감추고 있어. 어제 있던 아이가 오늘은 보이질 않는단다." },
-        { "speaker": "마을 어르신", "text": "네가 곤충을 만나 기록해 준다면, 사라져가는 그 아이들을 붙잡아 둘 수 있을 게다. 자, 여행의 첫 선물이란다 — 이 은빛 그물을 받으렴!" }
+        {
+          "speaker": "마을 어르신",
+          "text": "오, 드디어 왔구나! 이 초원에 새 곤충 친구를 찾으러 온 게로군."
+        },
+        {
+          "speaker": "마을 어르신",
+          "text": "그런데 말이다… 요즘 초원의 곤충들이 하나둘 자취를 감추고 있어. 어제 있던 아이가 오늘은 보이질 않는단다."
+        },
+        {
+          "speaker": "마을 어르신",
+          "text": "네가 곤충을 만나 기록해 준다면, 사라져가는 그 아이들을 붙잡아 둘 수 있을 게다. 자, 여행의 첫 선물이란다 — 이 은빛 그물을 받으렴!"
+        }
       ],
       "choices": [],
       "onComplete": {
@@ -30,13 +42,25 @@
       "chapterId": "ch1",
       "order": 1,
       "prerequisiteBeatId": "ch1_intro",
-      "trigger": { "type": "CaptureInsect", "param": "" },
+      "trigger": {
+        "type": "CaptureInsect",
+        "param": ""
+      },
       "requiredRegionId": "meadow",
       "speakerNpcId": "village_elder",
       "lines": [
-        { "speaker": "마을 어르신", "text": "훌륭해! 이 초원에서 곤충을 거둬 왔구나. 네 손끝엔 정말 소질이 있어." },
-        { "speaker": "마을 어르신", "text": "그 아이의 모습을 도감에 새겼으니, 이제 쉽게 사라지지 않을 게다. 이게 바로 우리가 할 수 있는 일이란다." },
-        { "speaker": "마을 어르신", "text": "예전엔 이 풀밭이 곤충들로 북적였는데… 지금은 너무 조용해. 부디 더 많은 친구들을 기록해 주렴." }
+        {
+          "speaker": "마을 어르신",
+          "text": "훌륭해! 이 초원에서 곤충을 거둬 왔구나. 네 손끝엔 정말 소질이 있어."
+        },
+        {
+          "speaker": "마을 어르신",
+          "text": "그 아이의 모습을 도감에 새겼으니, 이제 쉽게 사라지지 않을 게다. 이게 바로 우리가 할 수 있는 일이란다."
+        },
+        {
+          "speaker": "마을 어르신",
+          "text": "예전엔 이 풀밭이 곤충들로 북적였는데… 지금은 너무 조용해. 부디 더 많은 친구들을 기록해 주렴."
+        }
       ],
       "choices": [],
       "onComplete": {
@@ -56,13 +80,25 @@
       "chapterId": "ch1",
       "order": 2,
       "prerequisiteBeatId": "ch1_first_capture",
-      "trigger": { "type": "CaptureInsect", "param": "" },
+      "trigger": {
+        "type": "CaptureInsect",
+        "param": ""
+      },
       "requiredRegionId": "meadow",
       "speakerNpcId": "catcher_rival",
       "lines": [
-        { "speaker": "라온", "text": "야, 너였구나. 요즘 초원을 헤집고 다닌다는 채집가가." },
-        { "speaker": "라온", "text": "난 라온. 나도 곤충들이 사라지는 걸 쫓고 있었어. …인정할게, 너 실력 좋더라." },
-        { "speaker": "라온", "text": "좋아, 승부다. 누가 더 많은 친구를 구해내는지. 뒤처지지나 마!" }
+        {
+          "speaker": "라온",
+          "text": "야, 너였구나. 요즘 초원을 헤집고 다닌다는 채집가가."
+        },
+        {
+          "speaker": "라온",
+          "text": "난 라온. 나도 곤충들이 사라지는 걸 쫓고 있었어. …인정할게, 너 실력 좋더라."
+        },
+        {
+          "speaker": "라온",
+          "text": "좋아, 승부다. 누가 더 많은 친구를 구해내는지. 뒤처지지나 마!"
+        }
       ],
       "choices": [],
       "onComplete": {
@@ -82,12 +118,24 @@
       "chapterId": "ch1",
       "order": 3,
       "prerequisiteBeatId": "ch1_rival_intro",
-      "trigger": { "type": "LevelReach", "param": "3" },
+      "trigger": {
+        "type": "LevelReach",
+        "param": "3"
+      },
       "speakerNpcId": "village_elder",
       "lines": [
-        { "speaker": "마을 어르신", "text": "곤충은 사탕을 먹여 키운단다. 강해진 친구는 더 험한 곳에서도 널 지켜주지." },
-        { "speaker": "마을 어르신", "text": "…네가 더 강해져야 할 이유가 있어. 이 모든 사라짐의 뿌리는 저 멀리 고대 유적에 있다는 오랜 이야기가 전해온단다." },
-        { "speaker": "마을 어르신", "text": "아직은 먼 이야기야. 지금은 눈앞의 친구들부터 돌보렴. 이 성장의 묘약을 받으렴 — 네 친구들이 한결 빨리 자랄 게다." }
+        {
+          "speaker": "마을 어르신",
+          "text": "곤충은 사탕을 먹여 키운단다. 강해진 친구는 더 험한 곳에서도 널 지켜주지."
+        },
+        {
+          "speaker": "마을 어르신",
+          "text": "…네가 더 강해져야 할 이유가 있어. 이 모든 사라짐의 뿌리는 저 멀리 고대 유적에 있다는 오랜 이야기가 전해온단다."
+        },
+        {
+          "speaker": "마을 어르신",
+          "text": "아직은 먼 이야기야. 지금은 눈앞의 친구들부터 돌보렴. 이 성장의 묘약을 받으렴 — 네 친구들이 한결 빨리 자랄 게다."
+        }
       ],
       "choices": [],
       "onComplete": {
@@ -107,13 +155,25 @@
       "chapterId": "ch1",
       "order": 4,
       "prerequisiteBeatId": "ch1_growth",
-      "trigger": { "type": "BattleWin", "param": "" },
+      "trigger": {
+        "type": "BattleWin",
+        "param": ""
+      },
       "requiredRegionId": "meadow",
       "speakerNpcId": "catcher_rival",
       "lines": [
-        { "speaker": "라온", "text": "방금 그 전투, 봤어. 제법인데?" },
-        { "speaker": "라온", "text": "이 초원 끝에는 '수문장'이 버티고 있어. 그 녀석을 넘어야 다음 땅으로 갈 수 있지." },
-        { "speaker": "라온", "text": "사라짐의 실마리는 분명 초원 너머에 있을 거야. 준비되면 도전해 봐." }
+        {
+          "speaker": "라온",
+          "text": "방금 그 전투, 봤어. 제법인데?"
+        },
+        {
+          "speaker": "라온",
+          "text": "이 초원 끝에는 '수문장'이 버티고 있어. 그 녀석을 넘어야 다음 땅으로 갈 수 있지."
+        },
+        {
+          "speaker": "라온",
+          "text": "사라짐의 실마리는 분명 초원 너머에 있을 거야. 준비되면 도전해 봐."
+        }
       ],
       "choices": [],
       "onComplete": {
@@ -133,13 +193,25 @@
       "chapterId": "ch1",
       "order": 5,
       "prerequisiteBeatId": "ch1_first_battle",
-      "trigger": { "type": "BattleWin", "param": "" },
+      "trigger": {
+        "type": "BattleWin",
+        "param": ""
+      },
       "requiredRegionId": "meadow",
       "speakerNpcId": "village_elder",
       "lines": [
-        { "speaker": "마을 어르신", "text": "혼자선 수문장을 당해내지 못한다. 아끼는 친구들로 팀을 꾸리렴." },
-        { "speaker": "마을 어르신", "text": "요즘 그 수문장 사마귀가 몹시 사나워졌어. 곤충들이 사라지는 걸 저도 느끼는 게지… 불안해하는 게야." },
-        { "speaker": "마을 어르신", "text": "부디 조심히. 그리고 그 아이도 너무 상하게 하지 않도록. …자, 이 금빛 그물을 가져가렴. 네 손을 든든히 받쳐줄 게다." }
+        {
+          "speaker": "마을 어르신",
+          "text": "혼자선 수문장을 당해내지 못한다. 아끼는 친구들로 팀을 꾸리렴."
+        },
+        {
+          "speaker": "마을 어르신",
+          "text": "요즘 그 수문장 사마귀가 몹시 사나워졌어. 곤충들이 사라지는 걸 저도 느끼는 게지… 불안해하는 게야."
+        },
+        {
+          "speaker": "마을 어르신",
+          "text": "부디 조심히. 그리고 그 아이도 너무 상하게 하지 않도록. …자, 이 금빛 그물을 가져가렴. 네 손을 든든히 받쳐줄 게다."
+        }
       ],
       "choices": [],
       "onComplete": {
@@ -159,12 +231,24 @@
       "chapterId": "ch1",
       "order": 6,
       "prerequisiteBeatId": "ch1_guardian_call",
-      "trigger": { "type": "QuestComplete", "param": "q_guardian1" },
+      "trigger": {
+        "type": "QuestComplete",
+        "param": "q_guardian1"
+      },
       "speakerNpcId": "village_elder",
       "lines": [
-        { "speaker": "마을 어르신", "text": "해냈구나! 수문장이 길을 열어 주었어. 이제 초원 너머로 갈 수 있단다." },
-        { "speaker": "마을 어르신", "text": "그런데… 쓰러진 그 아이가 마지막에 남긴 떨림이, 저 먼 유적 쪽을 향하고 있었어. 우연이 아닐 게다." },
-        { "speaker": "마을 어르신", "text": "사라짐의 뿌리가 정말 그곳이라면, 네 여행은 이제 시작인 셈이야. 연못과 꽃밭, 두 갈래 길이 열렸단다." }
+        {
+          "speaker": "마을 어르신",
+          "text": "해냈구나! 수문장이 길을 열어 주었어. 이제 초원 너머로 갈 수 있단다."
+        },
+        {
+          "speaker": "마을 어르신",
+          "text": "그런데… 쓰러진 그 아이가 마지막에 남긴 떨림이, 저 먼 유적 쪽을 향하고 있었어. 우연이 아닐 게다."
+        },
+        {
+          "speaker": "마을 어르신",
+          "text": "사라짐의 뿌리가 정말 그곳이라면, 네 여행은 이제 시작인 셈이야. 연못과 꽃밭, 두 갈래 길이 열렸단다."
+        }
       ],
       "choices": [],
       "onComplete": {
@@ -184,11 +268,20 @@
       "chapterId": "ch2",
       "order": 7,
       "prerequisiteBeatId": "ch1_intro",
-      "trigger": { "type": "RegionEnter", "param": "pond" },
+      "trigger": {
+        "type": "RegionEnter",
+        "param": "pond"
+      },
       "speakerNpcId": "village_elder",
       "lines": [
-        { "speaker": "마을 어르신", "text": "여기가 바로 연못이야. 물가엔 초원과는 전혀 다른 곤충들이 살지." },
-        { "speaker": "마을 어르신", "text": "…하지만 여기도 조용하구나. 사라짐이 물가까지 번진 게야. 서둘러 이 아이들도 기록해 주렴. 여행의 다음 장이 시작되었단다." }
+        {
+          "speaker": "마을 어르신",
+          "text": "여기가 바로 연못이야. 물가엔 초원과는 전혀 다른 곤충들이 살지."
+        },
+        {
+          "speaker": "마을 어르신",
+          "text": "…하지만 여기도 조용하구나. 사라짐이 물가까지 번진 게야. 서둘러 이 아이들도 기록해 주렴. 여행의 다음 장이 시작되었단다."
+        }
       ],
       "choices": [],
       "onComplete": {
@@ -208,12 +301,21 @@
       "chapterId": "ch2",
       "order": 8,
       "prerequisiteBeatId": "ch1_reach_pond",
-      "trigger": { "type": "CaptureInsect", "param": "" },
+      "trigger": {
+        "type": "CaptureInsect",
+        "param": ""
+      },
       "requiredRegionId": "pond",
       "speakerNpcId": "catcher_rival",
       "lines": [
-        { "speaker": "라온", "text": "물가 곤충들은 초원 애들이랑 또 다르지? 근데 여기도 예전 같지 않아 — 수가 확 줄었어." },
-        { "speaker": "라온", "text": "그래도 네가 이렇게 하나씩 거둬들일 때마다, 뭔가 조금은 되돌아오는 기분이야. 계속하자." }
+        {
+          "speaker": "라온",
+          "text": "물가 곤충들은 초원 애들이랑 또 다르지? 근데 여기도 예전 같지 않아 — 수가 확 줄었어."
+        },
+        {
+          "speaker": "라온",
+          "text": "그래도 네가 이렇게 하나씩 거둬들일 때마다, 뭔가 조금은 되돌아오는 기분이야. 계속하자."
+        }
       ],
       "choices": [],
       "onComplete": {
@@ -233,11 +335,20 @@
       "chapterId": "ch2",
       "order": 9,
       "prerequisiteBeatId": "ch1_reach_pond",
-      "trigger": { "type": "QuestComplete", "param": "q_complete" },
+      "trigger": {
+        "type": "QuestComplete",
+        "param": "q_complete"
+      },
       "speakerNpcId": "village_elder",
       "lines": [
-        { "speaker": "마을 어르신", "text": "여기까지 오다니, 이제 내가 가르칠 건 다 가르쳤구나. 넌 어엿한 채집가야." },
-        { "speaker": "마을 어르신", "text": "허나 사라짐의 진짜 뿌리는 아직 저 너머에 있어. 숲으로, 또 그 너머로 나아가렴. 답은 고대 유적에 있을 게다." }
+        {
+          "speaker": "마을 어르신",
+          "text": "여기까지 오다니, 이제 내가 가르칠 건 다 가르쳤구나. 넌 어엿한 채집가야."
+        },
+        {
+          "speaker": "마을 어르신",
+          "text": "허나 사라짐의 진짜 뿌리는 아직 저 너머에 있어. 숲으로, 또 그 너머로 나아가렴. 답은 고대 유적에 있을 게다."
+        }
       ],
       "choices": [],
       "onComplete": {
@@ -257,12 +368,24 @@
       "chapterId": "ch3",
       "order": 8,
       "prerequisiteBeatId": "ch1_reach_pond",
-      "trigger": { "type": "RegionEnter", "param": "forest" },
+      "trigger": {
+        "type": "RegionEnter",
+        "param": "forest"
+      },
       "speakerNpcId": "ruins_scholar",
       "lines": [
-        { "speaker": "세라", "text": "당신이군요. 사라지는 곤충들을 쫓는다는 그 채집가가." },
-        { "speaker": "세라", "text": "저는 세라, 고대 유적을 연구하고 있어요. 이 '잦아듦' 현상… 유적의 봉인에 금이 간 것과 결코 무관하지 않아요." },
-        { "speaker": "세라", "text": "당신이 모으는 기록 하나하나가, 어쩌면 그 균열을 메우는 열쇠일지도 몰라요." }
+        {
+          "speaker": "세라",
+          "text": "당신이군요. 사라지는 곤충들을 쫓는다는 그 채집가가."
+        },
+        {
+          "speaker": "세라",
+          "text": "저는 세라, 고대 유적을 연구하고 있어요. 이 '잦아듦' 현상… 유적의 봉인에 금이 간 것과 결코 무관하지 않아요."
+        },
+        {
+          "speaker": "세라",
+          "text": "당신이 모으는 기록 하나하나가, 어쩌면 그 균열을 메우는 열쇠일지도 몰라요."
+        }
       ],
       "choices": [],
       "onComplete": {
@@ -282,11 +405,20 @@
       "chapterId": "ch3",
       "order": 9,
       "prerequisiteBeatId": "ch3_reach_forest",
-      "trigger": { "type": "SubAreaEnter", "param": "forest_cave" },
+      "trigger": {
+        "type": "SubAreaEnter",
+        "param": "forest_cave"
+      },
       "speakerNpcId": "ruins_scholar",
       "lines": [
-        { "speaker": "세라", "text": "이 각인… 유적의 것과 같은 문양이에요. 이 깊은 동굴까지 봉인의 흔적이 뻗어 있다니." },
-        { "speaker": "세라", "text": "곤충과 이 땅은 아주 오래전부터 이어져 있었나 봐요. 계속 기록해요 — 실마리가 쌓이고 있어요." }
+        {
+          "speaker": "세라",
+          "text": "이 각인… 유적의 것과 같은 문양이에요. 이 깊은 동굴까지 봉인의 흔적이 뻗어 있다니."
+        },
+        {
+          "speaker": "세라",
+          "text": "곤충과 이 땅은 아주 오래전부터 이어져 있었나 봐요. 계속 기록해요 — 실마리가 쌓이고 있어요."
+        }
       ],
       "choices": [],
       "onComplete": {
@@ -306,12 +438,21 @@
       "chapterId": "ch3",
       "order": 11,
       "prerequisiteBeatId": "ch3_reach_forest",
-      "trigger": { "type": "BattleWin", "param": "" },
+      "trigger": {
+        "type": "BattleWin",
+        "param": ""
+      },
       "requiredRegionId": "forest",
       "speakerNpcId": "ruins_scholar",
       "lines": [
-        { "speaker": "세라", "text": "방금 그 전투… 쓰러진 곤충이 사라지기 직전, 빛의 결이 유적 쪽으로 흘렀어요. 봤나요?" },
-        { "speaker": "세라", "text": "초원의 수문장도 그랬다죠. 우연이 아니에요 — 모든 곤충이 그 봉인과 이어져 있어요." }
+        {
+          "speaker": "세라",
+          "text": "방금 그 전투… 쓰러진 곤충이 사라지기 직전, 빛의 결이 유적 쪽으로 흘렀어요. 봤나요?"
+        },
+        {
+          "speaker": "세라",
+          "text": "초원의 수문장도 그랬다죠. 우연이 아니에요 — 모든 곤충이 그 봉인과 이어져 있어요."
+        }
       ],
       "choices": [],
       "onComplete": {
@@ -331,12 +472,24 @@
       "chapterId": "ch4",
       "order": 10,
       "prerequisiteBeatId": "ch3_reach_forest",
-      "trigger": { "type": "RegionEnter", "param": "swamp" },
+      "trigger": {
+        "type": "RegionEnter",
+        "param": "swamp"
+      },
       "speakerNpcId": "catcher_rival",
       "lines": [
-        { "speaker": "라온", "text": "여기까지 왔구나. …이 습지, 숨 쉴 때마다 목이 칼칼해. 공기부터 무겁지 않아?" },
-        { "speaker": "라온", "text": "솔직히 여긴 좀 무섭다. 그래도… 너 혼자 보내진 않을 거야." },
-        { "speaker": "라온", "text": "이제부턴 나도, 세라도 함께야. 셋이 뭉치면 어디든 갈 수 있어." }
+        {
+          "speaker": "라온",
+          "text": "여기까지 왔구나. …이 습지, 숨 쉴 때마다 목이 칼칼해. 공기부터 무겁지 않아?"
+        },
+        {
+          "speaker": "라온",
+          "text": "솔직히 여긴 좀 무섭다. 그래도… 너 혼자 보내진 않을 거야."
+        },
+        {
+          "speaker": "라온",
+          "text": "이제부턴 나도, 세라도 함께야. 셋이 뭉치면 어디든 갈 수 있어."
+        }
       ],
       "choices": [],
       "onComplete": {
@@ -356,13 +509,25 @@
       "chapterId": "ch4",
       "order": 13,
       "prerequisiteBeatId": "ch4_reach_swamp",
-      "trigger": { "type": "BattleWin", "param": "" },
+      "trigger": {
+        "type": "BattleWin",
+        "param": ""
+      },
       "requiredRegionId": "swamp",
       "speakerNpcId": "ruins_scholar",
       "lines": [
-        { "speaker": "세라", "text": "방금 그 아이, 쓰러지며 사라지는 속도가 초원 때보다 훨씬 빨랐어요. 봉인의 금이 그만큼 벌어졌다는 뜻이에요." },
-        { "speaker": "세라", "text": "이대론 당신이 거둔 아이들마저 위태로워요. 도감이 붙들고는 있지만… 그 힘도 영원하진 않아요." },
-        { "speaker": "세라", "text": "서둘러야 해요. 근원을 막지 못하면, 지금 되돌린 것마저 다시 스러질 테니까요." }
+        {
+          "speaker": "세라",
+          "text": "방금 그 아이, 쓰러지며 사라지는 속도가 초원 때보다 훨씬 빨랐어요. 봉인의 금이 그만큼 벌어졌다는 뜻이에요."
+        },
+        {
+          "speaker": "세라",
+          "text": "이대론 당신이 거둔 아이들마저 위태로워요. 도감이 붙들고는 있지만… 그 힘도 영원하진 않아요."
+        },
+        {
+          "speaker": "세라",
+          "text": "서둘러야 해요. 근원을 막지 못하면, 지금 되돌린 것마저 다시 스러질 테니까요."
+        }
       ],
       "choices": [],
       "onComplete": {
@@ -382,12 +547,21 @@
       "chapterId": "ch4",
       "order": 14,
       "prerequisiteBeatId": "ch4_reach_swamp",
-      "trigger": { "type": "CaptureInsect", "param": "" },
+      "trigger": {
+        "type": "CaptureInsect",
+        "param": ""
+      },
       "requiredRegionId": "swamp",
       "speakerNpcId": "catcher_rival",
       "lines": [
-        { "speaker": "라온", "text": "예전엔 너랑 경쟁만 하려 했는데… 이젠 아니야. 이 일은 혼자 될 게 아니더라." },
-        { "speaker": "라온", "text": "네가 한 마리씩 거둘 때 나도 곁에서 거들게. 세라도 함께야. 우리 셋이면 유적까지 갈 수 있어." }
+        {
+          "speaker": "라온",
+          "text": "예전엔 너랑 경쟁만 하려 했는데… 이젠 아니야. 이 일은 혼자 될 게 아니더라."
+        },
+        {
+          "speaker": "라온",
+          "text": "네가 한 마리씩 거둘 때 나도 곁에서 거들게. 세라도 함께야. 우리 셋이면 유적까지 갈 수 있어."
+        }
       ],
       "choices": [],
       "onComplete": {
@@ -407,12 +581,24 @@
       "chapterId": "ch5",
       "order": 11,
       "prerequisiteBeatId": "ch4_reach_swamp",
-      "trigger": { "type": "RegionEnter", "param": "mountain" },
+      "trigger": {
+        "type": "RegionEnter",
+        "param": "mountain"
+      },
       "speakerNpcId": "ruins_scholar",
       "lines": [
-        { "speaker": "세라", "text": "산을 오를수록 유적이 가까워져요. 모든 사라짐의 근원이 바로 저 위에 있어요." },
-        { "speaker": "세라", "text": "이제 확신해요 — 당신이 곤충을 붙잡아 도감에 새길 때마다, 금 갔던 봉인이 조금씩 메워지고 있어요." },
-        { "speaker": "세라", "text": "당신의 기록이 곧 이 세계를 붙드는 힘이에요. 조금만 더 힘내요." }
+        {
+          "speaker": "세라",
+          "text": "산을 오를수록 유적이 가까워져요. 모든 사라짐의 근원이 바로 저 위에 있어요."
+        },
+        {
+          "speaker": "세라",
+          "text": "이제 확신해요 — 당신이 곤충을 붙잡아 도감에 새길 때마다, 금 갔던 봉인이 조금씩 메워지고 있어요."
+        },
+        {
+          "speaker": "세라",
+          "text": "당신의 기록이 곧 이 세계를 붙드는 힘이에요. 조금만 더 힘내요."
+        }
       ],
       "choices": [],
       "onComplete": {
@@ -432,11 +618,20 @@
       "chapterId": "ch5",
       "order": 12,
       "prerequisiteBeatId": "ch5_reach_mountain",
-      "trigger": { "type": "SubAreaEnter", "param": "mountain_peak" },
+      "trigger": {
+        "type": "SubAreaEnter",
+        "param": "mountain_peak"
+      },
       "speakerNpcId": "ruins_scholar",
       "lines": [
-        { "speaker": "세라", "text": "보여요? 저 아래, 안개 너머로 빛나는 게 고대 유적이에요." },
-        { "speaker": "세라", "text": "여기까지 온 채집가는 당신이 처음이에요. …이제 마지막 장만 남았어요." }
+        {
+          "speaker": "세라",
+          "text": "보여요? 저 아래, 안개 너머로 빛나는 게 고대 유적이에요."
+        },
+        {
+          "speaker": "세라",
+          "text": "여기까지 온 채집가는 당신이 처음이에요. …이제 마지막 장만 남았어요."
+        }
       ],
       "choices": [],
       "onComplete": {
@@ -456,13 +651,25 @@
       "chapterId": "ch5",
       "order": 17,
       "prerequisiteBeatId": "ch5_reach_mountain",
-      "trigger": { "type": "CaptureInsect", "param": "" },
+      "trigger": {
+        "type": "CaptureInsect",
+        "param": ""
+      },
       "requiredRegionId": "mountain",
       "speakerNpcId": "ruins_scholar",
       "lines": [
-        { "speaker": "세라", "text": "당신이 한 생명씩 도감에 더할 때마다, 나는 조금씩 믿게 돼요 — 이 세계가 아직 늦지 않았다고." },
-        { "speaker": "세라", "text": "숲에서 처음 봤을 땐 그저 실마리를 쫓는 채집가였는데… 이젠 당신이 마지막 희망이에요." },
-        { "speaker": "세라", "text": "정상 너머, 유적에서 다 끝내요. 함께 가요." }
+        {
+          "speaker": "세라",
+          "text": "당신이 한 생명씩 도감에 더할 때마다, 나는 조금씩 믿게 돼요 — 이 세계가 아직 늦지 않았다고."
+        },
+        {
+          "speaker": "세라",
+          "text": "숲에서 처음 봤을 땐 그저 실마리를 쫓는 채집가였는데… 이젠 당신이 마지막 희망이에요."
+        },
+        {
+          "speaker": "세라",
+          "text": "정상 너머, 유적에서 다 끝내요. 함께 가요."
+        }
       ],
       "choices": [],
       "onComplete": {
@@ -482,11 +689,20 @@
       "chapterId": "ch6",
       "order": 13,
       "prerequisiteBeatId": "ch5_reach_mountain",
-      "trigger": { "type": "RegionEnter", "param": "ruins" },
+      "trigger": {
+        "type": "RegionEnter",
+        "param": "ruins"
+      },
       "speakerNpcId": "village_elder",
       "lines": [
-        { "speaker": "마을 어르신", "text": "…결국 여기까지 왔구나. 고대 유적, 모든 사라짐이 시작된 곳이야." },
-        { "speaker": "마을 어르신", "text": "내가 흘리던 옛이야기가 이젠 네 눈앞의 현실이 되었어. 조심하렴 — 그리고 널 믿는다." }
+        {
+          "speaker": "마을 어르신",
+          "text": "…결국 여기까지 왔구나. 고대 유적, 모든 사라짐이 시작된 곳이야."
+        },
+        {
+          "speaker": "마을 어르신",
+          "text": "내가 흘리던 옛이야기가 이젠 네 눈앞의 현실이 되었어. 조심하렴 — 그리고 널 믿는다."
+        }
       ],
       "choices": [],
       "onComplete": {
@@ -506,12 +722,21 @@
       "chapterId": "ch6",
       "order": 19,
       "prerequisiteBeatId": "ch6_reach_ruins",
-      "trigger": { "type": "BattleWin", "param": "" },
+      "trigger": {
+        "type": "BattleWin",
+        "param": ""
+      },
       "requiredRegionId": "ruins",
       "speakerNpcId": "village_elder",
       "lines": [
-        { "speaker": "마을 어르신", "text": "유적 안에선 한 걸음 한 걸음이 무겁구나. 방금 그 싸움에서도 공기가 떨리는 걸 느꼈어." },
-        { "speaker": "마을 어르신", "text": "두려워 말렴. 네가 여기까지 거둬 온 모든 생명이 널 지켜줄 게다. 진실은 바로 저 안쪽에 있어." }
+        {
+          "speaker": "마을 어르신",
+          "text": "유적 안에선 한 걸음 한 걸음이 무겁구나. 방금 그 싸움에서도 공기가 떨리는 걸 느꼈어."
+        },
+        {
+          "speaker": "마을 어르신",
+          "text": "두려워 말렴. 네가 여기까지 거둬 온 모든 생명이 널 지켜줄 게다. 진실은 바로 저 안쪽에 있어."
+        }
       ],
       "choices": [],
       "onComplete": {
@@ -531,12 +756,24 @@
       "chapterId": "ch6",
       "order": 14,
       "prerequisiteBeatId": "ch6_reach_ruins",
-      "trigger": { "type": "SubAreaEnter", "param": "ruins_temple" },
+      "trigger": {
+        "type": "SubAreaEnter",
+        "param": "ruins_temple"
+      },
       "speakerNpcId": "ruins_scholar",
       "lines": [
-        { "speaker": "세라", "text": "이곳이 봉인의 심장이에요. 보세요 — 벽을 가득 메운 곤충들의 문양을." },
-        { "speaker": "세라", "text": "봉인은 애초에 '기록'이었어요. 고대인들은 모든 곤충을 새겨 이 세계에 붙들어 두었죠. 세월에 그 기록이 바래며 종이 하나둘 지워지기 시작한 거예요." },
-        { "speaker": "세라", "text": "그리고 당신이 그 일을 다시 해냈어요. 당신의 도감이 봉인을 되살렸어요. …보세요, 사라졌던 고대의 잠자리가 당신에게 돌아왔어요." }
+        {
+          "speaker": "세라",
+          "text": "이곳이 봉인의 심장이에요. 보세요 — 벽을 가득 메운 곤충들의 문양을."
+        },
+        {
+          "speaker": "세라",
+          "text": "봉인은 애초에 '기록'이었어요. 고대인들은 모든 곤충을 새겨 이 세계에 붙들어 두었죠. 세월에 그 기록이 바래며 종이 하나둘 지워지기 시작한 거예요."
+        },
+        {
+          "speaker": "세라",
+          "text": "그리고 당신이 그 일을 다시 해냈어요. 당신의 도감이 봉인을 되살렸어요. …보세요, 사라졌던 고대의 잠자리가 당신에게 돌아왔어요."
+        }
       ],
       "choices": [],
       "onComplete": {
@@ -556,14 +793,32 @@
       "chapterId": "ch7",
       "order": 20,
       "prerequisiteBeatId": "ch6_secret",
-      "trigger": { "type": "SubAreaEnter", "param": "ruins_underground" },
+      "trigger": {
+        "type": "SubAreaEnter",
+        "param": "ruins_underground"
+      },
       "speakerNpcId": "ruins_scholar",
       "lines": [
-        { "speaker": "세라", "text": "신전의 기록은 다시 채워졌어요. 그런데… 왜 유적이 조용해지지 않죠?" },
-        { "speaker": "세라", "text": "지하를 보세요. 벽의 문양 사이, 아무것도 새겨지지 않은 자리가 있어요. 빈칸이에요. 그게 방금… 움직였어요." },
-        { "speaker": "세라", "text": "봉인은 곤충을 지키려던 게 아니었어요. 이름 있는 것들로 세계를 빈틈없이 메워서, 이름 없는 것이 들어올 자리를 없앤 울타리였어요." },
-        { "speaker": "세라", "text": "종이 하나 지워질 때마다 빈칸이 생겼고, 그리로 그것이 스며들었죠. 그리고 우리가 기록을 되살리는 순간 — 이미 들어와 있던 것이 안에 갇힌 거예요." },
-        { "speaker": "세라", "text": "갇힌 건 나가려 해요. 유적 너머, 지도에서 지워진 땅으로. …쫓아가야 해요. 우리가 연 문이니까요." }
+        {
+          "speaker": "세라",
+          "text": "신전의 기록은 다시 채워졌어요. 그런데… 왜 유적이 조용해지지 않죠?"
+        },
+        {
+          "speaker": "세라",
+          "text": "지하를 보세요. 벽의 문양 사이, 아무것도 새겨지지 않은 자리가 있어요. 빈칸이에요. 그게 방금… 움직였어요."
+        },
+        {
+          "speaker": "세라",
+          "text": "봉인은 곤충을 지키려던 게 아니었어요. 이름 있는 것들로 세계를 빈틈없이 메워서, 이름 없는 것이 들어올 자리를 없앤 울타리였어요."
+        },
+        {
+          "speaker": "세라",
+          "text": "종이 하나 지워질 때마다 빈칸이 생겼고, 그리로 그것이 스며들었죠. 그리고 우리가 기록을 되살리는 순간 — 이미 들어와 있던 것이 안에 갇힌 거예요."
+        },
+        {
+          "speaker": "세라",
+          "text": "갇힌 건 나가려 해요. 유적 너머, 지도에서 지워진 땅으로. …쫓아가야 해요. 우리가 연 문이니까요."
+        }
       ],
       "choices": [],
       "onComplete": {
@@ -576,6 +831,7 @@
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
       },
+      "cutsceneId": "cs_seal_opening",
       "oneShot": true
     },
     {
@@ -583,18 +839,39 @@
       "chapterId": "ch7",
       "order": 21,
       "prerequisiteBeatId": "ch7_opening",
-      "trigger": { "type": "RegionEnter", "param": "hollow" },
+      "trigger": {
+        "type": "RegionEnter",
+        "param": "hollow"
+      },
       "speakerNpcId": "ruins_scholar",
       "lines": [
-        { "speaker": "세라", "text": "들어보세요. …아무 소리도 안 나죠?" },
-        { "speaker": "세라", "text": "여긴 잦아듦이 가장 먼저 훑고 간 자리예요. 지도에는 분명 들판이라고 적혀 있는데, 남아 있는 건 마른 풀하고 쓰러진 울타리뿐이에요." },
-        { "speaker": "세라", "text": "저 표석들 보이세요? 원래는 이름이 새겨져 있었을 거예요. 지금은 전부 빈칸이고요." },
-        { "speaker": "세라", "text": "여기서부터예요. 한 종씩 다시 만나고 다시 새겨요. 그게 우리가 할 수 있는 전부고, 동시에 전부 다예요." }
+        {
+          "speaker": "세라",
+          "text": "들어보세요. …아무 소리도 안 나죠?"
+        },
+        {
+          "speaker": "세라",
+          "text": "여긴 잦아듦이 가장 먼저 훑고 간 자리예요. 지도에는 분명 들판이라고 적혀 있는데, 남아 있는 건 마른 풀하고 쓰러진 울타리뿐이에요."
+        },
+        {
+          "speaker": "세라",
+          "text": "저 표석들 보이세요? 원래는 이름이 새겨져 있었을 거예요. 지금은 전부 빈칸이고요."
+        },
+        {
+          "speaker": "세라",
+          "text": "여기서부터예요. 한 종씩 다시 만나고 다시 새겨요. 그게 우리가 할 수 있는 전부고, 동시에 전부 다예요."
+        }
       ],
       "choices": [],
       "onComplete": {
-        "rewardCandy": 35, "rewardExp": 90, "rewardItemId": "", "rewardItemCount": 0,
-        "rewardInsectId": "", "rewardInsectDisplayName": "", "rewardInsectLevel": 0, "unlockQuestId": ""
+        "rewardCandy": 35,
+        "rewardExp": 90,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
       },
       "oneShot": true
     },
@@ -603,17 +880,32 @@
       "chapterId": "ch7",
       "order": 22,
       "prerequisiteBeatId": "ch7_arrive",
-      "trigger": { "type": "CaptureInsect", "param": "" },
+      "trigger": {
+        "type": "CaptureInsect",
+        "param": ""
+      },
       "requiredRegionId": "hollow",
       "speakerNpcId": "catcher_rival",
       "lines": [
-        { "speaker": "라온", "text": "네 수집이 늘 때마다 이 들판이 조금씩 소리를 되찾는 것 같아. 기분 탓인가?" },
-        { "speaker": "라온", "text": "…근데 아까부터 저기, 검은 그림자 하나가 자꾸 눈에 밟혀. 형태는 곤충인데 색이 없어. 쫓아가면 사라지고." }
+        {
+          "speaker": "라온",
+          "text": "네 수집이 늘 때마다 이 들판이 조금씩 소리를 되찾는 것 같아. 기분 탓인가?"
+        },
+        {
+          "speaker": "라온",
+          "text": "…근데 아까부터 저기, 검은 그림자 하나가 자꾸 눈에 밟혀. 형태는 곤충인데 색이 없어. 쫓아가면 사라지고."
+        }
       ],
       "choices": [],
       "onComplete": {
-        "rewardCandy": 30, "rewardExp": 70, "rewardItemId": "", "rewardItemCount": 0,
-        "rewardInsectId": "", "rewardInsectDisplayName": "", "rewardInsectLevel": 0, "unlockQuestId": ""
+        "rewardCandy": 30,
+        "rewardExp": 70,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
       },
       "oneShot": true
     },
@@ -622,18 +914,39 @@
       "chapterId": "ch7",
       "order": 23,
       "prerequisiteBeatId": "ch7_arrive",
-      "trigger": { "type": "SubAreaEnter", "param": "hollow_silence" },
+      "trigger": {
+        "type": "SubAreaEnter",
+        "param": "hollow_silence"
+      },
       "speakerNpcId": "ruins_scholar",
       "lines": [
-        { "speaker": "세라", "text": "…저기예요. 라온이 봤다던 그림자." },
-        { "speaker": "세라", "text": "곤충은 맞아요. 그런데 무늬가 없고, 색도 없고… 저 아이는 자기가 무엇인지 몰라요." },
-        { "speaker": "세라", "text": "이름을 빼앗긴 거예요. 그것이 자리를 얻는 방식이 이거예요 — 남의 이름을 가져가서 그 자리에 대신 서는 것." },
-        { "speaker": "세라", "text": "되돌릴 방법이 없는 건 아니에요. 다시 만나서, 다시 도감에 새기면 돼요. 이름을 돌려주는 거죠." }
+        {
+          "speaker": "세라",
+          "text": "…저기예요. 라온이 봤다던 그림자."
+        },
+        {
+          "speaker": "세라",
+          "text": "곤충은 맞아요. 그런데 무늬가 없고, 색도 없고… 저 아이는 자기가 무엇인지 몰라요."
+        },
+        {
+          "speaker": "세라",
+          "text": "이름을 빼앗긴 거예요. 그것이 자리를 얻는 방식이 이거예요 — 남의 이름을 가져가서 그 자리에 대신 서는 것."
+        },
+        {
+          "speaker": "세라",
+          "text": "되돌릴 방법이 없는 건 아니에요. 다시 만나서, 다시 도감에 새기면 돼요. 이름을 돌려주는 거죠."
+        }
       ],
       "choices": [],
       "onComplete": {
-        "rewardCandy": 45, "rewardExp": 120, "rewardItemId": "net_gold", "rewardItemCount": 1,
-        "rewardInsectId": "", "rewardInsectDisplayName": "", "rewardInsectLevel": 0, "unlockQuestId": ""
+        "rewardCandy": 45,
+        "rewardExp": 120,
+        "rewardItemId": "net_gold",
+        "rewardItemCount": 1,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
       },
       "oneShot": true
     },
@@ -642,17 +955,32 @@
       "chapterId": "ch7",
       "order": 24,
       "prerequisiteBeatId": "ch7_arrive",
-      "trigger": { "type": "BattleWin", "param": "" },
+      "trigger": {
+        "type": "BattleWin",
+        "param": ""
+      },
       "requiredRegionId": "hollow",
       "speakerNpcId": "ruins_scholar",
       "lines": [
-        { "speaker": "세라", "text": "쓰러진 자리에 글자가 잠깐 떠올랐다가 꺼졌어요. 보셨어요?" },
-        { "speaker": "세라", "text": "아직 완전히 지워지진 않았다는 뜻이에요. 늦지 않았어요." }
+        {
+          "speaker": "세라",
+          "text": "쓰러진 자리에 글자가 잠깐 떠올랐다가 꺼졌어요. 보셨어요?"
+        },
+        {
+          "speaker": "세라",
+          "text": "아직 완전히 지워지진 않았다는 뜻이에요. 늦지 않았어요."
+        }
       ],
       "choices": [],
       "onComplete": {
-        "rewardCandy": 30, "rewardExp": 70, "rewardItemId": "", "rewardItemCount": 0,
-        "rewardInsectId": "", "rewardInsectDisplayName": "", "rewardInsectLevel": 0, "unlockQuestId": ""
+        "rewardCandy": 30,
+        "rewardExp": 70,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
       },
       "oneShot": true
     },
@@ -661,16 +989,31 @@
       "chapterId": "ch7",
       "order": 25,
       "prerequisiteBeatId": "talk_scholar",
-      "trigger": { "type": "NpcTalk", "param": "ruins_scholar" },
+      "trigger": {
+        "type": "NpcTalk",
+        "param": "ruins_scholar"
+      },
       "speakerNpcId": "ruins_scholar",
       "lines": [
-        { "speaker": "세라", "text": "…제가 틀렸을지도 몰라요. 봉인이 무엇을 가뒀는지, 우린 한 번도 묻지 않았어요." },
-        { "speaker": "세라", "text": "무엇을 지키려는 울타리인지만 물었지, 무엇을 막으려는 울타리인지는 안 물었죠. 학자로서 부끄러운 일이에요." }
+        {
+          "speaker": "세라",
+          "text": "…제가 틀렸을지도 몰라요. 봉인이 무엇을 가뒀는지, 우린 한 번도 묻지 않았어요."
+        },
+        {
+          "speaker": "세라",
+          "text": "무엇을 지키려는 울타리인지만 물었지, 무엇을 막으려는 울타리인지는 안 물었죠. 학자로서 부끄러운 일이에요."
+        }
       ],
       "choices": [],
       "onComplete": {
-        "rewardCandy": 20, "rewardExp": 40, "rewardItemId": "", "rewardItemCount": 0,
-        "rewardInsectId": "", "rewardInsectDisplayName": "", "rewardInsectLevel": 0, "unlockQuestId": ""
+        "rewardCandy": 20,
+        "rewardExp": 40,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
       },
       "oneShot": true
     },
@@ -679,17 +1022,35 @@
       "chapterId": "ch8",
       "order": 26,
       "prerequisiteBeatId": "ch7_confront",
-      "trigger": { "type": "RegionEnter", "param": "dunes" },
+      "trigger": {
+        "type": "RegionEnter",
+        "param": "dunes"
+      },
       "speakerNpcId": "catcher_rival",
       "lines": [
-        { "speaker": "라온", "text": "야, 이거 봐. 모래에 반쯤 묻힌 상자야. 하나둘이 아니라 줄줄이." },
-        { "speaker": "라온", "text": "뚜껑에 이름표가 붙어 있어. 종 이름이랑… 날짜랑, 수량." },
-        { "speaker": "라온", "text": "안에 살아 있어. 아직 살아 있다고. 근데 아무도 안 돌보고 있잖아." }
+        {
+          "speaker": "라온",
+          "text": "야, 이거 봐. 모래에 반쯤 묻힌 상자야. 하나둘이 아니라 줄줄이."
+        },
+        {
+          "speaker": "라온",
+          "text": "뚜껑에 이름표가 붙어 있어. 종 이름이랑… 날짜랑, 수량."
+        },
+        {
+          "speaker": "라온",
+          "text": "안에 살아 있어. 아직 살아 있다고. 근데 아무도 안 돌보고 있잖아."
+        }
       ],
       "choices": [],
       "onComplete": {
-        "rewardCandy": 40, "rewardExp": 100, "rewardItemId": "", "rewardItemCount": 0,
-        "rewardInsectId": "", "rewardInsectDisplayName": "", "rewardInsectLevel": 0, "unlockQuestId": ""
+        "rewardCandy": 40,
+        "rewardExp": 100,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
       },
       "oneShot": true
     },
@@ -698,17 +1059,32 @@
       "chapterId": "ch8",
       "order": 27,
       "prerequisiteBeatId": "ch8_arrive",
-      "trigger": { "type": "CaptureInsect", "param": "" },
+      "trigger": {
+        "type": "CaptureInsect",
+        "param": ""
+      },
       "requiredRegionId": "dunes",
       "speakerNpcId": "catcher_rival",
       "lines": [
-        { "speaker": "라온", "text": "네가 하는 거랑 저 상자랑, 겉으로는 똑같아 보이겠지. 잡아서 기록에 남기는 거니까." },
-        { "speaker": "라온", "text": "근데 아니야. 만나고 놓아주면서 새기는 거랑, 가둬 놓고 세는 거랑은 달라. 완전히 달라." }
+        {
+          "speaker": "라온",
+          "text": "네가 하는 거랑 저 상자랑, 겉으로는 똑같아 보이겠지. 잡아서 기록에 남기는 거니까."
+        },
+        {
+          "speaker": "라온",
+          "text": "근데 아니야. 만나고 놓아주면서 새기는 거랑, 가둬 놓고 세는 거랑은 달라. 완전히 달라."
+        }
       ],
       "choices": [],
       "onComplete": {
-        "rewardCandy": 35, "rewardExp": 80, "rewardItemId": "", "rewardItemCount": 0,
-        "rewardInsectId": "", "rewardInsectDisplayName": "", "rewardInsectLevel": 0, "unlockQuestId": ""
+        "rewardCandy": 35,
+        "rewardExp": 80,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
       },
       "oneShot": true
     },
@@ -717,19 +1093,43 @@
       "chapterId": "ch8",
       "order": 28,
       "prerequisiteBeatId": "ch8_arrive",
-      "trigger": { "type": "SubAreaEnter", "param": "dunes_vault" },
+      "trigger": {
+        "type": "SubAreaEnter",
+        "param": "dunes_vault"
+      },
       "speakerNpcId": "ledger_grip",
       "lines": [
-        { "speaker": "집게", "text": "손대지 마라. 그건 명부회 물건이다." },
-        { "speaker": "집게", "text": "우리가 뭘 하는지 아나? 빈칸을 메우는 거다. 종 하나가 지워질 때마다 세상에 구멍이 뚫려. 그 구멍으로 뭐가 들어오는지는 너도 봤을 텐데." },
-        { "speaker": "집게", "text": "그래서 남김없이 장부에 올린다. 전부, 지금 당장. 한 마리씩 만나고 다니는 네 방식으로는 백 년이 걸려도 못 끝내." },
-        { "speaker": "세라", "text": "…스승님 말투 그대로네요. 그런데 집게 씨, 저 상자 안의 아이들은 지금 몇이나 살아 있죠?" },
-        { "speaker": "집게", "text": "…장부에는 올라가 있다." }
+        {
+          "speaker": "집게",
+          "text": "손대지 마라. 그건 명부회 물건이다."
+        },
+        {
+          "speaker": "집게",
+          "text": "우리가 뭘 하는지 아나? 빈칸을 메우는 거다. 종 하나가 지워질 때마다 세상에 구멍이 뚫려. 그 구멍으로 뭐가 들어오는지는 너도 봤을 텐데."
+        },
+        {
+          "speaker": "집게",
+          "text": "그래서 남김없이 장부에 올린다. 전부, 지금 당장. 한 마리씩 만나고 다니는 네 방식으로는 백 년이 걸려도 못 끝내."
+        },
+        {
+          "speaker": "세라",
+          "text": "…스승님 말투 그대로네요. 그런데 집게 씨, 저 상자 안의 아이들은 지금 몇이나 살아 있죠?"
+        },
+        {
+          "speaker": "집게",
+          "text": "…장부에는 올라가 있다."
+        }
       ],
       "choices": [],
       "onComplete": {
-        "rewardCandy": 55, "rewardExp": 140, "rewardItemId": "", "rewardItemCount": 0,
-        "rewardInsectId": "", "rewardInsectDisplayName": "", "rewardInsectLevel": 0, "unlockQuestId": ""
+        "rewardCandy": 55,
+        "rewardExp": 140,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
       },
       "oneShot": true
     },
@@ -738,17 +1138,32 @@
       "chapterId": "ch8",
       "order": 29,
       "prerequisiteBeatId": "ch8_arrive",
-      "trigger": { "type": "BattleWin", "param": "" },
+      "trigger": {
+        "type": "BattleWin",
+        "param": ""
+      },
       "requiredRegionId": "dunes",
       "speakerNpcId": "ruins_scholar",
       "lines": [
-        { "speaker": "세라", "text": "저 장부를 봤어요. 우리 도감이랑 똑같이 생겼더군요. 같은 양식, 같은 칸." },
-        { "speaker": "세라", "text": "다른 건 딱 하나예요. 이름 옆에 날짜와 수량이 적혀 있었어요. …그건 만난 기록이 아니라 들어온 물건의 기록이에요." }
+        {
+          "speaker": "세라",
+          "text": "저 장부를 봤어요. 우리 도감이랑 똑같이 생겼더군요. 같은 양식, 같은 칸."
+        },
+        {
+          "speaker": "세라",
+          "text": "다른 건 딱 하나예요. 이름 옆에 날짜와 수량이 적혀 있었어요. …그건 만난 기록이 아니라 들어온 물건의 기록이에요."
+        }
       ],
       "choices": [],
       "onComplete": {
-        "rewardCandy": 35, "rewardExp": 80, "rewardItemId": "", "rewardItemCount": 0,
-        "rewardInsectId": "", "rewardInsectDisplayName": "", "rewardInsectLevel": 0, "unlockQuestId": ""
+        "rewardCandy": 35,
+        "rewardExp": 80,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
       },
       "oneShot": true
     },
@@ -757,16 +1172,31 @@
       "chapterId": "ch8",
       "order": 30,
       "prerequisiteBeatId": "talk_rival",
-      "trigger": { "type": "NpcTalk", "param": "catcher_rival" },
+      "trigger": {
+        "type": "NpcTalk",
+        "param": "catcher_rival"
+      },
       "speakerNpcId": "catcher_rival",
       "lines": [
-        { "speaker": "라온", "text": "쟤들 목적이 우리랑 같다는 게 제일 화나. 차라리 곤충이 미워서 저러는 거면 속이 편하겠어." },
-        { "speaker": "라온", "text": "빈칸을 메우자는 거잖아. 나도 그러고 싶어. 근데 저렇게 메우면 그 자리에 또 빈칸이 생긴다고." }
+        {
+          "speaker": "라온",
+          "text": "쟤들 목적이 우리랑 같다는 게 제일 화나. 차라리 곤충이 미워서 저러는 거면 속이 편하겠어."
+        },
+        {
+          "speaker": "라온",
+          "text": "빈칸을 메우자는 거잖아. 나도 그러고 싶어. 근데 저렇게 메우면 그 자리에 또 빈칸이 생긴다고."
+        }
       ],
       "choices": [],
       "onComplete": {
-        "rewardCandy": 25, "rewardExp": 50, "rewardItemId": "", "rewardItemCount": 0,
-        "rewardInsectId": "", "rewardInsectDisplayName": "", "rewardInsectLevel": 0, "unlockQuestId": ""
+        "rewardCandy": 25,
+        "rewardExp": 50,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
       },
       "oneShot": true
     },
@@ -775,17 +1205,35 @@
       "chapterId": "ch9",
       "order": 31,
       "prerequisiteBeatId": "ch8_confront",
-      "trigger": { "type": "RegionEnter", "param": "frostline" },
+      "trigger": {
+        "type": "RegionEnter",
+        "param": "frostline"
+      },
       "speakerNpcId": "ruins_scholar",
       "lines": [
-        { "speaker": "세라", "text": "여긴… 숨을 쉴 때마다 폐가 아려요. 그런데 보세요, 저 얼음 벽." },
-        { "speaker": "세라", "text": "글자가 있어요. 유적 신전의 것과 같은 문양인데, 하나도 안 바랬어요. 얼음이 시간을 붙들어 둔 거예요." },
-        { "speaker": "세라", "text": "여기 종들은 한 번도 이름을 잃은 적이 없어요. …이 땅이 왜 무사한지 알아내면, 나머지도 구할 수 있을지 몰라요." }
+        {
+          "speaker": "세라",
+          "text": "여긴… 숨을 쉴 때마다 폐가 아려요. 그런데 보세요, 저 얼음 벽."
+        },
+        {
+          "speaker": "세라",
+          "text": "글자가 있어요. 유적 신전의 것과 같은 문양인데, 하나도 안 바랬어요. 얼음이 시간을 붙들어 둔 거예요."
+        },
+        {
+          "speaker": "세라",
+          "text": "여기 종들은 한 번도 이름을 잃은 적이 없어요. …이 땅이 왜 무사한지 알아내면, 나머지도 구할 수 있을지 몰라요."
+        }
       ],
       "choices": [],
       "onComplete": {
-        "rewardCandy": 45, "rewardExp": 110, "rewardItemId": "", "rewardItemCount": 0,
-        "rewardInsectId": "", "rewardInsectDisplayName": "", "rewardInsectLevel": 0, "unlockQuestId": ""
+        "rewardCandy": 45,
+        "rewardExp": 110,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
       },
       "oneShot": true
     },
@@ -794,17 +1242,32 @@
       "chapterId": "ch9",
       "order": 32,
       "prerequisiteBeatId": "ch9_arrive",
-      "trigger": { "type": "CaptureInsect", "param": "" },
+      "trigger": {
+        "type": "CaptureInsect",
+        "param": ""
+      },
       "requiredRegionId": "frostline",
       "speakerNpcId": "ruins_scholar",
       "lines": [
-        { "speaker": "세라", "text": "얼음이 붙든 것과 도감이 붙든 것은 무엇이 다를까요." },
-        { "speaker": "세라", "text": "얼음은 그냥 멈춰 세운 거예요. 자라지도 죽지도 못하게. …당신 도감은 그렇지 않죠. 그 아이들은 여전히 살아 있어요." }
+        {
+          "speaker": "세라",
+          "text": "얼음이 붙든 것과 도감이 붙든 것은 무엇이 다를까요."
+        },
+        {
+          "speaker": "세라",
+          "text": "얼음은 그냥 멈춰 세운 거예요. 자라지도 죽지도 못하게. …당신 도감은 그렇지 않죠. 그 아이들은 여전히 살아 있어요."
+        }
       ],
       "choices": [],
       "onComplete": {
-        "rewardCandy": 40, "rewardExp": 90, "rewardItemId": "", "rewardItemCount": 0,
-        "rewardInsectId": "", "rewardInsectDisplayName": "", "rewardInsectLevel": 0, "unlockQuestId": ""
+        "rewardCandy": 40,
+        "rewardExp": 90,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
       },
       "oneShot": true
     },
@@ -813,20 +1276,47 @@
       "chapterId": "ch9",
       "order": 33,
       "prerequisiteBeatId": "ch9_arrive",
-      "trigger": { "type": "SubAreaEnter", "param": "frostline_archive" },
+      "trigger": {
+        "type": "SubAreaEnter",
+        "param": "frostline_archive"
+      },
       "speakerNpcId": "ledger_scale",
       "lines": [
-        { "speaker": "저울", "text": "세라구나. 여기까지 올 줄 알았다." },
-        { "speaker": "세라", "text": "…저울 선배." },
-        { "speaker": "저울", "text": "선배라고 부르지 마라. 넌 나갔고 난 남았다. 그게 전부다." },
-        { "speaker": "저울", "text": "그런데 하나만 짚고 가지. 너도 한때는 우리 방식이 옳다고 했어. 이 서고 목록을 만든 게 누구였더라?" },
-        { "speaker": "세라", "text": "…저였어요. 부정하지 않아요." },
-        { "speaker": "저울", "text": "그럼 지금 무엇이 달라졌지? 대답해 봐라. 대답이 안 되면 넌 그냥 겁먹고 도망친 거다." }
+        {
+          "speaker": "저울",
+          "text": "세라구나. 여기까지 올 줄 알았다."
+        },
+        {
+          "speaker": "세라",
+          "text": "…저울 선배."
+        },
+        {
+          "speaker": "저울",
+          "text": "선배라고 부르지 마라. 넌 나갔고 난 남았다. 그게 전부다."
+        },
+        {
+          "speaker": "저울",
+          "text": "그런데 하나만 짚고 가지. 너도 한때는 우리 방식이 옳다고 했어. 이 서고 목록을 만든 게 누구였더라?"
+        },
+        {
+          "speaker": "세라",
+          "text": "…저였어요. 부정하지 않아요."
+        },
+        {
+          "speaker": "저울",
+          "text": "그럼 지금 무엇이 달라졌지? 대답해 봐라. 대답이 안 되면 넌 그냥 겁먹고 도망친 거다."
+        }
       ],
       "choices": [],
       "onComplete": {
-        "rewardCandy": 60, "rewardExp": 160, "rewardItemId": "", "rewardItemCount": 0,
-        "rewardInsectId": "", "rewardInsectDisplayName": "", "rewardInsectLevel": 0, "unlockQuestId": ""
+        "rewardCandy": 60,
+        "rewardExp": 160,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
       },
       "oneShot": true
     },
@@ -835,17 +1325,32 @@
       "chapterId": "ch9",
       "order": 34,
       "prerequisiteBeatId": "ch9_arrive",
-      "trigger": { "type": "BattleWin", "param": "" },
+      "trigger": {
+        "type": "BattleWin",
+        "param": ""
+      },
       "requiredRegionId": "frostline",
       "speakerNpcId": "ruins_scholar",
       "lines": [
-        { "speaker": "세라", "text": "아까 저울 선배 물음에 대답을 못 했어요. 지금은 할 수 있을 것 같아요." },
-        { "speaker": "세라", "text": "달라진 건 속도가 아니라 방향이에요. 우린 이름을 되돌려주고 있고, 저쪽은 이름만 베껴 가고 있어요." }
+        {
+          "speaker": "세라",
+          "text": "아까 저울 선배 물음에 대답을 못 했어요. 지금은 할 수 있을 것 같아요."
+        },
+        {
+          "speaker": "세라",
+          "text": "달라진 건 속도가 아니라 방향이에요. 우린 이름을 되돌려주고 있고, 저쪽은 이름만 베껴 가고 있어요."
+        }
       ],
       "choices": [],
       "onComplete": {
-        "rewardCandy": 40, "rewardExp": 90, "rewardItemId": "", "rewardItemCount": 0,
-        "rewardInsectId": "", "rewardInsectDisplayName": "", "rewardInsectLevel": 0, "unlockQuestId": ""
+        "rewardCandy": 40,
+        "rewardExp": 90,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
       },
       "oneShot": true
     },
@@ -854,17 +1359,35 @@
       "chapterId": "ch9",
       "order": 35,
       "prerequisiteBeatId": "ch7_echo",
-      "trigger": { "type": "NpcTalk", "param": "ruins_scholar" },
+      "trigger": {
+        "type": "NpcTalk",
+        "param": "ruins_scholar"
+      },
       "speakerNpcId": "ruins_scholar",
       "lines": [
-        { "speaker": "세라", "text": "스승님 이야기를 해도 될까요. 관장님은 30년 전에 제자를 하나 잃으셨어요. 잦아듦으로요." },
-        { "speaker": "세라", "text": "그날 이후로 기다리는 걸 못 견디세요. 느리게 옳은 것보다 빠르게 틀린 걸 고르시죠." },
-        { "speaker": "세라", "text": "…미워할 수가 없어서 더 막아야 해요. 이해가 되나요, 이 말이." }
+        {
+          "speaker": "세라",
+          "text": "스승님 이야기를 해도 될까요. 관장님은 30년 전에 제자를 하나 잃으셨어요. 잦아듦으로요."
+        },
+        {
+          "speaker": "세라",
+          "text": "그날 이후로 기다리는 걸 못 견디세요. 느리게 옳은 것보다 빠르게 틀린 걸 고르시죠."
+        },
+        {
+          "speaker": "세라",
+          "text": "…미워할 수가 없어서 더 막아야 해요. 이해가 되나요, 이 말이."
+        }
       ],
       "choices": [],
       "onComplete": {
-        "rewardCandy": 30, "rewardExp": 60, "rewardItemId": "", "rewardItemCount": 0,
-        "rewardInsectId": "", "rewardInsectDisplayName": "", "rewardInsectLevel": 0, "unlockQuestId": ""
+        "rewardCandy": 30,
+        "rewardExp": 60,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
       },
       "oneShot": true
     },
@@ -873,17 +1396,35 @@
       "chapterId": "ch10",
       "order": 36,
       "prerequisiteBeatId": "ch9_confront",
-      "trigger": { "type": "RegionEnter", "param": "emberfall" },
+      "trigger": {
+        "type": "RegionEnter",
+        "param": "emberfall"
+      },
       "speakerNpcId": "catcher_rival",
       "lines": [
-        { "speaker": "라온", "text": "여긴 재가 아직도 안 식었어. 발밑이 따뜻해." },
-        { "speaker": "라온", "text": "세라 말로는 여기 기록이 통째로 불탔대. 그러니까 빈칸이 제일 두껍게 겹친 데가 여기라는 거지." },
-        { "speaker": "라온", "text": "…솔직히 무섭다. 근데 여기 아직 살아 있는 애들이 있어. 그럼 가야지." }
+        {
+          "speaker": "라온",
+          "text": "여긴 재가 아직도 안 식었어. 발밑이 따뜻해."
+        },
+        {
+          "speaker": "라온",
+          "text": "세라 말로는 여기 기록이 통째로 불탔대. 그러니까 빈칸이 제일 두껍게 겹친 데가 여기라는 거지."
+        },
+        {
+          "speaker": "라온",
+          "text": "…솔직히 무섭다. 근데 여기 아직 살아 있는 애들이 있어. 그럼 가야지."
+        }
       ],
       "choices": [],
       "onComplete": {
-        "rewardCandy": 50, "rewardExp": 120, "rewardItemId": "", "rewardItemCount": 0,
-        "rewardInsectId": "", "rewardInsectDisplayName": "", "rewardInsectLevel": 0, "unlockQuestId": ""
+        "rewardCandy": 50,
+        "rewardExp": 120,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
       },
       "oneShot": true
     },
@@ -892,18 +1433,36 @@
       "chapterId": "ch10",
       "order": 37,
       "prerequisiteBeatId": "ch10_arrive",
-      "trigger": { "type": "CaptureInsect", "param": "" },
+      "trigger": {
+        "type": "CaptureInsect",
+        "param": ""
+      },
       "requiredRegionId": "emberfall",
       "speakerNpcId": "ledger_ink",
       "lines": [
-        { "speaker": "먹", "text": "…나는 명부회의 필경사다. 장부를 직접 쓰는 사람." },
-        { "speaker": "먹", "text": "네 손끝을 보고 있으면 자꾸 세게 되더군. 내가 적은 이름 중에 아직 살아 있는 게 몇이나 될까 하고." },
-        { "speaker": "먹", "text": "…세어 봤다. 답은 말하지 않겠다." }
+        {
+          "speaker": "먹",
+          "text": "…나는 명부회의 필경사다. 장부를 직접 쓰는 사람."
+        },
+        {
+          "speaker": "먹",
+          "text": "네 손끝을 보고 있으면 자꾸 세게 되더군. 내가 적은 이름 중에 아직 살아 있는 게 몇이나 될까 하고."
+        },
+        {
+          "speaker": "먹",
+          "text": "…세어 봤다. 답은 말하지 않겠다."
+        }
       ],
       "choices": [],
       "onComplete": {
-        "rewardCandy": 45, "rewardExp": 100, "rewardItemId": "", "rewardItemCount": 0,
-        "rewardInsectId": "", "rewardInsectDisplayName": "", "rewardInsectLevel": 0, "unlockQuestId": ""
+        "rewardCandy": 45,
+        "rewardExp": 100,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
       },
       "oneShot": true
     },
@@ -912,21 +1471,51 @@
       "chapterId": "ch10",
       "order": 38,
       "prerequisiteBeatId": "ch10_arrive",
-      "trigger": { "type": "SubAreaEnter", "param": "emberfall_kiln" },
+      "trigger": {
+        "type": "SubAreaEnter",
+        "param": "emberfall_kiln"
+      },
       "speakerNpcId": "ledger_ink",
       "lines": [
-        { "speaker": "라온", "text": "저 안에 아직 애들이 있어! 갱도 내려앉기 전에—" },
-        { "speaker": "세라", "text": "라온, 안 돼요!" },
-        { "speaker": "먹", "text": "…비켜라." },
-        { "speaker": "먹", "text": "(먹이 무너지는 갱도에서 라온을 끌어낸다. 팔에 상자 하나가 들려 있다.)" },
-        { "speaker": "먹", "text": "상자는 다 못 꺼냈다. 이 하나뿐이다." },
-        { "speaker": "먹", "text": "…나는 이름을 적는 사람이지 가두는 사람이 아니었다. 이제야 그 차이를 알겠군." },
-        { "speaker": "세라", "text": "라온은 여기서 쉬어야 해요. 뼈가 상했어요. …여기서부턴 우리 둘이에요." }
+        {
+          "speaker": "라온",
+          "text": "저 안에 아직 애들이 있어! 갱도 내려앉기 전에—"
+        },
+        {
+          "speaker": "세라",
+          "text": "라온, 안 돼요!"
+        },
+        {
+          "speaker": "먹",
+          "text": "…비켜라."
+        },
+        {
+          "speaker": "먹",
+          "text": "(먹이 무너지는 갱도에서 라온을 끌어낸다. 팔에 상자 하나가 들려 있다.)"
+        },
+        {
+          "speaker": "먹",
+          "text": "상자는 다 못 꺼냈다. 이 하나뿐이다."
+        },
+        {
+          "speaker": "먹",
+          "text": "…나는 이름을 적는 사람이지 가두는 사람이 아니었다. 이제야 그 차이를 알겠군."
+        },
+        {
+          "speaker": "세라",
+          "text": "라온은 여기서 쉬어야 해요. 뼈가 상했어요. …여기서부턴 우리 둘이에요."
+        }
       ],
       "choices": [],
       "onComplete": {
-        "rewardCandy": 70, "rewardExp": 180, "rewardItemId": "full_restore", "rewardItemCount": 2,
-        "rewardInsectId": "", "rewardInsectDisplayName": "", "rewardInsectLevel": 0, "unlockQuestId": ""
+        "rewardCandy": 70,
+        "rewardExp": 180,
+        "rewardItemId": "full_restore",
+        "rewardItemCount": 2,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
       },
       "oneShot": true
     },
@@ -935,17 +1524,32 @@
       "chapterId": "ch10",
       "order": 39,
       "prerequisiteBeatId": "ch10_arrive",
-      "trigger": { "type": "BattleWin", "param": "" },
+      "trigger": {
+        "type": "BattleWin",
+        "param": ""
+      },
       "requiredRegionId": "emberfall",
       "speakerNpcId": "ruins_scholar",
       "lines": [
-        { "speaker": "세라", "text": "라온은 괜찮을 거예요. 붙임성이 좋아서 전초기지 사람들이 잘 봐줄 거고요." },
-        { "speaker": "세라", "text": "그러니까 우리는 우리 몫을 해요. 저 아이가 돌아왔을 때 보여줄 게 있어야죠." }
+        {
+          "speaker": "세라",
+          "text": "라온은 괜찮을 거예요. 붙임성이 좋아서 전초기지 사람들이 잘 봐줄 거고요."
+        },
+        {
+          "speaker": "세라",
+          "text": "그러니까 우리는 우리 몫을 해요. 저 아이가 돌아왔을 때 보여줄 게 있어야죠."
+        }
       ],
       "choices": [],
       "onComplete": {
-        "rewardCandy": 45, "rewardExp": 100, "rewardItemId": "", "rewardItemCount": 0,
-        "rewardInsectId": "", "rewardInsectDisplayName": "", "rewardInsectLevel": 0, "unlockQuestId": ""
+        "rewardCandy": 45,
+        "rewardExp": 100,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
       },
       "oneShot": true
     },
@@ -954,16 +1558,31 @@
       "chapterId": "ch10",
       "order": 40,
       "prerequisiteBeatId": "",
-      "trigger": { "type": "NpcTalk", "param": "ledger_ink" },
+      "trigger": {
+        "type": "NpcTalk",
+        "param": "ledger_ink"
+      },
       "speakerNpcId": "ledger_ink",
       "lines": [
-        { "speaker": "먹", "text": "장부는 두고 왔다. 태우진 않았다 — 거기 적힌 이름들에는 죄가 없으니까." },
-        { "speaker": "먹", "text": "관장님을 미워하진 않는다. 다만 그분은 30년째 같은 날에 서 계신다. 나는 이제 다음 날로 가고 싶다." }
+        {
+          "speaker": "먹",
+          "text": "장부는 두고 왔다. 태우진 않았다 — 거기 적힌 이름들에는 죄가 없으니까."
+        },
+        {
+          "speaker": "먹",
+          "text": "관장님을 미워하진 않는다. 다만 그분은 30년째 같은 날에 서 계신다. 나는 이제 다음 날로 가고 싶다."
+        }
       ],
       "choices": [],
       "onComplete": {
-        "rewardCandy": 35, "rewardExp": 70, "rewardItemId": "", "rewardItemCount": 0,
-        "rewardInsectId": "", "rewardInsectDisplayName": "", "rewardInsectLevel": 0, "unlockQuestId": ""
+        "rewardCandy": 35,
+        "rewardExp": 70,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
       },
       "oneShot": true
     },
@@ -972,17 +1591,35 @@
       "chapterId": "ch11",
       "order": 41,
       "prerequisiteBeatId": "ch10_confront",
-      "trigger": { "type": "RegionEnter", "param": "canopy" },
+      "trigger": {
+        "type": "RegionEnter",
+        "param": "canopy"
+      },
       "speakerNpcId": "ruins_scholar",
       "lines": [
-        { "speaker": "세라", "text": "…초록이에요. 여기는 초록이 있어요." },
-        { "speaker": "세라", "text": "잦아듦이 여길 건드리지 않았어요. 꽃밭처럼요. 라온이 예전에 물었죠 — 왜 꽃밭만 무사하냐고." },
-        { "speaker": "세라", "text": "답이 여기 있을 거예요. 두 곳이 같은 이유로 살아남았다면, 그 이유가 나머지도 구할 열쇠예요." }
+        {
+          "speaker": "세라",
+          "text": "…초록이에요. 여기는 초록이 있어요."
+        },
+        {
+          "speaker": "세라",
+          "text": "잦아듦이 여길 건드리지 않았어요. 꽃밭처럼요. 라온이 예전에 물었죠 — 왜 꽃밭만 무사하냐고."
+        },
+        {
+          "speaker": "세라",
+          "text": "답이 여기 있을 거예요. 두 곳이 같은 이유로 살아남았다면, 그 이유가 나머지도 구할 열쇠예요."
+        }
       ],
       "choices": [],
       "onComplete": {
-        "rewardCandy": 55, "rewardExp": 140, "rewardItemId": "", "rewardItemCount": 0,
-        "rewardInsectId": "", "rewardInsectDisplayName": "", "rewardInsectLevel": 0, "unlockQuestId": ""
+        "rewardCandy": 55,
+        "rewardExp": 140,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
       },
       "oneShot": true
     },
@@ -991,17 +1628,32 @@
       "chapterId": "ch11",
       "order": 42,
       "prerequisiteBeatId": "ch11_arrive",
-      "trigger": { "type": "CaptureInsect", "param": "" },
+      "trigger": {
+        "type": "CaptureInsect",
+        "param": ""
+      },
       "requiredRegionId": "canopy",
       "speakerNpcId": "ruins_scholar",
       "lines": [
-        { "speaker": "세라", "text": "여기 아이들은 이름을 잃은 적이 한 번도 없어요. 기록이 바랜 적이 없으니까요." },
-        { "speaker": "세라", "text": "당신 도감에 새 칸이 늘 때마다 저는 자꾸 이 나무를 봐요. 우리가 하려는 게 결국 이거구나 싶어서요." }
+        {
+          "speaker": "세라",
+          "text": "여기 아이들은 이름을 잃은 적이 한 번도 없어요. 기록이 바랜 적이 없으니까요."
+        },
+        {
+          "speaker": "세라",
+          "text": "당신 도감에 새 칸이 늘 때마다 저는 자꾸 이 나무를 봐요. 우리가 하려는 게 결국 이거구나 싶어서요."
+        }
       ],
       "choices": [],
       "onComplete": {
-        "rewardCandy": 50, "rewardExp": 110, "rewardItemId": "", "rewardItemCount": 0,
-        "rewardInsectId": "", "rewardInsectDisplayName": "", "rewardInsectLevel": 0, "unlockQuestId": ""
+        "rewardCandy": 50,
+        "rewardExp": 110,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
       },
       "oneShot": true
     },
@@ -1010,19 +1662,43 @@
       "chapterId": "ch11",
       "order": 43,
       "prerequisiteBeatId": "ch11_arrive",
-      "trigger": { "type": "SubAreaEnter", "param": "canopy_crown" },
+      "trigger": {
+        "type": "SubAreaEnter",
+        "param": "canopy_crown"
+      },
       "speakerNpcId": "ruins_scholar",
       "lines": [
-        { "speaker": "세라", "text": "…여기서 보니까 알겠어요. 이 나무 껍질에도 문양이 있어요. 유적 신전의 것과 같은." },
-        { "speaker": "세라", "text": "고대인은 울타리를 하나만 친 게 아니었어요. 본 기록이 무너질 때를 대비해서, 두 군데에 예비를 남겨 뒀어요. 꽃밭과 여기." },
-        { "speaker": "세라", "text": "그러니까 그들은 알고 있었던 거예요. 자기들이 실패할 거라는 걸." },
-        { "speaker": "세라", "text": "…실패할 걸 알면서 울타리를 치고, 실패한 뒤를 위해 두 칸을 남겼어요. 우리한테요." },
-        { "speaker": "세라", "text": "부끄럽지 않게 받아요. 남은 건 그것이 서려던 자리 하나뿐이에요." }
+        {
+          "speaker": "세라",
+          "text": "…여기서 보니까 알겠어요. 이 나무 껍질에도 문양이 있어요. 유적 신전의 것과 같은."
+        },
+        {
+          "speaker": "세라",
+          "text": "고대인은 울타리를 하나만 친 게 아니었어요. 본 기록이 무너질 때를 대비해서, 두 군데에 예비를 남겨 뒀어요. 꽃밭과 여기."
+        },
+        {
+          "speaker": "세라",
+          "text": "그러니까 그들은 알고 있었던 거예요. 자기들이 실패할 거라는 걸."
+        },
+        {
+          "speaker": "세라",
+          "text": "…실패할 걸 알면서 울타리를 치고, 실패한 뒤를 위해 두 칸을 남겼어요. 우리한테요."
+        },
+        {
+          "speaker": "세라",
+          "text": "부끄럽지 않게 받아요. 남은 건 그것이 서려던 자리 하나뿐이에요."
+        }
       ],
       "choices": [],
       "onComplete": {
-        "rewardCandy": 80, "rewardExp": 200, "rewardItemId": "", "rewardItemCount": 0,
-        "rewardInsectId": "", "rewardInsectDisplayName": "", "rewardInsectLevel": 0, "unlockQuestId": ""
+        "rewardCandy": 80,
+        "rewardExp": 200,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
       },
       "oneShot": true
     },
@@ -1031,17 +1707,32 @@
       "chapterId": "ch11",
       "order": 44,
       "prerequisiteBeatId": "ch11_arrive",
-      "trigger": { "type": "BattleWin", "param": "" },
+      "trigger": {
+        "type": "BattleWin",
+        "param": ""
+      },
       "requiredRegionId": "canopy",
       "speakerNpcId": "ruins_scholar",
       "lines": [
-        { "speaker": "세라", "text": "고대인이 남긴 두 칸 말이에요. 저는 그게 예비 울타리라기보다 편지 같아요." },
-        { "speaker": "세라", "text": "'여기까지가 우리 몫이었다'고 적어 둔 거죠. 나머지는 읽는 사람 몫이고요." }
+        {
+          "speaker": "세라",
+          "text": "고대인이 남긴 두 칸 말이에요. 저는 그게 예비 울타리라기보다 편지 같아요."
+        },
+        {
+          "speaker": "세라",
+          "text": "'여기까지가 우리 몫이었다'고 적어 둔 거죠. 나머지는 읽는 사람 몫이고요."
+        }
       ],
       "choices": [],
       "onComplete": {
-        "rewardCandy": 50, "rewardExp": 110, "rewardItemId": "", "rewardItemCount": 0,
-        "rewardInsectId": "", "rewardInsectDisplayName": "", "rewardInsectLevel": 0, "unlockQuestId": ""
+        "rewardCandy": 50,
+        "rewardExp": 110,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
       },
       "oneShot": true
     },
@@ -1050,18 +1741,39 @@
       "chapterId": "ch11",
       "order": 45,
       "prerequisiteBeatId": "talk_elder",
-      "trigger": { "type": "NpcTalk", "param": "village_elder" },
+      "trigger": {
+        "type": "NpcTalk",
+        "param": "village_elder"
+      },
       "speakerNpcId": "village_elder",
       "lines": [
-        { "speaker": "마을 어르신", "text": "네가 없는 동안 이 늙은이는 초원만 지켰구나. …이제 와서 하나 털어놓으마." },
-        { "speaker": "마을 어르신", "text": "내가 흘리던 옛이야기 말이다. 그거, 명부회 옛 문서에서 온 거란다. 나도 한때 그 사람들과 같은 자리에 있었어." },
-        { "speaker": "마을 어르신", "text": "그 방식이 무서워서 내려온 게야. 그러곤 여기서 아무것도 안 하고 나이만 먹었지." },
-        { "speaker": "마을 어르신", "text": "네가 대신 걷고 있구나. …고맙고, 미안하다." }
+        {
+          "speaker": "마을 어르신",
+          "text": "네가 없는 동안 이 늙은이는 초원만 지켰구나. …이제 와서 하나 털어놓으마."
+        },
+        {
+          "speaker": "마을 어르신",
+          "text": "내가 흘리던 옛이야기 말이다. 그거, 명부회 옛 문서에서 온 거란다. 나도 한때 그 사람들과 같은 자리에 있었어."
+        },
+        {
+          "speaker": "마을 어르신",
+          "text": "그 방식이 무서워서 내려온 게야. 그러곤 여기서 아무것도 안 하고 나이만 먹었지."
+        },
+        {
+          "speaker": "마을 어르신",
+          "text": "네가 대신 걷고 있구나. …고맙고, 미안하다."
+        }
       ],
       "choices": [],
       "onComplete": {
-        "rewardCandy": 40, "rewardExp": 80, "rewardItemId": "", "rewardItemCount": 0,
-        "rewardInsectId": "", "rewardInsectDisplayName": "", "rewardInsectLevel": 0, "unlockQuestId": ""
+        "rewardCandy": 40,
+        "rewardExp": 80,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
       },
       "oneShot": true
     },
@@ -1070,17 +1782,35 @@
       "chapterId": "ch12",
       "order": 46,
       "prerequisiteBeatId": "ch11_confront",
-      "trigger": { "type": "RegionEnter", "param": "nameless" },
+      "trigger": {
+        "type": "RegionEnter",
+        "param": "nameless"
+      },
       "speakerNpcId": "ruins_scholar",
       "lines": [
-        { "speaker": "세라", "text": "어느 지도에도 이 땅은 없어요. 우리가 지금 서 있는데도요." },
-        { "speaker": "세라", "text": "여기가 그것이 원래 있던 자리예요. 고대인이 울타리를 친 건 이 자리를 비워 두려는 거였고요." },
-        { "speaker": "세라", "text": "저 석판들 보세요. 전부 비어 있어요. 무언가를 둘러싸고 서 있었던 모양 그대로." }
+        {
+          "speaker": "세라",
+          "text": "어느 지도에도 이 땅은 없어요. 우리가 지금 서 있는데도요."
+        },
+        {
+          "speaker": "세라",
+          "text": "여기가 그것이 원래 있던 자리예요. 고대인이 울타리를 친 건 이 자리를 비워 두려는 거였고요."
+        },
+        {
+          "speaker": "세라",
+          "text": "저 석판들 보세요. 전부 비어 있어요. 무언가를 둘러싸고 서 있었던 모양 그대로."
+        }
       ],
       "choices": [],
       "onComplete": {
-        "rewardCandy": 60, "rewardExp": 160, "rewardItemId": "", "rewardItemCount": 0,
-        "rewardInsectId": "", "rewardInsectDisplayName": "", "rewardInsectLevel": 0, "unlockQuestId": ""
+        "rewardCandy": 60,
+        "rewardExp": 160,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
       },
       "oneShot": true
     },
@@ -1089,17 +1819,32 @@
       "chapterId": "ch12",
       "order": 47,
       "prerequisiteBeatId": "ch12_arrive",
-      "trigger": { "type": "CaptureInsect", "param": "" },
+      "trigger": {
+        "type": "CaptureInsect",
+        "param": ""
+      },
       "requiredRegionId": "nameless",
       "speakerNpcId": "ruins_scholar",
       "lines": [
-        { "speaker": "세라", "text": "한 이름씩, 한 자리씩이에요. 당신 도감이 늘 때마다 그것이 설 곳이 줄어요." },
-        { "speaker": "세라", "text": "화려한 방법은 아니에요. 그래도 이게 제일 확실한 방법이에요." }
+        {
+          "speaker": "세라",
+          "text": "한 이름씩, 한 자리씩이에요. 당신 도감이 늘 때마다 그것이 설 곳이 줄어요."
+        },
+        {
+          "speaker": "세라",
+          "text": "화려한 방법은 아니에요. 그래도 이게 제일 확실한 방법이에요."
+        }
       ],
       "choices": [],
       "onComplete": {
-        "rewardCandy": 55, "rewardExp": 130, "rewardItemId": "", "rewardItemCount": 0,
-        "rewardInsectId": "", "rewardInsectDisplayName": "", "rewardInsectLevel": 0, "unlockQuestId": ""
+        "rewardCandy": 55,
+        "rewardExp": 130,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
       },
       "oneShot": true
     },
@@ -1108,21 +1853,51 @@
       "chapterId": "ch12",
       "order": 48,
       "prerequisiteBeatId": "ch12_arrive",
-      "trigger": { "type": "SubAreaEnter", "param": "nameless_ledger" },
+      "trigger": {
+        "type": "SubAreaEnter",
+        "param": "nameless_ledger"
+      },
       "speakerNpcId": "ledger_chief",
       "lines": [
-        { "speaker": "하월", "text": "왔구나. 세라, 그리고… 자네가 그 채집가로군." },
-        { "speaker": "하월", "text": "이 방을 보게. 내 장부다. 삼천 종을 적었지. 삼십 년이 걸렸어." },
-        { "speaker": "세라", "text": "스승님. 그중 몇이 아직 살아 있나요." },
-        { "speaker": "하월", "text": "…절반이 창고에서 죽었다." },
-        { "speaker": "하월", "text": "알고 있었다. 세는 동안에도 알고 있었어. 그런데 멈추면 그 아이 생각이 나서, 멈출 수가 없더구나." },
-        { "speaker": "하월", "text": "빈칸을 메우겠다고 빈칸을 만들었어. 삼십 년을." },
-        { "speaker": "하월", "text": "…길을 비켜 주마. 안쪽으로 가라. 그것이 자네를 기다리고 있다." }
+        {
+          "speaker": "하월",
+          "text": "왔구나. 세라, 그리고… 자네가 그 채집가로군."
+        },
+        {
+          "speaker": "하월",
+          "text": "이 방을 보게. 내 장부다. 삼천 종을 적었지. 삼십 년이 걸렸어."
+        },
+        {
+          "speaker": "세라",
+          "text": "스승님. 그중 몇이 아직 살아 있나요."
+        },
+        {
+          "speaker": "하월",
+          "text": "…절반이 창고에서 죽었다."
+        },
+        {
+          "speaker": "하월",
+          "text": "알고 있었다. 세는 동안에도 알고 있었어. 그런데 멈추면 그 아이 생각이 나서, 멈출 수가 없더구나."
+        },
+        {
+          "speaker": "하월",
+          "text": "빈칸을 메우겠다고 빈칸을 만들었어. 삼십 년을."
+        },
+        {
+          "speaker": "하월",
+          "text": "…길을 비켜 주마. 안쪽으로 가라. 그것이 자네를 기다리고 있다."
+        }
       ],
       "choices": [],
       "onComplete": {
-        "rewardCandy": 100, "rewardExp": 240, "rewardItemId": "full_restore", "rewardItemCount": 3,
-        "rewardInsectId": "", "rewardInsectDisplayName": "", "rewardInsectLevel": 0, "unlockQuestId": ""
+        "rewardCandy": 100,
+        "rewardExp": 240,
+        "rewardItemId": "full_restore",
+        "rewardItemCount": 3,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
       },
       "oneShot": true
     },
@@ -1131,18 +1906,36 @@
       "chapterId": "fin",
       "order": 54,
       "prerequisiteBeatId": "fin_seal",
-      "trigger": { "type": "BattleWin", "param": "" },
+      "trigger": {
+        "type": "BattleWin",
+        "param": ""
+      },
       "requiredRegionId": "nameless",
       "speakerNpcId": "ledger_chief",
       "lines": [
-        { "speaker": "하월", "text": "…끝났다고 들었다. 확인하러 왔네." },
-        { "speaker": "하월", "text": "나는 삼십 년을 서둘렀고 자네는 한 마리씩 만났다. 결과가 이 꼴이라니." },
-        { "speaker": "하월", "text": "변명은 안 하마. 다만 자네 도감은 끝까지 채우게. 내 장부와 다른 것이 되도록." }
+        {
+          "speaker": "하월",
+          "text": "…끝났다고 들었다. 확인하러 왔네."
+        },
+        {
+          "speaker": "하월",
+          "text": "나는 삼십 년을 서둘렀고 자네는 한 마리씩 만났다. 결과가 이 꼴이라니."
+        },
+        {
+          "speaker": "하월",
+          "text": "변명은 안 하마. 다만 자네 도감은 끝까지 채우게. 내 장부와 다른 것이 되도록."
+        }
       ],
       "choices": [],
       "onComplete": {
-        "rewardCandy": 55, "rewardExp": 130, "rewardItemId": "", "rewardItemCount": 0,
-        "rewardInsectId": "", "rewardInsectDisplayName": "", "rewardInsectLevel": 0, "unlockQuestId": ""
+        "rewardCandy": 55,
+        "rewardExp": 130,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
       },
       "oneShot": true
     },
@@ -1151,17 +1944,35 @@
       "chapterId": "ch12",
       "order": 50,
       "prerequisiteBeatId": "ch8_echo",
-      "trigger": { "type": "NpcTalk", "param": "catcher_rival" },
+      "trigger": {
+        "type": "NpcTalk",
+        "param": "catcher_rival"
+      },
       "speakerNpcId": "catcher_rival",
       "lines": [
-        { "speaker": "라온", "text": "…늦어서 미안. 팔은 아직 잘 안 굽혀지는데, 걷는 건 되더라." },
-        { "speaker": "라온", "text": "처음에 나 너한테 승부하자고 했지. 누가 더 많이 구해내나 겨루자고." },
-        { "speaker": "라온", "text": "그거 취소. 그냥 같이 가자. 마지막은 같이 가야지." }
+        {
+          "speaker": "라온",
+          "text": "…늦어서 미안. 팔은 아직 잘 안 굽혀지는데, 걷는 건 되더라."
+        },
+        {
+          "speaker": "라온",
+          "text": "처음에 나 너한테 승부하자고 했지. 누가 더 많이 구해내나 겨루자고."
+        },
+        {
+          "speaker": "라온",
+          "text": "그거 취소. 그냥 같이 가자. 마지막은 같이 가야지."
+        }
       ],
       "choices": [],
       "onComplete": {
-        "rewardCandy": 45, "rewardExp": 90, "rewardItemId": "", "rewardItemCount": 0,
-        "rewardInsectId": "", "rewardInsectDisplayName": "", "rewardInsectLevel": 0, "unlockQuestId": ""
+        "rewardCandy": 45,
+        "rewardExp": 90,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
       },
       "oneShot": true
     },
@@ -1170,21 +1981,49 @@
       "chapterId": "fin",
       "order": 51,
       "prerequisiteBeatId": "ch12_confront",
-      "trigger": { "type": "SubAreaEnter", "param": "nameless_core" },
+      "trigger": {
+        "type": "SubAreaEnter",
+        "param": "nameless_core"
+      },
       "speakerNpcId": "ruins_scholar",
       "lines": [
-        { "speaker": "세라", "text": "…여기예요. 아무것도 새겨지지 않은 자리." },
-        { "speaker": "세라", "text": "보이세요? 형체가 없어요. 볼 때마다 다른 곤충의 모습을 빌려 쓰고 있어요. 전부 그것이 빼앗은 이름들이에요." },
-        { "speaker": "세라", "text": "…말을 걸어오네요. 이름을 달라고." },
-        { "speaker": "세라", "text": "주지 마세요. 절대로. 이름을 받는 순간 그것은 자리를 얻어요. 우리 세계의 한 칸을 정식으로 차지하는 거예요." },
-        { "speaker": "세라", "text": "우리가 할 일은 딱 하나예요. 마지막 빈칸까지 다른 이름으로 메워서, 그것이 설 자리를 없애는 것." },
-        { "speaker": "세라", "text": "당신이 여기까지 만나 온 모든 아이들이 지금 그 칸을 채우고 있어요. 가요." }
+        {
+          "speaker": "세라",
+          "text": "…여기예요. 아무것도 새겨지지 않은 자리."
+        },
+        {
+          "speaker": "세라",
+          "text": "보이세요? 형체가 없어요. 볼 때마다 다른 곤충의 모습을 빌려 쓰고 있어요. 전부 그것이 빼앗은 이름들이에요."
+        },
+        {
+          "speaker": "세라",
+          "text": "…말을 걸어오네요. 이름을 달라고."
+        },
+        {
+          "speaker": "세라",
+          "text": "주지 마세요. 절대로. 이름을 받는 순간 그것은 자리를 얻어요. 우리 세계의 한 칸을 정식으로 차지하는 거예요."
+        },
+        {
+          "speaker": "세라",
+          "text": "우리가 할 일은 딱 하나예요. 마지막 빈칸까지 다른 이름으로 메워서, 그것이 설 자리를 없애는 것."
+        },
+        {
+          "speaker": "세라",
+          "text": "당신이 여기까지 만나 온 모든 아이들이 지금 그 칸을 채우고 있어요. 가요."
+        }
       ],
       "choices": [],
       "onComplete": {
-        "rewardCandy": 150, "rewardExp": 300, "rewardItemId": "", "rewardItemCount": 0,
-        "rewardInsectId": "", "rewardInsectDisplayName": "", "rewardInsectLevel": 0, "unlockQuestId": ""
+        "rewardCandy": 150,
+        "rewardExp": 300,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
       },
+      "cutsceneId": "cs_nameless_confront",
       "oneShot": true
     },
     {
@@ -1192,19 +2031,39 @@
       "chapterId": "fin",
       "order": 52,
       "prerequisiteBeatId": "fin_unnamed",
-      "trigger": { "type": "BattleWin", "param": "" },
+      "trigger": {
+        "type": "BattleWin",
+        "param": ""
+      },
       "requiredRegionId": "nameless",
       "speakerNpcId": "ruins_scholar",
       "lines": [
-        { "speaker": "세라", "text": "…마지막 칸이 메워졌어요." },
-        { "speaker": "세라", "text": "보세요. 그것이 빌려 쓰던 모습들이 하나씩 제자리로 돌아가고 있어요. 이름이 주인에게 돌아가는 거예요." },
-        { "speaker": "세라", "text": "그것은 이제 설 자리가 없어요. 죽은 게 아니라 — 들어올 틈이 없어진 거죠." },
-        { "speaker": "세라", "text": "저 아이도 돌아왔네요. 이름을 되찾았어요. 데려가 주세요. 당신이 처음으로 이름을 돌려준 아이잖아요." }
+        {
+          "speaker": "세라",
+          "text": "…마지막 칸이 메워졌어요."
+        },
+        {
+          "speaker": "세라",
+          "text": "보세요. 그것이 빌려 쓰던 모습들이 하나씩 제자리로 돌아가고 있어요. 이름이 주인에게 돌아가는 거예요."
+        },
+        {
+          "speaker": "세라",
+          "text": "그것은 이제 설 자리가 없어요. 죽은 게 아니라 — 들어올 틈이 없어진 거죠."
+        },
+        {
+          "speaker": "세라",
+          "text": "저 아이도 돌아왔네요. 이름을 되찾았어요. 데려가 주세요. 당신이 처음으로 이름을 돌려준 아이잖아요."
+        }
       ],
       "choices": [],
       "onComplete": {
-        "rewardCandy": 150, "rewardExp": 300, "rewardItemId": "", "rewardItemCount": 0,
-        "rewardInsectId": "mantis_unnamed", "rewardInsectDisplayName": "이름을 되찾은 사마귀", "rewardInsectLevel": 60,
+        "rewardCandy": 150,
+        "rewardExp": 300,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "mantis_unnamed",
+        "rewardInsectDisplayName": "이름을 되찾은 사마귀",
+        "rewardInsectLevel": 60,
         "unlockQuestId": ""
       },
       "oneShot": true
@@ -1214,19 +2073,43 @@
       "chapterId": "fin",
       "order": 53,
       "prerequisiteBeatId": "ch9_echo",
-      "trigger": { "type": "NpcTalk", "param": "ruins_scholar" },
+      "trigger": {
+        "type": "NpcTalk",
+        "param": "ruins_scholar"
+      },
       "speakerNpcId": "ruins_scholar",
       "lines": [
-        { "speaker": "세라", "text": "스승님은 장부를 전부 넘기셨어요. 이제 저 이름들을 한 종씩 찾아다니며 살아 있는지 확인하실 거래요. 남은 평생 걸릴 거고, 본인도 아세요." },
-        { "speaker": "세라", "text": "라온은 어르신을 도우러 초원에 갔고요. 먹은 새 장부를 쓰기 시작했어요. 이번엔 수량 칸이 없대요." },
-        { "speaker": "세라", "text": "그리고 하나 말해 둘 게 있어요. …빈칸은 사라지지 않았어요." },
-        { "speaker": "세라", "text": "종이 사라지면 자리는 또 생겨요. 그건 우리가 이겨서 없앨 수 있는 게 아니에요." },
-        { "speaker": "세라", "text": "그러니까 계속 만나요. 한 마리씩, 계속. 그게 이 세계를 붙드는 유일한 방법이니까요." }
+        {
+          "speaker": "세라",
+          "text": "스승님은 장부를 전부 넘기셨어요. 이제 저 이름들을 한 종씩 찾아다니며 살아 있는지 확인하실 거래요. 남은 평생 걸릴 거고, 본인도 아세요."
+        },
+        {
+          "speaker": "세라",
+          "text": "라온은 어르신을 도우러 초원에 갔고요. 먹은 새 장부를 쓰기 시작했어요. 이번엔 수량 칸이 없대요."
+        },
+        {
+          "speaker": "세라",
+          "text": "그리고 하나 말해 둘 게 있어요. …빈칸은 사라지지 않았어요."
+        },
+        {
+          "speaker": "세라",
+          "text": "종이 사라지면 자리는 또 생겨요. 그건 우리가 이겨서 없앨 수 있는 게 아니에요."
+        },
+        {
+          "speaker": "세라",
+          "text": "그러니까 계속 만나요. 한 마리씩, 계속. 그게 이 세계를 붙드는 유일한 방법이니까요."
+        }
       ],
       "choices": [],
       "onComplete": {
-        "rewardCandy": 120, "rewardExp": 250, "rewardItemId": "", "rewardItemCount": 0,
-        "rewardInsectId": "", "rewardInsectDisplayName": "", "rewardInsectLevel": 0, "unlockQuestId": ""
+        "rewardCandy": 120,
+        "rewardExp": 250,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
       },
       "oneShot": true
     },
@@ -1235,16 +2118,31 @@
       "chapterId": "ch7",
       "order": 60,
       "prerequisiteBeatId": "ch6_secret",
-      "trigger": { "type": "GuardianDefeat", "param": "ruins" },
+      "trigger": {
+        "type": "GuardianDefeat",
+        "param": "ruins"
+      },
       "speakerNpcId": "ruins_scholar",
       "lines": [
-        { "speaker": "세라", "text": "파수꾼이 길을 열었어요. …그런데 발밑이 흔들리는 건 저만 느끼는 건가요?" },
-        { "speaker": "세라", "text": "유적 지하로 내려가 봐요. 신전 아래에 아직 우리가 안 본 게 있어요." }
+        {
+          "speaker": "세라",
+          "text": "파수꾼이 길을 열었어요. …그런데 발밑이 흔들리는 건 저만 느끼는 건가요?"
+        },
+        {
+          "speaker": "세라",
+          "text": "유적 지하로 내려가 봐요. 신전 아래에 아직 우리가 안 본 게 있어요."
+        }
       ],
       "choices": [],
       "onComplete": {
-        "rewardCandy": 25, "rewardExp": 60, "rewardItemId": "", "rewardItemCount": 0,
-        "rewardInsectId": "", "rewardInsectDisplayName": "", "rewardInsectLevel": 0, "unlockQuestId": ""
+        "rewardCandy": 25,
+        "rewardExp": 60,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
       },
       "oneShot": true
     },
@@ -1253,16 +2151,31 @@
       "chapterId": "ch7",
       "order": 61,
       "prerequisiteBeatId": "ch7_arrive",
-      "trigger": { "type": "GuardianDefeat", "param": "hollow" },
+      "trigger": {
+        "type": "GuardianDefeat",
+        "param": "hollow"
+      },
       "speakerNpcId": "ruins_scholar",
       "lines": [
-        { "speaker": "세라", "text": "쓰러뜨린 게 아니라 놓아준 것 같네요. 저 아이도 이름을 반쯤 잃고 있었어요." },
-        { "speaker": "세라", "text": "길이 열렸어요. 동쪽 모래언덕 쪽으로 수레바퀴 자국이 이어져 있어요." }
+        {
+          "speaker": "세라",
+          "text": "쓰러뜨린 게 아니라 놓아준 것 같네요. 저 아이도 이름을 반쯤 잃고 있었어요."
+        },
+        {
+          "speaker": "세라",
+          "text": "길이 열렸어요. 동쪽 모래언덕 쪽으로 수레바퀴 자국이 이어져 있어요."
+        }
       ],
       "choices": [],
       "onComplete": {
-        "rewardCandy": 35, "rewardExp": 85, "rewardItemId": "", "rewardItemCount": 0,
-        "rewardInsectId": "", "rewardInsectDisplayName": "", "rewardInsectLevel": 0, "unlockQuestId": ""
+        "rewardCandy": 35,
+        "rewardExp": 85,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
       },
       "oneShot": true
     },
@@ -1271,16 +2184,31 @@
       "chapterId": "ch8",
       "order": 62,
       "prerequisiteBeatId": "ch8_arrive",
-      "trigger": { "type": "GuardianDefeat", "param": "dunes" },
+      "trigger": {
+        "type": "GuardianDefeat",
+        "param": "dunes"
+      },
       "speakerNpcId": "catcher_rival",
       "lines": [
-        { "speaker": "라온", "text": "집게는 갔어. 상자는… 우리가 열 수 있는 만큼 열었고." },
-        { "speaker": "라온", "text": "다 살리진 못했어. 그래도 몇은 날아갔다. 그거면 오늘은 됐다고 치자." }
+        {
+          "speaker": "라온",
+          "text": "집게는 갔어. 상자는… 우리가 열 수 있는 만큼 열었고."
+        },
+        {
+          "speaker": "라온",
+          "text": "다 살리진 못했어. 그래도 몇은 날아갔다. 그거면 오늘은 됐다고 치자."
+        }
       ],
       "choices": [],
       "onComplete": {
-        "rewardCandy": 40, "rewardExp": 95, "rewardItemId": "", "rewardItemCount": 0,
-        "rewardInsectId": "", "rewardInsectDisplayName": "", "rewardInsectLevel": 0, "unlockQuestId": ""
+        "rewardCandy": 40,
+        "rewardExp": 95,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
       },
       "oneShot": true
     },
@@ -1289,16 +2217,31 @@
       "chapterId": "ch9",
       "order": 63,
       "prerequisiteBeatId": "ch9_arrive",
-      "trigger": { "type": "GuardianDefeat", "param": "frostline" },
+      "trigger": {
+        "type": "GuardianDefeat",
+        "param": "frostline"
+      },
       "speakerNpcId": "ruins_scholar",
       "lines": [
-        { "speaker": "세라", "text": "저울 선배는 서고에 남겠대요. 목록을 처음부터 다시 세어 보겠다고." },
-        { "speaker": "세라", "text": "…그게 그 사람 방식의 사과예요. 우리는 앞으로 가요." }
+        {
+          "speaker": "세라",
+          "text": "저울 선배는 서고에 남겠대요. 목록을 처음부터 다시 세어 보겠다고."
+        },
+        {
+          "speaker": "세라",
+          "text": "…그게 그 사람 방식의 사과예요. 우리는 앞으로 가요."
+        }
       ],
       "choices": [],
       "onComplete": {
-        "rewardCandy": 45, "rewardExp": 105, "rewardItemId": "", "rewardItemCount": 0,
-        "rewardInsectId": "", "rewardInsectDisplayName": "", "rewardInsectLevel": 0, "unlockQuestId": ""
+        "rewardCandy": 45,
+        "rewardExp": 105,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
       },
       "oneShot": true
     },
@@ -1307,16 +2250,31 @@
       "chapterId": "ch10",
       "order": 64,
       "prerequisiteBeatId": "ch10_arrive",
-      "trigger": { "type": "GuardianDefeat", "param": "emberfall" },
+      "trigger": {
+        "type": "GuardianDefeat",
+        "param": "emberfall"
+      },
       "speakerNpcId": "ledger_ink",
       "lines": [
-        { "speaker": "먹", "text": "골짜기가 조용해졌군. 라온은 잘 있다 — 걷진 못해도 말은 잘한다." },
-        { "speaker": "먹", "text": "나는 여기 남아 상자를 마저 꺼내겠다. 자네는 위로 가라. 우듬지가 아직 살아 있다더군." }
+        {
+          "speaker": "먹",
+          "text": "골짜기가 조용해졌군. 라온은 잘 있다 — 걷진 못해도 말은 잘한다."
+        },
+        {
+          "speaker": "먹",
+          "text": "나는 여기 남아 상자를 마저 꺼내겠다. 자네는 위로 가라. 우듬지가 아직 살아 있다더군."
+        }
       ],
       "choices": [],
       "onComplete": {
-        "rewardCandy": 50, "rewardExp": 115, "rewardItemId": "", "rewardItemCount": 0,
-        "rewardInsectId": "", "rewardInsectDisplayName": "", "rewardInsectLevel": 0, "unlockQuestId": ""
+        "rewardCandy": 50,
+        "rewardExp": 115,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
       },
       "oneShot": true
     },
@@ -1325,16 +2283,31 @@
       "chapterId": "ch11",
       "order": 65,
       "prerequisiteBeatId": "ch11_arrive",
-      "trigger": { "type": "GuardianDefeat", "param": "canopy" },
+      "trigger": {
+        "type": "GuardianDefeat",
+        "param": "canopy"
+      },
       "speakerNpcId": "ruins_scholar",
       "lines": [
-        { "speaker": "세라", "text": "세계수나비가 길을 비켜 줬어요. 막아선 게 아니라 시험한 거였나 봐요." },
-        { "speaker": "세라", "text": "이제 남은 건 하나예요. 지도에 없는 자리." }
+        {
+          "speaker": "세라",
+          "text": "세계수나비가 길을 비켜 줬어요. 막아선 게 아니라 시험한 거였나 봐요."
+        },
+        {
+          "speaker": "세라",
+          "text": "이제 남은 건 하나예요. 지도에 없는 자리."
+        }
       ],
       "choices": [],
       "onComplete": {
-        "rewardCandy": 60, "rewardExp": 140, "rewardItemId": "", "rewardItemCount": 0,
-        "rewardInsectId": "", "rewardInsectDisplayName": "", "rewardInsectLevel": 0, "unlockQuestId": ""
+        "rewardCandy": 60,
+        "rewardExp": 140,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
       },
       "oneShot": true
     },
@@ -1343,16 +2316,31 @@
       "chapterId": "side",
       "order": 70,
       "prerequisiteBeatId": "ch7_arrive",
-      "trigger": { "type": "DexProgress", "param": "60" },
+      "trigger": {
+        "type": "DexProgress",
+        "param": "60"
+      },
       "speakerNpcId": "ruins_scholar",
       "lines": [
-        { "speaker": "세라", "text": "예순 종이에요. 세어 봤어요." },
-        { "speaker": "세라", "text": "숫자로 말해서 미안해요. 그런데 이건 숫자가 맞아요 — 예순 개의 자리가 다시 채워졌다는 뜻이니까요." }
+        {
+          "speaker": "세라",
+          "text": "예순 종이에요. 세어 봤어요."
+        },
+        {
+          "speaker": "세라",
+          "text": "숫자로 말해서 미안해요. 그런데 이건 숫자가 맞아요 — 예순 개의 자리가 다시 채워졌다는 뜻이니까요."
+        }
       ],
       "choices": [],
       "onComplete": {
-        "rewardCandy": 40, "rewardExp": 90, "rewardItemId": "net_gold", "rewardItemCount": 1,
-        "rewardInsectId": "", "rewardInsectDisplayName": "", "rewardInsectLevel": 0, "unlockQuestId": ""
+        "rewardCandy": 40,
+        "rewardExp": 90,
+        "rewardItemId": "net_gold",
+        "rewardItemCount": 1,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
       },
       "oneShot": true
     },
@@ -1361,16 +2349,31 @@
       "chapterId": "side",
       "order": 71,
       "prerequisiteBeatId": "dex_60",
-      "trigger": { "type": "DexProgress", "param": "100" },
+      "trigger": {
+        "type": "DexProgress",
+        "param": "100"
+      },
       "speakerNpcId": "ruins_scholar",
       "lines": [
-        { "speaker": "세라", "text": "백 종. …관장님 장부가 삼천인데, 그중 살아 있는 게 절반이라 하셨죠." },
-        { "speaker": "세라", "text": "당신 백 종은 전부 살아 있어요. 어느 쪽이 더 큰 숫자인지는 이제 분명하네요." }
+        {
+          "speaker": "세라",
+          "text": "백 종. …관장님 장부가 삼천인데, 그중 살아 있는 게 절반이라 하셨죠."
+        },
+        {
+          "speaker": "세라",
+          "text": "당신 백 종은 전부 살아 있어요. 어느 쪽이 더 큰 숫자인지는 이제 분명하네요."
+        }
       ],
       "choices": [],
       "onComplete": {
-        "rewardCandy": 70, "rewardExp": 160, "rewardItemId": "", "rewardItemCount": 0,
-        "rewardInsectId": "", "rewardInsectDisplayName": "", "rewardInsectLevel": 0, "unlockQuestId": ""
+        "rewardCandy": 70,
+        "rewardExp": 160,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
       },
       "oneShot": true
     },
@@ -1379,17 +2382,35 @@
       "chapterId": "side",
       "order": 72,
       "prerequisiteBeatId": "dex_100",
-      "trigger": { "type": "DexProgress", "param": "140" },
+      "trigger": {
+        "type": "DexProgress",
+        "param": "140"
+      },
       "speakerNpcId": "ruins_scholar",
       "lines": [
-        { "speaker": "세라", "text": "백사십 종이에요. 이 정도면 고대인이 남긴 벽의 절반을 넘겼어요." },
-        { "speaker": "세라", "text": "빈칸이 줄어드는 게 눈에 보여요. 그것이 설 자리가 그만큼 좁아졌다는 뜻이고요." },
-        { "speaker": "세라", "text": "…끝까지 가요. 이번엔 우리가 먼저 채워요." }
+        {
+          "speaker": "세라",
+          "text": "백사십 종이에요. 이 정도면 고대인이 남긴 벽의 절반을 넘겼어요."
+        },
+        {
+          "speaker": "세라",
+          "text": "빈칸이 줄어드는 게 눈에 보여요. 그것이 설 자리가 그만큼 좁아졌다는 뜻이고요."
+        },
+        {
+          "speaker": "세라",
+          "text": "…끝까지 가요. 이번엔 우리가 먼저 채워요."
+        }
       ],
       "choices": [],
       "onComplete": {
-        "rewardCandy": 110, "rewardExp": 240, "rewardItemId": "", "rewardItemCount": 0,
-        "rewardInsectId": "", "rewardInsectDisplayName": "", "rewardInsectLevel": 0, "unlockQuestId": ""
+        "rewardCandy": 110,
+        "rewardExp": 240,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
       },
       "oneShot": true
     },
@@ -1398,17 +2419,35 @@
       "chapterId": "ch8",
       "order": 80,
       "prerequisiteBeatId": "ch8_confront",
-      "trigger": { "type": "NpcTalk", "param": "ledger_grip" },
+      "trigger": {
+        "type": "NpcTalk",
+        "param": "ledger_grip"
+      },
       "speakerNpcId": "ledger_grip",
       "lines": [
-        { "speaker": "집게", "text": "또 왔군. 창고 얘기라면 그만해라 — 나는 명령을 받은 대로 했다." },
-        { "speaker": "집게", "text": "네가 옳다고 생각하나? 그럼 증명해 봐라. 말이 아니라 손으로." },
-        { "speaker": "집게", "text": "…한 번 더 말을 걸면 그때는 붙는 거다. 준비하고 와라." }
+        {
+          "speaker": "집게",
+          "text": "또 왔군. 창고 얘기라면 그만해라 — 나는 명령을 받은 대로 했다."
+        },
+        {
+          "speaker": "집게",
+          "text": "네가 옳다고 생각하나? 그럼 증명해 봐라. 말이 아니라 손으로."
+        },
+        {
+          "speaker": "집게",
+          "text": "…한 번 더 말을 걸면 그때는 붙는 거다. 준비하고 와라."
+        }
       ],
       "choices": [],
       "onComplete": {
-        "rewardCandy": 30, "rewardExp": 70, "rewardItemId": "", "rewardItemCount": 0,
-        "rewardInsectId": "", "rewardInsectDisplayName": "", "rewardInsectLevel": 0, "unlockQuestId": ""
+        "rewardCandy": 30,
+        "rewardExp": 70,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
       },
       "oneShot": true
     },
@@ -1417,17 +2456,35 @@
       "chapterId": "ch9",
       "order": 81,
       "prerequisiteBeatId": "ch9_confront",
-      "trigger": { "type": "NpcTalk", "param": "ledger_scale" },
+      "trigger": {
+        "type": "NpcTalk",
+        "param": "ledger_scale"
+      },
       "speakerNpcId": "ledger_scale",
       "lines": [
-        { "speaker": "저울", "text": "세라는 대답을 찾았더군. 방향이 다르다고." },
-        { "speaker": "저울", "text": "말은 그럴듯하다. 그런데 나는 수치만 믿는다 — 네가 나보다 강하면 그 말이 맞는 거고, 아니면 그냥 감상이다." },
-        { "speaker": "저울", "text": "다시 오면 재 보자. 그때는 봐주지 않는다." }
+        {
+          "speaker": "저울",
+          "text": "세라는 대답을 찾았더군. 방향이 다르다고."
+        },
+        {
+          "speaker": "저울",
+          "text": "말은 그럴듯하다. 그런데 나는 수치만 믿는다 — 네가 나보다 강하면 그 말이 맞는 거고, 아니면 그냥 감상이다."
+        },
+        {
+          "speaker": "저울",
+          "text": "다시 오면 재 보자. 그때는 봐주지 않는다."
+        }
       ],
       "choices": [],
       "onComplete": {
-        "rewardCandy": 35, "rewardExp": 85, "rewardItemId": "", "rewardItemCount": 0,
-        "rewardInsectId": "", "rewardInsectDisplayName": "", "rewardInsectLevel": 0, "unlockQuestId": ""
+        "rewardCandy": 35,
+        "rewardExp": 85,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
       },
       "oneShot": true
     },
@@ -1436,18 +2493,39 @@
       "chapterId": "ch12",
       "order": 82,
       "prerequisiteBeatId": "ch12_confront",
-      "trigger": { "type": "NpcTalk", "param": "ledger_chief" },
+      "trigger": {
+        "type": "NpcTalk",
+        "param": "ledger_chief"
+      },
       "speakerNpcId": "ledger_chief",
       "lines": [
-        { "speaker": "하월", "text": "길은 비켜 주었다만, 그냥 보내는 건 또 다른 이야기다." },
-        { "speaker": "하월", "text": "이 아이를 보게. 이름이 지워진 나방이야. 삼십 년 전 내 장부 첫 장에 적힌 종이지." },
-        { "speaker": "하월", "text": "내가 적어서 살린 게 아니라 적어서 가둔 아이다. 이 아이를 넘지 못하면 자네도 나와 같은 길을 갈 걸세." },
-        { "speaker": "하월", "text": "…준비되면 오게. 마지막으로 스승 노릇을 해 주지." }
+        {
+          "speaker": "하월",
+          "text": "길은 비켜 주었다만, 그냥 보내는 건 또 다른 이야기다."
+        },
+        {
+          "speaker": "하월",
+          "text": "이 아이를 보게. 이름이 지워진 나방이야. 삼십 년 전 내 장부 첫 장에 적힌 종이지."
+        },
+        {
+          "speaker": "하월",
+          "text": "내가 적어서 살린 게 아니라 적어서 가둔 아이다. 이 아이를 넘지 못하면 자네도 나와 같은 길을 갈 걸세."
+        },
+        {
+          "speaker": "하월",
+          "text": "…준비되면 오게. 마지막으로 스승 노릇을 해 주지."
+        }
       ],
       "choices": [],
       "onComplete": {
-        "rewardCandy": 60, "rewardExp": 150, "rewardItemId": "", "rewardItemCount": 0,
-        "rewardInsectId": "", "rewardInsectDisplayName": "", "rewardInsectLevel": 0, "unlockQuestId": ""
+        "rewardCandy": 60,
+        "rewardExp": 150,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
       },
       "oneShot": true
     },
@@ -1456,11 +2534,20 @@
       "chapterId": "side",
       "order": 15,
       "prerequisiteBeatId": "ch1_reach_pond",
-      "trigger": { "type": "RegionEnter", "param": "garden" },
+      "trigger": {
+        "type": "RegionEnter",
+        "param": "garden"
+      },
       "speakerNpcId": "catcher_rival",
       "lines": [
-        { "speaker": "라온", "text": "여긴 꽃밭이야. …이상하지? 다른 데는 다 조용한데, 여기 곤충들은 멀쩡해." },
-        { "speaker": "라온", "text": "왜 꽃밭만 무사한 걸까? 세라한테 물어봐야겠어. 뭔가 큰 단서가 될지도 몰라." }
+        {
+          "speaker": "라온",
+          "text": "여긴 꽃밭이야. …이상하지? 다른 데는 다 조용한데, 여기 곤충들은 멀쩡해."
+        },
+        {
+          "speaker": "라온",
+          "text": "왜 꽃밭만 무사한 걸까? 세라한테 물어봐야겠어. 뭔가 큰 단서가 될지도 몰라."
+        }
       ],
       "choices": [],
       "onComplete": {
@@ -1480,16 +2567,31 @@
       "chapterId": "npc",
       "order": 30,
       "prerequisiteBeatId": "",
-      "trigger": { "type": "NpcTalk", "param": "village_elder" },
+      "trigger": {
+        "type": "NpcTalk",
+        "param": "village_elder"
+      },
       "speakerNpcId": "village_elder",
       "lines": [
-        { "speaker": "마을 어르신", "text": "오, 가까이 왔구나. 이렇게 얼굴을 보니 마음이 놓여. 곤충들이 사라지는 이 시국에, 네가 있어 참 다행이야." },
-        { "speaker": "마을 어르신", "text": "무리하진 말고… 허나 도감을 한 장 한 장 채워 주렴. 그게 이 세계를 붙드는 길이란다." }
+        {
+          "speaker": "마을 어르신",
+          "text": "오, 가까이 왔구나. 이렇게 얼굴을 보니 마음이 놓여. 곤충들이 사라지는 이 시국에, 네가 있어 참 다행이야."
+        },
+        {
+          "speaker": "마을 어르신",
+          "text": "무리하진 말고… 허나 도감을 한 장 한 장 채워 주렴. 그게 이 세계를 붙드는 길이란다."
+        }
       ],
       "choices": [],
       "onComplete": {
-        "rewardCandy": 5, "rewardExp": 0, "rewardItemId": "", "rewardItemCount": 0,
-        "rewardInsectId": "", "rewardInsectDisplayName": "", "rewardInsectLevel": 0, "unlockQuestId": ""
+        "rewardCandy": 5,
+        "rewardExp": 0,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
       },
       "oneShot": true
     },
@@ -1498,16 +2600,31 @@
       "chapterId": "npc",
       "order": 31,
       "prerequisiteBeatId": "",
-      "trigger": { "type": "NpcTalk", "param": "catcher_rival" },
+      "trigger": {
+        "type": "NpcTalk",
+        "param": "catcher_rival"
+      },
       "speakerNpcId": "catcher_rival",
       "lines": [
-        { "speaker": "라온", "text": "왔냐. 딱 봐도 또 곤충 잡으러 가는 얼굴인데?" },
-        { "speaker": "라온", "text": "나도 질 생각 없거든. 누가 더 많이 구해내나, 계속 겨뤄 보자고!" }
+        {
+          "speaker": "라온",
+          "text": "왔냐. 딱 봐도 또 곤충 잡으러 가는 얼굴인데?"
+        },
+        {
+          "speaker": "라온",
+          "text": "나도 질 생각 없거든. 누가 더 많이 구해내나, 계속 겨뤄 보자고!"
+        }
       ],
       "choices": [],
       "onComplete": {
-        "rewardCandy": 5, "rewardExp": 0, "rewardItemId": "", "rewardItemCount": 0,
-        "rewardInsectId": "", "rewardInsectDisplayName": "", "rewardInsectLevel": 0, "unlockQuestId": ""
+        "rewardCandy": 5,
+        "rewardExp": 0,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
       },
       "oneShot": true
     },
@@ -1516,16 +2633,31 @@
       "chapterId": "npc",
       "order": 32,
       "prerequisiteBeatId": "",
-      "trigger": { "type": "NpcTalk", "param": "ruins_scholar" },
+      "trigger": {
+        "type": "NpcTalk",
+        "param": "ruins_scholar"
+      },
       "speakerNpcId": "ruins_scholar",
       "lines": [
-        { "speaker": "세라", "text": "당신이군요. 마침 잘 왔어요 — 유적의 봉인에 대해 새로 알아낸 게 있어요." },
-        { "speaker": "세라", "text": "당신이 모으는 기록 하나하나가 그 균열을 메우고 있어요. 부디, 멈추지 말아요." }
+        {
+          "speaker": "세라",
+          "text": "당신이군요. 마침 잘 왔어요 — 유적의 봉인에 대해 새로 알아낸 게 있어요."
+        },
+        {
+          "speaker": "세라",
+          "text": "당신이 모으는 기록 하나하나가 그 균열을 메우고 있어요. 부디, 멈추지 말아요."
+        }
       ],
       "choices": [],
       "onComplete": {
-        "rewardCandy": 5, "rewardExp": 0, "rewardItemId": "", "rewardItemCount": 0,
-        "rewardInsectId": "", "rewardInsectDisplayName": "", "rewardInsectLevel": 0, "unlockQuestId": ""
+        "rewardCandy": 5,
+        "rewardExp": 0,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
       },
       "oneShot": true
     }

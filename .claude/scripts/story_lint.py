@@ -11,6 +11,7 @@ EvaluateTriggers switch 케이스나 이벤트 구독을 빠뜨리면, 그 타�
 """
 import io
 import os
+import re
 import sys
 
 # stdout 재설정은 하위 모듈 import보다 먼저 — data_lint 등이 자기 stdout을 재설정하면서
@@ -207,6 +208,45 @@ def evaluate_signals() -> list:
         "0건",
         (f"{len(once_only)}건 ({once_only})" if once_only else "0건") + note,
         "FAIL" if once_only else "PASS",
+    ))
+
+    # 9. cutsceneId 실재성 — 오타는 런타임에 LogWarning만 찍고 컷신이 조용히 안 나온다.
+    #    연출 누락은 화면상 티가 안 나서(원래 없던 것처럼 보인다) 배포까지 살아남기 쉽다.
+    #    CutsceneLibrary의 const 문자열을 소스에서 읽어 대조한다 — C#에 사본을 만들면
+    #    그쪽이 낡는다(이 저장소의 하드코딩 목록이 세 번 어긋난 것과 같은 이유).
+    lib_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "Assets", "Scripts", "Story", "CutsceneLibrary.cs")
+    try:
+        with open(lib_path, encoding="utf-8") as fh:
+            lib_src = fh.read()
+    except OSError as exc:
+        raise ExtractorBroken(f"CutsceneLibrary.cs를 읽지 못했다: {exc}")
+
+    known_cutscenes = set(re.findall(r'public const string \w+\s*=\s*"([a-z_0-9]+)"', lib_src))
+    if not known_cutscenes:
+        raise ExtractorBroken(
+            "CutsceneLibrary.cs에서 컷신 ID 상수를 하나도 찾지 못했다 — 추출기가 낡았다")
+
+    # 상수로 선언만 하고 TryGet switch에 case가 없으면 역시 발화하지 않는다(같은 무증상 결함).
+    dispatched = set(re.findall(r'case (\w+):\s*shots\s*=', lib_src))
+    declared_names = dict(re.findall(
+        r'public const string (\w+)\s*=\s*"([a-z_0-9]+)"', lib_src))
+    undispatched = sorted(v for k, v in declared_names.items() if k not in dispatched)
+
+    missing_cutscene = sorted(
+        f"{b['beatId']}→{b['cutsceneId']}"
+        for b in beats
+        if b.get("cutsceneId") and b["cutsceneId"] not in known_cutscenes)
+
+    problems = missing_cutscene + [f"{c}(switch 미배선)" for c in undispatched]
+    used = sum(1 for b in beats if b.get("cutsceneId"))
+    signals.append((
+        "cutsceneId 실재성 (JSON↔CutsceneLibrary)",
+        "0건 미존재",
+        f"{len(problems)}건 ({problems})" if problems
+        else f"0건 (사용 {used}건 / 정의 {len(known_cutscenes)}종)",
+        "FAIL" if problems else "PASS",
     ))
 
     return signals
