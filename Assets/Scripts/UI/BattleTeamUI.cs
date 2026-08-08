@@ -16,6 +16,17 @@ namespace InsectGame.UI
         private Vector2 listScroll;
         private readonly UIDirectScroll directScroll = new UIDirectScroll();
 
+        [SerializeField] private HospitalUI hospitalUi;
+
+        // ── 피커 정렬 ──
+        // 정렬은 패스마다 하지 않는다 — 비교자 델리게이트와 리스트 순회가 매 OnGUI 패스에 든다.
+        // 피커를 열 때와 기준을 바꿀 때만 다시 굽고, 그 사이에는 이 버퍼를 그대로 읽는다.
+        private InsectSortMode pickerSort = InsectSortMode.Rarity;
+        private readonly List<PlayerInsectData> pickerSorted = new List<PlayerInsectData>();
+        private bool pickerSortDirty = true;
+        private readonly Rect[] pickerSortChips = new Rect[4];
+        private int pickerSortedCount = -1;
+
         // OnGUI 매 프레임 new GUIStyle 회귀 차단 — 11개 캐시 필드 + InitStyles 1회 초기화.
         // 동적 textColor는 매 호출 갱신 (BattleScreenUI ComboCol 패턴).
         private GUIStyle teamTitleCache, teamCloseCache, teamSubCache;
@@ -34,6 +45,8 @@ namespace InsectGame.UI
         private static readonly Color InfoCol = new Color(0.76f, 0.76f, 0.8f);
         private static readonly Color RemoveBg = new Color(0.5f, 0.2f, 0.2f);
         private static readonly Color ChangeBg = new Color(0.25f, 0.35f, 0.55f);
+        private static readonly Color HealBg = new Color(0.22f, 0.55f, 0.38f);
+        private static readonly Color HurtCol = new Color(1f, 0.5f, 0.42f);
         private static readonly Color EmptyBoxCol = new Color(0.25f, 0.25f, 0.3f, 0.5f);
         private static readonly Color EmptyCol = new Color(0.68f, 0.68f, 0.74f);
         private static readonly Color HintCol = new Color(0.66f, 0.66f, 0.72f);
@@ -165,8 +178,29 @@ namespace InsectGame.UI
                 CloseModal();
             }
 
-            GUI.Label(new Rect(px + 24f, py + 92, panelW - 48f, 52),
-                $"배틀용 곤충을 최대 {BattleTeamManager.MaxSlots}마리 선택하세요", teamSubCache);
+            // 부상 안내 + 회복 진입 — 팀을 짜는 자리에서 바로 상태를 알고 고칠 수 있어야 한다.
+            // 치료 자체는 병원이 한다(재화·결제·환불 로직을 여기서 복제하면 곧 어긋난다).
+            int injured = InjuredTeamCount();
+            GUI.Label(new Rect(px + 24f, py + 92, panelW - (injured > 0 ? 220f : 48f), 52),
+                injured > 0
+                    ? $"부상 {injured}마리 — 회복하고 나가세요"
+                    : $"배틀용 곤충을 최대 {BattleTeamManager.MaxSlots}마리 선택하세요",
+                teamSubCache);
+
+            if (injured > 0 && hospitalUi != null)
+            {
+                float healH = SkillUILayout.GetTouchHeight(UIScale.IsMobileLayout, 48f, 56f);
+                GUI.backgroundColor = HealBg;
+                if (GUI.Button(new Rect(px + panelW - 196f, py + 94f, 172f, healH), "회복하러 가기", slotRemoveCache))
+                {
+                    // 배틀팀을 닫고 병원을 연다 — 모달 둘이 겹치면 뒤쪽 버튼이 클릭을 가로챈다.
+                    CloseModal();
+                    hospitalUi.Toggle();
+                    GUI.backgroundColor = Color.white;
+                    return;
+                }
+                GUI.backgroundColor = Color.white;
+            }
 
             float slotY = py + 150;
             const float slotGap = 6f;
@@ -218,8 +252,15 @@ namespace InsectGame.UI
 
                     int lv = pid != null ? pid.level : 1;
                     int cp = PlayerInsectCombatPower.Calculate(data, pid);
+                    // 부상이면 그 자리에서 알린다 — 헤더의 "회복하러 가기"만으로는 **누가** 다쳤는지 모른다.
+                    bool hurt = NeedsHeal(pid);
+                    slotInfoCache.normal.textColor = hurt ? HurtCol : InfoCol;
                     GUI.Label(new Rect(x + 150, y + 64, w - 330, 42),
-                        $"Lv.{lv}  |  {data.rarity}  |  CP {cp}", slotInfoCache);
+                        hurt
+                            ? $"Lv.{lv}  |  CP {cp}  |  {HurtLabel(pid, data)}"
+                            : $"Lv.{lv}  |  {data.rarity}  |  CP {cp}",
+                        slotInfoCache);
+                    slotInfoCache.normal.textColor = InfoCol;
                 }
 
                 GUI.backgroundColor = RemoveBg;
@@ -233,6 +274,7 @@ namespace InsectGame.UI
                     selectingSlot = index;
                     listScroll = Vector2.zero;
                     directScroll.Reset();
+                    pickerSortDirty = true;   // 열 때마다 최신 보유 목록으로 다시 정렬
                 }
                 GUI.backgroundColor = Color.white;
             }
@@ -251,6 +293,7 @@ namespace InsectGame.UI
                     selectingSlot = index;
                     listScroll = Vector2.zero;
                     directScroll.Reset();
+                    pickerSortDirty = true;   // 열 때마다 최신 보유 목록으로 다시 정렬
                 }
                 GUI.backgroundColor = Color.white;
 
@@ -283,10 +326,33 @@ namespace InsectGame.UI
 
             if (collection == null) return;
 
-            // 매 OnGUI 패스라 List를 새로 만들지 않는다(보관하지 않으므로 재사용 버퍼가 안전).
-            IReadOnlyList<PlayerInsectData> owned = collection.OwnedView;
-            float listY = py + 96;
-            float listH = panelH - 106;
+            // ── 정렬 칩 ──
+            // 팀에 넣을 곤충을 고를 때 필요한 건 "무엇이 강한가"다. 기본은 등급 → CP 순이고,
+            // 레벨·전투력·최근 획득으로 바꿀 수 있다. 순서 규칙은 InsectBrowseSort가 단일 출처이며
+            // 보유 곤충 화면도 같은 것을 쓴다(두 화면이 다르게 정렬하면 방금 본 개체를 다시 찾아야 한다).
+            float chipY = py + 92f;
+            float chipH = SkillUILayout.GetTouchHeight(UIScale.IsMobileLayout, 44f, 52f);
+            float chipW = (panelW - 40f - 18f) / InsectBrowseSort.Order.Length;
+            for (int i = 0; i < InsectBrowseSort.Order.Length; i++)
+            {
+                InsectSortMode mode = InsectBrowseSort.Order[i];
+                Rect chip = new Rect(px + 20f + i * (chipW + 6f), chipY, chipW, chipH);
+                pickerSortChips[i] = chip;
+                GUI.backgroundColor = pickerSort == mode ? ChangeBg : SlotBg;
+                if (GUI.Button(chip, InsectBrowseSort.Label(mode), pickerBtnCache) && pickerSort != mode)
+                {
+                    pickerSort = mode;
+                    pickerSortDirty = true;
+                    listScroll = Vector2.zero;
+                    directScroll.Reset();
+                }
+            }
+            GUI.backgroundColor = Color.white;
+
+            EnsurePickerSorted();
+            List<PlayerInsectData> owned = pickerSorted;
+            float listY = chipY + chipH + 8f;
+            float listH = panelH - (listY - py) - 10f;
             float itemH = UIScale.IsMobileLayout ? 132f : 116f;
             float totalH = owned.Count * itemH;
             Rect listArea = new Rect(px + 10, listY, panelW - 20, listH);
@@ -372,6 +438,71 @@ namespace InsectGame.UI
         {
             if (teamManager == null) teamManager = tm;
             if (collection == null) collection = col;
+        }
+
+        /// <summary>병원 진입점 — 팀에 부상이 있을 때 헤더 버튼으로 넘긴다(치료 로직은 그쪽 소유).</summary>
+        public void AutoWire(HospitalUI hospital)
+        {
+            if (hospitalUi == null) hospitalUi = hospital;
+        }
+
+        /// <summary>
+        /// 팀 슬롯 중 치료가 필요한 수. 판정은 병원과 같다 — HP가 깎였거나 독/마비.
+        /// <b>여기서 치료비를 계산하지 않는다</b>: 병원이 결제 수단·할인·환불을 들고 있고,
+        /// 두 곳에서 값을 만들면 표시와 실제가 갈린다.
+        /// </summary>
+        private int InjuredTeamCount()
+        {
+            if (teamManager == null || collection == null) return 0;
+
+            int count = 0;
+            for (int i = 0; i < BattleTeamManager.MaxSlots; i++)
+            {
+                PlayerInsectData pid = collection.GetByInstanceId(teamManager.GetSlot(i));
+                if (pid != null && NeedsHeal(pid)) count++;
+            }
+            return count;
+        }
+
+        /// <summary>
+        /// 피커 목록을 정렬해 버퍼에 담는다. <b>OnGUI 패스마다 정렬하지 않는다</b> —
+        /// 비교자 델리게이트 할당과 전체 순회가 프레임당 두 번 이상 들기 때문이다.
+        /// 기준을 바꿀 때(dirty)와 보유 수가 달라졌을 때만 다시 굽는다.
+        /// 레벨업으로 CP만 바뀐 경우는 다음에 피커를 열 때 반영된다(순간 갱신이 필요한 화면이 아니다).
+        /// </summary>
+        private void EnsurePickerSorted()
+        {
+            IReadOnlyList<PlayerInsectData> owned = collection.OwnedView;
+            if (!pickerSortDirty && pickerSortedCount == owned.Count) return;
+
+            InsectBrowseSort.Sort(owned, collection, pickerSort, pickerSorted);
+            pickerSortedCount = owned.Count;
+            pickerSortDirty = false;
+        }
+
+        /// <summary>부상 요약 — 상태이상이 HP보다 급하므로 먼저 보여준다.</summary>
+        private string HurtLabel(PlayerInsectData pid, InsectData data)
+        {
+            if (pid.isPoisoned && pid.isParalyzed) return "독·마비";
+            if (pid.isPoisoned) return "독";
+            if (pid.isParalyzed) return "마비";
+
+            int maxHp = pid.GetTotalHp(data.baseHp);
+            int curHp = pid.currentHp < 0 ? maxHp : pid.currentHp;
+            return curHp <= 0 ? "기절" : $"HP {curHp}/{maxHp}";
+        }
+
+        private bool NeedsHeal(PlayerInsectData pid)
+        {
+            if (pid == null) return false;
+            if (pid.isPoisoned || pid.isParalyzed) return true;
+
+            InsectData data = collection.GetInsectData(pid.insectId);
+            if (data == null) return false;
+            int maxHp = pid.GetTotalHp(data.baseHp);
+            // currentHp -1은 구세이브 미초기화 센티넬 = 풀피다(0 기절과 구분해야 한다).
+            int curHp = pid.currentHp < 0 ? maxHp : pid.currentHp;
+            return curHp < maxHp;
         }
 
         // instanceId 앞 6자리(#A3F2B1)는 붙이지 않는다 — 같은 종을 구분하려던 GUID 조각인데

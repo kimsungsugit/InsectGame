@@ -420,13 +420,21 @@ namespace InsectGame.UI
             // 고DPI 기기에서도 폰트·패널 크기가 일관되게 보이도록 한다. 내부 좌표는 모두 가상 단위.
             UIScale.Begin();
             if (detailOpen)
-                DrawDetailPanel();
-            else
             {
-                DrawQuestPanel();
-                DrawObjectiveRow();   // 칩 아래 — 상세 팝업보다 먼저 그려 팝업이 위에 오게 한다
-                if (activeDetailOpen) DrawActiveQuestDetail();
+                DrawDetailPanel();
+                // **알림은 그리지 않는다.** 상단 알림(ContentTop 부근)과 중앙 상세 패널은 원래
+                // 세로로 스쳤는데, 알림 높이를 폰트에서 파생시키며 커지자 상세 패널의 **제목 줄을
+                // 덮었다**(본문은 그 아래라 멀쩡해서 "타이틀만 가려진다"로 보였다).
+                // 상세 목록은 모달이므로 그 위에 무언가를 겹치는 것 자체가 맞지 않는다.
+                // 타이머는 Update가 계속 줄이므로, 닫고 나면 남은 시간만큼 이어서 뜬다.
+                UIScale.End();
+                return;
             }
+
+            DrawQuestPanel();
+            DrawObjectiveRow();   // 칩 아래 — 상세 팝업보다 먼저 그려 팝업이 위에 오게 한다
+            if (activeDetailOpen) DrawActiveQuestDetail();
+
             DrawCompletionNotification();
             DrawNewQuestNotification();
             UIScale.End();

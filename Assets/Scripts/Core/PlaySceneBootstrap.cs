@@ -383,6 +383,7 @@ namespace InsectGame.Core
 
             InsectGame.UI.CollectionUI collectionUi = EnsureComponent<InsectGame.UI.CollectionUI>("UI/CollectionUI");
             collectionUi.AutoWire(insectCollection, candyInventory, progress);
+            collectionUi.AutoWire(battleTeam);   // 목록에서 배틀팀을 맨 위로 올리기 위한 조회 + TeamChanged 구독
 
             InsectGame.UI.CapturePopupUI capturePopup = EnsureComponent<InsectGame.UI.CapturePopupUI>("UI/CapturePopup");
             capturePopup.AutoWire(capture);
@@ -559,6 +560,7 @@ namespace InsectGame.Core
                 hospitalUi.AutoWire(insectCollection, database, wallet, candyInventory);
                 worldInteract.AutoWire(hospitalUi);
                 inventoryUi.AutoWire(hospitalUi);   // 대상지정 치료 아이템 → 병원 선택기
+                battleTeamUi.AutoWire(hospitalUi);  // 팀에 부상이 있으면 헤더 버튼으로 병원 이동
                 if (villageResult != null)
                 {
                     worldInteract.RegisterPoints(villageResult.interactions);

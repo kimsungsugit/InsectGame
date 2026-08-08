@@ -182,6 +182,19 @@ namespace InsectGame.UI
         private string[] cachedRowStats;
         private bool ownedCacheDirty = true;
 
+        // ── 정렬 ──
+        // 순서 규칙의 단일 출처는 InsectBrowseSort다(배틀팀 피커와 공유). 여기서는 그 위에
+        // "배틀팀 먼저"를 얹는다 — 편성한 곤충을 찾으려고 목록을 스크롤하지 않아도 되게.
+        [SerializeField] private BattleTeamManager teamManager;
+        private InsectSortMode sortMode = InsectSortMode.Rarity;
+        private bool teamFirst = true;
+        private readonly Rect[] sortChips = new Rect[4];
+        private Rect teamFirstChip;
+        // 정렬 결과는 cachedOwned와 같은 순간에 굽는다 — 행 문자열 캐시(cachedRowInfo)가
+        // **인덱스로** 목록을 참조하므로 둘의 순서가 어긋나면 다른 곤충의 스탯이 표시된다.
+        private readonly List<PlayerInsectData> sortedOwned = new List<PlayerInsectData>();
+        private System.Func<PlayerInsectData, bool> isInTeamCache;
+
         private void InitItemStyles()
         {
             if (itemStylesReady) return;
@@ -200,12 +213,32 @@ namespace InsectGame.UI
             if (insectCollection == null) return null;
             if (ownedCacheDirty || cachedOwned == null)
             {
-                cachedOwned = insectCollection.GetAllOwned();
+                // OwnedView는 컬렉션의 재사용 버퍼(보관 금지)지만 여기서 곧바로 sortedOwned로
+                // 복사하므로 안전하다 — GetAllOwned()처럼 무효화마다 List를 새로 만들지 않는다.
+                SortInto(insectCollection.OwnedView);
+                cachedOwned = sortedOwned;
                 BuildRowTextCache();
                 ownedCacheDirty = false;
             }
             return cachedOwned;
         }
+
+        /// <summary>
+        /// 정렬 결과를 <see cref="sortedOwned"/>에 채운다. 무효화 시점에만 돌기 때문에
+        /// OnGUI 패스마다 비교자가 도는 일이 없다. <b>반드시 BuildRowTextCache보다 먼저</b> 부른다 —
+        /// 행 문자열이 인덱스로 대응하므로 순서가 나중에 바뀌면 다른 곤충의 정보가 붙는다.
+        /// </summary>
+        private void SortInto(IReadOnlyList<PlayerInsectData> source)
+        {
+            // 델리게이트를 필드에 캐시한다 — 무효화가 잦아(포획·레벨업·치료마다) 매번 새로 만들면 쌓인다.
+            if (isInTeamCache == null)
+                isInTeamCache = pid => teamManager != null && pid != null && teamManager.IsInTeam(pid.instanceId);
+
+            InsectBrowseSort.Sort(source, insectCollection, sortMode, sortedOwned,
+                isInTeamCache, teamFirst && teamManager != null);
+        }
+
+        private void HandleTeamChanged() { ownedCacheDirty = true; }
 
         /// <summary>
         /// 목록 행의 정보·스탯 문자열을 미리 굽는다. 값이 전부 (종·개체·레벨) 파생이라 불변인데
@@ -258,6 +291,13 @@ namespace InsectGame.UI
                 insectCollection.InsectUpdated -= HandleInsectUpdated;
                 insectCollection.InsectUpdated += HandleInsectUpdated;
             }
+            // 오프닝 다시보기가 UI 루트를 껐다 켜므로 OnDisable에서 끊은 것을 여기서 되살린다
+            // (rules/ui-layout.md의 구독 규칙 — AutoWire는 Bootstrap에서 한 번만 불린다).
+            if (teamManager != null)
+            {
+                teamManager.TeamChanged -= HandleTeamChanged;
+                teamManager.TeamChanged += HandleTeamChanged;
+            }
             ownedCacheDirty = true;
         }
 
@@ -300,6 +340,8 @@ namespace InsectGame.UI
             ModalUIRegistry.Unregister(this);
             if (insectCollection != null)
                 insectCollection.InsectUpdated -= HandleInsectUpdated;
+            if (teamManager != null)
+                teamManager.TeamChanged -= HandleTeamChanged;
         }
 
         // 빈 `Update()`와 빈 `DrawToggleButton()`이 여기 있었다. 전자는 본문이 없어도 Unity가
@@ -357,6 +399,9 @@ namespace InsectGame.UI
             GUI.color = Color.white;
 
             float contentY = tabY + 78;
+            // 정렬 줄은 보유 곤충 탭에만 붙인다 — 통계 탭에는 목록이 없다.
+            if (selectedTab == 0)
+                contentY += DrawSortBar(panelX + 18, contentY, panelW - 36);
             float contentH = panelH - (contentY - panelY) - 16;
             Rect contentRect = new Rect(panelX + 18, contentY, panelW - 36, contentH);
 
@@ -364,6 +409,43 @@ namespace InsectGame.UI
                 DrawInsectList(contentRect);
             else
                 DrawStats(contentRect);
+        }
+
+        /// <summary>정렬 칩 + "팀 먼저" 토글. 소비한 세로 높이를 돌려준다.</summary>
+        private float DrawSortBar(float x, float y, float w)
+        {
+            InitItemStyles();
+            float h = UIScale.IsMobileLayout ? 60f : 52f;
+            float toggleW = 180f;
+            float chipW = (w - toggleW - 6f - (InsectBrowseSort.Order.Length - 1) * 6f) / InsectBrowseSort.Order.Length;
+
+            for (int i = 0; i < InsectBrowseSort.Order.Length; i++)
+            {
+                InsectSortMode mode = InsectBrowseSort.Order[i];
+                Rect chip = new Rect(x + i * (chipW + 6f), y, chipW, h);
+                sortChips[i] = chip;
+                GUI.backgroundColor = sortMode == mode ? TabActiveBgCol : TabInactiveBgCol;
+                if (GUI.Button(chip, InsectBrowseSort.Label(mode), itemViewStyle) && sortMode != mode)
+                {
+                    sortMode = mode;
+                    ownedCacheDirty = true;   // 순서와 행 문자열을 함께 다시 굽는다
+                    scrollPos = Vector2.zero;
+                    directScroll.Reset();
+                }
+            }
+
+            teamFirstChip = new Rect(x + w - toggleW, y, toggleW, h);
+            GUI.backgroundColor = teamFirst ? TabActiveBgCol : TabInactiveBgCol;
+            if (GUI.Button(teamFirstChip, teamFirst ? "팀 먼저 ON" : "팀 먼저 OFF", itemViewStyle))
+            {
+                teamFirst = !teamFirst;
+                ownedCacheDirty = true;
+                scrollPos = Vector2.zero;
+                directScroll.Reset();
+            }
+            GUI.backgroundColor = Color.white;
+
+            return h + 12f;
         }
 
         private void DrawInsectList(Rect area)
@@ -410,7 +492,8 @@ namespace InsectGame.UI
                 // 한 프레임(다음 GetCachedOwned가 맞춘다)에 대한 안전망이다.
                 string rowInfo = cachedRowInfo != null && i < cachedRowInfo.Length ? cachedRowInfo[i] : string.Empty;
                 string rowStats = cachedRowStats != null && i < cachedRowStats.Length ? cachedRowStats[i] : string.Empty;
-                if (DrawInsectItem(new Rect(0, i * itemH, viewRect.width, itemH - 4), pid, data, rowInfo, rowStats))
+                bool inTeam = teamManager != null && teamManager.IsInTeam(pid.instanceId);
+                if (DrawInsectItem(new Rect(0, i * itemH, viewRect.width, itemH - 4), pid, data, rowInfo, rowStats, inTeam))
                 {
                     selectedInstanceId = pid.instanceId;
                     detailScrollPos = Vector2.zero;
@@ -421,7 +504,7 @@ namespace InsectGame.UI
         }
 
         private bool DrawInsectItem(Rect rect, PlayerInsectData pid, InsectData data,
-            string infoText, string statsText)
+            string infoText, string statsText, bool inTeam)
         {
             bool clicked = false;
             Color rarityColor = data != null ? GetRarityColor(data.rarity) : Color.gray;
@@ -452,6 +535,14 @@ namespace InsectGame.UI
             {
                 GUI.Label(new Rect(rect.x + 138, rect.y + 112, rect.width - 320, 34),
                     statsText, itemStatMiniStyle);
+            }
+
+            // "팀 먼저"로 위에 모아둔 개체가 어디까지인지 목록만 보고 알 수 있게 표시한다.
+            // statsText는 같은 띠의 오른쪽 끝에 붙으므로 왼쪽 96px는 비어 있다.
+            if (inTeam)
+            {
+                UISurface.Chip(new Rect(rect.x + 138, rect.y + 110, 100f, 38f),
+                    "배틀팀", UITheme.Instance.accentMint, Color.white);
             }
 
             GUI.backgroundColor = ItemViewBlueCol;
@@ -849,6 +940,24 @@ namespace InsectGame.UI
             string baseName = data != null ? data.displayName : (pid != null ? pid.insectId : "Unknown");
             string shinyMark = (pid != null && pid.isShiny) ? "★ " : "";
             return shinyMark + baseName;
+        }
+
+        /// <summary>
+        /// 배틀팀 소속을 목록 맨 위로 올리기 위해서만 쓴다. 팀이 바뀌면 목록 순서도 바뀌므로
+        /// <see cref="BattleTeamManager.TeamChanged"/>를 구독해 캐시를 무효화한다 —
+        /// 안 하면 팀에서 뺀 곤충이 화면을 다시 열 때까지 맨 위에 남는다.
+        /// </summary>
+        public void AutoWire(BattleTeamManager team)
+        {
+            if (teamManager == team) return;
+            if (teamManager != null) teamManager.TeamChanged -= HandleTeamChanged;
+            teamManager = team;
+            if (teamManager != null && isActiveAndEnabled)
+            {
+                teamManager.TeamChanged -= HandleTeamChanged;
+                teamManager.TeamChanged += HandleTeamChanged;
+            }
+            ownedCacheDirty = true;
         }
 
         public void AutoWire(PlayerInsectCollection collection, PlayerCandyInventory candy, PlayerProgressController progress)
