@@ -145,6 +145,62 @@ namespace InsectGame.Tests
                 Assert.IsTrue(found, $"{region.regionId}에 전초기지 주민 앵커가 없다");
             }
         }
+
+        /// <summary>
+        /// 본마을 건물이 서로 겹치지 않는다. 배치는 광장 중심 극좌표(각도, 거리)로 흩어져 있고
+        /// <b>어느 검사도 그 각도가 실제로 비었는지 보지 않았다</b> — 병원 주석은 "빈 각도 315°"라
+        /// 적어 놓고도 집5(320°)와 중심 거리가 1.48m라 집이 병원 안에 박혀 있었다(2026-08-08 발견).
+        /// 벽이 둘 다 콜라이더를 유지해 통행까지 막혔다.
+        ///
+        /// 판정은 <b>실제 벽 크기</b>로 한다. 두 건물의 벽 반너비 합보다 중심 거리가 멀어야 한다 —
+        /// 각도 목록을 눈으로 세는 방식은 이미 한 번 틀렸다.
+        /// </summary>
+        [Test]
+        public void VillageBuildings_DoNotOverlapEachOther()
+        {
+            GameObject village = GameObject.Find("Village");
+            Assert.IsNotNull(village, "Build가 Village 루트를 만들지 않았다");
+            Transform mainVillage = village.transform.Find("MainVillage");
+            Assert.IsNotNull(mainVillage, "본마을 루트(MainVillage)를 찾지 못했다");
+
+            List<(string name, Vector3 pos, float halfSpan)> buildings =
+                new List<(string, Vector3, float)>();
+            foreach (Transform child in mainVillage)
+            {
+                // 벽 조각의 이름은 "Wall"(집·상점·병원·훈련소) 또는 "HexWall_n"(가챠 오두막)이다.
+                float half = 0f;
+                foreach (Transform part in child)
+                {
+                    if (!part.name.StartsWith("Wall") && !part.name.StartsWith("HexWall")) continue;
+
+                    // 회전이 임의라 최악의 경우(대각)로 잡는다 — 반너비가 아니라 외접원 반지름.
+                    Vector3 s = part.localScale;
+                    float corner = 0.5f * Mathf.Sqrt(s.x * s.x + s.z * s.z);
+                    // 육각벽처럼 중심에서 떨어져 놓인 조각은 그 거리도 더해야 실제 외곽이 된다.
+                    Vector3 lp = part.localPosition;
+                    half = Mathf.Max(half, Mathf.Sqrt(lp.x * lp.x + lp.z * lp.z) + corner);
+                }
+                if (half <= 0f) continue;   // 광장·우물·장식 등 벽 없는 노드는 대상이 아니다
+
+                buildings.Add((child.name, child.position, half));
+            }
+
+            Assert.GreaterOrEqual(buildings.Count, 6,
+                "벽을 가진 마을 건물이 너무 적다 — 이름 규칙이 바뀌었는지 확인할 것");
+
+            for (int i = 0; i < buildings.Count; i++)
+            {
+                for (int j = i + 1; j < buildings.Count; j++)
+                {
+                    Vector3 d = buildings[i].pos - buildings[j].pos;
+                    d.y = 0f;
+                    float need = buildings[i].halfSpan + buildings[j].halfSpan;
+                    Assert.Greater(d.magnitude, need,
+                        $"{buildings[i].name}과 {buildings[j].name}이 겹친다 " +
+                        $"(중심 거리 {d.magnitude:0.00}m < 필요 {need:0.00}m)");
+                }
+            }
+        }
     }
 }
 #endif

@@ -419,10 +419,25 @@ namespace InsectGame.Core
             });
         }
 
-        /// <summary>병원 — 흰 벽 + 빨간 십자 간판. 곤충 HP·상태 치료(Hospital 상호작용). 빈 각도 315°.</summary>
+        /// <summary>
+        /// 병원 — 흰 벽 + 빨간 십자 간판. 곤충 HP·상태 치료(Hospital 상호작용).
+        ///
+        /// <b>각도 350°는 실측으로 고른 값이다.</b> 광장 둘레의 점유 각도는
+        /// 25·55·90·145·180·215·270·320이고, 원래 여기 적혀 있던 "빈 각도 315°"는 사실이 아니었다 —
+        /// 315°/12m와 집5(320°/13m)는 중심 거리가 <b>1.48m</b>인데 병원 벽이 6×5, 집 벽이 3.8×3.2라
+        /// 집이 병원 안에 박혔다. 둘 다 <c>keepCollider: true</c>여서 충돌체까지 겹쳤고,
+        /// 같은 각도의 주민 앵커(320°/9.5m, "집5 앞")는 병원 정면 벽에 붙어 스폰됐다.
+        /// 거리만 늘리는 방식(315°/17m)으로는 4.2m라 여전히 겹친다.
+        ///
+        /// 352°는 이웃한 두 점유 각도(320°와 25°)의 <b>이등분선</b>이라 양쪽 여유가 고르다 —
+        /// 집5까지 6.96m, 집1까지 7.17m다(필요 6.39m = 두 벽 외접원 반지름의 합).
+        /// 350°도 겹치지는 않지만 집5 쪽 여유가 0.15m뿐이라 작은 조정에도 다시 깨진다.
+        /// <b>각도를 다시 옮긴다면 <c>OutpostFacilityTests.VillageBuildings_DoNotOverlapEachOther</c>가
+        /// 검산한다</b> — 각도 목록을 눈으로 세는 방식은 이미 한 번 틀렸다.
+        /// </summary>
         private void BuildHospital(Transform root, Vector3 villageCenter, VillageBuildResult result)
         {
-            Vector3 pos = Polar(villageCenter, 315f, 12f);
+            Vector3 pos = Polar(villageCenter, 352f, 12f);
             Transform hosp = FacingRoot("Hospital", root, pos, villageCenter);
 
             Color wall = new Color(0.95f, 0.95f, 0.97f);       // 흰 병원 벽
@@ -954,21 +969,26 @@ namespace InsectGame.Core
             Color snow = new Color(0.93f, 0.95f, 0.98f);
 
             // 얼음 블록을 호(弧)로 세운다 — 바람을 막는 반원 벽.
+            // yaw는 반드시 **-(각도 + 90)**이다. 이 파일의 다른 극좌표 배치물(울타리·가챠 육각벽)이
+            // 쓰는 것과 같은 접선 정렬 관례다. +90을 빼면 블록의 긴 축(로컬 +X, 1.1)이 반지름
+            // 방향을 향해 호가 아니라 **방사형 스파이크 5개**가 되고, keepCollider까지 통로로 튀어나온다.
             for (int i = 0; i < 5; i++)
             {
-                float a = Mathf.Lerp(200f, 340f, i / 4f) * Mathf.Deg2Rad;
+                float deg = Mathf.Lerp(200f, 340f, i / 4f);
+                float a = deg * Mathf.Deg2Rad;
                 Prim(PrimitiveType.Cube, $"IceBlock_{i}", shelter,
                     new Vector3(Mathf.Cos(a) * 2.2f, 0.6f, Mathf.Sin(a) * 2.2f),
-                    new Vector3(0f, -Mathf.Lerp(200f, 340f, i / 4f), 0f),
+                    new Vector3(0f, -(deg + 90f), 0f),
                     new Vector3(1.1f, 1.2f, 0.45f), i % 2 == 0 ? ice : deepIce, keepCollider: true);
             }
             // 두 번째 단 — 낮게 얹어 벽에 두께를 준다.
             for (int i = 0; i < 4; i++)
             {
-                float a = Mathf.Lerp(212f, 328f, i / 3f) * Mathf.Deg2Rad;
+                float deg = Mathf.Lerp(212f, 328f, i / 3f);
+                float a = deg * Mathf.Deg2Rad;
                 Prim(PrimitiveType.Cube, $"IceBlockTop_{i}", shelter,
                     new Vector3(Mathf.Cos(a) * 2.15f, 1.45f, Mathf.Sin(a) * 2.15f),
-                    new Vector3(0f, -Mathf.Lerp(212f, 328f, i / 3f), 0f),
+                    new Vector3(0f, -(deg + 90f), 0f),
                     new Vector3(1.0f, 0.7f, 0.42f), deepIce);
             }
             // 눈처마 — 벽 위에 얹힌 눈.
