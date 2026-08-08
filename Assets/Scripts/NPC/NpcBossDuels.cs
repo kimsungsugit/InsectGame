@@ -41,6 +41,29 @@ namespace InsectGame.NPC
 
         private static readonly BossDuel[] Table =
         {
+            // ── 1막 하수 2인 ── 정체가 밝혀지기 전이라 이름 대신 인상으로 부른다.
+            //
+            // **레벨을 간부(54)와 크게 벌린다.** 1막 유적 구간이 Lv.28~35이라 그 위에 살짝 얹고,
+            // 2막에서 집게를 만나면 20레벨 가까이 뛰어 "급이 다르다"가 숫자로 체감된다.
+            // 하수를 강하게 만들면 1막에서 막히고, 간부와 비슷하게 두면 조직의 위계가 사라진다.
+            //
+            // 부리는 곤충도 하수답게 흔한 종이다 — 간부는 사막지네·고드름사마귀처럼 그 지역
+            // 고유종을 쓰는데, 이들은 어디서나 잡히는 종을 그물로 쓸어 담아 쓴다.
+            // 그 대비가 "장부에 올리기만 하면 된다"는 태도를 말해 준다.
+            new BossDuel
+            {
+                storyNpcId = "ledger_thug_cord", displayName = "검은 옷의 사내",
+                insectId = "hornet_asian", level = 34,
+                rewardItemId = "net_silver", rewardCount = 2,
+                retryCooldownSeconds = RetryCooldown,
+            },
+            new BossDuel
+            {
+                storyNpcId = "ledger_thug_rule", displayName = "검은 옷의 여자",
+                insectId = "mantis_green", level = 32,
+                rewardItemId = "wound_salve_great", rewardCount = 3,
+                retryCooldownSeconds = RetryCooldown,
+            },
             // 집게 — 포획반장. 완력형이라 땅속을 헤집는 지네를 부린다.
             new BossDuel
             {

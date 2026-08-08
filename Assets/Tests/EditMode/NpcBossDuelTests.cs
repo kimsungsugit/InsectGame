@@ -1,9 +1,11 @@
 #if UNITY_EDITOR
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 using NUnit.Framework;
 using InsectGame.Core;
 using InsectGame.Data;
 using InsectGame.NPC;
+using UnityEngine;
 
 namespace InsectGame.Tests
 {
@@ -21,8 +23,16 @@ namespace InsectGame.Tests
             HashSet<string> ids = new HashSet<string>();
             foreach (InsectSeed seed in InsectExpansionDefinitions.CreateAll()) ids.Add(seed.id);
             foreach (InsectSeed seed in InsectExpansion2Definitions.CreateAll()) ids.Add(seed.id);
-            // 1막 64종은 PlaySceneBootstrap의 CreateStableInsect 호출부에 있어 씬 없이 못 읽는다.
-            // 보스 곤충은 전부 2막 확장에서 고르므로 이 두 집합으로 충분하다.
+
+            // 1막 64종은 PlaySceneBootstrap의 CreateStableInsect 호출부에 있어 C#에서 실행할 수
+            // 없다(씬이 필요하다). **소스를 읽어 ID만 뽑는다** — 옛 주석은 "보스 곤충은 전부 2막
+            // 확장에서 고르므로 두 집합으로 충분하다"고 했는데, 1막 하수가 흔한 1막 종을
+            // 부리게 되면서 그 전제가 깨졌다(하수가 지역 고유종을 쓰면 "쓸어 담는다"는 태도가
+            // 안 읽힌다 — 곤충 선택 자체가 서사라 종을 바꾸는 대신 검사를 넓혔다).
+            string bootstrap = ReadRepoText("Assets/Scripts/Core/PlaySceneBootstrap.cs");
+            foreach (Match m in Regex.Matches(bootstrap, @"CreateStableInsect\(""([a-z_0-9]+)"""))
+                ids.Add(m.Groups[1].Value);
+
             return ids;
         }
 
@@ -122,6 +132,69 @@ namespace InsectGame.Tests
             {
                 yield return m.Groups[1].Value;
             }
+        }
+
+        [Test]
+        public void Act1Thugs_AreWeakerThanAnyLedgerOfficer()
+        {
+            // 조직의 위계가 숫자로 읽혀야 한다. 하수가 간부에 가까우면 2막에서 급이 올라간
+            // 느낌이 사라지고, 하수가 더 세면 1막에서 막힌다.
+            int weakestOfficer = int.MaxValue;
+            int strongestThug = 0;
+            foreach (NpcBossDuels.BossDuel d in NpcBossDuels.All())
+            {
+                bool isThug = d.storyNpcId.StartsWith("ledger_thug_");
+                if (isThug) strongestThug = Mathf.Max(strongestThug, d.level);
+                else weakestOfficer = Mathf.Min(weakestOfficer, d.level);
+            }
+
+            Assert.Greater(strongestThug, 0, "1막 하수 대결이 표에 없다");
+            Assert.Less(weakestOfficer, int.MaxValue, "간부 대결이 표에 없다");
+            Assert.Less(strongestThug + 10, weakestOfficer,
+                $"하수(Lv.{strongestThug})와 간부(Lv.{weakestOfficer})의 급 차이가 10 미만 — 위계가 안 읽힌다");
+        }
+
+        [Test]
+        public void Act1Thugs_AreBeatableWithinFirstActLevelRange()
+        {
+            // 1막 마지막 리전(유적)의 수문장 레벨을 넘으면 그 자리에서 진행이 막힌다.
+            int ruinsGuardian = 0;
+            foreach (RegionData r in RegionDefinitions.CreateAll())
+                if (r != null && r.regionId == "ruins") ruinsGuardian = r.guardianLevel;
+
+            Assert.Greater(ruinsGuardian, 0, "유적 수문장 레벨을 못 읽었다");
+
+            foreach (NpcBossDuels.BossDuel d in NpcBossDuels.All())
+            {
+                if (!d.storyNpcId.StartsWith("ledger_thug_")) continue;
+                Assert.LessOrEqual(d.level, ruinsGuardian + 6,
+                    $"{d.displayName} Lv.{d.level}이 유적 수문장 Lv.{ruinsGuardian}보다 너무 높다 — 1막에서 막힌다");
+            }
+        }
+
+        [Test]
+        public void EveryThug_HasWorldAnchorAndIntroBeat()
+        {
+            // 전투는 소개 비트를 본 뒤에만 열린다(WorldInteractionController). 소개 비트가
+            // 없으면 그 하수와는 영영 싸울 수 없고, 월드 앵커가 없으면 만날 수도 없다.
+            string village = ReadRepoText("Assets/Scripts/Core/VillageBuilder.cs");
+            string story = ReadRepoText("Assets/Resources/Story.json");
+
+            foreach (NpcBossDuels.BossDuel d in NpcBossDuels.All())
+            {
+                if (!d.storyNpcId.StartsWith("ledger_thug_")) continue;
+                StringAssert.Contains($"storyNpcId = \"{d.storyNpcId}\"", village,
+                    $"{d.storyNpcId}가 월드에 배치되지 않았다 — 만날 수 없다");
+                StringAssert.Contains($"\"param\": \"{d.storyNpcId}\"", story,
+                    $"{d.storyNpcId}에게 NpcTalk 소개 비트가 없다 — 대결이 열리지 않는다");
+            }
+        }
+
+        private static string ReadRepoText(string relativePath)
+        {
+            string full = System.IO.Path.Combine(Application.dataPath, "..", relativePath);
+            Assert.IsTrue(System.IO.File.Exists(full), $"파일 없음: {relativePath}");
+            return System.IO.File.ReadAllText(full);
         }
     }
 }
