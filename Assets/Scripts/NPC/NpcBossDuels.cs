@@ -29,6 +29,12 @@ namespace InsectGame.NPC
             public int rewardCount;
             /// <summary>패배 후 재도전까지의 대기(초). 아이 대결(90초)보다 짧게 둘 이유가 없다.</summary>
             public float retryCooldownSeconds;
+
+            /// <summary>
+            /// 최종전인가 — 보스 BGM을 간부 테마와 가른다. 호출부가 storyNpcId 문자열을
+            /// 다시 비교하지 않게 표가 직접 말한다(문자열 비교는 표가 바뀌면 조용히 어긋난다).
+            /// </summary>
+            public bool isFinal;
         }
 
         private const float RetryCooldown = 120f;
@@ -58,6 +64,7 @@ namespace InsectGame.NPC
                 insectId = "moth_effaced", level = 72,
                 rewardItemId = "full_restore", rewardCount = 3,
                 retryCooldownSeconds = RetryCooldown,
+                isFinal = true,
             },
         };
 

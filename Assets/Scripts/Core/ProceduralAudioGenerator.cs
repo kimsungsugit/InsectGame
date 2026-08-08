@@ -51,6 +51,10 @@ namespace InsectGame.Core
                 case "explore_emberfall": clip = GenerateRegionBGM("Emberfall", 88, new[] { C4, D4, F4, G4, C5, D5 }, new[] { D1 * 2f, C3, G3, C3 }, 277); break;
                 case "explore_canopy":   clip = GenerateRegionBGM("Canopy", 112, new[] { G4, A4, B4, D5, E5, G5 }, new[] { G3, D4, E4, C3 }, 307); break;
                 case "explore_nameless": clip = GenerateRegionBGM("Nameless", 58, new[] { C4, D4, F4, G4, B4, C5 }, new[] { D1, D1, C3, D1 }, 331); break;
+                // ── 2막 보스 테마 ── 리전 곡보다 빠르고 베이스가 한 음에 눌러앉는다(압박).
+                // 간부전은 명부회의 사무적인 냉정함, 최종전은 반음 충돌을 섞어 불안정하게.
+                case "boss_ledger": clip = GenerateRegionBGM("BossLedger", 138, new[] { D4, F4, G4, A4, C5, D5 }, new[] { D2, D2, D2, A2 }, 353); break;
+                case "boss_final":  clip = GenerateRegionBGM("BossFinal", 152, new[] { C4, D4, E4, G4, B4, C5 }, new[] { D1, D1, C3, D1 }, 379); break;
                 default:
                     Debug.LogWarning($"[ProceduralAudio] Unknown BGM type: {type}");
                     return null;

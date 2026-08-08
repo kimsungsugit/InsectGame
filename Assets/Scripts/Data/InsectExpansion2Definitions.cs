@@ -103,6 +103,31 @@ namespace InsectGame.Data
                 new InsectSeed("butterfly_erased", "Erased Butterfly", InsectRarity.Rare, 0.19f, 0.55f, "Wing scales rub away at a touch and do not grow back.", "Nameless"),
                 new InsectSeed("moth_effaced", "Effaced Moth", InsectRarity.Epic, 0.09f, 0.64f, "Whatever was written on it has been thoroughly gone over.", "Nameless"),
                 new InsectSeed("mantis_unnamed", "Unnamed Mantis", InsectRarity.Legendary, 0.03f, 0.84f, "The largest thing here to have lost its name.", "Nameless"),
+
+                // ── 리전 고유성 보강 (12) ──
+                // 처음 배치할 때 frostline·emberfall·canopy가 각각 산·유적·숲 종을 5개씩 빌려
+                // 썼다. 생태적으로는 말이 되지만 Lv.50~64 구간에서 이미 잡은 종이 절반 가까이
+                // 나오면 새 땅에 온 느낌이 안 난다. 리전당 4종씩 채워 12/14를 전용으로 만든다.
+                // (hollow는 일부러 늘리지 않는다 — 거긴 '지워진 개체'가 채운다. 위 Hollow 블록 주석 참조.)
+
+                // Frostline / 서릿길 — Lv.50~56
+                new InsectSeed("beetle_hoarfrost", "Hoarfrost Beetle", InsectRarity.Common, 1.00f, 0.24f, "Frost grows along its back in the shape of fern leaves.", "Frostline"),
+                new InsectSeed("katydid_snowfield", "Snowfield Katydid", InsectRarity.Uncommon, 0.58f, 0.36f, "It chirps only when the wind dies, and the sound carries far.", "Frostline"),
+                new InsectSeed("bee_glacier", "Glacier Bee", InsectRarity.Rare, 0.25f, 0.48f, "It warms its flight muscles for a full minute before leaving the hive.", "Frostline"),
+                new InsectSeed("centipede_frost", "Frost Centipede", InsectRarity.Rare, 0.21f, 0.53f, "It moves under the ice crust, tracing pale lines you can follow.", "Frostline"),
+
+                // Emberfall / 잿불 골짜기 — Lv.54~60
+                new InsectSeed("pill_bug_cinder", "Cinder Pill Bug", InsectRarity.Common, 1.06f, 0.22f, "It rolls through warm ash without scorching its plates.", "Emberfall"),
+                new InsectSeed("cricket_slag", "Slag Cricket", InsectRarity.Uncommon, 0.61f, 0.35f, "It nests in cooled slag and drums against the hollow stone.", "Emberfall"),
+                new InsectSeed("beetle_scorch", "Scorch Beetle", InsectRarity.Rare, 0.24f, 0.49f, "Its shell is banded black and orange, still hot to the touch.", "Emberfall"),
+                new InsectSeed("moth_smoulder", "Smouldering Moth", InsectRarity.Epic, 0.11f, 0.61f, "Embers glow along the veins of its wings and never quite go out.", "Emberfall"),
+
+                // Canopy / 우듬지 — Lv.58~64
+                new InsectSeed("beetle_bark_canopy", "Canopy Bark Beetle", InsectRarity.Common, 0.98f, 0.23f, "It grazes the high bark that never sees the forest floor.", "Canopy"),
+                new InsectSeed("cicada_crown", "Crown Cicada", InsectRarity.Uncommon, 0.55f, 0.38f, "Its call comes from so high that it sounds like weather.", "Canopy"),
+                new InsectSeed("moth_leafveil", "Leafveil Moth", InsectRarity.Rare, 0.22f, 0.50f, "At rest it is indistinguishable from a living leaf, veins and all.", "Canopy"),
+                // 'orchid'는 사마귀 전용 키워드다(BuildModel 분기가 bee보다 먼저 걸린다) — bee_perfume으로 둔다.
+                new InsectSeed("bee_perfume", "Perfume Bee", InsectRarity.Epic, 0.12f, 0.59f, "It gathers scent instead of nectar, and carries it for days.", "Canopy"),
             };
         }
 

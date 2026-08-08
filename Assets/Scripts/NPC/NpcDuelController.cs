@@ -153,6 +153,14 @@ namespace InsectGame.NPC
             activeKid = null;
             activeBossId = storyNpcId;
             activeRarity = enemyData.rarity;
+
+            // 보스 테마로 전환 — 간부전과 최종전을 가른다. 전투 종료 시 배틀 화면이
+            // 기존 경로로 탐험 BGM을 되돌리므로 여기서 복구를 따로 하지 않는다.
+            if (Core.AudioManager.Instance != null)
+            {
+                Core.AudioManager.Instance.PlayBGM(
+                    duel.isFinal ? Core.BgmType.BossFinal : Core.BgmType.BossLedger);
+            }
             return true;
         }
 

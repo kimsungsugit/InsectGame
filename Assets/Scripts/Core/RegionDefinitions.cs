@@ -16,6 +16,20 @@ namespace InsectGame.Core
         /// </summary>
         public const float WorldScale = 1.5f;
 
+        /// <summary>
+        /// 2막(ver2) 리전의 최소 <c>requiredLevel</c>. 1막 마지막인 유적이 이 값 미만이고
+        /// 2막 첫 리전 hollow가 정확히 이 값이다.
+        ///
+        /// "어느 리전이 2막인가"를 묻는 코드는 <b>리전 ID 목록을 박아 두지 말고</b> 이 임계로
+        /// 판정한다. 이 저장소에서 하드코딩 리전 목록이 조용히 어긋난 적이 세 번 있었다
+        /// (마스터 특권 / 스폰 레벨대 / 의상 해금 문구). 리전을 더 붙여도 여기는 안 바뀐다.
+        /// </summary>
+        public const int Act2MinRequiredLevel = 42;
+
+        /// <summary>이 리전이 2막(장부에 없는 땅)인가 — 「지워진 개체」 출현 판정 등에 쓴다.</summary>
+        public static bool IsAct2Region(RegionData region)
+            => region != null && region.requiredLevel >= Act2MinRequiredLevel;
+
         public static RegionData[] CreateAll()
         {
             RegionData[] regions = new RegionData[]
@@ -470,7 +484,7 @@ namespace InsectGame.Core
                             exclusiveInsectIds = new[] { "hornet_dune", "centipede_sand" },
                             minLevel = 48,
                             maxLevel = 54,
-                            environmentType = "underground"
+                            environmentType = "vault"
                         },
                         new SubAreaData
                         {
@@ -501,8 +515,8 @@ namespace InsectGame.Core
                         "pill_bug_frost", "cricket_frost", "moth_snow", "beetle_rime",
                         "spider_frost", "stag_beetle_glacier", "butterfly_snowveil",
                         "mantis_icicle", "moth_aurora",
-                        "ladybug_alpine", "cicada_mountain", "caterpillar_pine",
-                        "beetle_longhorn_alpine", "butterfly_apollo"
+                        "beetle_hoarfrost", "katydid_snowfield", "bee_glacier",
+                        "centipede_frost", "butterfly_apollo"
                     },
                     guardianInsectId = "moth_aurora",
                     guardianDisplayName = "서릿길의 오로라나방",
@@ -519,7 +533,7 @@ namespace InsectGame.Core
                             exclusiveInsectIds = new[] { "moth_aurora", "butterfly_snowveil" },
                             minLevel = 52,
                             maxLevel = 58,
-                            environmentType = "cave"
+                            environmentType = "archive"
                         },
                         new SubAreaData
                         {
@@ -554,8 +568,8 @@ namespace InsectGame.Core
                         "beetle_cinder", "cricket_ember", "fly_ash", "centipede_ember",
                         "wasp_ash", "cicada_ember", "beetle_longhorn_char",
                         "mantis_ember", "hornet_magma",
-                        "beetle_click", "centipede_red", "moth_shadow",
-                        "wasp_night", "cicada_ancient"
+                        "pill_bug_cinder", "cricket_slag", "moth_shadow",
+                        "beetle_scorch", "moth_smoulder"
                     },
                     guardianInsectId = "hornet_magma",
                     guardianDisplayName = "잿불 골짜기의 용암말벌",
@@ -572,7 +586,7 @@ namespace InsectGame.Core
                             exclusiveInsectIds = new[] { "hornet_magma", "mantis_ember" },
                             minLevel = 56,
                             maxLevel = 62,
-                            environmentType = "cave"
+                            environmentType = "kiln"
                         },
                         new SubAreaData
                         {
@@ -603,8 +617,8 @@ namespace InsectGame.Core
                         "aphid_canopy", "caterpillar_silk", "ladybug_canopy", "bee_stingless",
                         "katydid_canopy", "stick_insect_canopy", "butterfly_crown",
                         "mantis_canopy", "butterfly_worldtree",
-                        "butterfly_azure", "butterfly_monarch", "luna_moth_silver",
-                        "beetle_longhorn_rosalia", "cricket_tree"
+                        "beetle_bark_canopy", "cicada_crown", "moth_leafveil",
+                        "beetle_longhorn_rosalia", "bee_perfume"
                     },
                     guardianInsectId = "butterfly_worldtree",
                     guardianDisplayName = "우듬지의 세계수나비",
@@ -671,7 +685,7 @@ namespace InsectGame.Core
                             exclusiveInsectIds = new[] { "moth_effaced", "butterfly_erased" },
                             minLevel = 64,
                             maxLevel = 70,
-                            environmentType = "temple"
+                            environmentType = "ledger"
                         },
                         new SubAreaData
                         {

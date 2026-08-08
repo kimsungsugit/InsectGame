@@ -10,7 +10,7 @@ using InsectGame.Data;
 namespace InsectGame.Tests
 {
     /// <summary>
-    /// 2막(ver2) 곤충 확장 54종 시드 데이터 무결성 테스트.
+    /// 2막(ver2) 곤충 확장 66종 시드 데이터 무결성 테스트.
     /// InsectExpansionDefinitionsTests의 형제 — 같은 불변식을 2막 시드에 적용한다.
     /// 특히 InsectEntity.BuildModel의 ID contains 분기(부분문자열 오매칭)를 데이터 차원에서 막고,
     /// 1막 확장 64종과 ID가 겹치지 않는지(DB 중복 등록) 확인한다.
@@ -19,9 +19,9 @@ namespace InsectGame.Tests
     public class InsectExpansion2DefinitionsTests
     {
         [Test]
-        public void CreateAll_Count_Is54()
+        public void CreateAll_Count_Is66()
         {
-            Assert.AreEqual(54, InsectExpansion2Definitions.CreateAll().Length);
+            Assert.AreEqual(66, InsectExpansion2Definitions.CreateAll().Length);
         }
 
         [Test]
@@ -64,10 +64,10 @@ namespace InsectGame.Tests
                 counts[seed.rarity] = n + 1;
             }
 
-            Assert.AreEqual(18, counts[InsectRarity.Common], "Common 수 불일치");
-            Assert.AreEqual(12, counts[InsectRarity.Uncommon], "Uncommon 수 불일치");
-            Assert.AreEqual(12, counts[InsectRarity.Rare], "Rare 수 불일치");
-            Assert.AreEqual(10, counts[InsectRarity.Epic], "Epic 수 불일치");
+            Assert.AreEqual(21, counts[InsectRarity.Common], "Common 수 불일치");
+            Assert.AreEqual(15, counts[InsectRarity.Uncommon], "Uncommon 수 불일치");
+            Assert.AreEqual(16, counts[InsectRarity.Rare], "Rare 수 불일치");
+            Assert.AreEqual(12, counts[InsectRarity.Epic], "Epic 수 불일치");
             Assert.AreEqual(2, counts[InsectRarity.Legendary], "Legendary 수 불일치");
         }
 

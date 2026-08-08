@@ -75,7 +75,13 @@ namespace InsectGame.Capture
                 PlayEffect(successEffect);
 
                 bool isShiny = target != null && target.IsShiny;
-                ShowPopup(isShiny ? "★ 색다른 곤충 포획! ★" : successMessage);
+                // 지워진 개체를 잡는 것은 이름을 되찾아주는 일이다(2막 서사의 핵심 행위).
+                // 이로치보다 우선해 알린다 — 둘이 겹치는 일은 드물고, 겹치면 이쪽이 더 특별하다.
+                bool isErased = target != null && target.IsErased;
+                ShowPopup(
+                    isErased ? $"이름을 되찾아주었다 — {NameOf(target)}"
+                    : isShiny ? "★ 색다른 곤충 포획! ★"
+                    : successMessage);
 
                 if (isShiny && AudioManager.Instance != null)
                     AudioManager.Instance.PlaySFX(SfxType.Victory);
@@ -118,6 +124,10 @@ namespace InsectGame.Capture
                 effect.Play();
             }
         }
+
+        private static string NameOf(InsectEntity target)
+            => target != null && target.Data != null && !string.IsNullOrEmpty(target.Data.displayName)
+                ? target.Data.displayName : "이름 없는 것";
 
         private void ShowPopup(string message)
         {

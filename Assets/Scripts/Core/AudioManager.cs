@@ -27,7 +27,12 @@ namespace InsectGame.Core
         ExploreFrostline,
         ExploreEmberfall,
         ExploreCanopy,
-        ExploreNameless
+        ExploreNameless,
+        // 2막 보스 테마 — 명부회 간부(집게·저울)와 최종전(관장 하월·무명).
+        // 위 리전 BGM과 똑같이 3지점(BgmTypeToString / 아래 전환 호출부 /
+        // ProceduralAudioGenerator.GetBGM)을 함께 등록해야 소리가 난다.
+        BossLedger,
+        BossFinal
     }
 
     public enum SfxType
@@ -486,14 +491,33 @@ namespace InsectGame.Core
                 case BgmType.ExploreEmberfall: return "explore_emberfall";
                 case BgmType.ExploreCanopy: return "explore_canopy";
                 case BgmType.ExploreNameless: return "explore_nameless";
+                case BgmType.BossLedger: return "boss_ledger";
+                case BgmType.BossFinal: return "boss_final";
                 default: return "explore";
             }
         }
 
+        // 마지막으로 재생한 리전 탐험 BGM. 전투·레이드가 끝난 뒤 되돌릴 곡이다.
+        private BgmType lastExploreBgm = BgmType.Explore;
+
         public void PlayBGMForRegion(string regionId)
         {
             BgmType type = RegionIdToBgmType(regionId);
+            lastExploreBgm = type;
             PlayBGM(type);
+        }
+
+        /// <summary>
+        /// 전투·레이드·보스전이 끝난 뒤 탐험 BGM으로 복귀. <b>있던 리전의 곡으로</b> 돌아간다.
+        ///
+        /// 예전엔 세 호출부가 전부 <c>PlayBGM(BgmType.Explore)</c>였다 — 리전 곡 13개를 만들어
+        /// 놓고 첫 전투가 끝나는 순간 범용 곡으로 떨어져서, 리전을 다시 갈아타기 전까지
+        /// 그 상태로 남았다. 어느 곡으로 돌아갈지는 오디오 시스템이 알아야 할 일이라
+        /// 호출부마다 RegionManager를 뒤지게 하지 않고 여기서 기억한다.
+        /// </summary>
+        public void RestoreExploreBGM()
+        {
+            PlayBGM(lastExploreBgm);
         }
 
         private static BgmType RegionIdToBgmType(string regionId)

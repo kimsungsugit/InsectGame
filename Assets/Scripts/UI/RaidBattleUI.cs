@@ -749,7 +749,7 @@ namespace InsectGame.UI
 
             if (AudioManager.Instance != null)
             {
-                AudioManager.Instance.PlayBGM(BgmType.Explore);
+                AudioManager.Instance.RestoreExploreBGM();   // 있던 리전의 곡으로 (범용 Explore 아님)
                 AudioManager.Instance.ClearBattleIntensity();
             }
             phase = Phase.None;

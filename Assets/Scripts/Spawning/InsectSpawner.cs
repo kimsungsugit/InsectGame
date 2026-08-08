@@ -300,7 +300,7 @@ namespace InsectGame.Spawning
 
             point.NotifySpawned();
             int level = GetSpawnLevel(selected, point);
-            entity.Initialize(selected, level, point, DespawnEntity);
+            entity.Initialize(selected, level, point, DespawnEntity, GetErasedChance(point.regionId));
             activeInsects.Add(entity);
             totalSpawned++;
 
@@ -759,6 +759,31 @@ namespace InsectGame.Spawning
                 entity.Initialize(data, level, null, DespawnEntity);
                 activeInsects.Add(entity);
                 totalSpawned++;
+            }
+        }
+
+        /// <summary>
+        /// 이 리전에서 「지워진 개체」가 나올 확률.
+        ///
+        /// 2막 리전에서만 나온다 — 판정은 <see cref="RegionDefinitions.IsAct2Region"/>가
+        /// requiredLevel에서 파생시키므로 여기에 리전 ID 목록이 없다(하드코딩 목록은 이 저장소에서
+        /// 세 번 어긋났다).
+        ///
+        /// 텅 빈 들이 유독 높은 것은 설계다. 거긴 잦아듦이 가장 먼저 훑고 간 폐허 초원이라
+        /// 서식종 절반이 초원·습지 종 재활용인데, 그게 <b>이름을 잃은 모습</b>으로 보여야
+        /// "초원이 죽은 자리"로 읽힌다. 아니면 그냥 저레벨 곤충이 잘못 나온 것처럼 보인다.
+        /// </summary>
+        private float GetErasedChance(string regionId)
+        {
+            if (regionManager == null || string.IsNullOrEmpty(regionId)) return 0f;
+            Data.RegionData region = regionManager.GetRegionById(regionId);
+            if (!RegionDefinitions.IsAct2Region(region)) return 0f;
+
+            switch (regionId)
+            {
+                case "hollow": return 0.55f;    // 이름을 잃은 땅 — 절반 넘게
+                case "nameless": return 0.35f;  // 무명이 갇힌 자리
+                default: return 0.12f;          // 나머지 2막 — 이따금 눈에 띄는 정도
             }
         }
 

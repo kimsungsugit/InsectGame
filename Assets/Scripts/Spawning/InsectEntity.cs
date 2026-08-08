@@ -15,6 +15,7 @@ namespace InsectGame.Spawning
         private Vector3 basePosition;
         private float wingPhase;
         private bool shiny;
+        private bool erased;   // 「지워진 개체」 — IsErased 요약 참조
         private bool forBattle;
         private float shinySparkleTimer;
         private Transform cachedShinySparkle;
@@ -58,17 +59,29 @@ namespace InsectGame.Spawning
         public InsectData Data => data;
         public int Level => level;
         public bool IsShiny => shiny;
+
+        /// <summary>
+        /// 「지워진 개체」 — 이름을 빼앗겨 검은 실루엣이 된 개체. 2막 리전에서만 나온다.
+        ///
+        /// <b>포획하면 보통 개체가 된다.</b> 이 플래그는 월드에 서 있는 동안의 외형과 이름표에만
+        /// 걸리고 <c>PlayerInsectData</c>로 넘어가지 않는다 — 잡는 행위가 곧 이름을 되찾아주는
+        /// 것이라는 게 2막 서사의 골자다. 그래서 세이브에 필드를 늘릴 필요도 없다.
+        /// </summary>
+        public bool IsErased => erased;
         public bool CanBeEngaged => !forBattle && !engaged && alertState != 2 && !despawnedThisCycle;
         public SpawnPoint OwnerPoint => ownerPoint;
         public string RegionId => ownerPoint != null ? ownerPoint.regionId : string.Empty;
 
-        public void Initialize(InsectData insectData, int insectLevel, SpawnPoint point, Action<InsectEntity> despawnCallback)
+        public void Initialize(InsectData insectData, int insectLevel, SpawnPoint point,
+            Action<InsectEntity> despawnCallback, float erasedChance = 0f)
         {
             data = insectData;
             level = insectLevel;
             ownerPoint = point;
             onDespawn = despawnCallback;
             shiny = UnityEngine.Random.value < 0.01f; // 1% 확률 색다른 곤충
+            // 지워진 개체 — 확률은 스폰너가 리전에서 정해 넘긴다(여기에 리전 목록을 두지 않는다).
+            erased = erasedChance > 0f && UnityEngine.Random.value < erasedChance;
             // 풀 재사용 회귀 방지: BuildForBattle에서 true로 설정된 forBattle이 남아있으면
             // 다음 Update에서 회전 안 하는 정적 곤충이 됨. 매 Initialize마다 명시적 false.
             forBattle = false;
@@ -100,11 +113,14 @@ namespace InsectGame.Spawning
             wingPhase = UnityEngine.Random.Range(0f, Mathf.PI * 2f);
         }
 
-        public void BuildForBattle(InsectData insectData, int insectLevel, bool shinyOverride)
+        public void BuildForBattle(InsectData insectData, int insectLevel, bool shinyOverride,
+            bool erasedOverride = false)
         {
             data = insectData;
             level = insectLevel;
             shiny = shinyOverride;
+            // 풀 재사용 회귀 방지 — 명시하지 않으면 직전 개체의 erased가 남아 도감 프리뷰까지 검게 나온다.
+            erased = erasedOverride;
             forBattle = true;
             cachedNameLabel = null;
             cachedShinySparkle = null;
@@ -1536,7 +1552,27 @@ namespace InsectGame.Spawning
         // 모델 파츠 색칠 — shiny면 종별 색변환을 거쳐 전 파츠(하드코딩 색 포함)가 이로치 팔레트로 바뀜.
         private void ApplyColor(GameObject go, Color color)
         {
-            ApplyColorRaw(go, shiny ? Shinify(color) : color);
+            // erased가 shiny를 이긴다 — 이름을 빼앗긴 개체에는 옮길 색조가 남아 있지 않다.
+            if (erased) ApplyColorRaw(go, Erase(color));
+            else ApplyColorRaw(go, shiny ? Shinify(color) : color);
+        }
+
+        /// <summary>
+        /// 「지워진 개체」의 색 — 원색을 거의 잃은 검은 실루엣.
+        ///
+        /// 완전한 검정으로 뭉개지 않는다. 밝기 차이를 조금 남겨야 더듬이·다리·날개가 구분돼
+        /// "무엇이었는지는 알겠는데 무엇인지는 모르겠는" 인상이 나온다 — 그게 이 개체의 요점이다.
+        /// </summary>
+        private static Color Erase(Color color)
+        {
+            float lum = color.r * 0.299f + color.g * 0.587f + color.b * 0.114f;
+            Color ink = new Color(0.055f, 0.05f, 0.07f);
+            Color ghost = new Color(0.22f, 0.21f, 0.26f);
+            return new Color(
+                Mathf.Lerp(ink.r, ghost.r, lum),
+                Mathf.Lerp(ink.g, ghost.g, lum),
+                Mathf.Lerp(ink.b, ghost.b, lum),
+                color.a);
         }
 
         // shiny 변환을 건너뛰는 원색 적용 — 반짝임/오라/바닥마커 등 효과 오버레이용(레어/금빛 고정색 보존).
@@ -1658,9 +1694,17 @@ namespace InsectGame.Spawning
             label.transform.localPosition = new Vector3(0f, 2.5f, 0f);
 
             TextMesh text = label.AddComponent<TextMesh>();
-            string prefix = shiny ? "★ " : "";
-            string suffix = shiny ? " ★" : "";
-            text.text = $"{prefix}{data.displayName} Lv.{level}{suffix}";
+            if (erased)
+            {
+                // 빼앗긴 것이 바로 이름이다 — 종명 자리를 비워 둔다. 레벨은 남긴다(위험도는 보여야 한다).
+                text.text = $"??? Lv.{level}";
+            }
+            else
+            {
+                string prefix = shiny ? "★ " : "";
+                string suffix = shiny ? " ★" : "";
+                text.text = $"{prefix}{data.displayName} Lv.{level}{suffix}";
+            }
             text.characterSize = 0.2f;
             text.fontSize = 48;
             text.anchor = TextAnchor.MiddleCenter;

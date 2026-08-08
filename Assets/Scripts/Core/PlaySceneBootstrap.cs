@@ -3409,6 +3409,10 @@ namespace InsectGame.Core
                 case "butterfly_worldtree": name = "세계수 천공무"; element = InsectElement.Wind; break;
                 case "moth_effaced": name = "지워진 인분무"; element = InsectElement.Wind; break;
                 case "mantis_unnamed": name = "이름 없는 일격"; element = InsectElement.Leaf; break;
+                // 리전 고유성 보강분의 Epic 2종. moth_smoulder는 Wind/Light, bee_perfume은
+                // Wind/Poison만 유효하다(Infer*Type이 그 ID에 주는 값) — 그 안에서 고른다.
+                case "moth_smoulder": name = "잉걸 인분무"; element = InsectElement.Light; break;
+                case "bee_perfume": name = "향낭 살포"; element = InsectElement.Poison; break;
                 default: name = "궁극 생태 해방"; break;
             }
 

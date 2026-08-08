@@ -385,6 +385,20 @@ namespace InsectGame.Core
                 case "reeds":
                     BuildReeds(subArea);
                     break;
+                // ── 2막(ver2) 전용 ── 서사 비중이 큰 4곳만 전용으로 짓는다. 나머지 8곳은
+                // 1막 환경 재활용을 유지한다 — 전부 새로 만들 값어치가 없다.
+                case "vault":
+                    BuildLedgerVault(subArea);
+                    break;
+                case "archive":
+                    BuildIceArchive(subArea);
+                    break;
+                case "kiln":
+                    BuildEmberKiln(subArea);
+                    break;
+                case "ledger":
+                    BuildLedgerHall(subArea);
+                    break;
                 default:
                     BuildGenericArea(subArea);
                     break;
@@ -872,6 +886,233 @@ namespace InsectGame.Core
         }
 
         // ========== 사원 ==========
+        // ================= 2막(ver2) 전용 환경 =================
+
+        /// <summary>
+        /// 명부회 창고(dunes_vault) — 선반에 곤충 상자가 층층이 쌓인 방.
+        /// 예전엔 그냥 동굴이었다. 남획의 현장인데 동굴로 보이면 서사가 전달되지 않는다.
+        /// </summary>
+        private void BuildLedgerVault(SubAreaData sub)
+        {
+            Material floorMat = Mat(new Color(0.30f, 0.26f, 0.20f));
+            Material shelfMat = Mat(new Color(0.38f, 0.28f, 0.17f));
+            Material crateMat = Mat(new Color(0.52f, 0.42f, 0.26f));
+            Material glassMat = Mat(new Color(0.62f, 0.74f, 0.72f, 0.35f));
+            SetTransparent(glassMat);   // 알파 재질은 Mat만으론 불투명하게 나온다
+            Material lampMat = Mat(new Color(0.95f, 0.80f, 0.45f));
+
+            CreateFloor(floorMat, 30f);
+
+            // 선반 4열 — 통로를 가운데 남긴다.
+            for (int col = 0; col < 4; col++)
+            {
+                float x = -9f + col * 6f;
+                if (col >= 2) x += 2f;   // 가운데 통로
+                for (int tier = 0; tier < 3; tier++)
+                {
+                    GameObject plank = Prim(PrimitiveType.Cube, $"Shelf_{col}_{tier}");
+                    plank.transform.localPosition = new Vector3(x, 0.7f + tier * 1.05f, 0f);
+                    plank.transform.localScale = new Vector3(2.6f, 0.12f, 16f);
+                    Apply(plank, shelfMat);
+
+                    // 상자 — 층마다 개수를 달리해 손댄 흔적을 남긴다.
+                    int boxes = 5 - tier;
+                    for (int b = 0; b < boxes; b++)
+                    {
+                        GameObject crate = Prim(PrimitiveType.Cube, $"Crate_{col}_{tier}_{b}");
+                        crate.transform.localPosition =
+                            new Vector3(x + (b % 2 == 0 ? -0.5f : 0.5f), 1.05f + tier * 1.05f, -6.5f + b * 3.1f);
+                        crate.transform.localScale = new Vector3(1.1f, 0.75f, 1.1f);
+                        Apply(crate, b % 3 == 0 ? glassMat : crateMat);
+                    }
+                }
+                // 선반 기둥
+                for (int side = -1; side <= 1; side += 2)
+                {
+                    GameObject post = Prim(PrimitiveType.Cylinder, $"ShelfPost_{col}_{side}");
+                    post.transform.localPosition = new Vector3(x, 1.6f, side * 7.6f);
+                    post.transform.localScale = new Vector3(0.16f, 1.6f, 0.16f);
+                    Apply(post, shelfMat);
+                }
+            }
+
+            // 매달린 등 — 창고 특유의 차가운 작업 조명.
+            for (int i = 0; i < 3; i++)
+            {
+                GameObject lamp = Prim(PrimitiveType.Sphere, $"VaultLamp_{i}");
+                lamp.transform.localPosition = new Vector3(0f, 3.4f, -6f + i * 6f);
+                lamp.transform.localScale = Vector3.one * 0.5f;
+                Apply(lamp, lampMat);
+                CreatePointLight(new Vector3(0f, 3.4f, -6f + i * 6f), new Color(1f, 0.88f, 0.6f), 9f, 1.1f);
+            }
+        }
+
+        /// <summary>빙하 서고(frostline_archive) — 얼음 기둥 속에 장부가 얼어붙어 있다.</summary>
+        private void BuildIceArchive(SubAreaData sub)
+        {
+            Material floorMat = Mat(new Color(0.62f, 0.72f, 0.80f));
+            Material iceMat = Mat(new Color(0.70f, 0.84f, 0.92f, 0.55f));
+            SetTransparent(iceMat);
+            Material deepMat = Mat(new Color(0.42f, 0.58f, 0.72f));
+            Material paperMat = Mat(new Color(0.86f, 0.82f, 0.68f));
+            Material glowMat = Mat(new Color(0.55f, 0.85f, 1f));
+
+            CreateFloor(floorMat, 30f);
+
+            // 얼음 기둥 8개 — 안에 장부가 한 권씩 갇혀 있다.
+            for (int i = 0; i < 8; i++)
+            {
+                float a = i * (360f / 8f) * Mathf.Deg2Rad;
+                Vector3 at = new Vector3(Mathf.Cos(a) * 8f, 0f, Mathf.Sin(a) * 8f);
+
+                GameObject column = Prim(PrimitiveType.Cylinder, $"IceColumn_{i}");
+                column.transform.localPosition = at + new Vector3(0f, 2.0f, 0f);
+                column.transform.localScale = new Vector3(1.25f, 2.0f, 1.25f);
+                Apply(column, iceMat);
+
+                GameObject ledger = Prim(PrimitiveType.Cube, $"FrozenLedger_{i}");
+                ledger.transform.localPosition = at + new Vector3(0f, 1.7f, 0f);
+                ledger.transform.localRotation = Quaternion.Euler(0f, i * 24f, 8f);
+                ledger.transform.localScale = new Vector3(0.7f, 0.9f, 0.16f);
+                Apply(ledger, paperMat);
+            }
+
+            // 가운데 균열 — 바닥이 갈라져 아래에서 빛이 샌다.
+            for (int i = 0; i < 5; i++)
+            {
+                GameObject crack = Prim(PrimitiveType.Cube, $"IceCrack_{i}");
+                crack.transform.localPosition = new Vector3(0f, 0.03f, -6f + i * 3f);
+                crack.transform.localRotation = Quaternion.Euler(0f, (i % 2 == 0 ? 12f : -9f), 0f);
+                crack.transform.localScale = new Vector3(0.35f, 0.02f, 3.2f);
+                Apply(crack, glowMat);
+            }
+
+            GameObject core = Prim(PrimitiveType.Sphere, "ArchiveGlow");
+            core.transform.localPosition = new Vector3(0f, 1.2f, 0f);
+            core.transform.localScale = Vector3.one * 1.1f;
+            Apply(core, glowMat);
+            CreatePointLight(new Vector3(0f, 1.2f, 0f), new Color(0.6f, 0.85f, 1f), 14f, 1.5f);
+
+            // 매달린 고드름
+            for (int i = 0; i < 10; i++)
+            {
+                GameObject spike = Prim(PrimitiveType.Cylinder, $"Icicle_{i}");
+                spike.transform.localPosition = new Vector3(-10f + i * 2.2f, 4.2f, (i % 2 == 0 ? 4f : -4f));
+                spike.transform.localRotation = Quaternion.Euler(180f, 0f, 0f);
+                spike.transform.localScale = new Vector3(0.22f, 0.8f + (i % 3) * 0.3f, 0.22f);
+                Apply(spike, deepMat);
+            }
+        }
+
+        /// <summary>잿불 가마(emberfall_kiln) — 용암 균열과 달군 가마. 열기가 보이는 방.</summary>
+        private void BuildEmberKiln(SubAreaData sub)
+        {
+            Material floorMat = Mat(new Color(0.16f, 0.13f, 0.12f));
+            Material basaltMat = Mat(new Color(0.22f, 0.19f, 0.20f));
+            Material lavaMat = Mat(new Color(0.95f, 0.35f, 0.10f));
+            Material emberMat = Mat(new Color(1f, 0.55f, 0.18f));
+
+            CreateFloor(floorMat, 30f);
+
+            // 가마 3기 — 원통 몸체 + 달아오른 아궁이.
+            for (int i = 0; i < 3; i++)
+            {
+                float x = -8f + i * 8f;
+                GameObject body = Prim(PrimitiveType.Cylinder, $"Kiln_{i}");
+                body.transform.localPosition = new Vector3(x, 1.6f, 6f);
+                body.transform.localScale = new Vector3(2.1f, 1.6f, 2.1f);
+                Apply(body, basaltMat);
+
+                GameObject mouth = Prim(PrimitiveType.Sphere, $"KilnMouth_{i}");
+                mouth.transform.localPosition = new Vector3(x, 1.0f, 4.6f);
+                mouth.transform.localScale = new Vector3(1.1f, 0.9f, 0.6f);
+                Apply(mouth, lavaMat);
+                CreatePointLight(new Vector3(x, 1.0f, 4.6f), new Color(1f, 0.45f, 0.15f), 11f, 2.0f);
+            }
+
+            // 용암 균열 — 바닥을 가로지른다.
+            for (int i = 0; i < 6; i++)
+            {
+                GameObject vein = Prim(PrimitiveType.Cube, $"LavaVein_{i}");
+                vein.transform.localPosition = new Vector3(-10f + i * 4f, 0.03f, -4f + (i % 3) * 2.5f);
+                vein.transform.localRotation = Quaternion.Euler(0f, 20f + i * 25f, 0f);
+                vein.transform.localScale = new Vector3(0.5f, 0.02f, 5.5f + (i % 2) * 2f);
+                Apply(vein, lavaMat);
+            }
+
+            // 굳은 슬래그 더미
+            for (int i = 0; i < 7; i++)
+            {
+                GameObject slag = Prim(PrimitiveType.Cube, $"Slag_{i}");
+                slag.transform.localPosition = new Vector3(-9f + i * 3f, 0.35f, -9f);
+                slag.transform.localRotation = Quaternion.Euler(0f, i * 33f, i % 2 == 0 ? 7f : -6f);
+                slag.transform.localScale = new Vector3(1.4f, 0.7f, 1.2f);
+                Apply(slag, i % 3 == 0 ? emberMat : basaltMat);
+            }
+        }
+
+        /// <summary>
+        /// 장부의 방(nameless_ledger) — 최종장의 무대. 텅 빈 서가와 바닥에 새겨진 이름들,
+        /// 그리고 아직 채워지지 않은 빈칸 하나.
+        /// </summary>
+        private void BuildLedgerHall(SubAreaData sub)
+        {
+            Material floorMat = Mat(new Color(0.14f, 0.13f, 0.17f));
+            Material stoneMat = Mat(new Color(0.28f, 0.27f, 0.32f));
+            Material nameMat = Mat(new Color(0.72f, 0.70f, 0.62f));
+            Material voidMat = Mat(new Color(0.04f, 0.03f, 0.06f));
+            Material glowMat = Mat(new Color(0.85f, 0.82f, 0.60f));
+
+            CreateFloor(floorMat, 32f);
+
+            // 양옆 서가 — 칸은 있는데 대부분 비었다.
+            for (int side = -1; side <= 1; side += 2)
+            {
+                for (int i = 0; i < 5; i++)
+                {
+                    GameObject shelf = Prim(PrimitiveType.Cube, $"Rack_{side}_{i}");
+                    shelf.transform.localPosition = new Vector3(side * 9f, 1.9f, -8f + i * 4f);
+                    shelf.transform.localScale = new Vector3(0.6f, 3.8f, 3.0f);
+                    Apply(shelf, stoneMat);
+
+                    // 남은 장부 몇 권 — 드문드문.
+                    if (i % 2 == 0)
+                    {
+                        GameObject book = Prim(PrimitiveType.Cube, $"Ledger_{side}_{i}");
+                        book.transform.localPosition = new Vector3(side * 8.5f, 2.3f, -8f + i * 4f);
+                        book.transform.localScale = new Vector3(0.22f, 0.8f, 1.6f);
+                        Apply(book, nameMat);
+                    }
+                }
+            }
+
+            // 바닥에 새겨진 이름 줄 — 가운데로 갈수록 촘촘하다.
+            for (int i = 0; i < 12; i++)
+            {
+                GameObject line = Prim(PrimitiveType.Cube, $"NameLine_{i}");
+                line.transform.localPosition = new Vector3(0f, 0.02f, -9f + i * 1.6f);
+                line.transform.localScale = new Vector3(5.5f - Mathf.Abs(i - 6) * 0.3f, 0.015f, 0.12f);
+                Apply(line, nameMat);
+            }
+
+            // 빈칸 — 이름이 들어갈 자리 하나가 비어 있다. 이 방의 요점.
+            GameObject blank = Prim(PrimitiveType.Cube, "TheBlank");
+            blank.transform.localPosition = new Vector3(0f, 0.04f, 10f);
+            blank.transform.localScale = new Vector3(3.2f, 0.03f, 2.0f);
+            Apply(blank, voidMat);
+
+            GameObject rim = Prim(PrimitiveType.Cube, "BlankRim");
+            rim.transform.localPosition = new Vector3(0f, 0.03f, 10f);
+            rim.transform.localScale = new Vector3(3.6f, 0.02f, 2.4f);
+            Apply(rim, glowMat);
+
+            GameObject lamp = Prim(PrimitiveType.Sphere, "HallLight");
+            lamp.transform.localPosition = new Vector3(0f, 4.2f, 2f);
+            lamp.transform.localScale = Vector3.one * 0.6f;
+            Apply(lamp, glowMat);
+            CreatePointLight(new Vector3(0f, 4.2f, 2f), new Color(0.95f, 0.90f, 0.70f), 16f, 1.2f);
+        }
+
         private void BuildTemple(SubAreaData sub)
         {
             Material stoneMat = Mat(new Color(0.35f, 0.3f, 0.28f));
