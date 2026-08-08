@@ -130,12 +130,60 @@ namespace InsectGame.Core
 
         public bool InBattleMode => battleMode;
 
-        /// <summary>카메라 쉐이크 트리거. intensity: 흔들림 강도(0.1~0.5 권장), duration: 지속 시간(초).</summary>
+        /// <summary>
+        /// 현재 배틀 구도(위치·회전). <see cref="EnterBattleModeFramed"/>가 이걸 덮어쓰기만 하고
+        /// 되읽을 방법이 없어서, <b>배틀 중에 잠시 카메라를 빌려 가는 쪽</b>(컷신)이 원래 구도로
+        /// 돌려놓지 못했다. 빌려 가기 전에 이 값을 받아 두고 끝나면 다시 넣으면 된다.
+        /// </summary>
+        public void GetBattleFraming(out Vector3 position, out Quaternion rotation)
+        {
+            position = battlePos;
+            rotation = battleRot;
+        }
+
+        /// <summary>
+        /// 카메라 쉐이크 트리거. intensity: 흔들림 강도(0.1~0.5 권장), duration: 지속 시간(초).
+        ///
+        /// <b>비교 대상은 "지금 남아 있는 세기"다.</b> 예전엔 <c>Max(shakeIntensity, intensity)</c>로
+        /// 역대 최댓값을 붙들고 <c>shakeTimer = shakeDuration</c>으로 그 값을 통째로 되감았다.
+        /// 그래서 강한 흔들림 직후의 약한 호출이 <b>강한 것을 처음부터 다시 재생</b>했다 —
+        /// 레이드처럼 타격이 연달아 들어오면 흔들림이 영영 잦아들지 않고, 잔잔하게 의도한
+        /// 컷이 직전 전투의 충격을 물려받는다(래치가 타이머 만료 때만 풀리기 때문).
+        /// </summary>
         public void Shake(float intensity, float duration)
         {
-            shakeIntensity = Mathf.Max(shakeIntensity, intensity);
-            shakeDuration = Mathf.Max(shakeDuration, duration);
-            shakeTimer = shakeDuration;
+            ResolveShake(shakeIntensity, shakeDuration, shakeTimer, intensity, duration,
+                out shakeIntensity, out shakeDuration, out shakeTimer);
+        }
+
+        /// <summary>
+        /// 쉐이크 누적 규칙의 <b>순수</b> 부분 — 씬 없이 테스트로 고정한다.
+        /// 새 호출이 지금 남은 세기보다 강하면 갈아타고, 약하면 지속만 늘린다.
+        /// </summary>
+        internal static void ResolveShake(
+            float curIntensity, float curDuration, float curTimer,
+            float newIntensity, float newDuration,
+            out float intensity, out float duration, out float timer)
+        {
+            // 남은 세기 = 현재 세기 × 남은 비율. 이걸 기준으로 삼는 것이 핵심이다 —
+            // curIntensity(역대 최댓값)와 비교하면 이미 잦아든 흔들림이 새 호출을 계속 눌러 이긴다.
+            float remaining = curDuration > 0f && curTimer > 0f
+                ? curIntensity * (curTimer / curDuration)
+                : 0f;
+
+            if (newIntensity > remaining)
+            {
+                intensity = newIntensity;
+                duration = newDuration;
+                timer = newDuration;
+            }
+            else
+            {
+                // 약한 여진이 강한 흔들림을 끊지 않게 세기는 두고 지속만 늘린다.
+                intensity = curIntensity;
+                timer = Mathf.Max(curTimer, newDuration);
+                duration = Mathf.Max(curDuration, timer);
+            }
         }
 
         /// <summary>짧은 시네마틱 포커스 — worldPoint 쪽으로 잠깐 줌인 후 자동 복귀(첫 조우 연출 등).

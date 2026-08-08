@@ -35,6 +35,8 @@ namespace InsectGame.Story
         // 전투 화면의 카메라가 컷신 때문에 풀린다.
         private bool restoreBattleMode;
         private bool restoreFrozen;
+        private Vector3 restoreBattlePos;
+        private Quaternion restoreBattleRot;
 
         private GUIStyle subtitleStyle;
         private bool stylesReady;
@@ -90,6 +92,14 @@ namespace InsectGame.Story
             if (definition == null || definition.Length == 0) return;
             if (playerTransform == null || cameraFollower == null) return;
 
+            // **재진입 가드 — 없으면 영구 먹통이 된다.**
+            // 재생 중에 Play가 다시 불리면 아래의 "되돌릴 상태 기록"이 컷신 1번이 스스로 만든 값
+            // (battleMode=true, frozen=true)을 읽는다. 그러면 Stop()이 복구를 **둘 다 건너뛰어**
+            // 조작이 영영 안 돌아오고 카메라도 배틀 모드에 갇힌다.
+            // 먼저 Stop()으로 1번을 정상 종료시켜 원래 상태를 되돌린 뒤 새로 시작한다
+            // (겸사겸사 ModalUIRegistry 중복 등록도 사라진다).
+            if (playing) Stop();
+
             shots = definition;
             elapsed = 0f;
             lastShotIndex = -1;
@@ -98,6 +108,9 @@ namespace InsectGame.Story
             // 되돌릴 상태를 먼저 기록한다(아래에서 덮어쓰기 전에).
             restoreBattleMode = cameraFollower.InBattleMode;
             restoreFrozen = playerMovement != null && playerMovement.IsFrozen;
+            // 배틀 구도도 함께 기억한다 — restoreBattleMode면 ExitBattleMode를 건너뛰는데,
+            // 그때 battlePos/battleRot는 컷신 마지막 컷 값으로 남아 전투 카메라가 그 구도로 굳는다.
+            cameraFollower.GetBattleFraming(out restoreBattlePos, out restoreBattleRot);
 
             if (playerMovement != null)
             {
@@ -125,7 +138,20 @@ namespace InsectGame.Story
 
             // 원래 상태로 되돌린다 — 컷신이 시작될 때 이미 배틀 카메라였거나 이미 frozen이었다면
             // 그건 다른 시스템이 걸어 둔 것이라 여기서 풀면 안 된다.
-            if (cameraFollower != null && !restoreBattleMode) cameraFollower.ExitBattleMode();
+            if (cameraFollower != null)
+            {
+                if (restoreBattleMode)
+                {
+                    // 배틀 카메라를 유지하되 **구도는 원래대로** 돌려놓는다. 안 그러면 전투 화면이
+                    // 컷신 마지막 컷의 구도로 굳는다(LateUpdate가 battlePos를 매 프레임 적용한다).
+                    cameraFollower.EnterBattleModeFramed(
+                        restoreBattlePos, restoreBattlePos + restoreBattleRot * Vector3.forward);
+                }
+                else
+                {
+                    cameraFollower.ExitBattleMode();
+                }
+            }
             if (playerMovement != null && !restoreFrozen) playerMovement.SetFrozen(false);
             ModalUIRegistry.Unregister(this);
         }
