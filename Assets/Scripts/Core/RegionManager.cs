@@ -251,8 +251,22 @@ namespace InsectGame.Core
             return null;
         }
 
+        /// <summary>
+        /// 수문장이 서는 자리 — 이전 리전에서 오는 <b>길목</b>, 리전 경계 안쪽이다.
+        ///
+        /// 예전엔 두 리전 중심의 <b>중점</b>이었다. 그건 리전이 서로 겹칠 때만 경계가 되는데
+        /// 이 월드의 리전은 떨어져 있어서, 13개 중 <b>9개가 어느 리전에도 속하지 않는 허공</b>에
+        /// 섰다(hollow는 자기 중심에서 77m 밖). 전역 Ground 위라 떨어지지는 않지만 리전 안을
+        /// 아무리 둘러봐도 수문장이 안 보였고, 지도 마커도 리전 밖을 가리켰다.
+        ///
+        /// 반경의 72%에 두면 항상 리전 안이면서 중심보다 바깥이라 "길을 막는" 그림이 유지된다.
+        /// <c>RegionMapUI</c> 마커와 <c>StoryObjectiveTracker</c> 목표가 같은 함수를 쓰므로
+        /// 실물·표시·안내가 함께 움직인다.
+        /// </summary>
         public Vector3 GetGuardianPosition(RegionData region)
         {
+            if (region == null) return Vector3.zero;
+
             Vector3 fromCenter = Vector3.zero;
             string prevId = GetPreviousRegionId(region.regionId);
             if (prevId != null)
@@ -260,8 +274,17 @@ namespace InsectGame.Core
                 RegionData prev = GetRegionById(prevId);
                 if (prev != null) fromCenter = prev.centerPosition;
             }
-            return (fromCenter + region.centerPosition) / 2f;
+
+            Vector3 toPrev = fromCenter - region.centerPosition;
+            toPrev.y = 0f;
+            // 시작 리전(meadow)은 이전 리전이 없다 — 중심에 둔다.
+            if (toPrev.sqrMagnitude < 0.01f) return region.centerPosition;
+
+            return region.centerPosition + toPrev.normalized * (region.radius * GuardianEdgeRatio);
         }
+
+        /// <summary>수문장을 리전 반경의 몇 %에 세울지. 1.0이면 경계 밖으로 새어 나간다.</summary>
+        private const float GuardianEdgeRatio = 0.72f;
 
         // --- 지역 순서 매핑 ---
 

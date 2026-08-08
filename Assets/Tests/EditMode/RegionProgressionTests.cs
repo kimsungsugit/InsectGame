@@ -393,6 +393,39 @@ namespace InsectGame.Tests
                 $"조명 프로필이 없어 야외 주광으로 떨어지는 서브에리어 환경: {string.Join(", ", missing)}");
         }
 
+        [Test]
+        public void EveryGuardian_StandsInsideItsOwnRegion()
+        {
+            // 예전 공식은 두 리전 중심의 **중점**이었다. 리전이 겹칠 때만 경계가 되는데
+            // 이 월드의 리전은 떨어져 있어서 13개 중 9개가 어느 리전에도 없는 허공에 섰다
+            // (hollow는 자기 중심에서 77m 밖). 전역 Ground 위라 떨어지진 않지만
+            // **리전 안을 아무리 둘러봐도 수문장이 안 보였다** — 실제 기기에서 그렇게 보고됐다.
+            GameObject host = new GameObject("RegionManagerGuardianTest");
+            try
+            {
+                RegionManager mgr = host.AddComponent<RegionManager>();
+                RegionData[] all = RegionDefinitions.CreateAll();
+                mgr.Initialize(all);
+
+                foreach (RegionData r in all)
+                {
+                    if (r == null || string.IsNullOrEmpty(r.guardianInsectId)) continue;
+
+                    Vector3 pos = mgr.GetGuardianPosition(r);
+                    Vector3 d = pos - r.centerPosition;
+                    d.y = 0f;
+
+                    Assert.Less(d.magnitude, r.radius,
+                        $"{r.regionId} 수문장이 자기 리전 밖에 있다 " +
+                        $"({d.magnitude:F1}m / 반경 {r.radius:F1}m) — 리전 안에서는 보이지 않는다");
+                }
+            }
+            finally
+            {
+                Object.DestroyImmediate(host);
+            }
+        }
+
         private static string ReadSource(string relativePath)
         {
             string full = Path.Combine(Application.dataPath, "..", relativePath);

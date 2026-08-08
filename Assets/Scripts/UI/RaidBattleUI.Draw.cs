@@ -1160,13 +1160,23 @@ namespace InsectGame.UI
         /// 5슬롯 행동을 매 라운드 직접 지정하면 세로 모바일에서 라운드당 10탭이 되므로, 조작은
         /// 리더 선택만 남기고 나머지는 이 성향으로 조종한다(평소 추가 탭 0, 예고를 읽었을 때만 1탭).
         /// </summary>
+        // 하단 패널의 가로 여백 — 세이프에어리어(노치·펀치홀) 안쪽으로 30px.
+        // 예전엔 `30`과 `panelW - 30`을 그대로 썼는데, 그건 **화면 가장자리 기준**이라
+        // 인셋이 있는 기기에서 헤더·스킬 카드·스탠스 칩이 노치 아래로 들어가 잘렸다.
+        private static float PanelContentX => UIScale.VirtualSafeLeft + 30f;
+
+        private static float PanelContentWidth =>
+            Mathf.Max(1f, UIScale.VirtualScreenWidth
+                - UIScale.VirtualSafeLeft - UIScale.VirtualSafeRight - 60f);
+
         private void DrawStanceChips(float panelY, float panelW)
         {
             UITheme theme = UITheme.Instance;
-            float chipW = Mathf.Min(116f, (panelW - 72f) / 3f);
+            float contentW = PanelContentWidth;
+            float chipW = Mathf.Min(116f, (contentW - 12f) / 3f);
             const float chipH = 34f;
             float totalW = chipW * 3f + UITheme.Space.XS * 2f;
-            float x = panelW - 30f - totalW;
+            float x = PanelContentX + contentW - totalW;
             float y = panelY + 8f;
 
             for (int i = 0; i < StanceOrder.Length; i++)
@@ -1213,22 +1223,28 @@ namespace InsectGame.UI
 
             skillSelHeaderStyleCache.fontSize = mobile ? 27 : 26;
             // 헤더 폭은 스탠스 칩 앞까지만 — 겹치면 긴 문구가 칩 아래로 깔린다.
-            float headerW = Mathf.Max(140f, stanceRects[0].x - 30f - UITheme.Space.S);
+            float headerW = Mathf.Max(140f, stanceRects[0].x - PanelContentX - UITheme.Space.S);
             int actOrder = raidController.ActedThisRound + 1;
             int actTotal = Mathf.Max(actOrder, raidController.RoundActorCount);
             // 곤충 이름 길이는 데이터가 정하므로 고정 상자에 그대로 넣으면 잘린다.
-            UIHelper.LabelFit(new Rect(30, panelY + 8, headerW, 44),
+            UIHelper.LabelFit(new Rect(PanelContentX, panelY + 8, headerW, 44),
                 mobile
                     ? $"{actOrder}/{actTotal}  {stats.Data.displayName}의 차례"
                     : $"{actOrder}/{actTotal}  {stats.Data.displayName}의 차례 [Q/W/E/R]  |  A 자동 · S 전원자동",
                 skillSelHeaderStyleCache);
 
             int count = skills != null ? Mathf.Min(skills.Length, 4) : 0;
-            float btnW = portrait ? (panelW - 76f) * 0.5f : Mathf.Min(300, (panelW - 80) / Mathf.Max(count, 1));
+            // 세이프 인셋 안쪽 폭에서 나눈다 — 예전엔 화면 전체 폭(panelW)을 그대로 갈라
+            // 인셋이 있는 기기에서 맨 끝 카드가 노치 밖으로 밀려 글씨가 잘렸다.
+            const float btnGap = 14f;
+            float contentW = PanelContentWidth;
+            float btnW = portrait
+                ? (contentW - btnGap) * 0.5f
+                : Mathf.Min(300, (contentW - btnGap * Mathf.Max(count - 1, 0)) / Mathf.Max(count, 1));
             float btnH = 212f;
             float baseBtnY = panelY + 60f;
             float btnY = baseBtnY;
-            float startX = 30;
+            float startX = PanelContentX;
             string[] keyLabels = { "Q", "W", "E", "R" };
 
             for (int i = 0; i < count; i++)
@@ -1237,9 +1253,9 @@ namespace InsectGame.UI
                 if (skill == null) continue;
 
                 float bx = portrait
-                    ? startX + (i % 2) * (btnW + 14f)
-                    : startX + i * (btnW + 14f);
-                if (portrait) btnY = baseBtnY + (i / 2) * (btnH + 14f);
+                    ? startX + (i % 2) * (btnW + btnGap)
+                    : startX + i * (btnW + btnGap);
+                if (portrait) btnY = baseBtnY + (i / 2) * (btnH + btnGap);
                 int cd = cooldowns != null && i < cooldowns.Length ? cooldowns[i] : 0;
                 bool canUse = cd <= 0;
 
@@ -1351,14 +1367,14 @@ namespace InsectGame.UI
             // 셋 다 `DrawUniteButton`이 쓰는 3등분 폭 (panelW-84)/3에 맞춰 간격 12로 떨어진다.
             if (portrait)
             {
-                float rowY = baseBtnY + 2f * (btnH + 14f);
+                float rowY = baseBtnY + 2f * (btnH + btnGap);
                 float rowW = (panelW - 84f) / 3f;
                 DrawAutoButtons(startX, rowY, rowW, 90f, stacked: false);
                 DrawUniteButton(startX + 2f * (rowW + 12f), rowY, 90f);
             }
             else
             {
-                float sideX = startX + count * (btnW + 14f) + 20f;
+                float sideX = startX + count * (btnW + btnGap) + 20f;
                 DrawAutoButtons(sideX, baseBtnY, 160f, 62f, stacked: true);
                 DrawUniteButton(sideX, baseBtnY + 144f, 76f);
             }

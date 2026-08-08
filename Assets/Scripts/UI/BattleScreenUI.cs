@@ -1926,7 +1926,12 @@ namespace InsectGame.UI
             GUI.DrawTexture(new Rect(0, panelY + 4, sw, 2), Texture2D.whiteTexture);
 
             GUI.color = Color.white;
-            GUI.Label(new Rect(30, panelY + 12, sw - 60f, 36),
+            // 가로 여백은 세이프에어리어(노치·펀치홀) 안쪽으로 잡는다 — 화면 가장자리 기준으로
+            // 30을 쓰면 인셋이 있는 기기에서 헤더와 스킬 카드가 노치 아래로 들어가 잘린다.
+            float contentX = UIScale.VirtualSafeLeft + 30f;
+            float contentW = Mathf.Max(1f,
+                sw - UIScale.VirtualSafeLeft - UIScale.VirtualSafeRight - 60f);
+            GUI.Label(new Rect(contentX, panelY + 12, contentW, 36),
                 mobile ? "사용할 기술을 선택하세요" : "스킬을 선택하세요  (숫자키 1~4 또는 클릭)", skillHeaderCache);
 
             InsectSkill[] skills = battleController != null ? battleController.GetPlayerSkills() : playerStats.Data.skills;
@@ -1934,16 +1939,17 @@ namespace InsectGame.UI
             int count = skills != null ? Mathf.Min(skills.Length, 4) : 0;
             skillBtnCount = count;
 
-            float extraW = portrait ? (sw - 76f) * 0.5f : 200f;
             float gap = 16f;
-            float availW = sw - 40f - extraW - 30f;
+            // 세로는 2열, 가로는 우측에 상세 패널(extraW) 자리를 비워 둔다. 둘 다 contentW에서 나눈다.
+            float extraW = portrait ? (contentW - gap) * 0.5f : 200f;
+            float availW = contentW - extraW - 30f;
             float btnW = portrait
-                ? (sw - 76f) * 0.5f
+                ? (contentW - gap) * 0.5f
                 : Mathf.Max(220, Mathf.Min(320, (availW - gap * Mathf.Max(count - 1, 0)) / Mathf.Max(count, 1)));
             float btnH = 216f;
             float baseBtnY = panelY + 58f;
             float btnY = baseBtnY;
-            float startX = 30;
+            float startX = contentX;
 
             float pulse = 0.5f + Mathf.Sin(Time.time * 3f) * 0.15f;
 
@@ -3653,9 +3659,24 @@ namespace InsectGame.UI
                 new Rect(x, thirdY, width, rowHeight));
         }
 
+        /// <summary>
+        /// 속성색을 어두운 버튼 배경 위에서 읽히게 만든다.
+        ///
+        /// 예전엔 흰색을 <b>일률적으로 28%</b> 섞었다. 밝은 속성(Electric·Light)은 그걸로 충분했지만
+        /// 어두운 속성은 그대로 어두워서, <c>Dark</c>(0.4/0.15/0.5) 스킬의 "타입 · 동작" 줄이
+        /// 버튼 배경(0.08/0.10/0.20)과 명암비 <b>3.69</b>, 호버 시엔 <b>2.43</b>까지 떨어졌다
+        /// — 기기에서 "글씨가 배경색과 비슷해 안 보인다"고 보고된 자리다(WCAG AA 본문 기준 4.5).
+        ///
+        /// 이제 원래 밝기에 따라 섞는 양을 달리한다: 어두울수록 많이 섞어(최대 62%) 바닥을 끌어올리고,
+        /// 이미 밝으면 28%만 섞어 속성색의 정체성을 지킨다. 전 속성이 기본 5.5+ / 호버 3.6+가 된다.
+        /// </summary>
         internal static Color GetReadableAccent(Color accent)
         {
-            Color readable = Color.Lerp(accent, Color.white, 0.28f);
+            // 지각 밝기(ITU-R BT.601) — 사람 눈이 초록에 민감한 것을 반영한다.
+            float luminance = accent.r * 0.299f + accent.g * 0.587f + accent.b * 0.114f;
+            float mix = Mathf.Lerp(0.62f, 0.28f, Mathf.Clamp01(luminance / 0.5f));
+
+            Color readable = Color.Lerp(accent, Color.white, mix);
             readable.a = accent.a;
             return readable;
         }
