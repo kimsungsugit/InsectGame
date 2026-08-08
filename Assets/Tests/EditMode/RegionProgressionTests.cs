@@ -1,6 +1,7 @@
 #if UNITY_EDITOR
 using System.Collections.Generic;
 using System.IO;
+using System.Text.RegularExpressions;
 using NUnit.Framework;
 using InsectGame.Core;
 using InsectGame.Data;
@@ -352,6 +353,51 @@ namespace InsectGame.Tests
                 $"case \"{last}\": return \"",
                 body,
                 $"{last}는 사슬의 끝인데 다음 리전 배선이 있다 — MainChain을 먼저 늘릴 것");
+        }
+
+        [Test]
+        public void GuardianWorldPosition_HasNoDuplicateFormulaInBootstrap()
+        {
+            // PlaySceneBootstrap이 GetGuardianWorldPosition이라는 **낡은 사본**을 들고 있었다.
+            // 같은 공식을 쓰면서 이전 리전 switch만 자체 보유해 ver1 5개에서 멈춰 있었고,
+            // 그래서 ruins와 2막 6리전의 실물 수문장이 지도 마커와 다른 자리에 섰다
+            // (최대 105m — dunes는 연못 안, canopy는 유적 안). ruins는 2막의 유일한 문이라
+            // 지도가 가리키는 곳에 아무것도 없으면 에러 없이 조용히 진행이 막힌다.
+            string bootstrap = ReadSource("Assets/Scripts/Core/PlaySceneBootstrap.cs");
+
+            StringAssert.DoesNotContain("private Vector3 GetGuardianWorldPosition", bootstrap,
+                "수문장 좌표 계산이 다시 복제됐다 — RegionManager.GetGuardianPosition 하나만 쓸 것");
+            StringAssert.Contains("regionMgr.GetGuardianPosition(r)", bootstrap,
+                "CreateGuardians가 RegionManager에서 좌표를 받지 않는다");
+        }
+
+        [Test]
+        public void EverySubAreaEnvironmentType_HasLightingProfile()
+        {
+            // 지오메트리(SubAreaWorldBuilder)와 조명(SubAreaEnvironment)은 짝이다.
+            // 한쪽만 늘리면 밀폐 공간을 지어 놓고 바깥 햇빛을 쬔다 — 2막 4종이 실제로 그랬다.
+            string definitions = ReadSource("Assets/Scripts/Core/RegionDefinitions.cs");
+            string environment = ReadSource("Assets/Scripts/Core/SubAreaEnvironment.cs");
+
+            var used = new HashSet<string>();
+            foreach (Match m in Regex.Matches(definitions, @"environmentType\s*=\s*""([a-z_]+)"""))
+                used.Add(m.Groups[1].Value);
+
+            Assert.Greater(used.Count, 0, "environmentType 추출 실패 — 이 테스트가 무의미해졌다");
+
+            var missing = new List<string>();
+            foreach (string type in used)
+                if (!environment.Contains($"case \"{type}\":")) missing.Add(type);
+
+            CollectionAssert.IsEmpty(missing,
+                $"조명 프로필이 없어 야외 주광으로 떨어지는 서브에리어 환경: {string.Join(", ", missing)}");
+        }
+
+        private static string ReadSource(string relativePath)
+        {
+            string full = Path.Combine(Application.dataPath, "..", relativePath);
+            Assert.IsTrue(File.Exists(full), $"소스를 못 찾음: {relativePath}");
+            return File.ReadAllText(full);
         }
     }
 }

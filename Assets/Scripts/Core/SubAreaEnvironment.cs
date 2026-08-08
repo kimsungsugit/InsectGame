@@ -341,6 +341,62 @@ namespace InsectGame.Core
                         cameraBg = new Color(0.08f, 0.07f, 0.06f)
                     };
 
+                // ── 2막(ver2) 전용 4종 ──
+                // SubAreaWorldBuilder에는 이 넷의 지오메트리를 넣고 **여기 조명 프로필을 빠뜨려**
+                // 전부 default(야외 주광)로 떨어졌다. 밀폐 공간을 지어 놓고 바깥 햇빛을 쬐는 꼴이라
+                // 지오메트리만 보고는 티가 안 난다 — environmentType을 늘리면 이 switch도 함께 늘린다.
+                case "vault":   // 명부회 창고 — 곤충 상자가 쌓인 실내. 차가운 작업 조명.
+                    return new EnvironmentProfile
+                    {
+                        lightColor = new Color(0.72f, 0.68f, 0.58f),
+                        lightIntensity = 0.7f,
+                        lightRotation = Quaternion.Euler(80f, 15f, 0f),
+                        ambientColor = new Color(0.34f, 0.31f, 0.26f),
+                        fogEnabled = true,
+                        fogColor = new Color(0.16f, 0.14f, 0.11f),
+                        fogDensity = 0.035f,
+                        cameraBg = new Color(0.07f, 0.06f, 0.05f)
+                    };
+
+                case "archive": // 빙하 서고 — 얼음을 통과한 푸른 빛.
+                    return new EnvironmentProfile
+                    {
+                        lightColor = new Color(0.62f, 0.78f, 0.92f),
+                        lightIntensity = 0.85f,
+                        lightRotation = Quaternion.Euler(70f, 200f, 0f),
+                        ambientColor = new Color(0.38f, 0.48f, 0.58f),
+                        fogEnabled = true,
+                        fogColor = new Color(0.30f, 0.40f, 0.50f),
+                        fogDensity = 0.028f,
+                        cameraBg = new Color(0.12f, 0.18f, 0.24f)
+                    };
+
+                case "kiln":    // 잿불 가마 — 아래에서 올라오는 용암 빛.
+                    return new EnvironmentProfile
+                    {
+                        lightColor = new Color(1f, 0.55f, 0.28f),
+                        lightIntensity = 0.78f,
+                        lightRotation = Quaternion.Euler(60f, 30f, 0f),
+                        ambientColor = new Color(0.42f, 0.24f, 0.16f),
+                        fogEnabled = true,
+                        fogColor = new Color(0.24f, 0.12f, 0.08f),
+                        fogDensity = 0.042f,
+                        cameraBg = new Color(0.10f, 0.05f, 0.04f)
+                    };
+
+                case "ledger":  // 장부의 방 — 최종장. 빛이 거의 없고 바닥의 이름만 희미하다.
+                    return new EnvironmentProfile
+                    {
+                        lightColor = new Color(0.78f, 0.74f, 0.62f),
+                        lightIntensity = 0.55f,
+                        lightRotation = Quaternion.Euler(88f, 0f, 0f),
+                        ambientColor = new Color(0.22f, 0.21f, 0.24f),
+                        fogEnabled = true,
+                        fogColor = new Color(0.10f, 0.09f, 0.12f),
+                        fogDensity = 0.05f,
+                        cameraBg = new Color(0.04f, 0.04f, 0.06f)
+                    };
+
                 default:
                     return BuildDefaultProfile();
             }

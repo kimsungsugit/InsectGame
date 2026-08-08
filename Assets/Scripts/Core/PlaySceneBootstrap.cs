@@ -418,7 +418,7 @@ namespace InsectGame.Core
             };
 
             // 수문장 곤충 스폰 (3D 엔티티)
-            CreateGuardians(regionDefs, database);
+            CreateGuardians(regionDefs, database, regionMgr);
 
             PlayerMovement playerMovement = player.GetComponent<PlayerMovement>();
             if (playerMovement != null)
@@ -4656,13 +4656,15 @@ namespace InsectGame.Core
             return current;
         }
 
-        private void CreateGuardians(Data.RegionData[] regions, InsectDatabase database)
+        private void CreateGuardians(Data.RegionData[] regions, InsectDatabase database, RegionManager regionMgr)
         {
             foreach (var r in regions)
             {
                 if (string.IsNullOrEmpty(r.guardianInsectId)) continue;
 
-                Vector3 guardianPos = GetGuardianWorldPosition(r, regions);
+                // 좌표의 단일 출처는 RegionManager다 — 지도 마커(RegionMapUI)와 목표 추적기
+                // (StoryObjectiveTracker)가 같은 함수를 쓰므로 실물과 표시가 어긋날 수 없다.
+                Vector3 guardianPos = regionMgr.GetGuardianPosition(r);
 
                 // 수문장 플랫폼
                 Material platMat = CreateSafeMaterial(new Color(0.3f, 0.15f, 0.1f));
@@ -4751,25 +4753,13 @@ namespace InsectGame.Core
             text.color = new Color(1f, 0.3f, 0.2f);
         }
 
-        private Vector3 GetGuardianWorldPosition(Data.RegionData region, Data.RegionData[] allRegions)
-        {
-            Vector3 fromCenter = Vector3.zero;
-            string prevId = null;
-            switch (region.regionId)
-            {
-                case "pond": prevId = "meadow"; break;
-                case "forest": prevId = "pond"; break;
-                case "swamp": prevId = "forest"; break;
-                case "mountain": prevId = "swamp"; break;
-                case "garden": prevId = "meadow"; break;
-            }
-            if (prevId != null)
-            {
-                foreach (var r in allRegions)
-                    if (r.regionId == prevId) { fromCenter = r.centerPosition; break; }
-            }
-            return (fromCenter + region.centerPosition) / 2f;
-        }
+        // GetGuardianWorldPosition은 제거했다 — RegionManager.GetGuardianPosition의 **낡은 사본**이었다.
+        // 같은 공식((이전 리전 중심 + 이 리전 중심) / 2)을 쓰면서 이전 리전을 구하는 switch만
+        // 자체 보유해, ver1 5개 case에서 멈춰 있었다. 그래서 ruins와 2막 6리전은 prevId가 null →
+        // 원점 기준이 되어 **실물 수문장이 지도 마커와 전혀 다른 자리에 섰다**(최대 105m, dunes는
+        // 연못 안, canopy는 유적 안). ruins 수문장은 2막의 유일한 문이라 지도가 가리키는 곳에
+        // 아무것도 없으면 에러 없이 조용히 진행이 막힌다. 이제 CreateGuardians가 RegionManager를
+        // 직접 물어본다 — 좌표의 단일 출처는 하나여야 한다.
 
         private void CreateSubAreaEntries(Data.RegionData[] regions)
         {
