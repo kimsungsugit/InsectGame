@@ -822,10 +822,22 @@ namespace InsectGame.Battle
             {
                 InsectBattleStats attacker = TeamStats[i];
                 if (attacker == null || attacker.CurrentHp <= 0) continue;
+                // **이번 라운드에 이미 행동한 슬롯은 참여하지 않는다.**
+                // 게이지가 슬롯마다 차오르므로(CommitMemberAction) 팀 턴 **도중에** 100을 넘고,
+                // CanUniteAttack은 ActiveSlot을 보지 않는다 — 슬롯 0~3으로 스킬을 다 쓴 뒤
+                // 슬롯 4 차례에 [F]를 누르면 0~3이 한 라운드에 **두 번** 때렸다.
+                // (아래 주석은 반대쪽 절반만 막고 있었다: 아직 차례가 안 온 팀원의 이중 행동.)
+                if (HasActedThisRound(i)) continue;
                 result.AddTeamAction(
                     RaidRoundResolver.ResolveUniteContribution(i, attacker, BossStats));
                 names.Add(attacker.Data != null ? attacker.Data.displayName : $"팀원 {i + 1}");
             }
+
+            // 이미 커밋된 이번 라운드 피해를 이월한다 — 아래에서 roundInProgress를 새 결과로
+            // 갈아끼우므로, 이월하지 않으면 합체 이전 슬롯들의 피해가 통째로 사라져
+            // FinishTeamPhase의 LastDamageToBoss와 UI 기여도 표시가 과소 집계된다.
+            if (roundInProgress != null)
+                result.TotalDamageToBoss += roundInProgress.TotalDamageToBoss;
 
             // 합체공격은 팀 턴을 통째로 소비한다 — 아직 차례가 오지 않았던 팀원도 여기에 참여했다.
             // 표시하지 않으면 합체 직후 남은 슬롯들이 한 번 더 행동해 한 라운드에 두 번 때린다.

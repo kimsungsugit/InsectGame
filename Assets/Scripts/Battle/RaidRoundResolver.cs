@@ -49,10 +49,14 @@ namespace InsectGame.Battle
         /// 그대로 넘긴다 — 스위치는 상수 하나뿐이고 AOE 실행 경로
         /// (<see cref="ResolveBossIntent"/>의 <c>IsArea</c> 분기)는 손대지 않는다.
         /// </param>
+        // allowAreaAttack에 기본값을 두지 않는다 — 지금 프로덕션은 AOE를 끈 상태인데
+        // 기본값이 true면 **인자를 빠뜨린 새 호출부가 조용히 AOE를 부활**시킨다.
+        // 그 경로는 rageMultiplier를 무시하고 전원을 깎으므로 되살아나면 곧 전멸이다.
+        // 필수 인자로 두면 새 호출부가 "이 전투에서 AOE를 쓸 것인가"를 반드시 답하게 된다.
         public static RaidBossIntent CreateBossIntent(int roundNumber,
             InsectBattleStats boss, InsectBattleStats[] team, int roundsUntilAreaAttack,
             InsectSkill signatureSkill, IRaidRandomSource random,
-            bool allowAreaAttack = true)
+            bool allowAreaAttack)
         {
             IRaidRandomSource source = random ?? SharedRandom;
             InsectData bossData = boss != null ? boss.Data : null;

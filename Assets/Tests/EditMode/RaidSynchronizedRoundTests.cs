@@ -411,6 +411,59 @@ namespace InsectGame.Tests
         }
 
         [Test]
+        public void ResolveUniteCommand_MidRound_SkipsSlotsThatAlreadyActed()
+        {
+            // 게이지는 슬롯마다 차오르므로 팀 턴 **도중에** 100을 넘을 수 있고,
+            // CanUniteAttack은 ActiveSlot을 보지 않는다. 그때 이미 행동한 슬롯까지
+            // 합체에 참여시키면 한 라운드에 두 번 때린다.
+            InsectSkill skill = CreateSkill("hit", SkillEffectType.Damage, 1, 0);
+            RaidBattleController raid = CreateRaid(
+                CreateData("boss", 10000, 30, 100),
+                CreateTeam(5, 500, 60, 80),
+                new[] { skill });
+
+            raid.ResolveTeamCommand(0);
+            raid.ResolveTeamCommand(0);
+            Assert.AreEqual(2, raid.ActiveSlot, "전제: 슬롯 0·1이 이미 행동했다");
+
+            SetUniteGauge(raid, RaidBattleController.UniteGaugeMax);
+            RaidRoundResult result = raid.ResolveUniteCommand();
+
+            Assert.IsNotNull(result);
+            Assert.AreEqual(3, result.TeamActions.Count,
+                "이미 행동한 슬롯 0·1은 합체에 참여하지 않는다(참여하면 한 라운드 2회 공격)");
+            foreach (RaidActionResult action in result.TeamActions)
+            {
+                Assert.GreaterOrEqual(action.SourceSlot, 2,
+                    $"슬롯 {action.SourceSlot}은 이미 행동했는데 합체에 또 들어갔다");
+            }
+        }
+
+        [Test]
+        public void ResolveUniteCommand_MidRound_CarriesOverDamageAlreadyDealt()
+        {
+            // 합체는 roundInProgress를 새 결과로 갈아끼운다 — 이월하지 않으면 합체 이전
+            // 슬롯들의 피해가 사라져 라운드 집계와 UI 기여도가 과소 표시된다.
+            InsectSkill skill = CreateSkill("hit", SkillEffectType.Damage, 1, 0);
+            RaidBattleController raid = CreateRaid(
+                CreateData("boss", 10000, 30, 100),
+                CreateTeam(5, 500, 60, 80),
+                new[] { skill });
+
+            RaidRoundResult first = raid.ResolveTeamCommand(0);
+            int dealtBefore = first.TotalDamageToBoss;
+            Assert.Greater(dealtBefore, 0, "전제: 첫 슬롯이 실제로 피해를 줬다");
+
+            SetUniteGauge(raid, RaidBattleController.UniteGaugeMax);
+            RaidRoundResult result = raid.ResolveUniteCommand();
+
+            Assert.AreEqual(
+                dealtBefore + result.TeamActions.Sum(action => action.Damage),
+                result.TotalDamageToBoss,
+                "합체 이전 피해가 라운드 집계에서 사라졌다");
+        }
+
+        [Test]
         public void Unite_MidRound_ConsumesEveryRemainingSlot()
         {
             InsectSkill skill = CreateSkill("hit", SkillEffectType.Damage, 1, 0);
