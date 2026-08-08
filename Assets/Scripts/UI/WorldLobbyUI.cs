@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace InsectGame.UI
 {
-    public class WorldLobbyUI : MonoBehaviour
+    public class WorldLobbyUI : MonoBehaviour, IModalUI
     {
         private enum LobbyPhase { WorldSelect, Joining, InWorld, Hidden }
 
@@ -73,14 +73,21 @@ namespace InsectGame.UI
 
             if (skipLobby)
             {
-                phase = LobbyPhase.Hidden;
+                SetPhase(LobbyPhase.Hidden);
                 PlayerMovement pm = FindFirstObjectByType<PlayerMovement>();
                 if (pm != null) pm.SetFrozen(false);
                 TutorialQuestManager.Instance?.BeginTutorialForCurrentAccount();
                 return;
             }
 
-            phase = LobbyPhase.WorldSelect;
+            SetPhase(LobbyPhase.WorldSelect);
+            // 로비를 띄우는 동안 이동을 잠근다. OnWorldLeft(로비 복귀)는 이미 잠그고 있었는데
+            // **최초 진입 경로만 빠져 있어서**, 월드 선택 화면 뒤에서 WASD로 걸어 다닐 수 있었다.
+            //
+            // Bootstrap이 예전에 여기서 프리즈를 뺀 이유("월드 선택 미완료 시 frozen이 안 풀림")는
+            // 지금은 해당하지 않는다 — WorldSelect를 빠져나가는 경로가 셋뿐이고 전부 푼다:
+            // 입장 성공(OnWorldJoined) / 오프라인 진입 버튼 / skipLobby. HideLobby도 아래에서 푼다.
+            SetPlayerFrozen(true);
             if (manager != null)
             {
                 manager.RefreshWorldList();
@@ -89,9 +96,76 @@ namespace InsectGame.UI
 
         public void HideLobby()
         {
-            phase = LobbyPhase.Hidden;
+            SetPhase(LobbyPhase.Hidden);
             ResetAllScrolls();
+            // 호출부가 0인 public 메서드지만 반드시 풀어 둔다 — 안 그러면 나중에 누가 부르는 순간
+            // 영구 frozen이 된다(Bootstrap 주석이 경고한 바로 그 상황).
+            SetPlayerFrozen(false);
         }
+
+        // ── IModalUI ──
+        // 로비가 떠 있는 동안 클릭 이동·포획 입력을 막는다(그쪽은 frozen이 아니라
+        // ModalUIRegistry.IsAnyOpen()으로 게이트되므로 SetFrozen만으로는 안 막힌다).
+        public bool IsOpen => phase != LobbyPhase.Hidden;
+
+        /// <summary>
+        /// ESC 처리. <b>월드 선택은 필수 단계라 ESC로 건너뛸 수 없다</b> — 여기서 오프라인으로
+        /// 보내면 키 하나에 온라인을 포기하게 된다. InWorld 오버레이(Tab으로 여는 정보창)만 닫는다.
+        /// </summary>
+        public void CloseModal()
+        {
+            if (phase == LobbyPhase.InWorld)
+            {
+                SetPhase(LobbyPhase.Hidden);
+                ResetPlayerScroll();
+            }
+        }
+
+        // phase 전환의 단일 통로 — 모달 등록을 여기 한 곳에서만 관리한다.
+        // 대입이 파일 곳곳에 흩어져 있어 등록/해제를 따로 붙이면 반드시 하나를 빠뜨린다.
+        private void SetPhase(LobbyPhase next)
+        {
+            phase = next;
+            if (phase == LobbyPhase.Hidden) ModalUIRegistry.Unregister(this);
+            else ModalUIRegistry.Register(this);
+        }
+
+        private static void SetPlayerFrozen(bool frozen)
+        {
+            PlayerMovement pm = FindFirstObjectByType<PlayerMovement>();
+            if (pm != null) pm.SetFrozen(frozen);
+        }
+
+        /// <summary>
+        /// 입장 요청을 시작해도 되는지. 되면 Joining으로 넘기고 true.
+        ///
+        /// <b>매니저가 바쁘면 요청은 조용히 사라진다</b> — <c>CanStartRequest</c>가 <c>IsBusy</c>일 때
+        /// 이벤트조차 쏘지 않고 반환한다. 그런데 로비에 있는 동안 목록 새로고침이 5초마다 자동으로
+        /// 돌아 <c>IsBusy</c>가 상시 켜졌다 꺼지므로, 하필 그 구간에 누른 클릭은 요청 없이 증발한다.
+        /// 예전엔 phase를 먼저 Joining으로 바꿔 놓아서, 화면만 "접속 중"으로 남고 아무 일도
+        /// 일어나지 않았다. 먼저 물어보고 넘어간다.
+        /// </summary>
+        private bool BeginJoinRequest()
+        {
+            if (manager == null) return false;
+            if (manager.IsBusy)
+            {
+                errorMsg = "잠시 후 다시 시도해 주세요.";
+                errorTimer = 2f;
+                return false;
+            }
+
+            SetPhase(LobbyPhase.Joining);
+            ResetWorldScroll();
+            joiningTimer = JoiningTimeoutSeconds;
+            return true;
+        }
+
+        // Joining 안전망 — 매니저가 어떤 이유로든 완료·실패 이벤트를 안 쏘면 화면이 영구 고착한다.
+        // (예: ActionCompleted만 쏘는 다른 요청이 IsBusy를 잡고 있었던 경우. 이 UI는 그 이벤트를
+        //  구독하지 않는다.) 매니저 자체 타임아웃보다 길게 잡아 정상 실패가 먼저 오게 둔다.
+        private const float JoiningTimeoutSeconds = 15f;
+        private float joiningTimer;
 
         // ── Lifecycle ──
 
@@ -104,6 +178,10 @@ namespace InsectGame.UI
                 WorldChannelManager.Instance.WorldListUpdated += OnWorldListUpdated;
                 WorldChannelManager.Instance.ErrorOccurred += OnError;
             }
+            // 다시 켜졌을 때 등록도 되살린다 — OpeningReplayCoordinator가 UI 루트를 통째로
+            // 껐다 켜므로(rules/ui-layout.md의 구독 회귀 계열) 아래 OnDisable이 지운 등록이
+            // 살아나지 않으면 로비가 떠 있는데 입력이 뚫린다.
+            if (phase != LobbyPhase.Hidden) ModalUIRegistry.Register(this);
         }
 
         private void OnDisable()
@@ -115,6 +193,8 @@ namespace InsectGame.UI
                 WorldChannelManager.Instance.WorldListUpdated -= OnWorldListUpdated;
                 WorldChannelManager.Instance.ErrorOccurred -= OnError;
             }
+            // 꺼진 컴포넌트가 스택에 남으면 그리지도 않는 모달이 ESC와 입력 차단을 계속 먹는다.
+            ModalUIRegistry.Unregister(this);
             ResetAllScrolls();
         }
 
@@ -122,17 +202,31 @@ namespace InsectGame.UI
         {
             if (errorTimer > 0) errorTimer -= Time.deltaTime;
 
+            // Joining 고착 탈출 — 완료·실패 이벤트가 끝내 오지 않으면 목록으로 되돌린다.
+            if (phase == LobbyPhase.Joining)
+            {
+                joiningTimer -= Time.deltaTime;
+                if (joiningTimer <= 0f)
+                {
+                    SetPhase(LobbyPhase.WorldSelect);
+                    ResetWorldScroll();
+                    errorMsg = "월드 접속에 응답이 없습니다. 다시 시도해 주세요.";
+                    errorTimer = 5f;
+                    if (manager != null) manager.RefreshWorldList();
+                }
+            }
+
             // Tab key: toggle InWorld overlay
             if (Input.GetKeyDown(KeyCode.Tab) && WorldChannelManager.Instance != null && WorldChannelManager.Instance.IsJoined)
             {
                 if (phase == LobbyPhase.InWorld)
                 {
-                    phase = LobbyPhase.Hidden;
+                    SetPhase(LobbyPhase.Hidden);
                     ResetPlayerScroll();
                 }
                 else if (phase == LobbyPhase.Hidden)
                 {
-                    phase = LobbyPhase.InWorld;
+                    SetPhase(LobbyPhase.InWorld);
                     ResetPlayerScroll();
                 }
             }
@@ -142,7 +236,7 @@ namespace InsectGame.UI
 
         private void OnWorldJoined()
         {
-            phase = LobbyPhase.Hidden;
+            SetPhase(LobbyPhase.Hidden);
             ResetAllScrolls();
             // 월드 입장 후 플레이어 이동 해금
             PlayerMovement pm = FindFirstObjectByType<PlayerMovement>();
@@ -152,7 +246,7 @@ namespace InsectGame.UI
 
         private void OnWorldLeft()
         {
-            phase = LobbyPhase.WorldSelect;
+            SetPhase(LobbyPhase.WorldSelect);
             ResetAllScrolls();
             // 로비로 돌아오면 이동 잠금
             PlayerMovement pm = FindFirstObjectByType<PlayerMovement>();
@@ -164,7 +258,7 @@ namespace InsectGame.UI
             cachedWorlds = worlds ?? new List<WorldInstance>();
             if (phase == LobbyPhase.Joining)
             {
-                phase = LobbyPhase.WorldSelect;
+                SetPhase(LobbyPhase.WorldSelect);
                 ResetWorldScroll();
             }
         }
@@ -175,7 +269,7 @@ namespace InsectGame.UI
             errorTimer = 5f;
             if (phase == LobbyPhase.Joining)
             {
-                phase = LobbyPhase.WorldSelect;
+                SetPhase(LobbyPhase.WorldSelect);
                 ResetWorldScroll();
             }
         }
@@ -280,9 +374,7 @@ namespace InsectGame.UI
 
             if (GUI.Button(new Rect(cx, cy, btnW, actionH), "\uc790\ub3d9 \uc785\uc7a5", btnGreenStyle))
             {
-                phase = LobbyPhase.Joining;
-                ResetWorldScroll();
-                if (manager != null) manager.AutoJoinWorld();
+                if (BeginJoinRequest()) manager.AutoJoinWorld();
             }
 
             if (GUI.Button(new Rect(cx + btnW + 10f, cy, btnW, actionH), "\uc0c8\ub85c\uace0\uce68", btnBlueStyle))
@@ -294,7 +386,7 @@ namespace InsectGame.UI
             // 서버 배포 전이나 네트워크 장애 시에도 싱글플레이 진입을 보장합니다.
             if (GUI.Button(new Rect(cx, cy, innerW, mobile ? 56f : 32f), "오프라인으로 혼자 탐험", btnGrayStyle))
             {
-                phase = LobbyPhase.Hidden;
+                SetPhase(LobbyPhase.Hidden);
                 ResetAllScrolls();
                 PlayerMovement pm = FindFirstObjectByType<PlayerMovement>();
                 if (pm != null) pm.SetFrozen(false);
@@ -344,10 +436,8 @@ namespace InsectGame.UI
             GUI.enabled = !isFull;
             if (GUI.Button(new Rect(btnX, btnY, btnW, btnH), isFull ? "\uac00\ub4dd \ucc3c" : "\uc785\uc7a5", isFull ? btnRedStyle : btnGreenStyle))
             {
-                if (!isFull && manager != null)
+                if (!isFull && BeginJoinRequest())
                 {
-                    phase = LobbyPhase.Joining;
-                    ResetWorldScroll();
                     manager.JoinWorld(world.worldId);
                 }
             }
@@ -446,9 +536,24 @@ namespace InsectGame.UI
             cy += listH + 8f;
 
             // 월드 나가기 버튼
-            if (GUI.Button(new Rect(cx, cy, innerW, mobile ? 60f : 34f), "\uc6d4\ub4dc \ub098\uac00\uae30", btnRedStyle))
+            // \uc694\uccad \uc911\uc5d0\ub294 \ub20c\ub9ac\uc9c0 \uc54a\uac8c \ud558\uace0 \uc9c4\ud589 \uc0c1\ud0dc\ub97c \ub77c\ubca8\ub85c \uc54c\ub9b0\ub2e4.
+            bool busy = manager != null && manager.IsBusy;
+            float leaveH = mobile ? 60f : 34f;
+            GUI.enabled = !busy;
+            if (GUI.Button(new Rect(cx, cy, innerW, leaveH),
+                busy ? "\ub098\uac00\ub294 \uc911..." : "\uc6d4\ub4dc \ub098\uac00\uae30", btnRedStyle))
             {
                 if (manager != null) manager.LeaveWorld();
+            }
+            GUI.enabled = true;
+            cy += leaveH;
+
+            // \uc5d0\ub7ec \ud45c\uc2dc \u2014 \uc608\uc804\uc5d4 \uc6d4\ub4dc \uc120\ud0dd \ud328\ub110\uc5d0\ub9cc \uc788\uc5c8\ub2e4. \uadf8\ub798\uc11c \ub098\uac00\uae30\uac00 \uc2e4\ud328\ud558\uba74
+            // (\ub124\ud2b8\uc6cc\ud06c \uc624\ub958\u00b7\uc11c\ubc84 \uac70\uc808) phase\ub294 InWorld \uadf8\ub300\ub85c\ub77c **\ud654\uba74\uc5d0 \uc544\ubb34 \ubcc0\ud654\ub3c4 \uc5c6\uace0**
+            // \ubc84\ud2bc\ub9cc \uacc4\uc18d \ub20c\ub9ac\ub294 \uc0c1\ud0dc\uac00 \ub410\ub2e4. \uc0ac\uc6a9\uc790\uc5d0\uac90 "\ub20c\ub7ec\ub3c4 \uc544\ubb34 \uc77c \uc5c6\ub294 \ubc84\ud2bc"\uc73c\ub85c \ubcf4\uc778\ub2e4.
+            if (errorTimer > 0 && !string.IsNullOrEmpty(errorMsg))
+            {
+                GUI.Label(new Rect(cx, cy + 6f, innerW, mobile ? 40f : 24f), errorMsg, errorStyle);
             }
         }
 
