@@ -5,7 +5,7 @@
       "chapterId": "ch1",
       "order": 0,
       "prerequisiteBeatId": "",
-      "requiredQuestId": "q_approach",
+      "requiredQuestId": "q_move",
       "trigger": {
         "type": "NpcTalk",
         "param": "village_elder"
@@ -22,7 +22,11 @@
         },
         {
           "speaker": "마을 어르신",
-          "text": "네가 곤충을 만나 기록해 준다면, 사라져가는 그 아이들을 붙잡아 둘 수 있을 게다. 자, 여행의 첫 선물이란다 — 이 은빛 그물을 받으렴!"
+          "text": "맨손으로는 시작할 수 없지. 이 아이를 데려가거라 — 오래전 내가 함께 걷던 장수풍뎅이란다. 은빛 그물도 함께 받으렴."
+        },
+        {
+          "speaker": "마을 어르신",
+          "text": "그 아이와 함께 풀밭으로 나가 보렴. 곤충을 만나 기록하는 법은, 직접 해 보는 게 가장 빠르단다."
         }
       ],
       "choices": [],
@@ -31,9 +35,9 @@
         "rewardExp": 0,
         "rewardItemId": "net_silver",
         "rewardItemCount": 2,
-        "rewardInsectId": "",
-        "rewardInsectDisplayName": "",
-        "rewardInsectLevel": 0,
+        "rewardInsectId": "rhinoceros_beetle",
+        "rewardInsectDisplayName": "레어 장수풍뎅이",
+        "rewardInsectLevel": 6,
         "unlockQuestId": ""
       },
       "cutsceneId": "cs_story_prologue",

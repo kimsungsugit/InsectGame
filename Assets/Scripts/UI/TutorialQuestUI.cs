@@ -407,6 +407,16 @@ namespace InsectGame.UI
         private void Update()
         {
             hintPulse += Time.deltaTime * 2.5f;
+
+            // **모달이 열려 있는 동안에는 알림 수명을 태우지 않는다.**
+            // 퀘스트는 전투·포획 중에 올라가는 일이 대부분인데, 완료 배너는 3초·새 퀘스트 배너는
+            // 2초짜리다. 예전엔 전투 결과창을 보고 있는 사이에 그 3초가 그대로 흘러가, 창을 닫고
+            // 필드로 돌아오면 **이미 사라진 뒤**였다 — "전투는 끝났는데 뭐가 진행됐는지 모르겠다"가
+            // 그래서 생긴다. 타이머를 멈춰 두면 창을 닫는 순간부터 온전히 3초를 보게 된다.
+            // (모달 위에 겹쳐 그리지 않는 이유는 이 파일에 GUI.depth가 없어 그리기 순서가
+            //  불확정이고, 배너가 상점·도감 위를 덮는 건 더 나쁘기 때문이다.)
+            if (ModalUIRegistry.IsAnyOpen()) return;
+
             if (completionAnimTimer > 0f) completionAnimTimer -= Time.deltaTime;
             if (rewardAnimTimer > 0f) rewardAnimTimer -= Time.deltaTime;
             // 완료 알림이 끝나길 기다린 뒤(newQuestDelay) 새 퀘스트 배너 수명 소진.

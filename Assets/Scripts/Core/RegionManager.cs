@@ -277,8 +277,25 @@ namespace InsectGame.Core
 
             Vector3 toPrev = fromCenter - region.centerPosition;
             toPrev.y = 0f;
-            // 시작 리전(meadow)은 이전 리전이 없다 — 중심에 둔다.
-            if (toPrev.sqrMagnitude < 0.01f) return region.centerPosition;
+
+            // **시작 리전(meadow)은 이전 리전이 없다 — 대신 '나가는 길'을 본다.**
+            // 예전엔 중심에 뒀는데, 첫 리전만 배치 규칙이 예외라 플레이어가 시작 지점에서
+            // 수문장을 아예 못 보고 "수문장이 없다"고 느꼈다. 수문장의 역할은 어차피 길목을
+            // 지키는 것이므로, 이전 리전이 없으면 **다음 리전 방향**의 같은 반경에 세운다.
+            // 그러면 13개 리전이 모두 "경계에 선다"는 한 가지 규칙으로 통일된다.
+            if (toPrev.sqrMagnitude < 0.01f)
+            {
+                string nextId = GetNextRegionId(region.regionId);
+                RegionData next = nextId != null ? GetRegionById(nextId) : null;
+                if (next != null)
+                {
+                    Vector3 toNext = next.centerPosition - region.centerPosition;
+                    toNext.y = 0f;
+                    if (toNext.sqrMagnitude >= 0.01f)
+                        return region.centerPosition + toNext.normalized * (region.radius * GuardianEdgeRatio);
+                }
+                return region.centerPosition;   // 앞뒤 어느 쪽도 없는 리전(있다면) — 종전대로
+            }
 
             return region.centerPosition + toPrev.normalized * (region.radius * GuardianEdgeRatio);
         }

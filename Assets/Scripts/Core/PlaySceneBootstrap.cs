@@ -38,6 +38,15 @@ namespace InsectGame.Core
         private bool initialPlayerStartResolved;
         private bool initialSpawnApplied;
 
+        /// <summary>
+        /// 셰이더 폴백 4단계를 거쳐 머티리얼을 만든다. <b>알파 &lt; 1이면 투명 렌더로 전환한다.</b>
+        ///
+        /// Standard 셰이더는 기본이 Opaque라 <c>mat.color</c>에 알파를 넣어도 **무시된다** —
+        /// 렌더 모드·블렌드·ZWrite·렌더큐를 함께 세워야 실제로 비친다. 그 설정이 없어서
+        /// 반투명을 의도한 10곳(물웅덩이·호수·물결·거미줄·분수·늪안개·발광체·구름·수문장 아우라)이
+        /// 전부 **불투명 덩어리**로 그려지고 있었다. 수문장 아우라(알파 0.15)는 지름 5m 불투명
+        /// 빨간 구체가 되어 그 안의 수문장 곤충을 통째로 가렸다.
+        /// </summary>
         private static Material CreateSafeMaterial(Color color)
         {
             Shader shader = Shader.Find("Standard");
@@ -46,7 +55,26 @@ namespace InsectGame.Core
             if (shader == null) shader = Shader.Find("Sprites/Default");
             Material mat = shader != null ? new Material(shader) : new Material(Shader.Find("Hidden/InternalErrorShader"));
             mat.color = color;
+
+            if (color.a < 0.999f) MakeTransparent(mat);
             return mat;
+        }
+
+        /// <summary>
+        /// Standard 셰이더를 Fade 모드로 돌린다 — Unity 표준 머티리얼 인스펙터가 하는 것과 같은 설정이다.
+        /// 프로퍼티가 없는 폴백 셰이더(Unlit/Color 등)에서는 <c>HasProperty</c> 가드가 조용히 넘어간다.
+        /// </summary>
+        private static void MakeTransparent(Material mat)
+        {
+            if (mat == null) return;
+            if (mat.HasProperty("_Mode")) mat.SetFloat("_Mode", 2f);   // 2 = Fade
+            if (mat.HasProperty("_SrcBlend")) mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+            if (mat.HasProperty("_DstBlend")) mat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            if (mat.HasProperty("_ZWrite")) mat.SetInt("_ZWrite", 0);
+            mat.DisableKeyword("_ALPHATEST_ON");
+            mat.EnableKeyword("_ALPHABLEND_ON");
+            mat.DisableKeyword("_ALPHAPREMULTIPLY_ON");
+            mat.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
         }
 
         private void Awake()
@@ -4682,6 +4710,12 @@ namespace InsectGame.Core
                 // (StoryObjectiveTracker)가 같은 함수를 쓰므로 실물과 표시가 어긋날 수 없다.
                 Vector3 guardianPos = regionMgr.GetGuardianPosition(r);
 
+                // **격파된 수문장의 봉인은 걷힌다.** 곤충만 스폰을 건너뛰고 아우라는 그대로 두면
+                // 지름 5m 붉은 구체만 덩그러니 남아 "빈 제단"이 된다 — 마스터 계정은 13개 리전이
+                // 전부 그 상태라 필드가 붉은 구슬밭이 됐다. 플랫폼·기둥·간판은 남긴다(길목 표식이자
+                // 여기서 무슨 일이 있었는지 알려주는 흔적이다).
+                bool defeated = regionMgr.IsGuardianDefeated(r.regionId);
+
                 // 수문장 플랫폼
                 Material platMat = CreateSafeMaterial(new Color(0.3f, 0.15f, 0.1f));
                 GameObject platform = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
@@ -4703,14 +4737,17 @@ namespace InsectGame.Core
                     Object.Destroy(pillar.GetComponent<Collider>());
                 }
 
-                // 오라 (빨간 반투명)
-                Material auraMat = CreateSafeMaterial(new Color(0.9f, 0.2f, 0.1f, 0.15f));
-                GameObject aura = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                aura.name = $"Guardian_{r.regionId}_Aura";
-                aura.transform.position = guardianPos + new Vector3(0, 2f, 0);
-                aura.transform.localScale = new Vector3(5f, 4f, 5f);
-                aura.GetComponent<MeshRenderer>().material = auraMat;
-                Object.Destroy(aura.GetComponent<Collider>());
+                // 오라 (빨간 반투명) — 격파했으면 봉인이 걷혔으므로 그리지 않는다.
+                if (!defeated)
+                {
+                    Material auraMat = CreateSafeMaterial(new Color(0.9f, 0.2f, 0.1f, 0.15f));
+                    GameObject aura = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                    aura.name = $"Guardian_{r.regionId}_Aura";
+                    aura.transform.position = guardianPos + new Vector3(0, 2f, 0);
+                    aura.transform.localScale = new Vector3(5f, 4f, 5f);
+                    aura.GetComponent<MeshRenderer>().material = auraMat;
+                    Object.Destroy(aura.GetComponent<Collider>());
+                }
 
                 // 이름 표지판
                 Material signMat = CreateSafeMaterial(new Color(0.15f, 0.08f, 0.05f));
@@ -4728,9 +4765,16 @@ namespace InsectGame.Core
 
         private void SpawnGuardianInsect(Data.RegionData region, Vector3 guardianPos, InsectDatabase database)
         {
-            if (database == null || string.IsNullOrEmpty(region.guardianInsectId)) return;
+            if (database == null || string.IsNullOrEmpty(region.guardianInsectId))
+            {
+                Debug.LogWarning($"[Guardian] {region.regionId}: DB 미배선 또는 guardianInsectId 없음 — 곤충 미스폰");
+                return;
+            }
 
-            // 이미 격파된 수문장은 스폰하지 않음
+            // 이미 격파된 수문장은 스폰하지 않음.
+            // **마스터 계정은 여기서 13개 전부가 걸린다** — `AuthManager.ApplyMasterPrivileges`가
+            // 진행을 건너뛰라고 모든 리전을 해금하고 수문장을 격파 처리하기 때문이다(의도된 동작).
+            // 그래서 마스터로 접속하면 필드에 관문 구조물만 서 있고 곤충은 없다.
             RegionManager regionMgr = FindFirstObjectByType<RegionManager>();
             if (regionMgr != null && regionMgr.IsGuardianDefeated(region.regionId)) return;
 
@@ -4744,7 +4788,15 @@ namespace InsectGame.Core
                     break;
                 }
             }
-            if (guardianData == null) return;
+            if (guardianData == null)
+            {
+                // **조용히 실패하면 안 된다.** 관문 구조물(플랫폼·기둥·간판·아우라)은 그대로 서고
+                // 곤충만 사라져, 플레이어 눈에는 "수문장이 없는 빈 제단"으로 보인다.
+                // 실제로 meadow에서 그 상태가 났다.
+                Debug.LogWarning($"[Guardian] {region.regionId}: '{region.guardianInsectId}'를 "
+                    + $"InsectDatabase({database.insects?.Count ?? 0}종)에서 못 찾음 — 곤충 미스폰");
+                return;
+            }
 
             // 수문장 곤충 오브젝트 생성
             GameObject guardianObj = new GameObject($"Guardian_{region.regionId}_Insect");
@@ -4753,13 +4805,21 @@ namespace InsectGame.Core
             Spawning.InsectEntity entity = guardianObj.AddComponent<Spawning.InsectEntity>();
             entity.BuildForBattle(guardianData, region.guardianLevel, false);
 
-            // 수문장 크기 크게 (1.8배)
-            guardianObj.transform.localScale = Vector3.one * 1.8f;
+            // 수문장 크기 크게 — 배율의 단일 출처. 아래 라벨이 이 값으로 자기 스케일을 되돌린다.
+            const float GuardianScale = 1.8f;
+            guardianObj.transform.localScale = Vector3.one * GuardianScale;
 
             // 이름 라벨 추가 (수문장 표시)
             GameObject label = new GameObject("GuardianLabel");
             label.transform.SetParent(guardianObj.transform, false);
-            label.transform.localPosition = new Vector3(0f, 2.5f, 0f);
+
+            // **부모의 배율을 상쇄한다.** 라벨은 자식이라 스케일을 그대로 물려받는데, 곤충을
+            // 크게 만든 그 배율이 글자에도 걸려 가까이 가면 이름표가 **화면을 가로지른다**
+            // (10m 거리에서 폭 900px를 넘겼다). 위치도 1.8×2.5=4.5m로 떠올라 간판을 뚫었다.
+            // localScale로 되돌리고 로컬 y를 배율로 나눠 실제 높이를 2.5m로 유지한다.
+            label.transform.localScale = Vector3.one / GuardianScale;
+            label.transform.localPosition = new Vector3(0f, 2.5f / GuardianScale, 0f);
+
             TextMesh text = label.AddComponent<TextMesh>();
             text.text = $"⚔ {region.guardianDisplayName} Lv.{region.guardianLevel}";
             text.characterSize = 0.15f;

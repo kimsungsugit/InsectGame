@@ -19,6 +19,9 @@ namespace InsectGame.UI
         // internal — StoryObjectiveTracker가 자동 주행 도착 반경을 여기서 파생시킨다.
         // 사본을 두면 이 값이 바뀔 때 "도착했는데 말이 안 걸린다"가 조용히 생긴다.
         internal const float VillagerTalkRadius = 3f;
+
+        /// <summary>튜토리얼의 '박사' 역할을 맡은 스토리 NPC. `Story.json`의 `ch1_intro` 화자와 같다.</summary>
+        internal const string ElderStoryNpcId = "village_elder";
         // 아이는 돌아다니므로 주민보다 조금 넉넉하게 — 쫓아가서 말 걸기가 덜 답답하다.
         private const float KidDuelRadius = 3.5f;
         private const float ResultToastSeconds = 3.5f;
@@ -301,6 +304,16 @@ namespace InsectGame.UI
 
                 // 스토리 NPC면 먼저 NpcTalk 스토리 발동 시도. 비트가 뜨면 NpcDialogueUI가 렌더,
                 // 아니면(이미 봤거나 일반 주민) 앰비언트 대사로 폴백.
+                // q_talk_elder 진행 — 첫 파트너 곤충을 받는 자리라 튜토리얼의 시작점이다.
+                // **`OnNpcTalked`보다 먼저 부른다**: 그쪽이 비트를 발화시키면 대화 모달이 열리고,
+                // 그 뒤에 통지하면 프레임 순서에 따라 퀘스트 진행이 한 박자 늦는다.
+                // 이미 완료된 퀘스트면 `NotifyAction`이 활성 퀘스트 타입 불일치로 조용히 무시한다.
+                if (currentVillager.IsStoryNpc
+                    && currentVillager.StoryNpcId == ElderStoryNpcId)
+                {
+                    TutorialQuestManager.Instance?.NotifyTalkToElder();   // using InsectGame.Core
+                }
+
                 bool storyFired = currentVillager.IsStoryNpc && storyDirector != null
                     && storyDirector.OnNpcTalked(currentVillager.StoryNpcId);
                 if (storyFired && cameraFollower != null)

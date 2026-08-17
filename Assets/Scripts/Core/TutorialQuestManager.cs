@@ -165,17 +165,28 @@ namespace InsectGame.Core
                     type = QuestType.Movement, targetCount = 1,
                     rewardCandy = 3
                 },
+                // **박사(마을 어르신)에게 먼저 간다.** 예전엔 조작을 배우자마자 "곤충을 잡아라"였고
+                // 어르신 대화는 그걸 **끝낸 뒤에야** 열렸다 — 맨손으로 혼자 잡아낸 다음에 인사를
+                // 받는 순서라 이야기가 뒤에서 따라왔다. 이제 첫 파트너를 받고 그걸로 배운다.
+                // 곤충 지급은 이 퀘스트가 아니라 `ch1_intro` 비트의 보상이 한다 — 대사 안에서
+                // 건네받아야 "받았다"는 감각이 생기고, 지급 지점이 둘로 갈리지 않는다.
+                new TutorialQuest
+                {
+                    questId = "q_talk_elder", title = "마을 어르신을 만나다",
+                    description = "마을 어르신이 당신을 기다리고 있습니다 — 찾아가 이야기를 들으세요",
+                    hint = "마을 어르신에게 다가가면 먼저 다가와 인사합니다. [E]로 대화하세요",
+                    type = QuestType.TalkToElder, targetCount = 1,
+                    prerequisiteQuestId = "q_move",
+                    rewardCandy = 3
+                },
                 new TutorialQuest
                 {
                     questId = "q_approach", title = "첫 곤충 포획!",
                     description = "사라져가는 곤충을 만나 기록하세요 — 포획이 곧 그 생명을 붙드는 일입니다",
                     hint = "풀밭에서 움직이는 곤충에게 다가가 포획 미니게임을 완료하세요",
                     type = QuestType.Capture, targetCount = 1,
-                    prerequisiteQuestId = "q_move",
-                    rewardCandy = 5, rewardExp = 10,
-                    rewardInsectId = "rhinoceros_beetle",
-                    rewardInsectDisplayName = "레어 장수풍뎅이",
-                    rewardInsectLevel = 6
+                    prerequisiteQuestId = "q_talk_elder",
+                    rewardCandy = 5, rewardExp = 10
                 },
                 new TutorialQuest
                 {
@@ -616,6 +627,18 @@ namespace InsectGame.Core
             if (ActiveQuest != null && ActiveQuest.type == type)
                 IncrementProgress(activeQuestId, count);
             ProgressSideQuests(type, count);   // 서브 퀘스트(다중 활성)도 함께 진행
+        }
+
+        /// <summary>
+        /// 마을 어르신(박사)과 첫 대화 — <c>WorldInteractionController</c>가 스토리 NPC 대화 시 부른다.
+        ///
+        /// <b>이벤트 구독이 아니라 직접 호출이다.</b> 이 저장소는 이벤트 기반 QuestType이
+        /// <c>SubscribeEvents</c> 등록 누락으로 영구 정지한 전례가 있어(q_team), 진행에 필수인
+        /// 통지는 발생 지점에서 직접 부르는 쪽을 택했다.
+        /// </summary>
+        public void NotifyTalkToElder()
+        {
+            NotifyAction(QuestType.TalkToElder);
         }
 
         public void NotifyCapture(InsectRarity rarity)
