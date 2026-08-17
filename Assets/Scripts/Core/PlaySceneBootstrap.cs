@@ -286,6 +286,11 @@ namespace InsectGame.Core
             // 모바일 터치 이동 — 가상 조이스틱(UI→Core 입력 푸시)
             InsectGame.UI.VirtualJoystickUI joystick = EnsureComponent<InsectGame.UI.VirtualJoystickUI>("UI/VirtualJoystick");
             joystick.AutoWire(playerMov);
+            // 필드 안내 문구(이동 잠금·리전 레벨 부족). PlayerMovement가 자기 OnGUI에서 픽셀 좌표로
+            // 그리던 것을 가상 캔버스 안으로 들여왔다(BattleEffectTextOverlay와 같은 이유).
+            InsectGame.UI.PlayerHintOverlay hintOverlay =
+                EnsureComponent<InsectGame.UI.PlayerHintOverlay>("UI/PlayerHintOverlay");
+            hintOverlay.AutoWire(playerMov);
             InsectGame.UI.BattleScreenUI battleScreen = EnsureComponent<InsectGame.UI.BattleScreenUI>("UI/BattleScreen");
             battleScreen.AutoWire(battleController, camFollower, playerMov);
 
@@ -609,6 +614,15 @@ namespace InsectGame.Core
                 InsectGame.Story.CutsceneDirector cutscene =
                     EnsureComponent<InsectGame.Story.CutsceneDirector>("World/CutsceneDirector");
                 cutscene.AutoWire(storyDirector, camFollower, playerMov, player.transform);
+
+                // NPC 연출 지휘 — 조우 접근(규칙)과 등장/퇴장(저작)을 한 컴포넌트가 맡는다.
+                // 둘 다 같은 VillagerNpc의 Scripted 상태를 쓰므로 나누면 명령이 서로 덮인다.
+                // objectiveTracker 뒤에 와야 한다 — 목표 NPC를 저기서 읽는다.
+                InsectGame.Story.StoryStageDirector stageDirector =
+                    EnsureComponent<InsectGame.Story.StoryStageDirector>("World/StoryStageDirector");
+                stageDirector.AutoWire(storyDirector, objectiveTracker, npcManager, playerMov, player.transform);
+                // 대사 앞 연출 게이트 — stageEnterId가 있으면 모달보다 먼저 돌린다.
+                npcDialogue.AutoWire(stageDirector);
 
                 // 스폰은 배선 완료 후 (컬링 타깃/예약 시스템이 준비된 상태에서)
                 if (villageResult != null)

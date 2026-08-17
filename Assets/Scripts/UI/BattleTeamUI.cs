@@ -24,7 +24,9 @@ namespace InsectGame.UI
         private InsectSortMode pickerSort = InsectSortMode.Rarity;
         private readonly List<PlayerInsectData> pickerSorted = new List<PlayerInsectData>();
         private bool pickerSortDirty = true;
-        private readonly Rect[] pickerSortChips = new Rect[4];
+        // 정렬 칩 Rect를 보관하던 `Rect[4]` 필드가 있었다 — 대입만 하고 아무도 읽지 않는 죽은 필드였고,
+        // 길이 4가 `InsectBrowseSort.Order`와 코드로 묶여 있지 않아 정렬 모드를 하나 더 늘리면
+        // OnGUI에서 IndexOutOfRange가 날 자리였다. 히트 테스트는 `GUI.Button`이 직접 하므로 필요 없다.
         private int pickerSortedCount = -1;
 
         // OnGUI 매 프레임 new GUIStyle 회귀 차단 — 11개 캐시 필드 + InitStyles 1회 초기화.
@@ -181,7 +183,7 @@ namespace InsectGame.UI
             // 부상 안내 + 회복 진입 — 팀을 짜는 자리에서 바로 상태를 알고 고칠 수 있어야 한다.
             // 치료 자체는 병원이 한다(재화·결제·환불 로직을 여기서 복제하면 곧 어긋난다).
             int injured = InjuredTeamCount();
-            GUI.Label(new Rect(px + 24f, py + 92, panelW - (injured > 0 ? 220f : 48f), 52),
+            GUI.Label(new Rect(px + 24f, py + 92, panelW - (injured > 0 ? 272f : 48f), 52),
                 injured > 0
                     ? $"부상 {injured}마리 — 회복하고 나가세요"
                     : $"배틀용 곤충을 최대 {BattleTeamManager.MaxSlots}마리 선택하세요",
@@ -191,11 +193,16 @@ namespace InsectGame.UI
             {
                 float healH = SkillUILayout.GetTouchHeight(UIScale.IsMobileLayout, 48f, 56f);
                 GUI.backgroundColor = HealBg;
-                if (GUI.Button(new Rect(px + panelW - 196f, py + 94f, 172f, healH), "회복하러 가기", slotRemoveCache))
+                // 폭 224 — "회복하러 가기"는 31px 글자 6자라 안쪽 여백을 빼면 190px쯤 든다.
+                // 172로 잡았더니 마지막 글자가 잘렸다(wordWrap이 없어 가로로 잘린다).
+                if (GUI.Button(new Rect(px + panelW - 248f, py + 94f, 224f, healH), "회복하러 가기", slotRemoveCache))
                 {
                     // 배틀팀을 닫고 병원을 연다 — 모달 둘이 겹치면 뒤쪽 버튼이 클릭을 가로챈다.
                     CloseModal();
-                    hospitalUi.Toggle();
+                    // Toggle은 말 그대로 토글이라, 병원이 이미 열려 있으면 이 버튼이 그걸 닫아
+                    // 두 창이 다 사라진다. 지금은 퀵바의 IsAnyOpen 게이트 덕에 도달하지 않지만
+                    // 게이트 하나에 기대는 대신 여기서 "열기"로 못박는다.
+                    if (!hospitalUi.IsOpen) hospitalUi.Toggle();
                     GUI.backgroundColor = Color.white;
                     return;
                 }
@@ -284,7 +291,7 @@ namespace InsectGame.UI
                 GUI.DrawTexture(new Rect(x + 64, y + h / 2f - 32, 64, 64), Texture2D.whiteTexture);
 
                 GUI.color = Color.white;
-                GUI.Label(new Rect(x + 64, y + h / 2f - 32, 64, 64), "+", slotEmptyCache);
+                UIHelper.LabelFit(new Rect(x + 64, y + h / 2f - 32, 64, 64), "+", slotEmptyCache);
 
                 GUI.backgroundColor = AddBg;
                 float selectH = SkillUILayout.GetTouchHeight(UIScale.IsMobileLayout, 52f, 64f);
@@ -337,7 +344,6 @@ namespace InsectGame.UI
             {
                 InsectSortMode mode = InsectBrowseSort.Order[i];
                 Rect chip = new Rect(px + 20f + i * (chipW + 6f), chipY, chipW, chipH);
-                pickerSortChips[i] = chip;
                 GUI.backgroundColor = pickerSort == mode ? ChangeBg : SlotBg;
                 if (GUI.Button(chip, InsectBrowseSort.Label(mode), pickerBtnCache) && pickerSort != mode)
                 {

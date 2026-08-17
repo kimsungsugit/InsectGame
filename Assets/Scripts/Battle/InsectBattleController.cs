@@ -764,6 +764,36 @@ namespace InsectGame.Battle
             }
         }
 
+        /// <summary>
+        /// 교체할 팀원이 없어 기절이 곧 패배인 경우, UI가 이걸 불러 <b>패배를 확정</b>한다.
+        ///
+        /// 위 <c>PlayerFainted</c> 분기는 <b>구독자가 있기만 하면</b> <c>fainted = true</c>로 보고
+        /// 종료 처리를 UI에 넘긴다("교체로 이어갈 수 있으니 보류"). 그런데 유일한 구독자인
+        /// <c>BattleScreenUI</c>는 벤치가 비면 교체창 대신 결과 화면으로 가면서 <b>컨트롤러에
+        /// 되돌려 알리지 않았다</b> — 그래서 전멸 패배에서는 <c>BattleEnded</c>도 <c>DuelEnded</c>도
+        /// 영영 발화하지 않았다.
+        ///
+        /// NPC 대결이 그 이벤트로 보상·쿨다운을 걸기 때문에 결과가 컸다: 지고 나면 90초/120초
+        /// 재도전 쿨다운이 통째로 우회되고, 무엇보다 <c>NpcDuelController.activeBossId</c>가 남아
+        /// <b>다음 아이 대결의 승리가 간부 격파로 오기록</b>됐다(PlayerPrefs 영구 저장 + 클라우드 동기라
+        /// 되돌릴 수 없다 — 관장을 싸우지도 않고 격파 처리하고 보상까지 받는다).
+        ///
+        /// 도주 경로는 같은 누락을 이미 한 번 고쳤는데(<c>DuelEnded</c> 추가) 정작 전멸 패배 경로가
+        /// <c>fainted</c> 가드에 가려 남아 있었다.
+        ///
+        /// <b>멱등하다</b> — 이미 종료됐으면 아무것도 하지 않으므로 승리·도주로 온 호출은 무시된다.
+        /// </summary>
+        public void ConcludeDefeatWithoutSwap()
+        {
+            if (battleEnded) return;
+
+            battleEnded = true;
+            lastPlayerWon = false;
+            if (enemyEntity != null) enemyEntity.Despawn();
+            BattleEnded?.Invoke(false);
+            if (duelMode) DuelEnded?.Invoke(false);
+        }
+
         // ── 액션 헬퍼 (BattleArenaController 시각 코루틴 호출 wrapper) ──
 
         private void TryPlayHitFlash(bool isPlayerSide)

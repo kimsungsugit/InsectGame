@@ -34,6 +34,8 @@ namespace InsectGame.Story
         private bool hasWorldTarget;
         private Vector3 targetPosition;
         private string targetRegionId = string.Empty;
+        // TalkToNpc 목표가 고른 개체. Refresh가 매번 다시 고르므로 스폰/컬링으로 오가도 최신이다.
+        private VillagerNpc targetNpc;
 
         private string statusMessage = string.Empty;
         private float statusTimer;
@@ -43,6 +45,12 @@ namespace InsectGame.Story
         public bool HasObjective => hasObjective;
         /// <summary>"세라에게 말 걸기" 같은 한 줄. 목표가 없으면 빈 문자열.</summary>
         public string Label => label;
+        /// <summary>
+        /// 지금 목표가 가리키는 스토리 NPC 개체. 목표가 <c>TalkToNpc</c>가 아니거나 그 NPC가
+        /// 월드에 없으면 null. <see cref="StoryStageDirector"/>의 조우 접근이 읽는다 —
+        /// 개체 선택 규칙(현재 리전 우선 → 최근접)을 저쪽에 복제하지 않기 위해서다.
+        /// </summary>
+        public VillagerNpc TargetNpc => targetNpc;
         /// <summary>갈 곳이 정해진 목표인가 — false면 자동 주행 버튼을 띄우지 않는다.</summary>
         public bool HasWorldTarget => hasWorldTarget;
         public Vector3 TargetPosition => targetPosition;
@@ -126,8 +134,12 @@ namespace InsectGame.Story
                 label = string.Empty;
                 hasWorldTarget = false;
                 targetRegionId = string.Empty;
+                targetNpc = null;
                 return;
             }
+
+            // 아래 switch에서 ResolveNpcTarget만 다시 채운다 — 목표 종류가 바뀌면 자동으로 비워진다.
+            targetNpc = null;
 
             switch (objective.Kind)
             {
@@ -211,6 +223,7 @@ namespace InsectGame.Story
             label = $"{best.DisplayName}에게 말 걸기";
             targetPosition = best.transform.position;
             targetRegionId = best.RegionId ?? string.Empty;
+            targetNpc = best;
             hasWorldTarget = true;
         }
 

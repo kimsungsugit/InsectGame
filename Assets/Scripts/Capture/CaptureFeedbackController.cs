@@ -86,8 +86,9 @@ namespace InsectGame.Capture
                 if (isShiny && AudioManager.Instance != null)
                     AudioManager.Instance.PlaySFX(SfxType.Victory);
 
-                if (TutorialQuestManager.Instance != null && target != null && target.Data != null)
-                    TutorialQuestManager.Instance.NotifyCapture(target.Data.rarity);
+                // 퀘스트 통지는 여기 없다 — `CaptureController`가 직접 부른다.
+                // 이 컴포넌트는 `CaptureResolved`의 구독자 중 하나일 뿐이라, 앞선 구독자가
+                // 던지면 여기까지 오지 못해 진행이 유실됐다. 진행 통지를 연출 경로에 두지 않는다.
             }
             else
             {

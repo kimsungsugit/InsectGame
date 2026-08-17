@@ -183,6 +183,14 @@ namespace InsectGame.Tests
             Assert.AreEqual(0.052f, chance, 0.0001f);
         }
 
+        /// <summary>
+        /// 프로파일 에셋을 새로 만들었을 때 공식 기본값과 어긋나지 않는가.
+        ///
+        /// <b>이 테스트는 "일치"만 본다 — 두 값이 같다고 옳은 값인 건 아니다.</b>
+        /// 실제로 2026-08-03 리팩터가 두 곳을 함께 원복하며 이 테스트를 심었고,
+        /// 그 뒤로 이 테스트가 "틀린 한 쌍"을 서로 고정시켜 원복을 가렸다(2026-08-17 audit이 발견).
+        /// 값 자체가 맞는지는 <c>rules/balance.md</c>의 floor 상호작용 절을 볼 것.
+        /// </summary>
         [Test]
         public void GameplayTuningProfile_NewAssetDefaults_MatchCaptureFormulaDefaults()
         {

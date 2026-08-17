@@ -58,6 +58,8 @@ tools:
 - `Assets/Scripts/UI/SafeArea.cs` - `Screen.safeArea` 픽셀 인셋 (프레임당 1회 캐시). `UISafeLayout`의 입력원
 - `Assets/Scripts/UI/SafeAreaPanel.cs` - uGUI RectTransform 세이프에어리어 적용 컴포넌트
 - `Assets/Scripts/UI/VirtualJoystickUI.cs` - 모바일 가상 조이스틱 ※`ui_layout_lint` 면제 대상(조작 영역이라 마진을 주면 좁아진다)
+- `Assets/Scripts/UI/PlayerHintOverlay.cs` - 필드 안내 문구(이동 잠금·리전 레벨 부족) ※상태는 PlayerMovement가 소유, 여기선 그리기만
+- `Assets/Scripts/UI/BattleEffectTextOverlay.cs` - 전투 문구 오버레이 ※목록은 BattleArenaController가 소유
 - `Assets/Scripts/UI/FieldHudInput.cs` - 필드 HUD 터치 좌표 변환 ※`ui_layout_lint` 면제 대상(배치가 아니라 입력)
 - `Assets/Scripts/Dex/DexBrowseLayout.cs` - 도감 순환 선택·그리드 열 수/높이 순수 계산 (도감 탭과 보유 탭이 공유)
 

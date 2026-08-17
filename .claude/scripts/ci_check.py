@@ -52,6 +52,8 @@ REPO_CHECKS = [
     (["ui_layout_lint.py"], "UI 레이아웃 마진"),
     (["subscription_lint.py"], "UI 구독 소실"),
     (["text_fit_lint.py"], "라벨 잘림"),
+    (["literal_fit_lint.py"], "리터럴 문구 잘림"),
+    (["dex_grant_lint.py"], "곤충 지급↔도감 등록"),
     (["sync_codex.py", "--check"], "Codex 미러 동기"),
 ]
 

@@ -43,10 +43,6 @@ namespace InsectGame.Capture
             float chance = CalculateSuccessChance(target.Data, target.Level, timing01, extraBonus);
             bool success = UnityEngine.Random.value <= chance;
 
-            // 이벤트 핸들러 예외가 DEX/보상 처리를 차단하지 않도록 격리
-            try { CaptureResolved?.Invoke(target, success); }
-            catch (System.Exception e) { Debug.LogWarning($"[CaptureController] CaptureResolved 핸들러 예외: {e.Message}"); }
-
             if (dexController != null)
             {
                 dexController.RegisterEncounter(target.Data.insectId);
@@ -76,14 +72,28 @@ namespace InsectGame.Capture
                 // 필드에서 본 이로치(색다른 곤충)를 그대로 저장 — 옛 2-인자 호출은 isShiny=false라
                 // 미니게임 포획 시 색다른 개체가 일반 개체로 유실됐음(배틀/레이드 경로는 정상 전달).
                 insectCollection?.AddCapturedInsect(target.Data.insectId, target.Level, target.IsShiny);
-                target.Despawn();
+
+                // **퀘스트 통지는 이벤트가 아니라 여기서 한다.** 예전엔 `CaptureFeedbackController`
+                // (효과음·팝업을 담당하는 연출 컴포넌트) 안에 있었는데, 그건 `CaptureResolved`의
+                // 구독자 중 하나일 뿐이다. 멀티캐스트 델리게이트는 앞선 구독자가 던지면 **뒤를
+                // 호출하지 않으므로**, `CapturePopupUI`가 먼저 등록된 상태에서 예외가 나면
+                // 포획 퀘스트 진행이 경고 한 줄만 남기고 영구 유실된다.
+                // 진행에 필수인 통지는 연출과 같은 배를 타면 안 된다(`InsectBattleController`가
+                // 전투 경로에서 이미 같은 이유로 직접 부른다).
+                TutorialQuestManager.Instance?.NotifyCapture(target.Data.rarity);
             }
-            else
-            {
-                // 포획 실패 시에도 항상 Despawn — 사용자 의도("미니게임 끝나면 사라져야").
-                // 옛은 50% 확률 잔존이라 같은 곤충에 중첩 미니게임 발동 + 필드 중복 인스턴스 가능.
-                target.Despawn();
-            }
+
+            // **지급이 끝난 뒤에 알린다.** 예전엔 이 호출이 맨 앞이라, 팝업이
+            // `GetLatestOwnedBySpecies`로 방금 잡은 개체를 찾을 때 **아직 추가되기 전**이었다 —
+            // 같은 종을 이미 갖고 있었다면 **직전 개체의 등급·개체값**이 뜨고, 그 종의 첫 포획이면
+            // 조회가 비어 **이전 팝업의 값이 그대로 남았다**.
+            // 핸들러 예외가 여기 아래의 Despawn을 막지 않도록 격리는 유지한다.
+            try { CaptureResolved?.Invoke(target, success); }
+            catch (System.Exception e) { Debug.LogWarning($"[CaptureController] CaptureResolved 핸들러 예외: {e.Message}"); }
+
+            // 성공·실패 모두 Despawn — 사용자 의도("미니게임 끝나면 사라져야").
+            // 옛은 실패 시 50% 확률 잔존이라 같은 곤충에 중첩 미니게임 발동 + 필드 중복 인스턴스 가능.
+            target.Despawn();
         }
 
         private float CalculateSuccessChance(

@@ -6,6 +6,21 @@ namespace InsectGame.Capture
     /// <summary>CaptureController의 직렬화 튜닝값을 순수 계산기에 전달하는 불변 스냅샷.</summary>
     internal readonly struct CaptureChanceTuning
     {
+        // ── 이 값들을 내리기 전에 아래를 읽을 것 (2026-08-17 audit) ──
+        //
+        // 한때 0.35 / 0.45 / 0.10 이었다. 2026-07-17에 여기와 GameplayTuningProfile 두 곳을
+        // **같은 값으로 함께** 내린 의도적 너프였는데, 08-03에 리터럴을 이 상수로 추출하면서
+        // 최초 커밋 값으로 통째 되돌아갔다(그 커밋 메시지는 레벨 차 상한만 언급한다 — 사고다).
+        // 게다가 같은 커밋이 GameplayTuningProfile_NewAssetDefaults_MatchCaptureFormulaDefaults를
+        // 심어 "틀린 한 쌍"을 서로 고정시켰다. 두 값이 일치한다고 옳은 값인 건 아니다.
+        //
+        // **그래도 되돌리지 않기로 했다.** 같은 08-03 커밋이 도입한 GetRarityFloor가 base 0.60을
+        // 전제로 잡혀 있어서, 0.35로 내리면 난이도 0.5 동레벨 기준 **전 등급이 하한에 닿는다**
+        // (Common .35-.135=.215 < floor .30). 그러면 난이도·레벨·base 항이 전부 죽고 포획률이
+        // 등급별 상수가 되어, 너프의 원래 의도(더 어렵게)조차 이루지 못한다.
+        //
+        // 그래서 포획을 더 어렵게 만들고 싶다면 **floor를 함께 재설계**해야 한다.
+        // base만 내리는 변경은 무조건 틀린다.
         internal const float DefaultBaseSuccessChance = 0.60f;
         internal const float DefaultRarityPenaltyStep = 0.08f;
         internal const float DefaultDifficultyPenaltyScale = 0.40f;
@@ -100,6 +115,12 @@ namespace InsectGame.Capture
             return Mathf.Clamp01(chance);
         }
 
+        /// <summary>
+        /// 등급별 최저 보장 확률. <b>base 0.60 전제로 잡힌 값이다</b> —
+        /// 현재 계수에서는 난이도 0.5 동레벨 기준 전 등급이 이 하한보다 위라 안전망으로만 작동한다
+        /// (Common .40 / Legendary .08 vs 하한 .30 / .04). base를 내리면 공식이 아니라 여기가
+        /// 포획률을 지배하기 시작한다 — <see cref="CaptureChanceTuning"/> 상단 주석 참조.
+        /// </summary>
         internal static float GetRarityFloor(InsectRarity rarity)
         {
             switch (rarity)

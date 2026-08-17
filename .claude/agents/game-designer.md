@@ -28,6 +28,10 @@ tools:
 - `Assets/Scripts/Core/RegionDefinitions.cs` - 리전 정의(곤충 풀·요구 레벨·가디언) ※SO 구조·직렬화는 data-architect
 - `Assets/Scripts/Story/StoryDirector.cs` - 스토리 트리거 평가·진행 ※새 trigger.type 배선은 이벤트 시스템 담당
 - `Assets/Scripts/Story/StoryService.cs` - Story.json 로더
+- `Assets/Scripts/Story/StoryNpcApproach.cs` - 조우 접근 반경·판정 순수부
+- `Assets/Scripts/Story/StoryStageDirection.cs` - NPC 연출 스텝 데이터 + 타임아웃 순수부
+- `Assets/Scripts/Story/StoryStageLibrary.cs` - NPC 연출 저작(등장·퇴장·인사)
+- `Assets/Scripts/Story/StoryStageDirector.cs` - 연출 재생 + 조우 접근 지휘 ※몸짓 곡선은 visual-dev
 
 ## 역할
 

@@ -26,10 +26,10 @@ namespace InsectGame.Core
         private float frozenTimer;
         private float verticalVelocity;
         private bool isGrounded;
-        private bool hasReceivedInput;
         private Vector3 clickTarget;
         private bool movingToClick;
-        private string blockedRegionName;
+        // 진입 차단 안내 — 그리기는 PlayerHintOverlay(UI)가 한다. 문구는 설정 시 1회만 만든다.
+        private string blockedMessage;
         private float blockedMsgTimer;
 
         // ── 자동 주행(메인퀘스트 목표로 이동) ──
@@ -60,11 +60,6 @@ namespace InsectGame.Core
         private Vector2 joystickInput;
         private bool joystickActive;
 
-        // OnGUI 매 프레임 new GUIStyle 회귀 차단 — DexScreenUI/BattleScreenUI 패턴.
-        private GUIStyle hintStyle, frozenStyle, blockStyle;
-        private bool stylesInited;
-        private static readonly Color HintBgCol = new Color(0f, 0f, 0f, 0.7f);
-        private static readonly Color FrozenTextCol = new Color(1f, 1f, 0.5f, 0.7f);
 
         private float walkAnimTimer;
         private bool isWalking;
@@ -87,6 +82,13 @@ namespace InsectGame.Core
 
         public bool IsFrozen => frozen;
         public PlayerStartPose MainWorldSafePose => mainWorldSafePose;
+
+        /// <summary>진입 차단 안내 문구. 없으면 null. 그리기는 <c>PlayerHintOverlay</c>(UI)가 한다.</summary>
+        public string BlockedMessage => blockedMessage;
+
+        /// <summary>차단 안내의 잔여 알파(0이면 표시 없음). 마지막 0.5초 동안 사라진다.</summary>
+        public float BlockedMessageAlpha =>
+            blockedMsgTimer > 0f ? Mathf.Clamp01(blockedMsgTimer / 0.5f) : 0f;
 
         // 잡기 버튼 탭 시 캐릭터가 도구를 휙 휘두르는 1회성 액션. CaptureInputController가 호출.
         public void PlayCatchSwing()
@@ -178,6 +180,17 @@ namespace InsectGame.Core
                     frozen = false;
                 }
 
+                // **얼어 있어도 자세는 산다.** 예전엔 여기서 곧장 return해 AnimateWalk가 아예 안 불렸다
+                // — 대화·컷신·연출이 전부 frozen이므로, 그때마다 플레이어가 **걷던 자세 그대로 굳었다**
+                // (팔다리가 벌어진 채, 호흡도 없이). NPC는 숨을 쉬는데 플레이어만 마네킹이 된다.
+                // 잡기 스윙 타이머도 여기서 줄인다 — 안 줄이면 스윙 도중 모달이 열렸을 때 팔이 든 채 남는다.
+                // timeScale에 끌려다니면 안 되므로(컷신이 늦출 수 있다) unscaled를 쓴다.
+                if (catchSwingTimer > 0f) catchSwingTimer -= Time.unscaledDeltaTime;
+                walkAnimTimer = 0f;
+                isWalking = false;
+                footstepTimer = 0f;
+                AnimateWalk(false);
+
                 if (Input.GetKeyDown(KeyCode.Escape) || guiEscPressed)
                 {
                     guiEscPressed = false;
@@ -228,7 +241,6 @@ namespace InsectGame.Core
             bool hasKeyboard = h != 0f || v != 0f;
             // 가상 조이스틱(터치) — 키보드 입력 없을 때 사용. 아날로그 크기 보존(부분 기울임=부분 속도).
             bool hasJoystick = !hasKeyboard && joystickActive && joystickInput.sqrMagnitude > 0.0004f;
-            if (hasKeyboard || hasJoystick) hasReceivedInput = true;
 
             // 옛: line 145에서 guiClickRequest=false 즉시 reset → line 149 ternary 항상 false.
             // guiClickPos 분기가 dead branch였음. 로컬에 보존 후 reset.
@@ -268,7 +280,6 @@ namespace InsectGame.Core
                             clickTarget = clickHit.point;
                             clickTarget.y = transform.position.y;
                             movingToClick = true;
-                            hasReceivedInput = true;
                         }
                     }
                     finally
@@ -446,76 +457,51 @@ namespace InsectGame.Core
                 }
             }
 
-            InitStyles();
 
-            // 이동 안내 오버레이 제거(요청) — 로그인 화면에도 표시되던 문제를 함께 해결.
-            // PlayerMovement.OnGUI가 상태 무관하게 그려 로그인 중에도 노출됐음.
-            // 필요 시 이 블록을 복원하면 됨.
-
-            if (frozen)
-            {
-                GUI.Label(new Rect(0, Screen.height - 50, Screen.width, 30),
-                    "ESC를 누르면 이동 잠금을 해제합니다", frozenStyle);
-            }
-
-            if (blockedMsgTimer > 0f)
-            {
-                float alpha = Mathf.Clamp01(blockedMsgTimer / 0.5f);
-                // alpha 동적이라 textColor 매 프레임 갱신 (BattleScreenUI 패턴) — struct stack 할당.
-                blockStyle.normal.textColor = new Color(1f, 0.4f, 0.3f, alpha);
-                float bw = 400f;
-                Rect bRect = new Rect((Screen.width - bw) / 2f, Screen.height * 0.6f, bw, 30);
-                GUI.Label(bRect, $"{blockedRegionName} 진입에 레벨이 부족합니다!", blockStyle);
-            }
-
-        }
-
-        private void InitStyles()
-        {
-            if (stylesInited) return;
-            hintStyle = new GUIStyle(GUI.skin.label)
-            {
-                fontSize = 32,
-                fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleCenter
-            };
-            hintStyle.normal.textColor = Color.white;
-
-            frozenStyle = new GUIStyle(GUI.skin.label)
-            {
-                fontSize = 24,
-                alignment = TextAnchor.MiddleCenter
-            };
-            frozenStyle.normal.textColor = FrozenTextCol;
-
-            blockStyle = new GUIStyle(GUI.skin.label)
-            {
-                fontSize = 22,
-                fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleCenter
-            };
-            stylesInited = true;
+            // **화면 문구는 여기서 그리지 않는다.** 이 컴포넌트의 OnGUI는 UIScale 밖이라 실제
+            // 픽셀 좌표인데, 나머지 UI는 전부 가상 캔버스 안에서 그려진다 — 스케일이 1이 아닌
+            // 기기(1.333 등)에서 이 문구만 다른 크기로 찍히고 `Screen.height - 50`은 제스처바
+            // 아래로 들어간다. `BattleArenaController`가 같은 이유로 `BattleEffectTextOverlay`로
+            // 옮겨졌고, 여기도 같은 형태로 `PlayerHintOverlay`(UI)가 대신 그린다.
+            // 이 OnGUI에 남은 것은 키 래치·이벤트 처리뿐이다(그리기 아님).
         }
 
         private void AnimateWalk(bool walking)
         {
+            // idle 호흡 파형(-1..1) — 멈춰 있을 때 완전 정지(조각상)를 막는다.
+            // NpcWalkAnimator가 주민에게 쓰는 것과 **같은 파형·진폭**이다(1.5rad/s, 팔 ±1.2°,
+            // 몸통 ±1.8cm, 고개 ±4.5°). 예전엔 플레이어만 이게 없어서, 숨 쉬는 주민 옆에
+            // 마네킹처럼 서 있었다 — 대화 중에는 카메라가 둘을 나란히 잡으므로 특히 티가 났다.
+            float idle = walking ? 0f : Mathf.Sin(Time.time * 1.5f);
+            float idleArm = idle * 1.2f;
+
             float swing = walking ? Mathf.Sin(walkAnimTimer) : 0f;
             float swingDeg = swing * 25f;
-            float bobY = walking ? Mathf.Abs(Mathf.Sin(walkAnimTimer * 2f)) * 0.06f : 0f;
+            float bobY = walking
+                ? Mathf.Abs(Mathf.Sin(walkAnimTimer * 2f)) * 0.06f
+                : idle * 0.018f;
 
             // 팔 흔들기 (좌우 반대) — PlayerVisualBuilder 노드 안정적이므로 lazy 캐싱
             // Z 회전 6°는 PlayerVisualBuilder의 ArmL/R 초기 각도와 동기 (14° V자 어색함 차단).
             if (cachedArmL == null) cachedArmL = transform.Find("ArmL");
             if (cachedArmR == null) cachedArmR = transform.Find("ArmR");
-            // 오른팔/도구 X 회전 — 기본은 walk swing(-swingDeg), 잡기 액션 중엔 큰 sin 아크로 오버라이드.
-            float rightArmDeg = -swingDeg;
+            // 오른팔 X 회전 — 기본은 walk swing(-swingDeg), 잡기 액션 중엔 큰 sin 아크로 오버라이드.
+            //
+            // **도구용 각도(toolDeg)를 팔 각도와 따로 둔다.** 도구는 idle 미세 흔들림을 따라가면
+            // 안 된다 — 아래 base 재캐싱이 `!walking && 스윙 없음`일 때 매 프레임 도는데, 그때
+            // 도구가 idleArm만큼 돌아가 있으면 그 회전이 base로 누적돼 도구가 조금씩 드리프트한다
+            // (잡기 스윙 중 재캐싱을 막아 둔 것과 정확히 같은 함정이다).
+            // idle에서 toolDeg는 0이라 재캐싱이 무해한 항등이 된다.
+            float toolDeg = -swingDeg;
+            float rightArmDeg = toolDeg + idleArm;
             if (catchSwingTimer > 0f)
             {
                 float cp = 1f - Mathf.Clamp01(catchSwingTimer / CatchSwingDuration); // 0→1
-                rightArmDeg = Mathf.Sin(cp * Mathf.PI) * CatchSwingMaxDeg;           // 0→peak→0, 휙 휘두름
+                toolDeg = Mathf.Sin(cp * Mathf.PI) * CatchSwingMaxDeg;               // 0→peak→0, 휙 휘두름
+                rightArmDeg = toolDeg;   // 크게 휘두르는 중엔 호흡을 섞지 않는다
             }
             // Z=0 수직 자세 — 옛 ±6° V자 회전이 사용자 보고 "어깨 언밸런스" 원인. swing은 X축만.
-            if (cachedArmL != null) cachedArmL.localRotation = Quaternion.Euler(swingDeg, 0f, 0f);
+            if (cachedArmL != null) cachedArmL.localRotation = Quaternion.Euler(swingDeg + idleArm, 0f, 0f);
             if (cachedArmR != null) cachedArmR.localRotation = Quaternion.Euler(rightArmDeg, 0f, 0f);
 
             // 도구 = 오른팔과 동일 X swing. walking=false면 swing=0이라 도구 레시피
@@ -534,10 +520,12 @@ namespace InsectGame.Core
             }
             if (toolBaseCached)
             {
+                // idle 호흡이 빠진 toolDeg를 쓴다 — 위 재캐싱이 매 idle 프레임 도므로,
+                // 여기에 idleArm을 섞으면 그 회전이 base로 누적돼 도구가 드리프트한다.
                 if (cachedNetHandle != null)
-                    cachedNetHandle.localRotation = Quaternion.Euler(rightArmDeg, 0f, 0f) * netHandleBaseRot;
+                    cachedNetHandle.localRotation = Quaternion.Euler(toolDeg, 0f, 0f) * netHandleBaseRot;
                 if (cachedNetRing != null)
-                    cachedNetRing.localRotation = Quaternion.Euler(rightArmDeg, 0f, 0f) * netRingBaseRot;
+                    cachedNetRing.localRotation = Quaternion.Euler(toolDeg, 0f, 0f) * netRingBaseRot;
             }
 
             // 다리 흔들기 (팔과 반대) — LegPivot 회전 시 Leg+Boot 모두 함께 전파.
@@ -557,11 +545,14 @@ namespace InsectGame.Core
                 cachedBody.localPosition = bp;
             }
 
-            // 머리 약간 흔들림
+            // 머리 흔들림 — 걷기: 좌우 흔들. idle: 아주 느린 고개 스윙(~14s 주기, ±4.5°)으로
+            // 주변을 둘러보는 인상을 준다(NpcWalkAnimator와 같은 값).
             if (cachedHeadPivot == null) cachedHeadPivot = transform.Find("HeadPivot");
             if (cachedHeadPivot != null)
             {
-                float headTilt = walking ? Mathf.Sin(walkAnimTimer * 0.5f) * 3f : 0f;
+                float headTilt = walking
+                    ? Mathf.Sin(walkAnimTimer * 0.5f) * 3f
+                    : Mathf.Sin(Time.time * 0.45f) * 4.5f;
                 cachedHeadPivot.localRotation = Quaternion.Euler(0f, headTilt, 0f);
             }
         }
@@ -578,7 +569,7 @@ namespace InsectGame.Core
                 {
                     if (r.ContainsPoint(pos) && !regionManager.IsRegionAccessible(r))
                     {
-                        blockedRegionName = r.displayName;
+                        blockedMessage = $"{r.displayName} 진입에 레벨이 부족합니다!";
                         blockedMsgTimer = 2f;
                         return true;
                     }
@@ -692,7 +683,6 @@ namespace InsectGame.Core
             autoRunBlockedTimer = 0f;
             autoRunStallTimer = 0f;
             autoRunBestDistance = float.MaxValue;
-            hasReceivedInput = true;   // 조작 안내 배너를 닫는다(클릭 이동과 동일)
         }
 
         /// <summary>사용자가 취소하거나 목표가 사라졌을 때. 이벤트는 쏘지 않는다.</summary>

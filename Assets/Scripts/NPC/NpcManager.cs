@@ -85,7 +85,7 @@ namespace InsectGame.NPC
             {
                 playerTransform = player;
                 // 앵커 스폰이 먼저 일어났다면(호출 순서 방어) 컬링 타깃 사후 연결
-                if (player != null && (villagers.Count > 0 || kids.Count > 0))
+                if (player != null && (villagers.Count > 0 || kids.Count > 0 || storyNpcs.Count > 0))
                     RewireCullingTargets();
             }
         }
@@ -273,6 +273,10 @@ namespace InsectGame.NPC
                 if (villagers[i] != null) SetCullingTarget(villagers[i].gameObject);
             for (int i = 0; i < kids.Count; i++)
                 if (kids[i] != null) SetCullingTarget(kids[i].gameObject);
+            // 스토리 NPC도 포함 — 빠뜨리면 AutoWire(player)가 스폰보다 늦게 올 때
+            // 스토리 NPC만 컬링 타깃이 null로 남아 40m 밖에서도 계속 그려진다.
+            for (int i = 0; i < storyNpcs.Count; i++)
+                if (storyNpcs[i] != null) SetCullingTarget(storyNpcs[i].gameObject);
         }
 
         private void SetCullingTarget(GameObject go)
@@ -291,7 +295,10 @@ namespace InsectGame.NPC
 
             float time = Time.time;
             float dt = Time.deltaTime;
-            int total = villagers.Count + kids.Count;
+            // 스토리 NPC도 센다 — 예전엔 villagers+kids만 세어 storyNpcs가 TickAI/TickMovement를
+            // **한 번도 못 받았다.** TickMovement가 곧 NpcWalkAnimator.Tick이라, 어르신·라온·세라와
+            // 명부회 인물 전원이 호흡도 고개 흔들림도 없는 조각상으로 서 있었다.
+            int total = villagers.Count + kids.Count + storyNpcs.Count;
             if (total == 0) return;
 
             // ② 라운드로빈 TickAI — 프레임당 최대 3명 (NPC 내부에서 주기 자체 스로틀)
@@ -304,10 +311,15 @@ namespace InsectGame.NPC
                     VillagerNpc v = villagers[tickIndex];
                     if (v != null && v.isActiveAndEnabled) v.TickAI(time);
                 }
-                else
+                else if (tickIndex < villagers.Count + kids.Count)
                 {
                     CatcherKidNpc k = kids[tickIndex - villagers.Count];
                     if (k != null && k.isActiveAndEnabled) k.TickAI(time);
+                }
+                else
+                {
+                    VillagerNpc s2 = storyNpcs[tickIndex - villagers.Count - kids.Count];
+                    if (s2 != null && s2.isActiveAndEnabled) s2.TickAI(time);
                 }
             }
 
@@ -325,6 +337,13 @@ namespace InsectGame.NPC
                 if (k == null || !k.isActiveAndEnabled) continue;
                 if (hasPlayer && (k.transform.position - playerPos).sqrMagnitude > MovementRadiusSq) continue;
                 k.TickMovement(dt, time);
+            }
+            for (int i = 0; i < storyNpcs.Count; i++)
+            {
+                VillagerNpc s3 = storyNpcs[i];
+                if (s3 == null || !s3.isActiveAndEnabled) continue;
+                if (hasPlayer && (s3.transform.position - playerPos).sqrMagnitude > MovementRadiusSq) continue;
+                s3.TickMovement(dt, time);
             }
 
             // ④ 예약 sweep — Despawn/풀 반환된 엔티티의 잔존 예약 정리

@@ -738,6 +738,9 @@ namespace InsectGame.UI
             if (resultShown)
                 DrawResult();
 
+            // 전투 문구는 1v1과 같은 오버레이를 쓴다 — 아레나가 픽셀 좌표로 그리던 자리.
+            BattleEffectTextOverlay.Draw(arena);
+
             UIScale.End();
         }
 

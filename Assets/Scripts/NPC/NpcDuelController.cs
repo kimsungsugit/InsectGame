@@ -197,6 +197,12 @@ namespace InsectGame.NPC
             }
 
             activeKid = kid;
+            // 보스 ID를 비우는 건 `TryStartBossDuel`이 `activeKid = null`로 하는 것과 대칭이다.
+            // 대칭이 깨져 있으면 남은 보스 ID가 `OnDuelEnded`의 분기를 가로채, 아이 대결에 이겼을 뿐인데
+            // **간부를 격파한 것으로 영구 기록**되고 보상까지 나간다(PlayerPrefs 저장 + 클라우드 동기).
+            // 위쪽 `ConcludeDefeatWithoutSwap`이 상태 누출 자체를 막지만, 방어선을 한 겹 더 둔다 —
+            // `DuelEnded`가 어떤 이유로든 빠지면 그 값이 그대로 다음 대결로 흘러가는 구조라서다.
+            activeBossId = string.Empty;
             activeRarity = kid.DuelInsect.rarity;
             return true;
         }

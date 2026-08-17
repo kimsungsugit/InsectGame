@@ -307,6 +307,126 @@ def evaluate_signals() -> list:
         "FAIL" if unreachable_target else "PASS",
     ))
 
+    # 12. stageEnterId/stageExitId 실재성 — 검사 9(cutsceneId)와 같은 무증상 결함이다.
+    #     오타면 런타임에 LogWarning만 찍고 NPC가 그냥 안 움직인다. 특히 stageEnterId는
+    #     "라온이 뛰어 들어온 다음 말한다"의 순서를 만드는 장치라, 빠지면 지도 반대편에 있는
+    #     인물의 대사만 허공에서 뜬다 — 화면이 조용해서 배포까지 살아남는다.
+    stage_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "Assets", "Scripts", "Story", "StoryStageLibrary.cs")
+    try:
+        with open(stage_path, encoding="utf-8") as fh:
+            stage_src = fh.read()
+    except OSError as exc:
+        raise ExtractorBroken(f"StoryStageLibrary.cs를 읽지 못했다: {exc}")
+
+    known_stages = set(re.findall(r'public const string \w+\s*=\s*"([a-z_0-9]+)"', stage_src))
+    if not known_stages:
+        raise ExtractorBroken(
+            "StoryStageLibrary.cs에서 연출 ID 상수를 하나도 찾지 못했다 — 추출기가 낡았다")
+
+    # 상수만 선언하고 TryGet switch에 case가 없으면 역시 발화하지 않는다(같은 무증상 결함).
+    stage_dispatched = set(re.findall(r'case (\w+):\s*steps\s*=', stage_src))
+    stage_declared = dict(re.findall(
+        r'public const string (\w+)\s*=\s*"([a-z_0-9]+)"', stage_src))
+    stage_undispatched = sorted(v for k, v in stage_declared.items() if k not in stage_dispatched)
+
+    missing_stage = sorted(
+        f"{b['beatId']}→{b[field]}"
+        for b in beats
+        for field in ("stageEnterId", "stageExitId")
+        if b.get(field) and b[field] not in known_stages)
+
+    # 대사 없는 비트의 stageEnterId는 영영 안 돈다 — 모달이 안 뜨므로 게이트가 걸리지 않는다.
+    enter_without_lines = sorted(
+        b["beatId"] for b in beats
+        if b.get("stageEnterId") and not b.get("lines"))
+
+    stage_problems = (missing_stage
+                      + [f"{s}(switch 미배선)" for s in stage_undispatched]
+                      + [f"{b}(대사 없음)" for b in enter_without_lines])
+    stage_used = sum(1 for b in beats if b.get("stageEnterId") or b.get("stageExitId"))
+    signals.append((
+        "stageId 실재성 (JSON↔StoryStageLibrary)",
+        "0건 미존재",
+        f"{len(stage_problems)}건 ({stage_problems})" if stage_problems
+        else f"0건 (사용 {stage_used}건 / 정의 {len(known_stages)}종)",
+        "FAIL" if stage_problems else "PASS",
+    ))
+
+    # 13. stageExitId와 cutsceneId 동시 사용 금지 — 둘 다 StoryBeatCompleted를 구독해
+    #     조작(SetFrozen)과 모달 스택을 뺏는다. 함께 걸면 서로의 복구를 덮어써서
+    #     조작이 안 돌아오거나 카메라가 컷신 마지막 구도로 굳는다.
+    #     런타임에도 StoryStageDirector가 컷신에 양보하지만, 저작 단계에서 막는 편이 낫다.
+    both_slots = sorted(
+        b["beatId"] for b in beats
+        if b.get("stageExitId") and b.get("cutsceneId"))
+    signals.append((
+        "stageExitId ↔ cutsceneId 배타",
+        "0건 동시 사용",
+        f"{len(both_slots)}건 ({both_slots})" if both_slots else "0건",
+        "FAIL" if both_slots else "PASS",
+    ))
+
+    # 14. Story.json의 키가 StoryBeat.cs에 실재하는가.
+    #     **JsonUtility는 모르는 키를 조용히 무시한다** — 그래서 오타 하나("stageEnterID")나
+    #     이미 없어진 필드("oneShot")를 저작하면 아무 경고 없이 그 저작이 통째로 증발한다.
+    #     화면에는 "연출이 원래 없는 것"처럼 보여서 배포까지 살아남는다.
+    #     실제로 `oneShot`이 읽는 코드 0인 채 82비트에 남아 있었다(2026-08-17 audit).
+    #
+    #     필드 목록은 소스에서 읽는다 — 여기에 사본을 만들면 그쪽이 늘 때 이 검사가 낡는다.
+    beat_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "Assets", "Scripts", "Story", "StoryBeat.cs")
+    try:
+        with open(beat_path, encoding="utf-8") as fh:
+            beat_src = fh.read()
+    except OSError as exc:
+        raise ExtractorBroken(f"StoryBeat.cs를 읽지 못했다: {exc}")
+
+    # 클래스별 {필드명: 타입}. List<T>는 원소 타입 T로 눕혀 중첩 검사에 그대로 쓴다.
+    class_fields = {}
+    parts = re.split(r"public class (\w+)", beat_src)
+    for i in range(1, len(parts) - 1, 2):
+        cls_name, body = parts[i], parts[i + 1]
+        fields = {}
+        for fm in re.finditer(r"^\s*public\s+([\w\.<>\[\]]+)\s+(\w+)\s*(?:=[^;]*)?;", body, re.M):
+            ftype, fname = fm.group(1), fm.group(2)
+            elem = re.match(r"List<(\w+)>$", ftype)
+            fields[fname] = elem.group(1) if elem else ftype
+        class_fields[cls_name] = fields
+
+    if not class_fields.get("StoryBeat"):
+        raise ExtractorBroken("StoryBeat.cs에서 StoryBeat의 public 필드를 찾지 못했다 — 추출기가 낡았다")
+
+    def _walk_keys(node, cls_name, path, out):
+        known = class_fields.get(cls_name)
+        if known is None:
+            return  # string/int/bool 등 원시 타입 — 더 내려갈 곳이 없다
+        for key, value in node.items():
+            if key not in known:
+                out.append(f"{path}.{key}")
+                continue
+            child = known[key]
+            if isinstance(value, dict):
+                _walk_keys(value, child, f"{path}.{key}", out)
+            elif isinstance(value, list):
+                for idx, item in enumerate(value):
+                    if isinstance(item, dict):
+                        _walk_keys(item, child, f"{path}.{key}[{idx}]", out)
+
+    orphan_keys = []
+    for b in beats:
+        _walk_keys(b, "StoryBeat", b.get("beatId") or "(무명)", orphan_keys)
+
+    signals.append((
+        "Story.json 키 실재성 (JSON↔StoryBeat 필드)",
+        "0건 미매핑",
+        f"{len(orphan_keys)}건 ({orphan_keys[:8]})" if orphan_keys
+        else f"0건 (비트 {len(beats)}개 / 필드 {len(class_fields['StoryBeat'])}종)",
+        "FAIL" if orphan_keys else "PASS",
+    ))
+
     return signals
 
 

@@ -37,7 +37,7 @@
         "unlockQuestId": ""
       },
       "cutsceneId": "cs_story_prologue",
-      "oneShot": true
+      "stageEnterId": "st_ch1_elder_greet"
     },
     {
       "beatId": "ch1_first_capture",
@@ -74,8 +74,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "ch1_rival_intro",
@@ -113,7 +112,8 @@
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
       },
-      "oneShot": true
+      "stageEnterId": "st_ch1_rival_enter",
+      "stageExitId": "st_ch1_rival_exit"
     },
     {
       "beatId": "ch1_growth",
@@ -149,8 +149,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "ch1_first_battle",
@@ -187,8 +186,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "ch1_guardian_call",
@@ -225,8 +223,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "ch1_guardian_win",
@@ -262,8 +259,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "ch1_reach_pond",
@@ -295,8 +291,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "ch2_water",
@@ -329,8 +324,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "ch2_resolve",
@@ -362,8 +356,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "ch3_reach_forest",
@@ -399,8 +392,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "ch3_forest_carving",
@@ -432,8 +424,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "ch3_battle_insight",
@@ -466,8 +457,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "ch4_reach_swamp",
@@ -503,8 +493,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "ch4_decay",
@@ -541,8 +530,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "ch4_bond",
@@ -575,8 +563,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "ch5_reach_mountain",
@@ -612,8 +599,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "ch5_summit",
@@ -645,8 +631,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "ch5_thesis",
@@ -683,8 +668,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "ch6_reach_ruins",
@@ -716,8 +700,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "ch6_approach",
@@ -750,8 +733,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "ch6_secret",
@@ -787,8 +769,7 @@
         "rewardInsectDisplayName": "고대의 잠자리",
         "rewardInsectLevel": 45,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "ch7_opening",
@@ -833,8 +814,7 @@
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
       },
-      "cutsceneId": "cs_seal_opening",
-      "oneShot": true
+      "cutsceneId": "cs_seal_opening"
     },
     {
       "beatId": "ch7_arrive",
@@ -874,8 +854,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "ch7_sign",
@@ -908,8 +887,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "ch7_confront",
@@ -949,8 +927,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "ch7_clash",
@@ -983,8 +960,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "ch7_echo",
@@ -1016,8 +992,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "ch8_arrive",
@@ -1053,8 +1028,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "ch8_sign",
@@ -1087,8 +1061,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "ch8_confront",
@@ -1132,8 +1105,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "ch8_clash",
@@ -1166,8 +1138,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "ch8_echo",
@@ -1199,8 +1170,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "ch9_arrive",
@@ -1236,8 +1206,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "ch9_sign",
@@ -1270,8 +1239,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "ch9_confront",
@@ -1319,8 +1287,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "ch9_clash",
@@ -1353,8 +1320,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "ch9_echo",
@@ -1390,8 +1356,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "ch10_arrive",
@@ -1427,8 +1392,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "ch10_sign",
@@ -1465,8 +1429,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "ch10_confront",
@@ -1518,8 +1481,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "ch10_clash",
@@ -1552,8 +1514,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "ch10_echo",
@@ -1585,8 +1546,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "ch11_arrive",
@@ -1622,8 +1582,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "ch11_sign",
@@ -1656,8 +1615,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "ch11_confront",
@@ -1701,8 +1659,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "ch11_clash",
@@ -1735,8 +1692,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "ch11_echo",
@@ -1776,8 +1732,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "ch12_arrive",
@@ -1813,8 +1768,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "ch12_sign",
@@ -1847,8 +1801,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "ch12_confront",
@@ -1900,8 +1853,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "ch12_clash",
@@ -1938,8 +1890,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "ch12_echo",
@@ -1975,8 +1926,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "fin_unnamed",
@@ -2025,8 +1975,7 @@
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
       },
-      "cutsceneId": "cs_nameless_confront",
-      "oneShot": true
+      "cutsceneId": "cs_nameless_confront"
     },
     {
       "beatId": "fin_seal",
@@ -2067,8 +2016,7 @@
         "rewardInsectDisplayName": "이름을 되찾은 사마귀",
         "rewardInsectLevel": 60,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "fin_epilogue",
@@ -2112,8 +2060,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "gd_ruins",
@@ -2145,8 +2092,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "gd_hollow",
@@ -2178,8 +2124,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "gd_dunes",
@@ -2211,8 +2156,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "gd_frostline",
@@ -2244,8 +2188,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "gd_emberfall",
@@ -2277,8 +2220,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "gd_canopy",
@@ -2310,8 +2252,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "dex_60",
@@ -2343,8 +2284,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "dex_100",
@@ -2376,8 +2316,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "dex_140",
@@ -2413,8 +2352,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "talk_grip",
@@ -2450,8 +2388,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "talk_scale",
@@ -2487,8 +2424,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "talk_chief",
@@ -2528,8 +2464,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "garden_intro",
@@ -2561,8 +2496,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "talk_elder",
@@ -2594,8 +2528,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "talk_rival",
@@ -2627,8 +2560,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "talk_scholar",
@@ -2660,8 +2592,7 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      },
-      "oneShot": true
+      }
     },
     {
       "beatId": "ch2_watchers",
@@ -2700,8 +2631,7 @@
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
       },
-      "cutsceneId": "",
-      "oneShot": true
+      "cutsceneId": ""
     },
     {
       "beatId": "ch2_emperor",
@@ -2740,8 +2670,7 @@
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
       },
-      "cutsceneId": "",
-      "oneShot": true
+      "cutsceneId": ""
     },
     {
       "beatId": "ch3_warning",
@@ -2784,8 +2713,7 @@
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
       },
-      "cutsceneId": "",
-      "oneShot": true
+      "cutsceneId": ""
     },
     {
       "beatId": "ch3_stag",
@@ -2824,8 +2752,7 @@
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
       },
-      "cutsceneId": "",
-      "oneShot": true
+      "cutsceneId": ""
     },
     {
       "beatId": "ch4_harvest",
@@ -2868,8 +2795,7 @@
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
       },
-      "cutsceneId": "",
-      "oneShot": true
+      "cutsceneId": ""
     },
     {
       "beatId": "ch4_firefly",
@@ -2908,8 +2834,7 @@
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
       },
-      "cutsceneId": "",
-      "oneShot": true
+      "cutsceneId": ""
     },
     {
       "beatId": "ch5_blocked",
@@ -2956,8 +2881,7 @@
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
       },
-      "cutsceneId": "",
-      "oneShot": true
+      "cutsceneId": ""
     },
     {
       "beatId": "ch5_apollo",
@@ -2996,8 +2920,7 @@
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
       },
-      "cutsceneId": "",
-      "oneShot": true
+      "cutsceneId": ""
     },
     {
       "beatId": "ch6_ledger_hint",
@@ -3044,8 +2967,7 @@
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
       },
-      "cutsceneId": "",
-      "oneShot": true
+      "cutsceneId": ""
     },
     {
       "beatId": "ch6_relic",
@@ -3084,8 +3006,7 @@
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
       },
-      "cutsceneId": "",
-      "oneShot": true
+      "cutsceneId": ""
     }
   ]
 }

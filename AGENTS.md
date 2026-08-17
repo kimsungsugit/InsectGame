@@ -103,11 +103,17 @@ AutoWire·이벤트·오브젝트 풀 패턴, 금지 사항이 전부 거기 있
 | `subscription_lint.py` | `OnDisable`에서 해지한 구독을 `OnEnable`에서 되살릴 것 | `rules/ui-layout.md` |
 | `data_lint.py` | 곤충·아이템·리전 데이터 정합(ID 유일성, 참조 무결, 풀 배정) | 코드(`InsectDatabase` 등)와 스크립트 자신 |
 | `story_lint.py` | 스토리 비트 트리거·보상·리전키 정합 | 코드(`StoryBeat`)와 스크립트 자신 |
+| `dex_grant_lint.py` | 곤충을 지급하면 도감에도 올릴 것(`AddCapturedInsect`↔`RegisterCapture`) | 코드(`DexController`)와 스크립트 자신 |
 | `sync_codex.py` | `.claude` ↔ `.codex` 미러 동기 | 스크립트 자신 |
 | `verify_coverage.py` | 모든 `.cs`에 담당 에이전트가 있을 것 | `rules/agent-coordination.md` + `agents/*.md` |
 
-`data_lint`·`story_lint`는 대응 규칙 문서 없이 코드를 직접 읽는다 — 데이터 스키마가 곧 규칙이라
-문서 사본을 두면 썩기 때문이다. 나머지는 문서를 파싱하거나 문서에 적힌 규칙을 구현한다.
+`data_lint`·`story_lint`·`dex_grant_lint`는 대응 규칙 문서 없이 코드를 직접 읽는다 — 데이터 스키마와
+호출 배선이 곧 규칙이라 문서 사본을 두면 썩기 때문이다. 나머지는 문서를 파싱하거나 문서에 적힌 규칙을 구현한다.
+
+`dex_grant_lint`는 **증상이 조용한** 결함을 겨냥한다. 곤충 지급 경로 6곳(포획·전투·레이드·가챠·
+튜토리얼 보상·스토리 보상)이 각자 도감 등록을 따로 불러야 하는데, 빠뜨려도 예외도 경고도 없고
+곤충은 멀쩡히 손에 들어온다. 2026-08-17에 `TutorialQuestManager`(첫 파트너가 영원히 미발견)와
+`StoryDirector` **두 곳이 동시에** 빠져 있었다.
 
 ## 규칙
 

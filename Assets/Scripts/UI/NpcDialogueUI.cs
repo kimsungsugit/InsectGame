@@ -26,6 +26,10 @@ namespace InsectGame.UI
         private Texture2D panelTex;
         private bool stylesInited;
 
+        // 패널 페이드 상태(UIHelper.AnimatePanelOpen이 소유). CharacterOutfitUI와 같은 관례.
+        private TweenHandle openFade;
+        private bool wasOpen;
+
         // 스토리 비트 렌더 — StoryDirector.StoryBeatTriggered 구독. 기존 대화 모달 렌더 재사용.
         private InsectGame.Story.StoryDirector storyDirector;
         private InsectGame.Story.StoryBeat currentBeat;
@@ -59,8 +63,24 @@ namespace InsectGame.UI
                 storyDirector.StoryBeatTriggered -= OnStoryBeatTriggered;
         }
 
+        // 대사 앞 연출 게이트(옵션). 배선되지 않으면 지금까지처럼 곧바로 대사를 띄운다.
+        private InsectGame.Story.IStoryStagePrelude stagePrelude;
+
+        /// <summary>
+        /// NPC 등장 연출 주입 — 비트에 <c>stageEnterId</c>가 있으면 <b>대사보다 먼저</b> 돌린다.
+        /// "라온이 뛰어 들어오고 나서 말한다"의 순서가 여기서 갈린다.
+        /// </summary>
+        public void AutoWire(InsectGame.Story.IStoryStagePrelude prelude)
+        {
+            if (stagePrelude == null) stagePrelude = prelude;
+        }
+
         private void OnStoryBeatTriggered(InsectGame.Story.StoryBeat beat)
         {
+            // 연출이 있으면 그것이 끝나며 ShowStory를 부른다. 연출 쪽은 어떤 경로로 끝나든
+            // (도착·건너뛰기·타임아웃) 콜백을 반드시 부르기로 계약돼 있다 — 안 그러면 이 비트가
+            // pendingBeatId에 갇혀 캠페인이 멈춘다.
+            if (stagePrelude != null && stagePrelude.TryPlayPrelude(beat, () => ShowStory(beat))) return;
             ShowStory(beat);
         }
 
@@ -131,6 +151,10 @@ namespace InsectGame.UI
         {
             if (!isOpen) return;
             isOpen = false;
+            // 페이드 상태를 되돌린다 — OnGUI가 `!isOpen`에서 곧바로 return하므로 닫힘 전이가
+            // AnimatePanelOpen에 전달되지 않는다. 그대로 두면 wasOpen이 true로 굳어
+            // **두 번째 열림부터 페이드가 사라진다**(다음 열림에서 전이가 감지되지 않는다).
+            wasOpen = false;
             ModalUIRegistry.Unregister(this);
             if (playerMovement != null) playerMovement.SetFrozen(false);
             if (currentNpc != null) currentNpc.EndTalk();
@@ -204,6 +228,14 @@ namespace InsectGame.UI
             lineStyle.fontSize = storyMode ? 34 : 24;
             UIScale.Begin();
 
+            // 패널 페이드 — 대사창이 툭 튀어나오면 NPC가 다가와 인사하는 흐름이 거기서 끊긴다.
+            // **열릴 때만** 페이드한다: 닫을 때는 CloseModal이 lines/storyLines/currentBeat을
+            // 그 자리에서 비우고 보상까지 지급하므로(CompleteBeat), 사라지는 동안 그릴 내용이
+            // 남아 있지 않다. 내용을 살려 두려면 비트 완료 시점을 미뤄야 하는데 그건 이 저장소가
+            // 영구 정지를 겪은 자리라 건드리지 않는다.
+            float panelAlpha = UIHelper.AnimatePanelOpen(ref openFade, isOpen, ref wasOpen);
+            GUI.color = new Color(1f, 1f, 1f, panelAlpha);
+
             // **스토리는 화면 가운데 크게, 일반 대화는 하단에.**
             // 둘을 같은 하단 띠에 그리면 지금 보고 있는 것이 이야기인지 잡담인지 구분되지 않는다.
             // 딤은 뒤 월드를 눌러 시선을 대사로 모으되, 완전히 가리지는 않는다 —
@@ -229,9 +261,11 @@ namespace InsectGame.UI
             }
             else
             {
-                GUI.color = new Color(0f, 0f, 0f, 0.82f);
+                // 페이드 알파를 곱해 넣고, 복구도 흰색이 아니라 그 알파로 되돌린다 —
+                // 흰색으로 되돌리면 이 뒤의 이름·대사·버튼이 페이드에서 빠진다.
+                GUI.color = new Color(0f, 0f, 0f, 0.82f * panelAlpha);
                 GUI.DrawTexture(new Rect(px, py, panelW, panelH), panelTex);
-                GUI.color = Color.white;
+                GUI.color = new Color(1f, 1f, 1f, panelAlpha);
             }
 
             // 이름 + 대사 — 스토리 모드는 라인별 speaker(없으면 비트 speakerNpcId), 아니면 NPC 이름.
@@ -291,6 +325,8 @@ namespace InsectGame.UI
             if (GUI.Button(new Rect(px + panelW - btnW - 24f, btnY, btnW, btnH), "닫기", buttonStyle))
                 CloseModal();
 
+            // 페이드 알파를 남기지 않는다 — GUI.color는 전역이라 다음 컴포넌트의 OnGUI까지 물든다.
+            GUI.color = Color.white;
             UIScale.End();
         }
 
@@ -310,11 +346,14 @@ namespace InsectGame.UI
             float boxX = px + (storyMode ? 26f : 14f);
             float boxY = py + (storyMode ? 26f : 12f);
 
-            GUI.color = new Color(0.12f, 0.1f, 0.06f, 0.9f);
+            // 주변색(패널 페이드 알파)을 곱해 넣고 끝에 되돌린다 — 이 메서드는 호출부의
+            // panelAlpha를 인자로 받지 않으므로, UISurface와 같은 방식으로 GUI.color를 보존한다.
+            Color ambient = GUI.color;
+            GUI.color = new Color(0.12f, 0.1f, 0.06f, 0.9f) * ambient;
             GUI.DrawTexture(new Rect(boxX, boxY, box, box), panelTex);
-            GUI.color = new Color(1f, 0.85f, 0.45f, 0.5f);
+            GUI.color = new Color(1f, 0.85f, 0.45f, 0.5f) * ambient;
             GUI.DrawTexture(new Rect(boxX, boxY, box, 3f), panelTex);
-            GUI.color = Color.white;
+            GUI.color = ambient;
 
             float scale = box / 150f;
             Color bottom = new Color(0.18f, 0.22f, 0.28f);

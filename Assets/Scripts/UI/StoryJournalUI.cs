@@ -380,21 +380,34 @@ namespace InsectGame.UI
             return string.IsNullOrEmpty(beat.speakerNpcId) ? "???" : beat.speakerNpcId;
         }
 
-        /// <summary>미열람 비트의 힌트 — 대사는 숨기고 "어디서 열리는가"만 알린다.</summary>
+        /// <summary>
+        /// 미열람 비트의 힌트 — 대사는 숨기고 "어디서 열리는가"만 알린다.
+        ///
+        /// <b>case 라벨에 문자열 리터럴을 다시 적지 않는다.</b> <see cref="StoryDirector"/>의
+        /// <c>const</c> 상수를 쓴다 — 사본을 두면 새 트리거 타입이 생겼을 때 여기가 조용히
+        /// <c>default</c>로 흘러 "조건 미상"만 뜬다. 실제로 그렇게 어긋났다:
+        /// <c>GuardianDefeat</c>·<c>DexProgress</c>가 뒤늦게 추가되면서 이 switch가 따라오지
+        /// 않아 <b>82비트 중 9건</b>이 저널에서 아무 힌트도 주지 못했다
+        /// (<c>StoryObjectiveResolver.KindOf</c>가 같은 이유로 상수를 쓴다).
+        /// </summary>
         private static string HintFor(StoryBeat beat)
         {
             if (beat.trigger == null || string.IsNullOrEmpty(beat.trigger.type)) return "조건 미상";
             string param = beat.trigger.param ?? string.Empty;
             switch (beat.trigger.type)
             {
-                case "RegionEnter": return "새 지역에 닿으면";
-                case "SubAreaEnter": return "그 지역의 숨은 장소에서";
-                case "CaptureInsect": return "곤충을 만나 기록하면";
-                case "BattleWin": return "그곳에서 전투를 이기면";
-                case "NpcTalk": return "동행자에게 말을 걸면";
-                case "QuestComplete": return "퀘스트를 마치면";
-                case "LevelReach": return string.IsNullOrEmpty(param) ? "레벨이 오르면" : $"Lv.{param}에 닿으면";
-                case "Immediate": return "여행을 시작하면";
+                case StoryDirector.TriggerRegionEnter: return "새 지역에 닿으면";
+                case StoryDirector.TriggerSubAreaEnter: return "그 지역의 숨은 장소에서";
+                case StoryDirector.TriggerCaptureInsect: return "곤충을 만나 기록하면";
+                case StoryDirector.TriggerBattleWin: return "그곳에서 전투를 이기면";
+                case StoryDirector.TriggerNpcTalk: return "동행자에게 말을 걸면";
+                case StoryDirector.TriggerQuestComplete: return "퀘스트를 마치면";
+                case StoryDirector.TriggerLevelReach:
+                    return string.IsNullOrEmpty(param) ? "레벨이 오르면" : $"Lv.{param}에 닿으면";
+                case StoryDirector.TriggerImmediate: return "여행을 시작하면";
+                case StoryDirector.TriggerGuardianDefeat: return "그 지역의 수문장을 넘으면";
+                case StoryDirector.TriggerDexProgress:
+                    return string.IsNullOrEmpty(param) ? "도감이 채워지면" : $"도감에 {param}종을 새기면";
                 default: return "조건 미상";
             }
         }

@@ -945,6 +945,11 @@ namespace InsectGame.Core
                 Apply(lamp, lampMat);
                 CreatePointLight(new Vector3(0f, 3.4f, -6f + i * 6f), new Color(1f, 0.88f, 0.6f), 9f, 1.1f);
             }
+
+            // 경계벽 — 없으면 바닥(Plane) 가장자리를 넘는 순간 그대로 떨어진다. Update의 Y<-3
+            // 안전망이 "바닥 밖으로 떨어졌다" 경고와 함께 메인 월드로 강제 퇴장시키므로, 25m
+            // 자동 이탈은 발동조차 못 한다. 나머지 9개 방은 예외 없이 전부 봉해 두었다.
+            CreateBoundaryWalls(shelfMat, 13f, 5f);
         }
 
         /// <summary>빙하 서고(frostline_archive) — 얼음 기둥 속에 장부가 얼어붙어 있다.</summary>
@@ -962,7 +967,11 @@ namespace InsectGame.Core
             // 얼음 기둥 8개 — 안에 장부가 한 권씩 갇혀 있다.
             for (int i = 0; i < 8; i++)
             {
-                float a = i * (360f / 8f) * Mathf.Deg2Rad;
+                // 반칸(22.5도) 밀어 놓는다 — i * 45도면 i=6이 정확히 270도, 곧 (0, 0, -8)에 선다.
+                // 그 좌표가 `FindSafeSpawnPosition`의 1차 입구 자리이고 기둥은 반지름 1.25의
+                // 실콜라이더라, 이 방만 입구가 막혀 spiral 폴백으로 3m 밀려난 데서 등장했다.
+                float deg = (i + 0.5f) * (360f / 8f);
+                float a = deg * Mathf.Deg2Rad;
                 Vector3 at = new Vector3(Mathf.Cos(a) * 8f, 0f, Mathf.Sin(a) * 8f);
 
                 GameObject column = Prim(PrimitiveType.Cylinder, $"IceColumn_{i}");
@@ -972,7 +981,10 @@ namespace InsectGame.Core
 
                 GameObject ledger = Prim(PrimitiveType.Cube, $"FrozenLedger_{i}");
                 ledger.transform.localPosition = at + new Vector3(0f, 1.7f, 0f);
-                ledger.transform.localRotation = Quaternion.Euler(0f, i * 24f, 8f);
+                // 극좌표 배치물의 접선 정렬 관례는 `-(각도 + 90)`이다(울타리·육각벽과 동일).
+                // 장부는 두께 0.16의 판이라 이걸 어기면 방 한가운데서 보이는 게 옆날뿐이다 —
+                // 옛 `i * 24f`는 배치각과 아무 관계가 없는 값이었다.
+                ledger.transform.localRotation = Quaternion.Euler(0f, -(deg + 90f), 8f);
                 ledger.transform.localScale = new Vector3(0.7f, 0.9f, 0.16f);
                 Apply(ledger, paperMat);
             }
@@ -1002,6 +1014,11 @@ namespace InsectGame.Core
                 spike.transform.localScale = new Vector3(0.22f, 0.8f + (i % 3) * 0.3f, 0.22f);
                 Apply(spike, deepMat);
             }
+
+            // 경계벽 — 없으면 바닥(Plane) 가장자리를 넘는 순간 그대로 떨어진다. Update의 Y<-3
+            // 안전망이 "바닥 밖으로 떨어졌다" 경고와 함께 메인 월드로 강제 퇴장시키므로, 25m
+            // 자동 이탈은 발동조차 못 한다. 나머지 9개 방은 예외 없이 전부 봉해 두었다.
+            CreateBoundaryWalls(deepMat, 12f, 6f);
         }
 
         /// <summary>잿불 가마(emberfall_kiln) — 용암 균열과 달군 가마. 열기가 보이는 방.</summary>
@@ -1049,6 +1066,11 @@ namespace InsectGame.Core
                 slag.transform.localScale = new Vector3(1.4f, 0.7f, 1.2f);
                 Apply(slag, i % 3 == 0 ? emberMat : basaltMat);
             }
+
+            // 경계벽 — 없으면 바닥(Plane) 가장자리를 넘는 순간 그대로 떨어진다. Update의 Y<-3
+            // 안전망이 "바닥 밖으로 떨어졌다" 경고와 함께 메인 월드로 강제 퇴장시키므로, 25m
+            // 자동 이탈은 발동조차 못 한다. 나머지 9개 방은 예외 없이 전부 봉해 두었다.
+            CreateBoundaryWalls(basaltMat, 14f, 5f);
         }
 
         /// <summary>
@@ -1111,6 +1133,11 @@ namespace InsectGame.Core
             lamp.transform.localScale = Vector3.one * 0.6f;
             Apply(lamp, glowMat);
             CreatePointLight(new Vector3(0f, 4.2f, 2f), new Color(0.95f, 0.90f, 0.70f), 16f, 1.2f);
+
+            // 경계벽 — 없으면 바닥(Plane) 가장자리를 넘는 순간 그대로 떨어진다. Update의 Y<-3
+            // 안전망이 "바닥 밖으로 떨어졌다" 경고와 함께 메인 월드로 강제 퇴장시키므로, 25m
+            // 자동 이탈은 발동조차 못 한다. 나머지 9개 방은 예외 없이 전부 봉해 두었다.
+            CreateBoundaryWalls(stoneMat, 13f, 6f);
         }
 
         private void BuildTemple(SubAreaData sub)

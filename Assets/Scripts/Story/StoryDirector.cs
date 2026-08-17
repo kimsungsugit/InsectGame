@@ -231,9 +231,18 @@ namespace InsectGame.Story
         // triggerType의 미열람·prereq충족·param일치 비트를 찾아 하나만 발화(모달 클로버링 방지).
         // switch(triggerType)는 닫힌 enum — JSON이 쓰는 모든 trigger.type을 여기서 처리해야 한다.
         // 누락 시 그 타입 비트가 영영 발화하지 않음. story_lint 검사 6이 이 switch를 이벤트 구독과 교차검사.
+        //
+        // **첫 일치가 아니라 최우선 일치를 고른다.** AllBeats()는 Dictionary.Values라 순서가
+        // 비결정적인데, 동시에 자격을 갖는 비트가 실제로 있다(어르신에게 말 걸 때 1막 개막
+        // ch1_intro와 앰비언트 talk_elder가 함께 걸린다 — 포획 트리거도 ch2/ch4/ch5에 각 한 쌍).
+        // 첫 일치를 집으면 **실행마다 다른 비트가 뜨고**, 무엇보다 HUD 목표(StoryObjectiveResolver가
+        // 결정적으로 고른 것)와 실제 발화가 갈린다 — 안내를 따라갔는데 다른 대사가 나온다.
+        // 순위는 StoryObjectiveResolver.CompareBeatPriority 하나가 정한다(사본 없음).
         private bool EvaluateTriggers(string triggerType, string eventParam)
         {
             if (string.IsNullOrEmpty(triggerType)) return false;
+
+            StoryBeat chosen = null;
 
             foreach (StoryBeat beat in StoryService.AllBeats())
             {
@@ -284,13 +293,28 @@ namespace InsectGame.Story
                 // 퀘스트 게이트 — requiredQuestId가 채워진 비트는 그 튜토리얼을 마쳐야 발화.
                 matches = matches && RegionGateSatisfied(beat) && QuestGateSatisfied(beat);
 
-                if (matches)
+                if (matches
+                    && (chosen == null
+                        || StoryObjectiveResolver.CompareBeatPriority(beat, chosen, SpineBeatIds()) < 0))
                 {
-                    FireBeat(beat);
-                    return true;
+                    chosen = beat;
                 }
             }
-            return false;
+
+            if (chosen == null) return false;
+            FireBeat(chosen);
+            return true;
+        }
+
+        /// <summary>
+        /// 스파인 집합(다른 비트가 prerequisite로 지목하는 비트). Story.json에서만 나오므로
+        /// 진행과 무관하고 1회 계산이면 족하다 — 목표 도출과 발화가 같은 캐시를 공유한다.
+        /// </summary>
+        private HashSet<string> SpineBeatIds()
+        {
+            if (spineBeatIdsCache == null)
+                spineBeatIdsCache = StoryObjectiveResolver.CollectSpineBeatIds(StoryService.AllBeats());
+            return spineBeatIdsCache;
         }
 
         // requiredRegionId가 채워진 비트는 현재 리전이 일치할 때만 발화(비면 무제약).
@@ -415,13 +439,10 @@ namespace InsectGame.Story
 
         private void RecomputeObjective()
         {
-            if (spineBeatIdsCache == null)
-                spineBeatIdsCache = StoryObjectiveResolver.CollectSpineBeatIds(StoryService.AllBeats());
-
             // 퀘스트 게이트를 함께 넘긴다 — 안 넘기면 튜토리얼 중에 "마을 어르신에게 말 걸기"를
             // 안내해 놓고 정작 가서 말을 걸면 아무 일도 안 일어난다.
             StoryBeat beat = StoryObjectiveResolver.SelectObjectiveBeat(
-                StoryService.AllBeats(), IsSeen, spineBeatIdsCache,
+                StoryService.AllBeats(), IsSeen, SpineBeatIds(),
                 questManager != null ? questManager.IsQuestCompleted : (System.Func<string, bool>)null);
 
             if (beat == null || beat.trigger == null)
@@ -482,7 +503,20 @@ namespace InsectGame.Story
             if (!string.IsNullOrEmpty(reward.rewardInsectId))
             {
                 if (insectCollection != null)
+                {
                     insectCollection.AddCapturedInsect(reward.rewardInsectId, Mathf.Max(1, reward.rewardInsectLevel));
+
+                    // 도감 등록은 지급과 한 쌍이다(`TutorialQuestManager`와 같은 형태). 빠뜨리면
+                    // 준 곤충이 도감에 없어 100% 완주가 막히는데, **여기선 자기 발등도 찍는다** —
+                    // 아래 `CapturedSpeciesCount`가 DexProgress 비트의 판정값이라 자기가 준 보상이
+                    // 자기 트리거를 못 밀어올린다. 지금은 Story.json 전 비트가 rewardInsectId=""라
+                    // 휴면 상태지만, 첫 곤충 보상 비트를 저작하는 순간 발현된다.
+                    if (dexController != null)
+                    {
+                        dexController.RegisterEncounter(reward.rewardInsectId);
+                        dexController.RegisterCapture(reward.rewardInsectId);
+                    }
+                }
                 else Debug.LogWarning($"[Story] insectCollection null — 곤충 보상 손실 {reward.rewardInsectId}");
             }
 

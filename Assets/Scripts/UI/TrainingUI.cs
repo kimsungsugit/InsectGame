@@ -510,7 +510,7 @@ namespace InsectGame.UI
                 }
 
                 int skillCount = trainingManager.GetAvailableSkillCount(m, pid);
-                GUI.Label(new Rect(cardW - 340, cy + cardH - 44, 175, 34), $"스킬 {skillCount}개", methodCountStyle);
+                UIHelper.LabelFit(new Rect(cardW - 340, cy + cardH - 44, 175, 34), $"스킬 {skillCount}개", methodCountStyle);
 
                 GUI.backgroundColor = canTrain ? MethodTrainOkBgCol : MethodTrainOffBgCol;
                 GUI.enabled = canTrain;
@@ -871,7 +871,7 @@ namespace InsectGame.UI
             GUI.Label(new Rect(r.x + 18, r.y + 66, r.width - 200, 50),
                 typeStr, cardDescStyle);
 
-            GUI.Label(new Rect(r.x + 18, r.y + 120, r.width - 200, 34),
+            UIHelper.LabelFit(new Rect(r.x + 18, r.y + 120, r.width - 200, 34),
                 $"쿨다운: {skill.cooldownTurns}턴", cardCdStyle);
         }
 

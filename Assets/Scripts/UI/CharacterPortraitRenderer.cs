@@ -48,6 +48,9 @@ namespace InsectGame.UI
             Color topColor, Color bottomColor, Color shoeColor, Color hatColor,
             float swayX = 0f, bool drawDefaultPack = true)
         {
+            // 호출부의 색(패널 페이드 알파 등)을 잡아 둔다 — 파츠는 여기에 곱해 그린다.
+            ambientColor = GUI.color;
+
             Color skin = GetSkinColor(skinColorIdx);
             Color hair = GetHairColor(hairColorIdx);
 
@@ -62,9 +65,9 @@ namespace InsectGame.UI
             float headY = p.headY, bodyTop = p.bodyTop, legTop = p.legTop, footBottom = p.footBottom;
 
             // === 그림자 ===
-            GUI.color = new Color(0f, 0f, 0f, 0.18f);
+            GUI.color = new Color(0f, 0f, 0f, 0.18f) * ambientColor;
             DrawRect(cx - bodyW * 0.55f + swayX, footBottom + 2f * s, bodyW * 1.1f, 5f * s);
-            GUI.color = Color.white;
+            GUI.color = ambientColor;
 
             // === 신발 (footHalfGap 0.18 → 0.28: 옛 0.18은 신발 폭보다 좁아 겹쳐 보임) ===
             float footHalfGap = bodyW * 0.28f;
@@ -196,7 +199,7 @@ namespace InsectGame.UI
             DrawCol(ringCol, netX - 8f * s, netTop - 4f * s, 2.5f * s, ringH);
             DrawCol(ringCol, netX + 8f * s, netTop - 4f * s, 2.5f * s, ringH);
 
-            GUI.color = Color.white;
+            GUI.color = ambientColor;   // 흰색이 아니라 호출부의 색으로 되돌린다
         }
 
         private static void DrawHair(float headX, float headY, float headW, float headH, float s, int gender, int style, Color hair)
@@ -325,6 +328,10 @@ namespace InsectGame.UI
         /// <summary>장착 의상 기반 그리기 — CharacterOutfitUI(3D 마네킹 폴백)·CashShopUI가 쓴다.</summary>
         public static void DrawWithOutfit(float cx, float cy, float scale, float swayX = 0f)
         {
+            // 아래 Draw도 스스로 잡지만, 그 뒤에 붙는 세 헬퍼(DrawArmsAsSkin/DrawBackpackWithSlot/
+            // DrawOutfitAccessories)는 진입점이 아니라 여기서 잡아 둬야 한다.
+            ambientColor = GUI.color;
+
             EnsureSubscribed();
             if (!cacheValid) RefreshCache();
 
@@ -374,7 +381,7 @@ namespace InsectGame.UI
             // 그 색으로 곱해진다** — 상점의 "보유 재화 / 💎 / 🪙" 라벨이 장착한 악세서리 색으로
             // 물들었다(기본 악세서리 색이 거의 검정이라 라벨이 안 보이는 수준까지 간다).
             // 공개 진입점이 스스로 되돌린다 — 호출부가 이 사정을 알 필요가 없어야 한다.
-            GUI.color = Color.white;
+            GUI.color = ambientColor;   // 흰색이 아니라 호출부의 색으로 되돌린다
         }
 
         private static void DrawBackpackWithSlot(float cx, float cy, float scale, int gender, float swayX, CharacterOutfitManager mgr)
@@ -646,9 +653,21 @@ namespace InsectGame.UI
             return colors[Mathf.Clamp(idx, 0, colors.Length - 1)];
         }
 
+        /// <summary>
+        /// 공개 진입점이 들어올 때의 <c>GUI.color</c> 스냅샷. 모든 파츠 색은 여기에 <b>곱해</b> 그리고,
+        /// 복원도 흰색이 아니라 이 값으로 한다.
+        ///
+        /// 왜: 호출부가 패널 페이드로 <c>GUI.color</c>에 알파를 걸어 둘 수 있는데, 예전엔 파츠가
+        /// 색을 <b>절대값으로 덮고</b> 끝에 <c>Color.white</c>로 되돌렸다. 그래서 초상만 페이드에서
+        /// 빠지는 데 그치지 않고 <b>그 뒤에 그려지는 것 전부의 알파가 1로 되돌아갔다</b> —
+        /// 실제로 유일하게 페이드를 쓰는 <c>CharacterOutfitUI</c>가 그 상태였다.
+        /// (주변 색 복원이라는 교훈은 이미 얻었지만, 복원 대상이 "흰색"이라 절반만 맞았다.)
+        /// </summary>
+        private static Color ambientColor = Color.white;
+
         private static void DrawCol(Color col, float x, float y, float w, float h)
         {
-            GUI.color = col;
+            GUI.color = col * ambientColor;
             GUI.DrawTexture(new Rect(x, y, w, h), Texture2D.whiteTexture);
         }
 
@@ -671,7 +690,10 @@ namespace InsectGame.UI
             }
             string id = itemId ?? "";
             Color prevCol = GUI.color;
-            GUI.color = Color.white;
+            // 이 진입점도 주변색을 잡아 둔다 — ambientColor는 static이라 앞선 Draw가 남긴 값이
+            // 그대로 남아 있으면 카드 미리보기가 엉뚱한 알파로 곱해진다.
+            ambientColor = prevCol;
+            GUI.color = prevCol;
 
             // 형태의 단일 출처는 OutfitShapeLibrary다 — 레시피가 있으면 그 3D 파츠를 정사영해 그린다.
             // 그래야 카드 그림과 실제 착용 모습이 어긋나지 않는다(예전엔 카드에만 목도리 분기가 있어

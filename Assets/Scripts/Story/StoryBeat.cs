@@ -5,6 +5,13 @@ namespace InsectGame.Story
     // 스토리 한 조각(비트) — JSON(Assets/Resources/Story.json)에 저작, JsonUtility로 파싱.
     // 퀘스트/대화/리전을 갈아엎지 않고 관찰(구독)만 하는 가산 레이어. 필드 컨벤션은 데이터 클래스
     // 관례를 따라 public(GameSaveData/TutorialQuest/InsectLoreEntry와 동형 — JsonUtility 직렬화).
+    //
+    // **모든 비트는 일생 1회다 — 비트별 토글은 없다.** 반복 여부는 StoryDirector의
+    // seenBeatIds(story_progress.json)가 전역으로 정하고, 열람한 비트는 EvaluateTriggers가
+    // 무조건 건너뛴다. 예전엔 `oneShot` 필드가 있었지만 **읽는 코드가 한 곳도 없어서**
+    // `"oneShot": false`로 저작해도 아무 일이 일어나지 않았다(데이터가 동작을 거짓말했다).
+    // 되살리려면 onComplete 재지급부터 막아야 한다 — 앰비언트 비트(talk_elder 등)도 캔디 5개를
+    // 주므로 그대로 반복시키면 말 걸기 무한 파밍이 된다. 그건 정리가 아니라 별도 설계다.
     [System.Serializable]
     public class StoryBeat
     {
@@ -33,7 +40,13 @@ namespace InsectGame.Story
         // 실재성을 고정한다(오타는 런타임에 LogWarning만 찍고 조용히 안 나온다).
         // JsonUtility는 JSON에 없는 필드를 건드리지 않으므로 기존 비트 전부 null로 남아 호환된다.
         public string cutsceneId;
-        public bool oneShot = true;
+        // 대사 **앞**에 재생할 NPC 연출(옵션) — 등장·다가옴. StoryStageLibrary의 ID여야 한다.
+        // 대사가 없는 비트에는 무의미하다(모달 자체가 안 뜨므로 게이트가 걸리지 않는다).
+        public string stageEnterId;
+        // 대사 **뒤**에 재생할 NPC 연출(옵션) — 퇴장·안내.
+        // **cutsceneId와 같은 비트에 함께 두지 않는다** — 둘 다 조작·카메라를 뺏어 다툰다.
+        // story_lint 검사 13이 그 조합을 막는다.
+        public string stageExitId;
     }
 
     [System.Serializable]

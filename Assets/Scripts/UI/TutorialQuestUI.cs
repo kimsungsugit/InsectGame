@@ -698,7 +698,7 @@ namespace InsectGame.UI
             float w = panelRect.width - 24f;
 
             // Title \u2014 \uc6b0\uc0c1\ub2e8 \uc228\uae30\uae30 \ubc84\ud2bc\uacfc \uacb9\uce58\uc9c0 \uc54a\uac8c \ub108\ube44 \ucd95\uc18c.
-            GUI.Label(new Rect(x, y, w - (UIScale.IsMobileLayout ? 64f : 34f), 34f), "\u2605 \ud018\uc2a4\ud2b8: " + active.title, questTitleStyleCache);
+            UIHelper.LabelFit(new Rect(x, y, w - (UIScale.IsMobileLayout ? 64f : 34f), 34f), "\u2605 \ud018\uc2a4\ud2b8: " + active.title, questTitleStyleCache);
             y += 34f;
 
             // Description (동적 높이 — 긴 설명 잘림 방지)

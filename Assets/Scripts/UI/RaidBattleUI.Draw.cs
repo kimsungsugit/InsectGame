@@ -62,6 +62,7 @@ namespace InsectGame.UI
         private GUIStyle skillSelKeyStyleCache;     // DrawSkillSelector key
         private GUIStyle skillSelNameStyleCache;    // DrawSkillSelector name
         private GUIStyle skillSelTypeStyleCache;    // DrawSkillSelector type
+        private GUIStyle skillSelEffStyleCache;     // DrawSkillSelector 상성 배지(위력과 같은 줄, 우측)
         private GUIStyle skillSelInfoStyleCache;    // DrawSkillSelector info
         private GUIStyle skillSelCdStyleCache;      // DrawSkillSelector cooldown active
         private GUIStyle skillSelCdInfoStyleCache;  // DrawSkillSelector cooldown info
@@ -187,9 +188,18 @@ namespace InsectGame.UI
                 clipping = TextClipping.Clip
             };
 
-            skillSelTypeStyleCache = new GUIStyle(GUI.skin.label) { fontSize = 19 };
+            // 카드 안 라벨은 전부 세로 가운데 정렬 — IMGUI 기본값(Upper*)은 글자를 상자 맨 위에 붙여
+            // 그려서, 상자가 조금만 작아도 한글 받침부터 잘린다.
+            skillSelTypeStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 19, alignment = TextAnchor.MiddleLeft };
 
-            skillSelInfoStyleCache = new GUIStyle(GUI.skin.label) { fontSize = 20, fontStyle = FontStyle.Bold };
+            // 상성 배지는 위력과 같은 줄의 오른쪽 칸이라 정렬이 달라 별도 스타일이다. 예전엔
+            // skillSelTypeStyleCache를 재사용하며 색만 갈아 끼웠는데, 그러면 좌/우 정렬을 나눌 수 없다.
+            skillSelEffStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 19, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleRight };
+
+            skillSelInfoStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 20, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
 
             skillSelCdStyleCache = new GUIStyle(GUI.skin.label)
             { fontSize = 19, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleRight };
@@ -201,7 +211,8 @@ namespace InsectGame.UI
 
             skillSelNoSkillStyleCache = new GUIStyle(GUI.skin.label)
             { fontSize = 24, alignment = TextAnchor.MiddleCenter };
-            skillSelNoSkillStyleCache.normal.textColor = new Color(0.5f, 0.5f, 0.5f);
+            // 중간 회색(0.5)은 어두운 패널에서 4.95로 겨우 걸치는 값이라, 밝기만 올려 여유를 준다(9.42).
+            skillSelNoSkillStyleCache.normal.textColor = new Color(0.7f, 0.7f, 0.74f);
 
             attackSkillNameStyleCache = new GUIStyle(GUI.skin.label)
             { fontSize = 32, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
@@ -844,7 +855,7 @@ namespace InsectGame.UI
 
                 teamNumStyleCache.normal.textColor = isSelected ? new Color(1f, 0.85f, 0.2f) : new Color(0.7f, 0.7f, 0.7f, alpha);
                 GUI.color = Color.white;
-                GUI.Label(new Rect(ix - 14, iy + 26 * sc, 28, 24), $"{i + 1}", teamNumStyleCache);
+                UIHelper.LabelFit(new Rect(ix - 14, iy + 26 * sc, 28, 24), $"{i + 1}", teamNumStyleCache);
             }
         }
         private void DrawMiniInsect(float cx, float cy, InsectData data, float scale, float alpha)
@@ -954,7 +965,7 @@ namespace InsectGame.UI
 
             GUI.Label(new Rect(x + w - 130, y + 8, 116, 26), $"Lv.{boss.Level}", bossHpLvStyleCache);
 
-            GUI.Label(new Rect(x + 14, y + 38, w - 28, 20),
+            UIHelper.LabelFit(new Rect(x + 14, y + 38, w - 28, 20),
                 $"ATK {boss.Attack}  DEF {boss.Defense}", bossHpMiniStatStyleCache);
 
             float barX = x + 14;
@@ -1039,7 +1050,7 @@ namespace InsectGame.UI
                 GUI.Label(new Rect(hbX, hbY, hbW, hbH),
                     alive ? $"{Mathf.CeilToInt(dhp)}/{stats.MaxHp}" : "KO", teamHpTextStyleCache);
 
-                GUI.Label(new Rect(bx + 8, y + 58, barW - 16, 18), $"Lv.{stats.Level}", teamHpLvStyleCache);
+                UIHelper.LabelFit(new Rect(bx + 8, y + 58, barW - 16, 18), $"Lv.{stats.Level}", teamHpLvStyleCache);
             }
         }
         private void DrawIntro()
@@ -1287,28 +1298,49 @@ namespace InsectGame.UI
                 GUI.color = new Color(skillCol.r, skillCol.g, skillCol.b, canUse ? 0.85f : 0.25f);
                 GUI.DrawTexture(new Rect(bx + 12, btnY + 12, iconSize, iconSize), Texture2D.whiteTexture);
 
+                // 쿨다운 붉은 딤은 글자보다 **먼저**. 나중에 덮으면 글자까지 물들어 명암비가 내려간다
+                // (스킬명 8.77→7.21, 타입·위력 6.08→5.19). 1v1 카드와 같은 순서다.
+                if (cd > 0)
+                {
+                    GUI.color = new Color(1f, 0.3f, 0.2f, 0.12f);
+                    GUI.DrawTexture(new Rect(bx, btnY, btnW, btnH), Texture2D.whiteTexture);
+                    GUI.color = Color.white;
+                }
+
                 if (!mobile)
                 {
                     float pulse = 0.5f + Mathf.Sin(Time.time * 3f) * 0.15f;
-                    skillSelKeyStyleCache.normal.textColor = canUse ? new Color(1f, 0.85f, 0.3f, pulse + 0.5f) : new Color(0.35f, 0.35f, 0.35f);
+                    // 쿨다운 키 문자가 (0.35) 회색이라 거의 검은 배지(0.06) 위에서 명암비 2.74였다.
+                    skillSelKeyStyleCache.normal.textColor = canUse
+                        ? new Color(1f, 0.85f, 0.3f, pulse + 0.5f)
+                        : SkillUILayout.DisabledTextColor;
                     GUI.color = canUse ? new Color(0.15f, 0.12f, 0.05f) : new Color(0.06f, 0.06f, 0.06f);
                     GUI.DrawTexture(new Rect(bx + btnW - 46, btnY + 10, 36, 36), Texture2D.whiteTexture);
                     GUI.color = Color.white;
                     GUI.Label(new Rect(bx + btnW - 46, btnY + 10, 36, 36), keyLabels[i], skillSelKeyStyleCache);
                 }
 
+                // **글자를 그리기 전에 GUI.color를 흰색으로 되돌린다** — 1v1 카드와 같은 이유다.
+                // 아이콘 그리기가 남긴 색(속성색 × 알파 0.85/0.25)을 흰색으로 되돌리는 자리가
+                // `if (!mobile)` 블록뿐이라, **기기에서는 카드 글자 전체가 속성색으로 물들고
+                // 알파까지 곱해져** 배경과 구분이 안 됐다(쿨다운이면 0.25라 거의 사라진다).
+                GUI.color = Color.white;
+
+                // 카드(212) 세로 배분: 아이콘 12~44 / 이름 50~100 / 타입 106~134 / 정보 2행 140~202.
+                // 마지막 행 아래 10px가 남아 카드 테두리(209)에 닿지 않는다.
                 Rect skillCardRect = new Rect(bx, btnY, btnW, btnH);
                 SkillCardDetailRows detailRows = SkillUILayout.GetDetailRows(
-                    skillCardRect, 136f, 12f, 22f, 2f);
+                    skillCardRect, 140f, 12f, SkillUILayout.MinimumDetailRowHeight, 6f, 10f);
                 skillSelNameStyleCache.fontSize = mobile ? 29 : 27;
                 skillSelNameStyleCache.normal.textColor = canUse ? Color.white : SkillUILayout.DisabledTextColor;
-                GUI.Label(SkillUILayout.GetNameRect(skillCardRect, 50f, 12f, 56f),
+                // 스킬명 길이는 데이터가 정하는데 상자는 고정 — 두 줄이 되면 아랫줄이 통째로 잘린다.
+                UIHelper.LabelFit(SkillUILayout.GetNameRect(skillCardRect, 50f, 12f, 50f),
                     skill.displayName, skillSelNameStyleCache);
 
                 skillSelTypeStyleCache.normal.textColor = canUse
                     ? SkillUILayout.GetReadableAccent(skillCol)
                     : SkillUILayout.DisabledSecondaryTextColor;
-                GUI.Label(new Rect(bx + 12, btnY + 110, btnW - 24, 24),
+                UIHelper.LabelFit(new Rect(bx + 12, btnY + 106, btnW - 24, 28),
                     RaidSkillTypeLabel(skill.effectType), skillSelTypeStyleCache);
 
                 // 상성 배지 — 보스에게 강/약(데미지 스킬만). InsectTypeChart는 이미 public.
@@ -1319,26 +1351,24 @@ namespace InsectGame.UI
                     if (eff > 1.05f || eff < 0.95f)
                     {
                         bool strong = eff > 1.05f;
-                        skillSelTypeStyleCache.normal.textColor = canUse
-                            ? (strong ? new Color(0.4f, 1f, 0.5f) : new Color(1f, 0.45f, 0.4f))
+                        // 약점 붉은색은 호버 배경에서 4.25로 떨어졌다 → 0.58/0.52로 올려 5.29.
+                        skillSelEffStyleCache.normal.textColor = canUse
+                            ? (strong ? new Color(0.4f, 1f, 0.5f) : new Color(1f, 0.58f, 0.52f))
                             : SkillUILayout.DisabledSecondaryTextColor;
                         GUI.Label(detailRows.Effectiveness,
-                            strong ? "효과적 ▲" : "비효과 ▼", skillSelTypeStyleCache);
+                            strong ? "효과적 ▲" : "비효과 ▼", skillSelEffStyleCache);
                     }
                 }
 
                 skillSelInfoStyleCache.normal.textColor = canUse
                     ? new Color(0.96f, 0.91f, 0.72f)
                     : SkillUILayout.DisabledSecondaryTextColor;
-                GUI.Label(detailRows.Power,
+                UIHelper.LabelFit(detailRows.Power,
                     RaidSkillPowerLabel(skill), skillSelInfoStyleCache);
 
                 if (cd > 0)
                 {
                     GUI.Label(detailRows.Cooldown, $"쿨다운 {cd}턴", skillSelCdStyleCache);
-
-                    GUI.color = new Color(1f, 0.3f, 0.2f, 0.12f);
-                    GUI.DrawTexture(new Rect(bx, btnY, btnW, btnH), Texture2D.whiteTexture);
                 }
                 else if (skill.cooldownTurns > 0)
                 {
@@ -1346,12 +1376,8 @@ namespace InsectGame.UI
                         $"쿨다운: {skill.cooldownTurns}턴", skillSelCdInfoStyleCache);
                 }
 
-                if (hovered)
-                {
-                    GUI.color = new Color(1f, 1f, 1f, 0.06f);
-                    GUI.DrawTexture(new Rect(bx, btnY, btnW, btnH), Texture2D.whiteTexture);
-                    GUI.color = Color.white;
-                }
+                // 흰색 6% 덧칠 제거 — 호버 신호는 배경 밝기와 흰 테두리로 이미 둘이고, 세 번째
+                // 덧칠은 글자와 배경을 같이 밝혀 타입 줄 명암비만 깎았다(1v1 카드와 같은 이유).
 
                 raidSkillRects[i] = new Rect(bx, btnY, btnW, btnH);
                 raidSkillUsable[i] = canUse;
@@ -1779,30 +1805,26 @@ namespace InsectGame.UI
                     float easeT = projT * projT * (3f - 2f * projT);
                     int teamCount = raidController.TeamStats != null ? raidController.TeamStats.Length : 1;
                     float atkY = sh * 0.40f;
-                    if (activeRound != null)
+                    // 순차 턴에서 이 페이즈는 **한 마리**의 행동이다. 예전엔 라운드에 쌓인
+                    // `TeamActions`를 통째로 돌았는데, 그건 5마리가 한꺼번에 나가던 시절의 코드다 —
+                    // 지금은 3번째 곤충 차례에 1·2번 곤충의 투사체가 자기 자리에서 **다시** 날아가고,
+                    // 정작 피해 숫자(`lastDmgToBoss`)는 한 마리분이라 숫자와 그림이 어긋났다.
+                    RaidActionResult action = lastMemberAction;
+                    if (action != null && action.SourceSlot >= 0
+                        && (action.Damage > 0 || action.IsSupport))
                     {
-                        int actionIndex = 0;
-                        foreach (RaidActionResult action in activeRound.TeamActions)
-                        {
-                            if (action == null || action.SourceSlot < 0) continue;
-                            if (action.Damage <= 0 && !action.IsSupport) continue;
-                            float localT = Mathf.Clamp01((projT - actionIndex * 0.05f) / 0.82f);
-                            float localEase = localT * localT * (3f - 2f * localT);
-                            float atkX = RaidSlotLayout.AnchorX(action.SourceSlot, teamCount, sw);
-                            float px = Mathf.Lerp(atkX, bossX, localEase);
-                            float py = Mathf.Lerp(atkY, bossY, localEase)
-                                - Mathf.Sin(localEase * Mathf.PI) * (62f + actionIndex * 8f);
-                            Color actionColor = GetElementColor(action.Element);
-                            float projSize = 12f + (action.IsLeader ? 7f : 2f);
+                        float atkX = RaidSlotLayout.AnchorX(action.SourceSlot, teamCount, sw);
+                        float px = Mathf.Lerp(atkX, bossX, easeT);
+                        float py = Mathf.Lerp(atkY, bossY, easeT) - Mathf.Sin(easeT * Mathf.PI) * 62f;
+                        Color actionColor = GetElementColor(action.Element);
+                        float projSize = 12f + (action.IsLeader ? 7f : 2f);
 
-                            GUI.color = new Color(actionColor.r, actionColor.g, actionColor.b, 0.16f);
-                            GUI.DrawTexture(new Rect(px - projSize * 1.8f, py - projSize * 1.8f,
-                                projSize * 3.6f, projSize * 3.6f), Texture2D.whiteTexture);
-                            GUI.color = new Color(actionColor.r, actionColor.g, actionColor.b, 0.88f);
-                            GUI.DrawTexture(new Rect(px - projSize / 2f, py - projSize / 2f,
-                                projSize, projSize), Texture2D.whiteTexture);
-                            actionIndex++;
-                        }
+                        GUI.color = new Color(actionColor.r, actionColor.g, actionColor.b, 0.16f);
+                        GUI.DrawTexture(new Rect(px - projSize * 1.8f, py - projSize * 1.8f,
+                            projSize * 3.6f, projSize * 3.6f), Texture2D.whiteTexture);
+                        GUI.color = new Color(actionColor.r, actionColor.g, actionColor.b, 0.88f);
+                        GUI.DrawTexture(new Rect(px - projSize / 2f, py - projSize / 2f,
+                            projSize, projSize), Texture2D.whiteTexture);
                     }
                 }
 
@@ -1838,13 +1860,10 @@ namespace InsectGame.UI
                     GUI.color = Color.white;
                     GUI.Label(new Rect(bossX - 70, bossY - 90 - dmgT * 50, 140, 56), $"-{lastDmgToBoss}", bossDmgNumStyleCache);
 
-                    if (activeRound != null && activeRound.TeamActions.Count > 1)
-                    {
-                        float comboAlpha = Mathf.Clamp01(1f - dmgT * 0.65f);
-                        comboStyleCache.normal.textColor = new Color(0.45f, 0.95f, 1f, comboAlpha);
-                        GUI.Label(new Rect(bossX - 180, bossY - 32 - dmgT * 36f, 360, 44),
-                            $"TEAM RUSH ×{activeRound.TeamActions.Count}", comboStyleCache);
-                    }
+                    // "TEAM RUSH ×N"이 여기 있었다. N은 라운드에 쌓인 행동 수인데 이 페이즈가
+                    // 보여 주는 건 그중 **한 마리**의 공격이라, 단일 타격 위에 ×3이 붙고 그 옆의
+                    // 피해 숫자는 한 마리분이었다. 합체 공격은 자기 연출(`DrawUniteAttackAnimation`)에서
+                    // 따로 러시를 보여 주므로 여기서 되살리지 말 것.
                 }
             }
 
@@ -1880,11 +1899,11 @@ namespace InsectGame.UI
                     aoeLabelStyleCache.normal.textColor = new Color(1f, 0.2f, 0.15f, aoeTextAlpha);
                     float shakeX = t < 0.5f ? Mathf.Sin(Time.time * 50f) * 5f : 0;
                     GUI.color = Color.white;
-                    GUI.Label(new Rect(sw / 2 - 200 + shakeX, sh * 0.33f - t * 15f, 400, 52), "전체 공격!", aoeLabelStyleCache);
+                    UIHelper.LabelFit(new Rect(sw / 2 - 200 + shakeX, sh * 0.33f - t * 15f, 400, 52), "전체 공격!", aoeLabelStyleCache);
 
                     // Damage number below
                     aoeDmgStyleCache.normal.textColor = new Color(1, 0.3f, 0.3f, 1f - t * 0.6f);
-                    GUI.Label(new Rect(sw / 2 - 130, sh * 0.38f - t * 30, 260, 44),
+                    UIHelper.LabelFit(new Rect(sw / 2 - 130, sh * 0.38f - t * 30, 260, 44),
                         $"TOTAL -{lastDmgToTeam}", aoeDmgStyleCache);
 
                     // Per-team-member damage popup
@@ -1906,7 +1925,7 @@ namespace InsectGame.UI
                                         : 0;
                                 if (memberDamage <= 0) continue;
                                 aoeMemberDmgStyleCache.normal.textColor = new Color(1, 0.4f, 0.3f, mAlpha);
-                                GUI.Label(new Rect(mx - 42, my - 40 - memberT * 30, 84, 30),
+                                UIHelper.LabelFit(new Rect(mx - 42, my - 40 - memberT * 30, 84, 30),
                                     $"-{memberDamage}", aoeMemberDmgStyleCache);
                             }
                         }
@@ -1967,7 +1986,7 @@ namespace InsectGame.UI
                             && lastHitSlot < activeRound.BossDamageBySlot.Length
                                 ? activeRound.BossDamageBySlot[lastHitSlot]
                                 : lastDmgToTeam;
-                        GUI.Label(new Rect(hx - 48 + shakeX, hy - 60 - impT * 30, 96, 36),
+                        UIHelper.LabelFit(new Rect(hx - 48 + shakeX, hy - 60 - impT * 30, 96, 36),
                             $"-{actualDamage}", attackDmg2StyleCache);
                     }
                 }
@@ -2052,12 +2071,12 @@ namespace InsectGame.UI
                 // Candy reward with bounce
                 float candyBounce = candyAlpha > 0 ? Mathf.Max(0, Mathf.Sin((resultTimer - rewardDelay) * 8f) * (1f - candyAlpha) * 10f) : 0;
                 resultValStyleCache.normal.textColor = new Color(1f, 0.5f, 0.8f, candyAlpha);
-                GUI.Label(new Rect(cx - 200, cy + 100 - candyBounce, 200, 28), $"+{raidController.RewardCandy} Candy (x3)", resultValStyleCache);
+                UIHelper.LabelFit(new Rect(cx - 200, cy + 100 - candyBounce, 200, 28), $"+{raidController.RewardCandy} Candy (x3)", resultValStyleCache);
 
                 // XP reward with bounce
                 float xpBounce = xpAlpha > 0 ? Mathf.Max(0, Mathf.Sin((resultTimer - rewardDelay - 0.2f) * 8f) * (1f - xpAlpha) * 10f) : 0;
                 resultValStyleCache.normal.textColor = new Color(0.4f, 0.8f, 1f, xpAlpha);
-                GUI.Label(new Rect(cx, cy + 100 - xpBounce, 200, 28), $"+{raidController.RewardExp} XP (x3)", resultValStyleCache);
+                UIHelper.LabelFit(new Rect(cx, cy + 100 - xpBounce, 200, 28), $"+{raidController.RewardExp} XP (x3)", resultValStyleCache);
 
                 // Bonus text
                 resultBonusStyleCache.normal.textColor = new Color(0.6f, 1f, 0.6f, bonusAlpha);
@@ -2102,7 +2121,7 @@ namespace InsectGame.UI
                 // "RAID FAILED" with shake
                 float failShake = resultTimer < 1f ? Mathf.Sin(Time.time * 30f) * 3f * (1f - resultTimer) : 0;
                 resultFailStyleCache.normal.textColor = new Color(1f, 0.25f, 0.2f, alpha);
-                GUI.Label(new Rect(cx - 300 + failShake, cy + 10, 600, 62), "RAID FAILED", resultFailStyleCache);
+                UIHelper.LabelFit(new Rect(cx - 300 + failShake, cy + 10, 600, 62), "RAID FAILED", resultFailStyleCache);
 
                 // Subtitle
                 resultFailSubStyleCache.normal.textColor = new Color(0.6f, 0.4f, 0.4f, alpha);
@@ -2301,7 +2320,7 @@ namespace InsectGame.UI
                         float dmgX = bossCx - 70 + idx * 28 - alive * 14;
                         uniteSlotDmgStyleCache.normal.textColor = new Color(memberCol.r, Mathf.Min(1, memberCol.g + 0.3f), memberCol.b, dmgAlpha);
                         GUI.color = Color.white;
-                        GUI.Label(new Rect(dmgX, dmgY, 140, 40), $"-{dmg}", uniteSlotDmgStyleCache);
+                        UIHelper.LabelFit(new Rect(dmgX, dmgY, 140, 40), $"-{dmg}", uniteSlotDmgStyleCache);
                     }
                     idx++;
                 }
@@ -2900,9 +2919,16 @@ namespace InsectGame.UI
 
             if (isBuff)
             {
-                // Buff: effect on active team member position
+                // 버프 오라는 **방금 행동한 곤충** 위에 뜬다. `selectedSlot`을 쓰면 안 된다 —
+                // 컨트롤러가 `RaidMemberActionResolved` 직후 `ActiveSlot`을 다음 슬롯으로 옮기고
+                // `RaidUpdated`를 쏘므로, 연출이 시작되는 그 프레임에 `selectedSlot`은 이미
+                // **아직 차례가 오지도 않은 곤충**을 가리킨다(라운드 마지막이면 -1 → 0번으로 폴백).
+                // 앵커식도 손으로 복사하지 않는다 — `AnchorX`가 1인 팀 중앙 정렬까지 처리한다.
                 int teamCount = raidController.TeamStats != null ? raidController.TeamStats.Length : 1;
-                float memberX = sw * 0.15f + (selectedSlot >= 0 ? selectedSlot : 0) * (sw * 0.7f / Mathf.Max(teamCount - 1, 1));
+                int auraSlot = lastMemberAction != null && lastMemberAction.SourceSlot >= 0
+                    ? lastMemberAction.SourceSlot
+                    : (selectedSlot >= 0 ? selectedSlot : 0);
+                float memberX = RaidSlotLayout.AnchorX(auraSlot, teamCount, sw);
                 float memberY = sh * 0.40f;
 
                 // Pulsing aura circle
@@ -2926,7 +2952,7 @@ namespace InsectGame.UI
 
                     buffArrowStyleCache.normal.textColor = new Color(0.3f, 0.85f, 0.5f, arrowAlpha);
                     GUI.color = Color.white;
-                    GUI.Label(new Rect(arrowX - 12, arrowY, 24, 28), "\u25b2", buffArrowStyleCache);
+                    UIHelper.LabelFit(new Rect(arrowX - 12, arrowY, 24, 28), "\u25b2", buffArrowStyleCache);
                 }
 
                 // Skill name text
@@ -2970,7 +2996,7 @@ namespace InsectGame.UI
 
                     debuffArrowStyleCache.normal.textColor = new Color(0.9f, 0.2f, 0.2f, arrowAlpha);
                     GUI.color = Color.white;
-                    GUI.Label(new Rect(arrowX - 12, arrowY, 24, 28), "\u25bc", debuffArrowStyleCache);
+                    UIHelper.LabelFit(new Rect(arrowX - 12, arrowY, 24, 28), "\u25bc", debuffArrowStyleCache);
                 }
 
                 // Skill name text

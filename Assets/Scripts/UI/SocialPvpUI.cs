@@ -51,6 +51,12 @@ namespace InsectGame.UI
         private void OnDisable()
         {
             if (manager != null) manager.StateChanged -= OnStateChanged;
+            // isOpen을 남겨 두면 **레지스트리엔 없는데 열린 것으로 아는** 상태가 된다 —
+            // ESC가 이 모달을 건너뛰어 안 닫히고, 퀵바의 `IsAnyOpen()` 가드도 무력화돼
+            // 친구코드를 입력하는 중에 N/T/G/C 같은 글자가 다른 화면을 토글한다.
+            // 오프닝 다시보기가 UI 루트를 통째로 껐다 켜므로 실제로 도달하는 경로다.
+            // `CashShopUI`는 같은 커밋에서 이 처리를 받았는데 이 파일만 빠져 있었다.
+            isOpen = false;
             ResetAllPageScrolls();
             ModalUIRegistry.Unregister(this);
         }

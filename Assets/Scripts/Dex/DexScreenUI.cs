@@ -1033,7 +1033,7 @@ namespace InsectGame.Dex
             else
             {
                 detailNameStyleCache.normal.textColor = SubMissingCol;
-                GUI.Label(new Rect(x, py, w, 66), "???", detailNameStyleCache);
+                UIHelper.LabelFit(new Rect(x, py, w, 66), "???", detailNameStyleCache);
             }
             py += 70;
 
@@ -1065,7 +1065,7 @@ namespace InsectGame.Dex
             }
             else
             {
-                GUI.Label(new Rect(x, py, w, 46), "아직 발견하지 못한 곤충입니다", unkSCache);
+                UIHelper.LabelFit(new Rect(x, py, w, 46), "아직 발견하지 못한 곤충입니다", unkSCache);
                 py += 50;
                 GUI.color = Color.white;
                 return;
@@ -1164,7 +1164,10 @@ namespace InsectGame.Dex
             }
 
             DrawRoundedCard(contentRect, ListBg, CardBorderCol);
-            GUI.Label(new Rect(contentRect.x + 24f, contentRect.y + 12f, contentRect.width - 48f, 52f),
+            // 상자를 폰트에서 파생시킨다(50pt → 68px). 52px였을 때 받침이 잘렸다.
+            // **아래 리스트 뷰포트도 함께 민다** — 헤더 아래 여백이 8px뿐이라 상자만 키우면 겹친다.
+            GUI.Label(new Rect(contentRect.x + 24f, contentRect.y + 12f, contentRect.width - 48f,
+                    LineH(headerSCache)),
                 $"나의 곤충 친구  ·  {owned.Count}마리", headerSCache);
 
             float panelW = Mathf.Min(contentRect.width - 28f, 1400f);
@@ -1177,7 +1180,7 @@ namespace InsectGame.Dex
             float cardW = (panelW - (cols - 1) * gap - 14f) / cols;
             float cardH = 182f;
             float totalH = DexBrowseLayout.GetGridContentHeight(owned.Count, cols, cardH, gap);
-            Rect listViewport = new Rect(px, contentRect.y + 72f, panelW, contentRect.height - 86f);
+            Rect listViewport = new Rect(px, contentRect.y + 88f, panelW, contentRect.height - 102f);
             ownedDirectScroll.Handle(ref ownedScroll, listViewport, totalH, cardH * 0.34f);
 
             ownedScroll = GUI.BeginScrollView(
@@ -1235,10 +1238,10 @@ namespace InsectGame.Dex
             string rStr = data != null ? GetRarityLabel(data.rarity) : "?";
             // IV%는 우하단(x+w-90, y+82)과 아래 IV 상세줄에 이미 표시되므로 중간줄에선 생략 —
             // 폰트 확대(→34) + 좁은 폭(w-176≈269px)에 "Lv | 등급 | IV%"를 넣으면 뒤가 잘리던 회귀 차단.
-            GUI.Label(new Rect(x + 108, y + 70, w - 204, 40),
+            GUI.Label(new Rect(x + 108, y + 70, w - 204, LineH(ownedInfoCache)),
                 $"Lv.{pid.level}  |  {rStr}", ownedInfoCache);
 
-            GUI.Label(new Rect(x + 108, y + 126, w - 132, 40),
+            GUI.Label(new Rect(x + 108, y + 126, w - 132, LineH(ownedStCache)),
                 $"HP:{pid.ivHp}  ATK:{pid.ivAtk}  DEF:{pid.ivDef}", ownedStCache);
 
             Color gc = UITheme.Instance.GetGradeColor(pid.Grade);
@@ -1249,7 +1252,8 @@ namespace InsectGame.Dex
             Color pctCol = gc;
             pctCol.a = 0.7f;
             ownedPctCache.normal.textColor = pctCol;
-            GUI.Label(new Rect(x + w - 90, y + 82, 80, 36), $"{pid.IVPercent * 100:0}%", ownedPctCache);
+            GUI.Label(new Rect(x + w - 90, y + 82, 80, LineH(ownedPctCache)),
+                $"{pid.IVPercent * 100:0}%", ownedPctCache);
         }
 
         private void DrawItems(Rect contentRect)
@@ -1299,7 +1303,8 @@ namespace InsectGame.Dex
                 new Rect(0f, 0f, panelW - 14f, Mathf.Max(viewport.height, totalH)),
                 GUIStyle.none,
                 GUIStyle.none);
-            GUI.Label(new Rect(0f, 0f, panelW - 14f, 58f), $"보유 아이템  ·  {positiveCount}종", headerSCache);
+            GUI.Label(new Rect(0f, 0f, panelW - 14f, LineH(headerSCache)),
+                $"보유 아이템  ·  {positiveCount}종", headerSCache);
 
             float itemY = headerH;
             for (int i = 0; i < snapshot.items.Count; i++)

@@ -438,6 +438,9 @@ namespace InsectGame.UI
 
         private void TryHeal(PlayerInsectData pid, int cost)
         {
+            // 결제 전 확인 — collection이 없으면 재화만 빠지고 아무도 낫지 않는다(TryHealAll과 대칭).
+            if (collection == null) { Feedback("치료할 수 없습니다"); return; }
+
             bool paid = payWithCoins
                 ? (wallet != null && wallet.SpendCoins(cost))
                 : (candyInventory != null && candyInventory.SpendCandy(cost));
@@ -454,6 +457,9 @@ namespace InsectGame.UI
         private void ApplyTreatmentItem(PlayerInsectData pid)
         {
             if (pendingItem == null || pendingInv == null) return;
+            // 결제 전 확인 — collection이 없으면 재화만 빠지고 아무도 낫지 않는다(TryHealAll과 대칭).
+            if (collection == null) { Feedback("치료할 수 없습니다"); return; }
+
             if (!pendingInv.UseItem(pendingItem.itemId, 1)) { Feedback("아이템이 없습니다"); pendingItem = null; pendingInv = null; return; }
 
             if (pendingItem.healAmount > 0)
@@ -469,6 +475,9 @@ namespace InsectGame.UI
 
         private void TryGemHeal(PlayerInsectData pid)
         {
+            // 결제 전 확인 — collection이 없으면 재화만 빠지고 아무도 낫지 않는다(TryHealAll과 대칭).
+            if (collection == null) { Feedback("치료할 수 없습니다"); return; }
+
             if (wallet == null || !wallet.SpendGems(FullHealGems)) { Feedback("젬이 부족합니다"); return; }
             collection.FullHeal(pid);
             Feedback($"{DisplayName(pid)} 전액+상태 즉시치료!");

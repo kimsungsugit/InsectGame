@@ -306,6 +306,82 @@ namespace InsectGame.Tests
 
             Assert.Fail("목표가 진행되지 않고 같은 비트를 반복한다");
         }
+
+        // ── 순위 비교 (목표 도출과 실제 발화가 공유하는 단일 출처) ──
+
+        [Test]
+        public void CompareBeatPriority_SpineWinsOverLeaf()
+        {
+            var spine = new HashSet<string> { "s" };
+            StoryBeat s = Beat("s", "ch5", 9);
+            StoryBeat leaf = Beat("l", "ch1", 0);
+            // 스파인이 챕터·order를 모두 이긴다 — 놓치면 체인이 끊기는 쪽이 먼저다.
+            Assert.Less(StoryObjectiveResolver.CompareBeatPriority(s, leaf, spine), 0);
+            Assert.Greater(StoryObjectiveResolver.CompareBeatPriority(leaf, s, spine), 0);
+        }
+
+        [Test]
+        public void CompareBeatPriority_ChapterBeatsOrder_AndNumericNotLexical()
+        {
+            var spine = new HashSet<string>();
+            // "ch10"은 문자열 정렬로는 "ch2"보다 앞이지만 이야기상 뒤다.
+            Assert.Less(
+                StoryObjectiveResolver.CompareBeatPriority(Beat("a", "ch2", 99), Beat("b", "ch10", 0), spine), 0);
+        }
+
+        [Test]
+        public void CompareBeatPriority_MainStoryBeatsSideChapters()
+        {
+            var spine = new HashSet<string>();
+            // 곁이야기(npc/side)는 본편 뒤로 민다 — 이게 이번 회귀의 핵심이다.
+            Assert.Less(
+                StoryObjectiveResolver.CompareBeatPriority(Beat("a", "ch1", 0), Beat("b", "npc", 0), spine), 0);
+            Assert.Less(
+                StoryObjectiveResolver.CompareBeatPriority(Beat("a", "ch12", 0), Beat("b", "side", 0), spine), 0);
+        }
+
+        [Test]
+        public void CompareBeatPriority_SameRank_FallsBackToBeatId_SoOrderIsDeterministic()
+        {
+            var spine = new HashSet<string>();
+            Assert.Less(
+                StoryObjectiveResolver.CompareBeatPriority(Beat("aaa", "ch1", 3), Beat("bbb", "ch1", 3), spine), 0);
+            Assert.AreEqual(0,
+                StoryObjectiveResolver.CompareBeatPriority(Beat("same", "ch1", 3), Beat("same", "ch1", 3), spine));
+        }
+
+        [Test]
+        public void CompareBeatPriority_NullsSortLast()
+        {
+            var spine = new HashSet<string>();
+            Assert.Less(StoryObjectiveResolver.CompareBeatPriority(Beat("a", "ch1", 0), null, spine), 0);
+            Assert.Greater(StoryObjectiveResolver.CompareBeatPriority(null, Beat("a", "ch1", 0), spine), 0);
+            Assert.AreEqual(0, StoryObjectiveResolver.CompareBeatPriority(null, null, spine));
+        }
+
+        [Test]
+        public void CompareBeatPriority_CampaignOpenerBeatsAmbientChatter()
+        {
+            // 실제로 겹치던 쌍이다: 마을 어르신에게 말을 걸면 1막 개막(ch1_intro)과
+            // 앰비언트 잡담(talk_elder)이 **함께** 자격을 갖는다. 둘 다 스파인이라
+            // 챕터 순위가 가른다 — 이게 뒤집히면 처음 하는 사람이 프롤로그 컷신 대신
+            // 잡담을 보고, 어느 쪽이 뜰지는 실행마다 달라진다.
+            var spine = new HashSet<string> { "ch1_intro", "talk_elder" };
+            StoryBeat opener = Beat("ch1_intro", "ch1", 0, param: "village_elder");
+            StoryBeat chatter = Beat("talk_elder", "npc", 0, param: "village_elder");
+
+            Assert.Less(StoryObjectiveResolver.CompareBeatPriority(opener, chatter, spine), 0);
+
+            // 선택기를 통해서도 같은 답이 나와야 한다(발화 쪽이 같은 함수를 쓴다).
+            StoryBeat chosen = StoryObjectiveResolver.SelectObjectiveBeat(
+                new[] { chatter, opener }, Seen(), spine);
+            Assert.AreEqual("ch1_intro", chosen.beatId);
+
+            // 입력 순서가 바뀌어도 같아야 한다 — AllBeats()는 Dictionary.Values라 순서가 없다.
+            chosen = StoryObjectiveResolver.SelectObjectiveBeat(
+                new[] { opener, chatter }, Seen(), spine);
+            Assert.AreEqual("ch1_intro", chosen.beatId);
+        }
     }
 }
 #endif

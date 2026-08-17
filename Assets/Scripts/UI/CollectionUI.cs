@@ -188,7 +188,7 @@ namespace InsectGame.UI
         [SerializeField] private BattleTeamManager teamManager;
         private InsectSortMode sortMode = InsectSortMode.Rarity;
         private bool teamFirst = true;
-        private readonly Rect[] sortChips = new Rect[4];
+        // 정렬 칩 Rect 배열은 죽은 필드였다(대입만·읽기 없음) — BattleTeamUI와 같은 이유로 제거.
         private Rect teamFirstChip;
         // 정렬 결과는 cachedOwned와 같은 순간에 굽는다 — 행 문자열 캐시(cachedRowInfo)가
         // **인덱스로** 목록을 참조하므로 둘의 순서가 어긋나면 다른 곤충의 스탯이 표시된다.
@@ -375,7 +375,7 @@ namespace InsectGame.UI
             UISurface.Rounded(new Rect(panelX + 3f, panelY + 3f, panelW - 6f, 88f), PanelHeaderCol);
 
             GUI.color = Color.white;
-            GUI.Label(new Rect(panelX, panelY + 16, panelW - 84, 58), "컬렉션", panelTitleStyle);
+            UIHelper.LabelFit(new Rect(panelX, panelY + 16, panelW - 84, 58), "컬렉션", panelTitleStyle);
 
             if (GUI.Button(new Rect(panelX + panelW - 72, panelY + 16, 56, 56), "X", panelCloseStyle))
             {
@@ -423,7 +423,6 @@ namespace InsectGame.UI
             {
                 InsectSortMode mode = InsectBrowseSort.Order[i];
                 Rect chip = new Rect(x + i * (chipW + 6f), y, chipW, h);
-                sortChips[i] = chip;
                 GUI.backgroundColor = sortMode == mode ? TabActiveBgCol : TabInactiveBgCol;
                 if (GUI.Button(chip, InsectBrowseSort.Label(mode), itemViewStyle) && sortMode != mode)
                 {
@@ -632,7 +631,7 @@ namespace InsectGame.UI
             GUI.Label(new Rect(panelX + panelW - 172, panelY + 268, 150, 82), gradeLabel, detailGradeDispStyle);
 
             detailGradePercStyle.normal.textColor = new Color(gradeCol.r, gradeCol.g, gradeCol.b, 0.7f);
-            GUI.Label(new Rect(panelX + panelW - 172, panelY + 348, 150, 36),
+            UIHelper.LabelFit(new Rect(panelX + panelW - 172, panelY + 348, 150, 36),
                 $"{pid.IVPercent * 100:0}%", detailGradePercStyle);
 
             float lowerTop = panelY + 398f;

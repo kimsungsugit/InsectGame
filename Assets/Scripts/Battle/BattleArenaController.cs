@@ -2106,8 +2106,6 @@ namespace InsectGame.Battle
 
         private readonly List<EffectTextEntry> activeEffectTexts = new List<EffectTextEntry>();
         private const int MaxConcurrentEffectTexts = 3;
-        private GUIStyle effectTextStyle;
-        private GUIStyle effectTextShadowStyle;
 
         // HitFlash/Faint 호출 시마다 GetComponentsInChildren 반복 방지용 캐시
         private readonly Dictionary<GameObject, MeshRenderer[]> rendererCache = new Dictionary<GameObject, MeshRenderer[]>();
@@ -2126,7 +2124,22 @@ namespace InsectGame.Battle
             return fresh;
         }
 
-        public IReadOnlyList<EffectTextEntry> GetActiveEffectTexts() => activeEffectTexts;
+        /// <summary>
+        /// 지금 떠 있는 문구. 만료 항목은 <b>여기서</b> 걷어낸다 — 그리는 쪽(<c>BattleEffectTextOverlay</c>)이
+        /// 목록을 수정할 수 없고 이 컴포넌트엔 <c>Update</c>가 없기 때문이다. 호출은 프레임당 한 번
+        /// (오버레이 그리기)이고 항목은 최대 <see cref="MaxConcurrentEffectTexts"/>개다.
+        /// </summary>
+        public IReadOnlyList<EffectTextEntry> GetActiveEffectTexts()
+        {
+            float now = Time.time;
+            for (int i = activeEffectTexts.Count - 1; i >= 0; i--)
+            {
+                EffectTextEntry e = activeEffectTexts[i];
+                if (e == null || now - e.startTime >= e.duration)
+                    activeEffectTexts.RemoveAt(i);
+            }
+            return activeEffectTexts;
+        }
 
         public void PlayEffectText(string text, Color color)
         {
@@ -2144,67 +2157,10 @@ namespace InsectGame.Battle
             });
         }
 
-        private void OnGUI()
-        {
-            if (!isActive) return;
-            if (activeEffectTexts.Count == 0) return;
-
-            float now = Time.time;
-            // 만료 항목 정리
-            for (int i = activeEffectTexts.Count - 1; i >= 0; i--)
-            {
-                EffectTextEntry e = activeEffectTexts[i];
-                if (e == null || now - e.startTime >= e.duration)
-                    activeEffectTexts.RemoveAt(i);
-            }
-
-            if (activeEffectTexts.Count == 0) return;
-
-            if (effectTextStyle == null)
-            {
-                effectTextStyle = new GUIStyle(GUI.skin.label)
-                {
-                    fontSize = 40,
-                    fontStyle = FontStyle.Bold,
-                    alignment = TextAnchor.MiddleCenter
-                };
-                effectTextShadowStyle = new GUIStyle(effectTextStyle);
-            }
-            GUIStyle style = effectTextStyle;
-            GUIStyle shadowStyle = effectTextShadowStyle;
-
-            float centerX = Screen.width * 0.5f;
-            float baseY = Screen.height * 0.35f;
-            float stackSpacing = 56f;
-            float width = 600f;
-            float height = 50f;
-
-            Color prevColor = GUI.color;
-            for (int i = 0; i < activeEffectTexts.Count; i++)
-            {
-                EffectTextEntry e = activeEffectTexts[i];
-                if (e == null) continue;
-
-                float elapsed = now - e.startTime;
-                float progress = Mathf.Clamp01(elapsed / e.duration);
-                float alpha = 1f - progress;
-                float yOffset = -40f * progress; // 위로 떠오름
-                float y = baseY + i * stackSpacing + yOffset;
-                Rect rect = new Rect(centerX - width * 0.5f, y, width, height);
-
-                // Shadow
-                GUI.color = new Color(0f, 0f, 0f, alpha * 0.7f);
-                Rect shadowRect = new Rect(rect.x + 2f, rect.y + 2f, rect.width, rect.height);
-                GUI.Label(shadowRect, e.text, shadowStyle);
-
-                // Main
-                Color c = e.color;
-                c.a *= alpha;
-                GUI.color = c;
-                GUI.Label(rect, e.text, style);
-            }
-            GUI.color = prevColor;
-        }
+        // 이 자리에 `OnGUI`가 있었다. 아레나는 3D 연출을 맡는 컴포넌트인데 화면 문구까지 직접
+        // 그리고 있었고, 거긴 `UIScale` 밖이라 **픽셀 좌표**였다 — 스케일이 1이 아닌 기기에서
+        // 이 문구만 다른 UI보다 25% 작게 찍혔다. 그리기는 `BattleEffectTextOverlay`(UI)로 옮겼다.
+        // 여기서 부를 수는 없다: UI가 이미 Battle을 참조하므로 반대 방향은 순환이 된다.
 
         public IEnumerator PlayFaintCoroutine(GameObject model)
         {

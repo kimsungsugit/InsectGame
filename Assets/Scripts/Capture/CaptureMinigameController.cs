@@ -344,7 +344,7 @@ namespace InsectGame.Capture
             for (int i = 0; i < comboHits && i < 3; i++)
             {
                 float starX = x + panelW / 2f - 45 + i * 30;
-                GUI.Label(new Rect(starX, barY + barH + 22, 28, 28), "*", starStyleCache);
+                UIHelper.LabelFit(new Rect(starX, barY + barH + 22, 28, 28), "*", starStyleCache);
             }
 
             float timerRatio = Mathf.Clamp01(timer / timeLimit);

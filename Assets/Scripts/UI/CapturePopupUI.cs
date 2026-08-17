@@ -104,6 +104,17 @@ namespace InsectGame.UI
             popupTimer = popupDuration;
             animTime = 0f;
 
+            // 개체 정보는 **매번 비우고 시작한다.** 등급 상자는 조회 성공 여부와 무관하게 늘
+            // 그려지는데, 예전엔 조회가 비어도 필드가 그대로 남아 **직전에 잡은 다른 곤충의
+            // 등급·개체값**이 표시됐다. `CaptureController`가 지급 뒤에 알리도록 바뀌어 성공 시엔
+            // 조회가 비지 않지만, 순서가 다시 뒤집혀도 남의 수치가 되살아나지는 않게 둔다.
+            capturedInstanceId = null;
+            capturedGrade = IVGrade.D;
+            capturedIvHp = 0;
+            capturedIvAtk = 0;
+            capturedIvDef = 0;
+            capturedIvPct = 0f;
+
             if (target != null && target.Data != null)
             {
                 insectName = target.Data.displayName;
@@ -250,7 +261,7 @@ namespace InsectGame.UI
             GUI.color = Color.white;
 
             gradeTitleStyleCache.normal.textColor = new Color(GradeTitleGrayBase.r, GradeTitleGrayBase.g, GradeTitleGrayBase.b, alpha);
-            GUI.Label(new Rect(px + 44, gradeBoxY + 6, 120, 22), "개체값 감정", gradeTitleStyleCache);
+            UIHelper.LabelFit(new Rect(px + 44, gradeBoxY + 6, 120, 22), "개체값 감정", gradeTitleStyleCache);
 
             gradeLblStyleCache.normal.textColor = new Color(gc.r, gc.g, gc.b, alpha);
             GUI.Label(new Rect(px + 44, gradeBoxY + 26, 65, 56), GetGradeLabel(capturedGrade), gradeLblStyleCache);
@@ -270,7 +281,7 @@ namespace InsectGame.UI
 
             rewardLabelStyleCache.normal.textColor = new Color(GradeTitleGrayBase.r, GradeTitleGrayBase.g, GradeTitleGrayBase.b, alpha);
             GUI.color = Color.white;
-            GUI.Label(new Rect(px, rewardY + 4, panelW, 22), "보상", rewardLabelStyleCache);
+            UIHelper.LabelFit(new Rect(px, rewardY + 4, panelW, 22), "보상", rewardLabelStyleCache);
 
             rewardValStyleCache.normal.textColor = new Color(RewardCandyBase.r, RewardCandyBase.g, RewardCandyBase.b, alpha);
             GUI.Label(new Rect(px, rewardY + 32, panelW / 2f, 30), $"+{candyReward} 캔디", rewardValStyleCache);
@@ -986,7 +997,7 @@ namespace InsectGame.UI
             GUI.color = Color.white;
 
             ivVsStyleCache.normal.textColor = new Color(bc.r, bc.g, bc.b, alpha);
-            GUI.Label(new Rect(barX + barW + 6, y, 34, 22), $"{iv}", ivVsStyleCache);
+            UIHelper.LabelFit(new Rect(barX + barW + 6, y, 34, 22), $"{iv}", ivVsStyleCache);
         }
 
         public static void DrawInsectPortrait(float cx, float cy, InsectRarity rarity, float alpha)

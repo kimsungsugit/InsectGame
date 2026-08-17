@@ -158,6 +158,23 @@ namespace InsectGame.Tests
             foreach (InsectSortMode mode in System.Enum.GetValues(typeof(InsectSortMode)))
                 Assert.IsFalse(string.IsNullOrEmpty(InsectBrowseSort.Label(mode)), $"{mode} 라벨 없음");
         }
+
+        /// <summary>
+        /// 라벨이 서로 달라야 한다. "비지 않았나"만 보면 <c>default</c>가 아무 값이나 돌려줘도
+        /// 통과한다 — 실제로 <c>Label</c>의 default가 "등급"이라, 모드를 하나 더 늘리면 칩 두 개가
+        /// 나란히 "등급"으로 뜨면서 정렬은 조용히 Rarity로 동작했다. 그 상태를 여기서 잡는다.
+        /// </summary>
+        [Test]
+        public void Label_IsDistinct_ForEveryMode()
+        {
+            var seen = new System.Collections.Generic.HashSet<string>();
+            foreach (InsectSortMode mode in System.Enum.GetValues(typeof(InsectSortMode)))
+            {
+                string label = InsectBrowseSort.Label(mode);
+                Assert.IsTrue(seen.Add(label),
+                    $"{mode}의 라벨 \"{label}\"이 다른 모드와 겹친다 — switch에 case를 빠뜨렸다");
+            }
+        }
     }
 }
 #endif

@@ -33,6 +33,7 @@ namespace InsectGame.UI
         // OnGUI 매 호출마다 FindFirstObjectByType 비용 회피용 캐시
         private OutfitBonusProvider cachedBonusProvider;
         private PlayerCurrencyWallet cachedWallet;
+        private InsectDatabase cachedInsectDb;
 
         // 가챠 영역 OnGUI 매 호출 new GUIStyle 11개 회귀 제거용 캐시 (DexScreenUI/BattleTeamUI 패턴).
         private bool gachaStylesReady;
@@ -396,7 +397,7 @@ namespace InsectGame.UI
             // -- 가챠 연출 중이면 결과 화면만 표시 --
             if (showingGachaResult && gachaResult != null)
             {
-                DrawGachaResultScreen();
+                DrawGachaResultScreen(rightW, panelH);
                 GUILayout.EndArea();
                 UIScale.End();
                 return;
@@ -718,6 +719,64 @@ namespace InsectGame.UI
         private static readonly Color BoxSilverCol = new Color(0.7f, 0.7f, 0.8f);
         private static readonly Color BoxGoldCol = new Color(1f, 0.85f, 0.3f);
 
+        /// <summary>상자 그림 한 변(px). 카드 폭과 무관하게 고정 — 3장이 같은 크기로 보여야 한다.</summary>
+        private const float ChestIconSize = 120f;
+        /// <summary>가챠 결과의 곤충 초상 자리(px). 초상 자체는 고정 크기라 이 값은 <b>레이아웃 높이</b>다.</summary>
+        private const float GachaPortraitSize = 140f;
+        // 상자 그림자 — 테마색에서 파생되지 않는 유일한 색이라 상수로 둔다(팔레트 추가 아님).
+        private static readonly Color ChestShadowCol = new Color(0f, 0f, 0f, 0.26f);
+
+        /// <summary>
+        /// 보물상자 하나를 <b>프로시저럴로</b> 그린다. 이 저장소엔 상자 아트가 없으므로
+        /// <see cref="UIShapes.Part"/>를 조합한다 — <c>DexScreenUI</c>가 곤충 44종을 그리는 방식과 같다.
+        ///
+        /// 좌표는 전부 <paramref name="r"/>에 대한 <b>비율</b>이다. 카드 크기가 바뀌거나
+        /// 연출 화면에서 더 크게 그려도 비례가 유지된다.
+        ///
+        /// 명암은 <paramref name="theme"/>에서 <c>Lerp</c>로 파생한다 — 브론즈/실버/골드 3종에
+        /// 각각 팔레트를 만들면 색이 6개로 늘고 테마색을 바꿀 때 따로 논다(rules/ui-layout.md).
+        ///
+        /// <b>roundness는 0(각짐) 아니면 1(타원)만 쓴다.</b> 중간값은 disc 위에 인셋 사각형을
+        /// 덮어 만드는 방식(<see cref="UIShapes.Part"/>)이라 옆구리가 오목하게 파여
+        /// 상자가 <b>모래시계처럼</b> 보인다 — 실제로 0.16을 줬다가 그렇게 나왔다.
+        /// 각진 몸통과 둥근 뚜껑은 섞지 말고 <b>겹쳐서</b> 만든다.
+        /// </summary>
+        private static void DrawChest(Rect r, Color theme)
+        {
+            float x = r.x, y = r.y, w = r.width, h = r.height;
+            if (w <= 1f || h <= 1f) return;
+
+            Color lidCol = Color.Lerp(theme, Color.white, 0.30f);   // 뚜껑은 빛을 받는다
+            Color seamCol = Color.Lerp(theme, Color.black, 0.45f);
+            Color bandCol = Color.Lerp(theme, Color.black, 0.62f);  // 세로 금속 밴드
+            Color lockCol = Color.Lerp(theme, Color.white, 0.55f);
+            Color rimCol = Color.Lerp(theme, Color.black, 0.28f);   // 바닥 굽
+
+            // 바닥 그림자 — 없으면 상자가 공중에 뜬 스티커처럼 보인다.
+            UIShapes.Part(new Rect(x + w * 0.14f, y + h * 0.87f, w * 0.72f, h * 0.085f), ChestShadowCol);
+
+            // 뚜껑 돔(순수 타원). 아랫부분은 이음매와 몸통이 덮어 반원만 남는다.
+            UIShapes.Part(new Rect(x + w * 0.10f, y + h * 0.20f, w * 0.80f, h * 0.36f), lidCol);
+
+            // 몸통(각진 사각형) — 뚜껑보다 좁아 뚜껑이 턱처럼 내민다.
+            UIShapes.Part(new Rect(x + w * 0.135f, y + h * 0.52f, w * 0.73f, h * 0.35f), theme, 0f);
+
+            // 뚜껑과 몸통의 이음매 — 돔의 둥근 아랫변을 끊어 상자로 만든다.
+            UIShapes.Part(new Rect(x + w * 0.10f, y + h * 0.475f, w * 0.80f, h * 0.06f), seamCol, 0f);
+
+            // 바닥 굽
+            UIShapes.Part(new Rect(x + w * 0.115f, y + h * 0.835f, w * 0.77f, h * 0.045f), rimCol, 0f);
+
+            // 세로 금속 밴드 2줄 — 돔 안쪽에서 시작해 굽까지 내려온다.
+            UIShapes.Part(new Rect(x + w * 0.27f, y + h * 0.30f, w * 0.065f, h * 0.575f), bandCol, 0f);
+            UIShapes.Part(new Rect(x + w * 0.665f, y + h * 0.30f, w * 0.065f, h * 0.575f), bandCol, 0f);
+
+            // 자물쇠판 + 열쇠구멍(원 + 아래로 뻗은 홈)
+            UIShapes.Part(new Rect(x + w * 0.44f, y + h * 0.455f, w * 0.12f, h * 0.165f), lockCol, 0f);
+            UIShapes.Part(new Rect(x + w * 0.478f, y + h * 0.505f, w * 0.044f, h * 0.05f), seamCol);
+            UIShapes.Part(new Rect(x + w * 0.492f, y + h * 0.535f, w * 0.016f, h * 0.045f), seamCol, 0f);
+        }
+
         // ===== Tab 2: 랜덤 상자 =====
         private void DrawGachaTab()
         {
@@ -798,14 +857,18 @@ namespace InsectGame.UI
             float cardW = mobile ? Mathf.Min(560f, UIScale.VirtualScreenWidth * 0.86f) : 300f;
             GUILayout.BeginVertical(GUI.skin.box, GUILayout.Width(cardW), GUILayout.Height(mobile ? 470f : 420f));
 
-            // 상자 색상 테마
-            GUI.color = themeColor;
+            // 상자 그림 — 예전엔 `GUILayout.Box("")`를 테마색으로 틴트한 **빈 정사각형**이었다.
+            // 내장 스킨의 배경만 칠해지므로 화면엔 갈색/은색/금색 네모만 떴고, 그게
+            // "상자 사진이 안 나온다"로 읽혔다. 이 저장소엔 상자 아트가 없다(이미지 에셋 9개가
+            // 전부 앱 아이콘·오프닝·TMP 이모지다) — 그리려면 그려야 한다.
             GUILayout.BeginHorizontal();
             GUILayout.FlexibleSpace();
-            GUILayout.Box("", GUILayout.Width(120), GUILayout.Height(120));
+            Rect chestRect = GUILayoutUtility.GetRect(ChestIconSize, ChestIconSize,
+                GUILayout.Width(ChestIconSize), GUILayout.Height(ChestIconSize));
+            // 레이아웃 패스의 Rect는 아직 확정 전이라 그리면 엉뚱한 자리에 찍힌다.
+            if (Event.current.type == EventType.Repaint) DrawChest(chestRect, themeColor);
             GUILayout.FlexibleSpace();
             GUILayout.EndHorizontal();
-            GUI.color = Color.white;
 
             CardText text = GetBoxCardText(boxId, title, price);
             GUILayout.Label(text.title, boxCenterBoldStyle);
@@ -847,8 +910,27 @@ namespace InsectGame.UI
         private static readonly Color GachaFlashBlue = new Color(0.3f, 0.5f, 1f);
         private static readonly Color GachaFlashGold = new Color(1f, 0.85f, 0.3f);
 
+        /// <summary>
+        /// 결과 초상에 쓸 3D 썸네일을 미리 굽게 한다.
+        ///
+        /// 렌더러는 <b>프레임당 1장</b>만 굽고 첫 요청엔 null을 돌려준다(그동안 호출부는 2D 폴백을
+        /// 그린다). Phase 3에서 처음 부르면 결과가 열리는 프레임에 2D가 한 번 보였다가 3D로 튀고,
+        /// 하필 그 프레임에 <c>InsectEntity</c>를 통째로 만들었다 부수는 렌더 비용까지 겹친다 —
+        /// 연출의 절정에서 딱 한 번 끊기는 셈이다. 상자가 흔들리는 1.5초 구간으로 옮겨 둔다.
+        /// </summary>
+        private void PrewarmGachaThumbnail()
+        {
+            if (InsectVisual.Renderer == null || gachaResult == null) return;
+            if (cachedInsectDb == null) cachedInsectDb = FindFirstObjectByType<InsectDatabase>();
+            InsectData data = cachedInsectDb != null ? cachedInsectDb.GetById(gachaResult.insectId) : null;
+            // 캐시 적중 뒤에도 매 패스 불리지만 그때는 Dictionary 조회 + LRU 갱신뿐이다.
+            if (data != null) InsectVisual.Renderer.GetThumbnail(data, false);
+        }
+
         // ===== 가챠 연출 화면 =====
-        private void DrawGachaResultScreen()
+        /// <param name="contentW">감싸는 <c>BeginArea</c>의 폭. Phase 2 플래시가 화면을 꽉 채우는 데 쓴다.</param>
+        /// <param name="contentH">같은 높이.</param>
+        private void DrawGachaResultScreen(float contentW, float contentH)
         {
             InitGachaStyles();
 
@@ -857,7 +939,27 @@ namespace InsectGame.UI
             {
                 GUILayout.FlexibleSpace();
                 float flash = Mathf.PingPong(gachaAnimTimer * 6f, 1f);
-                GUI.color = Color.Lerp(GachaFlashBlue, GachaFlashGold, flash);
+                Color flashCol = Color.Lerp(GachaFlashBlue, GachaFlashGold, flash);
+
+                // 주석이 "상자 흔들림"이라 적혀 있었지만 실제로는 `???` 글자만 떨었다 —
+                // 상자를 여는 연출인데 정작 상자가 없었다. 카드와 같은 그림을 흔든다.
+                GUILayout.BeginHorizontal();
+                GUILayout.FlexibleSpace();
+                float shakeSize = ChestIconSize * 1.35f;
+                Rect shakeRect = GUILayoutUtility.GetRect(shakeSize, shakeSize,
+                    GUILayout.Width(shakeSize), GUILayout.Height(shakeSize));
+                if (Event.current.type == EventType.Repaint)
+                {
+                    // 좌우로 떨고 뚜껑이 들썩이듯 살짝 위아래로. 주기를 다르게 줘 기계적이지 않게.
+                    shakeRect.x += Mathf.Sin(gachaAnimTimer * 34f) * shakeSize * 0.045f;
+                    shakeRect.y += Mathf.Abs(Mathf.Sin(gachaAnimTimer * 11f)) * shakeSize * -0.03f;
+                    DrawChest(shakeRect, flashCol);
+                    PrewarmGachaThumbnail();
+                }
+                GUILayout.FlexibleSpace();
+                GUILayout.EndHorizontal();
+
+                GUI.color = flashCol;
                 GUILayout.Label("<size=52><b>???</b></size>", gachaShakeStyle);
                 GUI.color = Color.white;
 
@@ -867,11 +969,15 @@ namespace InsectGame.UI
             }
 
             // Phase 2 (1.5~2초): 밝은 플래시 (struct new Color는 stack — GC 없음, 유지)
+            //
+            // 크기는 **감싸는 Area에서 받는다.** 예전엔 850x620 하드코딩이었는데 결과 화면의
+            // Area는 1200x820(데스크톱) / 1200x1560(모바일)이라, 플래시가 좌상단만 덮고
+            // 우·하단은 그대로 남는 **각진 흰 판**으로 보였다(모바일에선 높이의 40%).
             if (gachaAnimTimer < 2f)
             {
                 float alpha = 1f - (gachaAnimTimer - 1.5f) * 2f;
                 GUI.color = new Color(1f, 1f, 1f, alpha);
-                GUI.DrawTexture(new Rect(0, 0, 850, 620), Texture2D.whiteTexture);
+                GUI.DrawTexture(new Rect(0, 0, contentW, contentH), Texture2D.whiteTexture);
                 GUI.color = Color.white;
             }
 
@@ -900,12 +1006,43 @@ namespace InsectGame.UI
                 GUILayout.Label($"<size=47><b>{stars}{rarityLabel}!{stars}</b></size>", gachaTitleStyle);
                 GUILayout.Space(20);
 
-                // 곤충 컬러 미리보기 (등급 색 사각형)
+                // 뽑은 곤충 초상. 예전엔 등급 색으로 칠한 **빈 정사각형**이라, 정작 무엇을 뽑았는지
+                // 그림으로는 알 수 없었다(이름 라벨만 있었다).
+                //
+                // 그림 한 장의 단일 진입점은 `InsectVisual.Draw`다 — 3D 썸네일이 있으면 그것,
+                // 없으면 안에서 `DrawTypedInsectPortrait`로 내려간다. 한때 여기서 2D 폴백을
+                // **직접** 불렀는데, 그러면 다른 9개 화면(도감·보유곤충·팀편성·병원·훈련·포획선택·
+                // 지역맵)이 전부 3D 모델을 보여주는 동안 **가챠 결과만 홀로 2D**가 된다.
+                // 돈을 쓴 직후 화면이라 품질 격차가 가장 크게 보이는 자리다.
+                //
+                // 새 분기 사슬을 만들지 않는 이유는 그대로다 — 2026-08-07에 `"beetle"`이 `"bee"`에
+                // 가려져 딱정벌레 31종이 4개 화면에서 벌로 그려진 전례가 있다(InsectPortraitRoutingTests).
                 GUILayout.BeginHorizontal();
                 GUILayout.FlexibleSpace();
-                GUI.color = rarityColor;
-                GUILayout.Box("", GUILayout.Width(140), GUILayout.Height(140));
-                GUI.color = Color.white;
+                Rect portraitRect = GUILayoutUtility.GetRect(GachaPortraitSize, GachaPortraitSize,
+                    GUILayout.Width(GachaPortraitSize), GUILayout.Height(GachaPortraitSize));
+                if (Event.current.type == EventType.Repaint)
+                {
+                    Color previousColor = GUI.color;
+                    if (cachedInsectDb == null) cachedInsectDb = FindFirstObjectByType<InsectDatabase>();
+                    InsectData drawn = cachedInsectDb != null ? cachedInsectDb.GetById(gachaResult.insectId) : null;
+                    if (drawn != null)
+                    {
+                        // 가챠 결과는 샤이니 개념이 없다(GachaResult에 필드 자체가 없고
+                        // AddCapturedInsect가 지급 시점에 굴린다) — 늘 false다.
+                        InsectVisual.Draw(portraitRect, drawn, false, 1f);
+                    }
+                    else
+                    {
+                        // DB 미로드 등으로 조회가 빈 경우. `InsectVisual.Draw`는 data가 null이면
+                        // **아무것도 그리지 않으므로**, 빈 사각형 회귀를 막으려면 여기서 직접 폴백한다.
+                        // 초상은 (cx, cy) 중심에 고정 크기로 그려진다 — 상자 크기와 무관하다.
+                        CapturePopupUI.DrawTypedInsectPortrait(
+                            portraitRect.center.x, portraitRect.center.y,
+                            gachaResult.insectId, gachaResult.rarity, 1f);
+                    }
+                    GUI.color = previousColor;
+                }
                 GUILayout.FlexibleSpace();
                 GUILayout.EndHorizontal();
 

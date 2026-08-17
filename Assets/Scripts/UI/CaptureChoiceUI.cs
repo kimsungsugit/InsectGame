@@ -383,7 +383,7 @@ namespace InsectGame.UI
                 GUIStyle countS = new GUIStyle(GUI.skin.label)
                 { fontSize = 30, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleRight };
                 countS.normal.textColor = hasItem ? new Color(1f, 0.85f, 0.3f) : new Color(0.4f, 0.3f, 0.3f);
-                GUI.Label(new Rect(px + panelW - 220, cy + 14, 80, 36), $"x{count}", countS);
+                UIHelper.LabelFit(new Rect(px + panelW - 220, cy + 14, 80, 36), $"x{count}", countS);
 
                 GUIStyle useBtn = new GUIStyle(GUI.skin.button) { fontSize = 28, fontStyle = FontStyle.Bold };
                 GUI.backgroundColor = hasItem ? new Color(0.25f, 0.5f, 0.3f) : new Color(0.2f, 0.2f, 0.2f);
@@ -464,7 +464,7 @@ namespace InsectGame.UI
             { fontSize = 36, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             titleStyle.normal.textColor = new Color(1f, 0.8f, 0.3f);
             GUI.color = Color.white;
-            GUI.Label(new Rect(px, py + 18, panelW, 44), "곤충을 선택하세요", titleStyle);
+            UIHelper.LabelFit(new Rect(px, py + 18, panelW, 44), "곤충을 선택하세요", titleStyle);
 
             GUIStyle subStyle = new GUIStyle(GUI.skin.label)
             { fontSize = 28, alignment = TextAnchor.MiddleCenter };

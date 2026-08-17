@@ -402,10 +402,25 @@ namespace InsectGame.UI
         // 마지막 공격 연출이 끝난 뒤 결과화면 진입 — 승패 SFX/BGM도 여기서(연출 도중 스포일 방지).
         private void EnterResult()
         {
+            // **재진입 차단.** 아래 ConcludeDefeatWithoutSwap이 BattleEnded를 발화하고,
+            // 그 핸들러(OnBattleEnded)가 이 메서드를 다시 부른다 — 같은 프레임 안에서 동기로.
+            if (phase == Phase.Result) return;
+
+            // **상태를 먼저 세운다.** 순서가 이 가드의 전부다: 상태가 Conclude 뒤에 있으면
+            // 재진입이 위 가드를 통과해(그때 phase는 아직 Result가 아니다) 결과 진입이 통째로
+            // 두 번 돌고, 패배 SFX·BGM이 겹쳐 재생된다.
             phase = Phase.Result;
             resultShown = true;
             resultTimer = 0f;
             pendingResult = false;
+
+            // 교체할 팀원이 없어 여기로 온 패배는 **컨트롤러가 아직 종료 처리를 못 했다** —
+            // `PlayerFainted`가 구독자 유무만 보고 "UI가 교체로 처리한다"고 판단해 손을 뗐기 때문이다.
+            // 여기서 확정시키지 않으면 `BattleEnded`/`DuelEnded`가 영영 발화하지 않아 NPC 대결의
+            // 보상·쿨다운이 통째로 건너뛰어진다(상세는 `ConcludeDefeatWithoutSwap` 주석).
+            // 승리·도주로 온 경우엔 이미 종료돼 있어 멱등하게 무시된다.
+            if (!lastWon && battleController != null) battleController.ConcludeDefeatWithoutSwap();
+
             if (AudioManager.Instance != null)
             {
                 AudioManager.Instance.PlaySFX(lastWon ? SfxType.Victory : SfxType.Defeat);
@@ -767,8 +782,11 @@ namespace InsectGame.UI
             { fontSize = 32, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
 
             // DrawSkillPanel
+            // 아래 라벨들은 전부 세로 가운데 정렬이다. IMGUI 기본값(Upper*)은 글자를 상자 맨 위에
+            // 붙여 그려서, 상자가 글자보다 조금만 작아도 아랫부분(한글 받침·디센더)이 먼저 잘린다.
+            // Middle*이면 남는 세로가 위아래로 반씩 나뉘어 같은 상자에서도 여백이 생긴다.
             skillHeaderCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 28, fontStyle = FontStyle.Bold };
+            { fontSize = 28, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
             skillHeaderCache.normal.textColor = new Color(0.9f, 0.85f, 0.5f);
             skillKeyNumCache = new GUIStyle(GUI.skin.label)
             { fontSize = 28, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
@@ -780,9 +798,13 @@ namespace InsectGame.UI
                 wordWrap = true,
                 clipping = TextClipping.Clip
             };
-            skillTypeLabelCache = new GUIStyle(GUI.skin.label) { fontSize = 20 };
-            skillEffLabelCache = new GUIStyle(GUI.skin.label) { fontSize = 19, fontStyle = FontStyle.Bold };
-            skillInfoStyleCache = new GUIStyle(GUI.skin.label) { fontSize = 20, fontStyle = FontStyle.Bold };
+            skillTypeLabelCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 20, alignment = TextAnchor.MiddleLeft };
+            // 상성 배지는 위력과 같은 줄의 오른쪽 칸이라 우측 정렬이다.
+            skillEffLabelCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 19, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleRight };
+            skillInfoStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 20, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
             skillCdStyleCache = new GUIStyle(GUI.skin.label)
             { fontSize = 20, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleRight };
             skillCdStyleCache.normal.textColor = new Color(1f, 0.4f, 0.3f);
@@ -794,13 +816,16 @@ namespace InsectGame.UI
             skillFKeyCache.normal.textColor = new Color(1f, 0.85f, 0.3f);
             skillFInfoCache = new GUIStyle(GUI.skin.label)
             { fontSize = 20, alignment = TextAnchor.MiddleCenter };
-            skillFInfoCache.normal.textColor = new Color(0.6f, 0.55f, 0.4f);
+            // 부제 두 줄은 원래 바탕색을 살짝 밝힌 정도(0.6/0.55/0.4 · 0.55/0.4/0.4)라 버튼 배경과
+            // 거의 구분되지 않았다 — 호버로 배경이 밝아지면 각각 4.01 / 3.17까지 떨어져 AA 미만이었다.
+            // 색조(따뜻한 금색 · 붉은색)는 유지한 채 밝기만 올린다: 평시 10.06 / 9.92, 호버 8.16 / 8.75.
+            skillFInfoCache.normal.textColor = new Color(0.85f, 0.79f, 0.62f);
             skillEscStyleCache = new GUIStyle(GUI.skin.label)
             { fontSize = 26, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             skillEscStyleCache.normal.textColor = new Color(0.9f, 0.5f, 0.4f);
             skillEscInfoCache = new GUIStyle(GUI.skin.label)
             { fontSize = 20, alignment = TextAnchor.MiddleCenter };
-            skillEscInfoCache.normal.textColor = new Color(0.55f, 0.4f, 0.4f);
+            skillEscInfoCache.normal.textColor = new Color(0.88f, 0.72f, 0.68f);
 
             // DrawAttackAnimation — fontSize dynamic for dmg
             dmgStyle3dCache = new GUIStyle(GUI.skin.label)
@@ -946,6 +971,10 @@ namespace InsectGame.UI
 
             if (resultShown)
                 DrawResult();
+
+            // "효과가 굉장했다!" 같은 전투 문구. 아레나가 자기 OnGUI에서 픽셀 좌표로 그리던 것을
+            // 가상 캔버스 안으로 들여왔다(BattleEffectTextOverlay 주석 참고).
+            BattleEffectTextOverlay.Draw(arena);
 
             UIScale.End();
         }
@@ -1709,7 +1738,7 @@ namespace InsectGame.UI
 
             GUI.Label(new Rect(x + w - 100, y + 10, 86, 28), $"Lv.{stats.Level}", hpLvStyleCache);
 
-            GUI.Label(new Rect(x + 14, y + 42, w - 28, 22),
+            UIHelper.LabelFit(new Rect(x + 14, y + 42, w - 28, 22),
                 $"ATK {stats.Attack}  DEF {stats.Defense}", hpMiniStatCache);
 
             float barX = x + 14;
@@ -1931,7 +1960,8 @@ namespace InsectGame.UI
             float contentX = UIScale.VirtualSafeLeft + 30f;
             float contentW = Mathf.Max(1f,
                 sw - UIScale.VirtualSafeLeft - UIScale.VirtualSafeRight - 60f);
-            GUI.Label(new Rect(contentX, panelY + 12, contentW, 36),
+            // 상자 42 — 28px 글자의 한글 세로 폭(약 38)에 위아래 여백까지. 36이던 자리라 받침이 잘렸다.
+            GUI.Label(new Rect(contentX, panelY + 10, contentW, 42),
                 mobile ? "사용할 기술을 선택하세요" : "스킬을 선택하세요  (숫자키 1~4 또는 클릭)", skillHeaderCache);
 
             InsectSkill[] skills = battleController != null ? battleController.GetPlayerSkills() : playerStats.Data.skills;
@@ -2023,30 +2053,57 @@ namespace InsectGame.UI
                     GUI.DrawTexture(new Rect(iconX + 10, iconY + 10, iconSize - 20, iconSize - 20), Texture2D.whiteTexture);
                 }
 
+                // 쿨다운 붉은 딤은 글자보다 **먼저** 깐다. 예전엔 라벨을 다 그린 뒤에 덮어서
+                // 글자까지 같이 물들었고 명암비가 8.77→6.79(스킬명) · 6.08→4.94(타입·위력)로 내려갔다.
+                // 배경만 물들이면 대비가 그대로 살아 "쿨다운이라 흐린 것"과 "안 보이는 것"이 갈린다.
+                if (cd > 0)
+                {
+                    GUI.color = new Color(1f, 0.3f, 0.2f, 0.15f);
+                    GUI.DrawTexture(new Rect(bx, btnY, btnW, btnH), Texture2D.whiteTexture);
+                    GUI.color = Color.white;
+                }
+
                 if (!mobile)
                 {
+                    // 쿨다운 번호가 (0.35,0.35,0.35) 회색이라 거의 검은 배지(0.08) 위에서 명암비 2.63이었다
+                    // — "회색이라 안 보인다"고 지목된 자리. 이미 있는 비활성 토큰을 쓴다(8.29).
                     skillKeyNumCache.normal.textColor = canUse
                         ? new Color(1f, 0.85f, 0.3f, pulse + 0.5f)
-                        : new Color(0.35f, 0.35f, 0.35f);
+                        : SkillUILayout.DisabledTextColor;
                     GUI.color = canUse ? new Color(0.15f, 0.12f, 0.05f) : new Color(0.08f, 0.08f, 0.08f);
                     GUI.DrawTexture(new Rect(bx + btnW - 48, btnY + 10, 38, 38), Texture2D.whiteTexture);
                     GUI.color = Color.white;
                     GUI.Label(new Rect(bx + btnW - 48, btnY + 10, 38, 38), $"{i + 1}", skillKeyNumCache);
                 }
 
+                // **글자를 그리기 전에 GUI.color를 반드시 흰색으로 되돌린다.**
+                // `GUI.color`는 스타일의 textColor에 곱해진다. 바로 위 아이콘 그리기가 색을 남겨 두는데,
+                // 그걸 흰색으로 되돌리는 유일한 자리가 `if (!mobile)` 안의 키 배지 블록이었다 —
+                // 즉 **모바일에서는 되돌지 않았다.** 그래서 기기에서는 데미지 스킬의 카드 글자가
+                // 전부 (0,0,0,0.6)이 곱해져 **검은색 60% = 사실상 안 보이고**, 그 외 스킬은
+                // (1,1,1,0.3)이 곱해져 30% 알파로 흐릿하게 떴다. 쿨다운 중인 카드만 위 딤 블록이
+                // 흰색을 복구해 멀쩡히 보였다 — "쓸 수 있는 스킬만 안 보인다"의 정체다.
+                // 색 토큰을 아무리 밝혀도 여기서 곱해져 사라지므로, 이 한 줄이 실제 원인이다.
+                GUI.color = Color.white;
+
+                // 카드(216) 세로 배분: 아이콘 14~50 / 이름 54~104 / 타입 110~138 / 정보 2행 144~206.
+                // 마지막 행 아래로 10px가 남아 카드 테두리(213)에 닿지 않는다.
                 Rect skillCardRect = new Rect(bx, btnY, btnW, btnH);
                 SkillCardDetailRows detailRows = SkillUILayout.GetDetailRows(
-                    skillCardRect, 144f, 14f, 22f, 2f);
+                    skillCardRect, 144f, 14f, SkillUILayout.MinimumDetailRowHeight, 6f, 10f);
                 skillNameStyleCache.fontSize = mobile ? 30 : 27;
                 skillNameStyleCache.normal.textColor = canUse ? Color.white : SkillUILayout.DisabledTextColor;
-                GUI.Label(SkillUILayout.GetNameRect(skillCardRect, 54f, 14f, 58f),
+                // 스킬명 길이는 데이터가 정하는데 상자는 고정이다 — 두 줄이 되면 아랫줄이 통째로 잘린다.
+                UIHelper.LabelFit(SkillUILayout.GetNameRect(skillCardRect, 54f, 14f, 50f),
                     skill.displayName, skillNameStyleCache);
 
                 skillTypeLabelCache.normal.textColor = canUse
                     ? SkillUILayout.GetReadableAccent(skillIconCol)
                     : SkillUILayout.DisabledSecondaryTextColor;
                 string typeStr = $"{InsectTypeChart.GetDisplayName(skill.element)} 타입 · {SkillActionLabel(skill.effectType)}";
-                GUI.Label(new Rect(bx + 14, btnY + 116, btnW - 28, 26), typeStr, skillTypeLabelCache);
+                // "다크 타입 · 공격 디버프"는 가로 카드(폭 220)에서 상자를 넘긴다. wordWrap이 꺼져 있어
+                // 세로가 아니라 가로로 잘리는 쪽이고, LabelFit이 두 방향을 함께 본다.
+                UIHelper.LabelFit(new Rect(bx + 14, btnY + 110, btnW - 28, 28), typeStr, skillTypeLabelCache);
 
                 // 상성 배지 — 지금 적에게 강/약(데미지 스킬만, 버프·디버프는 상성 무관). 스킬 선택 전 판단 제공.
                 if (skill.effectType == SkillEffectType.Damage && enemyStats != null && enemyStats.Data != null)
@@ -2056,8 +2113,9 @@ namespace InsectGame.UI
                     if (eff > 1.05f || eff < 0.95f)
                     {
                         bool strong = eff > 1.05f;
+                        // 약점 붉은색은 호버 배경(0.18/0.22/0.38)에서 4.25로 떨어졌다 → 0.58/0.52로 올려 5.29.
                         skillEffLabelCache.normal.textColor = canUse
-                            ? (strong ? new Color(0.4f, 1f, 0.5f) : new Color(1f, 0.45f, 0.4f))
+                            ? (strong ? new Color(0.4f, 1f, 0.5f) : new Color(1f, 0.58f, 0.52f))
                             : SkillUILayout.DisabledSecondaryTextColor;
                         GUI.Label(detailRows.Effectiveness,
                             strong ? "효과적 ▲" : "비효과 ▼", skillEffLabelCache);
@@ -2067,14 +2125,11 @@ namespace InsectGame.UI
                 skillInfoStyleCache.normal.textColor = canUse
                     ? new Color(0.96f, 0.91f, 0.72f)
                     : SkillUILayout.DisabledSecondaryTextColor;
-                GUI.Label(detailRows.Power, SkillPowerLabel(skill), skillInfoStyleCache);
+                UIHelper.LabelFit(detailRows.Power, SkillPowerLabel(skill), skillInfoStyleCache);
 
                 if (cd > 0)
                 {
                     GUI.Label(detailRows.Cooldown, $"쿨다운 {cd}턴", skillCdStyleCache);
-
-                    GUI.color = new Color(1f, 0.3f, 0.2f, 0.15f);
-                    GUI.DrawTexture(new Rect(bx, btnY, btnW, btnH), Texture2D.whiteTexture);
                 }
                 else if (skill.cooldownTurns > 0)
                 {
@@ -2082,12 +2137,10 @@ namespace InsectGame.UI
                         $"쿨다운: {skill.cooldownTurns}턴", skillCdInfoCache);
                 }
 
-                if (isHovered)
-                {
-                    GUI.color = new Color(1f, 1f, 1f, 0.06f);
-                    GUI.DrawTexture(new Rect(bx, btnY, btnW, btnH), Texture2D.whiteTexture);
-                    GUI.color = Color.white;
-                }
+                // 예전엔 여기서 흰색 6%를 카드 전체에 한 번 더 덮었다. 호버 신호는 이미 둘이다 —
+                // 배경이 1.52배 밝아지고 테두리가 통째로 흰색이 된다. 세 번째 덧칠은 눈에 거의 안
+                // 띄면서 **글자와 배경을 같이 밝혀** 타입 줄 명암비를 4.67 → 4.14로 되돌렸다(AA 미만).
+                // 배경에만 얹어도 3.90으로 더 나쁘다(글자는 그대로인데 바닥만 밝아진다). 그래서 뺐다.
             }
 
             btnY = portrait ? baseBtnY + 2f * (btnH + gap) + 2f : baseBtnY;
@@ -2107,8 +2160,10 @@ namespace InsectGame.UI
                 GUI.DrawTexture(new Rect(extraX + extraW - 2, btnY, 2, extraBtnH), Texture2D.whiteTexture);
                 GUI.color = Color.white;
 
-                GUI.Label(new Rect(extraX, btnY + 8, extraW, 32), mobile ? "기본 공격" : "[F] 기본 공격", skillFKeyCache);
-                GUI.Label(new Rect(extraX, btnY + 44, extraW, 26), "쿨다운 없음", skillFInfoCache);
+                // 26px 글자에 상자 32, 20px 글자에 상자 26이던 자리 — 둘 다 한글 세로 폭(1.35배)에 못 미쳐
+                // 받침이 잘렸다. 버튼 높이(80)는 그대로 두고 두 줄의 상자만 36/28로 키운다(6+36+4+28+6=80).
+                GUI.Label(new Rect(extraX, btnY + 6, extraW, 36), mobile ? "기본 공격" : "[F] 기본 공격", skillFKeyCache);
+                GUI.Label(new Rect(extraX, btnY + 46, extraW, 28), "쿨다운 없음", skillFInfoCache);
             }
 
             {
@@ -2126,8 +2181,8 @@ namespace InsectGame.UI
                 GUI.DrawTexture(new Rect(escapeX + extraW - 2, escY, 2, extraBtnH), Texture2D.whiteTexture);
                 GUI.color = Color.white;
 
-                GUI.Label(new Rect(escapeX, escY + 8, extraW, 32), mobile ? "도망가기" : "[ESC] 도망가기", skillEscStyleCache);
-                GUI.Label(new Rect(escapeX, escY + 44, extraW, 26), "확률적 성공", skillEscInfoCache);
+                GUI.Label(new Rect(escapeX, escY + 6, extraW, 36), mobile ? "도망가기" : "[ESC] 도망가기", skillEscStyleCache);
+                GUI.Label(new Rect(escapeX, escY + 46, extraW, 28), "확률적 성공", skillEscInfoCache);
             }
         }
 
@@ -3188,7 +3243,7 @@ namespace InsectGame.UI
                 // "DEFEAT..." text
                 defeatStyleCache.normal.textColor = new Color(red.r, red.g, red.b, alpha);
                 GUI.color = Color.white;
-                GUI.Label(new Rect(cx - 280, cy + 4, 560, 60), "DEFEAT...", defeatStyleCache);
+                UIHelper.LabelFit(new Rect(cx - 280, cy + 4, 560, 60), "DEFEAT...", defeatStyleCache);
 
                 // Retry guidance with fade-in
                 float guideAlpha = Mathf.Clamp01((resultTimer - 1f) / 0.5f);
@@ -3384,7 +3439,7 @@ namespace InsectGame.UI
 
                 if (isFainted)
                 {
-                    GUI.Label(new Rect(bx, btnY + 208, btnW, 28), "쓰러짐", swapFaintStyleCache);
+                    UIHelper.LabelFit(new Rect(bx, btnY + 208, btnW, 28), "쓰러짐", swapFaintStyleCache);
                 }
                 else if (isCurrent)
                 {
@@ -3501,7 +3556,7 @@ namespace InsectGame.UI
             Color lblCol = ComboLblBase;
             lblCol.a = alpha * 0.9f;
             cachedComboLblStyle.normal.textColor = lblCol;
-            GUI.Label(new Rect(bx, by + boxH - 22, boxW, 18), "COMBO", cachedComboLblStyle);
+            UIHelper.LabelFit(new Rect(bx, by + boxH - 22, boxW, 18), "COMBO", cachedComboLblStyle);
         }
 
         // 콤보 표시 정적 색 — 매 OnGUI new Color 회귀 차단
@@ -3603,6 +3658,16 @@ namespace InsectGame.UI
     internal static class SkillUILayout
     {
         internal const float MinimumSkillNameHeight = 44f;
+
+        /// <summary>
+        /// 본문 글자가 위아래로 잘리지 않는 최소 행 높이.
+        ///
+        /// 한글 글리프는 폰트 크기의 <b>1.35배</b>쯤을 세로로 쓴다(라틴 문자보다 어센더·디센더가 크다).
+        /// 카드의 정보 행은 18~20px 글자를 담으므로 20 × 1.35 = 27이 하한이고, 위아래 여백까지
+        /// 생각해 28을 쓴다. 이 상수보다 낮은 행을 요청하면 <see cref="GetDetailRows"/>가 끌어올린다.
+        /// </summary>
+        internal const float MinimumDetailRowHeight = 28f;
+
         internal static readonly Color DisabledTextColor = new Color(0.68f, 0.68f, 0.72f);
         internal static readonly Color DisabledSecondaryTextColor = new Color(0.56f, 0.56f, 0.62f);
 
@@ -3634,29 +3699,50 @@ namespace InsectGame.UI
                 : desktopHeight;
         }
 
+        /// <summary>
+        /// 스킬 카드 아래쪽 정보 영역. <b>2행</b>이다 — 첫 줄에 위력(좌)과 상성 배지(우)를 나란히,
+        /// 둘째 줄에 쿨다운.
+        ///
+        /// 예전엔 3행이었는데 216px 카드 안에서 행 하나가 <b>22px</b>밖에 안 됐다. 20px 글자에
+        /// 필요한 27px(<see cref="MinimumDetailRowHeight"/> 참고)에 못 미쳐 한글 위아래가 그대로
+        /// 잘렸고, 마지막 행(y 192~214)은 카드 아래 테두리(213)를 파고들어 여백이 아예 없었다.
+        /// 카드를 키우는 해법은 못 쓴다 — 스킬 패널이 커지면 전투 장면의 곤충을 더 가리고,
+        /// 그건 이미 한 번 줄여 놓은 자리다. 그래서 <b>행 수를 줄여</b> 남는 세로를 여백으로 돌렸다.
+        /// 위력과 상성은 애초에 짧아(각각 "위력: 45" / "효과적 ▲") 한 줄에 좌우로 들어간다.
+        ///
+        /// <paramref name="bottomPadding"/>은 선택 인자가 아니다 — 마지막 행이 카드 테두리에 닿지
+        /// 않도록 호출부가 반드시 남겨야 하는 값이라 기본값을 주지 않는다.
+        /// </summary>
         internal static SkillCardDetailRows GetDetailRows(
             Rect cardRect,
             float top,
             float horizontalPadding,
             float requestedRowHeight,
-            float requestedGap)
+            float requestedGap,
+            float bottomPadding)
         {
             float safeTop = Mathf.Clamp(top, 0f, cardRect.height);
             float safePadding = Mathf.Max(0f, horizontalPadding);
+            float safeBottom = Mathf.Clamp(bottomPadding, 0f, cardRect.height - safeTop);
             float gap = Mathf.Max(0f, requestedGap);
-            float availableHeight = Mathf.Max(0f, cardRect.height - safeTop);
-            float maximumRowHeight = Mathf.Max(0f, (availableHeight - gap * 2f) / 3f);
-            float rowHeight = Mathf.Min(Mathf.Max(1f, requestedRowHeight), maximumRowHeight);
+            float availableHeight = Mathf.Max(0f, cardRect.height - safeTop - safeBottom);
+            float maximumRowHeight = Mathf.Max(0f, (availableHeight - gap) * 0.5f);
+            float rowHeight = Mathf.Min(
+                Mathf.Max(MinimumDetailRowHeight, requestedRowHeight),
+                maximumRowHeight);
             float x = cardRect.x + safePadding;
             float width = Mathf.Max(1f, cardRect.width - safePadding * 2f);
             float firstY = cardRect.y + safeTop;
             float secondY = firstY + rowHeight + gap;
-            float thirdY = secondY + rowHeight + gap;
+
+            // 같은 줄이라 폭부터 갈라 둔다 — 위력이 길어도 상성 배지를 밟지 않는다.
+            float powerWidth = Mathf.Max(1f, width * 0.56f);
+            float effectivenessWidth = Mathf.Max(1f, width - powerWidth - gap);
 
             return new SkillCardDetailRows(
-                new Rect(x, firstY, width, rowHeight),
-                new Rect(x, secondY, width, rowHeight),
-                new Rect(x, thirdY, width, rowHeight));
+                new Rect(x, firstY, powerWidth, rowHeight),
+                new Rect(x + width - effectivenessWidth, firstY, effectivenessWidth, rowHeight),
+                new Rect(x, secondY, width, rowHeight));
         }
 
         /// <summary>
@@ -3667,14 +3753,20 @@ namespace InsectGame.UI
         /// 버튼 배경(0.08/0.10/0.20)과 명암비 <b>3.69</b>, 호버 시엔 <b>2.43</b>까지 떨어졌다
         /// — 기기에서 "글씨가 배경색과 비슷해 안 보인다"고 보고된 자리다(WCAG AA 본문 기준 4.5).
         ///
-        /// 이제 원래 밝기에 따라 섞는 양을 달리한다: 어두울수록 많이 섞어(최대 62%) 바닥을 끌어올리고,
-        /// 이미 밝으면 28%만 섞어 속성색의 정체성을 지킨다. 전 속성이 기본 5.5+ / 호버 3.6+가 된다.
+        /// 이제 원래 밝기에 따라 섞는 양을 달리한다: 어두울수록 많이 섞고, 이미 밝으면 조금만 섞어
+        /// 속성색의 정체성을 지킨다.
+        ///
+        /// <b>기준 배경은 평시가 아니라 호버다.</b> 첫 수정은 평시 배경(0.08/0.10/0.20)에만 맞춰
+        /// 62%/28% 곡선을 잡았고 그래서 평시는 5.5+였지만 <b>호버 배경(0.18/0.22/0.38)에서 Dark 3.65 ·
+        /// Poison 3.82</b>로 도로 떨어졌다 — 마우스를 올린 카드, 즉 <b>지금 고르려는 그 카드</b>의
+        /// 글씨가 가장 안 보였다. 호버는 배경을 밝히는 연출이라 어두운 글씨와 정면으로 부딪힌다.
+        /// 82%/36%로 올려 호버에서도 전 속성 4.6+(최저 Poison 4.67), 평시는 6.9+가 된다.
         /// </summary>
         internal static Color GetReadableAccent(Color accent)
         {
             // 지각 밝기(ITU-R BT.601) — 사람 눈이 초록에 민감한 것을 반영한다.
             float luminance = accent.r * 0.299f + accent.g * 0.587f + accent.b * 0.114f;
-            float mix = Mathf.Lerp(0.62f, 0.28f, Mathf.Clamp01(luminance / 0.5f));
+            float mix = Mathf.Lerp(0.82f, 0.36f, Mathf.Clamp01(luminance / 0.5f));
 
             Color readable = Color.Lerp(accent, Color.white, mix);
             readable.a = accent.a;

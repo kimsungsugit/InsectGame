@@ -727,6 +727,22 @@ namespace InsectGame.Core
             return SaveScope.FilePath(GameConstants.SaveFiles.PlayerInsects);
         }
 
+        /// <summary>
+        /// 바깥 시스템이 <see cref="PlayerInsectData"/>를 직접 고친 뒤 부르는 알림.
+        ///
+        /// <see cref="GetByInstanceId"/>가 실참조를 돌려주므로 훈련·이벤트 보상 같은 외부 코드가
+        /// 곤충을 그 자리에서 고칠 수 있는데, 그러면 <see cref="InsectUpdated"/> 구독자들
+        /// (레벨업·선택 UI, 상태 HUD의 캐시 무효화)이 변경을 모른다 — 실제로 훈련이 스킬을 갈아
+        /// 끼우고도 이걸 알리지 않아 화면이 옛 스킬셋으로 남아 있었다.
+        /// 컬렉션이 스스로 고치는 경로(레벨업·치료 등)는 이미 각자 발화하므로 여기 올 일이 없다.
+        /// </summary>
+        public void NotifyInsectChanged(PlayerInsectData data)
+        {
+            if (data == null) return;
+            MarkDirty();
+            InsectUpdated?.Invoke(data);
+        }
+
         public void ForceSave()
         {
             if (saveData != null) Save(saveData);

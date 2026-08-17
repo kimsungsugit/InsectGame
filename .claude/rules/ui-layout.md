@@ -188,6 +188,26 @@ UIHelper.LabelFit(new Rect(x, y, w, 84f), data.description, descStyle);
 멀쩡하던 라벨이 기기에서 잘리는 일이 반복됐다(도감 설명·아이템 설명·보유 곤충 설명·NPC 대사·
 팀 슬롯 이름·가이드 배너).
 
+### 리터럴 문구는 `literal_fit_lint.py`가 따로 잡는다
+
+`text_fit_lint`는 **길이를 데이터가 정하는** 자리만 본다. 그래서
+`GUI.Label(rect, "고정 문구", style)`처럼 리터럴을 쓰는 자리는 아무도 검사하지 않았고,
+**36pt를 28px 상자에** 그리던 곳이 실제로 있었다(2026-08-08에 손으로 둘 찾아 고쳤다).
+
+```
+python -X utf8 .claude/scripts/literal_fit_lint.py
+```
+
+스타일의 `fontSize`와 Rect 높이를 소스에서 뽑아 대조한다. 한글 줄높이 ≈ `fontSize × 1.35`
+(`DexScreenUI.LineH` / `TutorialQuestUI.RowH`와 같은 계산)보다 상자가 **10% 이상** 낮으면 FAIL이다.
+그보다 작은 차이는 폰트 패딩에 묻혀 실제로 안 잘릴 수 있어 정보로만 센다 — 전부를 기준으로
+삼으면 `text_fit_lint`가 247건에서 31건으로 좁혀졌던 실수를 되풀이한다.
+
+**고치는 방법은 `UIHelper.LabelFit`이다.** 상자를 키우지 않는다 — 아래 요소가 전부 밀려
+회귀 범위가 커지고, IMGUI는 배치모드로 캡처할 수 없어 결과를 눈으로 확인할 수도 없다
+(`rules/testing.md`). 상자를 키우는 건 아래가 밀려도 되는 자리(스크롤 목록 등)에서
+이웃 y를 검산한 뒤에만. 2026-08-17에 심각 31건을 전부 `LabelFit`으로 바꿨다.
+
 ### `text_fit_lint.py`가 잡는다
 
 ```

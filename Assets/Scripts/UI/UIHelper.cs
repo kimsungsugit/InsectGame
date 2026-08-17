@@ -252,7 +252,7 @@ namespace InsectGame.UI
             if (width <= 1f || height <= 1f)
                 return baseSize;
 
-            long key = FitKey(text, width, height, baseSize);
+            long key = FitKey(text, width, height, baseSize, style);
             if (fitCache.TryGetValue(key, out int cached))
                 return cached;
 
@@ -283,18 +283,49 @@ namespace InsectGame.UI
             return size;
         }
 
-        private static long FitKey(string text, float width, float height, int baseSize)
+        /// <summary>
+        /// 캐시 키. <b>스타일 자체가 키에 들어가야 한다</b> — 측정은 <c>style.CalcHeight</c>/
+        /// <c>CalcSize</c>로 하고 그 결과는 폰트·볼드·<c>wordWrap</c>·패딩에 좌우되는데,
+        /// 예전엔 (텍스트, 폭, 높이, 기준폰트)만 해싱했다. 그래서 이 넷이 같은 서로 다른 스타일이
+        /// <b>하나의 답을 나눠 썼다</b>. 특히 <c>checkWidth = !style.wordWrap</c>이라 wordWrap이
+        /// 다르면 <b>측정 규칙 자체가 다른데도</b> 캐시가 공유된다 — 가로 검사를 아예 하지 않은
+        /// 값이 가로로 넘치는 라벨에 그대로 쓰인다. 증상은 조용한 글자 잘림이라,
+        /// <c>LabelFit</c>이 막으려던 바로 그 결함이 캐시를 통해 되살아난다.
+        ///
+        /// 참조 동일성(<c>RuntimeHelpers.GetHashCode</c>)을 쓰는 이유는 측정에 영향을 주는
+        /// 속성을 <b>빠짐없이</b> 나열할 자신이 없어서다. 스타일은 화면마다 1회 캐시되는
+        /// 싱글턴이라 적중률 손해도 사실상 없고, 재생성되면 옛 항목은 <see cref="FitCacheMax"/>
+        /// 초과 시 통째로 비워진다.
+        /// </summary>
+        // internal — 그리기는 IMGUI 컨텍스트가 필요해 테스트할 수 없지만 이 키 계산은 순수하다.
+        // UIHelperFitKeyTests가 "스타일이 다르면 키도 달라야 한다"를 고정한다.
+        internal static long FitKey(string text, float width, float height, int baseSize, GUIStyle style)
         {
             // 문자열 해시는 런타임마다 달라도 무방하다 — 이 캐시는 세션 안에서만 산다.
             long h = text.GetHashCode();
             h = h * 31 + Mathf.RoundToInt(width);
             h = h * 31 + Mathf.RoundToInt(height);
             h = h * 31 + baseSize;
+            h = h * 31 + System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(style);
             return h;
         }
 
         // ── 패널 페이드 ──
 
+        /// <summary>
+        /// 패널 열림/닫힘 알파(0~1). <paramref name="isOpen"/>이 바뀌는 순간을 감지해 트윈을 건다.
+        ///
+        /// <b>호출부는 두 갈래 중 하나를 반드시 지켜야 한다 — 안 지키면 조용히 페이드가 사라진다.</b>
+        /// 전이 감지가 <paramref name="wasOpen"/> 하나에 걸려 있어서다.
+        /// <list type="number">
+        ///   <item>닫힌 프레임에도 <b>매 프레임 이걸 먼저 부르고</b> 알파가 0에 닿은 뒤에 그리기를
+        ///     멈춘다(<c>CharacterOutfitUI</c> 방식 — 페이드아웃까지 보인다).</item>
+        ///   <item>닫히면 곧바로 그리기를 멈추는 화면이라면(그래서 이 함수가 안 불린다),
+        ///     닫는 자리에서 <c>wasOpen = false</c>로 되돌린다. 안 그러면 <c>wasOpen</c>이 true로
+        ///     굳어 <b>두 번째 열림부터 전이가 감지되지 않는다</b> — 첫 열림에만 페이드가 걸리고
+        ///     그 뒤로는 툭 튀어나온다(<c>NpcDialogueUI</c>가 이 갈래다).</item>
+        /// </list>
+        /// </summary>
         public static float AnimatePanelOpen(ref TweenHandle handle, bool isOpen, ref bool wasOpen)
         {
             if (isOpen != wasOpen)

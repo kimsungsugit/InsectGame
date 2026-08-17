@@ -166,7 +166,12 @@ namespace InsectGame.Core
             }
 
             if (collection != null)
+            {
+                // 스킬을 갈아 끼웠다는 걸 컬렉션 구독자에게 알린다. `TrainingCompleted`는 구독자가
+                // 0이라 아무에게도 안 갔고, 그래서 훈련 직후 캐시를 쓰는 화면이 옛 스킬셋으로 남았다.
+                collection.NotifyInsectChanged(insect);
                 collection.ForceSave();
+            }
 
             TrainingCompleted?.Invoke();
             // q_training 진행도 — TrainSkill 성공 분기 끝

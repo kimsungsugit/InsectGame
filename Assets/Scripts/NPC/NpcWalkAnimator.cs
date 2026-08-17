@@ -9,9 +9,6 @@ namespace InsectGame.NPC
     /// </summary>
     public class NpcWalkAnimator
     {
-        private const float SwingDuration = 0.6f;   // 뜰채 스윙 1회성 액션 시간 (CatcherKidNpc CatchSwing과 동기)
-        private const float SwingMaxDeg = 72f;      // PlayerMovement.CatchSwingMaxDeg 이식
-
         private readonly Transform armL;
         private readonly Transform armR;
         private readonly Transform legPivotL;
@@ -29,9 +26,15 @@ namespace InsectGame.NPC
 
         private float walkTimer;
         private float bodyBaseY = float.NaN;
-        private float swingTimer;
 
-        public bool IsSwinging => swingTimer > 0f;
+        // 1회성 제스처 — 곡선은 NpcGesturePose(순수부)가 갖고 여기선 타이머만 굴린다.
+        private NpcGesture activeGesture = NpcGesture.None;
+        private float gestureTimer;
+        private float gestureDuration;
+
+        public bool IsSwinging => activeGesture == NpcGesture.NetSwing && gestureTimer > 0f;
+        /// <summary>지금 몸짓을 재생 중인가 — 연출이 다음 스텝으로 넘어갈 시점 판단에 쓴다.</summary>
+        public bool IsGesturing => gestureTimer > 0f;
 
         public NpcWalkAnimator(Transform root)
         {
@@ -57,10 +60,29 @@ namespace InsectGame.NPC
         /// <summary>뜰채 스윙 1회성 시작 (PlayerMovement.PlayCatchSwing 참고). Tick에서 타이머 처리.</summary>
         public void PlaySwing()
         {
-            swingTimer = SwingDuration;
+            PlayGesture(NpcGesture.NetSwing);
         }
 
-        /// <summary>매 프레임 호출(40m 이내 NPC만) — 팔다리 sin 스윙 + 바디 밥 + 스윙 타이머.</summary>
+        /// <summary>
+        /// 몸짓 1회 재생. 재생 중에 다시 부르면 <b>새 몸짓이 앞의 것을 즉시 대체한다</b> —
+        /// 섞으면 관절이 어디로 갈지 알 수 없고, 연출은 한 번에 하나만 보이면 된다.
+        /// 길이가 0인 값(None·미등록)이면 재생 중이던 것을 끄기만 한다.
+        /// </summary>
+        public void PlayGesture(NpcGesture gesture)
+        {
+            float duration = NpcGesturePose.DurationOf(gesture);
+            if (duration <= 0f)
+            {
+                activeGesture = NpcGesture.None;
+                gestureTimer = 0f;
+                return;
+            }
+            activeGesture = gesture;
+            gestureDuration = duration;
+            gestureTimer = duration;
+        }
+
+        /// <summary>매 프레임 호출(40m 이내 NPC만) — 팔다리 sin 스윙 + 바디 밥 + 제스처 타이머.</summary>
         public void Tick(float time, float dt, bool walking)
         {
             if (walking) walkTimer += dt * 8f;
@@ -75,25 +97,41 @@ namespace InsectGame.NPC
             // 걷기: 흡수 밥(0.06). idle: 몸통만 미세 상하(호흡, ~1.8cm) — Body는 torso 단독이라 가슴 부풂으로 읽힘.
             float bobY = walking ? Mathf.Abs(Mathf.Sin(walkTimer * 2f)) * 0.06f : idle * 0.018f;
 
-            // 오른팔 — 기본은 걷기 스윙, 뜰채 스윙 중엔 큰 sin 아크 오버라이드
-            float rightArmDeg = -swingDeg;
-            if (swingTimer > 0f)
+            // 1회성 제스처 — 타이머만 여기서 굴리고 각도는 순수부에서 받는다.
+            NpcPoseDelta pose = default;
+            if (gestureTimer > 0f)
             {
-                swingTimer -= dt;
-                float cp = 1f - Mathf.Clamp01(swingTimer / SwingDuration); // 0→1
-                rightArmDeg = Mathf.Sin(cp * Mathf.PI) * SwingMaxDeg;      // 0→peak→0
+                gestureTimer -= dt;
+                if (gestureTimer <= 0f)
+                {
+                    // 마지막 프레임을 t=1(모든 채널 0)로 확정한다. 중간값에서 끊으면 그 NPC가
+                    // 팔을 든 채로 영영 서 있게 된다 — 곡선이 양 끝에서 0인 이유이기도 하다.
+                    gestureTimer = 0f;
+                    pose = NpcGesturePose.Evaluate(activeGesture, 1f);
+                    activeGesture = NpcGesture.None;
+                }
+                else
+                {
+                    float cp = 1f - Mathf.Clamp01(gestureTimer / gestureDuration); // 0→1
+                    pose = NpcGesturePose.Evaluate(activeGesture, cp);
+                }
             }
 
-            if (armL != null) armL.localRotation = Quaternion.Euler(swingDeg + idleArm, 0f, 0f);
-            if (armR != null) armR.localRotation = Quaternion.Euler(rightArmDeg + idleArm, 0f, 0f);
+            // 제스처가 지배하지 않는 관절은 걷기/idle 파형을 그대로 쓴다(뜰채 스윙이 오른팔만 뺏던 동작).
+            float leftArmDeg = pose.ownsLeftArm ? pose.leftArmDeg : swingDeg + idleArm;
+            float rightArmDeg = pose.ownsRightArm ? pose.rightArmDeg : -swingDeg + idleArm;
 
-            // 뜰채 = 오른팔과 동기 회전 (base 회전 보존)
+            if (armL != null) armL.localRotation = Quaternion.Euler(leftArmDeg, 0f, 0f);
+            if (armR != null) armR.localRotation = Quaternion.Euler(rightArmDeg, 0f, 0f);
+
+            // 뜰채 = 오른팔과 동기 회전 (base 회전 보존). 팔과 **같은 각도**를 쓴다 —
+            // 예전엔 idleArm이 팔에만 더해져 멈춰 있을 때 도구가 손에서 미세하게 어긋났다.
             if (netHandle != null)
                 netHandle.localRotation = Quaternion.Euler(rightArmDeg, 0f, 0f) * netHandleBaseRot;
             if (netRing != null)
                 netRing.localRotation = Quaternion.Euler(rightArmDeg, 0f, 0f) * netRingBaseRot;
 
-            // 다리 (팔과 반대) — LegPivot 회전으로 Leg+Boot 함께 전파
+            // 다리 (팔과 반대) — LegPivot 회전으로 Leg+Boot 함께 전파. 제스처는 전부 상체라 관여하지 않는다.
             if (legPivotL != null) legPivotL.localRotation = Quaternion.Euler(-swingDeg * 0.8f, 0f, 0f);
             if (legPivotR != null) legPivotR.localRotation = Quaternion.Euler(swingDeg * 0.8f, 0f, 0f);
 
@@ -102,17 +140,23 @@ namespace InsectGame.NPC
             {
                 Vector3 bp = body.localPosition;
                 if (float.IsNaN(bodyBaseY)) bodyBaseY = bp.y;
-                bp.y = bodyBaseY + bobY;
+                bp.y = bodyBaseY + (pose.ownsBody ? pose.bodyOffsetY : bobY);
                 body.localPosition = bp;
             }
 
             // 머리 미세 흔들림 — 걷기: 좌우 흔들. idle: 아주 느린 고개 스윙(~14s 주기, ±4.5°) 주변 둘러보는 인상.
             if (headPivot != null)
             {
-                float headTilt = walking
+                float headYaw = walking
                     ? Mathf.Sin(walkTimer * 0.5f) * 3f
                     : Mathf.Sin((time + idlePhase) * 0.45f) * 4.5f;
-                headPivot.localRotation = Quaternion.Euler(0f, headTilt, 0f);
+                float headPitch = 0f;
+                if (pose.ownsHead)
+                {
+                    headYaw = pose.headYawDeg;
+                    headPitch = pose.headPitchDeg;
+                }
+                headPivot.localRotation = Quaternion.Euler(headPitch, headYaw, 0f);
             }
         }
     }

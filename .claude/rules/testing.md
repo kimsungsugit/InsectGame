@@ -19,7 +19,7 @@ description: 테스트 프레임워크, 컨벤션, 필수 기준
 ```
 
 `-testPlatform EditMode`를 쓰면 **0건을 실행하고 "성공"이라 보고한다.** 실행 개수를
-반드시 확인할 것 — 현재 `[Test]` 메서드는 **250개**, 러너가 실제 실행하는 케이스는 **276개**다
+반드시 확인할 것 — 현재 `[Test]` 메서드는 **547개**, 러너가 실제 실행하는 케이스는 **628개**다
 (`[TestCase]` 파라미터화가 여러 케이스로 펼쳐진다). 단일 출처는 코드다 —
 `grep -c "\[Test\]" Assets/Tests/EditMode/*.cs`의 합과 TestResults.xml의 `total`.
 문서에 박아둔 숫자는 늘 낡는다(실제로 62로 적혀 있다가 147까지 벌어져 있었다).
@@ -72,3 +72,33 @@ EditMode 러너를 되살리려면 `Assets/Scripts`·`Assets/Editor`·`Assets/Te
 - MonoBehaviour 생명주기 의존 로직 (`[UnityTest]` + `yield`가 필요. 현재 테스트는 전부
   씬 없이 도는 순수 로직 `[Test]`다)
 - 외부 서비스 호출 (Firebase, Firestore)
+
+## 3D 화면은 눈으로 확인한다 — `LiveSceneCapture`
+
+위 제외 대상 중 **월드에 보이는 것**(모델·애니메이션·지형·배치·연출)은 테스트 대신
+실제 화면을 찍어서 본다. `Assets/Editor/LiveSceneCapture.cs`가 배치모드로 PlayScene을
+띄우고 카메라를 렌더해 PNG로 남긴다.
+
+```
+"$UNITY_EDITOR_PATH" -batchmode -projectPath "C:/Project/곤충게임" \
+  -logFile .claude/cache/capture.log \
+  -executeMethod InsectGame.EditorTools.LiveSceneCapture.Run \
+  -captureOut .claude/cache/capture -captureTimes 2.0,4.0 \
+  -captureSize 900x700 -captureOffset 0,1.2,-2.6 -captureLook 0,0.85,0
+```
+
+인자는 전부 선택이다(`-captureTarget`은 따라갈 오브젝트 이름, 기본 `Player`,
+`none`이면 게임 카메라 구도 그대로). 결과는 로그의 `[CAPTURE]` 줄로 확인하고,
+종료 코드는 요청한 장수를 다 찍었을 때만 0이다.
+
+**정지 화면으로는 애니메이션을 못 본다** — 여러 시각을 찍어 픽셀 차분을 낸다.
+플레이어 idle 호흡을 이 방법으로 확인했다(2초 간격 3장, 차이가 플레이어 영역에만 몰림).
+
+### 한계 셋 (전부 실측)
+
+- **IMGUI는 안 잡힌다.** `OnGUI`는 카메라를 거치지 않는다 — 상점·대화창·배틀 UI·HUD는
+  이 도구로 검증할 수 없다. 필요하면 스탠드얼론 빌드에서 `ScreenCapture`를 써야 한다.
+- **`ScreenCapture.CaptureScreenshot`은 배치모드에서 조용히 실패한다**(게임뷰가 없다).
+  그래서 이 도구는 카메라 → `RenderTexture` → `ReadPixels` 경로를 쓴다.
+- **Unity 에디터를 열어두면 이 도구가 못 돈다.** 프로젝트가 `Temp/UnityLockfile`로 잠겨
+  두 번째 인스턴스가 뜨지 않는다. 배치모드 검증 중에는 에디터를 닫아 둔다.

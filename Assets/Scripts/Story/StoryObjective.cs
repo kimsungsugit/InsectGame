@@ -87,6 +87,36 @@ namespace InsectGame.Story
         }
 
         /// <summary>
+        /// 같은 자격을 가진 두 비트 중 어느 쪽이 먼저인가(음수면 <paramref name="a"/>가 앞).
+        /// 순위는 <b>(스파인 우선, 챕터, order, beatId)</b>다.
+        ///
+        /// <b>이 함수가 순서의 단일 출처다.</b> 목표 도출(<see cref="SelectObjectiveBeat"/>)과
+        /// 실제 발화(<c>StoryDirector.EvaluateTriggers</c>)가 <b>같은 답</b>을 내야 한다 —
+        /// 예전엔 발화 쪽이 <c>AllBeats()</c>(Dictionary.Values, 순서 비결정)를 훑어 <b>첫 일치</b>를
+        /// 집었다. 그래서 동시에 자격을 갖는 비트가 있으면 HUD가 가리키는 것과 실제로 뜨는 것이
+        /// 갈렸다: 마을 어르신에게 말을 걸었을 때 1막 개막(<c>ch1_intro</c>, 프롤로그 컷신)이 아니라
+        /// 앰비언트 잡담(<c>talk_elder</c>)이 먼저 뜰 수 있었고, 어느 쪽이 뜰지는 실행마다 달랐다.
+        /// </summary>
+        public static int CompareBeatPriority(StoryBeat a, StoryBeat b, HashSet<string> spineBeatIds)
+        {
+            if (a == null) return b == null ? 0 : 1;
+            if (b == null) return -1;
+
+            int spineA = spineBeatIds != null && spineBeatIds.Contains(a.beatId) ? 0 : 1;
+            int spineB = spineBeatIds != null && spineBeatIds.Contains(b.beatId) ? 0 : 1;
+            if (spineA != spineB) return spineA - spineB;
+
+            int chapterA = ChapterRank(a.chapterId);
+            int chapterB = ChapterRank(b.chapterId);
+            if (chapterA != chapterB) return chapterA - chapterB;
+
+            if (a.order != b.order) return a.order - b.order;
+
+            // 앞 셋이 모두 같을 때 남는 비결정성을 없앤다.
+            return string.CompareOrdinal(a.beatId, b.beatId);
+        }
+
+        /// <summary>
         /// trigger.type → 목표 종류. 알 수 없는 타입은 Freeform으로 떨어진다(안전한 쪽 —
         /// 위치를 모르면 화살표를 띄우지 않는다).
         ///
@@ -128,7 +158,6 @@ namespace InsectGame.Story
             if (beats == null || isSeen == null) return null;
 
             StoryBeat best = null;
-            int bestSpine = 0, bestChapter = 0, bestOrder = 0;
 
             foreach (StoryBeat beat in beats)
             {
@@ -142,21 +171,9 @@ namespace InsectGame.Story
                     && !isQuestDone(beat.requiredQuestId))
                     continue;
 
-                int spine = spineBeatIds != null && spineBeatIds.Contains(beat.beatId) ? 0 : 1; // 0이 우선
-                int chapter = ChapterRank(beat.chapterId);
-
-                if (best == null
-                    || spine < bestSpine
-                    || (spine == bestSpine && chapter < bestChapter)
-                    || (spine == bestSpine && chapter == bestChapter && beat.order < bestOrder)
-                    || (spine == bestSpine && chapter == bestChapter && beat.order == bestOrder
-                        && string.CompareOrdinal(beat.beatId, best.beatId) < 0))
-                {
+                // 순위 비교는 CompareBeatPriority 하나만 쓴다 — 발화 쪽과 답이 갈리지 않게.
+                if (best == null || CompareBeatPriority(beat, best, spineBeatIds) < 0)
                     best = beat;
-                    bestSpine = spine;
-                    bestChapter = chapter;
-                    bestOrder = beat.order;
-                }
             }
 
             return best;

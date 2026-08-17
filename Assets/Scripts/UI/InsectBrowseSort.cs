@@ -29,14 +29,21 @@ namespace InsectGame.UI
     /// </summary>
     public static class InsectBrowseSort
     {
+        /// <summary>
+        /// 칩에 쓸 이름. <b>모든 값을 명시한다</b> — 예전엔 <c>default</c>가 "등급"을 돌려줘서,
+        /// 새 모드를 추가하면 칩 두 개가 나란히 "등급"으로 뜨면서 정렬도 조용히 Rarity로 동작했다.
+        /// 지금은 빠뜨린 값이 enum 이름 그대로 나오므로 화면에서 바로 눈에 띄고,
+        /// <c>InsectBrowseSortTests</c>의 "라벨은 전부 한글이고 서로 달라야 한다"에 걸린다.
+        /// </summary>
         public static string Label(InsectSortMode mode)
         {
             switch (mode)
             {
+                case InsectSortMode.Rarity: return "등급";
                 case InsectSortMode.Level: return "레벨";
                 case InsectSortMode.Cp: return "전투력";
                 case InsectSortMode.Recent: return "최근";
-                default: return "등급";
+                default: return mode.ToString();
             }
         }
 

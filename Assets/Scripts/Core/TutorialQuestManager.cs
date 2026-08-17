@@ -149,27 +149,33 @@ namespace InsectGame.Core
 
         private void Initialize()
         {
+            // **배열 순서가 곧 첫 퀘스트다.** ActivateNextQuest가 배열을 위에서부터 훑어
+            // 첫 미완료·prereq충족 스토리 퀘스트를 고르는데, q_collection/q_dex는 prereq가
+            // 아예 없어서 순서만이 그 둘보다 먼저 오게 하는 유일한 장치다.
+            //
+            // q_move가 맨 앞인 이유: 예전엔 q_approach(첫 포획)가 첫 퀘스트라, 처음 켠 사람이
+            // **움직이는 법을 배우기 전에** 곤충을 잡으라는 지시를 받았다.
             allQuests = new TutorialQuest[]
             {
-                new TutorialQuest
-                {
-                    questId = "q_approach", title = "첫 곤충 포획!",
-                    description = "사라져가는 곤충을 만나 기록하세요 — 포획이 곧 그 생명을 붙드는 일입니다",
-                    hint = "풀밭에서 움직이는 곤충에게 다가가 포획 미니게임을 완료하세요",
-                    type = QuestType.Capture, targetCount = 1,
-                    rewardCandy = 5, rewardExp = 10,
-                    rewardInsectId = "rhinoceros_beetle",
-                    rewardInsectDisplayName = "레어 장수풍뎅이",
-                    rewardInsectLevel = 6
-                },
                 new TutorialQuest
                 {
                     questId = "q_move", title = "첫 걸음!",
                     description = "화면 왼쪽 조이스틱으로 움직여보세요",
                     hint = "화면 왼쪽 아래를 누른 채 원하는 방향으로 밀어보세요",
                     type = QuestType.Movement, targetCount = 1,
-                    prerequisiteQuestId = "q_approach",
                     rewardCandy = 3
+                },
+                new TutorialQuest
+                {
+                    questId = "q_approach", title = "첫 곤충 포획!",
+                    description = "사라져가는 곤충을 만나 기록하세요 — 포획이 곧 그 생명을 붙드는 일입니다",
+                    hint = "풀밭에서 움직이는 곤충에게 다가가 포획 미니게임을 완료하세요",
+                    type = QuestType.Capture, targetCount = 1,
+                    prerequisiteQuestId = "q_move",
+                    rewardCandy = 5, rewardExp = 10,
+                    rewardInsectId = "rhinoceros_beetle",
+                    rewardInsectDisplayName = "레어 장수풍뎅이",
+                    rewardInsectLevel = 6
                 },
                 new TutorialQuest
                 {
@@ -766,6 +772,17 @@ namespace InsectGame.Core
                     PlayerInsectData starter = insectCollection.AddCapturedInsect(
                         quest.rewardInsectId,
                         Mathf.Max(1, quest.rewardInsectLevel));
+
+                    // **도감 등록을 빠뜨리면 안 된다.** 보상 곤충은 소유·출전까지 하는데 도감에는
+                    // 영원히 미발견으로 남아 100% 완주가 불가능해진다. 게다가 `CapturedSpeciesCount`가
+                    // 스토리 DexProgress 트리거의 판정값이라(`StoryDirector`) 전 플레이어의 진행이
+                    // 한 종만큼 늦게 열린다. `dexController`는 오래 배선만 돼 있고 한 번도 읽히지
+                    // 않는 죽은 필드였다 — 포획(`CaptureController`)·가챠(`GachaBoxManager`)와 같은 형태로 맞춘다.
+                    if (dexController != null)
+                    {
+                        dexController.RegisterEncounter(quest.rewardInsectId);
+                        dexController.RegisterCapture(quest.rewardInsectId);
+                    }
 
                     // 첫 포획 직후 바로 배틀할 수 있도록, 팀이 비어 있을 때만 1번 슬롯에 배치한다.
                     if (starter != null
