@@ -189,8 +189,10 @@ namespace InsectGame.UI
             GUIStyle nameStyle = new GUIStyle(GUI.skin.label)
             { fontSize = 38, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             nameStyle.normal.textColor = rarityCol;
+            // 「지워진 개체」면 본명 대신 "???" — 월드에서 실루엣·"???"로 감춰 놓고 이 창이
+            // 바로 알려주면 연출이 무의미해진다(`InsectEntity.DisplayNameForPlayer`가 단일 출처).
             UIHelper.LabelFit(new Rect(px, py + 160, panelW, 48),
-                $"{targetInsect.Data.displayName} Lv.{targetInsect.Level}", nameStyle);
+                $"{targetInsect.DisplayNameForPlayer} Lv.{targetInsect.Level}", nameStyle);
 
             if (isRaid)
             {

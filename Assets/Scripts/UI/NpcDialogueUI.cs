@@ -80,7 +80,20 @@ namespace InsectGame.UI
             // 연출이 있으면 그것이 끝나며 ShowStory를 부른다. 연출 쪽은 어떤 경로로 끝나든
             // (도착·건너뛰기·타임아웃) 콜백을 반드시 부르기로 계약돼 있다 — 안 그러면 이 비트가
             // pendingBeatId에 갇혀 캠페인이 멈춘다.
-            if (stagePrelude != null && stagePrelude.TryPlayPrelude(beat, () => ShowStory(beat))) return;
+            //
+            // **예외까지 여기서 막는다.** `StoryDirector.FireBeat`는 이벤트를 쏘기 **전에**
+            // `pendingBeatId`를 커밋하고 `EvaluateTriggers`는 그 비트를 영구 스킵하므로,
+            // 연출 쪽에서 예외가 튀어 `ShowStory`에 도달하지 못하면 그 세션에서 재발화 경로가 없다.
+            // 연출의 자체 타임아웃도 구제하지 못한다 — 재생 상태를 세우기 **전에** 던지면
+            // 타임아웃 자체가 무장되지 않는다. 연출을 잃는 건 감수해도 진행은 잃지 않는다.
+            try
+            {
+                if (stagePrelude != null && stagePrelude.TryPlayPrelude(beat, () => ShowStory(beat))) return;
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogError($"[Dialogue] 스토리 연출 실패 — 대사로 넘어간다: {e}");
+            }
             ShowStory(beat);
         }
 

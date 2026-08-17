@@ -371,6 +371,27 @@ namespace InsectGame.UI
 
         // 세이프 에어리어를 반영한 가용폭 클램프 + 중앙 정렬 X (가로 비대칭 노치 보정).
         // DrawFieldStatus가 이미 쓰던 방식을 중앙 정렬 패널 전반에 통일한다.
+        /// <summary>
+        /// 이 패널 위의 탭이 월드 클릭-이동으로 새지 않게 등록한다.
+        ///
+        /// <b>왜 필요한가.</b> <c>PlayerMovement</c>는 <c>Input.GetMouseButtonDown(0)</c>을 Update에서
+        /// 따로 폴링한다. 탭한 프레임엔 아직 모달이 안 열려 <c>IsAnyOpen()</c>이 false이고, IMGUI라
+        /// <c>pointerOverUI</c>도 false다. 등록이 없으면 버튼 아래 월드 지점이 클릭 목표로 잡혀
+        /// "3:3 대전"을 누른 순간 캐릭터가 상대 뒤로 걸어간다. 같은 결함을 `QuickAccessBarUI`가
+        /// P0으로 겪었고 `CaptureInputController`는 처음부터 등록하고 있었다.
+        ///
+        /// <b>좌표 변환에 주의.</b> 이 화면은 <c>UIScale.Begin()</c>을 쓰지 않는 **픽셀 좌표계**
+        /// (<c>UISafeLayout.Px</c>)인데 <c>RegisterBlockingRect</c>는 **가상 좌표**를 받는다
+        /// (<c>IsScreenPointOverHud</c>가 화면좌표를 <c>UIScale.Scale</c>로 나눠 비교한다).
+        /// 그대로 넘기면 스케일이 1이 아닌 기기에서 엉뚱한 영역이 막힌다.
+        /// </summary>
+        private static void BlockFieldClicks(float x, float y, float w, float h)
+        {
+            float s = UIScale.Scale;
+            if (s <= 0f) return;
+            FieldHudInput.RegisterBlockingRect(new Rect(x / s, y / s, w / s, h / s));
+        }
+
         private static float SafeClampW(float desired) =>
             Mathf.Min(desired, Screen.width - SafeArea.Left - SafeArea.Right - 32f);
 
@@ -383,6 +404,7 @@ namespace InsectGame.UI
             float w = Mathf.Min(360f, Screen.width - SafeArea.Left - SafeArea.Right - 32f);
             float x = Screen.width - SafeArea.Right - w - 18f;
             float y = UISafeLayout.Px.ContentTop;
+            BlockFieldClicks(x, y, w, 122f);   // 탭이 월드 클릭-이동으로 새지 않게
             GUI.Box(new Rect(x, y, w, 122f), "", panelStyle);
             GUI.Label(new Rect(x + 12f, y + 8f, w - 24f, 36f), cachedWorldTitle, titleStyle);
             if (GUI.Button(new Rect(x + 14f, y + 54f, w - 28f, 56f), "친구를 이 필드로 초대", buttonStyle))
@@ -400,6 +422,7 @@ namespace InsectGame.UI
             float h = 132f;
             float x = SafeCenterX(w);
             float y = UISafeLayout.Px.BottomY(h);
+            BlockFieldClicks(x, y, w, h);   // 탭이 월드 클릭-이동으로 새지 않게
             GUI.Box(new Rect(x, y, w, h), "", panelStyle);
             GUI.Label(new Rect(x + 18f, y + 10f, w - 36f, 30f), cachedNearbyLabel, titleStyle);
 
@@ -451,6 +474,7 @@ namespace InsectGame.UI
             float h = 120f;
             float x = SafeCenterX(w);
             float y = UISafeLayout.Px.CenteredY(h);
+            BlockFieldClicks(x, y, w, h);   // 탭이 월드 클릭-이동으로 새지 않게
             GUI.Box(new Rect(x, y, w, h), "", panelStyle);
             UIHelper.LabelFit(new Rect(x + 14f, y + 8f, w - 28f, 27f), player.displayName + "에게 말하기", titleStyle);
             chatInput = GUI.TextField(new Rect(x + 14f, y + 42f, w - 150f, 55f), chatInput, 80, fieldStyle);
@@ -484,6 +508,7 @@ namespace InsectGame.UI
             float h = UISafeLayout.Px.ClampHeight(520f);
             float x = SafeCenterX(w);
             float y = UISafeLayout.Px.ContentTop;
+            BlockFieldClicks(x, y, w, h);   // 탭이 월드 클릭-이동으로 새지 않게
             GUI.Box(new Rect(x, y, w, h), "", panelStyle);
             GUI.Label(new Rect(x + 16f, y + 12f, w - 100f, 36f), "친구 필드 초대", titleStyle);
             if (GUI.Button(new Rect(x + w - 72f, y + 8f, 58f, 56f), "X", dangerStyle)) CloseModal();
@@ -548,6 +573,7 @@ namespace InsectGame.UI
             float h = 190f;
             float x = SafeCenterX(w);
             float y = UISafeLayout.Px.ContentTop + 100f;   // 상단 초대/친구 패널 아래
+            BlockFieldClicks(x, y, w, h);   // 탭이 월드 클릭-이동으로 새지 않게
             GUI.Box(new Rect(x, y, w, h), "", panelStyle);
             GUI.Label(new Rect(x + 16f, y + 12f, w - 32f, 32f), "필드 초대", titleStyle);
             GUI.Label(new Rect(x + 16f, y + 50f, w - 32f, 40f),

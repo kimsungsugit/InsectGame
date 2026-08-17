@@ -46,6 +46,14 @@ namespace InsectGame.Core
 
             data.gems -= amount;
             Save();
+
+            // **젬 차감은 즉시 클라우드에 확정한다.** 로컬 파일만 쓰고 120초 자동저장을 기다리면,
+            // 그 사이에 젬 패키지를 결제할 때 서버가 **차감 전 잔액**에 보너스를 더해 확정한다 —
+            // 쓴 젬이 되돌아오고 아이템·의상·치료는 남는 복제가 된다.
+            // `CashShopManager.PurchaseWithGems`가 이 시나리오를 주석으로 적고 자기 경로에만
+            // 넣어 뒀는데, 병원·상점·의상 세 싱크가 그 수정에서 빠져 있었다. 차감 초크포인트인
+            // 여기 한 곳에 두면 네 경로가 전부 덮인다(연속 호출은 `pendingSave`가 합친다).
+            CloudSaveManager.Instance?.SaveToCloud();
             return true;
         }
 

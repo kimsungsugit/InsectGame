@@ -104,6 +104,15 @@ namespace InsectGame.Story
         public bool TryPlayPrelude(StoryBeat beat, System.Action onDone)
         {
             if (beat == null || onDone == null) return false;
+
+            // **죽었거나 꺼져 있으면 게이트를 걸지 않는다.** 호출부의 `stagePrelude != null`은
+            // 필드가 인터페이스 타입이라 **C# 참조 비교로 컴파일된다** — `UnityEngine.Object`의
+            // 오버로드된 `==`(파괴 검사)가 적용되지 않는다. 게다가 이 컴포넌트는 `World/` 아래고
+            // 대화창은 `UI/` 아래라 서로 다른 루트다. 파괴·비활성 상태에서 true를 돌려주면
+            // 모달 등록과 `SetFrozen(true)`만 남고 `Update`가 안 돌아 하드 타임아웃이 영영
+            // 발화하지 않는다 → `onDone` 미호출 → 그 비트가 영구 정지한다.
+            if (!isActiveAndEnabled) return false;
+
             if (string.IsNullOrEmpty(beat.stageEnterId)) return false;
             // 대사가 없는 비트는 모달 자체가 안 뜨므로(ShowStory가 즉시 완료) 게이트를 걸 이유가 없다.
             if (beat.lines == null || beat.lines.Count == 0) return false;

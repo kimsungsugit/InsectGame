@@ -219,6 +219,35 @@ python -X utf8 .claude/scripts/text_fit_lint.py
 한 줄 라벨은 원래 높이가 fontSize의 1.2배쯤이라 정상 라벨을 전부 잡는다. 텍스트 출처를
 좁히고 나서야 31건이 됐고, 그 31곳이 전부 진짜였다. `ci_check.py`의 `REPO_CHECKS`에 있다.
 
+## 필드 위에 그리는 버튼은 `FieldHudInput.RegisterBlockingRect`에 등록한다
+
+모달이 아닌 상태에서 월드 위에 겹쳐 그리는 버튼(퀵액세스 바, 잡기 버튼, 멀티플레이 패널 등)은
+**매 `OnGUI`마다 자기 Rect를 등록해야 한다.** 안 하면 그 버튼을 누른 탭이 **월드 클릭-이동으로
+새어** 캐릭터가 버튼 아래 지점으로 걸어간다.
+
+왜 IMGUI만 이 문제를 겪나: `PlayerMovement`는 `Input.GetMouseButtonDown(0)`을 `Update`에서
+**따로 폴링**한다. 그 시점에 ①탭한 프레임엔 아직 모달이 안 열려 `ModalUIRegistry.IsAnyOpen()`이
+false고 ②IMGUI는 EventSystem을 안 거쳐 `pointerOverUI`도 false다. 남은 방어선이 이 등록 하나뿐이다.
+
+```csharp
+Rect barRect = new Rect(startX - 14, y - 8, totalW + 28, btnH + 16);
+FieldHudInput.RegisterBlockingRect(barRect);   // 그리기 직전
+GUI.DrawTexture(barRect, Texture2D.whiteTexture);
+```
+
+**픽셀 좌표계라면 `UIScale.Scale`로 나눠서 넘긴다.** `RegisterBlockingRect`는 가상 좌표를 받고
+`IsScreenPointOverHud`가 화면 좌표를 `Scale`로 나눠 비교한다. `UIScale.Begin()`을 쓰지 않는
+화면(`UISafeLayout.Px` 사용)이 그대로 넘기면 스케일이 1이 아닌 기기에서 엉뚱한 영역이 막힌다
+(`WorldFieldMultiplayerUI.BlockFieldClicks`가 그 변환의 본보기다).
+
+2026-08-17 audit에서 **세 파일 중 둘이 빠져 있었다** — `CaptureInputController`만 등록하고
+`QuickAccessBarUI`(메뉴를 열 때마다 매번)와 `WorldFieldMultiplayerUI`("3:3 대전"을 누르면
+도전과 동시에 캐릭터가 상대 뒤로 걸어감)는 호출이 0건이었다. 둘 다 P0으로 처리했다.
+
+검사기를 두지 않은 이유: "필드 위 비모달 버튼"을 정적으로 판정하려면 모달 여부·그리기 조건을
+따라가야 해서 오탐이 크다. 전체 화면 모달은 등록하면 **안 되고**(모달 중에는 애초에 클릭-이동이
+막힌다), 그 구분이 소스 패턴으로는 안 드러난다.
+
 ## 구독은 `OnEnable`에서 되살린다 — `subscription_lint.py`가 잡는다
 
 UI 컴포넌트가 `OnDisable`에서 `-=`로 해지한 이벤트는 **반드시 `OnEnable`에서 다시 `+=`** 한다.

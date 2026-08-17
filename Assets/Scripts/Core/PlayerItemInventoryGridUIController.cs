@@ -145,9 +145,16 @@ namespace InsectGame.Core
                 return;
             }
 
+            // **템플릿은 건너뛴다.** `PlaySceneBootstrap`이 `itemPrefab`을 바로 이 `contentRoot`의
+            // 자식으로 만들기 때문에, 그냥 전부 지우면 첫 갱신에서 템플릿까지 파괴 예약되고
+            // 두 번째 갱신부터는 위 `itemPrefab == null` 가드에 걸려 조기 반환한다 —
+            // 그리드가 **옛 수량으로 영구히 얼어붙는다**(아이템을 써도 개수가 그대로다).
+            Transform template = itemPrefab.transform;
             for (int i = contentRoot.childCount - 1; i >= 0; i--)
             {
-                Destroy(contentRoot.GetChild(i).gameObject);
+                Transform child = contentRoot.GetChild(i);
+                if (child == template) continue;
+                Destroy(child.gameObject);
             }
 
             PlayerItemSave save = inventory.GetSnapshot();
@@ -165,6 +172,9 @@ namespace InsectGame.Core
 
                 ItemData data = itemDatabase.FindById(record.itemId);
                 ItemInventoryGridItem item = Instantiate(itemPrefab, contentRoot);
+                // 템플릿은 숨겨져 있고(`SetActive(false)`) `Instantiate`가 그 상태를 복사하므로,
+                // 켜 주지 않으면 셀이 보이지 않고 `GridLayoutGroup` 배치에서도 빠진다.
+                item.gameObject.SetActive(true);
                 item.Bind(data, record.count, TryUseItem);
             }
         }

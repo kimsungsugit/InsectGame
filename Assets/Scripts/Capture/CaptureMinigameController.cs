@@ -296,8 +296,9 @@ namespace InsectGame.Capture
             GUI.color = new Color(0, 0, 0, 0.88f);
             GUI.DrawTexture(new Rect(x, y, panelW, panelH), Texture2D.whiteTexture);
 
-            string targetName = currentTarget != null && currentTarget.Data != null
-                ? currentTarget.Data.displayName : "???";
+            // 지워진 개체는 포획 전까지 본명을 감춘다(`CaptureChoiceUI`와 같은 이유·같은 출처).
+            string targetName = currentTarget != null
+                ? currentTarget.DisplayNameForPlayer : "???";
             string rarityName = currentTarget != null && currentTarget.Data != null
                 ? currentTarget.Data.rarity.ToString() : "";
 

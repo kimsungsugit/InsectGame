@@ -68,6 +68,17 @@ namespace InsectGame.Spawning
         /// 것이라는 게 2막 서사의 골자다. 그래서 세이브에 필드를 늘릴 필요도 없다.
         /// </summary>
         public bool IsErased => erased;
+
+        /// <summary>
+        /// 플레이어에게 보여줄 종명. <b>「지워진 개체」는 이름을 빼앗긴 상태</b>라 포획 전엔 밝히지 않는다.
+        ///
+        /// 월드 모델은 검은 실루엣 + <c>"??? Lv.N"</c> 이름표로 그리면서 정작 포획 선택창과 미니게임
+        /// HUD가 본명을 그대로 띄우고 있었다 — 연출이 감춘 것을 UI가 바로 다음 화면에서 알려주는 셈이라
+        /// <c>CaptureFeedbackController</c>의 "이름을 되찾아주었다" 회수 문구가 이미 아는 이름을
+        /// 반복하는 말이 됐다. 표시명을 여기 한 곳으로 모아 그 루프를 닫는다.
+        /// </summary>
+        public string DisplayNameForPlayer =>
+            (erased || Data == null) ? "???" : Data.displayName;
         public bool CanBeEngaged => !forBattle && !engaged && alertState != 2 && !despawnedThisCycle;
         public SpawnPoint OwnerPoint => ownerPoint;
         public string RegionId => ownerPoint != null ? ownerPoint.regionId : string.Empty;

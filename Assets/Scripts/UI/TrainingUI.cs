@@ -652,6 +652,11 @@ namespace InsectGame.UI
                     if (GUI.Button(new Rect(px + pw - 170, sy + (slotH - removeButtonH) * 0.5f, 130, removeButtonH), "해제", equipRemBtnStyle))
                     {
                         pid.EquipSkill(null, i);
+                        // **`ForceSave`만으로는 부족하다** — 그건 디스크에만 쓰고 `InsectUpdated`를
+                        // 쏘지 않는다. 보유 목록의 "장착: c/d" 문자열 캐시(`ownedInfoCache`)는 그
+                        // 이벤트로만 비워지므로, 여기서 알리지 않으면 **이 화면 자신의 장착·해제만**
+                        // 목록에 반영되지 않고 옛 값으로 얼어붙는다(닫았다 열어도 유지된다).
+                        collection.NotifyInsectChanged(pid);
                         collection.ForceSave();
                     }
                     GUI.backgroundColor = Color.white;
@@ -716,6 +721,7 @@ namespace InsectGame.UI
                             if (pid.GetEquippedSkill(s) == null)
                             {
                                 pid.EquipSkill(sk.skillId, s);
+                                collection.NotifyInsectChanged(pid);   // 위 '해제'와 같은 이유 — 목록 캐시 무효화
                                 collection.ForceSave();
                                 // q_equip 진행도 — 사용자 직접 장착만 카운트
                                 // (TrainingManager 자동 장착/PlayerInsectCollection 마이그레이션은 제외)
