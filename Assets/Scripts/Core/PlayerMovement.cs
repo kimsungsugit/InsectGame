@@ -186,6 +186,11 @@ namespace InsectGame.Core
                 // 잡기 스윙 타이머도 여기서 줄인다 — 안 줄이면 스윙 도중 모달이 열렸을 때 팔이 든 채 남는다.
                 // timeScale에 끌려다니면 안 되므로(컷신이 늦출 수 있다) unscaled를 쓴다.
                 if (catchSwingTimer > 0f) catchSwingTimer -= Time.unscaledDeltaTime;
+                // 차단 문구 타이머도 같은 이유로 여기서 줄인다. 아래 return 때문에 이걸 빠뜨리면
+                // **문구가 영영 안 사라진다** — 리전 입구에서 튕긴 직후 2초 안에 대화·컷신이 열리면
+                // 붉은 굵은 글씨가 모달이 닫힐 때까지 화면에 박힌다. 스토리 NPC가 스스로 걸어와
+                // 말을 거는 지금 구조에서는 그 창이 실제로 자주 열린다.
+                if (blockedMsgTimer > 0f) blockedMsgTimer -= Time.unscaledDeltaTime;
                 walkAnimTimer = 0f;
                 isWalking = false;
                 footstepTimer = 0f;

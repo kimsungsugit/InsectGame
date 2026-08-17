@@ -23,6 +23,15 @@ namespace InsectGame.Core
             GameConstants.PrefsKeys.QuestProgress,
             GameConstants.PrefsKeys.QuestCompleted,
             GameConstants.PrefsKeys.ActiveQuest,
+            // 아래 5개는 `AuthManager.ScopedKey`를 실제로 거치면서도 이 목록에 없었다 —
+            // `ClearCurrentAccountLocal()`이 지우지 못해 **계정을 삭제하고 같은 provider로 다시
+            // 로그인하면**(uid가 같다) 서브 퀘스트 진행·반복 티어가 부활하고, 낡은 "이미 수령"이
+            // 남아 정당한 주간 보상이 조용히 막혔다.
+            GameConstants.PrefsKeys.QuestSideProgress,
+            GameConstants.PrefsKeys.QuestSideRepeat,
+            GameConstants.PrefsKeys.QuestUnseen,
+            GameConstants.PrefsKeys.TutorialHidden,
+            GameConstants.PrefsKeys.WeeklyContestClaimed,
             "InsectGame.UnlockedRegions",
             "InsectGame.DefeatedGuardians",
             "InsectGame.Equipped",
@@ -47,7 +56,9 @@ namespace InsectGame.Core
         // 마이그레이션 버전 — 스코핑 대상 키를 늘리거나 복사 로직을 고칠 때마다 +1. 기존 소유자도 1회 재이전.
         // v3: int형 캐릭터 외형 키를 GetString→GetInt 복사로 수정 (외형 초기화 버그).
         // v4: story_progress.json을 계정 마이그레이션/삭제 대상에 포함.
-        private const int MigrationVersion = 4;
+        // 5: 스코핑 키 5개 추가(QuestSideProgress/QuestSideRepeat/QuestUnseen/TutorialHidden/
+        //    WeeklyContestClaimed). 올려야 기존 기기의 전역 키가 계정 스코프로 이전된다.
+        private const int MigrationVersion = 5;
 
         private static readonly string[] ScopedFiles =
         {

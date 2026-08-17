@@ -212,10 +212,23 @@ namespace InsectGame.Story
                 if (sequenceActors[i] != null) sequenceActors[i].StopScripted();
 
             if (steps == null) return;
-            for (int i = Mathf.Max(0, stepIndex); i < steps.Length; i++)
+            for (int i = 0; i < steps.Length; i++)
             {
                 StoryStageStep step = steps[i];
-                if (step.action != StageAction.MoveToOffset
+                bool pending = i >= Mathf.Max(0, stepIndex);
+
+                // **이미 지나간 스텝도 귀가만은 확인한다.** 이동 스텝은 NPC의 8초 타임아웃으로도
+                // "완료"로 쳐서 시퀀스가 정상 종료되므로, 걷다 만 `ReturnToAnchor`는 예전엔
+                // 아무도 보정하지 않았다(루프가 `stepIndex`부터라 정상 완주 시 한 번도 안 돌았다).
+                // 그래서 라온이 초원 앵커까지 25m를 못 걷고 들판 한복판에 영구 정착했고, 그 개체가
+                // `StoryObjectiveTracker`의 후보로 남아 HUD 쐐기와 자동 주행이 엉뚱한 곳을 가리켰다.
+                // 역설적으로 ESC로 건너뛰면(이 루프가 도는 경로) 결과가 더 나았다.
+                //
+                // 지나간 스텝 중 **`ReturnToAnchor`만** 소급한다 — 앵커는 절대 좌표라 낡지 않지만
+                // 플레이어 기준 오프셋은 그 사이 플레이어가 움직여 무의미해진다.
+                if (!pending && step.action != StageAction.ReturnToAnchor) continue;
+                if (pending
+                    && step.action != StageAction.MoveToOffset
                     && step.action != StageAction.WarpToOffset
                     && step.action != StageAction.ReturnToAnchor) continue;
 
@@ -224,6 +237,11 @@ namespace InsectGame.Story
                 Vector3 destination = step.action == StageAction.ReturnToAnchor
                     ? npc.AnchorPosition
                     : PlayerRelative(step.offset);
+
+                // 소급 보정은 실제로 못 돌아간 배우에게만 — 이미 집에 있는데 워프시키면 낭비다.
+                if (!pending
+                    && HorizontalDistance(npc.transform.position, destination) <= HomeDistance) continue;
+
                 npc.WarpTo(destination, playerTransform);
             }
         }
@@ -260,6 +278,15 @@ namespace InsectGame.Story
 
                 case StageAction.ReturnToAnchor:
                     if (npc == null) break;
+                    // 도착까지 기다린다 — 저작된 퇴장 연출이 실제로 보이도록.
+                    //
+                    // **알려진 UX 부채**: 마지막 스텝이 이것이면 대사를 닫은 뒤 배우가 앵커에 닿을
+                    // 때까지(최악 8초, 시퀀스 상한 ~9초) 조작이 잠기는데 화면엔 안내가 없고 이
+                    // 컴포넌트는 건너뛰기 버튼도 그리지 않는다(`CutsceneDirector`엔 있다).
+                    // 여기서 기다리지 않게 바꾸면 `Stop()`의 `SnapToFinalPose`가 즉시 앵커로
+                    // 워프시켜 **걷는 연출 자체가 사라진다** — 눈앞의 NPC가 순간이동하는 셈이라
+                    // 더 나쁘다. 제대로 풀려면 "시퀀스 진행"과 "조작 잠금"을 분리하거나
+                    // 건너뛰기 버튼을 붙여야 하고, 그건 연출 설계 판단이라 여기서 단독으로 하지 않는다.
                     waitingForMove = true;
                     npc.BeginScriptedReturn(MakeArriveCallback());
                     break;
@@ -387,9 +414,17 @@ namespace InsectGame.Story
                     {
                         approachReturning = false;
                     }
-                    else if (!approachReturning)
+                    else if (!approachReturning || !approachNpc.IsScripted)
                     {
-                        // 한 번만 명령한다 — 매 틱 다시 걸면 이동 타임아웃이 계속 미뤄진다.
+                        // 걷고 있는 동안에는 다시 걸지 않는다 — 매 틱 재발행하면 이동 타임아웃이
+                        // 계속 미뤄져 영영 만료되지 않는다. 그래서 조건은 `IsScripted`다.
+                        //
+                        // **래치 하나로는 부족하다.** 예전엔 `!approachReturning` 뿐이라,
+                        // 복귀 이동이 8초 타임아웃으로 중도 종료되면(예산 3.2m/s × 8s = 25.6m —
+                        // 플레이어가 주행하며 NPC를 그보다 멀리 끌고 나가는 건 쉽다) 래치가 true로
+                        // 남아 **다시는 명령이 안 나갔다**. 스토리 NPC는 `wanderRadius = 0`이라
+                        // 배회 복귀도 없어서, 주석이 막겠다던 "어르신이 들판을 헤맨다"가 영구화됐다.
+                        // 진입 데드존(12~16m)을 `engaged`로 고쳤던 것의 거울상이다.
                         approachReturning = true;
                         if (approachNpc.IsScripted) approachNpc.StopScripted();
                         approachNpc.BeginScriptedReturn();

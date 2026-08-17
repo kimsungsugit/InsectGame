@@ -156,9 +156,16 @@ namespace InsectGame.NPC
         {
             StopScripted();
 
+            // **지붕 가드는 여기서도 필요하다.** 위 주석대로 이전 groundY 기준 클램프는 쓸 수 없지만,
+            // 그렇다고 첫 히트를 무조건 받으면 안 된다 — 집·상점·병원·회관 몸통은 콜라이더를 남기므로
+            // (`VillageBuilder`, 지붕만 제거) 목적지가 건물 발자국 안이면 상판 y=2.8~3.8m가 잡힌다.
+            // 그 뒤로는 `SampleGround`의 ±0.75m 클램프가 **지상 복귀를 영구히 거부**해서 자가 회복이
+            // 불가능하다(라온의 등장 워프 좌표가 실제로 그 입력을 만든다).
+            // 기준은 요청 좌표의 y다 — 호출부가 주는 오프셋은 지면 높이를 뜻한다.
             if (Physics.Raycast(worldPosition + Vector3.up * 5f, Vector3.down,
                     out RaycastHit hit, 20f, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore)
-                && !hit.transform.IsChildOf(transform))
+                && !hit.transform.IsChildOf(transform)
+                && hit.point.y <= worldPosition.y + MaxGroundStep)
             {
                 groundY = hit.point.y;
             }

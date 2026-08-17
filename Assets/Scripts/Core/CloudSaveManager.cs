@@ -389,6 +389,12 @@ namespace InsectGame.Core
                 // 다시 싸울 수 있고 승리 보상도 다시 받는다 — defeatedGuardians와 완전히 동형이다.
                 defeatedBosses = PlayerPrefs.GetString(
                     SaveScope.PrefsKey("InsectGame.DefeatedLedgerBosses"), ""),
+                // 주간 크기 대결 보상 수령 상태("주차:등급"). 대결 **기록** 자체는 곤충 블롭에서
+                // 파생돼 이미 따라오는데 이 수령 상태만 안 따라와서, 기기를 바꾸면 큰 개체는 돌아오고
+                // ClaimedTier는 None이 된다 → 그 주에 대상 종을 한 번 더 잡으면 보상을 재수령한다.
+                // 바로 위 defeatedBosses가 같은 형태의 결함을 고친 선례다.
+                weeklyContestClaimed = PlayerPrefs.GetString(
+                    AuthManager.ScopedKey(GameConstants.PrefsKeys.WeeklyContestClaimed), ""),
                 // 퀘스트는 계정별 키에서 읽어 현재 계정의 진행만 클라우드에 올린다(교차 오염 방지).
                 questProgress = PlayerPrefs.GetString(
                     AuthManager.ScopedKey(GameConstants.PrefsKeys.QuestProgress), ""),
@@ -487,6 +493,8 @@ namespace InsectGame.Core
                 data.defeatedGuardians ?? "");
             PlayerPrefs.SetString(SaveScope.PrefsKey("InsectGame.DefeatedLedgerBosses"),
                 data.defeatedBosses ?? "");
+            PlayerPrefs.SetString(AuthManager.ScopedKey(GameConstants.PrefsKeys.WeeklyContestClaimed),
+                data.weeklyContestClaimed ?? "");
             // 클라우드 퀘스트 데이터를 현재 계정의 계정별 키에 적용(이후 ReloadFromDisk가 인메모리 갱신).
             PlayerPrefs.SetString(AuthManager.ScopedKey(GameConstants.PrefsKeys.QuestProgress),
                 data.questProgress ?? "");
@@ -635,6 +643,7 @@ namespace InsectGame.Core
             sb.Append(","); AppendStringField(sb, "unlockedRegions", data.unlockedRegions);
             sb.Append(","); AppendStringField(sb, "defeatedGuardians", data.defeatedGuardians);
             sb.Append(","); AppendStringField(sb, "defeatedBosses", data.defeatedBosses);
+            sb.Append(","); AppendStringField(sb, "weeklyContestClaimed", data.weeklyContestClaimed);
             sb.Append(","); AppendStringField(sb, "questProgress", data.questProgress);
             sb.Append(","); AppendStringField(sb, "questCompleted", data.questCompleted);
             sb.Append(","); AppendStringField(sb, "activeQuest", data.activeQuest);
@@ -679,6 +688,7 @@ namespace InsectGame.Core
             data.unlockedRegions = ExtractStringValue(json, "unlockedRegions");
             data.defeatedGuardians = ExtractStringValue(json, "defeatedGuardians");
             data.defeatedBosses = ExtractStringValue(json, "defeatedBosses");
+            data.weeklyContestClaimed = ExtractStringValue(json, "weeklyContestClaimed");
             data.questProgress = ExtractStringValue(json, "questProgress");
             data.questCompleted = ExtractStringValue(json, "questCompleted");
             data.activeQuest = ExtractStringValue(json, "activeQuest");
@@ -842,6 +852,11 @@ namespace InsectGame.Core
         // 명부회 간부 격파 기록(CSV). 기본값 ""이라 옛 클라우드 문서에 없어도 무해하다
         // — 아무도 안 이긴 상태로 시작하고, 로컬에 기록이 있으면 다음 업로드에 실린다.
         public string defeatedBosses;
+
+        /// <summary>주간 크기 대결 보상 수령 상태("주차:등급"). 기본 ""이라 옛 문서에 없어도 무해하다
+        /// — 미수령으로 시작하고, 로컬에 기록이 있으면 다음 업로드에 실린다.</summary>
+        public string weeklyContestClaimed;
+
         public string questProgress;
         public string questCompleted;
         public string activeQuest;

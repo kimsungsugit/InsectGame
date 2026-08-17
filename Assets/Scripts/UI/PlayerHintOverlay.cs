@@ -42,9 +42,14 @@ namespace InsectGame.UI
             // 그때 ESC는 모달을 닫거나 컷신을 건너뛰는 키다 — "이동 잠금을 해제합니다"는 틀린 안내이고,
             // 스토리를 읽는 내내 화면 아래에 남아 방해가 된다. 이 문구가 필요한 건 모달 없이
             // frozen만 남은 상태(진짜로 갇힌 경우)뿐이다.
-            bool showFrozen = playerMovement.IsFrozen && !ModalUIRegistry.IsAnyOpen();
+            // 두 문구 모두 모달 뒤에 숨는다. 잠금 안내는 위 이유로, 차단 문구는 **대화창·컷신 위에
+            // 겹쳐 뜨기 때문**이다(스토리 NPC가 걸어와 말을 거는 지금 구조에선 리전에서 튕긴 직후
+            // 2초 창이 자주 열린다). 타이머 자체는 `PlayerMovement`의 frozen 분기가 줄인다.
+            bool modalOpen = ModalUIRegistry.IsAnyOpen();
+            bool showFrozen = playerMovement.IsFrozen && !modalOpen;
             float blockedAlpha = playerMovement.BlockedMessageAlpha;
-            bool showBlocked = blockedAlpha > 0f && !string.IsNullOrEmpty(playerMovement.BlockedMessage);
+            bool showBlocked = blockedAlpha > 0f && !modalOpen
+                               && !string.IsNullOrEmpty(playerMovement.BlockedMessage);
             if (!showFrozen && !showBlocked) return;
 
             EnsureStyles();
@@ -53,9 +58,14 @@ namespace InsectGame.UI
             if (showFrozen)
             {
                 const float h = 40f;
-                GUI.Label(
-                    new Rect(UIScale.VirtualSafeLeft, UISafeLayout.BottomY(h),
-                        UISafeLayout.ContentWidth, h),
+                // **퀵액세스 바 위로 올린다.** `BottomY(h)` 그대로 두면 바(`BottomY(64)` + 배경
+                // 여백 8)의 **안쪽에 통째로** 들어가 가운데 버튼 위에 글자가 찍혔다 — 이 문구가
+                // 뜨는 조건(모달 없음)이 곧 바가 보이는 조건이라 겹침이 100%였다.
+                // x도 `ContentLeft`로 맞춘다. 예전엔 x만 `VirtualSafeLeft`(마진 미포함)이고 폭은
+                // `ContentWidth`(마진 24 제외분)라, 가운데 정렬이 다른 UI 대비 24px 왼쪽으로 쏠렸다.
+                float y = UISafeLayout.BottomY(h) - QuickAccessBarUI.BarReservedHeight;
+                UIHelper.LabelFit(
+                    new Rect(UISafeLayout.ContentLeft, y, UISafeLayout.ContentWidth, h),
                     "ESC를 누르면 이동 잠금을 해제합니다", frozenStyle);
             }
 

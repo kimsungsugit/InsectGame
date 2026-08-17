@@ -37,6 +37,17 @@ namespace InsectGame.UI
         // buttons[] 중 '퀘스트' 항목 인덱스 — 미확인 완료 배지를 이 버튼에만 그린다.
         private const int QuestButtonIndex = 4;
 
+        /// <summary>데스크톱 하단 바의 버튼 높이. 배치의 단일 출처다.</summary>
+        public const float BarButtonHeight = 64f;
+
+        /// <summary>
+        /// 이 바가 화면 하단에서 실제로 먹는 높이(버튼 + 배경 여백 8 + 시각적 간격 4).
+        /// <b>다른 하단 UI는 이 값만큼 띄워야 한다</b> — `PlayerHintOverlay`가 그냥
+        /// <c>BottomY(40)</c>을 쓰다가 바 안쪽에 통째로 들어가 버튼 위에 글자가 찍혔다.
+        /// 여기 값을 고치면 그쪽도 따라온다(사본을 두지 않는다).
+        /// </summary>
+        public const float BarReservedHeight = BarButtonHeight + 8f + 4f;
+
         public bool IsOpen => mobileMenuOpen;
 
         public void CloseModal()
@@ -123,15 +134,24 @@ namespace InsectGame.UI
             }
 
             float btnW = Mathf.Min(140f, (UIScale.VirtualScreenWidth - 100f) / buttons.Length);
-            float btnH = 64f;
+            const float btnH = BarButtonHeight;
             float gap = 6f;
             float totalW = buttons.Length * btnW + (buttons.Length - 1) * gap;
             float startX = (UIScale.VirtualScreenWidth - totalW) / 2f;
             // 제스처바(하단 세이프 인셋) + 세로 마진 위로.
             float y = UISafeLayout.BottomY(btnH);
 
+            Rect barRect = new Rect(startX - 14, y - 8, totalW + 28, btnH + 16);
+
+            // **클릭-이동 억제 등록**(`CaptureInputController`의 '잡기' 버튼과 같은 이유).
+            // `PlayerMovement`는 `Input.GetMouseButtonDown(0)`을 Update에서 따로 폴링하는데,
+            // 탭한 프레임엔 아직 모달이 안 열려 `IsAnyOpen()`이 false이고 IMGUI라 `pointerOverUI`도
+            // false다. 등록이 없으면 버튼 아래 월드 지점이 클릭 목표로 잡혀, 모달을 닫는 순간
+            // 캐릭터가 거기로 걸어간다 — 메뉴를 열 때마다 매번.
+            FieldHudInput.RegisterBlockingRect(barRect);
+
             GUI.color = new Color(0, 0, 0, 0.5f);
-            GUI.DrawTexture(new Rect(startX - 14, y - 8, totalW + 28, btnH + 16), Texture2D.whiteTexture);
+            GUI.DrawTexture(barRect, Texture2D.whiteTexture);
             GUI.color = Color.white;
 
             for (int i = 0; i < buttons.Length; i++)
@@ -151,8 +171,13 @@ namespace InsectGame.UI
                 cachedBtnStyle.normal.textColor = isActive ? Color.white : def.color;
                 cachedBtnStyle.hover.textColor = Color.white;
 
+                // **`OnClick`이 아니라 `TryHotkey`다.** 데스크톱 바는 모달이 열려 있어도 계속
+                // 그려지므로(위 렌더 경로 주석 참조), 클릭이 가드를 안 거치면 도감을 켜 둔 채
+                // 상점을 눌러 두 모달이 동시에 등록·렌더된다 — 뒤에 깔린 쪽이 "안 보이는데 입력만
+                // 먹고" ESC도 그쪽부터 닫힌다. `TryHotkey`는 열려 있는 화면 자신의 버튼(=IsActive)만
+                // 통과시키므로 토글로 닫는 동작은 그대로 산다.
                 if (GUI.Button(new Rect(bx, y, btnW, btnH), $"{def.label}\n<size=14>[{def.key}]</size>", cachedBtnStyle))
-                    OnClick(i);
+                    TryHotkey(i);
 
                 if (isActive)
                 {
@@ -185,9 +210,16 @@ namespace InsectGame.UI
             float colX = UIScale.VirtualScreenWidth - safeR - colW - 14f;
             float colY = UISafeLayout.ContentTop;
 
+            Rect colRect = new Rect(colX - 8f, colY - 8f, colW + 16f, totalH + 16f);
+
+            // 데스크톱 바와 같은 이유의 클릭-이동 억제 등록.
+            // **모바일이 더 나쁘다** — 키보드가 없어 `PlayerMovement`의 키 입력 기반 자동 해제도
+            // 안 걸리므로, 한 번 잡힌 목표가 그대로 남아 모달을 닫자마자 걸어간다.
+            FieldHudInput.RegisterBlockingRect(colRect);
+
             // 컬럼 배경(가독성, 필드 가림 최소화를 위해 옅게)
             GUI.color = new Color(0f, 0f, 0f, 0.3f);
-            GUI.DrawTexture(new Rect(colX - 8f, colY - 8f, colW + 16f, totalH + 16f), Texture2D.whiteTexture);
+            GUI.DrawTexture(colRect, Texture2D.whiteTexture);
             GUI.color = Color.white;
 
             for (int i = 0; i < n; i++)
@@ -201,7 +233,7 @@ namespace InsectGame.UI
                     : new Color(def.color.r * 0.26f, def.color.g * 0.26f, def.color.b * 0.26f, 0.92f);
                 mobileGridButtonStyle.normal.textColor = active ? Color.white : def.color;
                 if (GUI.Button(new Rect(colX, by, colW, cellH), def.label, mobileGridButtonStyle))
-                    OnClick(i);
+                    TryHotkey(i);   // 데스크톱과 같은 이유 — 모달 중첩 차단
 
                 if (active)
                 {
