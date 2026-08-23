@@ -55,6 +55,8 @@ PATHS = {
     "story_director": "Assets/Scripts/Story/StoryDirector.cs",
     "item_db": "Assets/Scripts/Data/ItemDatabase.cs",
     "village_builder": "Assets/Scripts/Core/VillageBuilder.cs",
+    "stage_library": "Assets/Scripts/Story/StoryStageLibrary.cs",
+    "subarea_builder": "Assets/Scripts/Core/SubAreaWorldBuilder.cs",
 }
 
 RARITIES = ("Common", "Uncommon", "Rare", "Epic", "Legendary")
@@ -628,6 +630,151 @@ def story_npc_ambient_ids() -> set:
         raise ExtractorBroken("StoryNpcLines에서 키를 하나도 못 읽었다 — 초기화 형태가 바뀌었는가?")
     return ids
 
+
+
+def stage_offsets() -> dict:
+    """저작 연출별 배치 좌표 — {stageId: [(action, x, y, z), ...]}.
+
+    출처: StoryStageLibrary. `case Ch7ScholarFollow: steps = BuildCh7ScholarFollow()`로
+    상수 → 빌더를 잇고, 빌더 본문의 `Warp/MoveTo(..., new Vector3(x, y, z))`를 읽는다.
+    좌표가 방 밖인지 판정하는 검사 21이 쓴다.
+
+    strip_cs는 못 쓴다 — NPC id가 문자열 리터럴이고 그게 지워지면 파싱이 어긋난다.
+    """
+    src = "\n".join(l.split("//", 1)[0] for l in _read("stage_library").splitlines())
+
+    consts = dict(re.findall(r'const\s+string\s+(\w+)\s*=\s*"([^"]+)"', src))
+    if not consts:
+        raise ExtractorBroken("StoryStageLibrary에서 스테이지 상수를 하나도 못 읽었다")
+
+    dispatch = dict(re.findall(r"case\s+(\w+)\s*:\s*steps\s*=\s*(\w+)\s*\(", src))
+    if not dispatch:
+        raise ExtractorBroken("StoryStageLibrary의 TryGet switch를 못 읽었다 — 형태가 바뀌었는가?")
+
+    bodies = dict(re.findall(
+        r"private\s+static\s+StoryStageStep\[\]\s+(\w+)\s*\(\s*\)\s*\{(.*?)\n        \}",
+        src, re.DOTALL))
+    if not bodies:
+        raise ExtractorBroken("StoryStageLibrary의 빌더 본문을 못 읽었다 — 형태가 바뀌었는가?")
+
+    out = {}
+    for const_name, builder in dispatch.items():
+        stage_id = consts.get(const_name)
+        if stage_id is None or builder not in bodies:
+            continue
+        steps = []
+        for action, x, y, z in re.findall(
+                r"StoryStageStep\.(Warp|MoveTo)\([^,]+,\s*new Vector3\("
+                r"\s*(-?[\d.]+)f?\s*,\s*(-?[\d.]+)f?\s*,\s*(-?[\d.]+)f?\s*\)",
+                bodies[builder]):
+            steps.append((action, float(x), float(y), float(z)))
+        out[stage_id] = steps
+    return out
+
+
+def _boundary_half_size(body: str):
+    """`CreateBoundaryWalls(mat, halfSize, height)`의 halfSize.
+
+    첫 인자에 `Mat(new Color(0.4f, 0.4f, 0.4f))`처럼 콤마가 들어 있어 단순 정규식으로는
+    괄호 안의 색 성분을 크기로 읽는다(실제로 0.2를 방 크기로 보고했다). 괄호를 세어 자른다.
+    """
+    idx = body.find("CreateBoundaryWalls(")
+    if idx < 0:
+        return None
+    i = idx + len("CreateBoundaryWalls(")
+    depth, arg, args = 0, [], []
+    while i < len(body):
+        ch = body[i]
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            if depth == 0:
+                args.append("".join(arg))
+                break
+            depth -= 1
+        elif ch == "," and depth == 0:
+            args.append("".join(arg))
+            arg = []
+            i += 1
+            continue
+        arg.append(ch)
+        i += 1
+    if len(args) < 2:
+        return None
+    m = re.fullmatch(r"\s*(-?[\d.]+)f?\s*", args[1])
+    return float(m.group(1)) if m else None
+
+
+def subarea_room_bounds() -> dict:
+    """서브에리어별 방 반쪽 크기 — {subAreaId: halfSize}.
+
+    두 파일을 잇는다. RegionDefinitions의 `subAreaId`/`environmentType`, 그리고
+    SubAreaWorldBuilder의 `switch (subArea.environmentType)` → 빌더 → 그 빌더가 부르는
+    `CreateBoundaryWalls(mat, halfSize, height)`.
+
+    방은 축정렬 정사각이라 halfSize 하나로 네 벽이 정해진다(CreateBoundaryWalls 참조).
+    """
+    defs = _read("region_defs")
+    envs = {}
+    # `exclusiveInsectIds = new[] { ... }`가 중간에 있어 "다음 }까지"로는 못 자른다 —
+    # subAreaId 다음에 처음 나오는 environmentType을 그 항목의 것으로 본다.
+    marks = [(m.group(1), m.end()) for m in re.finditer(r'subAreaId\s*=\s*"(\w+)"', defs)]
+    for i, (sub_id, start) in enumerate(marks):
+        stop = marks[i + 1][1] if i + 1 < len(marks) else len(defs)
+        m = re.search(r'environmentType\s*=\s*"(\w+)"', defs[start:stop])
+        if m:
+            envs[sub_id] = m.group(1)
+    if not envs:
+        raise ExtractorBroken("RegionDefinitions에서 subAreaId↔environmentType을 못 읽었다")
+
+    builder_src = _read("subarea_builder")
+    # case "vault": / case "cave": case "underground": → Build___(subArea);
+    env_to_builder = {}
+    pending = []
+    for line in builder_src.splitlines():
+        m = re.search(r'case\s+"(\w+)"\s*:', line)
+        if m:
+            pending.append(m.group(1))
+            continue
+        m = re.search(r"(Build\w+)\(subArea\)\s*;", line)
+        if m and pending:
+            for env in pending:
+                env_to_builder[env] = m.group(1)
+            pending = []
+    if not env_to_builder:
+        raise ExtractorBroken("SubAreaWorldBuilder의 environmentType switch를 못 읽었다")
+
+    walls = {}
+    for name, body in re.findall(
+            r"private\s+void\s+(Build\w+)\s*\(SubAreaData[^)]*\)\s*\{(.*?)\n        \}",
+            builder_src, re.DOTALL):
+        half = _boundary_half_size(body)
+        if half is not None:
+            walls[name] = half
+    if not walls:
+        raise ExtractorBroken("SubAreaWorldBuilder에서 CreateBoundaryWalls 크기를 못 읽었다")
+
+    out = {}
+    for sub_id, env in envs.items():
+        builder = env_to_builder.get(env)
+        if builder and builder in walls:
+            out[sub_id] = walls[builder]
+    return out
+
+
+def subarea_entry_offset() -> tuple:
+    """서브에리어 진입 시 플레이어가 서는 방 로컬 좌표 (x, z).
+
+    `FindSafeSpawnPosition`의 1순위 좌표다. 막혀 있으면 주변을 탐색하지만, 연출 좌표를
+    저작할 때 기준으로 삼는 것은 이 값이다 — 워프 오프셋이 방 안인지 여기서부터 잰다.
+    """
+    src = _read("subarea_builder")
+    m = _need(
+        re.search(r"preferred\s*=\s*origin\s*\+\s*new Vector3\("
+                  r"\s*(-?[\d.]+)f\s*,\s*-?[\d.]+f\s*,\s*(-?[\d.]+)f\s*\)", src),
+        "FindSafeSpawnPosition의 1순위 좌표", "subarea_builder",
+    )
+    return float(m.group(1)), float(m.group(2))
 
 def dialogue_region_keys() -> set:
     """NpcDialogueDatabase.RegionLines의 regionId 키 집합. 리전 ID 드리프트 검증용."""

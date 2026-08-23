@@ -173,12 +173,19 @@ namespace InsectGame.Story
         /// <summary>
         /// 산. 말이 아니라 몸으로 막는다 — 유일하게 한 걸음 <b>다가오는</b> 대치다.
         /// 이동 스텝은 하나만 둔다(둘이면 최악 16초라 시퀀스 상한 15초에 잘린다).
+        ///
+        /// <b><see cref="StoryStageStep.MoveTo"/>가 아니라 <see cref="StoryStageStep.Approach"/>인
+        /// 이유</b>: 이 배우는 <b>플레이어가 말을 건 상대</b>라 어느 방향에 서 있을지 모른다.
+        /// 예전엔 목적지가 `플레이어 + (0,0,1.6)`, 즉 <i>월드축 북쪽</i> 1.6m였다 — 플레이어가
+        /// 북쪽에서 다가와 말을 걸었다면 그 점이 <b>플레이어 너머</b>라, 여자가 플레이어를 향해
+        /// 곧장 걷다 콜라이더에 막혀 <b>8초를 제자리걸음</b>한 뒤에야 대사가 떴다(그동안 조작 잠김).
+        /// `Approach`는 목적지를 배우–플레이어 직선 위에서 잡으므로 어느 방향에서 걸든 성립한다.
         /// </summary>
         private static StoryStageStep[] BuildCh5RuleBar()
         {
             return new[]
             {
-                StoryStageStep.MoveTo("ledger_thug_rule", new Vector3(0f, 0f, 1.6f), 0.9f),
+                StoryStageStep.Approach("ledger_thug_rule", 1.8f),
                 StoryStageStep.Face("ledger_thug_rule", 0.2f),
                 StoryStageStep.Play("ledger_thug_rule", NpcGesture.Point),
             };
@@ -209,17 +216,38 @@ namespace InsectGame.Story
         //
         // 이동 스텝은 시퀀스당 **하나만** 둔다. 최악 8초라 둘이면 합이 상한(15초)에 닿아
         // 정상 재생이 하드 타임아웃에 잘린다.
+        //
+        // ── **워프 지점은 반드시 방 안이어야 한다** ──────────────────────────────
+        //
+        // 서브에리어는 벽으로 봉해진 정사각 방이고(`SubAreaWorldBuilder.CreateBoundaryWalls`),
+        // 진입하면 플레이어가 **방 남쪽 입구에 고정 배치**된다(`FindSafeSpawnPosition`의
+        // `origin + (0, 0.5, -8)`). 오프셋은 월드축이고 방도 축정렬이라, 워프 지점의 방 로컬
+        // 좌표는 그냥 **(offset.x, offset.z - 8)**이다 — 저작 시점에 계산할 수 있다.
+        //
+        // 그 점이 벽 밖이면 배우가 벽 뒤에 떨어지고, 걸어 들어오려다 `IsBlockedAhead`에 막힌다.
+        // Scripted 이동은 막혀도 포기하지 않으므로 **8초를 밀다가 타임아웃으로 "완료" 처리**되고,
+        // `SnapToFinalPose`는 이미 지나간 이동 스텝을 소급하지 않는다(`ReturnToAnchor`만 한다).
+        // 결과는 **대사만 뜨고 화자는 화면에 없는** 장면이다 — 예외도 경고도 없다.
+        //
+        // 1막의 `Ch1RivalEnter`가 쓰는 "뒤쪽 9m" 관용구를 여기 그대로 옮기면 이 함정을 밟는다.
+        // 벽 없는 메인 필드에서 온 값이라, 플레이어가 남쪽 입구에 서 있는 방에서는 남벽 바깥이다
+        // (실제로 ch7·ch12가 그랬고 ch11은 벽에 낀 채로 나왔다). **방에서는 옆에서 들인다** —
+        // 가로로 멀리 두면 카메라 밖이면서 벽 안이다(`Ch9ScaleEnter`가 원래 그 형태였다).
+        // `story_lint` 검사 21이 방별 벽 크기를 읽어 이 조건을 강제한다.
 
         /// <summary>
         /// 침묵의 자리. 세라가 <b>뒤따라</b> 들어온다 — 앞서 들어가면 플레이어가 이끌린 게 되고,
         /// 이 장면은 플레이어가 먼저 보고 세라가 뒤늦게 확인하는 순서라야 한다.
         /// 도착해서 마주 보고 움찔한다(지워진 개체를 본 반응).
+        ///
+        /// 등장은 <b>왼쪽 뒤 모서리</b>에서다. 곧장 뒤(옛 `-7`)는 방 남벽 <b>바깥</b>이라
+        /// 세라가 벽에 막혀 못 들어왔다 — 위 블록 주석의 방 기하 규칙 참조.
         /// </summary>
         private static StoryStageStep[] BuildCh7ScholarFollow()
         {
             return new[]
             {
-                StoryStageStep.Warp("ruins_scholar", new Vector3(-1.8f, 0f, -7f)),
+                StoryStageStep.Warp("ruins_scholar", new Vector3(-11.5f, 0f, -3.5f)),
                 StoryStageStep.MoveTo("ruins_scholar", new Vector3(-1.4f, 0f, 1.2f), 1.1f),
                 StoryStageStep.Face("ruins_scholar", 0.2f),
                 StoryStageStep.Play("ruins_scholar", NpcGesture.Recoil),
@@ -243,9 +271,13 @@ namespace InsectGame.Story
         }
 
         /// <summary>
-        /// 얼음 서고 — <b>저울</b>의 첫 등장. 옆에서 나타나 플레이어가 아니라 <b>세라를</b> 가리킨다.
-        /// 이 장면의 사건은 대치가 아니라 "옛 동문을 알아보는 것"이라, 시선이 플레이어를
-        /// 지나쳐야 대사("너도 한때는 우리 방식이 옳다고 했잖아")가 제자리를 찾는다.
+        /// 얼음 서고 — <b>저울</b>의 첫 등장. 옆에서 걸어 나와 가리킨다.
+        /// 이 장면의 사건은 대치가 아니라 "옛 동문을 알아보는 것"이다.
+        ///
+        /// <b>세라를 지목하지는 못한다.</b> 이 비트의 대사에는 세라가 나오지만 무대에 올리는
+        /// 배우는 저울 하나뿐이고(그녀는 리전 앵커에 서 있다), 배우끼리 서로를 향하게 하는
+        /// 액션도 없다 — 지금 있는 것은 플레이어를 보는 <c>FacePlayer</c>뿐이다.
+        /// 방 안에 동행자를 함께 세우는 것은 6개 대치 전부에 걸린 별건이다(감사 P2로 남겼다).
         /// </summary>
         private static StoryStageStep[] BuildCh9ScaleEnter()
         {
@@ -276,12 +308,16 @@ namespace InsectGame.Story
         /// <summary>
         /// 우듬지 꼭대기 — 여기만 <b>동행자가 앞서</b> 간다. 대치가 아니라 발견의 장면이고,
         /// 세라가 먼저 올라가 위를 가리키는 것이 곧 떡밥 회수의 신호다(예비 울타리).
+        ///
+        /// 왼쪽에서 들여 플레이어를 앞질러 간다. 옛 값(`-2.2`)은 플레이어 바로 뒤라
+        /// <b>카메라와 플레이어 사이</b>에서 세라가 불쑥 생겨났고, 이 방은 가장 좁아서
+        /// 그 자리가 남벽 안쪽 면에 거의 닿아 있었다(캡슐이 벽에 낀다).
         /// </summary>
         private static StoryStageStep[] BuildCh11ScholarLead()
         {
             return new[]
             {
-                StoryStageStep.Warp("ruins_scholar", new Vector3(0.6f, 0f, -2.2f)),
+                StoryStageStep.Warp("ruins_scholar", new Vector3(-8.5f, 0f, -1f)),
                 StoryStageStep.MoveTo("ruins_scholar", new Vector3(0.8f, 0f, 3.4f), 1f),
                 StoryStageStep.Face("ruins_scholar", 0.25f),
                 StoryStageStep.Play("ruins_scholar", NpcGesture.Point),
@@ -289,15 +325,18 @@ namespace InsectGame.Story
         }
 
         /// <summary>
-        /// 이름 없는 장부 — <b>관장 하월</b>. 유일하게 뒤에서 다가온다: 이미 여기 있었고
-        /// 플레이어가 들어오는 것을 보고 있었다는 뜻이다(라온의 등장과 같은 경로, 반대의 감정).
+        /// 이름 없는 장부 — <b>관장 하월</b>. 유일하게 <b>뒤쪽 모서리</b>에서 다가온다:
+        /// 이미 여기 있었고 플레이어가 들어오는 것을 보고 있었다는 뜻이다.
         /// 몸짓이 없다 — 마주 서서 한 박자 두는 것으로 끝낸다. 이 사람만 진명으로 불린다.
+        ///
+        /// 옛 값(`-11`)은 방 남벽에서 **6m 바깥**, 바닥 평면 밖이었다. 최종장 첫 대면인데
+        /// 관장이 벽 뒤에서 8초를 밀다가 그대로 대사만 뜨고 있었다.
         /// </summary>
         private static StoryStageStep[] BuildCh12ChiefEnter()
         {
             return new[]
             {
-                StoryStageStep.Warp("ledger_chief", new Vector3(1.6f, 0f, -11f)),
+                StoryStageStep.Warp("ledger_chief", new Vector3(10.5f, 0f, -3.5f)),
                 StoryStageStep.MoveTo("ledger_chief", new Vector3(1.2f, 0f, 2.6f), 1.3f),
                 StoryStageStep.Face("ledger_chief", 0.4f),
                 StoryStageStep.Pause(0.7f),

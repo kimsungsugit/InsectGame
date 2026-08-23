@@ -10,6 +10,12 @@ namespace InsectGame.Story
         WarpToOffset,
         /// <summary>플레이어 기준 상대 좌표까지 걸어간다.</summary>
         MoveToOffset,
+        /// <summary>
+        /// <b>지금 선 자리에서</b> 플레이어 쪽으로 걸어와 지정 거리 앞에 선다.
+        /// 목적지를 배우–플레이어 직선 위에서 잡으므로 <b>경로가 플레이어를 가로지르지 않는다</b>
+        /// — 이미 마주 선 상대가 "한 걸음 다가오는" 대치는 반드시 이걸 쓴다.
+        /// </summary>
+        ApproachPlayer,
         /// <summary>스폰 앵커까지 걸어 돌아간다.</summary>
         ReturnToAnchor,
         /// <summary>즉시 플레이어를 바라본다.</summary>
@@ -51,6 +57,27 @@ namespace InsectGame.Story
                 offset = offset, arriveRadius = arriveRadius
             };
 
+        /// <summary>
+        /// 제자리에서 플레이어 쪽으로 <paramref name="stopDistance"/>m 앞까지 다가온다.
+        ///
+        /// <b><see cref="MoveTo"/>로 이걸 흉내 내면 안 된다.</b> 저쪽 목적지는 플레이어 기준
+        /// <i>월드축</i> 좌표라, 배우가 그 반대편에 서 있으면 목적지가 <b>플레이어 너머</b>가 된다.
+        /// 그러면 배우가 플레이어를 향해 곧장 걷다 <c>IsBlockedAhead</c>에 막히고
+        /// (플레이어 콜라이더는 예외가 아니다) 도착 판정이 영영 안 와서
+        /// <b>8초를 제자리걸음</b>한 뒤에야 다음 스텝으로 넘어간다 — 그동안 조작은 잠겨 있다.
+        ///
+        /// 이미 <paramref name="stopDistance"/>보다 가까우면 움직이지 않는다(물러서지 않는다).
+        /// </summary>
+        public static StoryStageStep Approach(string npcId, float stopDistance = 1.8f,
+            float arriveRadius = 0.5f)
+            => new StoryStageStep
+            {
+                storyNpcId = npcId, action = StageAction.ApproachPlayer,
+                // offset.z에 남길 거리를 싣는다 — 이 액션은 목적지를 재생기가 계산하므로
+                // 좌표 자리가 비어 있다(ReturnToAnchor가 앵커를 쓰는 것과 같은 성격).
+                offset = new Vector3(0f, 0f, stopDistance), arriveRadius = arriveRadius
+            };
+
         public static StoryStageStep GoHome(string npcId)
             => new StoryStageStep { storyNpcId = npcId, action = StageAction.ReturnToAnchor, arriveRadius = 0.6f };
 
@@ -88,6 +115,7 @@ namespace InsectGame.Story
             {
                 case StageAction.MoveToOffset:
                 case StageAction.ReturnToAnchor:
+                case StageAction.ApproachPlayer:
                     return MoveTimeoutSeconds;
                 case StageAction.Gesture:
                     return Mathf.Max(NpcGesturePose.DurationOf(step.gesture), Mathf.Max(0f, step.duration));

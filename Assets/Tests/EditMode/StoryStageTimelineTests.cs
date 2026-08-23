@@ -1,4 +1,6 @@
 #if UNITY_EDITOR
+using System.Collections.Generic;
+using System.Reflection;
 using InsectGame.NPC;
 using InsectGame.Story;
 using NUnit.Framework;
@@ -91,26 +93,36 @@ namespace InsectGame.Tests
         }
 
         /// <summary>
-        /// 저작된 연출 전부. 새 시퀀스를 추가하면 여기에도 올린다 — 아래 검사들이 이 목록을
-        /// 돌므로, 빠뜨리면 그 시퀀스만 조용히 검사 밖에 남는다.
+        /// 저작된 연출 전부를 <b>리플렉션으로 센다.</b> 손으로 나열하면 새 시퀀스가 검사에서
+        /// 조용히 빠진다 — <c>CutsceneTimelineTests</c>가 같은 이유로 같은 처방을 쓴다.
+        /// 상수 이름이 아니라 <b>값</b>(st_*)을 모은다 — <c>TryGet</c>이 받는 것이 그쪽이다.
         /// </summary>
-        private static readonly string[] AllStages =
+        private static readonly string[] AllStages = CollectStageIds();
+
+        private static string[] CollectStageIds()
         {
-            StoryStageLibrary.Ch1ElderGreet,
-            StoryStageLibrary.Ch1RivalEnter,
-            StoryStageLibrary.Ch1RivalExit,
-            StoryStageLibrary.Ch2CordTurn,
-            StoryStageLibrary.Ch3RuleBlock,
-            StoryStageLibrary.Ch4CordHaul,
-            StoryStageLibrary.Ch5RuleBar,
-            StoryStageLibrary.Ch6CordYield,
-            StoryStageLibrary.Ch7ScholarFollow,
-            StoryStageLibrary.Ch8GripEnter,
-            StoryStageLibrary.Ch9ScaleEnter,
-            StoryStageLibrary.Ch10InkEnter,
-            StoryStageLibrary.Ch11ScholarLead,
-            StoryStageLibrary.Ch12ChiefEnter,
-        };
+            var ids = new List<string>();
+            FieldInfo[] fields = typeof(StoryStageLibrary)
+                .GetFields(BindingFlags.Public | BindingFlags.Static);
+
+            foreach (FieldInfo f in fields)
+            {
+                // const 문자열만 — static readonly가 섞여도 GetRawConstantValue가 터지지 않게.
+                if (!f.IsLiteral || f.IsInitOnly) continue;
+                if (f.FieldType != typeof(string)) continue;
+                ids.Add((string)f.GetRawConstantValue());
+            }
+
+            ids.Sort(System.StringComparer.Ordinal);   // 케이스 이름이 실행마다 흔들리지 않게
+            return ids.ToArray();
+        }
+
+        [Test]
+        public void Library_IdCollection_IsNotEmpty()
+        {
+            // 리플렉션이 아무것도 못 모으면 아래 검사가 전부 0회 돌고 "성공"이라 보고한다.
+            Assert.Greater(AllStages.Length, 0, "StoryStageLibrary에서 상수를 하나도 못 읽었다");
+        }
 
         [Test]
         public void Library_EveryDeclaredStage_IsDispatched()
@@ -133,6 +145,7 @@ namespace InsectGame.Tests
                 int moves = 0;
                 for (int i = 0; i < steps.Length; i++)
                     if (steps[i].action == StageAction.MoveToOffset
+                        || steps[i].action == StageAction.ApproachPlayer
                         || steps[i].action == StageAction.ReturnToAnchor) moves++;
 
                 Assert.LessOrEqual(moves, 1,
@@ -182,6 +195,40 @@ namespace InsectGame.Tests
                 for (int i = 0; i < steps.Length; i++)
                     if (steps[i].action == StageAction.MoveToOffset) { walkIndex = i; break; }
                 Assert.Greater(walkIndex, 0, $"{id}: 워프 뒤에 걸어 들어오는 스텝이 있어야 한다");
+            }
+        }
+
+        [Test]
+        public void WorstCase_Approach_UsesNpcTimeout()
+        {
+            // 새 액션을 WorstCaseSeconds에 안 올리면 0초로 세어 시퀀스 타임아웃이 하한(2초)까지
+            // 줄고, 정상 재생이 그 자리에서 잘린다 — 제스처 등록 누락과 같은 무증상 결함이다.
+            Assert.AreEqual(StoryStageTimeline.MoveTimeoutSeconds,
+                StoryStageTimeline.WorstCaseSeconds(StoryStageStep.Approach("ledger_thug_rule")),
+                0.001f);
+        }
+
+        [Test]
+        public void Library_StagesWithoutWarp_DoNotUsePlayerRelativeMoves()
+        {
+            // **워프가 없으면 배우가 어디에 서 있는지 모른다.** 그 상태에서 MoveToOffset을 쓰면
+            // 목적지(플레이어 기준 월드축 좌표)가 배우 반대편, 즉 **플레이어 너머**일 수 있고
+            // 그러면 경로가 플레이어를 가로질러 콜라이더에 막힌다 — Scripted 이동은 막혀도
+            // 포기하지 않으므로 8초 제자리걸음 뒤에야 다음 스텝으로 넘어간다(조작 잠긴 채).
+            // 그런 대치는 ApproachPlayer를 쓴다(목적지를 배우–플레이어 직선 위에서 잡는다).
+            // ReturnToAnchor는 앵커가 절대 좌표라 이 함정이 없다.
+            foreach (string id in AllStages)
+            {
+                Assert.IsTrue(StoryStageLibrary.TryGet(id, out StoryStageStep[] steps), id);
+
+                bool warped = false;
+                for (int i = 0; i < steps.Length; i++)
+                {
+                    if (steps[i].action == StageAction.WarpToOffset) warped = true;
+                    if (steps[i].action != StageAction.MoveToOffset) continue;
+                    Assert.IsTrue(warped,
+                        $"{id}: 워프 없이 MoveToOffset을 쓴다 — 목적지가 플레이어 너머일 수 있다");
+                }
             }
         }
 

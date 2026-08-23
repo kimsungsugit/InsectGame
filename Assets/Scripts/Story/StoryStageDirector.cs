@@ -320,13 +320,16 @@ namespace InsectGame.Story
                 if (pending
                     && step.action != StageAction.MoveToOffset
                     && step.action != StageAction.WarpToOffset
+                    && step.action != StageAction.ApproachPlayer
                     && step.action != StageAction.ReturnToAnchor) continue;
 
                 VillagerNpc npc = FindActor(step.storyNpcId);
                 if (npc == null) continue;
-                Vector3 destination = step.action == StageAction.ReturnToAnchor
-                    ? npc.AnchorPosition
-                    : PlayerRelative(step.offset);
+                Vector3 destination;
+                if (step.action == StageAction.ReturnToAnchor) destination = npc.AnchorPosition;
+                else if (step.action == StageAction.ApproachPlayer)
+                    destination = ApproachTarget(npc, step.offset.z);
+                else destination = PlayerRelative(step.offset);
 
                 // 소급 보정은 실제로 못 돌아간 배우에게만 — 이미 집에 있는데 워프시키면 낭비다.
                 if (!pending
@@ -372,6 +375,13 @@ namespace InsectGame.Story
                         MakeArriveCallback());
                     break;
 
+                case StageAction.ApproachPlayer:
+                    if (npc == null) break;
+                    waitingForMove = true;
+                    npc.BeginScriptedMove(ApproachTarget(npc, step.offset.z), step.arriveRadius,
+                        MakeArriveCallback());
+                    break;
+
                 case StageAction.ReturnToAnchor:
                     if (npc == null) break;
                     // 도착까지 기다린다 — 저작된 퇴장 연출이 실제로 보이도록.
@@ -403,6 +413,30 @@ namespace InsectGame.Story
             }
 
             // 즉시 끝나는 스텝은 다음 Update가 넘긴다 — 여기서 재귀하면 깊이가 스텝 수만큼 된다.
+        }
+
+        /// <summary>
+        /// <see cref="StageAction.ApproachPlayer"/>의 목적지 — 배우와 플레이어를 잇는 직선 위,
+        /// 플레이어에게서 <paramref name="stopDistance"/>m 떨어진 점.
+        ///
+        /// <b>플레이어 너머로는 절대 잡지 않는다.</b> 저작자가 준 것은 "얼마나 가까이"뿐이고
+        /// 방향은 배우가 실제로 선 자리가 정한다 — 그래서 경로가 플레이어를 가로지르지 않는다
+        /// (가로지르면 플레이어 콜라이더에 막혀 8초 제자리걸음이 된다).
+        /// 이미 그보다 가까우면 제자리를 돌려준다(물러서게 하지 않는다).
+        /// </summary>
+        private Vector3 ApproachTarget(VillagerNpc npc, float stopDistance)
+        {
+            if (npc == null || playerTransform == null) return Vector3.zero;
+            Vector3 player = playerTransform.position;
+            Vector3 away = npc.transform.position - player;
+            away.y = 0f;
+            float distance = away.magnitude;
+            // 완전히 겹쳐 서 있으면 방향을 정할 수 없다 — 그 자리에 둔다.
+            if (distance < 0.05f) return npc.transform.position;
+            float keep = Mathf.Min(distance, Mathf.Max(0.5f, stopDistance));
+            Vector3 target = player + away / distance * keep;
+            target.y = npc.transform.position.y;
+            return target;
         }
 
         // 토큰을 캡처한 도착 콜백. 시퀀스가 바뀐 뒤 도착한 늦은 콜백은 무시된다.

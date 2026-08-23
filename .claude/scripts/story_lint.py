@@ -671,6 +671,51 @@ def evaluate_signals() -> list:
         "FAIL" if npc_problems else "PASS",
     ))
 
+    # 21. 서브에리어 연출 좌표가 **방 안**인가.
+    #
+    #     서브에리어는 벽으로 봉해진 축정렬 정사각 방이고(CreateBoundaryWalls), 진입하면
+    #     플레이어가 남쪽 입구에 고정 배치된다(FindSafeSpawnPosition). 연출 오프셋도 월드축이라
+    #     워프 지점의 방 로컬 좌표는 (offset.x, offset.z + 입구z)로 **저작 시점에 계산된다**.
+    #
+    #     그 점이 벽 밖이면 배우가 벽 뒤에 떨어지고, 걸어 들어오려다 IsBlockedAhead에 막힌다.
+    #     Scripted 이동은 막혀도 포기하지 않으므로 8초를 밀다 타임아웃으로 "완료" 처리되고,
+    #     SnapToFinalPose는 지나간 이동 스텝을 소급하지 않는다 → **대사만 뜨고 화자는 화면에
+    #     없다.** 예외도 경고도 없다.
+    #
+    #     1막의 "뒤쪽 9m" 관용구(벽 없는 메인 필드에서 온 값)를 방에 옮겨 심으면 바로 이 함정이다.
+    #     2026-08-23에 ch7(남벽 밖 1m)·ch12(남벽 밖 6m, 바닥 밖)·ch11(벽 안쪽 면에 낌)이 그랬다.
+    stage_offsets = game_facts.stage_offsets()
+    room_bounds = game_facts.subarea_room_bounds()
+    entry_x, entry_z = game_facts.subarea_entry_offset()
+    # 배우 캡슐 반경 + 벽 두께(1m의 절반) — 벽에 닿는 자리도 낀 것으로 본다.
+    ROOM_MARGIN = 1.0
+
+    outside_room = []
+    for b in beats:
+        trigger = b.get("trigger") or {}
+        if trigger.get("type") != "SubAreaEnter":
+            continue
+        sub_id = trigger.get("param")
+        half = room_bounds.get(sub_id)
+        if half is None:
+            continue
+        for field in ("stageEnterId", "stageExitId"):
+            stage_id = b.get(field)
+            for action, ox, _oy, oz in stage_offsets.get(stage_id) or []:
+                lx, lz = entry_x + ox, entry_z + oz
+                if max(abs(lx), abs(lz)) <= half - ROOM_MARGIN:
+                    continue
+                outside_room.append(
+                    f"{stage_id}:{action}({lx:g},{lz:g}) {sub_id} 벽±{half:g}")
+
+    signals.append((
+        "서브에리어 연출 좌표 (방 밖이면 배우가 벽에 막혀 안 나온다)",
+        "0건 벽 밖",
+        f"{len(outside_room)}건 ({outside_room})" if outside_room
+        else f"0건 (방 {len(room_bounds)}개 · 입구 z={entry_z:g})",
+        "FAIL" if outside_room else "PASS",
+    ))
+
     return signals
 
 
@@ -709,6 +754,9 @@ def main():
     print("  최대치를 본다. side/npc 챕터 비트는 진행 축이 아니라 대상에서 뺀다.")
     print("- 검사 18은 세이브 0(진행·퀘스트 모두 비어 있음)에서 자격을 갖는 비트를 센다.")
     print("  2개 이상이면 개막 순서가 저작이 아니라 우선순위 표에 맡겨진다.")
+    print("- 검사 21은 SubAreaWorldBuilder의 CreateBoundaryWalls 크기와 FindSafeSpawnPosition의")
+    print("  입구 좌표를 읽어 연출 워프 지점이 방 안인지 본다. 방은 축정렬 정사각이고 오프셋도")
+    print("  월드축이라 좌표가 결정적이다 — 벽 밖이면 배우가 막혀 대사만 뜬다(무증상).")
     print("- 검사 19는 NpcBossDuels.cs의 storyNpcId를 정규식으로 읽어 Story.json의")
     print("  speakerNpcId ∪ NpcTalk param과 대조한다(소개 없는 보스 = 영구 도전 불가).")
     fail = sum(1 for s in signals if s[3] == "FAIL")
