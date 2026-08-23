@@ -144,7 +144,13 @@ namespace InsectGame.UI
         {
             if (npc == null) return;
             currentNpc = npc;
-            lines = NpcDialogueDatabase.GetLines(npc.NpcId, npc.RegionId);
+            // 스토리 인물은 전용 잡담이 있으면 그걸 쓴다 — 마을 주민 풀로 떨어지면
+            // 명부회 간부가 날씨 이야기를 한다(비트를 아직 못 봤거나 전부 본 뒤의 경로).
+            if (!npc.IsStoryNpc
+                || !NpcDialogueDatabase.TryGetStoryNpcLines(npc.StoryNpcId, out lines))
+            {
+                lines = NpcDialogueDatabase.GetLines(npc.NpcId, npc.RegionId);
+            }
             lineIndex = 0;
             isOpen = true;
             openedFrame = Time.frameCount;

@@ -40,6 +40,87 @@ def _beat_prereq_cycle(beats) -> str:
     return None
 
 
+def _beat_gate_cycle(beats) -> str:
+    """prerequisiteBeatId + requiredBeatId 두 간선을 **함께** 따라간 사이클 시작 beatId (없으면 None).
+
+    둘은 AND라 어느 쪽으로든 자기 자신에게 돌아오면 그 비트는 영영 열리지 않는다.
+    검사 2는 prereq 한 축만 보므로 게이트를 섞은 순환은 거기서 안 잡힌다.
+    """
+    edges = {}
+    for b in beats:
+        out = []
+        for key in ("prerequisiteBeatId", "requiredBeatId"):
+            v = b.get(key) or None
+            if v:
+                out.append(v)
+        edges[b["beatId"]] = out
+
+    WHITE, GREY, BLACK = 0, 1, 2
+    color = {k: WHITE for k in edges}
+
+    def dfs(node):
+        color[node] = GREY
+        for nxt in edges.get(node, ()):
+            if nxt not in color:      # 미존재 대상 — 검사 2/15가 따로 잡는다
+                continue
+            if color[nxt] == GREY:
+                return True
+            if color[nxt] == WHITE and dfs(nxt):
+                return True
+        color[node] = BLACK
+        return False
+
+    for start in edges:
+        if color[start] == WHITE and dfs(start):
+            return start
+    return None
+
+
+def _chapter_ordinal(chapter_id: str):
+    """본편 챕터의 진행 순번. ch1..ch12 → 1..12, fin → 13, side/npc → None(본편 아님).
+
+    story_lint 안에서만 쓰는 값이다. StoryObjectiveResolver.ChapterRank는 정렬용이라
+    fin=1000 / side=2000 같은 센티넬을 쓰는데, 여기서는 "한 챕터 앞"을 빼야 해서
+    산술이 되는 연속 번호가 필요하다.
+    """
+    if not chapter_id:
+        return None
+    if chapter_id.startswith("ch") and chapter_id[2:].isdigit():
+        return int(chapter_id[2:])
+    if chapter_id == "fin":
+        return 13
+    return None
+
+
+def _max_ancestor_chapter(beat_id: str, by_id: dict, seen=None) -> int:
+    """prerequisiteBeatId ∪ requiredBeatId를 거슬러 올라가 만나는 **본편 챕터 최대 순번**.
+
+    선행이 없거나 전부 side/npc면 0(캠페인 시작점과 같은 취급).
+    사이클은 검사 2·15가 따로 잡으므로 여기서는 방문 표시로 끊기만 한다.
+    """
+    if seen is None:
+        seen = set()
+    if beat_id in seen:
+        return 0
+    seen.add(beat_id)
+    beat = by_id.get(beat_id)
+    if beat is None:
+        return 0
+
+    best = 0
+    for key in ("prerequisiteBeatId", "requiredBeatId"):
+        target = beat.get(key) or None
+        if not target:
+            continue
+        parent = by_id.get(target)
+        if parent is not None:
+            ordinal = _chapter_ordinal(parent.get("chapterId"))
+            if ordinal:
+                best = max(best, ordinal)
+        best = max(best, _max_ancestor_chapter(target, by_id, seen))
+    return best
+
+
 def evaluate_signals() -> list:
     signals = []
     beats = game_facts.story_beats()
@@ -427,6 +508,147 @@ def evaluate_signals() -> list:
         "FAIL" if orphan_keys else "PASS",
     ))
 
+    # 15. requiredBeatId 실재성 + 자기참조 + (prereq와 섞인) 순환.
+    #     진행 게이트는 여운(echo) 비트의 조기 발화를 막으려고 들어왔다 — 그것들은 "같은 NPC의
+    #     직전 여운"만 prereq로 물고 있어서, 시작 지역인 초원에서 라온에게 세 번 말하면 12장
+    #     복귀 대사가, 숲에서 세라에게 네 번 말하면 엔딩 에필로그 전문이 보상까지 딸려 나왔다.
+    #     오타 난 게이트는 런타임에 조용히 "영영 안 열림"이 되므로 여기서 잡는다.
+    gate_broken = []
+    for b in beats:
+        gate = b.get("requiredBeatId") or None
+        if not gate:
+            continue
+        if gate not in idset:
+            gate_broken.append(f"{b['beatId']}→{gate}(없음)")
+        if gate == b["beatId"]:
+            gate_broken.append(f"{b['beatId']} 자기참조")
+    gate_cycle = _beat_gate_cycle(beats)
+    if gate_cycle:
+        gate_broken.append(f"순환({gate_cycle})")
+    gated = sum(1 for b in beats if b.get("requiredBeatId"))
+    signals.append((
+        "requiredBeatId 무결성 (진행 게이트)",
+        "0건",
+        f"{len(gate_broken)}건 ({gate_broken})" if gate_broken
+        else f"0건 (게이트 {gated}건)",
+        "FAIL" if gate_broken else "PASS",
+    ))
+
+    # 16. 게이트 대상의 재발화성 — 검사 8이 스파인(prereq)에 대해 하는 판정을 게이트에 대해 한다.
+    #     GuardianDefeat는 리전당 1회(RegionManager.DefeatGuardian의 idempotent 가드),
+    #     QuestComplete는 퀘스트당 1회다. 그 순간을 놓친 세이브는 게이트가 영영 안 열려
+    #     그 비트가 영구 정지한다 — 스파인과 달리 여기는 유예 없이 FAIL이다(새 필드라
+    #     물려받은 부채가 없다. 지금 막지 않으면 그대로 부채가 된다).
+    once_only_triggers = ("GuardianDefeat", "QuestComplete")
+    beat_by_id = {b["beatId"]: b for b in beats}
+    bad_gate = []
+    for b in beats:
+        gate = b.get("requiredBeatId") or None
+        if not gate or gate not in beat_by_id:
+            continue
+        gate_trigger = (beat_by_id[gate].get("trigger") or {}).get("type")
+        if gate_trigger in once_only_triggers:
+            bad_gate.append(f"{b['beatId']}→{gate}({gate_trigger})")
+    signals.append((
+        "게이트 대상의 재발화성 (requiredBeatId → 일생 1회 트리거 금지)",
+        "0건",
+        f"{len(bad_gate)}건 ({bad_gate})" if bad_gate
+        else f"0건 (게이트 {gated}건)",
+        "FAIL" if bad_gate else "PASS",
+    ))
+
+    # 17. 챕터 도달 순서 — N장 비트가 N-1장까지의 진행만으로 열려서는 안 된다.
+    #
+    #     **이번 결함의 재발 방지기다.** 여운(echo) 비트가 "같은 NPC의 직전 여운"만 prereq로
+    #     물고 있어서 진행과 무관하게 발화했다: 시작 지역인 초원에서 라온에게 세 번 말하면
+    #     12장 복귀 대사가, 어르신에게 세 번이면 11장의 최대 반전이, 숲에서 세라에게 네 번이면
+    #     엔딩 에필로그 전문이 캔디 120 + XP 250과 함께 나왔다. 7건 전부 이 검사에 걸린다.
+    #
+    #     선행 최대 챕터가 자기 챕터 **-1** 이상이면 통과다. -1인 것은 도착 비트(chN_arrive)가
+    #     바로 그 챕터를 여는 비트라 선행이 N-1장일 수밖에 없기 때문이다.
+    #     side/npc 챕터는 본편 진행 축이 아니므로 대상에서 뺀다(앰비언트는 언제 봐도 된다).
+    beat_index = {b["beatId"]: b for b in beats}
+    out_of_order = []
+    for b in beats:
+        ordinal = _chapter_ordinal(b.get("chapterId"))
+        if ordinal is None:
+            continue
+        reached = _max_ancestor_chapter(b["beatId"], beat_index)
+        if reached < ordinal - 1:
+            out_of_order.append(f"{b['beatId']}({b['chapterId']}, 선행 최대 ch{reached})")
+    main_beats = sum(1 for b in beats if _chapter_ordinal(b.get("chapterId")) is not None)
+    signals.append((
+        "챕터 도달 순서 (뒷 챕터 비트의 조기 발화)",
+        "0건",
+        f"{len(out_of_order)}건 ({out_of_order})" if out_of_order
+        else f"0건 (본편 비트 {main_beats}개)",
+        "FAIL" if out_of_order else "PASS",
+    ))
+
+    # 18. 캠페인 시작 시 동시에 자격을 갖는 비트 — 1개를 넘지 않아야 한다.
+    #
+    #     넘으면 무엇이 먼저 뜰지가 저작이 아니라 우선순위 표(스파인→챕터→order→id)에 맡겨진다.
+    #     실제로 그렇게 어긋났다: 개막 `ch1_intro`는 `requiredQuestId: q_move`로 잠겨 있는데
+    #     앰비언트 `talk_elder`/`talk_rival`/`talk_scholar`는 아무 게이트가 없어, **튜토리얼 중
+    #     HUD 목표가 "마을 어르신에게 말 걸기"로 잡히고 첫 목표 자동 주행까지 태워 보냈다.**
+    #     도착해서 말을 걸면 개막이 아니라 잡담이 뜨고 그게 소비됐다.
+    #
+    #     앰비언트 비트에 `requiredBeatId: ch1_intro`를 걸어 0건으로 만들었다. 0도 정상이다 —
+    #     그동안은 튜토리얼 퀘스트 칩이 안내를 맡는다.
+    unlocked_at_start = [
+        b["beatId"] for b in beats
+        if not (b.get("prerequisiteBeatId") or None)
+        and not (b.get("requiredBeatId") or None)
+        and not (b.get("requiredQuestId") or None)
+    ]
+    signals.append((
+        "캠페인 시작 시 동시 자격 비트",
+        "1개 이하",
+        f"{len(unlocked_at_start)}개 ({unlocked_at_start})" if len(unlocked_at_start) > 1
+        else f"{len(unlocked_at_start)}개",
+        "FAIL" if len(unlocked_at_start) > 1 else "PASS",
+    ))
+
+    # 19. 명부회 간부 보스전 상대는 **소개 비트**를 가져야 한다.
+    #
+    #     WorldInteractionController가 도전을 여는 조건이 "그 인물과 이야기를 나눈 적이 있는가"
+    #     (StoryObjectiveResolver.HasMetNpc)로 바뀌었다. 예전엔 "이번 대화에서 비트가 안 떴다"만
+    #     봐서, 집게·저울·관장처럼 소개가 서브에리어 대치 비트에 걸린 인물은 **리전에 도착해
+    #     본진에서 말만 걸면 이름도 모르는 채 보스전이 시작됐다**(최종 보스 포함).
+    #
+    #     그 대가로 새 잠금 위험이 생겼다: 표에 보스를 추가하면서 스토리 비트를 안 만들면
+    #     `HasMetNpc`가 영영 false라 **그 보스와 싸울 수 없다**. 런타임엔 아무 로그도 안 나온다.
+    duel_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "Assets", "Scripts", "NPC", "NpcBossDuels.cs")
+    try:
+        with open(duel_path, encoding="utf-8") as fh:
+            duel_src = fh.read()
+    except OSError as exc:
+        raise ExtractorBroken(f"NpcBossDuels.cs를 읽지 못했다: {exc}")
+
+    duel_npcs = re.findall(r'storyNpcId\s*=\s*"([a-z_0-9]+)"', duel_src)
+    if not duel_npcs:
+        raise ExtractorBroken(
+            "NpcBossDuels.cs에서 보스 storyNpcId를 하나도 찾지 못했다 — 추출기가 낡았다")
+
+    introduced = set()
+    for b in beats:
+        if b.get("speakerNpcId"):
+            introduced.add(b["speakerNpcId"])
+        trig = b.get("trigger") or {}
+        if trig.get("type") == "NpcTalk" and trig.get("param"):
+            introduced.add(trig["param"])
+
+    unintroduced = sorted(set(duel_npcs) - introduced)
+    signals.append((
+        "보스 대결 상대의 소개 비트 (없으면 도전 불가)",
+        "0건 미소개",
+        f"{len(unintroduced)}건 ({unintroduced})" if unintroduced
+        else f"0건 (보스 {len(set(duel_npcs))}명)",
+        "FAIL" if unintroduced else "PASS",
+    ))
+
     return signals
 
 
@@ -455,6 +677,15 @@ def main():
     print("- 트리거 배선(검사 6)은 StoryDirector의 Trigger 상수·switch case·EvaluateTriggers")
     print("  발화 지점을 교차검사. 새 trigger.type의 배선 누락(영구 미발화)을 잡는다.")
     print("- SubAreaEnter param은 리전 밖 서브에리어 ID일 수 있어 완화(미존재만 잡지 않음).")
+    print("- 진행 게이트(검사 15·16)는 requiredBeatId를 본다. prerequisiteBeatId가 체인의")
+    print("  '순서'라면 이쪽은 '단계'이고 둘은 AND다 — 발화(StoryDirector.BeatGateSatisfied)와")
+    print("  목표 도출(StoryObjectiveResolver.SelectObjectiveBeat) 양쪽에 같은 게이트가 걸려 있다.")
+    print("- 챕터 도달 순서(검사 17)는 prereq∪requiredBeatId를 거슬러 올라가 만나는 본편 챕터")
+    print("  최대치를 본다. side/npc 챕터 비트는 진행 축이 아니라 대상에서 뺀다.")
+    print("- 검사 18은 세이브 0(진행·퀘스트 모두 비어 있음)에서 자격을 갖는 비트를 센다.")
+    print("  2개 이상이면 개막 순서가 저작이 아니라 우선순위 표에 맡겨진다.")
+    print("- 검사 19는 NpcBossDuels.cs의 storyNpcId를 정규식으로 읽어 Story.json의")
+    print("  speakerNpcId ∪ NpcTalk param과 대조한다(소개 없는 보스 = 영구 도전 불가).")
     fail = sum(1 for s in signals if s[3] == "FAIL")
     return 1 if fail else 0
 

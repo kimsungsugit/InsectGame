@@ -208,6 +208,87 @@ def evaluate_signals() -> list:
                     else f"0건 (Side {side_count}개 정합)",
                     "FAIL" if side_bad else "PASS"))
 
+    # 8. 전투 퀘스트가 팀 편성 퀘스트보다 **앞서면** 팀을 자동으로 채우는 경로가 있어야 한다.
+    #
+    #     `CaptureChoiceUI`의 [B] 배틀은 `BattleTeamManager.HasAnyInsect()`만 보고 버튼과 키
+    #     입력을 함께 막는다 — 컬렉션 폴백이 없다(`NpcDuelController.FindPlayerLeader`와 다르다).
+    #     그래서 팀이 빈 채로 Battle 타입 퀘스트에 도달하면 **튜토리얼이 거기서 영구 정지**하고,
+    #     팀 편성을 가르치는 q_team은 그보다 뒤라 안내조차 없다. 스토리도 함께 멈춘다
+    #     (ch1_first_battle·ch1_guardian_call이 BattleWin).
+    #
+    #     실제로 났다: 첫 파트너 지급이 퀘스트 보상에서 `ch1_intro` 비트로 옮겨가며
+    #     `TutorialQuestManager.CompleteQuest` 안의 1번 슬롯 자동 배치가 **죽은 코드**가 됐다
+    #     (튜토리얼 퀘스트에 rewardInsectId가 하나도 안 남았다). 지금은 `BattleTeamManager`가
+    #     `InsectCaptured`를 구독해 지급 경로 전체를 한 번에 덮는다 — 그 구독이 사라지면 여기서 잡는다.
+    story_order = [q for q in quests if q.get("category", "Story") != "Side"]
+    battle_at = next((i for i, q in enumerate(story_order) if q.get("type") == "Battle"), None)
+    setteam_at = next((i for i, q in enumerate(story_order) if q.get("type") == "SetTeam"), None)
+
+    if battle_at is None or setteam_at is None or battle_at > setteam_at:
+        # 팀 편성을 먼저 가르치므로 자동 편성이 없어도 막히지 않는다.
+        signals.append((
+            "팀 자동 편성 경로 (전투 퀘스트가 팀 편성보다 앞설 때)",
+            "필요 시 존재",
+            "해당 없음 (팀 편성 퀘스트가 전투보다 앞서거나 없음)",
+            "PASS",
+        ))
+    else:
+        team_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+            "Assets", "Scripts", "Core", "BattleTeamManager.cs")
+        try:
+            with open(team_path, encoding="utf-8") as fh:
+                team_src = fh.read()
+        except OSError as exc:
+            raise ExtractorBroken(f"BattleTeamManager.cs를 읽지 못했다: {exc}")
+
+        subscribes = "InsectCaptured +=" in team_src
+        fills = re.search(r"HasAnyInsect\(\)\s*\)\s*return;[\s\S]{0,200}?SetSlot\(0", team_src) is not None
+        missing = []
+        if not subscribes:
+            missing.append("InsectCaptured 미구독")
+        if not fills:
+            missing.append("빈 팀 → SetSlot(0) 경로 없음")
+
+        signals.append((
+            "팀 자동 편성 경로 (전투 퀘스트가 팀 편성보다 앞설 때)",
+            "존재",
+            f"없음 ({missing}) — 전투 퀘스트 #{battle_at + 1} < 팀 편성 #{setteam_at + 1}" if missing
+            else f"있음 (BattleTeamManager가 InsectCaptured 구독, 전투 #{battle_at + 1} < 편성 #{setteam_at + 1})",
+            "FAIL" if missing else "PASS",
+        ))
+
+    # 9. 모든 prerequisiteQuestId는 배열에서 **자기보다 앞**을 가리켜야 한다.
+    #
+    #     ActivateNextQuest가 배열을 앞에서부터 훑어 첫 미완료·prereq충족을 고르므로, 이 전제가
+    #     성립할 때만 **완료 순서 = 배열 순서**다. 그리고 그 등식 위에
+    #     TutorialQuestManager.BackfillSkippedStoryQuests(배열 중간 삽입분의 소급 완료)가 서 있다 —
+    #     뒤엣것이 완료됐으면 앞엣것도 완료됐어야 한다는 판정이다.
+    #
+    #     전제가 깨지면(prereq가 배열 뒤를 가리키면) 그 퀘스트는 prereq 미충족으로 건너뛰어질 수
+    #     있고, 그러면 소급이 **아직 할 차례인 퀘스트를 완료 처리해 버린다** — 보상 없이 사라지고
+    #     플레이어는 그 단계를 영영 못 한다. 런타임엔 아무 경고도 없다.
+    story_seq = [q for q in quests if q.get("category", "Story") != "Side"]
+    pos = {q["questId"]: i for i, q in enumerate(story_seq)}
+    backward = []
+    for i, q in enumerate(story_seq):
+        # game_facts는 prereq 키로 준다 — prerequisiteQuestId로 읽으면 항상 None이라
+        # 검사가 통째로 껍데기가 된다(실제로 그렇게 만들었다가 검출력 실측에서 잡았다).
+        pre = q.get("prereq") or None
+        if not pre:
+            continue
+        if pre not in pos:
+            continue   # 존재하지 않는 prereq는 검사 2가 잡는다
+        if pos[pre] > i:
+            backward.append(f"{q['questId']}(#{i + 1}) → {pre}(#{pos[pre] + 1})")
+    signals.append((
+        "prereq 방향 (배열 앞을 가리켜야 소급 완료가 안전)",
+        "0건 역방향",
+        f"{len(backward)}건 ({backward})" if backward
+        else f"0건 (스토리 {len(story_seq)}개, 완료 순서 = 배열 순서)",
+        "FAIL" if backward else "PASS",
+    ))
+
     return signals
 
 
@@ -235,6 +316,10 @@ def main():
     print("- 퀘스트는 TutorialQuestManager 배열에서 읽는다(SO/JSON 아님).")
     print("- 보상 곤충은 필드+가챠전용 ID로 대조. InsectDatabase .asset의 개체별 편차는 미반영.")
     print("- 검사 5는 update/event(구독)/notify(게임플레이 호출) 경로 중 하나라도 닿으면 통과.")
+    print("- 검사 8은 배열 순서로 전투/팀편성 선후를 보고, 앞설 때만 BattleTeamManager의")
+    print("  InsectCaptured 구독 + 빈 팀 SetSlot(0) 경로를 소스에서 확인한다.")
+    print("- 검사 9는 소급 완료(BackfillSkippedStoryQuests)의 전제인 '완료 순서 = 배열 순서'를")
+    print("  고정한다. prereq가 배열 뒤를 가리키면 소급이 아직 할 차례인 퀘스트를 건너뛴다.")
     fail = sum(1 for s in signals if s[3] == "FAIL")
     return 1 if fail else 0
 

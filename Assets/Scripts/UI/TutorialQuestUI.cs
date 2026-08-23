@@ -124,6 +124,8 @@ namespace InsectGame.UI
 
         // 메인퀘스트 목표 행. 위치·이름·거리는 전부 트래커가 풀어 준다(UI는 그리기만).
         private InsectGame.Story.StoryObjectiveTracker objectiveTracker;
+        // 목표가 다른 리전일 때 열어 줄 지도. 미주입이면 트래커가 안내 문구로 폴백한다.
+        private RegionMapUI regionMapUi;
         // 칩(또는 숨김 버튼)이 끝나는 y — 목표 행이 그 아래에 붙는다. 칩 높이가 상태마다
         // 달라(완료/숨김/진행 중) 상수로 둘 수 없어, 그린 쪽이 실제 값을 남긴다.
         private float objectiveRowTop;
@@ -292,6 +294,7 @@ namespace InsectGame.UI
 
         private void OnEnable()
         {
+            SubscribeObjectiveEvents();
             if (questManager != null)
             {
                 questManager.QuestActivated += OnQuestActivated;
@@ -302,6 +305,7 @@ namespace InsectGame.UI
 
         private void OnDisable()
         {
+            if (objectiveTracker != null) objectiveTracker.MapRequested -= OnObjectiveMapRequested;
             detailOpen = false;
             activeDetailOpen = false;
             detailDirectScroll.Reset();
@@ -571,6 +575,12 @@ namespace InsectGame.UI
         private void DrawObjectiveRow()
         {
             if (!objectiveRowVisible || objectiveTracker == null || !objectiveTracker.HasObjective) return;
+
+            // **모달 위에는 그리지 않는다.** 형제 HUD(MinimapUI·KeyGuideHUD)와 같은 규칙이고,
+            // 여기는 이유가 하나 더 있다 — 이 행이 지도를 여는 버튼이 되면서, 지도가 열린 뒤에도
+            // 그 위에 남아 있으면 같은 탭이 지도 쪽 컨트롤과 함께 먹힌다(IMGUI는 z-order로
+            // 히트 테스트를 가르지 않는다).
+            if (ModalUIRegistry.IsAnyOpen()) return;
 
             UITheme theme = UITheme.Instance;
             float x = MinimapUI.LeftX;
@@ -1225,6 +1235,38 @@ namespace InsectGame.UI
         public void AutoWire(InsectGame.Story.StoryObjectiveTracker tracker)
         {
             if (objectiveTracker == null) objectiveTracker = tracker;
+            SubscribeObjectiveEvents();
+        }
+
+        /// <summary>
+        /// 목표가 타 리전일 때 열어 줄 지도. 미주입이면 트래커가 안내 문구로 폴백하므로
+        /// 기능이 사라지지 않고 한 단계 덜 편해질 뿐이다.
+        /// </summary>
+        public void AutoWire(RegionMapUI map)
+        {
+            if (regionMapUi == null) regionMapUi = map;
+            SubscribeObjectiveEvents();   // 트래커가 먼저 들어왔다면 이 시점에 구독이 성립한다
+        }
+
+        // 구독을 메서드로 뺀 것은 OnEnable에서 되살리기 위해서다 — OpeningReplayCoordinator가
+        // UI 루트를 통째로 껐다 켜는 경로에서 AutoWire는 다시 불리지 않는다(rules/ui-layout.md).
+        // `-=` 뒤 `+=`라 중복 구독이 되지 않는다.
+        private void SubscribeObjectiveEvents()
+        {
+            // **지도를 못 받았으면 구독하지 않는다.** 구독자가 하나라도 있으면 트래커는
+            // 안내 문구 폴백을 건너뛰는데, 여기서 regionMapUi가 null이면 핸들러가 아무것도
+            // 하지 않아 목표 행을 눌러도 **무반응**이 된다(문구조차 안 뜬다).
+            // 구독을 지도 유무에 걸면 그 경우 구독자가 0이라 트래커가 문구로 폴백한다.
+            if (objectiveTracker == null || regionMapUi == null) return;
+            objectiveTracker.MapRequested -= OnObjectiveMapRequested;
+            objectiveTracker.MapRequested += OnObjectiveMapRequested;
+        }
+
+        // 목표가 다른 리전이라 걸어갈 수 없다 — 지도를 그 리전이 선택된 채로 연다.
+        // 실제 이동은 지도의 "이동" 버튼이 한다(해금·수문장 판정이 거기 있다).
+        private void OnObjectiveMapRequested(string regionId)
+        {
+            if (regionMapUi != null) regionMapUi.OpenAt(regionId);
         }
 
         /// <summary>보상 아이템의 표시명 조회용. 미주입이면 목록·배너에 아이템 ID가 그대로 나온다.</summary>

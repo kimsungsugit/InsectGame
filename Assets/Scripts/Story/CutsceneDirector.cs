@@ -71,6 +71,9 @@ namespace InsectGame.Story
         private void OnDisable()
         {
             if (storyDirector != null) storyDirector.StoryBeatCompleted -= OnBeatCompleted;
+            // 미뤄 둔 컷신은 버린다 — Update가 안 도는 동안 대기 시각도 안 흐르므로, 그냥 두면
+            // 전투가 끝난 지 한참 뒤 다시 켜질 때 뒤늦게 튀어나온다.
+            pendingShots = null;
             // 재생 중 비활성화되면 카메라·조작이 뺏긴 채로 남는다 — 반드시 되돌린다.
             Stop();
         }
@@ -84,7 +87,52 @@ namespace InsectGame.Story
                 Debug.LogWarning($"[Cutscene] 알 수 없는 cutsceneId: '{beat.cutsceneId}' (beat {beat.beatId})");
                 return;
             }
+
+            // **전투 화면이 아직 떠 있으면 미룬다.** `fin_seal`처럼 `BattleWin` 비트에 붙은
+            // 컷신이 여기 걸린다 — 결과 화면은 4초 뒤 스스로 닫히는데 대사를 그보다 빨리
+            // 넘기면 컷신이 전투 UI 밑에서 재생된다. 더 나쁜 건 카메라다: 그 시점의
+            // <c>Play</c>는 <c>InBattleMode = true</c>를 "원래 상태"로 기록하고, 끝날 때
+            // 그 상태로 되돌려 **전투 구도에 갇힌다**(전투는 이미 끝났는데).
+            //
+            // BattleScreenUI는 IModalUI가 아니라 ModalUIRegistry로는 알 수 없다 —
+            // 카메라의 배틀 모드가 "전투가 아직 화면에 있다"의 신호다.
+            if (cameraFollower != null && cameraFollower.InBattleMode)
+            {
+                pendingShots = loaded;
+                pendingSeconds = 0f;
+                return;
+            }
+
             Play(loaded);
+        }
+
+        // ── 전투 화면 때문에 미뤄 둔 컷신 ──
+        private CutsceneShot[] pendingShots;
+        private float pendingSeconds;
+        /// <summary>
+        /// 미뤄 둔 컷신을 포기하는 시각(초). 전투가 끝나지 않으면 <b>연출을 잃되 진행은 잃지
+        /// 않는다</b> — 비트는 이미 완료됐고, 억지로 재생하면 카메라가 전투 구도에 갇힌다.
+        /// 결과 화면은 4초면 닫히므로 정상 경로에서는 여기 닿지 않는다.
+        /// </summary>
+        private const float PendingGiveUpSeconds = 12f;
+
+        private void TickPending()
+        {
+            if (pendingShots == null) return;
+
+            if (cameraFollower == null || !cameraFollower.InBattleMode)
+            {
+                CutsceneShot[] queued = pendingShots;
+                pendingShots = null;
+                Play(queued);
+                return;
+            }
+
+            pendingSeconds += Time.unscaledDeltaTime;
+            if (pendingSeconds < PendingGiveUpSeconds) return;
+
+            Debug.LogWarning("[Cutscene] 전투 화면이 닫히지 않아 컷신을 건너뛴다");
+            pendingShots = null;
         }
 
         public void Play(CutsceneShot[] definition)
@@ -158,7 +206,11 @@ namespace InsectGame.Story
 
         private void Update()
         {
-            if (!playing) return;
+            if (!playing)
+            {
+                TickPending();
+                return;
+            }
 
             // 컷신은 연출이라 timeScale에 끌려다니면 안 된다(전투 슬로모션 직후 재생될 수 있다).
             elapsed += Time.unscaledDeltaTime;

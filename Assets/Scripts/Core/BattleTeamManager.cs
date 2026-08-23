@@ -100,6 +100,49 @@ namespace InsectGame.Core
         {
             if (collection == null) collection = col;
             MigrateLegacySlots();
+            SubscribeEvents();
+        }
+
+        // 구독을 메서드로 뺀 것은 OnEnable에서 되살리기 위해서다 —
+        // `-=` 뒤 `+=`라 중복 구독이 되지 않는다(rules/ui-layout.md의 구독 회귀 계열).
+        private void SubscribeEvents()
+        {
+            if (collection == null) return;
+            collection.InsectCaptured -= OnInsectObtained;
+            collection.InsectCaptured += OnInsectObtained;
+        }
+
+        private void OnEnable() => SubscribeEvents();
+
+        private void OnDisable()
+        {
+            if (collection != null) collection.InsectCaptured -= OnInsectObtained;
+        }
+
+        /// <summary>
+        /// <b>첫 곤충은 자동으로 1번 슬롯에 앉는다.</b> 팀이 비어 있을 때만 — 그 뒤로는
+        /// 플레이어가 편성한다.
+        ///
+        /// 이 규칙이 왜 여기 있나: 예전엔 <c>TutorialQuestManager.CompleteQuest</c>의 곤충 보상
+        /// 블록 안에 있었는데, 첫 파트너 지급이 퀘스트에서 <c>ch1_intro</c> 비트로 옮겨가면서
+        /// (그쪽은 <c>StoryDirector.GrantReward</c>가 처리한다) 그 코드가 통째로 죽었다 —
+        /// 튜토리얼 퀘스트에 <c>rewardInsectId</c>가 하나도 남지 않았기 때문이다.
+        ///
+        /// 그래서 <b>배틀팀이 영원히 비었다</b>. <c>CaptureChoiceUI</c>의 [B] 배틀은
+        /// <c>HasAnyInsect()</c>만 보고 버튼과 키 입력을 함께 막으므로(컬렉션 폴백이 없다),
+        /// <c>q_battle</c>(첫 전투)에서 튜토리얼이 멈춘다. 팀 편성을 가르치는 <c>q_team</c>은
+        /// 그보다 <b>세 단계 뒤</b>라 안내조차 없다. 스토리도 함께 멈춘다(<c>ch1_first_battle</c>·
+        /// <c>ch1_guardian_call</c>이 BattleWin).
+        ///
+        /// 지급 경로(포획·전투·레이드·가챠·퀘스트·스토리) 어디에 붙여도 같은 일을 하므로
+        /// <b>지급이 모이는 이벤트 한 곳</b>에 둔다 — 경로마다 복제하면 새 경로가 생길 때
+        /// 또 빠뜨린다(도감 등록이 정확히 그렇게 6곳으로 흩어져 <c>dex_grant_lint</c>가 필요해졌다).
+        /// </summary>
+        private void OnInsectObtained(PlayerInsectData insect)
+        {
+            if (insect == null || string.IsNullOrEmpty(insect.instanceId)) return;
+            if (HasAnyInsect()) return;
+            SetSlot(0, insect.instanceId);
         }
 
         // 클라우드 로드 후 battle_team.json을 다시 읽어 슬롯 갱신.

@@ -183,9 +183,59 @@ namespace InsectGame.Story
             if (subArea != null) EvaluateTriggers(TriggerSubAreaEnter, subArea.subAreaId);
         }
 
+        /// <summary>
+        /// <b>이기자마자 대사를 띄우지 않는다.</b> <c>BattleEnded</c>는 KO 순간에 울리는데
+        /// 전투 결과 화면은 그로부터 4초를 더 떠 있다(연출 페이즈가 끼면 6초 가까이). 그 위로
+        /// 대화 모달이 열리면 <b>획득 EXP·캔디가 적힌 보상 패널을 통째로 덮는다</b> — 무엇을
+        /// 얻었는지 못 본 채 대사를 읽게 된다. <c>BattleWin</c> 비트 12개 전부에 해당한다.
+        ///
+        /// 그래서 결과 화면이 스스로 닫힐 때(<c>BattleScreenUI.EndBattle</c>)까지 미룬다.
+        /// 같은 판단을 <c>CutsceneDirector</c>가 컷신에 대해 이미 하고 있다 — 거기서는
+        /// 카메라의 배틀 모드를 신호로 쓴다(BattleScreenUI는 IModalUI가 아니라 레지스트리로
+        /// 알 수 없다). 이쪽은 화면 쪽이 끝났다고 <b>알려 주는</b> 형태다: UI가 스토리를 아는
+        /// 방향은 허용되지만 그 반대는 의존 방향에 어긋난다.
+        /// </summary>
         private void OnBattleEnded(bool playerWon)
         {
-            if (playerWon) EvaluateTriggers(TriggerBattleWin, null);
+            if (!playerWon) return;
+            pendingBattleWin = true;
+            pendingBattleWinSeconds = 0f;
+        }
+
+        // ── 결과 화면 뒤로 미뤄 둔 BattleWin ──
+        private bool pendingBattleWin;
+        private float pendingBattleWinSeconds;
+
+        /// <summary>
+        /// 미뤄 둔 발화를 포기하지 않고 <b>그냥 쏘는</b> 시각(초). 컷신의
+        /// <c>PendingGiveUpSeconds</c>와 같은 값이지만 처리가 반대다 — 저쪽은 연출이라 버려도
+        /// 되지만 <b>여기는 이야기의 진행이라 버리면 안 된다.</b> 전투 화면이 어떤 이유로든
+        /// 닫혔다고 알려 주지 않으면(미배선·예외로 EndBattle 중단·씬 교체) 보상 패널을 덮는
+        /// 쪽이 진행이 멈추는 것보다 훨씬 낫다.
+        /// </summary>
+        private const float BattleWinGiveUpSeconds = 12f;
+
+        /// <summary>
+        /// 전투 화면(결과 포함)이 완전히 닫혔다 — 미뤄 둔 <c>BattleWin</c>을 지금 쏜다.
+        /// <c>BattleScreenUI.EndBattle</c>이 부른다. 미뤄 둔 게 없으면 아무 일도 안 한다.
+        /// </summary>
+        public void NotifyBattlePresentationClosed()
+        {
+            if (!pendingBattleWin) return;
+            pendingBattleWin = false;
+            EvaluateTriggers(TriggerBattleWin, null);
+        }
+
+        private void Update()
+        {
+            if (!pendingBattleWin) return;
+
+            // timeScale에 끌려다니면 안 된다 — 히트스톱·슬로모션이 결과 화면 직전까지 걸린다.
+            pendingBattleWinSeconds += Time.unscaledDeltaTime;
+            if (pendingBattleWinSeconds < BattleWinGiveUpSeconds) return;
+
+            Debug.LogWarning("[Story] 전투 화면이 닫혔다는 통지가 없어 BattleWin을 그대로 발화한다");
+            NotifyBattlePresentationClosed();
         }
 
         private void OnGuardianDefeated(string regionId)
@@ -291,7 +341,9 @@ namespace InsectGame.Story
 
                 // 리전 게이트 — requiredRegionId가 채워진 비트는 현재 리전 일치 시에만 발화.
                 // 퀘스트 게이트 — requiredQuestId가 채워진 비트는 그 튜토리얼을 마쳐야 발화.
-                matches = matches && RegionGateSatisfied(beat) && QuestGateSatisfied(beat);
+                // 진행 게이트 — requiredBeatId가 채워진 비트는 그 비트를 이미 열람해야 발화.
+                matches = matches && RegionGateSatisfied(beat) && QuestGateSatisfied(beat)
+                    && BeatGateSatisfied(beat);
 
                 if (matches
                     && (chosen == null
@@ -344,6 +396,21 @@ namespace InsectGame.Story
             if (beat == null || string.IsNullOrEmpty(beat.requiredQuestId)) return true;
             if (questManager == null) return true;
             return questManager.IsQuestCompleted(beat.requiredQuestId);
+        }
+
+        /// <summary>
+        /// <c>requiredBeatId</c>가 채워진 비트는 그 비트를 <b>이미 열람해야</b> 발화한다(비면 무제약).
+        ///
+        /// <c>prerequisiteBeatId</c>와 <b>AND</b>다 — 저쪽은 체인의 순서를, 이쪽은 진행 단계를 맡는다.
+        /// 여운 비트가 "같은 NPC의 직전 여운"만 물고 있어서 진행과 무관하게 말을 반복해 걸기만 하면
+        /// 뒷 챕터 대사가 나왔다(초원에서 라온 3회 → 12장, 세라 4회 → 엔딩 에필로그).
+        /// <see cref="StoryObjectiveResolver.SelectObjectiveBeat"/>도 <b>같은 게이트를 건다</b> —
+        /// 한쪽만 걸면 잠긴 비트를 목표로 안내해 놓고 가서 말을 걸면 아무 일도 안 일어난다.
+        /// </summary>
+        private bool BeatGateSatisfied(StoryBeat beat)
+        {
+            if (beat == null || string.IsNullOrEmpty(beat.requiredBeatId)) return true;
+            return IsSeen(beat.requiredBeatId);
         }
 
         private bool PrerequisiteSatisfied(StoryBeat beat)
@@ -453,9 +520,11 @@ namespace InsectGame.Story
 
             cachedObjective = new StoryObjective(
                 beat.beatId,
-                StoryObjectiveResolver.KindOf(beat.trigger.type),
+                StoryObjectiveResolver.KindOf(beat.trigger.type, beat.requiredRegionId),
                 beat.trigger.param,
-                beat.requiredRegionId);
+                beat.requiredRegionId,
+                beat.trigger.type,
+                StoryObjectiveResolver.ThresholdOf(beat.trigger.type, beat.trigger.param));
         }
 
         private bool IsSeen(string beatId)
@@ -476,6 +545,24 @@ namespace InsectGame.Story
         /// <summary>열람한 비트 수 — 저널 헤더의 진행률 표시용.</summary>
         public int SeenCount => progress != null && progress.seenBeatIds != null
             ? progress.seenBeatIds.Count : 0;
+
+        /// <summary>
+        /// 이 스토리 NPC와 <b>이야기를 한 번이라도 나눴는가</b> — 그 인물이 화자인 비트나
+        /// 그에게 말 거는 비트를 하나라도 열람했으면 true.
+        ///
+        /// 간부 보스전이 이걸 묻는다. 예전엔 호출부가 "이번 대화에서 비트가 안 떴다"만 보고
+        /// 도전을 열었는데, 그건 <b>이미 소개를 봤다</b>와 <b>아직 차례가 아니다</b>를 구분하지
+        /// 못한다. 집게·저울·관장의 소개는 각각 서브에리어 대치 비트(<c>chN_confront</c>)에
+        /// 걸려 있어서, 리전에 도착하자마자 본진에 서 있는 그들에게 말을 걸면 <b>이름도 모르는
+        /// 채로 보스전이 시작됐다</b> — 최종 보스인 관장까지 그랬다.
+        ///
+        /// 판정을 저작 데이터에서 낸다(인물 목록을 코드에 박지 않는다) — <c>speakerNpcId</c>는
+        /// 대치·격전 비트가, <c>trigger.param</c>은 여운 비트가 채운다.
+        /// </summary>
+        public bool HasMetStoryNpc(string npcId)
+        {
+            return StoryObjectiveResolver.HasMetNpc(StoryService.AllBeats(), IsSeen, npcId);
+        }
 
         // 보상 지급 — TutorialQuestManager.CompleteQuest 패턴 동일(null 시 경고 후 계속).
         private void GrantReward(StoryReward reward)

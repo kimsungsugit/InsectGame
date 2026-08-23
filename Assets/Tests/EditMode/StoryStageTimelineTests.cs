@@ -90,14 +90,99 @@ namespace InsectGame.Tests
             Assert.AreEqual(0f, StoryStageTimeline.WorstCaseSeconds(StoryStageStep.Pause(-3f)), 0.001f);
         }
 
+        /// <summary>
+        /// 저작된 연출 전부. 새 시퀀스를 추가하면 여기에도 올린다 — 아래 검사들이 이 목록을
+        /// 돌므로, 빠뜨리면 그 시퀀스만 조용히 검사 밖에 남는다.
+        /// </summary>
+        private static readonly string[] AllStages =
+        {
+            StoryStageLibrary.Ch1ElderGreet,
+            StoryStageLibrary.Ch1RivalEnter,
+            StoryStageLibrary.Ch1RivalExit,
+            StoryStageLibrary.Ch2CordTurn,
+            StoryStageLibrary.Ch3RuleBlock,
+            StoryStageLibrary.Ch4CordHaul,
+            StoryStageLibrary.Ch5RuleBar,
+            StoryStageLibrary.Ch6CordYield,
+            StoryStageLibrary.Ch7ScholarFollow,
+            StoryStageLibrary.Ch8GripEnter,
+            StoryStageLibrary.Ch9ScaleEnter,
+            StoryStageLibrary.Ch10InkEnter,
+            StoryStageLibrary.Ch11ScholarLead,
+            StoryStageLibrary.Ch12ChiefEnter,
+        };
+
         [Test]
         public void Library_EveryDeclaredStage_IsDispatched()
         {
             // 상수만 선언하고 switch에 case가 없으면 런타임에 LogWarning만 찍고 조용히 안 나온다.
             // (story_lint가 소스를 정규식으로 보는 것과 별개로, 여기선 실제 호출로 확인한다.)
-            AssertStageExists(StoryStageLibrary.Ch1ElderGreet);
-            AssertStageExists(StoryStageLibrary.Ch1RivalEnter);
-            AssertStageExists(StoryStageLibrary.Ch1RivalExit);
+            foreach (string id in AllStages) AssertStageExists(id);
+        }
+
+        [Test]
+        public void Library_EveryStage_HasAtMostOneMoveStep()
+        {
+            // 이동 스텝은 최악 8초다. 둘이면 합이 16초라 상한(15초)에 닿아 **정상 재생이
+            // 하드 타임아웃에 잘린다** — 배우가 걷다 만 채로 대사가 뜬다.
+            // 저작 시점에 걸리게 여기서 고정한다.
+            foreach (string id in AllStages)
+            {
+                Assert.IsTrue(StoryStageLibrary.TryGet(id, out StoryStageStep[] steps), id);
+
+                int moves = 0;
+                for (int i = 0; i < steps.Length; i++)
+                    if (steps[i].action == StageAction.MoveToOffset
+                        || steps[i].action == StageAction.ReturnToAnchor) moves++;
+
+                Assert.LessOrEqual(moves, 1,
+                    $"{id}에 이동 스텝이 {moves}개다 — 합이 시퀀스 상한에 닿아 잘린다");
+            }
+        }
+
+        [Test]
+        public void Library_EveryStage_LeavesRoomBeforeTimeout()
+        {
+            // 최악 합이 상한에 **닿으면** 정상 재생도 잘릴 수 있다. 여유를 요구한다.
+            foreach (string id in AllStages)
+            {
+                Assert.IsTrue(StoryStageLibrary.TryGet(id, out StoryStageStep[] steps), id);
+
+                float sum = 0f;
+                for (int i = 0; i < steps.Length; i++)
+                    sum += StoryStageTimeline.WorstCaseSeconds(steps[i]);
+
+                Assert.Less(sum, StoryStageTimeline.MaxSequenceSeconds - 1f,
+                    $"{id}의 최악 합 {sum:F1}s가 상한 {StoryStageTimeline.MaxSequenceSeconds}s에 너무 가깝다");
+            }
+        }
+
+        [Test]
+        public void Library_SubAreaEntrances_WarpBeforeWalking()
+        {
+            // 대치 연출은 SubAreaEnter에 걸려 있어 발화 시점에 배우가 수십 m 밖(자기 앵커)에 있다.
+            // 먼저 무대 밖으로 옮기지 않으면 거기서부터 걸어오려다 8초 타임아웃에 잘린다.
+            string[] entrances =
+            {
+                StoryStageLibrary.Ch7ScholarFollow,
+                StoryStageLibrary.Ch8GripEnter,
+                StoryStageLibrary.Ch9ScaleEnter,
+                StoryStageLibrary.Ch10InkEnter,
+                StoryStageLibrary.Ch11ScholarLead,
+                StoryStageLibrary.Ch12ChiefEnter,
+            };
+
+            foreach (string id in entrances)
+            {
+                Assert.IsTrue(StoryStageLibrary.TryGet(id, out StoryStageStep[] steps), id);
+                Assert.AreEqual(StageAction.WarpToOffset, steps[0].action,
+                    $"{id}는 무대 밖 워프로 시작해야 한다");
+
+                int walkIndex = -1;
+                for (int i = 0; i < steps.Length; i++)
+                    if (steps[i].action == StageAction.MoveToOffset) { walkIndex = i; break; }
+                Assert.Greater(walkIndex, 0, $"{id}: 워프 뒤에 걸어 들어오는 스텝이 있어야 한다");
+            }
         }
 
         [Test]

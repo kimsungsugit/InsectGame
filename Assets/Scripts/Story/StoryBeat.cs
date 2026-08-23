@@ -29,6 +29,21 @@ namespace InsectGame.Story
         // 컬렉션·도감)을 익히기 전에는 마을 어르신이 이야기를 열어주지 않는다.
         // 비면 무제약. JsonUtility는 JSON에 없는 필드를 건드리지 않으므로 기존 비트 전부 호환.
         public string requiredQuestId;
+        // 진행 게이트(옵션). 채워지면 그 비트를 **이미 열람해야** 발화한다.
+        // prerequisiteBeatId가 체인의 '순서'를 맡는다면 이쪽은 '단계'를 맡는다 — 둘은 AND다.
+        //
+        // 여운(echo) 비트가 이걸 쓴다. 그것들은 "같은 NPC의 직전 여운"만 prereq로 물고 있어서
+        // **진행과 무관하게 말을 반복해 걸기만 하면 뒷 챕터 대사가 나왔다** — 시작 지역인 초원에서
+        // 라온에게 세 번 말하면 12장 복귀 대사가, 어르신에게 세 번 말하면 11장의 최대 반전이,
+        // 숲에서 세라에게 네 번 말하면 **엔딩 에필로그 전문**이 보상까지 딸려 나왔다.
+        // StoryBible 6장은 여운이 '뒤늦게' 뜨는 것만 대비했지 조기 발화는 보지 못했다.
+        //
+        // **가리키는 비트는 재발화 트리거여야 한다**(RegionEnter/SubAreaEnter/BattleWin 등).
+        // QuestComplete·GuardianDefeat처럼 일생 1회 발화하는 비트를 게이트로 지목하면 그 순간을
+        // 놓친 세이브가 영구 정지한다 — story_lint 검사 16이 막는다.
+        //
+        // 비면 무제약. JsonUtility는 JSON에 없는 필드를 건드리지 않으므로 기존 비트 전부 호환.
+        public string requiredBeatId;
         public StoryTrigger trigger;
         // 이름/초상만 참조(대사는 lines[]에 저작). NpcDialogueDatabase 앰비언트와 분리.
         public string speakerNpcId;

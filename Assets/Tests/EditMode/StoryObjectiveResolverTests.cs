@@ -13,7 +13,8 @@ namespace InsectGame.Tests
     public class StoryObjectiveResolverTests
     {
         private static StoryBeat Beat(string id, string chapter, int order,
-            string prereq = null, string triggerType = "NpcTalk", string param = "npc")
+            string prereq = null, string triggerType = "NpcTalk", string param = "npc",
+            string gate = null)
         {
             return new StoryBeat
             {
@@ -21,6 +22,7 @@ namespace InsectGame.Tests
                 chapterId = chapter,
                 order = order,
                 prerequisiteBeatId = prereq,
+                requiredBeatId = gate,
                 trigger = new StoryTrigger { type = triggerType, param = param }
             };
         }
@@ -381,6 +383,174 @@ namespace InsectGame.Tests
             chosen = StoryObjectiveResolver.SelectObjectiveBeat(
                 new[] { opener, chatter }, Seen(), spine);
             Assert.AreEqual("ch1_intro", chosen.beatId);
+        }
+
+        // ── 진행 게이트 (requiredBeatId) ──
+
+        [Test]
+        public void SelectObjectiveBeat_UnsatisfiedBeatGate_IsSkipped()
+        {
+            // 실제로 났던 모양이다: 여운 비트가 "같은 NPC의 직전 여운"만 prereq로 물고 있어서
+            // 시작 지역에서 말만 반복해도 뒷 챕터 대사가 나왔다. 게이트를 걸면 목표에서도
+            // 빠져야 한다 — 발화 쪽(StoryDirector.BeatGateSatisfied)과 답이 갈리면
+            // 잠긴 비트를 안내해 놓고 가 보면 아무 일도 안 일어난다.
+            var gated = Beat("ch11_echo", "ch11", 45, prereq: "talk_elder", gate: "ch11_arrive");
+            var beats = new[] { gated };
+
+            StoryBeat chosen = StoryObjectiveResolver.SelectObjectiveBeat(
+                beats, Seen("talk_elder"), StoryObjectiveResolver.CollectSpineBeatIds(beats));
+
+            Assert.IsNull(chosen, "prereq만 충족하고 진행 게이트가 안 열렸으면 목표가 아니다");
+        }
+
+        [Test]
+        public void SelectObjectiveBeat_SatisfiedBeatGate_IsChosen()
+        {
+            var gated = Beat("ch11_echo", "ch11", 45, prereq: "talk_elder", gate: "ch11_arrive");
+            var beats = new[] { gated };
+
+            StoryBeat chosen = StoryObjectiveResolver.SelectObjectiveBeat(
+                beats, Seen("talk_elder", "ch11_arrive"),
+                StoryObjectiveResolver.CollectSpineBeatIds(beats));
+
+            Assert.AreEqual("ch11_echo", chosen.beatId);
+        }
+
+        [Test]
+        public void SelectObjectiveBeat_BeatGateWithoutPrerequisite_StillGates()
+        {
+            // ch10_echo가 이 모양이다 — prereq가 아예 없어서 처음부터 자격을 갖고 있었다.
+            var beats = new[] { Beat("ch10_echo", "ch10", 40, gate: "ch10_arrive") };
+
+            Assert.IsNull(StoryObjectiveResolver.SelectObjectiveBeat(
+                beats, Seen(), StoryObjectiveResolver.CollectSpineBeatIds(beats)));
+            Assert.IsNotNull(StoryObjectiveResolver.SelectObjectiveBeat(
+                beats, Seen("ch10_arrive"), StoryObjectiveResolver.CollectSpineBeatIds(beats)));
+        }
+
+        // ── 목표 종류: 리전이 실린 포획/전투 ──
+
+        [Test]
+        public void KindOf_CaptureOrBattleWithRegion_IsActInRegion()
+        {
+            // 무param 포획/전투는 트리거가 위치를 안 싣지만 리전 게이트가 사실상 위치다.
+            // 예전엔 전부 Freeform이라 HUD가 "모험을 이어가세요"만 띄웠다.
+            Assert.AreEqual(StoryObjectiveKind.ActInRegion,
+                StoryObjectiveResolver.KindOf("CaptureInsect", "meadow"));
+            Assert.AreEqual(StoryObjectiveKind.ActInRegion,
+                StoryObjectiveResolver.KindOf("BattleWin", "swamp"));
+
+            // 리전이 없으면 갈 곳이 없다 — 화살표를 띄우면 없는 곳을 가리킨다.
+            Assert.AreEqual(StoryObjectiveKind.Freeform,
+                StoryObjectiveResolver.KindOf("CaptureInsect", null));
+            Assert.AreEqual(StoryObjectiveKind.Freeform,
+                StoryObjectiveResolver.KindOf("BattleWin", ""));
+
+            // 레벨·도감은 리전이 있어도 위치 목표가 아니다.
+            Assert.AreEqual(StoryObjectiveKind.Freeform,
+                StoryObjectiveResolver.KindOf("LevelReach", "meadow"));
+            Assert.AreEqual(StoryObjectiveKind.Freeform,
+                StoryObjectiveResolver.KindOf("DexProgress", "meadow"));
+        }
+
+        [TestCase("LevelReach", "3", 3)]
+        [TestCase("DexProgress", "60", 60)]
+        [TestCase("LevelReach", "숫자아님", -1)]
+        [TestCase("CaptureInsect", "5", -1)]
+        [TestCase("BattleWin", "", -1)]
+        public void ThresholdOf_OnlyProgressTriggers(string triggerType, string param, int expected)
+        {
+            Assert.AreEqual(expected, StoryObjectiveResolver.ThresholdOf(triggerType, param));
+        }
+
+        // ── 목표 문구 ──
+
+        [Test]
+        public void DescribeActionObjective_Capture_NamesRegionOnlyWhenElsewhere()
+        {
+            Assert.AreEqual("연못에서 왕잠자리 포획", StoryObjectiveResolver.DescribeActionObjective(
+                "CaptureInsect", "연못", false, "왕잠자리", null, -1, -1));
+            Assert.AreEqual("왕잠자리 포획하기", StoryObjectiveResolver.DescribeActionObjective(
+                "CaptureInsect", "연못", true, "왕잠자리", null, -1, -1));
+            Assert.AreEqual("초원에서 곤충 포획", StoryObjectiveResolver.DescribeActionObjective(
+                "CaptureInsect", "초원", false, null, null, -1, -1));
+            Assert.AreEqual("야생 곤충 1마리 포획", StoryObjectiveResolver.DescribeActionObjective(
+                "CaptureInsect", "초원", true, null, null, -1, -1));
+        }
+
+        [Test]
+        public void DescribeActionObjective_BattleWin_NamesRegionOnlyWhenElsewhere()
+        {
+            Assert.AreEqual("습지에서 전투 승리", StoryObjectiveResolver.DescribeActionObjective(
+                "BattleWin", "습지", false, null, null, -1, -1));
+            Assert.AreEqual("야생 곤충과 전투 승리", StoryObjectiveResolver.DescribeActionObjective(
+                "BattleWin", "습지", true, null, null, -1, -1));
+        }
+
+        [Test]
+        public void DescribeActionObjective_ProgressTriggers_ShowCurrentValue()
+        {
+            // 현재값이 있으면 함께 보여준다 — "얼마나 남았는가"가 곧 안내다.
+            Assert.AreEqual("트레이너 Lv.3 달성 · 현재 Lv.2", StoryObjectiveResolver.DescribeActionObjective(
+                "LevelReach", "", false, null, null, 3, 2));
+            Assert.AreEqual("도감 60종 기록 · 현재 42종", StoryObjectiveResolver.DescribeActionObjective(
+                "DexProgress", "", false, null, null, 60, 42));
+
+            // 현재값을 모르면(-1) 임계값만. 참조가 미주입이어도 안내가 사라지지 않는다.
+            Assert.AreEqual("트레이너 Lv.3 달성", StoryObjectiveResolver.DescribeActionObjective(
+                "LevelReach", "", false, null, null, 3, -1));
+        }
+
+        [Test]
+        public void DescribeActionObjective_QuestComplete_UsesTitle()
+        {
+            Assert.AreEqual("'첫 수문장' 완료하기", StoryObjectiveResolver.DescribeActionObjective(
+                "QuestComplete", "", false, null, "첫 수문장", -1, -1));
+            Assert.AreEqual("퀘스트 완료하기", StoryObjectiveResolver.DescribeActionObjective(
+                "QuestComplete", "", false, null, null, -1, -1));
+        }
+
+        // ── 스토리 인물과 만난 적 있는가 (보스전 게이트) ──
+
+        [Test]
+        public void HasMetNpc_SeenSpeakerBeat_CountsAsMet()
+        {
+            // 대치 비트(SubAreaEnter)는 화자로만 인물을 싣는다 — 집게·저울·관장의 소개가 그 형태다.
+            var beat = Beat("ch8_confront", "ch8", 28, triggerType: "SubAreaEnter", param: "dunes_vault");
+            beat.speakerNpcId = "ledger_grip";
+            var beats = new[] { beat };
+
+            Assert.IsFalse(StoryObjectiveResolver.HasMetNpc(beats, Seen(), "ledger_grip"),
+                "아직 못 봤으면 만난 적 없다 — 여기서 true면 소개 전에 보스전이 열린다");
+            Assert.IsTrue(StoryObjectiveResolver.HasMetNpc(beats, Seen("ch8_confront"), "ledger_grip"));
+        }
+
+        [Test]
+        public void HasMetNpc_SeenNpcTalkBeat_CountsAsMet()
+        {
+            var beats = new[] { Beat("talk_grip", "ch8", 80, param: "ledger_grip") };
+
+            Assert.IsFalse(StoryObjectiveResolver.HasMetNpc(beats, Seen(), "ledger_grip"));
+            Assert.IsTrue(StoryObjectiveResolver.HasMetNpc(beats, Seen("talk_grip"), "ledger_grip"));
+        }
+
+        [Test]
+        public void HasMetNpc_OtherNpcOrEmptyInput_IsFalse()
+        {
+            var beats = new[] { Beat("talk_grip", "ch8", 80, param: "ledger_grip") };
+
+            Assert.IsFalse(StoryObjectiveResolver.HasMetNpc(beats, Seen("talk_grip"), "ledger_chief"));
+            Assert.IsFalse(StoryObjectiveResolver.HasMetNpc(beats, Seen("talk_grip"), null));
+            Assert.IsFalse(StoryObjectiveResolver.HasMetNpc(null, Seen("talk_grip"), "ledger_grip"));
+        }
+
+        [Test]
+        public void DescribeActionObjective_UnknownTrigger_FallsBackWithoutCrashing()
+        {
+            Assert.AreEqual("초원(으)로", StoryObjectiveResolver.DescribeActionObjective(
+                "오타난타입", "초원", false, null, null, -1, -1));
+            Assert.AreEqual("모험을 이어가세요", StoryObjectiveResolver.DescribeActionObjective(
+                "오타난타입", "", false, null, null, -1, -1));
         }
     }
 }

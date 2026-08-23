@@ -150,6 +150,67 @@ namespace InsectGame.NPC
         };
 
         /// <summary>
+        /// 스토리 인물 전용 잡담. <b>비트가 없을 때</b> 쓰인다 — 아직 소개되지 않았거나
+        /// 그 인물의 비트를 전부 열람한 뒤다.
+        ///
+        /// 없으면 <see cref="GetLines"/>의 마을 주민 풀로 떨어지는데, 그러면 명부회 간부가
+        /// "오늘 날씨가 좋네요" 류를 말한다. 최종 보스인 관장도 같았다.
+        ///
+        /// <b>줄거리를 진행시키지 않는다.</b> 여기에 정보를 담으면 저작된 비트를 우회하는
+        /// 두 번째 서사 경로가 생긴다 — 인상만 남기고 끝낸다.
+        /// </summary>
+        private static readonly Dictionary<string, string[]> StoryNpcLines =
+            new Dictionary<string, string[]>
+        {
+            { "village_elder", new[] {
+                "허허, 또 왔구나. 몸은 성한 게냐.",
+                "무리하진 말거라. 도감은 도망가지 않는단다.",
+            } },
+            { "catcher_rival", new[] {
+                "오, 또 만났네. 몇 마리 늘었어?",
+                "난 아직 안 졌어. 그거 기억해 둬.",
+            } },
+            { "ruins_scholar", new[] {
+                "기록은 잘 되고 있나요?",
+                "한 마리씩이면 돼요. 조급해하지 말아요.",
+            } },
+            { "ledger_thug_cord", new[] {
+                "…볼일 없으면 비켜라.",
+                "여긴 우리가 맡은 구역이다.",
+            } },
+            { "ledger_thug_rule", new[] {
+                "기록할 게 있는 얼굴은 아니군.",
+                "돌아가라. 두 번은 말 안 한다.",
+            } },
+            { "ledger_grip", new[] {
+                "손이 비었군. 그럼 할 말도 없다.",
+                "여기 있는 건 전부 장부에 오른 것들이다.",
+            } },
+            { "ledger_scale", new[] {
+                "등급, 개체수, 상태. 셋 중 뭘 물으러 왔나.",
+                "숫자로 말해라. 그 편이 빠르다.",
+            } },
+            { "ledger_ink", new[] {
+                "…적을 게 없는 날도 있다.",
+                "붓을 놓으면 손이 허전해서.",
+            } },
+            { "ledger_chief", new[] {
+                "시간이 없다. 나에게도, 저 아이들에게도.",
+                "네 방식이 틀렸다곤 안 했다. 느리다고 했지.",
+            } },
+        };
+
+        /// <summary>
+        /// 스토리 인물의 전용 잡담. 없으면 false — 호출부가 마을 주민 풀로 떨어진다.
+        /// </summary>
+        public static bool TryGetStoryNpcLines(string storyNpcId, out string[] lines)
+        {
+            lines = null;
+            return !string.IsNullOrEmpty(storyNpcId)
+                && StoryNpcLines.TryGetValue(storyNpcId, out lines);
+        }
+
+        /// <summary>
         /// npcId 해시 시드 기반 결정적 대사 3줄 — 개인 1 + 리전 1 + 공용 힌트 1.
         /// 같은 npcId/regionId면 항상 같은 조합(재방문 동일 인물 동일 톤).
         /// </summary>

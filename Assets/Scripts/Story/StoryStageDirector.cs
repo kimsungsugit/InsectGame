@@ -29,6 +29,11 @@ namespace InsectGame.Story
         private const float ApproachInterval = 0.25f;
         /// <summary>앵커에 "돌아왔다"고 볼 거리(m).</summary>
         private const float HomeDistance = 1f;
+        /// <summary>
+        /// 워프한 배우를 되돌려도 되는 거리(m). <c>DistanceCulling</c>의 disable 거리(25m)보다
+        /// 크게 잡아, 되돌리는 순간 이미 렌더러가 꺼져 있게 한다 — 눈앞에서 사라지지 않는다.
+        /// </summary>
+        private const float RestoreOutOfSightDistance = 27f;
 
         private StoryDirector storyDirector;
         private StoryObjectiveTracker objectiveTracker;
@@ -51,6 +56,17 @@ namespace InsectGame.Story
         private int sequenceToken;
         // 이번 시퀀스가 건드린 배우들 — 종료 시 걷다 만 상태를 정리한다.
         private readonly List<VillagerNpc> sequenceActors = new List<VillagerNpc>();
+        // 입장 연출이 무대 밖에서 데려온 배우들. **비트가 끝나면 앵커로 돌려보낸다.**
+        //
+        // 2막의 서브에리어 대치 연출 6곳이 이걸 요구한다: 배우를 플레이어 옆으로 워프해
+        // 등장시키는데, 퇴장을 저작하지 않으면 그 NPC가 서브에리어 좌표에 영구 정착한다.
+        // 그러면 StoryObjectiveTracker가 그 개체를 목표 후보로 집어 HUD 쐐기와 자동 주행이
+        // 마을이 아니라 동굴 속을 가리킨다 — 라온이 실제로 겪은 회귀다(SnapToFinalPose 주석).
+        //
+        // **걷게 하지 않고 즉시 워프한다.** ReturnToAnchor로 돌려보내면 대사를 닫은 뒤 최악 8초
+        // 조작이 잠기는데(AdvanceStep의 "알려진 UX 부채"), 그 비용을 6곳에 곱할 이유가 없다.
+        // 저작된 퇴장(stageExitId)이 있으면 그쪽이 배우의 행선지를 정하므로 손대지 않는다.
+        private readonly List<VillagerNpc> warpedActors = new List<VillagerNpc>();
 
         // ── 조우 접근 상태 ──
         private float approachTimer;
@@ -93,6 +109,9 @@ namespace InsectGame.Story
             if (storyDirector != null) storyDirector.StoryBeatCompleted -= OnBeatCompleted;
             // 재생 중 비활성화되면 조작이 묶인 채 남는다 — 반드시 되돌린다.
             Stop();
+            // Update가 안 도니 지연 복귀도 멈춘다. 기다리던 배우를 여기서 즉시 돌려보낸다 —
+            // 안 그러면 서브에리어 좌표에 선 채로 남아 목표 트래커가 그 개체를 집는다.
+            RestoreWarpedActors();
         }
 
         // ==================== 저작 연출 ====================
@@ -121,15 +140,72 @@ namespace InsectGame.Story
 
         private void OnBeatCompleted(StoryBeat beat)
         {
-            if (beat == null || string.IsNullOrEmpty(beat.stageExitId)) return;
+            if (beat == null) return;
+
+            // 저작된 퇴장이 없다 — 입장이 데려온 배우를 제자리로 돌려놓는다.
+            // **지금 당장은 아니다.** 대사를 닫은 순간 눈앞 2~3m의 NPC를 워프시키면 사라지는
+            // 것으로 보인다. 플레이어가 멀어질 때까지 기다렸다가 조용히 되돌린다(Update).
+            if (string.IsNullOrEmpty(beat.stageExitId)) { restorePending = warpedActors.Count > 0; return; }
+
             // cutsceneId가 함께 있으면 CutsceneDirector와 조작·카메라를 다툰다. story_lint가
             // 그 조합을 금지하지만, 런타임에서도 컷신 쪽에 양보한다(카메라를 뺏는 쪽이 더 크다).
             if (!string.IsNullOrEmpty(beat.cutsceneId))
             {
                 Debug.LogWarning($"[Stage] {beat.beatId}: cutsceneId와 stageExitId가 함께 있어 연출을 건너뛴다");
+                restorePending = warpedActors.Count > 0;   // 연출은 건너뛰어도 배우는 제자리로
                 return;
             }
+
+            // 저작된 퇴장이 배우의 행선지를 정한다. 자동 복귀 기록은 여기서 버린다.
+            warpedActors.Clear();
+            restorePending = false;
             PlaySequence(beat.stageExitId, Mode.Postlude, null);
+        }
+
+        /// <summary>
+        /// 입장 연출이 데려온 배우를 앵커로 <b>즉시</b> 되돌린다. 이미 제자리면 건드리지 않는다.
+        /// 두 번 불려도 안전하다(리스트를 비운다).
+        /// </summary>
+        private void RestoreWarpedActors()
+        {
+            for (int i = 0; i < warpedActors.Count; i++) SendHome(warpedActors[i]);
+            warpedActors.Clear();
+            restorePending = false;
+        }
+
+        /// <summary>비트가 끝나 되돌릴 배우가 남아 있는가. Update가 시야 밖이 되길 기다린다.</summary>
+        private bool restorePending;
+
+        /// <summary>
+        /// 플레이어에게서 충분히 멀어진 배우부터 하나씩 앵커로 돌려보낸다.
+        ///
+        /// 즉시 되돌리지 않는 이유는 대사가 끝난 직후엔 배우가 눈앞 2~3m에 서 있기 때문이다.
+        /// 그렇다고 두면 서브에리어 좌표에 영구 정착해 <c>StoryObjectiveTracker</c>가 그 개체를
+        /// 목표로 집는다(HUD 쐐기와 자동 주행이 동굴 속을 가리킨다). 멀어진 뒤에 처리하면 둘 다 없다.
+        /// </summary>
+        private void TickRestore()
+        {
+            if (playerTransform == null) { RestoreWarpedActors(); return; }
+
+            for (int i = warpedActors.Count - 1; i >= 0; i--)
+            {
+                VillagerNpc npc = warpedActors[i];
+                if (npc == null) { warpedActors.RemoveAt(i); continue; }
+                if (HorizontalDistance(npc.transform.position, playerTransform.position)
+                    < RestoreOutOfSightDistance) continue;
+                SendHome(npc);
+                warpedActors.RemoveAt(i);
+            }
+
+            if (warpedActors.Count == 0) restorePending = false;
+        }
+
+        private void SendHome(VillagerNpc npc)
+        {
+            if (npc == null) return;
+            if (HorizontalDistance(npc.transform.position, npc.AnchorPosition) <= HomeDistance) return;
+            npc.StopScripted();
+            npc.WarpTo(npc.AnchorPosition, playerTransform);
         }
 
         private bool PlaySequence(string stageId, Mode nextMode, System.Action onDone)
@@ -163,6 +239,11 @@ namespace InsectGame.Story
             mode = nextMode;
             onPreludeDone = onDone;
             sequenceActors.Clear();
+            // 새 입장 연출이 시작되면 앞 비트의 배우는 먼저 제자리로 보낸다.
+            // **여기서 Clear()만 하면 아직 안 돌아간 배우가 영영 방치된다** — 지연 복귀
+            // (TickRestore)가 기다리는 동안 다음 비트가 터지면 목록이 통째로 비기 때문이다.
+            // 이 시점엔 이미 다른 장면이므로 즉시 워프해도 눈에 띄지 않는다.
+            if (nextMode == Mode.Prelude) RestoreWarpedActors();
 
             restoreFrozen = playerMovement != null && playerMovement.IsFrozen;
             if (playerMovement != null)
@@ -275,7 +356,13 @@ namespace InsectGame.Story
             switch (step.action)
             {
                 case StageAction.WarpToOffset:
-                    if (npc != null) npc.WarpTo(PlayerRelative(step.offset), playerTransform);
+                    if (npc != null)
+                    {
+                        npc.WarpTo(PlayerRelative(step.offset), playerTransform);
+                        // 입장이 데려온 배우는 비트가 끝나면 돌려보낸다(OnBeatCompleted).
+                        // 퇴장 연출 안의 워프는 저작자가 행선지를 정한 것이므로 세지 않는다.
+                        if (mode == Mode.Prelude && !warpedActors.Contains(npc)) warpedActors.Add(npc);
+                    }
                     break;
 
                 case StageAction.MoveToOffset:
@@ -365,6 +452,10 @@ namespace InsectGame.Story
             approachTimer -= Time.deltaTime;
             if (approachTimer > 0f) return;
             approachTimer = ApproachInterval;
+
+            // 조우 접근과 같은 주기에 태운다 — 둘 다 "플레이어와 NPC의 거리"만 보고,
+            // 매 프레임 볼 이유가 없다.
+            if (restorePending) TickRestore();
             TickApproach();
         }
 

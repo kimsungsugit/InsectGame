@@ -27,6 +27,14 @@ namespace InsectGame.Story
         private PlayerMovement playerMovement;
         private Transform playerTransform;
 
+        // ── 라벨을 구체화하는 참조. 전부 옵션이다 ──
+        // 없으면 문구에서 그 조각만 빠질 뿐 목표 자체는 그대로 나온다.
+        // 안내가 통째로 사라지는 것보다 덜 구체적인 편이 낫다.
+        private PlayerProgressController progressController;
+        private InsectGame.Dex.DexController dexController;
+        private TutorialQuestManager questManager;
+        private InsectDatabase insectDatabase;
+
         private float refreshTimer;
         private bool hasObjective;
         private StoryObjective objective;
@@ -87,6 +95,15 @@ namespace InsectGame.Story
         /// <summary>일시 안내 문구(주행 실패·지역 잠김). 없으면 빈 문자열.</summary>
         public string StatusMessage => statusTimer > 0f ? statusMessage : string.Empty;
 
+        /// <summary>
+        /// 목표가 <b>다른 리전</b>이라 지금 걸어갈 수 없을 때 <see cref="Toggle"/>이 쏜다.
+        /// 인자는 목표 리전 ID — UI가 지도를 그 리전 선택 상태로 연다.
+        ///
+        /// 구독자가 없으면 예전처럼 안내 문구로 폴백한다. 이동 자체를 여기서 하지 않는 것은
+        /// 해금·수문장 판정이 지도 클릭 경로에 있기 때문이다(우회 위험).
+        /// </summary>
+        public event System.Action<string> MapRequested;
+
         public void AutoWire(StoryDirector director, NpcManager npcs, RegionManager region,
             PlayerMovement movement, Transform player)
         {
@@ -96,6 +113,19 @@ namespace InsectGame.Story
             if (playerMovement == null) playerMovement = movement;
             if (playerTransform == null) playerTransform = player;
             SubscribeEvents();
+        }
+
+        /// <summary>
+        /// 라벨 구체화용 참조. <b>목표 도출과는 무관하다</b> — 이게 없어도 목표는 나온다.
+        /// 곤충 표시명·리전명·퀘스트 제목·현재 레벨/도감 종수를 여기서 얻는다.
+        /// </summary>
+        public void AutoWire(PlayerProgressController prog, InsectGame.Dex.DexController dex,
+            TutorialQuestManager quests, InsectDatabase database)
+        {
+            if (progressController == null) progressController = prog;
+            if (dexController == null) dexController = dex;
+            if (questManager == null) questManager = quests;
+            if (insectDatabase == null) insectDatabase = database;
         }
 
         // 구독을 메서드로 뺀 것은 OnEnable에서 되살리기 위해서다 — OpeningReplayCoordinator가
@@ -147,6 +177,7 @@ namespace InsectGame.Story
                 case StoryObjectiveKind.EnterRegion:
                 case StoryObjectiveKind.DefeatGuardian: ResolveRegionTarget(); break;
                 case StoryObjectiveKind.EnterSubArea: ResolveSubAreaTarget(); break;
+                case StoryObjectiveKind.ActInRegion: ResolveActInRegion(); break;
                 default: ResolveFreeform(); break;
             }
 
@@ -220,7 +251,7 @@ namespace InsectGame.Story
 
             if (best == null) { ResolveFreeform(); return; }
 
-            label = $"{best.DisplayName}에게 말 걸기";
+            SetLabel($"{best.DisplayName}에게 말 걸기");
             targetPosition = best.transform.position;
             targetRegionId = best.RegionId ?? string.Empty;
             targetNpc = best;
@@ -234,7 +265,7 @@ namespace InsectGame.Story
             if (region == null) { ResolveFreeform(); return; }
 
             bool guardian = objective.Kind == StoryObjectiveKind.DefeatGuardian;
-            label = guardian ? $"{region.displayName} 수문장 격파" : $"{region.displayName}(으)로";
+            SetLabel(guardian ? $"{region.displayName} 수문장 격파" : $"{region.displayName}(으)로");
             targetPosition = guardian ? regionManager.GetGuardianPosition(region) : region.centerPosition;
             targetRegionId = region.regionId;
             hasWorldTarget = true;
@@ -251,7 +282,7 @@ namespace InsectGame.Story
                 foreach (SubAreaData sub in region.subAreas)
                 {
                     if (sub == null || sub.subAreaId != objective.TargetId) continue;
-                    label = $"{sub.displayName}(으)로";
+                    SetLabel($"{sub.displayName}(으)로");
                     targetPosition = sub.centerPosition;
                     targetRegionId = region.regionId;
                     hasWorldTarget = true;
@@ -261,19 +292,99 @@ namespace InsectGame.Story
             ResolveFreeform();
         }
 
-        // 위치가 없는 목표(전투 승리·포획·레벨·도감). 문구만 띄운다.
+        /// <summary>
+        /// "그 리전에서 무언가 하기"(무param 포획·전투 + <c>requiredRegionId</c>).
+        ///
+        /// 이미 그 리전 안이면 갈 곳이 없으므로 문구만 띄우고, 밖이면 <b>리전 중심을 타깃으로
+        /// 잡아</b> 미니맵 쐐기·지도 마커·원터치 이동이 전부 살아난다. 저작된 비트 28개가
+        /// 이 경로를 타며, 예전엔 전부 "모험을 이어가세요"로 떨어졌다.
+        /// </summary>
+        private void ResolveActInRegion()
+        {
+            hasWorldTarget = false;
+            RegionData region = regionManager != null
+                ? regionManager.GetRegionById(objective.RequiredRegionId) : null;
+            if (region == null) { ResolveFreeform(); return; }
+
+            bool inside = InTargetRegion(region.regionId);
+            SetLabel(StoryObjectiveResolver.DescribeActionObjective(
+                objective.TriggerType, region.displayName, inside,
+                InsectDisplayName(objective.TargetId), null, objective.Threshold, -1));
+
+            if (inside) { targetRegionId = string.Empty; return; }
+
+            targetPosition = region.centerPosition;
+            targetRegionId = region.regionId;
+            hasWorldTarget = true;
+        }
+
+        // 위치가 정말로 없는 목표(레벨·도감·퀘스트 완료) + 위 해석들이 실패했을 때의 폴백.
         private void ResolveFreeform()
         {
             hasWorldTarget = false;
             targetRegionId = string.Empty;
+
+            // 갈 곳이 있어야 할 종류인데 대상을 못 찾은 경우 — 종류에 맞는 폴백 문구.
             switch (objective.Kind)
             {
-                case StoryObjectiveKind.TalkToNpc: label = "동행자를 찾아 대화"; break;
+                case StoryObjectiveKind.TalkToNpc: SetLabel("동행자를 찾아 대화"); return;
                 case StoryObjectiveKind.EnterRegion:
                 case StoryObjectiveKind.EnterSubArea:
-                case StoryObjectiveKind.DefeatGuardian: label = "새로운 장소를 찾아서"; break;
-                default: label = "모험을 이어가세요"; break;
+                case StoryObjectiveKind.DefeatGuardian: SetLabel("새로운 장소를 찾아서"); return;
             }
+
+            SetLabel(StoryObjectiveResolver.DescribeActionObjective(
+                objective.TriggerType,
+                RegionDisplayName(objective.RequiredRegionId),
+                InTargetRegion(objective.RequiredRegionId),
+                InsectDisplayName(objective.TargetId),
+                QuestTitle(objective.TargetId),
+                objective.Threshold,
+                CurrentProgressValue()));
+        }
+
+        // 라벨은 0.5초마다 다시 만들어지지만 대부분 같은 문자열이다. 값이 같으면 기존 참조를
+        // 유지한다 — HUD(TutorialQuestUI.DrawObjectiveRow)가 ReferenceEquals로 캐시 적중을
+        // 판정하므로, 매번 새 인스턴스를 물리면 저쪽 문자열 조립이 헛돈다.
+        private void SetLabel(string value)
+        {
+            if (value == null) value = string.Empty;
+            if (!string.Equals(label, value, System.StringComparison.Ordinal)) label = value;
+        }
+
+        private bool InTargetRegion(string regionId)
+        {
+            if (string.IsNullOrEmpty(regionId) || regionManager == null
+                || regionManager.CurrentRegion == null) return false;
+            return regionManager.CurrentRegion.regionId == regionId;
+        }
+
+        private string InsectDisplayName(string insectId)
+        {
+            if (string.IsNullOrEmpty(insectId) || insectDatabase == null) return null;
+            InsectData data = insectDatabase.GetById(insectId);
+            return data != null ? data.displayName : null;
+        }
+
+        private string QuestTitle(string questId)
+        {
+            if (string.IsNullOrEmpty(questId) || questManager == null) return null;
+            return questManager.GetQuestTitle(questId);
+        }
+
+        /// <summary>
+        /// 진행형 목표(레벨·도감)의 현재값. 모르면 -1(그때는 임계값만 띄운다).
+        ///
+        /// <b>매 Refresh마다 새로 읽는다.</b> <see cref="StoryObjective"/>는 StoryDirector가
+        /// 캐시하고 진행이 바뀔 때만 무효화하므로, 거기 담으면 화면에 낡은 수치가 굳는다.
+        /// </summary>
+        private int CurrentProgressValue()
+        {
+            if (objective.TriggerType == StoryDirector.TriggerLevelReach)
+                return progressController != null ? progressController.Level : -1;
+            if (objective.TriggerType == StoryDirector.TriggerDexProgress)
+                return dexController != null ? dexController.CapturedSpeciesCount : -1;
+            return -1;
         }
 
         /// <summary>목표 행 버튼 — 주행 중이면 취소, 아니면 시작.</summary>
@@ -293,7 +404,9 @@ namespace InsectGame.Story
             if (!TargetInCurrentRegion)
             {
                 // 리전 이동은 지도의 기존 경로를 쓴다 — 접근 가능 여부·수문장 판정이 거기 있다.
-                ShowStatus($"지도에서 {RegionDisplayName(targetRegionId)}(으)로 먼저 이동하세요");
+                // 예전엔 문구만 띄우고 끝이라, 안내를 읽고도 지도를 직접 열어 그 리전을 찾아야 했다.
+                if (MapRequested != null) MapRequested.Invoke(targetRegionId);
+                else ShowStatus($"지도에서 {RegionDisplayName(targetRegionId)}(으)로 먼저 이동하세요");
                 return;
             }
 
@@ -304,8 +417,11 @@ namespace InsectGame.Story
                     : 2f);
         }
 
+        // 빈 ID면 빈 문자열을 준다 — DescribeActionObjective가 그걸 "리전 모름"으로 읽어
+        // 지명 없는 문구로 떨어진다. null을 흘리면 그쪽 분기가 지명을 붙이려다 빈칸을 만든다.
         private string RegionDisplayName(string regionId)
         {
+            if (string.IsNullOrEmpty(regionId)) return string.Empty;
             RegionData r = regionManager != null ? regionManager.GetRegionById(regionId) : null;
             return r != null && !string.IsNullOrEmpty(r.displayName) ? r.displayName : regionId;
         }

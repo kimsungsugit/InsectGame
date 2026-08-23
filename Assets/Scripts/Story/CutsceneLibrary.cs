@@ -19,6 +19,10 @@ namespace InsectGame.Story
         public const string SealOpening = "cs_seal_opening";
         /// <summary>최종장 — 무명과의 대치.</summary>
         public const string NamelessConfront = "cs_nameless_confront";
+        /// <summary>1막 클라이맥스 — 유적 신전에서 봉인의 정체(기록)를 본 순간.</summary>
+        public const string SealDiscovery = "cs_seal_discovery";
+        /// <summary>최종장 마무리 — 마지막 빈칸이 메워지고 그것이 설 자리를 잃는다.</summary>
+        public const string FinalSeal = "cs_final_seal";
 
         public static bool TryGet(string cutsceneId, out CutsceneShot[] shots)
         {
@@ -27,19 +31,26 @@ namespace InsectGame.Story
                 case StoryPrologue: shots = BuildStoryPrologue(); return true;
                 case SealOpening: shots = BuildSealOpening(); return true;
                 case NamelessConfront: shots = BuildNamelessConfront(); return true;
+                case SealDiscovery: shots = BuildSealDiscovery(); return true;
+                case FinalSeal: shots = BuildFinalSeal(); return true;
                 default: shots = null; return false;
             }
         }
 
         /// <summary>
-        /// 1막 개막 — 조작을 익힌 플레이어가 마을 어르신을 찾아온 순간.
+        /// 1막 개막 — 어르신에게 이야기를 <b>듣고 첫 파트너를 받은 직후</b>.
         ///
-        /// <b>이야기가 시작되는 자리를 눈으로 보여준다.</b> 튜토리얼은 "어떻게 잡는가"를 가르쳤고,
-        /// 여기서 "왜 잡는가"로 넘어간다 — 카메라가 초원을 한 바퀴 둘러보며 곤충이 사라지고 있다는
-        /// 것을 먼저 보여주고, 그 다음 어르신의 대사가 이어진다.
+        /// <b>대사는 앞에 온다.</b> 컷신은 <c>StoryBeatCompleted</c>로 재생되므로 대화 모달이
+        /// 닫힌 뒤다(<c>CutsceneDirector</c> 클래스 주석이 근거). 그러니 여기서 하는 일은
+        /// 이야기를 <b>여는</b> 것이 아니라 들은 이야기를 들고 필드로 <b>내보내는</b> 것이다.
         ///
-        /// 대사가 <b>뒤에</b> 오므로(StoryBeatCompleted 재생) 여기서는 세계를 보여주기만 하고
-        /// 설명하지 않는다. 자막 세 줄이 그 이상 말하지 않는 이유다.
+        /// 예전 자막은 이 순서를 거꾸로 알고 쓰여 있었다 — 세 번째 컷이 어르신 대사 2번째 줄
+        /// ("어제 있던 아이가 오늘은 보이질 않는단다")을 <b>거의 그대로 되풀이</b>했고, 마지막
+        /// 컷은 "마을 어르신이 그 이야기를 알고 있다"로 <b>방금 만나고 나온 사람을 찾아가라</b>고
+        /// 안내했다. 재생 시점을 확인하지 않고 쓰면 이렇게 어긋난다.
+        ///
+        /// 카메라 워크(초원 훑기 → 부감 → 복귀)는 그대로 둔다. 어긋난 것은 자막뿐이고,
+        /// 그림은 "지금부터 나갈 곳"을 보여주는 데 그대로 맞는다.
         /// </summary>
         private static CutsceneShot[] BuildStoryPrologue()
         {
@@ -50,7 +61,7 @@ namespace InsectGame.Story
                     camFrom: new Vector3(0f, 2.2f, -3.4f),
                     camTo: new Vector3(-2.6f, 3.4f, -4.2f),
                     lookAt: new Vector3(0f, 1.2f, 1.2f),
-                    subtitle: "곤충을 잡는 법은 몸이 먼저 익혔다."),
+                    subtitle: "잡는 법은 몸이 먼저 익혔다. 그리고 이제 혼자가 아니다."),
 
                 // 2. 초원을 옆으로 훑는다. 자막 없이 그림만 — 넓이를 느끼게 한다.
                 new CutsceneShot(2.2f,
@@ -63,14 +74,14 @@ namespace InsectGame.Story
                     camFrom: new Vector3(3.2f, 4.0f, -3.0f),
                     camTo: new Vector3(0.5f, 8.5f, -6.5f),
                     lookAt: new Vector3(0f, 0.5f, 4.0f),
-                    subtitle: "그런데 어제 있던 것이 오늘은 보이지 않는다."),
+                    subtitle: "풀밭은 이렇게 넓은데, 움직이는 것이 눈에 잘 띄지 않는다."),
 
-                // 4. 다시 내려와 어르신 쪽으로 — 대사로 넘어가는 다리.
+                // 4. 다시 내려와 플레이어 곁으로 — 다음 목표(필드로 나가기)로 넘어가는 다리.
                 new CutsceneShot(2.6f,
                     camFrom: new Vector3(0.5f, 8.5f, -6.5f),
                     camTo: new Vector3(0f, 2.6f, -3.6f),
                     lookAt: new Vector3(0f, 1.4f, 1.0f),
-                    subtitle: "마을 어르신이 그 이야기를 알고 있다."),
+                    subtitle: "이 아이와 함께라면, 그 이유를 찾을 수 있을지도 모른다."),
             };
         }
 
@@ -166,6 +177,94 @@ namespace InsectGame.Story
                     camTo: new Vector3(0f, 3.0f, -4.0f),
                     lookAt: new Vector3(0f, 1.0f, 0f),
                     dim: 0.12f),
+            };
+        }
+
+        /// <summary>
+        /// 「벽은 목록이었다」 — 1막의 클라이맥스. 세라가 대사로 이미 설명을 마친 뒤에 재생되므로
+        /// (<c>StoryBeatCompleted</c>) 여기서는 <b>설명하지 않고 보여준다</b>.
+        ///
+        /// 카메라가 플레이어를 떠나 벽으로 갔다가 다시 돌아오는 왕복 구조다. 2막의
+        /// <see cref="SealOpening"/>이 같은 자리에서 <b>바닥</b>으로 내려가는 것과 짝을 이룬다 —
+        /// 여기서 올려다본 것이 저기서 발밑에서 갈라진다.
+        ///
+        /// 총 10.8초. 상한은 <c>PlayerMovement.AutoUnfreezeTime</c>(20초)이고
+        /// <c>CutsceneTimelineTests</c>가 여유 4초를 강제한다.
+        /// </summary>
+        private static CutsceneShot[] BuildSealDiscovery()
+        {
+            return new[]
+            {
+                // 1. 플레이어 어깨 너머에서 벽 쪽으로 — 무엇을 보고 있는지부터 맞춘다.
+                new CutsceneShot(2.6f,
+                    camFrom: new Vector3(0f, 2.0f, -3.2f),
+                    camTo: new Vector3(-1.2f, 2.4f, -1.8f),
+                    lookAt: new Vector3(0f, 2.2f, 3.4f),
+                    subtitle: "벽은 장식이 아니었다. 목록이었다."),
+
+                // 2. 벽을 옆으로 훑는다. 자막 없이 그림만 — 수를 세게 하려는 컷이다.
+                new CutsceneShot(2.4f,
+                    camFrom: new Vector3(-1.2f, 2.4f, -1.8f),
+                    camTo: new Vector3(2.4f, 2.6f, -1.4f),
+                    lookAt: new Vector3(0.8f, 2.4f, 3.6f)),
+
+                // 3. 올라가 전체를 담는다. 빈칸이 보이기 시작하는 각.
+                new CutsceneShot(2.8f,
+                    camFrom: new Vector3(2.4f, 2.6f, -1.4f),
+                    camTo: new Vector3(0.4f, 5.6f, -4.2f),
+                    lookAt: new Vector3(0f, 2.0f, 3.0f),
+                    subtitle: "이름 하나가 바랠 때마다, 세계에서 한 종이 지워졌다.",
+                    dim: 0.18f),
+
+                // 4. 내려와 플레이어 곁으로. 딤을 걷으며 끝낸다.
+                new CutsceneShot(3.0f,
+                    camFrom: new Vector3(0.4f, 5.6f, -4.2f),
+                    camTo: new Vector3(0f, 2.4f, -3.4f),
+                    lookAt: new Vector3(0f, 1.3f, 0.8f),
+                    subtitle: "그리고 방금, 한 줄이 다시 채워졌다."),
+            };
+        }
+
+        /// <summary>
+        /// 「들어올 틈이 없어졌다」 — 최종전 직후. <see cref="NamelessConfront"/>이 딤을 쌓으며
+        /// 들어갔으므로 여기서는 <b>딤을 걷으며 나온다</b>(0.40 → 0.22 → 0.08 → 0).
+        /// 화면이 밝아지는 것 자체가 결말이라, 마지막 컷에는 자막을 두지 않는다.
+        ///
+        /// 「무명」을 이름으로 부르지 않는다 — 이 이야기의 규칙이자 승리 조건이다(StoryBible 2장).
+        /// 총 9.0초.
+        /// </summary>
+        private static CutsceneShot[] BuildFinalSeal()
+        {
+            return new[]
+            {
+                // 1. 가장 어둡고 가장 가깝다 — 대치의 마지막 프레임을 이어받는다.
+                new CutsceneShot(2.4f,
+                    camFrom: new Vector3(0f, 1.5f, -2.0f),
+                    camTo: new Vector3(0f, 1.9f, -2.8f),
+                    lookAt: new Vector3(0f, 1.4f, 2.6f),
+                    subtitle: "빌려 쓴 모습들이 하나씩 제자리로 돌아갔다.",
+                    dim: 0.40f),
+
+                // 2. 물러나며 올라간다. 자막 없이 — 빈 자리를 눈으로 확인하는 사이.
+                new CutsceneShot(2.2f,
+                    camFrom: new Vector3(0f, 1.9f, -2.8f),
+                    camTo: new Vector3(-0.8f, 3.4f, -4.6f),
+                    lookAt: new Vector3(0f, 1.2f, 2.0f),
+                    dim: 0.22f),
+
+                // 3. 가장 먼 각. 여기서만 결말을 말한다.
+                new CutsceneShot(2.6f,
+                    camFrom: new Vector3(-0.8f, 3.4f, -4.6f),
+                    camTo: new Vector3(0.6f, 4.4f, -6.0f),
+                    lookAt: new Vector3(0f, 1.0f, 1.6f),
+                    subtitle: "그것은 죽지 않았다. 들어올 틈이 없어졌을 뿐이다.",
+                    dim: 0.08f),
+
+                // 4. 플레이어 곁으로 복귀. 딤 0 — 멀리서 끝내면 카메라가 튀어 돌아온다.
+                new CutsceneShot(1.8f,
+                    camFrom: new Vector3(0.6f, 4.4f, -6.0f),
+                    camTo: new Vector3(0f, 2.6f, -3.6f),
+                    lookAt: new Vector3(0f, 1.2f, 0.6f)),
             };
         }
     }

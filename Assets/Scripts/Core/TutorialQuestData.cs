@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace InsectGame.Core
@@ -64,5 +65,52 @@ namespace InsectGame.Core
         // QuestType.CaptureRarity 전용: 이 등급을 포획해야 진행된다. 다른 타입에서는 무시.
         // 기본값 Common은 enum의 0이라, 이 필드를 안 쓰는 기존 퀘스트에 영향이 없다.
         public InsectGame.Data.InsectRarity requiredRarity = InsectGame.Data.InsectRarity.Common;
+    }
+
+    /// <summary>
+    /// 튜토리얼 배열 순서에 기대는 <b>순수</b> 판정. MonoBehaviour와 떼어 놓아 테스트로 고정한다
+    /// (<c>StoryObjectiveResolver</c>와 같은 성격).
+    /// </summary>
+    public static class TutorialQuestOrder
+    {
+        /// <summary>
+        /// <b>배열 중간에 삽입돼 기존 세이브가 건너뛴 스토리 퀘스트</b>를 찾는다.
+        /// 자기보다 뒤에 있는 스토리 퀘스트를 이미 깬 세이브라면 그건 지나간 단계다.
+        ///
+        /// 없으면 이미 진행한 유저가 <b>뒤로 되돌아간다</b> — <c>ActivateNextQuest</c>가 배열을
+        /// 앞에서부터 훑어 첫 미완료를 고르기 때문이다. <c>q_talk_elder</c>를 3번 자리에 끼우자
+        /// 튜토리얼을 마친 세이브에서 "마을 어르신을 만나다"가 부활했다.
+        ///
+        /// <b>경계는 "가장 뒤에 완료된 것"이다.</b> 그보다 앞만 소급하므로, 아직 할 차례인
+        /// 퀘스트는 건드리지 않는다 — q_move만 깬 세이브에서 q_talk_elder는 그대로 다음 차례다.
+        ///
+        /// 판정의 전제는 <b>완료 순서 = 배열 순서</b>이고, 그건 모든 prereq가 배열에서 자기보다
+        /// 앞을 가리킬 때만 성립한다(<c>quest_lint</c> 검사 9가 고정한다).
+        /// 서브 퀘스트는 다중 활성이라 순서 개념이 없어 대상이 아니다.
+        /// </summary>
+        public static List<string> CollectBackfillTargets(
+            TutorialQuest[] quests, System.Func<string, bool> isCompleted)
+        {
+            var targets = new List<string>();
+            if (quests == null || isCompleted == null) return targets;
+
+            int lastCompleted = -1;
+            for (int i = 0; i < quests.Length; i++)
+            {
+                TutorialQuest q = quests[i];
+                if (q == null || q.category != QuestCategory.Story) continue;
+                if (isCompleted(q.questId)) lastCompleted = i;
+            }
+            if (lastCompleted < 0) return targets;   // 스토리를 하나도 안 깬 세이브(신규 포함)
+
+            for (int i = 0; i < lastCompleted; i++)
+            {
+                TutorialQuest q = quests[i];
+                if (q == null || q.category != QuestCategory.Story) continue;
+                if (isCompleted(q.questId)) continue;
+                targets.Add(q.questId);
+            }
+            return targets;
+        }
     }
 }

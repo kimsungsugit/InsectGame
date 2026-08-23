@@ -785,7 +785,10 @@ namespace InsectGame.UI
             for (int i = 0; i < stanceRects.Length; i++)
                 stanceRects[i] = new Rect(0, 0, 0, 0);
             if (cameraFollower != null) cameraFollower.ExitBattleMode();
-            if (playerMovement != null) playerMovement.SetFrozen(false);
+            // 1v1(BattleScreenUI.EndBattle)과 같은 이유로 모달 중에는 풀지 않는다 —
+            // 프리즈는 bool 하나라 주인이 여럿이면 마지막에 쓴 쪽이 이긴다.
+            if (playerMovement != null && !ModalUIRegistry.IsAnyOpen())
+                playerMovement.SetFrozen(false);
         }
 
 

@@ -3496,7 +3496,20 @@ namespace InsectGame.UI
                 if (Time.timeScale != 1f) Time.timeScale = 1f;
                 hitstopUntil = 0f; critUntil = 0f;
                 if (cameraFollower != null) cameraFollower.ExitBattleMode();
-                if (playerMovement != null) playerMovement.SetFrozen(false);
+                // **모달이 떠 있으면 풀지 않는다.** 프리즈는 bool 하나라 주인이 여럿이면
+                // 마지막에 쓴 쪽이 이긴다. 전투 승리로 스토리 비트가 뜨면 대화 모달이 먼저
+                // 프리즈를 걸어 두는데, 결과 화면은 그와 무관하게 4초 뒤 스스로 닫히며 여기서
+                // 프리즈를 푼다 — **대사를 읽는 동안 캐릭터가 걸어다녔다**(BattleWin 비트 12개
+                // 전부 해당). 모달 쪽이 닫힐 때 자기가 푼다(NpcDialogueUI.CloseModal).
+                // 그쪽이 끝내 안 풀어도 PlayerMovement의 AutoUnfreezeTime(20s)이 받아낸다.
+                if (playerMovement != null && !ModalUIRegistry.IsAnyOpen())
+                    playerMovement.SetFrozen(false);
+
+                // **맨 마지막이다.** 화면·카메라·프리즈를 다 걷은 뒤에 알려야, 이어서 열리는
+                // 대화 모달이 방금 푼 프리즈를 다시 걸 수 있다(순서가 뒤집히면 대사를 읽는
+                // 동안 캐릭터가 걸어다닌다 — 바로 위 주석의 그 결함이다).
+                // finally에 두는 이유: try에서 예외가 나도 이야기는 이어져야 한다.
+                if (storyDirector != null) storyDirector.NotifyBattlePresentationClosed();
             }
         }
 
@@ -3629,6 +3642,15 @@ namespace InsectGame.UI
             if (teamManager == null) teamManager = team;
             if (collection == null) collection = col;
             if (trainingManager == null) trainingManager = training;
+        }
+
+        // 전투가 끝났다고 알려 줄 곳. 없어도 전투는 그대로 돌아간다 — 스토리 쪽이 12초 뒤
+        // 스스로 쏜다(StoryDirector.BattleWinGiveUpSeconds).
+        private InsectGame.Story.StoryDirector storyDirector;
+
+        public void AutoWire(InsectGame.Story.StoryDirector director)
+        {
+            if (storyDirector == null) storyDirector = director;
         }
 
         public void AutoWire(BattleArenaController a)

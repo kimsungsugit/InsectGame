@@ -321,10 +321,18 @@ namespace InsectGame.UI
 
                 // 명부회 간부는 대사가 끝난 다음 말을 걸면 대결로 이어진다.
                 // 순서가 중요하다 — 첫 대화에서 곧바로 싸움을 걸면 그 인물이 누구인지 모르는 채로
-                // 전투에 들어간다. storyFired가 false여야(= 소개 비트를 이미 봤어야) 도전이 열린다.
+                // 전투에 들어간다.
+                //
+                // **`!storyFired`만으로는 부족하다.** 그건 "이미 소개를 봤다"와 "아직 차례가
+                // 아니다"를 구분하지 못한다 — 집게·저울·관장의 소개는 서브에리어 대치 비트에
+                // 걸려 있어서, 리전에 도착해 본진의 그들에게 말을 걸면 소개 없이 보스전이
+                // 시작됐다(최종 보스인 관장까지). `HasMetStoryNpc`가 그 둘을 가른다.
+                //
                 // **early return 금지** — 아래 재스캔 정리를 건너뛰면 전투 중에도 상호작용
                 // 프롬프트가 화면에 남는다.
-                bool bossDuelStarted = !storyFired && currentVillager.IsStoryNpc
+                bool metBefore = storyDirector != null
+                    && storyDirector.HasMetStoryNpc(currentVillager.StoryNpcId);
+                bool bossDuelStarted = !storyFired && metBefore && currentVillager.IsStoryNpc
                     && duelController != null
                     && duelController.TryStartBossDuel(currentVillager.StoryNpcId, Time.time);
 

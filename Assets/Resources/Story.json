@@ -773,7 +773,8 @@
         "rewardInsectDisplayName": "고대의 잠자리",
         "rewardInsectLevel": 45,
         "unlockQuestId": ""
-      }
+      },
+      "cutsceneId": "cs_seal_discovery"
     },
     {
       "beatId": "ch7_opening",
@@ -931,7 +932,8 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      }
+      },
+      "stageEnterId": "st_ch7_scholar_follow"
     },
     {
       "beatId": "ch7_clash",
@@ -971,6 +973,7 @@
       "chapterId": "ch7",
       "order": 25,
       "prerequisiteBeatId": "talk_scholar",
+      "requiredBeatId": "ch7_arrive",
       "trigger": {
         "type": "NpcTalk",
         "param": "ruins_scholar"
@@ -1109,7 +1112,8 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      }
+      },
+      "stageEnterId": "st_ch8_grip_enter"
     },
     {
       "beatId": "ch8_clash",
@@ -1149,6 +1153,7 @@
       "chapterId": "ch8",
       "order": 30,
       "prerequisiteBeatId": "talk_rival",
+      "requiredBeatId": "ch8_arrive",
       "trigger": {
         "type": "NpcTalk",
         "param": "catcher_rival"
@@ -1291,7 +1296,8 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      }
+      },
+      "stageEnterId": "st_ch9_scale_enter"
     },
     {
       "beatId": "ch9_clash",
@@ -1331,6 +1337,7 @@
       "chapterId": "ch9",
       "order": 35,
       "prerequisiteBeatId": "ch7_echo",
+      "requiredBeatId": "ch9_arrive",
       "trigger": {
         "type": "NpcTalk",
         "param": "ruins_scholar"
@@ -1485,7 +1492,8 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      }
+      },
+      "stageEnterId": "st_ch10_ink_enter"
     },
     {
       "beatId": "ch10_clash",
@@ -1525,6 +1533,7 @@
       "chapterId": "ch10",
       "order": 40,
       "prerequisiteBeatId": "",
+      "requiredBeatId": "ch10_arrive",
       "trigger": {
         "type": "NpcTalk",
         "param": "ledger_ink"
@@ -1663,7 +1672,8 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      }
+      },
+      "stageEnterId": "st_ch11_scholar_lead"
     },
     {
       "beatId": "ch11_clash",
@@ -1703,6 +1713,7 @@
       "chapterId": "ch11",
       "order": 45,
       "prerequisiteBeatId": "talk_elder",
+      "requiredBeatId": "ch11_arrive",
       "trigger": {
         "type": "NpcTalk",
         "param": "village_elder"
@@ -1857,7 +1868,8 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      }
+      },
+      "stageEnterId": "st_ch12_chief_enter"
     },
     {
       "beatId": "ch12_clash",
@@ -1901,6 +1913,7 @@
       "chapterId": "ch12",
       "order": 50,
       "prerequisiteBeatId": "ch8_echo",
+      "requiredBeatId": "ch12_confront",
       "trigger": {
         "type": "NpcTalk",
         "param": "catcher_rival"
@@ -2020,13 +2033,15 @@
         "rewardInsectDisplayName": "이름을 되찾은 사마귀",
         "rewardInsectLevel": 60,
         "unlockQuestId": ""
-      }
+      },
+      "cutsceneId": "cs_final_seal"
     },
     {
       "beatId": "fin_epilogue",
       "chapterId": "fin",
       "order": 53,
       "prerequisiteBeatId": "ch9_echo",
+      "requiredBeatId": "fin_seal",
       "trigger": {
         "type": "NpcTalk",
         "param": "ruins_scholar"
@@ -2532,7 +2547,8 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      }
+      },
+      "requiredBeatId": "ch1_intro"
     },
     {
       "beatId": "talk_rival",
@@ -2564,7 +2580,8 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      }
+      },
+      "requiredBeatId": "ch1_intro"
     },
     {
       "beatId": "talk_scholar",
@@ -2596,7 +2613,8 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      }
+      },
+      "requiredBeatId": "ch1_intro"
     },
     {
       "beatId": "ch2_watchers",
@@ -2635,6 +2653,7 @@
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
       },
+      "stageEnterId": "st_ch2_cord_turn",
       "cutsceneId": ""
     },
     {
@@ -2717,6 +2736,7 @@
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
       },
+      "stageEnterId": "st_ch3_rule_block",
       "cutsceneId": ""
     },
     {
@@ -2799,6 +2819,7 @@
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
       },
+      "stageEnterId": "st_ch4_cord_haul",
       "cutsceneId": ""
     },
     {
@@ -2885,6 +2906,7 @@
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
       },
+      "stageEnterId": "st_ch5_rule_bar",
       "cutsceneId": ""
     },
     {
@@ -2971,6 +2993,7 @@
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
       },
+      "stageEnterId": "st_ch6_cord_yield",
       "cutsceneId": ""
     },
     {

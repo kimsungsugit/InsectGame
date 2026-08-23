@@ -792,7 +792,7 @@ namespace InsectGame.Core
             {
                 if (insectCollection != null)
                 {
-                    PlayerInsectData starter = insectCollection.AddCapturedInsect(
+                    insectCollection.AddCapturedInsect(
                         quest.rewardInsectId,
                         Mathf.Max(1, quest.rewardInsectLevel));
 
@@ -807,13 +807,10 @@ namespace InsectGame.Core
                         dexController.RegisterCapture(quest.rewardInsectId);
                     }
 
-                    // 첫 포획 직후 바로 배틀할 수 있도록, 팀이 비어 있을 때만 1번 슬롯에 배치한다.
-                    if (starter != null
-                        && battleTeamManager != null
-                        && !battleTeamManager.HasAnyInsect())
-                    {
-                        battleTeamManager.SetSlot(0, starter.instanceId);
-                    }
+                    // 첫 곤충의 1번 슬롯 자동 배치는 여기 없다 — `BattleTeamManager`가
+                    // `InsectCaptured`를 구독해 지급 경로 전체에 대해 한 번에 처리한다.
+                    // 여기 두면 퀘스트 보상 경로에만 걸리는데, 실제로 그래서 첫 파트너가
+                    // 스토리 비트 보상으로 옮겨간 순간 이 코드가 죽고 팀이 영원히 비었다.
                 }
                 else
                 {
@@ -1045,6 +1042,17 @@ namespace InsectGame.Core
             return completedQuests.Contains(questId);
         }
 
+        /// <summary>
+        /// 퀘스트 표시 제목(없으면 null). 스토리 목표 행이 <c>QuestComplete</c> 비트를
+        /// "'첫 수문장' 완료하기"로 풀어 쓰는 데 쓴다 — 예전엔 questId를 못 읽어
+        /// "모험을 이어가세요"로 떨어졌다. 읽기 전용이라 진행에 영향이 없다.
+        /// </summary>
+        public string GetQuestTitle(string questId)
+        {
+            TutorialQuest quest = GetQuest(questId);
+            return quest != null ? quest.title : null;
+        }
+
         // 사용자가 퀘스트 창을 열어 완료 목록을 확인했을 때 호출 — 미확인 완료 배지를 0으로 리셋.
         public void MarkQuestsSeen()
         {
@@ -1173,6 +1181,57 @@ namespace InsectGame.Core
             // 서브 퀘스트 진행/반복 로드(로컬 전용).
             ParseIntDict(PlayerPrefs.GetString(SideProgressKey, ""), sideProgress);
             ParseIntDict(PlayerPrefs.GetString(SideRepeatKey, ""), sideRepeatCount);
+
+            // 배열 중간에 새로 끼운 퀘스트를 기존 세이브에 맞춰 정리한다. 세 로드 경로
+            // (Start / BeginTutorialForCurrentAccount / ReloadFromDisk)가 전부 여기를 지난다.
+            BackfillSkippedStoryQuests();
+        }
+
+        /// <summary>
+        /// <b>배열 중간에 삽입된 퀘스트를 기존 세이브에서 소급 완료 처리한다.</b>
+        /// 자기보다 <b>뒤</b>에 있는 스토리 퀘스트를 이미 깬 세이브라면, 그 사이에 끼워 넣은
+        /// 퀘스트는 이미 지나간 단계다.
+        ///
+        /// 없으면 이미 진행한 유저가 <b>뒤로 되돌아간다</b> — <c>ActivateNextQuest</c>가 배열을
+        /// 앞에서부터 훑어 첫 미완료를 고르기 때문이다. 실제로 <c>q_talk_elder</c>를 3번 자리에
+        /// 끼우자 튜토리얼을 마친 세이브에서 "마을 어르신을 만나다"가 부활했다(완주 상태가 깨지고
+        /// 튜토리얼 칩이 다시 뜬다). 진행이 막히진 않지만 진척이 되감긴 것으로 보인다.
+        ///
+        /// <b>보상은 주지 않는다.</b> 하지 않은 일에 대한 지급이고, 곤충 보상이 걸린 퀘스트라면
+        /// 그대로 복제가 된다. 완료 표시만 남긴다.
+        ///
+        /// 판정이 성립하는 근거는 <b>완료 순서 = 배열 순서</b>다. <c>ActivateNextQuest</c>가
+        /// 배열 앞에서부터 고르고, 모든 <c>prerequisiteQuestId</c>가 배열에서 자기보다 <b>앞</b>을
+        /// 가리키므로(prereq 미충족으로 건너뛰는 항목이 없다) 뒤엣것이 완료됐다면 앞엣것도
+        /// 완료됐어야 한다. <c>quest_lint</c> 검사 9가 그 전제를 고정한다 — 깨지면 이 소급이
+        /// <b>아직 할 차례인 퀘스트를 건너뛴다</b>.
+        ///
+        /// 서브 퀘스트는 대상이 아니다(다중 활성이라 순서 개념이 없다).
+        /// </summary>
+        private void BackfillSkippedStoryQuests()
+        {
+            // 판정은 순수부(TutorialQuestOrder)가 한다 — 경계가 미묘해서 테스트로 고정했다.
+            List<string> targets =
+                TutorialQuestOrder.CollectBackfillTargets(allQuests, completedQuests.Contains);
+            if (targets.Count == 0) return;
+
+            for (int i = 0; i < targets.Count; i++)
+            {
+                completedQuests.Add(targets[i]);
+                Debug.Log($"[Quest] 소급 완료: {targets[i]} — 뒤 퀘스트를 이미 깬 세이브라 지나간 단계다");
+            }
+
+            // 활성 퀘스트가 방금 완료 처리됐다면 비운다 — 호출부가 ActivateNextQuest로 재선정한다
+            // (세 경로 모두 `ActiveQuest == null || completedQuests.Contains(activeQuestId)`를 본다).
+            if (!string.IsNullOrEmpty(activeQuestId) && completedQuests.Contains(activeQuestId))
+            {
+                activeQuestId = null;
+                ActiveQuest = null;
+            }
+
+            // **미확인 배지는 올리지 않는다.** 하지 않은 퀘스트의 완료 알림을 띄우면
+            // 보상을 받은 것으로 오해한다(소급은 조용해야 한다).
+            SaveProgress();
         }
     }
 }

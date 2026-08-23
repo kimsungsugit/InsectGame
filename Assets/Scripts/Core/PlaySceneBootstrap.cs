@@ -12,7 +12,7 @@ using UnityEngine.UI;
 
 namespace InsectGame.Core
 {
-    public class PlaySceneBootstrap : MonoBehaviour
+    public class PlaySceneBootstrap : MonoBehaviour, ICloudReloadable
     {
         [Header("Bootstrap Flags")]
         [SerializeField] private bool buildWorld = true;
@@ -452,7 +452,16 @@ namespace InsectGame.Core
             };
 
             // 수문장 곤충 스폰 (3D 엔티티)
+            guardianRegions = regionDefs;
+            guardianDatabase = database;
+            guardianRegionMgr = regionMgr;
             CreateGuardians(regionDefs, database, regionMgr);
+
+            // 봉인을 진척에 붙여 둔다. **RegionManager 다음에 등록해야** 클라우드 로드 때
+            // 갱신된 격파 집합을 읽는다(CloudSaveManager가 등록 순서대로 부른다).
+            regionMgr.GuardianDefeated -= OnGuardianSealBroken;
+            regionMgr.GuardianDefeated += OnGuardianSealBroken;
+            cloudSave.RegisterReloadable(this);
 
             PlayerMovement playerMovement = player.GetComponent<PlayerMovement>();
             if (playerMovement != null)
@@ -549,6 +558,8 @@ namespace InsectGame.Core
             storyDirector.AutoWire(candyInventory, itemInventory);
             storyDirector.AutoWire(dex);   // DexProgress 트리거 소스 — Start 전에 주입해야 구독이 걸린다
             cloudSave.RegisterReloadable(storyDirector);
+            // 전투 결과 화면이 닫힌 뒤에 BattleWin 비트를 띄우기 위한 통지 경로.
+            battleScreen.AutoWire(storyDirector);
 
             // 캐시 상점 + 가챠 시스템
             CashShopManager cashShop = EnsureComponent<CashShopManager>("World/CashShop");
@@ -633,8 +644,13 @@ namespace InsectGame.Core
                 InsectGame.Story.StoryObjectiveTracker objectiveTracker =
                     EnsureComponent<InsectGame.Story.StoryObjectiveTracker>("World/StoryObjectiveTracker");
                 objectiveTracker.AutoWire(storyDirector, npcManager, regionMgr, playerMov, player.transform);
+                // 목표 문구 구체화 — 곤충 표시명·퀘스트 제목·현재 레벨/도감 종수.
+                // 없어도 목표는 나오지만 "모험을 이어가세요"로 뭉개진다.
+                objectiveTracker.AutoWire(progress, dex, questManager, database);
                 questUi.AutoWire(objectiveTracker);      // 퀘스트 칩 아래 목표 행
+                questUi.AutoWire(mapUi);                 // 목표가 타 리전이면 지도를 그 리전으로 연다
                 minimapUi.AutoWire(objectiveTracker);    // 미니맵 목표 방향 쐐기
+                mapUi.AutoWire(objectiveTracker);        // 지도 위 스토리 목표 마커
                 minimapUi.AutoWire(statusHud);           // 좌측 스택 가림 판정(펼침 패널이 덮는다)
 
                 // 프로시저럴 컷신 — 스토리 비트의 대사가 끝난 뒤(StoryBeatCompleted) 재생한다.
@@ -4737,18 +4753,6 @@ namespace InsectGame.Core
                     Object.Destroy(pillar.GetComponent<Collider>());
                 }
 
-                // 오라 (빨간 반투명) — 격파했으면 봉인이 걷혔으므로 그리지 않는다.
-                if (!defeated)
-                {
-                    Material auraMat = CreateSafeMaterial(new Color(0.9f, 0.2f, 0.1f, 0.15f));
-                    GameObject aura = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                    aura.name = $"Guardian_{r.regionId}_Aura";
-                    aura.transform.position = guardianPos + new Vector3(0, 2f, 0);
-                    aura.transform.localScale = new Vector3(5f, 4f, 5f);
-                    aura.GetComponent<MeshRenderer>().material = auraMat;
-                    Object.Destroy(aura.GetComponent<Collider>());
-                }
-
                 // 이름 표지판
                 Material signMat = CreateSafeMaterial(new Color(0.15f, 0.08f, 0.05f));
                 GameObject sign = GameObject.CreatePrimitive(PrimitiveType.Cube);
@@ -4758,25 +4762,116 @@ namespace InsectGame.Core
                 sign.GetComponent<MeshRenderer>().material = signMat;
                 Object.Destroy(sign.GetComponent<Collider>());
 
-                // 수문장 곤충 엔티티 스폰 (실제 3D 곤충)
-                SpawnGuardianInsect(r, guardianPos, database);
+                // 봉인(아우라 + 곤충)은 격파 여부에 따라 붙었다 떨어졌다 한다 — 구조물과 달리
+                // **생겼다 사라지는 것**이라 따로 짓고 따로 걷는다.
+                if (!defeated) BuildGuardianSeal(r, guardianPos, database);
             }
         }
 
-        private void SpawnGuardianInsect(Data.RegionData region, Vector3 guardianPos, InsectDatabase database)
+        // ── 수문장 봉인의 생명주기 ──────────────────────────────────────────────
+        //
+        // 관문 구조물(플랫폼·기둥·간판)은 격파해도 남는 흔적이라 한 번 짓고 끝이다.
+        // **아우라와 곤충은 다르다** — "아직 안 깼다"의 표시이므로 상태를 따라와야 한다.
+        // 그런데 이 둘은 부팅 때 한 번 지어질 뿐이라 두 자리에서 어긋나 있었다:
+        //
+        //   1. **인게임 격파** — 수문장을 이겨도 아우라를 걷는 사람이 아무도 없었다
+        //      (`GuardianDefeated` 구독자는 StoryDirector 하나뿐이다). 곤충만 사라지고
+        //      지름 5m 붉은 구체가 다음 부팅까지 그대로 서 있었다.
+        //   2. **기기 교체 첫 접속** — 클라우드 로드는 부팅 뒤에 끝나므로, 다른 기기에서 깬
+        //      수문장이 여기서는 멀쩡히 서 있다. 말을 걸면 이미 격파 처리된 상대라 진행에
+        //      영향은 없지만 화면과 진척이 어긋난다(앱을 다시 켜야 사라졌다).
+        //
+        // 그래서 봉인만 딕셔너리로 들고 있다가 두 신호에 맞춰 걷거나 다시 세운다.
+        // 계층을 바꾸지 않으려고 부모로 묶지 않고 두 참조를 그대로 든다 — `InsectEntity`는
+        // 풀에서 온 것이 아니라(여기서 `new GameObject`) 파괴해도 풀이 상하지 않는다.
+        private struct GuardianSeal
+        {
+            public GameObject aura;
+            public GameObject insect;
+        }
+
+        private readonly Dictionary<string, GuardianSeal> guardianSeals =
+            new Dictionary<string, GuardianSeal>();
+        private Data.RegionData[] guardianRegions;
+        private InsectDatabase guardianDatabase;
+        private RegionManager guardianRegionMgr;
+
+        private void BuildGuardianSeal(Data.RegionData region, Vector3 guardianPos, InsectDatabase database)
+        {
+            if (region == null || guardianSeals.ContainsKey(region.regionId)) return;
+
+            Material auraMat = CreateSafeMaterial(new Color(0.9f, 0.2f, 0.1f, 0.15f));
+            GameObject aura = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            aura.name = $"Guardian_{region.regionId}_Aura";
+            aura.transform.position = guardianPos + new Vector3(0, 2f, 0);
+            aura.transform.localScale = new Vector3(5f, 4f, 5f);
+            aura.GetComponent<MeshRenderer>().material = auraMat;
+            Object.Destroy(aura.GetComponent<Collider>());
+
+            guardianSeals[region.regionId] = new GuardianSeal
+            {
+                aura = aura,
+                insect = SpawnGuardianInsect(region, guardianPos, database),
+            };
+        }
+
+        private void RemoveGuardianSeal(string regionId)
+        {
+            if (string.IsNullOrEmpty(regionId)) return;
+            if (!guardianSeals.TryGetValue(regionId, out GuardianSeal seal)) return;
+            guardianSeals.Remove(regionId);
+
+            // 전투가 곤충 쪽을 이미 치웠을 수 있다 — Unity의 가짜 null이라 그대로 비교한다.
+            if (seal.aura != null) Object.Destroy(seal.aura);
+            if (seal.insect != null) Object.Destroy(seal.insect);
+        }
+
+        // 인게임 격파 — RegionManager가 해금·저장을 마친 뒤에 울린다.
+        private void OnGuardianSealBroken(string regionId) => RemoveGuardianSeal(regionId);
+
+        /// <summary>
+        /// 클라우드 로드가 끝난 뒤 필드의 봉인을 진척에 맞춘다. <b>양방향이다</b> —
+        /// 깬 수문장은 걷고, (진척이 적은 계정으로 갈아탔다면) 안 깬 수문장은 다시 세운다.
+        /// <c>RegionManager</c>보다 <b>뒤에</b> 등록해야 갱신된 격파 집합을 읽는다.
+        /// </summary>
+        public void ReloadFromDisk()
+        {
+            if (guardianRegions == null || guardianRegionMgr == null) return;
+
+            foreach (var r in guardianRegions)
+            {
+                if (r == null || string.IsNullOrEmpty(r.guardianInsectId)) continue;
+
+                bool defeated = guardianRegionMgr.IsGuardianDefeated(r.regionId);
+                bool standing = guardianSeals.ContainsKey(r.regionId);
+
+                if (defeated && standing) RemoveGuardianSeal(r.regionId);
+                else if (!defeated && !standing)
+                    BuildGuardianSeal(r, guardianRegionMgr.GetGuardianPosition(r), guardianDatabase);
+            }
+        }
+
+        private void OnDestroy()
+        {
+            if (guardianRegionMgr != null) guardianRegionMgr.GuardianDefeated -= OnGuardianSealBroken;
+        }
+
+        // 만든 오브젝트를 돌려준다 — 호출부(BuildGuardianSeal)가 격파 시 걷어야 한다.
+        // 실패 경로는 null이고, 그건 "봉인에 곤충이 없다"로 그대로 기록된다.
+        private GameObject SpawnGuardianInsect(Data.RegionData region, Vector3 guardianPos, InsectDatabase database)
         {
             if (database == null || string.IsNullOrEmpty(region.guardianInsectId))
             {
                 Debug.LogWarning($"[Guardian] {region.regionId}: DB 미배선 또는 guardianInsectId 없음 — 곤충 미스폰");
-                return;
+                return null;
             }
 
-            // 이미 격파된 수문장은 스폰하지 않음.
-            // **마스터 계정은 여기서 13개 전부가 걸린다** — `AuthManager.ApplyMasterPrivileges`가
+            // 격파 판정은 호출부(CreateGuardians)가 한다 — 거기서 아우라를 그릴지도 같은 값으로
+            // 정하므로, 여기서 또 물으면 판정이 둘로 갈린다. 그래서 FindFirstObjectByType도 없앴다.
+            //
+            // **마스터 계정은 호출부에서 13개 전부가 걸러진다** — `AuthManager.ApplyMasterPrivileges`가
             // 진행을 건너뛰라고 모든 리전을 해금하고 수문장을 격파 처리하기 때문이다(의도된 동작).
             // 그래서 마스터로 접속하면 필드에 관문 구조물만 서 있고 곤충은 없다.
-            RegionManager regionMgr = FindFirstObjectByType<RegionManager>();
-            if (regionMgr != null && regionMgr.IsGuardianDefeated(region.regionId)) return;
 
             // 수문장 InsectData 찾기
             InsectData guardianData = null;
@@ -4795,7 +4890,7 @@ namespace InsectGame.Core
                 // 실제로 meadow에서 그 상태가 났다.
                 Debug.LogWarning($"[Guardian] {region.regionId}: '{region.guardianInsectId}'를 "
                     + $"InsectDatabase({database.insects?.Count ?? 0}종)에서 못 찾음 — 곤충 미스폰");
-                return;
+                return null;
             }
 
             // 수문장 곤충 오브젝트 생성
@@ -4827,6 +4922,7 @@ namespace InsectGame.Core
             text.anchor = TextAnchor.MiddleCenter;
             text.alignment = TextAlignment.Center;
             text.color = new Color(1f, 0.3f, 0.2f);
+            return guardianObj;
         }
 
         // GetGuardianWorldPosition은 제거했다 — RegionManager.GetGuardianPosition의 **낡은 사본**이었다.
