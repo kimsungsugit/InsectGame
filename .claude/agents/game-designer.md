@@ -38,6 +38,7 @@ tools:
 - `Assets/Scripts/Story/StoryObjective.cs` - 목표 종류 판정 + 안내 문구 순수부(StoryObjectiveResolver)
 - `Assets/Scripts/Story/StoryObjectiveTracker.cs` - 목표 → 월드 좌표·자동 주행 해석
 - `Assets/Scripts/NPC/NpcBossDuels.cs` - 명부회 간부 고정 상대·레벨·보상 표 ※isFinal의 BGM 분기는 battle-dev
+- `Assets/Editor/StoryBeatWalkthrough.cs` - 스토리 비트 실발화 걸음(배치모드) ※`LiveSceneCapture`(visual-dev)와 같은 배치 도구지만 검증 대상이 3D가 아니라 **저작**이다
 
 ## 역할
 

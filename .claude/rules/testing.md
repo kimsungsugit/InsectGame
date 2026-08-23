@@ -94,6 +94,37 @@ EditMode 러너를 되살리려면 `Assets/Scripts`·`Assets/Editor`·`Assets/Te
 **정지 화면으로는 애니메이션을 못 본다** — 여러 시각을 찍어 픽셀 차분을 낸다.
 플레이어 idle 호흡을 이 방법으로 확인했다(2초 간격 3장, 차이가 플레이어 영역에만 몰림).
 
+### 대사가 실제로 뜨는지는 `StoryBeatWalkthrough`로 본다
+
+캡처 도구의 첫 번째 한계(IMGUI 미포착)가 정확히 스토리 대사를 덮는다 — 비트가 발화하면
+`NpcDialogueUI`가 `OnGUI`로 그리므로 **화면으로는 확인할 방법이 없다.** 그런데
+`story_lint`도 못 본다: 그쪽은 Story.json을 **정적으로** 읽어 게이트·참조 무결성만 본다.
+발화는 트리거 이벤트·prereq 열람·리전 게이트·우선순위 비교·`pendingBeatId` 잠금·
+미뤄 둔 트리거 큐가 **런타임에** 맞물린 결과라, 하나만 어긋나도 **대사가 그냥 안 뜬다**
+(예외도 경고도 없다).
+
+그래서 대사창 대신 **발화 자체**를 본다. `Assets/Editor/StoryBeatWalkthrough.cs`가
+`StoryBeatTriggered`를 구독한 채 게임의 실제 진입점(`OnNpcTalked`·`AddCapturedInsect`·
+`BattleEnded`·`CleanseByBoss`)을 순서대로 두드리고, 뜬 대사는 `NpcDialogueUI.CloseModal`로
+닫는다(닫지 않으면 `DrainPendingTriggers`가 모달 가드에 막혀 **다음 비트가 영영 안 온다**).
+
+```
+"$UNITY_EDITOR_PATH" -batchmode -projectPath "C:/Project/곤충게임" \
+  -logFile .claude/cache/story-walk.log \
+  -executeMethod InsectGame.EditorTools.StoryBeatWalkthrough.Run \
+  -walkOut .claude/cache/story-walk.md [-walkRegion mountain]
+```
+
+거점 목록을 박아두지 않는다 — `RegionData.HasBlightSite`를 런타임에 훑으므로 거점을
+늘리면 걸음도 저절로 는다. 종료 코드는 모든 걸음이 통과했을 때만 0이고, 보고서에
+**실제 발화 순서**가 남는다. 선행 비트만 `CompleteBeat`로 채우고(검증 대상이 아니다)
+무엇을 채웠는지 보고서에 적는다.
+
+읽을 때 헷갈리는 것: **한 걸음에 시도가 2회로 찍히는 게 정상일 수 있다.** 같은 트리거에
+본편 비트가 함께 자격을 가지면 챕터 우선순위가 이겨 그쪽이 먼저 나간다(산에서 포획하면
+`ch5_thesis`가 `bl_mountain_sign`보다 먼저, 유적에서 이기면 `ch6_approach`가 먼저다).
+플레이어도 실제로 두 번 해야 한다 — 결함이 아니라 저작 순서다.
+
 ### 한계 셋 (전부 실측)
 
 - **IMGUI는 안 잡힌다.** `OnGUI`는 카메라를 거치지 않는다 — 상점·대화창·배틀 UI·HUD는
