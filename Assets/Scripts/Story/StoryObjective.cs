@@ -159,8 +159,11 @@ namespace InsectGame.Story
             if (triggerType == StoryDirector.TriggerSubAreaEnter) return StoryObjectiveKind.EnterSubArea;
             if (triggerType == StoryDirector.TriggerGuardianDefeat) return StoryObjectiveKind.DefeatGuardian;
             // 무param 포획/전투는 리전 게이트가 유일한 위치다 — 그게 있으면 거기로 안내한다.
+            // 정화(RegionCleansed)도 같은 자리다: 할 일이 "그 리전에서 거점을 부수는 것"이라
+            // 리전 중심으로 안내하면 맞다. 저작 시 param과 requiredRegionId를 같은 리전으로 둔다.
             if ((triggerType == StoryDirector.TriggerCaptureInsect
-                    || triggerType == StoryDirector.TriggerBattleWin)
+                    || triggerType == StoryDirector.TriggerBattleWin
+                    || triggerType == StoryDirector.TriggerRegionCleansed)
                 && !string.IsNullOrEmpty(requiredRegionId))
                 return StoryObjectiveKind.ActInRegion;
             return StoryObjectiveKind.Freeform;
@@ -229,6 +232,9 @@ namespace InsectGame.Story
 
             if (triggerType == StoryDirector.TriggerBattleWin)
                 return elsewhere ? $"{regionName}에서 전투 승리" : "야생 곤충과 전투 승리";
+
+            if (triggerType == StoryDirector.TriggerRegionCleansed)
+                return elsewhere ? $"{regionName}의 명부회 거점 무너뜨리기" : "명부회 거점 무너뜨리기";
 
             if (triggerType == StoryDirector.TriggerLevelReach)
                 return current >= 0

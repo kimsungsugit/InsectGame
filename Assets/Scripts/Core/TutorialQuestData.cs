@@ -30,6 +30,9 @@ namespace InsectGame.Core
         // 마을 어르신(박사)에게 첫 대화 — WorldInteractionController가 스토리 NPC 대화 시
         // NotifyTalkToElder로 알린다. 첫 파트너 곤충을 받는 자리라 튜토리얼의 시작점이다.
         TalkToElder,
+        // 명부회 오염 거점 정화 — RegionBlightManager.RegionCleansed가 알린다.
+        // 이벤트 기반이라 구독 등록이 급소다(q_team 전례).
+        CleanseBlight,
     }
 
     // 퀘스트 분류 — Story(선형 메인 체인) vs Side(다중 활성, 일부 반복 상승).

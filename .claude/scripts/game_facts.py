@@ -49,6 +49,7 @@ PATHS = {
     # 한쪽만 보면 2막 종이 통째로 "존재하지 않는 ID"로 잘못 보고된다.
     "insect_expansion2": "Assets/Scripts/Data/InsectExpansion2Definitions.cs",
     "region_defs": "Assets/Scripts/Core/RegionDefinitions.cs",
+    "region_data": "Assets/Scripts/Data/RegionData.cs",
     "tutorial_data": "Assets/Scripts/Core/TutorialQuestData.cs",
     "npc_dialogue": "Assets/Scripts/NPC/NpcDialogueDatabase.cs",
     "story_json": "Assets/Resources/Story.json",
@@ -810,6 +811,39 @@ def region_pools() -> list:
             "RegionDefinitions에서 리전 풀(regionId/requiredLevel/insectIds)을 못 읽었다 — 구조가 바뀌었는가?"
         )
     return pools
+
+
+def blight_sites() -> list:
+    """[(regionId, bossNpcId, siteName, returningInsectId), ...] — 명부회 오염 거점.
+
+    출처: RegionDefinitions.CreateAll()의 각 RegionData{ blightBossNpcId, ... }.
+    거점 정의를 별도 표가 아니라 RegionData 필드로 둔 이유는 그 파일 상단 주석 참조
+    (하드코딩 리전 목록이 이 저장소에서 세 번 조용히 어긋났다).
+
+    **0건이어도 예외를 던지지 않는다** — 거점이 하나도 없는 것은 파서 고장이 아니라
+    "아직 아무 리전에도 거점을 두지 않았다"는 정상 상태다. 대신 필드 선언 자체가
+    사라졌으면(개명·삭제) 그건 고장이므로 잡는다.
+    """
+    src = _read("region_defs")
+    data_src = _read("region_data")
+    if "blightBossNpcId" not in data_src:
+        raise ExtractorBroken(
+            "RegionData에 blightBossNpcId 필드가 없다 — 개명했는가? 이 추출기도 함께 고칠 것")
+
+    sites = []
+    # regionId부터 다음 regionId 직전까지를 한 리전 블록으로 자른다(필드 순서 비의존).
+    starts = [m for m in re.finditer(r'regionId = "(\w+)"', src)]
+    for i, m in enumerate(starts):
+        end = starts[i + 1].start() if i + 1 < len(starts) else len(src)
+        block = src[m.start():end]
+        boss = re.search(r'blightBossNpcId = "([^"]*)"', block)
+        if not boss or not boss.group(1):
+            continue
+        name = re.search(r'blightSiteName = "([^"]*)"', block)
+        ret = re.search(r'blightReturningInsectId = "([^"]*)"', block)
+        sites.append((m.group(1), boss.group(1),
+                      name.group(1) if name else "", ret.group(1) if ret else ""))
+    return sites
 
 
 def team_max_slots() -> int:

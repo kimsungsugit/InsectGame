@@ -56,6 +56,16 @@ namespace InsectGame.Story
         /// <summary>12장 · 이름 없는 장부 — <b>관장 하월</b>이 뒤에서 천천히 다가온다.</summary>
         public const string Ch12ChiefEnter = "st_ch12_chief_enter";
 
+        // ── 오염 거점 대치 (NpcTalk 비트) ──
+        // 위 1막 대치들과 같은 자리·같은 배우인데 **몸짓이 반대로 간다.** 1막에서는 막고
+        // 가리키고 물러섰다면, 여기서는 손에서 도구를 내려놓는다 — 현장을 인정하는 장면이다.
+        // 워프하지 않는 이유는 위와 같다(말을 건 상대라 이미 대화 거리).
+
+        /// <summary>산 채집장 — 여자가 뜰채를 내려놓고 능선을 가리킨다. 자기 현장을 시인한다.</summary>
+        public const string BlightMountainConfront = "st_bl_mountain_confront";
+        /// <summary>유적 창고 — 사내가 상자를 내밀다 멈추고 고개를 떨군다. 처음으로 대답이 없다.</summary>
+        public const string BlightRuinsConfront = "st_bl_ruins_confront";
+
         public static bool TryGet(string stageId, out StoryStageStep[] steps)
         {
             switch (stageId)
@@ -76,6 +86,9 @@ namespace InsectGame.Story
                 case Ch10InkEnter: steps = BuildCh10InkEnter(); return true;
                 case Ch11ScholarLead: steps = BuildCh11ScholarLead(); return true;
                 case Ch12ChiefEnter: steps = BuildCh12ChiefEnter(); return true;
+
+                case BlightMountainConfront: steps = BuildBlightMountainConfront(); return true;
+                case BlightRuinsConfront: steps = BuildBlightRuinsConfront(); return true;
 
                 default: steps = null; return false;
             }
@@ -339,6 +352,46 @@ namespace InsectGame.Story
                 StoryStageStep.Warp("ledger_chief", new Vector3(10.5f, 0f, -3.5f)),
                 StoryStageStep.MoveTo("ledger_chief", new Vector3(1.2f, 0f, 2.6f), 1.3f),
                 StoryStageStep.Face("ledger_chief", 0.4f),
+                StoryStageStep.Pause(0.7f),
+            };
+        }
+
+        // ==================== 오염 거점 대치 ====================
+        //
+        // 1막 대치가 "여긴 우리 구역이다"였다면 여기는 "이게 우리가 한 일이다"다.
+        // 그래서 <b>도구를 쓰는 몸짓(NetSwing/Offer)이 앞에 오고 시선이 뒤에 온다</b> —
+        // 손이 먼저 멈추고 그 다음에 이쪽을 보는 순서가 "들켜서"가 아니라 "그만두려고"로 읽힌다.
+        //
+        // 이동 스텝은 없다. 시퀀스 상한 15초 안에 넉넉히 들어간다.
+
+        /// <summary>
+        /// 산. 여자는 1막에서 유일하게 한 걸음 다가왔던 인물이다(<c>Ch5RuleBar</c>).
+        /// 여기서는 그 반대로 — 뜰채를 한 번 휘두르고(내려놓는 동작을 대신한다) 능선을 가리킨 뒤
+        /// 이쪽을 본다. 가리키는 곳에 자기가 걷어 낸 자리가 있다.
+        /// </summary>
+        private static StoryStageStep[] BuildBlightMountainConfront()
+        {
+            return new[]
+            {
+                StoryStageStep.Play("ledger_thug_rule", NpcGesture.NetSwing),
+                StoryStageStep.Play("ledger_thug_rule", NpcGesture.Point),
+                StoryStageStep.Face("ledger_thug_rule", 0.3f),
+                StoryStageStep.Pause(0.5f),
+            };
+        }
+
+        /// <summary>
+        /// 유적. 사내는 1막 마지막에 처음으로 물러섰던 인물이다(<c>Ch6CordYield</c>).
+        /// 여기서는 상자를 내밀다(Offer) 멈추고 고개를 떨군다(Nod). 가장 긴 사이를 뒤에 둔다 —
+        /// 대사 첫 줄이 "…나도 안다"라서, 그 앞의 침묵이 길수록 그 말이 무겁다.
+        /// </summary>
+        private static StoryStageStep[] BuildBlightRuinsConfront()
+        {
+            return new[]
+            {
+                StoryStageStep.Play("ledger_thug_cord", NpcGesture.Offer),
+                StoryStageStep.Face("ledger_thug_cord", 0.25f),
+                StoryStageStep.Play("ledger_thug_cord", NpcGesture.Nod),
                 StoryStageStep.Pause(0.7f),
             };
         }

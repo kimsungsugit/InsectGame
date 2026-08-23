@@ -29,6 +29,7 @@ namespace InsectGame.NPC
         [SerializeField] private PlayerItemInventory itemInventory;
         [SerializeField] private ItemDatabase itemDatabase;
         [SerializeField] private RegionManager regionManager;
+        [SerializeField] private RegionBlightManager blight;
 
         // 진행 중인 대결의 상대 — DuelEnded에서 보상·쿨다운을 걸 대상.
         private CatcherKidNpc activeKid;
@@ -65,6 +66,15 @@ namespace InsectGame.NPC
             if (database == null) database = db;
             if (itemInventory == null) itemInventory = inventory;
             if (regionManager == null) regionManager = region;
+        }
+
+        /// <summary>
+        /// 오염 거점 상태. 별도 오버로드로 둔 것은 위 AutoWire가 이미 인자 7개라 더 늘리면
+        /// 호출부에서 순서를 틀리기 쉽기 때문이다(TutorialQuestManager가 같은 방식을 쓴다).
+        /// </summary>
+        public void AutoWire(RegionBlightManager blightManager)
+        {
+            if (blight == null) blight = blightManager;
         }
 
         private void OnDestroy()
@@ -115,6 +125,16 @@ namespace InsectGame.NPC
         }
 
         /// <summary>
+        /// 이 인물이 맡은 거점이 <b>지금 서 있는 리전</b>에서 아직 살아 있는가 — 재도전 예외의 조건.
+        /// </summary>
+        private bool CanRematchForBlight(string storyNpcId)
+        {
+            if (blight == null || regionManager == null) return false;
+            RegionData here = regionManager.CurrentRegion;
+            return here != null && blight.IsBlightBossHere(storyNpcId, here.regionId);
+        }
+
+        /// <summary>
         /// 지금 이 간부에게 도전할 수 있는가. 표에 없거나 이미 이겼거나 재도전 쿨다운 중이면 false.
         /// WorldInteractionController가 프롬프트 표시 여부 판정에도 그대로 쓴다.
         /// </summary>
@@ -122,7 +142,11 @@ namespace InsectGame.NPC
         {
             if (battleController == null || database == null) return false;
             if (!NpcBossDuels.TryGet(storyNpcId, out NpcBossDuels.BossDuel duel)) return false;
-            if (IsBossDefeated(storyNpcId)) return false;
+            // 이미 이긴 상대는 원칙적으로 다시 못 붙는다 — 단 **그자가 맡은 오염 거점이 아직
+            // 살아 있는 리전에 서 있다면** 예외다. 이 예외가 없으면 두 하수를 이미 이긴 세이브
+            // (2막 진행자 대부분)는 산·유적의 거점을 영영 부수지 못해 기능 자체를 못 본다.
+            // 거점이 없는 리전(숲·연못·습지)에서는 예외가 서지 않으므로 옛 동작 그대로다.
+            if (IsBossDefeated(storyNpcId) && !CanRematchForBlight(storyNpcId)) return false;
             if (bossRetryAt.TryGetValue(storyNpcId, out float readyAt) && time < readyAt) return false;
             // 상대 곤충이 DB에 없으면(데이터 오타) 프롬프트를 띄우지 않는다 — 눌러도 안 열리는 버튼 방지.
             if (database.GetById(duel.insectId) == null) return false;
@@ -254,17 +278,35 @@ namespace InsectGame.NPC
             }
 
             EnsureBossState();
-            if (defeatedBosses.Add(bossId)) SaveBossState();
+            // **첫 승리인지를 기억해 둔다.** 오염 거점 재도전으로 다시 이길 수 있게 되었으므로
+            // 이 값으로 보상을 가르지 않으면 같은 아이템을 두 번 준다.
+            bool firstWin = defeatedBosses.Add(bossId);
+            if (firstWin) SaveBossState();
             bossRetryAt.Remove(bossId);
 
-            if (!string.IsNullOrEmpty(duel.rewardItemId) && duel.rewardCount > 0 && itemInventory != null)
+            if (firstWin && !string.IsNullOrEmpty(duel.rewardItemId) && duel.rewardCount > 0
+                && itemInventory != null)
                 itemInventory.AddItem(duel.rewardItemId, duel.rewardCount);
 
             // 간부전도 '동네 최강자' 서브 퀘스트에 센다 — 아이 대결과 같은 1v1 듀얼이다.
             TutorialQuestManager.Instance?.NotifyNpcDuelWon();
 
+            // 오염 거점 정화 — **지금 서 있는 리전의 거점을 이 인물이 맡고 있을 때만.**
+            // 하수 둘은 거점이 없는 리전에도 서 있어서, 리전만 보거나 인물만 보면 엉뚱한
+            // 곳이 정화된다. CleanseByBoss가 둘을 함께 검증하고 idempotent 가드도 든다.
+            bool cleansed = blight != null && regionManager != null && regionManager.CurrentRegion != null
+                && blight.CleanseByBoss(bossId, regionManager.CurrentRegion.regionId);
+
+            if (cleansed)
+            {
+                RegionData here = regionManager.CurrentRegion;
+                string siteName = string.IsNullOrEmpty(here.blightSiteName) ? "거점" : here.blightSiteName;
+                SetResult($"{duel.displayName}을(를) 이겼다! {siteName}이(가) 무너진다");
+                return;
+            }
+
             string itemName = ResolveItemName(duel.rewardItemId);
-            SetResult(string.IsNullOrEmpty(itemName)
+            SetResult(!firstWin || string.IsNullOrEmpty(itemName)
                 ? $"{duel.displayName}을(를) 이겼다!"
                 : $"{duel.displayName}을(를) 이겼다! {itemName} ×{duel.rewardCount} 획득");
         }

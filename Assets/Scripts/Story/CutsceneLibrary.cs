@@ -23,6 +23,12 @@ namespace InsectGame.Story
         public const string SealDiscovery = "cs_seal_discovery";
         /// <summary>최종장 마무리 — 마지막 빈칸이 메워지고 그것이 설 자리를 잃는다.</summary>
         public const string FinalSeal = "cs_final_seal";
+        /// <summary>
+        /// 오염 거점이 무너지고 그 리전에 곤충이 돌아온다. <b>거점 둘이 같은 컷신을 쓴다</b> —
+        /// 좌표가 전부 플레이어 기준 상대라 산에서도 유적에서도 그대로 맞고, 자막도 장소를
+        /// 지목하지 않는다. 장소별 감상은 비트의 <c>lines[]</c>가 이미 말한다.
+        /// </summary>
+        public const string BlightCleanse = "cs_bl_cleanse";
 
         public static bool TryGet(string cutsceneId, out CutsceneShot[] shots)
         {
@@ -33,6 +39,7 @@ namespace InsectGame.Story
                 case NamelessConfront: shots = BuildNamelessConfront(); return true;
                 case SealDiscovery: shots = BuildSealDiscovery(); return true;
                 case FinalSeal: shots = BuildFinalSeal(); return true;
+                case BlightCleanse: shots = BuildBlightCleanse(); return true;
                 default: shots = null; return false;
             }
         }
@@ -265,6 +272,56 @@ namespace InsectGame.Story
                     camFrom: new Vector3(0.6f, 4.4f, -6.0f),
                     camTo: new Vector3(0f, 2.6f, -3.6f),
                     lookAt: new Vector3(0f, 1.2f, 0.6f)),
+            };
+        }
+
+        /// <summary>
+        /// 거점이 무너진 직후 — 걷어 간 손이 사라진 땅.
+        ///
+        /// <b>딤을 걷으며 나온다</b>(0.42 → 0). 오염 아크의 다른 장면이 아니라 이 장면 하나가
+        /// 아크의 마침표라, 들어갈 때가 아니라 나올 때 밝아지는 것이 맞다(<c>FinalSeal</c>이
+        /// 같은 형태다). 흔들림은 첫 컷에만 약하게 — 구조물이 주저앉는 순간을 대신한다.
+        ///
+        /// <b>마지막 컷은 플레이어 가까이서 끝낸다.</b> 멀리서 끝나면 컷신이 카메라를 놓는
+        /// 순간 추적 카메라가 튀어 돌아온다.
+        ///
+        /// 총 9.4초 — <c>PlayerMovement.AutoUnfreezeTime</c>(20s)보다 충분히 짧다.
+        /// <c>CutsceneTimelineTests</c>가 여유 4초를 강제한다.
+        /// </summary>
+        private static CutsceneShot[] BuildBlightCleanse()
+        {
+            return new[]
+            {
+                // 1. 낮은 자리에서 거점이 있던 쪽을 올려다본다. 흔들림 + 가장 짙은 딤.
+                new CutsceneShot(2.3f,
+                    camFrom: new Vector3(1.6f, 1.1f, -3.2f),
+                    camTo: new Vector3(0.6f, 1.6f, -3.8f),
+                    lookAt: new Vector3(0f, 2.4f, 2.6f),
+                    subtitle: "그물이 무너졌다. 상자를 세던 손도 없다.",
+                    shake: 0.35f,
+                    dim: 0.42f),
+
+                // 2. 옆으로 돌며 땅을 훑는다 — 자막 없이 그림만. 딤이 절반으로 걷힌다.
+                new CutsceneShot(2.4f,
+                    camFrom: new Vector3(0.6f, 1.6f, -3.8f),
+                    camTo: new Vector3(-3.4f, 2.4f, -2.2f),
+                    lookAt: new Vector3(0f, 0.8f, 2.0f),
+                    dim: 0.22f),
+
+                // 3. 올라가 리전 전체를 담는다. 돌아온 것이 눈에 들어오는 자리.
+                new CutsceneShot(2.7f,
+                    camFrom: new Vector3(-3.4f, 2.4f, -2.2f),
+                    camTo: new Vector3(-0.8f, 7.6f, -6.0f),
+                    lookAt: new Vector3(0f, 0.6f, 3.4f),
+                    subtitle: "걷어 가는 손만 없으면, 땅은 스스로 채운다.",
+                    dim: 0.08f),
+
+                // 4. 플레이어 곁으로 내려온다. 딤 0 — 밝은 채로 조작이 돌아간다.
+                new CutsceneShot(2.0f,
+                    camFrom: new Vector3(-0.8f, 7.6f, -6.0f),
+                    camTo: new Vector3(0f, 2.5f, -3.5f),
+                    lookAt: new Vector3(0f, 1.3f, 1.0f),
+                    subtitle: "장부에 없는 줄이 하나 늘었다 — 돌려보냈다는 줄이."),
             };
         }
     }

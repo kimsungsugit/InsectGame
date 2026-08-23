@@ -98,17 +98,18 @@ AutoWire·이벤트·오브젝트 풀 패턴, 금지 사항이 전부 거기 있
 
 | 검사기 | 강제하는 규칙 | 단일 출처 |
 |---|---|---|
-| `quest_lint.py` | questId 중복·prerequisite 무결성·QuestType↔진행 배선 등 6검사 | `rules/quest-system.md` |
+| `quest_lint.py` | questId 중복·prerequisite 무결성·QuestType↔진행 배선 등 10검사 | `rules/quest-system.md` |
 | `ui_layout_lint.py` | 패널 y·height 직접 계산 금지 (`UISafeLayout` 경유) | `rules/ui-layout.md` |
 | `subscription_lint.py` | `OnDisable`에서 해지한 구독을 `OnEnable`에서 되살릴 것 | `rules/ui-layout.md` |
 | `data_lint.py` | 곤충·아이템·리전 데이터 정합(ID 유일성, 참조 무결, 풀 배정) | 코드(`InsectDatabase` 등)와 스크립트 자신 |
 | `story_lint.py` | 스토리 비트 트리거·보상·리전키 정합 | 코드(`StoryBeat`)와 스크립트 자신 |
 | `dex_grant_lint.py` | 곤충을 지급하면 도감에도 올릴 것(`AddCapturedInsect`↔`RegisterCapture`) | 코드(`DexController`)와 스크립트 자신 |
+| `blight_lint.py` | 명부회 오염 거점 — 보스·귀환종·비트·재도전 예외·스폰 하한 18검사 | 코드(`RegionData` 거점 필드)와 스크립트 자신 |
 | `singleton_lint.py` | 싱글턴이 `OnDestroy`에서 `Instance`를 비울 것 | 코드(`*Manager.cs`)와 스크립트 자신 |
 | `sync_codex.py` | `.claude` ↔ `.codex` 미러 동기 | 스크립트 자신 |
 | `verify_coverage.py` | 모든 `.cs`에 담당 에이전트가 있을 것 | `rules/agent-coordination.md` + `agents/*.md` |
 
-`data_lint`·`story_lint`·`dex_grant_lint`·`singleton_lint`는 대응 규칙 문서 없이 코드를 직접 읽는다 — 데이터 스키마와
+`data_lint`·`story_lint`·`dex_grant_lint`·`singleton_lint`·`blight_lint`는 대응 규칙 문서 없이 코드를 직접 읽는다 — 데이터 스키마와
 호출 배선이 곧 규칙이라 문서 사본을 두면 썩기 때문이다. 나머지는 문서를 파싱하거나 문서에 적힌 규칙을 구현한다.
 
 `singleton_lint`도 같은 계열이다. 매니저 9종이 `public static T Instance`를 드는데 전부
@@ -116,6 +117,12 @@ AutoWire·이벤트·오브젝트 풀 패턴, 금지 사항이 전부 거기 있
 파기된다. 그때 static을 안 비우면 `Instance != null`(Unity의 파괴 검사)과 `Instance?.`(진짜 null
 검사)가 **서로 다른 답**을 내고 후자는 파기된 객체로 호출이 들어간다. 저장소에 `Instance?.`가
 19곳 있다. 2026-08-23에 9종 중 8종이 안 비우고 있었다.
+
+`blight_lint`도 그 계열이다. 오염 거점은 실패가 **전부 무증상**이다 — 예외도 경고도 안 나고
+거점이 그냥 영원히 안 무너지거나, 정화해도 아무것도 안 돌아온다. 급소 둘: ①`CanBossDuel`의
+오염 예외가 사라지면 **이미 하수를 이긴 세이브(2막 진행자 대부분)에는 기능이 아예 안 보인다**
+(이긴 보스에겐 재도전이 막힌다). ②`BlightPolicy.MinActive`가 0으로 내려가면 그 리전의
+포획·전투 비트가 전부 도달 불가가 되어 **캠페인이 영구 정지한다**. 둘 다 소스 grep으로 고정했다.
 
 `dex_grant_lint`는 **증상이 조용한** 결함을 겨냥한다. 곤충 지급 경로 6곳(포획·전투·레이드·가챠·
 튜토리얼 보상·스토리 보상)이 각자 도감 등록을 따로 불러야 하는데, 빠뜨려도 예외도 경고도 없고

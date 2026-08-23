@@ -43,8 +43,10 @@ description: 퀘스트 데이터 정의 위치·추가 절차·Notify 배선 규
 python -X utf8 .claude/scripts/quest_lint.py
 ```
 
-6검사: questId 중복 / prerequisite 무결성(끊김·순환) / 보상 곤충 ID 존재 /
-보상 아이템 ID 존재 / **QuestType↔진행 배선**(q_team류 정지 검출) / 대화 리전키 정합성.
+10검사: questId 중복 / prerequisite 무결성(끊김·순환) / 보상 곤충 ID 존재 / 보상 아이템 ID 존재 /
+보스 대결 보상 아이템 ID 존재 / **QuestType↔진행 배선**(q_team류 정지 검출) / 대화 리전키 정합성 /
+서브 퀘스트 정합(반복은 Side 전용) / 팀 자동 편성 경로 / **prereq 방향**(배열 앞을 가리켜야
+소급 완료가 안전 — 뒤를 가리키면 아직 할 차례인 퀘스트를 보상 없이 삼킨다).
 `ci_check`에도 포함돼 세션 밖 편집(Codex CLI 등)의 결함도 CI가 잡는다.
 
 보상 ID(`rewardInsectId`/`rewardItemId`)는 존재하지 않는 값을 물어도 런타임엔 `LogWarning`만

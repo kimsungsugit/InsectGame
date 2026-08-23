@@ -22,6 +22,7 @@ namespace InsectGame.Story
         private TutorialQuestManager questManager;
         // DexProgress 트리거 소스. 다른 의존성과 생성 순서가 달라 별도 AutoWire로 받는다.
         private InsectGame.Dex.DexController dexController;
+        private RegionBlightManager blight;
         // 보상 지급 의존성 — 트리거 소스와 분리해 별도 AutoWire(keyGuide/quickBar 다중 AutoWire 관례).
         private PlayerCandyInventory candyInventory;
         private PlayerItemInventory itemInventory;
@@ -73,6 +74,12 @@ namespace InsectGame.Story
         // LevelReach와 같은 누적형이라 **재발화 트리거다** — 임계를 넘긴 뒤 도감이 갱신될 때마다
         // 다시 평가되므로 스파인에 걸어도 안전하다(GuardianDefeat와 다르다).
         internal const string TriggerDexProgress = "DexProgress";
+        // 명부회 오염 거점을 무너뜨렸다. param=regionId. 소스는 RegionBlightManager.RegionCleansed.
+        // **재발화 트리거다** — 정화 순간뿐 아니라 이미 정화된 리전에 다시 들어올 때도 쏜다
+        // (OnRegionChanged 참조). 그 재발화가 없으면 정화 비트를 영영 못 보는 경로가 생긴다:
+        // 거점 보스는 서브에리어 밖 본진에서도 도전 가능해서, 대치 비트를 보기 전에 이길 수
+        // 있고 그 순간 정화 비트는 prereq 미충족이라 버려진다(FireBeat는 한 번에 하나만 쏜다).
+        internal const string TriggerRegionCleansed = "RegionCleansed";
 
         // 트리거 평가 + 진행/보상 지급에 필요한 참조 주입. Bootstrap이 호출.
         public void AutoWire(RegionManager region, InsectBattleController battle,
@@ -101,6 +108,15 @@ namespace InsectGame.Story
         public void AutoWire(InsectGame.Dex.DexController dex)
         {
             if (dexController == null) dexController = dex;
+        }
+
+        /// <summary>
+        /// RegionCleansed 트리거 소스. <c>DexController</c>와 같은 이유로 <b>Start보다 먼저</b>
+        /// 불려야 한다 — 구독이 Start에서 한 번만 걸린다.
+        /// </summary>
+        public void AutoWire(RegionBlightManager blightManager)
+        {
+            if (blight == null) blight = blightManager;
         }
 
         private void Awake()
@@ -146,6 +162,8 @@ namespace InsectGame.Story
                 insectCollection.InsectCaptured += OnInsectCaptured;
             if (dexController != null)
                 dexController.DexUpdated += OnDexUpdated;
+            if (blight != null)
+                blight.RegionCleansed += OnRegionCleansed;
         }
 
         private void UnsubscribeEvents()
@@ -169,13 +187,36 @@ namespace InsectGame.Story
                 insectCollection.InsectCaptured -= OnInsectCaptured;
             if (dexController != null)
                 dexController.DexUpdated -= OnDexUpdated;
+            if (blight != null)
+                blight.RegionCleansed -= OnRegionCleansed;
         }
 
         // --- 이벤트 핸들러 → 중앙 평가 ---
 
         private void OnRegionChanged(RegionData region)
         {
-            if (region != null) EvaluateTriggers(TriggerRegionEnter, region.regionId);
+            if (region == null) return;
+            EvaluateTriggers(TriggerRegionEnter, region.regionId);
+
+            // 이미 정화한 리전에 다시 들어왔다 — 정화 트리거를 재발화한다.
+            // 정화 순간에 그 비트가 자격 미달이었거나(대치 비트를 아직 못 봄) 다른 비트가
+            // 먼저 나가 버려졌을 수 있다. 재발화가 그 유일한 회복 경로다.
+            // 이미 열람한 비트는 어차피 다시 안 뜨므로 중복 발화 걱정은 없다.
+            if (blight != null && blight.IsCleansed(region.regionId))
+                EvaluateTriggers(TriggerRegionCleansed, region.regionId);
+        }
+
+        /// <summary>
+        /// 거점이 무너졌다 — 전투 결과 화면 뒤로 미룬다.
+        ///
+        /// <c>OnGuardianDefeated</c>와 같은 이유다. 정화는 보스전 승리 직후에 일어나는데 그건
+        /// 결과 화면이 아직 떠 있는 시점이라, 미루지 않으면 정화 비트와 그 컷신이 보상 패널을
+        /// 덮는다. 게다가 같은 전투가 <c>BattleWin</c>도 함께 자격을 주므로 둘을 순서대로 흘려야
+        /// 앞 대사가 뒤 대사에 밀려나지 않는다.
+        /// </summary>
+        private void OnRegionCleansed(string regionId)
+        {
+            if (!string.IsNullOrEmpty(regionId)) DeferTrigger(TriggerRegionCleansed, regionId);
         }
 
         private void OnSubAreaChanged(SubAreaData subArea)
@@ -381,7 +422,9 @@ namespace InsectGame.Story
                     case TriggerSubAreaEnter:
                     case TriggerNpcTalk:
                     case TriggerGuardianDefeat:
-                        // param 완전 일치(리전/퀘스트/서브에리어 ID / 스토리 NPC ID / 수문장 리전 ID).
+                    case TriggerRegionCleansed:
+                        // param 완전 일치(리전/퀘스트/서브에리어 ID / 스토리 NPC ID / 수문장 리전 ID
+                        // / 정화된 리전 ID).
                         matches = !string.IsNullOrEmpty(beat.trigger.param)
                             && beat.trigger.param == eventParam;
                         break;

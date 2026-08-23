@@ -18,7 +18,7 @@ argument-hint: "<questId> <QuestType> <목표설명>"
 | 필드 | 설명 | 예시 |
 |---|---|---|
 | questId | 고유 ID (q_ 접두) | `q_visit_ruins` |
-| type | QuestType (기존 15종 또는 신규) | `VisitRegion` |
+| type | QuestType (기존 20종 또는 신규) | `VisitRegion` |
 | title / description / hint | 표시 문구 | "유적 탐험" / … |
 | targetCount | 목표 횟수 | 1 |
 | prerequisiteQuestId | 선행 퀘스트 (선형 체인) | `q_battle10` |
@@ -61,7 +61,7 @@ quest_types로 확인)
 python -X utf8 .claude/scripts/quest_lint.py
 ```
 
-6검사가 전부 PASS여야 한다:
+10검사가 전부 PASS여야 한다:
 - questId 중복 / prerequisite 무결성(끊김·순환) / 보상 곤충 ID 존재 /
   보상 아이템 ID 존재 / **QuestType↔진행 배선** / 대화 리전키 정합성
 

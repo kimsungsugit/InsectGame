@@ -29,11 +29,11 @@ FAIL 0을 확인한다.**
   "choices": [],
   "onComplete": { "rewardCandy": 5, "rewardExp": 0, "rewardItemId": "",
     "rewardInsectId": "", "unlockQuestId": "" },
-  "oneShot": true
+  "requiredBeatId": ""
 }
 ```
 
-**trigger.type (기존 9종)**: RegionEnter, QuestComplete, LevelReach, CaptureInsect,
+**trigger.type (기존 10종)**: RegionEnter, QuestComplete, LevelReach, CaptureInsect,
 BattleWin, SubAreaEnter, Immediate, NpcTalk, GuardianDefeat. `param`은 그 타입의 대상 ID:
 - RegionEnter/SubAreaEnter → 리전 ID (meadow/pond/…)
 - QuestComplete → questId (q_approach 등)
@@ -51,7 +51,7 @@ BattleWin, SubAreaEnter, Immediate, NpcTalk, GuardianDefeat. `param`은 그 타�
 
 ### 기존 trigger.type이면 → Story.json 1곳만
 
-7종 중 하나면 JSON에 비트만 추가. StoryDirector가 이미 그 타입을 처리한다.
+10종 중 하나면 JSON에 비트만 추가. StoryDirector가 이미 그 타입을 처리한다.
 **단 prerequisiteBeatId / choices.nextBeatId 배선 주의** (체인·분기 끊김).
 
 ### 새 trigger.type이면 → StoryDirector 2곳 (누락 = 영구 미발화)
@@ -68,7 +68,7 @@ BattleWin, SubAreaEnter, Immediate, NpcTalk, GuardianDefeat. `param`은 그 타�
 
 ## 발화 함정 — 기존 trigger.type에서도 밟는다 (실측)
 
-Phase 2가 "기존 7종이면 JSON 1곳만"이라 해도, **어느 트리거를 고르고 대사를 어떻게 쓰는지**가
+Phase 2가 "기존 10종이면 JSON 1곳만"이라 해도, **어느 트리거를 고르고 대사를 어떻게 쓰는지**가
 발화 정확성을 가른다. 아래 넷은 story_lint가 못 잡는 런타임 함정이다(전부 코드 실측).
 
 ### 1. 스파인은 재발화 트리거로 — QuestComplete-게이트는 기존 유저를 정지시킨다
@@ -86,11 +86,16 @@ Phase 2가 "기존 7종이면 JSON 1곳만"이라 해도, **어느 트리거를 
 (실제로 겪음: pond 스파인 오프너가 `q_guardian1` 완료에 걸려, 가디언을 이미 잡은 유저는
 ch1_intro 다음이 통째로 잠겼다. 게이트를 `ch1_intro`(Immediate)로 재배선해 해결.)
 
-### 2. `order` 필드는 발화 순서에 안 쓰인다 — 순서는 prereq로만
+### 2. 순서는 prereq가 정한다 — `order`는 **동률일 때만** 쓰인다
 
 `StoryService.AllBeats()`는 `Dictionary.Values`를 반환한다(삽입순 보장 없음). 엔진은 매
-이벤트에서 **적격(미열람·prereq충족·param일치) 비트 중 처음 하나만** 발화한다. `order`는 순수
-문서용 메타라 **발화 순서를 결정하지 않는다.** 순서가 중요하면 `prerequisiteBeatId`로 엮어라.
+이벤트에서 **적격(미열람·prereq충족·param일치) 비트 중 하나만** 발화하고, 여럿이 동시에
+적격이면 `StoryObjectiveResolver.CompareBeatPriority`가 고른다 —
+**(스파인 우선 → 챕터 → `order` → beatId)**.
+
+즉 `order`는 순수 문서용 메타가 **아니다**(그렇게 적혀 있었으나 틀렸다). 다만 앞의 두 축이
+먼저 갈리므로 **순서를 `order`에 기대면 안 되는 것은 그대로다** — 순서가 중요하면
+`prerequisiteBeatId`로 엮고, 단계가 중요하면 `requiredBeatId`로 게이트를 건다.
 
 ### 3. 무param 트리거(BattleWin / 빈 CaptureInsect)는 리전을 못 실어 늦발화 얼룩 — `requiredRegionId`로 잠가라
 
@@ -120,7 +125,7 @@ Dictionary 비결정 — 그럴 땐 prereq로 한 번에 하나만 적격이 되
 python -X utf8 .claude/scripts/story_lint.py
 ```
 
-8검사가 전부 PASS여야 한다(FAIL 0, WARN 0):
+21검사가 전부 PASS여야 한다(FAIL 0, WARN 0):
 - beatId 중복 / prerequisite 무결성(끊김·순환) / 트리거 param 대상 존재 /
   분기 도달성(choices.nextBeatId) / onComplete 보상·unlock ID 존재 /
   **트리거 배선 정합(JSON↔StoryDirector)** / **requiredRegionId 정합(리전 게이트)** /

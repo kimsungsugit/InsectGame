@@ -3034,6 +3034,390 @@
         "unlockQuestId": ""
       },
       "cutsceneId": ""
+    },
+    {
+      "beatId": "bl_mountain_arrive",
+      "chapterId": "bl",
+      "order": 200,
+      "prerequisiteBeatId": "",
+      "requiredBeatId": "ch5_blocked",
+      "requiredRegionId": "mountain",
+      "trigger": {
+        "type": "NpcTalk",
+        "param": "ledger_thug_rule"
+      },
+      "speakerNpcId": "ledger_thug_rule",
+      "lines": [
+        {
+          "speaker": "검은 옷의 여자",
+          "text": "또 너냐. 이번엔 돌아가란 말은 안 하마."
+        },
+        {
+          "speaker": "검은 옷의 여자",
+          "text": "저 능선을 봐라. 그물을 쳐 뒀다. 여기서 나는 건 전부 우리 장부로 간다."
+        },
+        {
+          "speaker": "세라",
+          "text": "…능선이 조용해요. 이 시간이면 뭐라도 울어야 하는데요."
+        },
+        {
+          "speaker": "검은 옷의 여자",
+          "text": "울 게 없으니까. 다 걷었다."
+        },
+        {
+          "speaker": "세라",
+          "text": "그게 지키는 건가요? 이름만 남기고 나머지를 전부 상자에 넣는 게요."
+        },
+        {
+          "speaker": "검은 옷의 여자",
+          "text": "이름이 남으면 종은 지워지지 않아. 그게 우리 방식이다."
+        }
+      ],
+      "choices": [],
+      "onComplete": {
+        "rewardCandy": 25,
+        "rewardExp": 60,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
+      }
+    },
+    {
+      "beatId": "bl_mountain_sign",
+      "chapterId": "bl",
+      "order": 201,
+      "prerequisiteBeatId": "bl_mountain_arrive",
+      "requiredRegionId": "mountain",
+      "trigger": {
+        "type": "CaptureInsect",
+        "param": ""
+      },
+      "speakerNpcId": "ruins_scholar",
+      "lines": [
+        {
+          "speaker": "세라",
+          "text": "이상해요. 예전에 이 고도에서 잡히던 게 이만큼이 아니었어요."
+        },
+        {
+          "speaker": "세라",
+          "text": "잦아듦은 종이 '지워지는' 거예요. 이건 달라요 — 지워진 게 아니라 가져간 거예요."
+        },
+        {
+          "speaker": "세라",
+          "text": "빈칸이 늘까 봐 걷는다면서, 걷어서 빈칸을 만들고 있어요."
+        }
+      ],
+      "choices": [],
+      "onComplete": {
+        "rewardCandy": 20,
+        "rewardExp": 45,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
+      }
+    },
+    {
+      "beatId": "bl_mountain_confront",
+      "chapterId": "bl",
+      "order": 202,
+      "prerequisiteBeatId": "bl_mountain_arrive",
+      "requiredRegionId": "mountain",
+      "trigger": {
+        "type": "NpcTalk",
+        "param": "ledger_thug_rule"
+      },
+      "speakerNpcId": "ledger_thug_rule",
+      "lines": [
+        {
+          "speaker": "검은 옷의 여자",
+          "text": "…장부는 정직하다. 몇 마리를 어디서 언제 걷었는지 다 적혀 있어."
+        },
+        {
+          "speaker": "검은 옷의 여자",
+          "text": "그 다음 줄은 안 적는다. 그 아이들이 그 뒤에 어떻게 됐는지는."
+        },
+        {
+          "speaker": "세라",
+          "text": "적으세요. 거기까지 적으면 그건 장부가 아니라 기록이에요."
+        },
+        {
+          "speaker": "검은 옷의 여자",
+          "text": "…비켜라. 여긴 내 현장이다."
+        }
+      ],
+      "choices": [],
+      "onComplete": {
+        "rewardCandy": 40,
+        "rewardExp": 95,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
+      },
+      "stageEnterId": "st_bl_mountain_confront"
+    },
+    {
+      "beatId": "bl_mountain_clash",
+      "chapterId": "bl",
+      "order": 203,
+      "prerequisiteBeatId": "bl_mountain_arrive",
+      "requiredRegionId": "mountain",
+      "trigger": {
+        "type": "BattleWin",
+        "param": ""
+      },
+      "speakerNpcId": "ruins_scholar",
+      "lines": [
+        {
+          "speaker": "세라",
+          "text": "그물이 아직 남아 있는데도 잡히는 게 늘었어요."
+        },
+        {
+          "speaker": "세라",
+          "text": "땅은 살아 있어요. 걷어 가는 손만 없으면 돌아와요."
+        }
+      ],
+      "choices": [],
+      "onComplete": {
+        "rewardCandy": 25,
+        "rewardExp": 50,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
+      }
+    },
+    {
+      "beatId": "bl_mountain_restore",
+      "chapterId": "bl",
+      "order": 204,
+      "prerequisiteBeatId": "bl_mountain_confront",
+      "requiredRegionId": "mountain",
+      "trigger": {
+        "type": "RegionCleansed",
+        "param": "mountain"
+      },
+      "speakerNpcId": "ruins_scholar",
+      "lines": [
+        {
+          "speaker": "세라",
+          "text": "…소리가 돌아왔어요."
+        },
+        {
+          "speaker": "세라",
+          "text": "돌아온 게 이긴 건 아니에요. 원래 있던 걸 되돌린 것뿐이죠."
+        },
+        {
+          "speaker": "세라",
+          "text": "그 사이에 못 돌아온 것도 있을 거예요. 그건 장부에도 안 적혀 있고요."
+        }
+      ],
+      "choices": [],
+      "onComplete": {
+        "rewardCandy": 60,
+        "rewardExp": 140,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
+      },
+      "cutsceneId": "cs_bl_cleanse"
+    },
+    {
+      "beatId": "bl_ruins_arrive",
+      "chapterId": "bl",
+      "order": 205,
+      "prerequisiteBeatId": "",
+      "requiredBeatId": "ch6_ledger_hint",
+      "requiredRegionId": "ruins",
+      "trigger": {
+        "type": "NpcTalk",
+        "param": "ledger_thug_cord"
+      },
+      "speakerNpcId": "ledger_thug_cord",
+      "lines": [
+        {
+          "speaker": "검은 옷의 사내",
+          "text": "여긴 걷는 데가 아니라 쌓는 데다."
+        },
+        {
+          "speaker": "검은 옷의 사내",
+          "text": "능선에서 걷은 게 전부 여기로 온다. 상자마다 이름표가 붙지."
+        },
+        {
+          "speaker": "세라",
+          "text": "…상자가 몇 개죠?"
+        },
+        {
+          "speaker": "검은 옷의 사내",
+          "text": "세 봐야 소용없다. 숫자는 장부에 있으니까."
+        }
+      ],
+      "choices": [],
+      "onComplete": {
+        "rewardCandy": 30,
+        "rewardExp": 70,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
+      }
+    },
+    {
+      "beatId": "bl_ruins_sign",
+      "chapterId": "bl",
+      "order": 206,
+      "prerequisiteBeatId": "bl_ruins_arrive",
+      "requiredRegionId": "ruins",
+      "trigger": {
+        "type": "CaptureInsect",
+        "param": ""
+      },
+      "speakerNpcId": "ruins_scholar",
+      "lines": [
+        {
+          "speaker": "세라",
+          "text": "저 상자들, 뚜껑이 안 열린 지 오래됐어요."
+        },
+        {
+          "speaker": "세라",
+          "text": "기록은 늘고 살아 있는 건 줄어요. 두 숫자가 반대로 가는데 아무도 안 봐요."
+        }
+      ],
+      "choices": [],
+      "onComplete": {
+        "rewardCandy": 25,
+        "rewardExp": 55,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
+      }
+    },
+    {
+      "beatId": "bl_ruins_confront",
+      "chapterId": "bl",
+      "order": 207,
+      "prerequisiteBeatId": "bl_ruins_arrive",
+      "requiredRegionId": "ruins",
+      "trigger": {
+        "type": "NpcTalk",
+        "param": "ledger_thug_cord"
+      },
+      "speakerNpcId": "ledger_thug_cord",
+      "lines": [
+        {
+          "speaker": "검은 옷의 사내",
+          "text": "…나도 안다. 열어 본 적 있으니까."
+        },
+        {
+          "speaker": "검은 옷의 사내",
+          "text": "관장님은 기록이 먼저라고 하셨다. 먼저라면 나중이 있어야 하는데, 그 나중이 안 왔다."
+        },
+        {
+          "speaker": "세라",
+          "text": "지금 오게 하면 돼요."
+        },
+        {
+          "speaker": "검은 옷의 사내",
+          "text": "…내가 그럴 급이 아니야. 여기까지다."
+        }
+      ],
+      "choices": [],
+      "onComplete": {
+        "rewardCandy": 45,
+        "rewardExp": 100,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
+      },
+      "stageEnterId": "st_bl_ruins_confront"
+    },
+    {
+      "beatId": "bl_ruins_clash",
+      "chapterId": "bl",
+      "order": 208,
+      "prerequisiteBeatId": "bl_ruins_arrive",
+      "requiredRegionId": "ruins",
+      "trigger": {
+        "type": "BattleWin",
+        "param": ""
+      },
+      "speakerNpcId": "ruins_scholar",
+      "lines": [
+        {
+          "speaker": "세라",
+          "text": "유적이 조용한 건 오래돼서인 줄 알았어요."
+        },
+        {
+          "speaker": "세라",
+          "text": "아니었어요. 조용하게 만든 거였어요."
+        }
+      ],
+      "choices": [],
+      "onComplete": {
+        "rewardCandy": 30,
+        "rewardExp": 60,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
+      }
+    },
+    {
+      "beatId": "bl_ruins_restore",
+      "chapterId": "bl",
+      "order": 209,
+      "prerequisiteBeatId": "bl_ruins_confront",
+      "requiredRegionId": "ruins",
+      "trigger": {
+        "type": "RegionCleansed",
+        "param": "ruins"
+      },
+      "speakerNpcId": "ruins_scholar",
+      "lines": [
+        {
+          "speaker": "세라",
+          "text": "상자가 열렸어요. …전부는 아니지만요."
+        },
+        {
+          "speaker": "세라",
+          "text": "이 기록은 우리가 이어서 쓰죠. 걷었다는 줄 다음에, 돌려보냈다는 줄을."
+        }
+      ],
+      "choices": [],
+      "onComplete": {
+        "rewardCandy": 70,
+        "rewardExp": 160,
+        "rewardItemId": "net_gold",
+        "rewardItemCount": 1,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
+      },
+      "cutsceneId": "cs_bl_cleanse"
     }
   ]
 }

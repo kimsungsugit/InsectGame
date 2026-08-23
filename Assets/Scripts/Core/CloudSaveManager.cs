@@ -404,6 +404,9 @@ namespace InsectGame.Core
                 // 바로 위 defeatedBosses가 같은 형태의 결함을 고친 선례다.
                 weeklyContestClaimed = PlayerPrefs.GetString(
                     AuthManager.ScopedKey(GameConstants.PrefsKeys.WeeklyContestClaimed), ""),
+                // 오염 거점 정화 기록 — 안 올리면 기기를 바꿀 때 정화한 리전이 다시 오염으로 뜬다.
+                blightCleansed = PlayerPrefs.GetString(
+                    AuthManager.ScopedKey(GameConstants.PrefsKeys.BlightCleansed), ""),
                 // 퀘스트는 계정별 키에서 읽어 현재 계정의 진행만 클라우드에 올린다(교차 오염 방지).
                 questProgress = PlayerPrefs.GetString(
                     AuthManager.ScopedKey(GameConstants.PrefsKeys.QuestProgress), ""),
@@ -504,6 +507,8 @@ namespace InsectGame.Core
                 data.defeatedBosses ?? "");
             PlayerPrefs.SetString(AuthManager.ScopedKey(GameConstants.PrefsKeys.WeeklyContestClaimed),
                 data.weeklyContestClaimed ?? "");
+            PlayerPrefs.SetString(AuthManager.ScopedKey(GameConstants.PrefsKeys.BlightCleansed),
+                data.blightCleansed ?? "");
             // 클라우드 퀘스트 데이터를 현재 계정의 계정별 키에 적용(이후 ReloadFromDisk가 인메모리 갱신).
             PlayerPrefs.SetString(AuthManager.ScopedKey(GameConstants.PrefsKeys.QuestProgress),
                 data.questProgress ?? "");
@@ -653,6 +658,7 @@ namespace InsectGame.Core
             sb.Append(","); AppendStringField(sb, "defeatedGuardians", data.defeatedGuardians);
             sb.Append(","); AppendStringField(sb, "defeatedBosses", data.defeatedBosses);
             sb.Append(","); AppendStringField(sb, "weeklyContestClaimed", data.weeklyContestClaimed);
+            sb.Append(","); AppendStringField(sb, "blightCleansed", data.blightCleansed);
             sb.Append(","); AppendStringField(sb, "questProgress", data.questProgress);
             sb.Append(","); AppendStringField(sb, "questCompleted", data.questCompleted);
             sb.Append(","); AppendStringField(sb, "activeQuest", data.activeQuest);
@@ -698,6 +704,7 @@ namespace InsectGame.Core
             data.defeatedGuardians = ExtractStringValue(json, "defeatedGuardians");
             data.defeatedBosses = ExtractStringValue(json, "defeatedBosses");
             data.weeklyContestClaimed = ExtractStringValue(json, "weeklyContestClaimed");
+            data.blightCleansed = ExtractStringValue(json, "blightCleansed");
             data.questProgress = ExtractStringValue(json, "questProgress");
             data.questCompleted = ExtractStringValue(json, "questCompleted");
             data.activeQuest = ExtractStringValue(json, "activeQuest");
@@ -865,6 +872,10 @@ namespace InsectGame.Core
         /// <summary>주간 크기 대결 보상 수령 상태("주차:등급"). 기본 ""이라 옛 문서에 없어도 무해하다
         /// — 미수령으로 시작하고, 로컬에 기록이 있으면 다음 업로드에 실린다.</summary>
         public string weeklyContestClaimed;
+
+        /// <summary>정화한 명부회 오염 거점의 리전 ID CSV. 기본 ""이면 전 거점이 오염 상태다
+        /// — 옛 문서에 없어도 무해하고, 그게 이 기능이 기존 유저에게 보이는 방식이다.</summary>
+        public string blightCleansed;
 
         public string questProgress;
         public string questCompleted;

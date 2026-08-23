@@ -29,6 +29,7 @@ namespace InsectGame.Core
         private bool tutorialSessionStarted;
 
         // 서브 퀘스트 상태 — 클라우드 동기(CloudSaveManager DTO questSideProgress/questSideRepeat). 스토리 questProgress와 별개 키.
+        private RegionBlightManager blight;
         private Dictionary<string, int> sideProgress = new Dictionary<string, int>();
         private Dictionary<string, int> sideRepeatCount = new Dictionary<string, int>();
 
@@ -119,6 +120,18 @@ namespace InsectGame.Core
             if (weeklyContest != null) weeklyContest.TierReached -= OnContestTierReached;
             weeklyContest = contest;
             if (weeklyContest != null) weeklyContest.TierReached += OnContestTierReached;
+        }
+
+        /// <summary>
+        /// 오염 거점 연결. <c>WeeklyContestManager</c>와 같은 이유로 여기서도 구독한다 —
+        /// Bootstrap의 배선 순서가 Start(SubscribeEvents)보다 뒤일 수 있다.
+        /// </summary>
+        public void AutoWire(RegionBlightManager blightManager)
+        {
+            if (blight == blightManager) return;
+            if (blight != null) blight.RegionCleansed -= OnRegionCleansed;
+            blight = blightManager;
+            if (blight != null) blight.RegionCleansed += OnRegionCleansed;
         }
 
         /// <summary>이번 주 대결 대상 종 — TutorialQuestUI가 퀘스트 문구를 덮어쓸 때 쓴다.</summary>
@@ -365,6 +378,30 @@ namespace InsectGame.Core
                     rewardItemId = "spirit_blessing", rewardItemCount = 1
                 },
 
+                // --- 오염 거점 ---
+                // **반드시 q_complete 뒤에 온다.** 배열 중간에 끼우면 BackfillSkippedStoryQuests가
+                // "마지막 완료 퀘스트보다 앞"으로 보고 기존 세이브에서 보상 없이 소급 완료시킨다.
+                new TutorialQuest
+                {
+                    questId = "q_blight_first", title = "무너뜨린 거점",
+                    description = "명부회가 세운 오염 거점을 하나 무너뜨리세요. 그 지역에 곤충이 돌아옵니다.",
+                    hint = "산이나 유적에서 검은 옷의 사람에게 말을 걸어 보세요",
+                    type = QuestType.CleanseBlight, targetCount = 1,
+                    prerequisiteQuestId = "q_complete",
+                    rewardCandy = 60, rewardExp = 120,
+                    rewardItemId = "net_gold", rewardItemCount = 1
+                },
+                new TutorialQuest
+                {
+                    questId = "q_blight_both", title = "돌아온 자리",
+                    description = "오염 거점 두 곳을 모두 정화하세요.",
+                    hint = "산과 유적 양쪽의 거점을 무너뜨리세요",
+                    type = QuestType.CleanseBlight, targetCount = 2,
+                    prerequisiteQuestId = "q_blight_first",
+                    rewardCandy = 120, rewardExp = 240,
+                    rewardItemId = "full_restore", rewardItemCount = 2
+                },
+
                 // --- 서브 퀘스트(다중 활성, 반복 시 목표 상승) — category=Side ---
                 new TutorialQuest
                 {
@@ -512,6 +549,13 @@ namespace InsectGame.Core
                 weeklyContest.TierReached -= OnContestTierReached;
                 weeklyContest.TierReached += OnContestTierReached;
             }
+
+            // 오염 거점 정화 (q_blight_*). AutoWire에서도 구독하므로 해지 후 구독한다.
+            if (blight != null)
+            {
+                blight.RegionCleansed -= OnRegionCleansed;
+                blight.RegionCleansed += OnRegionCleansed;
+            }
         }
 
         private void UnsubscribeEvents()
@@ -521,6 +565,9 @@ namespace InsectGame.Core
 
             if (raidController != null)
                 raidController.RaidEnded -= OnRaidEnded;
+
+            if (blight != null)
+                blight.RegionCleansed -= OnRegionCleansed;
 
             if (regionManager != null)
             {
@@ -536,6 +583,11 @@ namespace InsectGame.Core
         }
 
         private void OnTeamChanged() => NotifyAction(QuestType.SetTeam);
+
+        // 오염 거점이 무너졌다. OnTeamChanged와 같은 형태로 NotifyAction을 **직접** 부른다 —
+        // 한 겹 감싸면 quest_lint의 배선 검사(핸들러 본문의 NotifyAction(QuestType.X))가
+        // 못 보고 q_team류 영구 정지로 오판한다.
+        private void OnRegionCleansed(string regionId) => NotifyAction(QuestType.CleanseBlight);
 
         // 등급을 새로 달성했을 때만 울린다(WeeklyContestManager가 중복 발화를 막는다).
         // 등급별 추가 보상은 여기서 지급한다 — 퀘스트 보상(고정)과 별개로 동/은/금 차등을 준다.

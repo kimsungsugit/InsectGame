@@ -257,6 +257,12 @@ namespace InsectGame.Core
                     guardianInsectId = "atlas_moth_giant",
                     guardianDisplayName = "산의 거신 아틀라스나방",
                     guardianLevel = 45,
+                    // 명부회 채집장 — 능선을 그물로 통째로 훑은 자리. 검은 옷의 여자가 지킨다.
+                    // 무쇠사슴벌레를 귀환종으로 둔 것은 설계다: 사슴벌레는 이 세계에서 가장
+                    // 많이 잡혀 나간 종이고, 돌아오는 것이 눈에 띄어야 정화가 체감된다.
+                    blightBossNpcId = "ledger_thug_rule",
+                    blightSiteName = "명부회 채집장",
+                    blightReturningInsectId = "stag_beetle_iron",
                     subAreas = new SubAreaData[]
                     {
                         new SubAreaData
@@ -362,6 +368,11 @@ namespace InsectGame.Core
                     guardianInsectId = "scarab_pharaoh",
                     guardianDisplayName = "유적의 파수꾼 파라오풍뎅이",
                     guardianLevel = 42,
+                    // 명부회 창고 — 잡아둔 것을 상자에 재는 곳. 검은 옷의 사내가 지킨다.
+                    // 산이 '잡아 가는 현장'이라면 여기는 '쌓아 두는 현장'이다.
+                    blightBossNpcId = "ledger_thug_cord",
+                    blightSiteName = "명부회 창고",
+                    blightReturningInsectId = "jewel_beetle_azure",
                     subAreas = new SubAreaData[]
                     {
                         new SubAreaData

@@ -436,6 +436,13 @@ namespace InsectGame.Core
             regionMgr.AutoWire(progress);
             cloudSave.RegisterReloadable(regionMgr);
 
+            // 명부회 오염 거점 상태 — RegionManager 다음에 만든다(거점 정의를 RegionData에서 읽는다).
+            // 클라우드 재로드도 RegionManager 뒤에 등록해야 갱신된 PlayerPrefs를 읽는다
+            // (CloudSaveManager가 등록 순서대로 부른다 — 아래 수문장 봉인과 같은 이유).
+            RegionBlightManager blight = EnsureComponent<RegionBlightManager>("World/RegionBlightManager");
+            blight.AutoWire(regionMgr);
+            cloudSave.RegisterReloadable(blight);
+
             SubAreaEnvironment subAreaEnv = EnsureComponent<SubAreaEnvironment>("World/SubAreaEnvironment");
             subAreaEnv.AutoWire(regionMgr);
 
@@ -443,6 +450,8 @@ namespace InsectGame.Core
             subAreaWorld.AutoWire(regionMgr, camFollower);
 
             spawner.AutoWire(regionMgr);
+            // 오염 리전은 동시 출현 수를 줄이고, 거점이 무너지면 곧바로 되돌린다.
+            spawner.AutoWire(blight);
 
             // 리전 진입 시 BGM 자동 전환
             regionMgr.RegionChanged += region =>
@@ -538,6 +547,8 @@ namespace InsectGame.Core
                 EnsureComponent<WeeklyContestManager>("World/WeeklyContestManager");
             weeklyContest.AutoWire(insectCollection, database);
             questManager.AutoWire(weeklyContest);
+            // 오염 거점 정화 → q_blight_* 진행. 구독은 AutoWire와 SubscribeEvents 양쪽에 있다.
+            questManager.AutoWire(blight);
 
             InsectGame.UI.TutorialQuestUI questUi = EnsureComponent<InsectGame.UI.TutorialQuestUI>("UI/TutorialQuestUI");
             questUi.AutoWire(questManager);   // 주간 대결 대상 종도 questManager를 통해 읽는다
@@ -555,6 +566,8 @@ namespace InsectGame.Core
             InsectGame.Story.StoryDirector storyDirector =
                 EnsureComponent<InsectGame.Story.StoryDirector>("World/StoryDirector");
             storyDirector.AutoWire(regionMgr, battleController, progress, insectCollection, questManager);
+                // RegionCleansed 트리거 소스 — DexController와 같은 이유로 Start 전에 주입한다.
+                storyDirector.AutoWire(blight);
             storyDirector.AutoWire(candyInventory, itemInventory);
             storyDirector.AutoWire(dex);   // DexProgress 트리거 소스 — Start 전에 주입해야 구독이 걸린다
             cloudSave.RegisterReloadable(storyDirector);
@@ -625,10 +638,19 @@ namespace InsectGame.Core
                     EnsureComponent<InsectGame.NPC.NpcDuelController>("World/NpcDuelController");
                 npcDuel.AutoWire(battleController, battleTeam, insectCollection, database,
                     itemInventory, itemDatabase, regionMgr);
+                // 오염 거점 — 이긴 간부에게도 그자의 거점이 살아 있는 리전에서는 다시 도전할 수
+                // 있게 하고(그러지 않으면 이미 이긴 세이브가 거점을 영영 못 부순다), 승리 시 정화한다.
+                npcDuel.AutoWire(blight);
                 // 명부회 간부 격파 기록은 PlayerPrefs라, 클라우드 로드 후 인메모리 캐시를 다시 읽어야
                 // 다른 기기의 격파가 반영된다(RegionManager 해금 상태와 같은 이유).
                 cloudSave.RegisterReloadable(npcDuel);
                 worldInteract.AutoWire(npcDuel);
+
+                // 오염 거점 비주얼 — 구조물·안개·지면 탈색, 정화 시 붕괴.
+                // NpcManager가 필요해 여기(NPC 생성 뒤)에 둔다: 거점 좌표를 하수 실물에서
+                // 잡기 때문이다(VillageBuilder의 극좌표를 베끼면 사본이 어긋난다).
+                BlightVfx blightVfx = EnsureComponent<BlightVfx>("World/BlightVfx");
+                blightVfx.AutoWire(regionMgr, blight, npcManager);
 
                 InsectGame.UI.NpcDialogueUI npcDialogue =
                     EnsureComponent<InsectGame.UI.NpcDialogueUI>("UI/NpcDialogueUI");

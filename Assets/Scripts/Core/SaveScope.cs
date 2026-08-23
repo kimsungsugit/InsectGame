@@ -32,8 +32,13 @@ namespace InsectGame.Core
             GameConstants.PrefsKeys.QuestUnseen,
             GameConstants.PrefsKeys.TutorialHidden,
             GameConstants.PrefsKeys.WeeklyContestClaimed,
+            GameConstants.PrefsKeys.BlightCleansed,
             "InsectGame.UnlockedRegions",
             "InsectGame.DefeatedGuardians",
+            // 위 5개와 정확히 같은 결함이었다 — `SaveScope.PrefsKey`를 거치면서도 이 목록에
+            // 없어서, 계정을 삭제하고 같은 provider로 다시 로그인하면(uid가 같다) 간부 격파
+            // 기록이 부활했다. 그러면 재도전이 막혀 오염 거점을 영영 정화할 수 없다.
+            "InsectGame.DefeatedLedgerBosses",
             "InsectGame.Equipped",
             "InsectGame.OwnedOutfits",
             "InsectGame.Character.Name",
@@ -58,7 +63,8 @@ namespace InsectGame.Core
         // v4: story_progress.json을 계정 마이그레이션/삭제 대상에 포함.
         // 5: 스코핑 키 5개 추가(QuestSideProgress/QuestSideRepeat/QuestUnseen/TutorialHidden/
         //    WeeklyContestClaimed). 올려야 기존 기기의 전역 키가 계정 스코프로 이전된다.
-        private const int MigrationVersion = 5;
+        // 6: BlightCleansed(신규) + DefeatedLedgerBosses(누락분) 추가.
+        private const int MigrationVersion = 6;
 
         private static readonly string[] ScopedFiles =
         {

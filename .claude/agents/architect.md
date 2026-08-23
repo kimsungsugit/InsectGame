@@ -34,6 +34,7 @@ tools:
 - `Assets/Scripts/Opening/OpeningAutoPlayPolicy.cs` - 최초 자동 재생 소비 정책
 - `Assets/Scripts/Opening/OpeningSequenceState.cs` - 오프닝 타임라인 상태
 - `Assets/Scripts/Opening/OpeningReplayCoordinator.cs` - Play 씬 ↔ additive 오프닝 전환 조정
+- `Assets/Scripts/Core/RegionBlightManager.cs` - 오염 거점 런타임 상태·정화 이벤트·세이브
 - `Assets/Editor/OpeningContentBuilder.cs` - 오프닝 씬·오디오·BuildSettings 생성기
 
 ### 빌드/에디터 인프라

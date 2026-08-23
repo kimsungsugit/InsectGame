@@ -22,6 +22,13 @@ namespace InsectGame.Spawning
         [SerializeField] private int prewarmPoolSize = 32;
         [SerializeField] private int initialSpawnCount = 20;
         [SerializeField] private int maxActivePerRegion = 10;
+
+        /// <summary>정화 직후 곤충을 되돌리기까지의 사이(초) — 연출이 끝나고 채운다.</summary>
+        private const float RepopulateDelaySeconds = 1.2f;
+        /// <summary>정화 직후 한 번에 채우는 최대 마리 수(상한에 걸리면 그 전에 멈춘다).</summary>
+        private const int RepopulateBurst = 6;
+
+        private Core.RegionBlightManager blight;
         [SerializeField] private int subAreaActiveCount = 2;
         [SerializeField] private float subAreaRespawnSeconds = 45f;
 
@@ -219,7 +226,7 @@ namespace InsectGame.Spawning
                 return;
             }
 
-            if (!string.IsNullOrEmpty(point.regionId) && CountActiveInRegion(point.regionId) >= maxActivePerRegion)
+            if (!string.IsNullOrEmpty(point.regionId) && CountActiveInRegion(point.regionId) >= RegionCap(point.regionId))
             {
                 return;
             }
@@ -274,6 +281,20 @@ namespace InsectGame.Spawning
                 return;
             }
 
+            SpawnAt(selected, point);
+        }
+
+        /// <summary>
+        /// 고른 종을 이 스폰 포인트에 실제로 띄운다 — 풀 취득·배치·초기화·집계.
+        ///
+        /// <see cref="TrySpawn(string)"/>(무작위 선택)과 <see cref="TrySpawnSpecific"/>(종 지정)이
+        /// 공유한다. 사본을 두면 풀 반환·레이드 통지·erased 확률 중 하나가 한쪽에만 반영돼
+        /// 조용히 어긋난다.
+        /// </summary>
+        private void SpawnAt(InsectData selected, SpawnPoint point)
+        {
+            if (selected == null || point == null) return;
+
             GameObject prefab = selected.prefabOverride != null ? selected.prefabOverride : defaultPrefab;
             if (prefab == null)
             {
@@ -308,6 +329,28 @@ namespace InsectGame.Spawning
             {
                 RaidBossSpawned?.Invoke(entity);
             }
+        }
+
+        /// <summary>
+        /// 특정 종을 특정 리전에 한 마리 띄운다 — 정화 직후 "돌아온 종"을 확정 노출하는 용도.
+        ///
+        /// 무작위 스폰과 달리 <b>월드 상태(시간·날씨) 필터를 거치지 않는다.</b> 정화는 그 자리에서
+        /// 눈으로 확인해야 하는 사건이라, 밤이라서 혹은 비가 와서 안 나오면 연출이 통째로 죽는다.
+        /// 대신 리전 풀 밖의 종은 띄우지 않는다(스폰 포인트가 그 리전 소속이면 자동으로 만족).
+        /// </summary>
+        private bool TrySpawnSpecific(string insectId, string regionId)
+        {
+            if (database == null || string.IsNullOrEmpty(insectId)) return false;
+            if (activeInsects.Count >= maxActiveTotal) return false;
+
+            InsectData data = database.GetById(insectId);
+            if (data == null) return false;
+
+            SpawnPoint point = GetAvailableSpawnPoint(regionId);
+            if (point == null || point.regionId != regionId) return false;
+
+            SpawnAt(data, point);
+            return true;
         }
 
         private void SpawnInitialInsects()
@@ -422,7 +465,9 @@ namespace InsectGame.Spawning
 
             foreach (string regionId in regions)
             {
-                if (CountActiveInRegion(regionId) < maxActivePerRegion && HasAvailableSpawnPoint(regionId))
+                // 오염 리전은 상한이 낮아 금방 "부족하지 않음"이 된다 — 이 자리를 안 고치면
+                // 오염 리전이 계속 우선 스폰 대상으로 뽑혀 다른 리전이 굶는다.
+                if (CountActiveInRegion(regionId) < RegionCap(regionId) && HasAvailableSpawnPoint(regionId))
                 {
                     return regionId;
                 }
@@ -670,10 +715,70 @@ namespace InsectGame.Spawning
                 regionManager.SubAreaChanged += OnSubAreaChanged;
         }
 
+        /// <summary>
+        /// 오염 거점 상태 — 거점이 살아 있는 리전은 동시 출현 수를 줄이고, 무너지면 되돌린다.
+        /// </summary>
+        public void AutoWire(Core.RegionBlightManager blightManager)
+        {
+            if (blight != null)
+                blight.RegionCleansed -= OnRegionCleansed;
+            blight = blightManager;
+            if (blight != null)
+                blight.RegionCleansed += OnRegionCleansed;
+        }
+
         private void OnDisable()
         {
             if (regionManager != null)
                 regionManager.SubAreaChanged -= OnSubAreaChanged;
+            if (blight != null)
+                blight.RegionCleansed -= OnRegionCleansed;
+        }
+
+        /// <summary>
+        /// 이 리전의 동시 출현 상한. 오염 거점이 살아 있으면 줄어든다.
+        ///
+        /// <b>0으로 내려가지 않는 것이 중요하다</b> — 그 리전에서의 포획·전투를 조건으로 건
+        /// 스토리 비트가 여럿이라(오염 아크 둘 + 1막의 특정 종 포획) 곤충이 아예 안 뜨면
+        /// 발화 지점에 영영 도달하지 못한다. 하한은 <c>BlightPolicy.MinActive</c>가 든다.
+        /// </summary>
+        private int RegionCap(string regionId)
+        {
+            bool blighted = blight != null && blight.IsBlighted(regionId);
+            return Core.BlightPolicy.MaxActiveFor(blighted, maxActivePerRegion);
+        }
+
+        /// <summary>
+        /// 거점이 무너졌다 — 그 리전의 곤충을 즉시 되돌린다.
+        ///
+        /// 다음 <c>Update</c>를 기다리면 스폰 간격만큼 빈 들판이 남아 "돌아왔다"가 안 읽힌다.
+        /// 귀환종을 먼저 한 마리 확정 스폰하는 것도 같은 이유다 — 무작위에 맡기면 정화 직후
+        /// 화면에 흔한 종만 뜰 수 있다.
+        /// </summary>
+        private void OnRegionCleansed(string regionId)
+        {
+            if (!isActiveAndEnabled || string.IsNullOrEmpty(regionId)) return;
+            StartCoroutine(RepopulateCleansedRegion(regionId));
+        }
+
+        private System.Collections.IEnumerator RepopulateCleansedRegion(string regionId)
+        {
+            // 정화 연출·컷신이 카메라를 잡고 있는 동안 곤충이 튀어나오면 화면이 어수선하다.
+            // 한 박자 뒤에 채운다.
+            yield return new WaitForSeconds(RepopulateDelaySeconds);
+            if (blight == null || blight.IsBlighted(regionId)) yield break;   // 그새 상태가 바뀌었다
+
+            Data.RegionData region = regionManager != null ? regionManager.GetRegionById(regionId) : null;
+            if (region != null && !string.IsNullOrEmpty(region.blightReturningInsectId))
+                TrySpawnSpecific(region.blightReturningInsectId, regionId);
+
+            int cap = RegionCap(regionId);
+            for (int i = 0; i < RepopulateBurst; i++)
+            {
+                if (CountActiveInRegion(regionId) >= cap) break;
+                if (activeInsects.Count >= maxActiveTotal) break;
+                TrySpawn(regionId);
+            }
         }
 
         private void OnSubAreaChanged(SubAreaData subArea)

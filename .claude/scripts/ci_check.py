@@ -54,6 +54,7 @@ REPO_CHECKS = [
     (["text_fit_lint.py"], "라벨 잘림"),
     (["literal_fit_lint.py"], "리터럴 문구 잘림"),
     (["dex_grant_lint.py"], "곤충 지급↔도감 등록"),
+    (["blight_lint.py"], "오염 거점 정합성"),
     (["singleton_lint.py"], "싱글턴 static 해제"),
     (["sync_codex.py", "--check"], "Codex 미러 동기"),
 ]

@@ -49,6 +49,9 @@ namespace InsectGame.Core
             // 주간 크기 대결 보상 수령 상태 "주차:등급". 주차가 바뀌면 값이 안 맞아 자동 미수령.
             // 기록 자체는 저장하지 않는다 — player_insects.json의 capturedUnix로 파생한다.
             public const string WeeklyContestClaimed = "InsectGame.WeeklyContest.Claimed";
+            // 정화한 명부회 오염 거점의 리전 ID CSV — 클라우드 동기(DTO blightCleansed).
+            // 간부 격파 기록(DefeatedLedgerBosses)에서 파생하지 않는 이유는 RegionBlightManager 참조.
+            public const string BlightCleansed = "InsectGame.BlightCleansed";
         }
 
         // ── 플레이어 ──
