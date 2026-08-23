@@ -23,7 +23,6 @@ namespace InsectGame.UI
         private GUIStyle nameStyle;
         private GUIStyle lineStyle;
         private GUIStyle buttonStyle;
-        private Texture2D panelTex;
         private bool stylesInited;
 
         // 패널 페이드 상태(UIHelper.AnimatePanelOpen이 소유). CharacterOutfitUI와 같은 관례.
@@ -39,6 +38,11 @@ namespace InsectGame.UI
         // 화자명·초상 렌더를 그대로 쓰되, 닫을 때 CompleteBeat만 건너뛴다.
         // **이 플래그가 없으면 다시 읽을 때마다 onComplete 보상이 재지급된다.**
         private bool storyReplay;
+
+        // 진행 표시("n/총") 캐시 — 줄이 바뀔 때만 다시 만든다.
+        private string progressCache;
+        private int progressCacheIndex = -1;
+        private int progressCacheTotal = -1;
 
         public bool IsOpen => isOpen;
 
@@ -135,6 +139,17 @@ namespace InsectGame.UI
         public void ShowStoryReplay(InsectGame.Story.StoryBeat beat)
         {
             if (beat == null || beat.lines == null || beat.lines.Count == 0) return;
+
+            // **읽고 있는 진짜 비트를 밀어내지 않는다.** ShowStory는 열려 있는 모달을
+            // CloseModal로 정리하는데, 그 경로가 CompleteBeat를 불러 **읽지 않은 대사가
+            // 보상까지 받고 열람 처리된다.** StoryDirector 쪽은 발화 경로에 같은 가드를
+            // 걸어 뒀지만(FireBeat), 저널 다시보기는 그 경로를 거치지 않는다.
+            if (isOpen && storyMode && !storyReplay)
+            {
+                Debug.LogWarning("[Dialogue] 진행 중인 스토리 대사가 있어 다시보기를 건너뛴다");
+                return;
+            }
+
             ShowStory(beat);
             storyReplay = true;   // ShowStory가 false로 돌려놓은 뒤에 켠다
         }
@@ -283,7 +298,7 @@ namespace InsectGame.UI
                 // 페이드 알파를 곱해 넣고, 복구도 흰색이 아니라 그 알파로 되돌린다 —
                 // 흰색으로 되돌리면 이 뒤의 이름·대사·버튼이 페이드에서 빠진다.
                 GUI.color = new Color(0f, 0f, 0f, 0.82f * panelAlpha);
-                GUI.DrawTexture(new Rect(px, py, panelW, panelH), panelTex);
+                GUI.DrawTexture(new Rect(px, py, panelW, panelH), Texture2D.whiteTexture);
                 GUI.color = new Color(1f, 1f, 1f, panelAlpha);
             }
 
@@ -327,8 +342,21 @@ namespace InsectGame.UI
                 lines[Mathf.Clamp(lineIndex, 0, lines.Length - 1)], lineStyle);
 
             // 진행 표시 (n/총)
-            GUI.Label(new Rect(px + panelW - 120f, nameY, 92f, 30f),
-                $"{lineIndex + 1}/{lines.Length}", nameStyle);
+            // **상자 높이를 숫자로 박지 않는다.** 이 라벨은 이름과 같은 `nameStyle`을 쓰는데,
+            // 스토리 모드에서 그 폰트가 26 → 38로 커진 뒤에도 상자는 30px 그대로였다 —
+            // 한글 줄높이는 대략 fontSize × 1.35(=51)라 "1/4"가 위아래로 깎였다.
+            // 이름 쪽(nameH)은 52로 함께 키웠는데 여기만 남았다.
+            //
+            // 문자열도 캐시한다 — OnGUI는 프레임당 여러 번 도는데 보간은 매번 새 문자열이다.
+            if (progressCacheIndex != lineIndex || progressCacheTotal != lines.Length)
+            {
+                progressCacheIndex = lineIndex;
+                progressCacheTotal = lines.Length;
+                progressCache = (lineIndex + 1) + "/" + lines.Length;
+            }
+            float progH = Mathf.Ceil(nameStyle.fontSize * 1.35f);
+            UIHelper.LabelFit(new Rect(px + panelW - 120f, nameY, 92f, progH),
+                progressCache, nameStyle);
 
             // 버튼 — 마지막 줄이면 [닫기]만, 아니면 [다음]/[닫기]
             float btnW = storyMode ? 220f : 170f;
@@ -369,9 +397,9 @@ namespace InsectGame.UI
             // panelAlpha를 인자로 받지 않으므로, UISurface와 같은 방식으로 GUI.color를 보존한다.
             Color ambient = GUI.color;
             GUI.color = new Color(0.12f, 0.1f, 0.06f, 0.9f) * ambient;
-            GUI.DrawTexture(new Rect(boxX, boxY, box, box), panelTex);
+            GUI.DrawTexture(new Rect(boxX, boxY, box, box), Texture2D.whiteTexture);
             GUI.color = new Color(1f, 0.85f, 0.45f, 0.5f) * ambient;
-            GUI.DrawTexture(new Rect(boxX, boxY, box, 3f), panelTex);
+            GUI.DrawTexture(new Rect(boxX, boxY, box, 3f), Texture2D.whiteTexture);
             GUI.color = ambient;
 
             float scale = box / 150f;
@@ -405,6 +433,23 @@ namespace InsectGame.UI
                 case "ledger_thug_rule": // 자 — 모자 없이 묶은 머리
                     gender = 1; skinIdx = 1; hairIdx = 3; hairStyle = 3; faceType = 1;
                     top = new Color(0.16f, 0.16f, 0.20f); hat = new Color(0f, 0f, 0f, 0f); return true;
+
+                // 2막 간부 4인. 표에 없으면 **얼굴 없이** 말한다 — 1막 하수에게는 초상이 있는데
+                // 8~12장 대치의 상대들, 심지어 최종 보스인 관장이 그랬다. 하수의 검은 상의를
+                // 그대로 이어받되(같은 계열임이 색으로 읽힌다) 채도를 조금씩 달리해 구분한다.
+                case "ledger_grip": // 집게 — 힘으로 밀어붙인다. 짧은 머리, 모자 없음
+                    gender = 0; skinIdx = 3; hairIdx = 0; hairStyle = 0; faceType = 1;
+                    top = new Color(0.18f, 0.17f, 0.21f); hat = new Color(0f, 0f, 0f, 0f); return true;
+                case "ledger_scale": // 저울 — 숫자로 말한다. 단정한 올림머리
+                    gender = 1; skinIdx = 0; hairIdx = 1; hairStyle = 3; faceType = 0;
+                    top = new Color(0.20f, 0.20f, 0.26f); hat = new Color(0f, 0f, 0f, 0f); return true;
+                case "ledger_ink": // 먹 — 붓을 놓지 못한다. 챙 있는 모자로 눈을 가린다
+                    gender = 0; skinIdx = 1; hairIdx = 4; hairStyle = 0; faceType = 0;
+                    top = new Color(0.14f, 0.14f, 0.18f); hat = new Color(0.09f, 0.09f, 0.12f); return true;
+                case "ledger_chief": // 관장 — 최종 보스. 유일하게 밝은 머리로 격을 가른다
+                    gender = 0; skinIdx = 2; hairIdx = 2; hairStyle = 0; faceType = 0;
+                    top = new Color(0.12f, 0.12f, 0.16f); hat = new Color(0.30f, 0.26f, 0.18f); return true;
+
                 default:
                     gender = 0; skinIdx = 0; hairIdx = 0; hairStyle = 0; faceType = 0;
                     top = Color.white; hat = new Color(0f, 0f, 0f, 0f); return false;
@@ -437,10 +482,6 @@ namespace InsectGame.UI
                 fontStyle = FontStyle.Bold,
                 alignment = TextAnchor.MiddleCenter
             };
-
-            panelTex = new Texture2D(1, 1, TextureFormat.RGBA32, false);
-            panelTex.SetPixel(0, 0, Color.white);
-            panelTex.Apply();
 
             stylesInited = true;
         }
