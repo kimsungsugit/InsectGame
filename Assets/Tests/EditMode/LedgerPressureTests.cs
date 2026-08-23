@@ -158,35 +158,49 @@ namespace InsectGame.Tests
             Assert.LessOrEqual(LedgerPressure.ReadDamageMultiplier, 2f);
         }
 
-        // ── 때리는 턴에만 쓴다 ──────────────────────────────────────
+        // ── 게이지 단계 ─────────────────────────────────────────────
         /// <summary>
-        /// 곱할 피해가 없는 턴에 정독이 터지면 <b>게이지만 비워지고 아무 일도 안 일어난다</b> —
-        /// 경고를 보고 각오한 쪽에서는 압박이 운으로 읽힌다. 실측에서 정독 4회 중 1회가
-        /// 그렇게 낭비됐다(평균 배율이 1.19로 희석).
+        /// <b>장부가 찰수록 단계도 올라야 한다.</b> 중간에 내려가는 구간이 있으면
+        /// 가장 위험한 순간이 안전색으로 보인다 — 실제로 그랬다. 화면이
+        /// <c>IsWarning</c>만 보고 색을 고르던 동안, 게이지가 가득 찬 순간
+        /// (<c>IsWarning</c>은 정의상 그때 false다) 붉은색에서 평상색으로 되돌아갔다.
+        ///
+        /// 발동이 같은 턴에 곧바로 일어나던 동안에는 그 상태가 한 프레임도 안 보여
+        /// 드러나지 않았다. 정독을 <b>못 쓴 턴에는 들고 기다리도록</b> 고친 뒤로
+        /// 여러 턴 이어지는 상태가 되면서 눈에 띄었다.
         /// </summary>
-        [TestCase(Data.SkillEffectType.BuffAttack)]
-        [TestCase(Data.SkillEffectType.DebuffAttack)]
-        [TestCase(Data.SkillEffectType.Heal)]
-        [TestCase(Data.SkillEffectType.PoisonDot)]
-        [TestCase(Data.SkillEffectType.Stun)]
-        [TestCase(Data.SkillEffectType.DefenseBuff)]
-        public void DealsImmediateDamage_NonDamagingSkills_HoldTheRead(Data.SkillEffectType kind)
+        [Test]
+        public void AlertOf_NeverDropsAsTheLedgerFills()
         {
-            Assert.IsFalse(LedgerPressure.DealsImmediateDamage(kind, true));
+            foreach (NpcBossDuels.BossDuel duel in NpcBossDuels.All())
+            {
+                int threshold = duel.ledgerThreshold;
+                LedgerAlert previous = LedgerAlert.Calm;
+                for (int tally = 0; tally <= threshold; tally++)
+                {
+                    LedgerAlert now = LedgerPressure.AlertOf(tally, threshold);
+                    Assert.GreaterOrEqual((int)now, (int)previous,
+                        $"{duel.storyNpcId}(임계 {threshold}): 장부 {tally}에서 단계가 " +
+                        $"{previous} → {now}로 **내려간다** — 그 구간이 실제보다 안전해 보인다");
+                    previous = now;
+                }
+            }
         }
 
         [Test]
-        public void DealsImmediateDamage_DamageSkill_Spends()
+        public void AlertOf_FullLedger_IsMarked()
         {
-            Assert.IsTrue(LedgerPressure.DealsImmediateDamage(Data.SkillEffectType.Damage, true));
+            // 가득 찬 상태는 「이미 적혔다」다 — 때릴 자리가 날 때까지 여러 턴 이어질 수 있다.
+            Assert.AreEqual(LedgerAlert.Marked, LedgerPressure.AlertOf(6, 6));
+            Assert.AreEqual(LedgerAlert.Warning, LedgerPressure.AlertOf(5, 6));
+            Assert.AreEqual(LedgerAlert.Calm, LedgerPressure.AlertOf(0, 6));
         }
 
         [Test]
-        public void DealsImmediateDamage_NoSkill_Spends()
+        public void AlertOf_Inactive_IsAlwaysCalm()
         {
-            // 쿨다운에 걸려 스킬이 없는 턴은 기본 피해를 준다 — 곱할 대상이 있다.
-            Assert.IsTrue(LedgerPressure.DealsImmediateDamage(Data.SkillEffectType.Damage, false));
-            Assert.IsTrue(LedgerPressure.DealsImmediateDamage(Data.SkillEffectType.Heal, false));
+            // 장부 없는 전투(야생·아이 대결)에서 게이지가 뜨면 안 된다.
+            Assert.AreEqual(LedgerAlert.Calm, LedgerPressure.AlertOf(99, 0));
         }
 
         // ── 행동 키 ─────────────────────────────────────────────────

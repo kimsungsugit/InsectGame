@@ -2,7 +2,7 @@
 
 이 기능의 실패는 전부 무증상이다. 예외도 경고도 안 나고, 거점이 그냥 영원히 안 무너지거나
 정화해도 아무것도 안 돌아온다. 기존 검사기가 못 보는 것만 여기서 본다 —
-비트 무결성은 story_lint(21검사), 퀘스트 배선은 quest_lint(10검사)가 이미 본다.
+비트 무결성은 story_lint(22검사), 퀘스트 배선은 quest_lint(10검사)가 이미 본다.
 
 가장 큰 급소 둘:
 
@@ -42,6 +42,18 @@ def code_only(src):
     "이건 쓰지 않는다"고 적어 둔 주석 때문에 FAIL이 났다(실제로 겪음)."""
     src = re.sub(r"/\*.*?\*/", "", src, flags=re.S)
     return re.sub(r"//.*", "", src)
+
+
+def _method_body(src, signature):
+    """선언 줄부터 같은 들여쓰기의 다음 멤버 선언 전까지. 메서드 **안**에 있는지를
+    묻는 검사가 있어서 필요하다 — 파일 전체 grep은 옆 메서드의 코드도 같이 본다."""
+    idx = src.find(signature)
+    if idx < 0:
+        raise gf.ExtractorBroken(
+            "InsectBattleController에서 '" + signature + "'를 못 찾았다 — 이름이 바뀌었으면 검사기부터 고칠 것")
+    tail = src[idx + len(signature):]
+    nxt = re.search(r"\n        (?:private|public|internal|protected)\s", tail)
+    return tail[:nxt.start()] if nxt else tail
 
 
 def _boss_duels():
@@ -256,6 +268,38 @@ def main():
         add("BlightVfx가 RenderSettings 미사용", "0건",
             "**사용함 — 서브에리어 왕복에 조용히 지워진다**" if touches else "0건", not touches)
 
+    # 20. 「장부」 정독이 **실제로 때린 턴에만** 소모되는가.
+    #
+    #     이것도 무증상이다 — 게이지는 멀쩡히 차고 "장부에 올랐다!"도 뜨는데 피해만
+    #     안 곱해진다. 옛 판은 적 스킬의 SkillEffectType을 **열거해** "때리는 턴인가"를
+    #     ApplySkill **전에** 예측했고, 그래서 빗나감을 못 봤다: 산·유적 거점 보스
+    #     (mantis_green·hornet_asian)의 주력기 storm은 명중 0.9라 정독 열 번에 한 번이
+    #     조용히 증발했다. 지금은 GetDamage가 배율을 곱한 사실을 남기고 UseEnemyTurn이
+    #     **결과를 보고** 장부를 비운다. 두 급소를 소스로 고정한다.
+    bc = code_only(read("Assets/Scripts/Battle/InsectBattleController.cs"))
+    ledger_bad = []
+
+    # (a) 배율을 곱하는 자리는 GetDamage 하나뿐이어야 한다.
+    #     ApplySkill의 피해 분기가 여럿이라 분기마다 곱하면 하나를 빠뜨린다.
+    mult_total = bc.count("ReadDamageMultiplier")
+    mult_in_funnel = _method_body(bc, "private int GetDamage(").count("ReadDamageMultiplier")
+    if mult_total != 1 or mult_in_funnel != 1:
+        ledger_bad.append("배율 곱셈 %d곳(GetDamage 안 %d곳) — 단일 지점이 아니다"
+                          % (mult_total, mult_in_funnel))
+
+    # (b) 장부를 비우는 자리가 ApplySkill **뒤**여야 한다. 앞에 있으면 못 때린 턴에도 비워진다.
+    enemy_turn = _method_body(bc, "private void UseEnemyTurn(")
+    apply_at = enemy_turn.find("ApplySkill(")
+    spend_at = enemy_turn.find("ledgerReadCount++")
+    if apply_at < 0 or spend_at < 0:
+        ledger_bad.append("UseEnemyTurn에서 ApplySkill/소모 지점을 못 찾았다")
+    elif spend_at < apply_at:
+        ledger_bad.append("소모가 ApplySkill **앞**에 있다 — 빗나가거나 못 때린 턴에도 장부가 비워진다")
+
+    add("장부 정독 소모 지점", "GetDamage 단일 배율 + ApplySkill 뒤 소모",
+        str(len(ledger_bad)) + "건 " + str(ledger_bad) if ledger_bad else "정상",
+        not ledger_bad)
+
     fails = [s for s in signals if s[3] == "FAIL"]
     print("# blight-lint — 명부회 오염 거점 정합성\n")
     print("| 검사 | 기대 | 측정 | 판정 |")
@@ -266,10 +310,11 @@ def main():
     print("\n## 가정 / 한계")
     print("- 거점 정의는 RegionData 필드에서 읽는다(별도 표 아님). 0건은 정상 상태로 본다 —")
     print("  필드 선언 자체가 사라지면 game_facts가 ExtractorBroken으로 죽는다.")
-    print("- 비트 무결성·연출/컷신 배선은 story_lint(21검사), 퀘스트는 quest_lint(10검사) 담당.")
+    print("- 비트 무결성·연출/컷신 배선은 story_lint(22검사), 퀘스트는 quest_lint(10검사) 담당.")
     print("- 검사 6·7은 story_lint의 사각지대를 메운다: 검사 17이 'bl' 챕터를 건너뛰고,")
     print("  검사 3은 RegionCleansed 분기가 없어 param을 안 본다.")
-    print("- 소스 grep 기반 검사(8~13, 16~18)는 '경로가 존재하는가'만 본다. 그 경로가 실제로")
+    print("- 검사 20은 거점이 아니라 **장부 압박**을 본다 — 같은 조직의 무증상 결함이라 여기 둔다.")
+    print("- 소스 grep 기반 검사(8~13, 16~18, 20)는 '경로가 존재하는가'만 본다. 그 경로가 실제로")
     print("  불리는지는 기기 확인 대상이다.")
     return 1 if fails else 0
 

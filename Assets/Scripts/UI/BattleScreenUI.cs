@@ -1738,20 +1738,36 @@ namespace InsectGame.UI
 
             int tally = battleController.LedgerTally;
             float fill = LedgerPressure.Fill01(tally, threshold);
-            bool warn = LedgerPressure.IsWarning(tally, threshold);
+            // 단계 판정은 순수부가 든다 — 경고 여부만 보고 색을 고르면 **가득 찬 순간**
+            // 평상색으로 되돌아간다(IsWarning은 정의상 IsFull일 때 false다).
+            LedgerAlert alert = LedgerPressure.AlertOf(tally, threshold);
             const float h = 26f;
 
             UISurface.Flat(new Rect(x, y, w, h), new Color(0.09f, 0.09f, 0.14f, 0.94f));
             if (fill > 0.001f)
             {
-                Color col = warn ? new Color(0.95f, 0.35f, 0.3f) : new Color(0.85f, 0.72f, 0.35f);
+                Color col;
+                if (alert == LedgerAlert.Marked)
+                {
+                    // 이미 적힌 상태는 여러 턴 이어질 수 있다(때릴 자리가 날 때까지 기다린다).
+                    // 정지된 붉은 막대는 그냥 배경이 되므로 맥동으로 "아직 살아 있음"을 남긴다.
+                    float pulse = 0.78f + 0.22f * Mathf.PingPong(Time.time * 1.6f, 1f);
+                    col = new Color(1f * pulse, 0.22f * pulse, 0.2f * pulse);
+                }
+                else if (alert == LedgerAlert.Warning) col = new Color(0.95f, 0.35f, 0.3f);
+                else col = new Color(0.85f, 0.72f, 0.35f);
                 UISurface.Flat(new Rect(x, y, w * fill, h), col);
             }
 
             Color prev = hpTextCache.normal.textColor;
-            hpTextCache.normal.textColor = warn ? new Color(1f, 0.86f, 0.82f) : new Color(0.93f, 0.9f, 0.78f);
+            hpTextCache.normal.textColor = alert == LedgerAlert.Calm
+                ? new Color(0.93f, 0.9f, 0.78f)
+                : new Color(1f, 0.86f, 0.82f);
+            string label = alert == LedgerAlert.Marked ? "장부 — 이미 적혔다"
+                : alert == LedgerAlert.Warning ? "장부 — 곧 적힌다"
+                : "장부";
             // 문구 길이가 상태로 갈리므로 LabelFit으로 상자에 맞춘다(상자를 키우면 아레나를 침범한다).
-            UIHelper.LabelFit(new Rect(x, y, w, h), warn ? "장부 — 곧 적힌다" : "장부", hpTextCache);
+            UIHelper.LabelFit(new Rect(x, y, w, h), label, hpTextCache);
             // **되돌려 놓는다.** 이 스타일은 아래 HP 숫자가 이어서 쓴다(흰색 전제).
             hpTextCache.normal.textColor = prev;
         }

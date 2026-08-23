@@ -2,6 +2,17 @@ using UnityEngine;
 
 namespace InsectGame.Battle
 {
+    /// <summary>「장부」 게이지가 알리는 위험 단계. 값이 클수록 위험하다(순서에 의미가 있다).</summary>
+    public enum LedgerAlert
+    {
+        /// <summary>아직 여유가 있다.</summary>
+        Calm = 0,
+        /// <summary>임계가 코앞이다 — 지금 행동을 바꾸면 늦지 않는다.</summary>
+        Warning = 1,
+        /// <summary><b>이미 적혔다.</b> 보스가 때릴 자리를 노리는 중이라 다음 공격이 정독이다.</summary>
+        Marked = 2,
+    }
+
     /// <summary>
     /// 명부회 보스전의 「장부」 압박 — <b>순수 계산부</b>. MonoBehaviour 없이 돌아
     /// EditMode 테스트가 씬 없이 고정한다(<c>BlightPolicy</c>·<c>UISafeLayout</c>과 같은 계열).
@@ -18,6 +29,12 @@ namespace InsectGame.Battle
     /// <c>ledgerThreshold</c>가 든다 — 여기에 인물 ID를 하나도 두지 않는 이유다
     /// (<c>BlightPolicy</c>가 리전 ID를 안 두는 것과 같다. 신원의 단일 출처는 그 표다).
     /// 갓 들어온 말단은 받아 적기만 해서 느리고, 3,000종을 적은 관장의 손은 빠르다.
+    ///
+    /// <b>여기에 "때리는 턴인가"를 판정하는 함수는 없다.</b> 한때 있었고(스킬 효과 종류를
+    /// 열거했다) <b>빗나감을 못 봤다</b> — 산·유적 거점 보스의 주력기는 명중 0.9라 정독
+    /// 열 번에 한 번이 조용히 증발했다. 지금은 <c>InsectBattleController.GetDamage</c>가
+    /// 배율을 실제로 곱했는지를 그대로 돌려주고, 못 쓴 턴은 장부를 들고 기다린다 —
+    /// 관찰이지 예측이 아니라서 스킬 종류가 늘어도 낡지 않는다.
     /// </summary>
     public static class LedgerPressure
     {
@@ -89,21 +106,21 @@ namespace InsectGame.Battle
         }
 
         /// <summary>
-        /// 이 행동이 <b>즉시 피해</b>를 주는가 — 장부를 여기서만 쓴다.
+        /// 게이지가 알려야 할 위험 단계. <b>tally가 오를수록 단계도 올라야 한다</b> —
+        /// 중간에 낮아지는 구간이 있으면 <b>가장 위험한 순간이 안전색으로 보인다.</b>
         ///
-        /// 배율을 걸 피해가 없는 턴(버프·회복·독 부여·기절)에 정독이 터지면 <b>아무 일도
-        /// 안 일어난 채 게이지만 비워진다.</b> 플레이어 쪽에서는 경고를 보고 각오했는데
-        /// 그냥 넘어간 것이라, 압박이 실력이 아니라 운으로 읽힌다 —
-        /// 실측에서 정독 4회 중 1회가 그렇게 낭비됐다(평균 배율이 1.19로 희석됐다).
-        ///
-        /// 그래서 <b>때리는 턴까지 미룬다.</b> "적어 둔 자리를 친다"는 말 그대로,
-        /// 칠 것이 없으면 아직 쓰지 않는다.
-        /// <c>null</c>(쿨다운 대체 기본공격)은 피해를 주므로 true다.
+        /// 실제로 그랬다. <see cref="IsWarning"/>은 정의상 <see cref="IsFull"/>일 때
+        /// false라(경고는 발동 <i>전</i> 구간이다), 화면이 경고 여부만 보고 색을 고르면
+        /// 장부가 가득 찬 순간 붉은색에서 평상색으로 <b>되돌아간다</b>. 발동이 같은 턴에
+        /// 곧바로 일어나던 동안에는 눈에 안 띄었지만, 정독을 <b>못 쓴 턴에는 들고
+        /// 기다리도록</b> 고친 뒤로 그 상태가 여러 턴 이어져 드러났다.
         /// </summary>
-        public static bool DealsImmediateDamage(Data.SkillEffectType effectType, bool hasSkill)
+        public static LedgerAlert AlertOf(int tally, int threshold)
         {
-            if (!hasSkill) return true;                       // 쿨다운 대체타 — 기본 피해
-            return effectType == Data.SkillEffectType.Damage;
+            if (!IsActive(threshold)) return LedgerAlert.Calm;
+            if (IsFull(tally, threshold)) return LedgerAlert.Marked;
+            if (IsWarning(tally, threshold)) return LedgerAlert.Warning;
+            return LedgerAlert.Calm;
         }
 
         /// <summary>

@@ -46,7 +46,10 @@ namespace InsectGame.Battle
         private int ledgerTally;
         private int lastActionKey = LedgerPressure.NoActionKey;
         // 이번 적 턴에 「장부에 올랐다」가 터졌는가 — GetDamage가 읽어 피해를 키운다.
-        private bool ledgerTriggered;
+        // 이번 적 턴에 정독을 **겨눴는가**(장부가 찼다)와 **실제로 썼는가**(배율이 걸렸다)를
+        // 가른다. 둘을 하나로 두면 곱할 피해가 없던 턴·빗나간 턴에도 장부가 비워진다.
+        private bool ledgerArmedThisTurn;
+        private bool ledgerSpentThisTurn;
         private int ledgerReadCount;
         private InsectSkill[] playerOverrideSkills;
         private int[] playerCooldowns;
@@ -144,7 +147,8 @@ namespace InsectGame.Battle
             ledgerThreshold = 0;
             ledgerTally = 0;
             lastActionKey = LedgerPressure.NoActionKey;
-            ledgerTriggered = false;
+            ledgerArmedThisTurn = false;
+            ledgerSpentThisTurn = false;
             ledgerReadCount = 0;
             lastCandyReward = 0;
             lastExpReward = 0;
@@ -169,7 +173,8 @@ namespace InsectGame.Battle
             ledgerThreshold = LedgerPressure.IsActive(threshold) ? threshold : 0;
             ledgerTally = 0;
             lastActionKey = LedgerPressure.NoActionKey;
-            ledgerTriggered = false;
+            ledgerArmedThisTurn = false;
+            ledgerSpentThisTurn = false;
             ledgerReadCount = 0;
         }
 
@@ -227,9 +232,13 @@ namespace InsectGame.Battle
                 {
                     playerCooldowns[skillIndex] = skill.cooldownTurns;
                 }
+
+                // **행동한 턴만 적힌다.** 기절로 건너뛴 턴은 보스가 볼 것이 없었다 —
+                // 밖에 두면 손 못 댄 턴에 장부가 차고, 반대로 아무 키나 눌러 완화를
+                // 공짜로 얻는 길도 함께 열린다.
+                NoteLedgerAction(skillIndex);
             }
 
-            NoteLedgerAction(skillIndex);
             if (enemyStats.CurrentHp > 0)
             {
                 UseEnemyTurn();
@@ -259,10 +268,12 @@ namespace InsectGame.Battle
                 int damage = Mathf.Max(1, Mathf.RoundToInt(playerStats.Attack * 0.7f));
                 enemyStats.ApplyDamage(damage, playerStats.Attack, enemyStats.Defense);
                 TryPlayHitFlash(false);
+
+                // 쿨다운 없는 기본공격 연타가 이 압박이 겨냥하는 바로 그 패턴이다.
+                // 기절로 건너뛴 턴은 적지 않는다(UseSkill과 같은 이유).
+                NoteLedgerAction(LedgerPressure.BasicAttackKey);
             }
 
-            // 쿨다운 없는 기본공격 연타가 이 압박이 겨냥하는 바로 그 패턴이다.
-            NoteLedgerAction(LedgerPressure.BasicAttackKey);
             if (enemyStats.CurrentHp > 0)
             {
                 UseEnemyTurn();
@@ -474,9 +485,15 @@ namespace InsectGame.Battle
             float multiplier = Mathf.Clamp(1f + attacker.AttackBonus, 0.3f, 3f);
             // 장부 정독은 **적이 때릴 때만** 걸린다. attacker 참조로 가른다 —
             // duelMode 같은 상태로 가르면 플레이어 공격까지 배율을 먹는다.
-            if (ledgerTriggered && ReferenceEquals(attacker, enemyStats))
+            //
+            // <b>여기가 정독을 실제로 쓰는 유일한 지점이다.</b> 배율을 건 사실을
+            // 그대로 남겨, 장부를 비울지 말지를 `UseEnemyTurn`이 **결과를 보고** 정한다 —
+            // 이 자리에 도달하지 못한 턴(버프·회복·독·기절, 그리고 <b>빗나감</b>)은
+            // 곱할 것이 없었던 턴이므로 장부를 그대로 들고 다음 턴을 기다린다.
+            if (ledgerArmedThisTurn && ReferenceEquals(attacker, enemyStats))
             {
                 multiplier *= LedgerPressure.ReadDamageMultiplier;
+                ledgerSpentThisTurn = true;
             }
             int damage = Mathf.RoundToInt((baseDamage + attacker.Level * 2) * multiplier);
             return Mathf.Max(1, damage);
@@ -518,24 +535,29 @@ namespace InsectGame.Battle
             // **피해 배율은 GetDamage 한 곳에서만** 걸린다 — ApplySkill의 분기가 여럿이라
             // 각 분기에 곱하면 하나를 빠뜨리고 그게 조용히 어긋난다.
             //
-            // **때리는 턴에만 쓴다.** 이번 행동이 버프·회복·독·기절이면 곱할 피해가 없어
-            // 게이지만 비워지고 아무 일도 안 일어난다 — 경고를 보고 각오한 쪽에서는 압박이
-            // 실력이 아니라 운으로 읽힌다(배치 실측에서 정독 4회 중 1회가 그렇게 낭비됐다).
-            // 그래서 칠 것이 없으면 장부를 든 채 다음 턴을 기다린다.
-            ledgerTriggered = LedgerPressure.IsFull(ledgerTally, ledgerThreshold)
-                && LedgerPressure.DealsImmediateDamage(
-                    enemySkill != null ? enemySkill.effectType : Data.SkillEffectType.Damage,
-                    enemySkill != null);
-            if (ledgerTriggered)
+            // **쓴 턴에만 비운다.** 장부가 찼다고 무조건 소모하면, 곱할 피해가 없던 턴
+            // (버프·회복·독·기절)과 **빗나간 턴**에 게이지만 비워지고 아무 일도 안 일어난다 —
+            // 경고를 보고 각오한 쪽에서는 압박이 실력이 아니라 운으로 읽힌다.
+            // 그래서 여기서는 **겨누기만** 하고, 실제로 배율이 걸렸는지는 `GetDamage`가
+            // `ledgerSpentThisTurn`으로 알려 준다. 못 썼으면 장부를 든 채 다음 턴을 기다린다.
+            //
+            // 이 구조는 스킬 종류를 열거하지 않는다는 점이 중요하다 — 옛 판은
+            // `SkillEffectType`을 나열해 "때리는 턴인가"를 미리 판정했고, 그래서
+            // **빗나감을 못 봤다**(산·유적 거점 보스의 주력기 `storm`은 명중 0.9다).
+            ledgerArmedThisTurn = LedgerPressure.IsFull(ledgerTally, ledgerThreshold);
+            ledgerSpentThisTurn = false;
+
+            LastEnemySkill = enemySkill;   // UI가 EnemyAttack 연출(속성·근접여부)에 사용
+            ApplySkill(enemyStats, playerStats, enemySkill, false);
+
+            if (ledgerSpentThisTurn)
             {
                 ledgerTally = 0;
                 ledgerReadCount++;
                 TryPlayEffectText("장부에 올랐다!", new Color(0.95f, 0.35f, 0.3f));
             }
-
-            LastEnemySkill = enemySkill;   // UI가 EnemyAttack 연출(속성·근접여부)에 사용
-            ApplySkill(enemyStats, playerStats, enemySkill, false);
-            ledgerTriggered = false;
+            ledgerArmedThisTurn = false;
+            ledgerSpentThisTurn = false;
             if (enemySkill != null)
             {
                 enemyCooldown = enemySkill.cooldownTurns;
