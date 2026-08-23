@@ -595,10 +595,37 @@ def story_npc_ids() -> set:
 
     출처: VillageBuilder의 storyNpcId = "..." 앵커. 여기에 없는 NPC를 NpcTalk param으로
     쓰면 그 NPC가 월드에 없어 비트가 영영 발화하지 않는다(조용한 미발화). story_lint가 잡는다.
+
+    **주석을 먼저 지운다.** VillageBuilder에는 이 추출기의 요구사항을 적어 둔 주석
+    (`storyNpcId = "리터럴"`)이 있는데, 파이썬 `\\w`가 한글을 먹어서 그 예시가 실제 NPC로
+    집계됐다 — 추출기가 자기 사용설명서를 데이터로 읽은 셈이다. 집합이 커지면 오타 param이
+    통과할 수 있고, "모든 스토리 NPC에 앰비언트 대사가 있는가"(검사 20)가 거짓 FAIL을 낸다.
     """
-    ids = set(re.findall(r'storyNpcId\s*=\s*"(\w+)"', _read("village_builder")))
+    # strip_cs는 못 쓴다 — 그쪽은 **문자열 리터럴까지** 지워서 읽어야 할 값이 통째로 사라진다
+    # (story_trigger_wiring이 상수 정의를 원본에서 읽는 것과 같은 이유). 줄 주석만 걷는다.
+    ids = set()
+    for line in _read("village_builder").splitlines():
+        ids.update(re.findall(r'storyNpcId\s*=\s*"(\w+)"', line.split("//", 1)[0]))
     if not ids:
         raise ExtractorBroken('VillageBuilder에서 storyNpcId를 하나도 못 읽었다 — 배치 형태가 바뀌었는가?')
+    return ids
+
+
+def story_npc_ambient_ids() -> set:
+    """전용 앰비언트 대사가 있는 스토리 NPC 집합(NpcDialogueDatabase.StoryNpcLines 키).
+
+    없는 인물은 비트가 없을 때 **마을 주민 풀로 떨어진다** — 명부회 간부가 날씨 이야기를 한다.
+    예외도 경고도 없이 그럴듯한 대사가 나오므로 눈으로만 잡을 수 있었다(2026-08-23에 실제로 그랬다).
+    """
+    # strip_cs는 문자열 리터럴까지 지운다 — 여기서 읽어야 할 것이 바로 그 리터럴이라
+    # 줄 주석만 걷는다(story_npc_ids와 같은 이유).
+    src = "\n".join(l.split("//", 1)[0] for l in _read("npc_dialogue").splitlines())
+    idx = src.find("StoryNpcLines")
+    if idx < 0:
+        raise ExtractorBroken("NpcDialogueDatabase에서 StoryNpcLines를 못 찾았다 — 이름이 바뀌었는가?")
+    ids = set(re.findall(r'\{\s*"(\w+)",\s*new\[\]', src[idx:]))
+    if not ids:
+        raise ExtractorBroken("StoryNpcLines에서 키를 하나도 못 읽었다 — 초기화 형태가 바뀌었는가?")
     return ids
 
 

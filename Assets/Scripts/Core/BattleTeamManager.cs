@@ -100,6 +100,7 @@ namespace InsectGame.Core
         {
             if (collection == null) collection = col;
             MigrateLegacySlots();
+            SeatFirstOwnedInsect();
             SubscribeEvents();
         }
 
@@ -145,6 +146,40 @@ namespace InsectGame.Core
             SetSlot(0, insect.instanceId);
         }
 
+        /// <summary>
+        /// <b>곤충은 있는데 팀이 빈 세이브를 구제한다.</b> <see cref="OnInsectObtained"/>는
+        /// <b>앞으로의 획득</b>만 덮는다 — 그 결함을 이미 겪은 세이브(첫 파트너를 받았는데
+        /// 자동 배치 코드가 죽어 있던 빌드로 플레이한 계정)는 업데이트해도 팀이 그대로 비어
+        /// 있고, <c>CaptureChoiceUI</c>의 [B]가 여전히 잠긴 채 <c>q_battle</c>에서 멈춘다.
+        /// 새 곤충을 하나 더 잡으면 풀리지만, 그 포획을 하려면 전투를 지나야 하는 게 아니라서
+        /// 운 좋게 벗어나는 것뿐이다.
+        ///
+        /// <b>TeamChanged를 발화하지 않는다</b> — 사용자 액션이 아니라 시스템 정리라
+        /// <c>MigrateLegacySlots</c>와 같은 취급이다(팀 UI는 매 프레임 <c>GetAllSlots</c>로 읽는다).
+        ///
+        /// 팀을 일부러 비워 둔 플레이어는 다음 부팅에 1번 슬롯이 다시 채워진다. 빈 팀은 전투 자체를
+        /// 막으므로 그 편이 낫다고 봤다.
+        /// </summary>
+        private void SeatFirstOwnedInsect()
+        {
+            if (collection == null || saveData == null) return;
+            if (HasAnyInsect()) return;
+
+            IReadOnlyList<PlayerInsectData> owned = collection.OwnedView;
+            if (owned == null) return;
+
+            for (int i = 0; i < owned.Count; i++)
+            {
+                PlayerInsectData d = owned[i];
+                if (d == null || string.IsNullOrEmpty(d.instanceId)) continue;
+
+                saveData.slotIds[0] = d.instanceId;
+                Save(saveData);
+                Debug.Log($"[BattleTeam] 빈 팀에 {d.instanceId} 자동 편성 — 곤충은 있는데 팀이 비어 있었다");
+                return;
+            }
+        }
+
         // 클라우드 로드 후 battle_team.json을 다시 읽어 슬롯 갱신.
         // TeamChanged는 발화하지 않음 — TutorialQuestManager가 q_team 진행도를 잘못 가산하는 회귀 차단.
         // 팀 UI(IMGUI)는 매 프레임 GetAllSlots로 읽어 자동 반영.
@@ -154,6 +189,9 @@ namespace InsectGame.Core
             while (saveData.slotIds.Count < MaxSlots)
                 saveData.slotIds.Add(string.Empty);
             MigrateLegacySlots();
+            // 다른 기기의 곤충이 방금 내려왔는데 팀이 비어 있을 수 있다 — 컬렉션이
+            // 이 클래스보다 **먼저** 등록돼 있어 여기서는 이미 갱신된 목록을 본다.
+            SeatFirstOwnedInsect();
         }
 
         private void MigrateLegacySlots()

@@ -649,6 +649,28 @@ def evaluate_signals() -> list:
         "FAIL" if unintroduced else "PASS",
     ))
 
+    # 20. 월드에 배치된 스토리 NPC는 **전용 앰비언트 대사**를 가져야 한다.
+    #
+    #     비트가 없을 때(아직 차례가 아니거나 전부 본 뒤) NpcDialogueUI는 마을 주민 풀로
+    #     떨어진다. 그래서 명부회 간부가 "산책하기 딱 좋은 날씨예요"를 말했다 — 최종 보스인
+    #     관장까지. 예외도 경고도 없고 그럴듯한 대사가 나오므로 눈으로만 잡힌다.
+    #
+    #     인물을 새로 배치할 때 `StoryNpcLines`에 두 줄 넣는 걸 빠뜨리기 쉬워서 여기서 잡는다.
+    world_npcs = game_facts.story_npc_ids()
+    ambient_npcs = game_facts.story_npc_ambient_ids()
+    voiceless = sorted(world_npcs - ambient_npcs)
+    orphan_lines = sorted(ambient_npcs - world_npcs)
+
+    npc_problems = ([f"{n}(앰비언트 없음)" for n in voiceless]
+                    + [f"{n}(월드에 없는 인물)" for n in orphan_lines])
+    signals.append((
+        "스토리 인물 앰비언트 대사 (없으면 주민 잡담으로 떨어짐)",
+        "0건 누락",
+        f"{len(npc_problems)}건 ({npc_problems})" if npc_problems
+        else f"0건 (스토리 인물 {len(world_npcs)}명 전원 전용 대사)",
+        "FAIL" if npc_problems else "PASS",
+    ))
+
     return signals
 
 
@@ -675,6 +697,8 @@ def main():
     print("## 가정 / 한계")
     print("- 스토리 비트는 Assets/Resources/Story.json에서 json.load로 읽는다(정규식 아님).")
     print("  지연 발화(DeferTrigger)도 배선으로 세되, 큐를 흘리는 지점이 있을 때만 센다.")
+    print("- 검사 20은 VillageBuilder의 storyNpcId(주석 제외)와 NpcDialogueDatabase.StoryNpcLines")
+    print("  키를 양방향 대조한다. 한쪽에만 있으면 그 인물이 주민 잡담을 하거나 사문화된 대사다.")
     print("- 트리거 배선(검사 6)은 StoryDirector의 Trigger 상수·switch case·EvaluateTriggers")
     print("  발화 지점을 교차검사. 새 trigger.type의 배선 누락(영구 미발화)을 잡는다.")
     print("- SubAreaEnter param은 리전 밖 서브에리어 ID일 수 있어 완화(미존재만 잡지 않음).")

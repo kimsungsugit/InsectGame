@@ -155,6 +155,7 @@ namespace InsectGame.UI
         private GUIStyle detailRewardStyleCache;
         private GUIStyle detailRewardLabelStyleCache;
         private GUIStyle detailDescStyleCache;
+        private GUIStyle detailSectionStyleCache;
         private bool detailStylesReady;
 
         // 퀘스트별 보상 요약 문자열 캐시. 보상은 불변이라 최초 1회만 조립하면 되고,
@@ -290,6 +291,15 @@ namespace InsectGame.UI
             detailRewardLabelStyleCache = new GUIStyle(GUI.skin.label)
             { fontSize = 23, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
             detailRewardLabelStyleCache.normal.textColor = UITheme.Instance.textMuted;
+
+            // 목록 안의 "★ 스토리" / "◆ 서브" 구분줄. **패널 헤더와 스타일을 공유하지 않는다** —
+            // 예전엔 헤더 스타일의 fontSize를 21로 바꿔 그리고 상수 31로 되돌렸는데, 헤더가
+            // 37로 커진 뒤에도 그 31이 그대로 남아 **패널 제목이 첫 프레임 이후 영구히 작아졌다**
+            // (컴파일도 되고 예외도 없다. 이 파일의 RowH 주석이 경고하는 "숫자를 박아두면
+            // 어긋난다"의 실례가 자기 안에 있었다).
+            detailSectionStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 21, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
+            detailSectionStyleCache.normal.textColor = QuestTitleCol;
         }
 
         private void OnEnable()
@@ -487,7 +497,9 @@ namespace InsectGame.UI
                     : UISafeLayout.BottomY(rH);    // 데스크톱: 좌하단
                 objectiveRowTop = rY + rH + UITheme.Space.XS;
                 objectiveRowVisible = true;
-                if (UISurface.Button(new Rect(chipX, rY, rW, rH), "▼ 퀘스트 보기", theme.surfaceRaised, panelSurfaceBtnStyleCache))
+                Rect restoreRect = new Rect(chipX, rY, rW, rH);
+                FieldHudInput.RegisterBlockingRect(restoreRect);
+                if (UISurface.Button(restoreRect, "▼ 퀘스트 보기", theme.surfaceRaised, panelSurfaceBtnStyleCache))
                     SetTutorialHidden(false);
                 return;
             }
@@ -511,6 +523,14 @@ namespace InsectGame.UI
             Rect chipRect = new Rect(chipX, chipY, chipW, chipH);
             objectiveRowTop = chipRect.yMax + UITheme.Space.XS;
             objectiveRowVisible = true;
+
+            // **필드 위에 겹쳐 그리는 버튼은 자기 영역을 매 프레임 등록한다.**
+            // 안 하면 그 탭이 월드 클릭-이동으로 **새어** 캐릭터가 칩 아래 지점으로 걸어간다 —
+            // `PlayerMovement`가 `Input.GetMouseButtonDown(0)`을 Update에서 따로 폴링하는데,
+            // 그 시점엔 모달도 안 열려 있고 IMGUI는 EventSystem을 거치지 않아 방어선이 이것뿐이다
+            // (rules/ui-layout.md). 칩은 눌러서 상세를 여는 버튼이고 안에 ✕도 있다.
+            // 좌표는 `UIScale.Begin()` 안이라 가상 좌표 그대로 넘긴다.
+            FieldHudInput.RegisterBlockingRect(chipRect);
 
             // 배경 — 미니맵과 같은 반투명 서피스. 각진 사각형 직접 칠하기는 금지(rules/ui-layout.md).
             UISurface.HudCard(chipRect);
@@ -589,6 +609,11 @@ namespace InsectGame.UI
                 : 400f;
             float h = Mathf.Ceil(objectiveStyleCache.fontSize * 1.35f) + UITheme.Space.S * 2f;
             Rect row = new Rect(x, objectiveRowTop, w, h);
+
+            // 칩과 같은 이유로 등록한다 — 여기는 더 나쁘다. 이 행을 누르면 자동 주행이 시작되는데
+            // **같은 탭이 클릭-이동으로도 발화해** 목표로 달려가면서 동시에 탭 지점으로 걸어가려
+            // 든다. 버튼이 아닌 안내 카드일 때도 생김새가 같아 눌리므로 함께 막는다.
+            FieldHudInput.RegisterBlockingRect(row);
 
             bool running = objectiveTracker.IsRunning;
             bool canRun = objectiveTracker.HasWorldTarget;
@@ -746,7 +771,10 @@ namespace InsectGame.UI
 
             // Progress text
             GUI.color = Color.white;
-            GUI.Label(new Rect(x + barW + 8f, y, 62f, barH + 8f), current + "/" + target, questProgStyleCache);
+            // 칩 쪽은 "100/100"이 안 들어가 84px로 넓혔는데 여기는 62px 그대로였다.
+            // questProgStyle은 wordWrap이 꺼져 있어 넘치면 세로가 아니라 **가로**로 잘린다.
+            UIHelper.LabelFit(new Rect(x + barW + 8f, y, 62f, barH + 8f),
+                current + "/" + target, questProgStyleCache);
             y += barBlockH;
 
             // Hint with pulsing alpha \u2014 base style \uce90\uc2dc + textColor\ub9cc \ub3d9\uc801 \uac31\uc2e0 (BattleScreenUI \ud328\ud134).
@@ -1038,9 +1066,7 @@ namespace InsectGame.UI
             GUI.color = new Color(0.9f, 0.75f, 0.2f, 0.16f);
             GUI.DrawTexture(new Rect(0, ry, width, headH), Texture2D.whiteTexture);
             GUI.color = Color.white;
-            detailHeaderStyleCache.fontSize = 21;
-            GUI.Label(new Rect(10f, ry + 3f, width - 20f, headH - 4f), label, detailHeaderStyleCache);
-            detailHeaderStyleCache.fontSize = 31;   // \ud328\ub110 \ud5e4\ub354\uc6a9\uc73c\ub85c \ubcf5\uc6d0
+            GUI.Label(new Rect(10f, ry + 3f, width - 20f, headH - 4f), label, detailSectionStyleCache);
             ry += headH;
         }
 
