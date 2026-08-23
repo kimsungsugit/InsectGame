@@ -177,6 +177,15 @@ namespace InsectGame.UI
         }
 
         // 원형 텍스처 1회 생성. ring=true면 테두리 강조(베이스), false면 꽉 찬 원(노브).
+        // 런타임 Texture2D는 씬 재로드로 사라지지 않는다(WorldInteractionController와 같은 계열).
+        private void OnDestroy()
+        {
+            if (baseTex != null) Destroy(baseTex);
+            if (knobTex != null) Destroy(knobTex);
+            baseTex = null;
+            knobTex = null;
+        }
+
         private static Texture2D MakeCircle(int size, bool ring)
         {
             Texture2D t = new Texture2D(size, size, TextureFormat.RGBA32, false);

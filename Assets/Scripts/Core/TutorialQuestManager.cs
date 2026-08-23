@@ -145,6 +145,12 @@ namespace InsectGame.Core
         private void OnDestroy()
         {
             UnsubscribeEvents();
+            // **파기된 자신을 static에 남기지 않는다.** 남겨 두면 `Instance != null`(파괴 검사)은
+            // false인데 `Instance?.`(진짜 null 검사)는 통과해 두 관용구가 서로 다른 답을 낸다 —
+            // 저장소 안에 `Instance?.`가 19곳 있고 그중 절반이 이 매니저다.
+            // 이 오브젝트는 `World/TutorialQuestManager`로 **부모가 있어** DontDestroyOnLoad
+            // 대상도 아니다(씬 재로드마다 실제로 파기된다). WorldChannelManager와 같은 처리.
+            if (ReferenceEquals(Instance, this)) Instance = null;
         }
 
         private void Initialize()

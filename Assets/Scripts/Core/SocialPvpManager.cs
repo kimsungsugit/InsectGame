@@ -153,6 +153,14 @@ namespace InsectGame.Core
 
         private float nextPollTime;
 
+        // 파기된 자신을 static에 남기면 `Instance != null`과 `Instance?.`가 서로 다른 답을 낸다
+        // (`WorldChannelManager.OnDestroy`와 같은 처리). 이 오브젝트는 부모가 있어 씬 재로드 때
+        // 실제로 파기된다.
+        private void OnDestroy()
+        {
+            if (ReferenceEquals(Instance, this)) Instance = null;
+        }
+
         private void Awake()
         {
             if (Instance == null) Instance = this;

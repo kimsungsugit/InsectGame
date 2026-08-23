@@ -324,6 +324,16 @@ namespace InsectGame.Capture
             if (circleRingTex == null) circleRingTex = MakeCircle(128, true);
         }
 
+        // 런타임 Texture2D는 씬 재로드로 사라지지 않는다 — 이 필드만 참조하는 언매니지드
+        // 객체라 파기하지 않으면 재로드마다 쌓인다(WorldInteractionController와 같은 계열).
+        private void OnDestroy()
+        {
+            if (circleFillTex != null) Destroy(circleFillTex);
+            if (circleRingTex != null) Destroy(circleRingTex);
+            circleFillTex = null;
+            circleRingTex = null;
+        }
+
         // 원형 텍스처 1회 생성. ring=true면 테두리 강조(링), false면 꽉 찬 원(채움).
         private static Texture2D MakeCircle(int size, bool ring)
         {

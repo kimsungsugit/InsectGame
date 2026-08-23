@@ -74,7 +74,10 @@ namespace InsectGame.UI
             processing = false;
             if (success)
             {
-                // 깨끗한 재시작 → 로그인 화면 (DontDestroyOnLoad 싱글턴은 로그아웃 상태 유지)
+                // 깨끗한 재시작 → 로그인 화면.
+                // (예전 주석은 "DontDestroyOnLoad 싱글턴은 상태 유지"라고 적었지만, 싱글턴들이
+                //  `World/` 아래 자식으로 생성돼 그 DDOL 가드가 통과하지 않는다 — 전부 함께 파기되고
+                //  새로 만들어진다. 로그인 화면으로 돌아가는 결과는 같지만 기전은 다르다.)
                 ReloadScene();
             }
             else

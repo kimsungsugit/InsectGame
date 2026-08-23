@@ -133,6 +133,16 @@ namespace InsectGame.UI
         {
             if (storyDirector != null)
                 storyDirector.StoryBeatCompleted -= OnStoryBeatCompleted;
+
+            // **런타임에 만든 Texture2D는 씬이 내려가도 안 사라진다.** 애셋이 아니라 이 필드만
+            // 참조하는 언매니지드 객체라, 파기하지 않으면 씬을 다시 로드할 때마다 128KB씩 쌓인다
+            // (`AccountSettingsUI`의 로그아웃·계정삭제가 씬을 통째로 재로드한다).
+            // `WorldLobbyUI`가 같은 계열로 audit에 걸린 적이 있다 — 그쪽은 매 프레임이라 더 빨랐을 뿐
+            // 원인은 같다. (unity-csharp.md의 "Destroy 직접 호출 금지"는 풀링 대상 이야기다.)
+            if (circleFillTex != null) Destroy(circleFillTex);
+            if (circleRingTex != null) Destroy(circleRingTex);
+            circleFillTex = null;
+            circleRingTex = null;
         }
 
         // 스토리 비트 모달이 닫히면 조우 카메라 줌을 부드럽게 조기 종료(진행 중 포커스 없으면 no-op).
@@ -311,7 +321,13 @@ namespace InsectGame.UI
                 if (currentVillager.IsStoryNpc
                     && currentVillager.StoryNpcId == ElderStoryNpcId)
                 {
-                    TutorialQuestManager.Instance?.NotifyTalkToElder();   // using InsectGame.Core
+                    // **`?.`를 쓰지 않는다.** null 조건 연산자는 **진짜 참조**만 보므로,
+                    // 파기된 MonoBehaviour가 static에 남아 있으면(싱글턴이 OnDestroy에서 안 비우면)
+                    // 그대로 호출로 들어가 MissingReferenceException이 난다 —
+                    // `UnityEngine.Object`의 오버로드된 `==`(파괴 검사)를 우회하기 때문이다.
+                    // (`StoryStageDirector.TryPlayPrelude`가 같은 함정을 다룬다.)
+                    TutorialQuestManager mgr = TutorialQuestManager.Instance;   // using InsectGame.Core
+                    if (mgr != null) mgr.NotifyTalkToElder();
                 }
 
                 bool storyFired = currentVillager.IsStoryNpc && storyDirector != null
@@ -397,8 +413,12 @@ namespace InsectGame.UI
             float vw = UIScale.VirtualScreenWidth;
             float safeR = UIScale.VirtualSafeRight;
 
-            // 프롬프트 — 화면 하단 중앙에서 좌측 오프셋 (잡기 버튼/미스 피드백과 겹침 회피)
-            GUI.Label(new Rect(vw / 2f - 560f, UISafeLayout.ContentBottom - 96f, 640f, 44f), promptText, promptStyle);
+            // 프롬프트 — 화면 하단 중앙에서 좌측 오프셋 (잡기 버튼/미스 피드백과 겹침 회피).
+            // **길이를 데이터가 정한다**(NPC 표시명·건물 라벨)는데 상자는 640 고정이고 wordWrap도
+            // 없어서, 이름이 길면 **가로로 잘린다**(rules/ui-layout.md). `text_fit_lint`는 라벨 인자가
+            // 캐시된 문자열(`promptText`)이라 데이터 출처를 못 봐서 이 자리를 놓친다.
+            UIHelper.LabelFit(new Rect(vw / 2f - 560f, UISafeLayout.ContentBottom - 96f, 640f, 44f),
+                promptText, promptStyle);
 
             DrawCenterButton(vw);
 

@@ -715,8 +715,17 @@ namespace InsectGame.Core
         public void Logout()
         {
             // 로그아웃 전 마지막 클라우드 플러시 — ClearAuth가 토큰을 무효화하기 전에 시도해 마지막 진행 보존.
-            // SaveToCloud는 동기적으로 코루틴을 시작해 현재 토큰으로 요청을 발사하고(첫 yield 전에 헤더 설정),
-            // CloudSaveManager는 DontDestroyOnLoad라 씬 리로드 후에도 in-flight 요청이 완료된다.
+            // SaveToCloud는 동기적으로 코루틴을 시작해 현재 토큰으로 요청을 발사한다(첫 yield 전에 헤더 설정).
+            //
+            // **"CloudSaveManager는 DontDestroyOnLoad라 씬 리로드 후에도 완료된다"고 적혀 있었는데
+            // 사실이 아니다.** 그 DDOL은 `if (transform.parent == null)` 가드 뒤에 있고,
+            // `PlaySceneBootstrap`은 이 매니저를 `World/CloudSaveManager`로 만든다 — **부모가 있어
+            // 가드가 통과하지 않는다.** 게다가 유일한 호출부(`AccountSettingsUI`)는 이 메서드 바로
+            // 다음 줄에서 씬을 재로드하므로, 발사한 코루틴이 그 오브젝트와 함께 죽는다.
+            // 로컬 세이브는 남으므로 잃는 것은 "이번 세션의 클라우드 사본"뿐이지만, 다른 기기에서
+            // 로그인하면 한 세션 낡은 상태를 본다. 수명 자체를 고치는 건 architect 판단이라
+            // audit 큐에 별건으로 올렸다(2026-08-23).
+            //
             // 마스터/오프라인은 클라우드가 없으므로 생략.
             if (IsLoggedIn && !IsMasterAccount) CloudSaveManager.Instance?.SaveToCloud();
             ClearAuth();
