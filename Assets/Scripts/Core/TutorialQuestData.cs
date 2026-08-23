@@ -71,6 +71,41 @@ namespace InsectGame.Core
     /// 튜토리얼 배열 순서에 기대는 <b>순수</b> 판정. MonoBehaviour와 떼어 놓아 테스트로 고정한다
     /// (<c>StoryObjectiveResolver</c>와 같은 성격).
     /// </summary>
+    /// <summary>
+    /// 이동 퀘스트 진행 판정의 <b>순수</b> 부분. MonoBehaviour와 떼어 놓아 테스트로 고정한다
+    /// (<see cref="InsectGame.Story.StoryStageTimeline"/>과 같은 성격).
+    ///
+    /// <b>왜 있나.</b> 예전 판정은 <c>Vector3.Distance(now, lastFrame) &gt; 1f</c> 하나였다.
+    /// 그건 "한 프레임에 1m 이상"이라 60fps에서 <b>초속 60m</b>를 요구한다 —
+    /// 플레이어 이동 속도는 8m/s(의상 보정 최대 ×2)라 프레임당 0.13~0.27m다.
+    /// 즉 <b>게임의 첫 퀘스트가 시키는 대로 걸어서는 절대 참이 되지 않았다.</b>
+    /// 참이 되는 경우는 워프뿐인데(서브에리어 진입 2000m 점프), 그건 "첫 걸음"이 아니다.
+    /// </summary>
+    public static class MovementProgress
+    {
+        /// <summary>1카운트에 필요한 누적 이동 거리(m). 몇 걸음이면 되도록 짧게 잡는다.</summary>
+        public const float RequiredMeters = 3f;
+
+        /// <summary>
+        /// 한 프레임에 이 이상 움직였으면 걸은 게 아니라 <b>워프</b>다 — 세지 않는다.
+        /// 서브에리어 진입·지도 이동·스폰 재배치가 여기 걸린다. 8m/s가 한 프레임에 5m를
+        /// 가려면 0.6초짜리 프레임이어야 하므로 정상 이동을 잘라내지 않는다.
+        /// </summary>
+        public const float TeleportMeters = 5f;
+
+        /// <summary>
+        /// 이번 프레임 이동량을 누적하고, 한 카운트를 채웠으면 true(그리고 누적을 비운다).
+        /// </summary>
+        public static bool Accumulate(float frameDistance, ref float accumulated)
+        {
+            if (frameDistance < 0f || frameDistance >= TeleportMeters) return false;
+            accumulated += frameDistance;
+            if (accumulated < RequiredMeters) return false;
+            accumulated = 0f;
+            return true;
+        }
+    }
+
     public static class TutorialQuestOrder
     {
         /// <summary>

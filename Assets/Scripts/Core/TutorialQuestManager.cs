@@ -33,6 +33,10 @@ namespace InsectGame.Core
         private Dictionary<string, int> sideRepeatCount = new Dictionary<string, int>();
 
         private Vector3 lastPlayerPos;
+        // 이동 퀘스트 누적 거리와, 그 누적이 어느 퀘스트 것인지. 퀘스트가 바뀌면 다시 센다 —
+        // 안 그러면 다른 퀘스트를 하는 동안 쌓인 값이 다음 이동 퀘스트를 즉시 완료시킨다.
+        private float movedDistance;
+        private string movementQuestId;
         private Transform cachedPlayerTransform; // 매 프레임 GameObject.Find("Player") 회피
 
         // 플레이어 Transform 지연 캐싱 — 최초 1회만 Find, 이후 재사용(디스폰 시 재탐색).
@@ -614,15 +618,25 @@ namespace InsectGame.Core
             if (ActiveQuest.type != QuestType.Movement) return;
 
             Transform player = PlayerTransform();
-            if (player != null)
+            if (player == null) return;
+
+            // 이 이동 퀘스트를 처음 보는 프레임 — 기준점만 잡고 넘어간다.
+            // (다른 퀘스트를 하는 동안 Update가 early return 했으므로 lastPlayerPos가 낡았다.)
+            if (movementQuestId != activeQuestId)
             {
-                float dist = Vector3.Distance(player.position, lastPlayerPos);
-                if (dist > 1f)
-                {
-                    IncrementProgress(activeQuestId);
-                }
+                movementQuestId = activeQuestId;
+                movedDistance = 0f;
                 lastPlayerPos = player.position;
+                return;
             }
+
+            float dist = Vector3.Distance(player.position, lastPlayerPos);
+            lastPlayerPos = player.position;
+
+            // **한 프레임의 이동량이 아니라 누적 거리를 본다.** 옛 `dist > 1f`는 60fps에서
+            // 초속 60m를 요구해 걸어서는 절대 참이 되지 않았다(MovementProgress 주석 참조).
+            if (MovementProgress.Accumulate(dist, ref movedDistance))
+                IncrementProgress(activeQuestId);
         }
 
         // --- 외부 알림 메서드 ---
@@ -997,6 +1011,8 @@ namespace InsectGame.Core
 
             Transform player = PlayerTransform();
             if (player != null) lastPlayerPos = player.position;
+            movedDistance = 0f;
+            movementQuestId = null;
         }
 
         public void ResetForNewAccount()
@@ -1009,6 +1025,8 @@ namespace InsectGame.Core
             sideRepeatCount.Clear();
             activeQuestId = null;
             ActiveQuest = null;
+            movedDistance = 0f;
+            movementQuestId = null;
 
             PlayerPrefs.DeleteKey(ProgressKey);
             PlayerPrefs.DeleteKey(CompletedKey);

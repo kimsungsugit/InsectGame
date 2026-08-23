@@ -96,6 +96,63 @@ namespace InsectGame.Tests
             Assert.AreEqual(0, TutorialQuestOrder.CollectBackfillTargets(null, Done("q_move")).Count);
             Assert.AreEqual(0, TutorialQuestOrder.CollectBackfillTargets(Chain, null).Count);
         }
+
+        // ── 이동 퀘스트 진행 규칙 ──
+        //
+        // 옛 판정은 `한 프레임 이동량 > 1m` 하나였다. 플레이어 속도는 8m/s(의상 보정 최대 ×2)라
+        // 60fps에서 프레임당 0.13~0.27m — **게임의 첫 퀘스트가 시키는 대로 걸어서는 절대
+        // 참이 되지 않았다.** 참이 되는 경우는 워프뿐인데 그건 "첫 걸음"이 아니다.
+
+        [Test]
+        public void Movement_WalkingOneFrame_DoesNotCompleteButAccumulates()
+        {
+            float acc = 0f;
+            // 8m/s ÷ 60fps
+            Assert.IsFalse(MovementProgress.Accumulate(8f / 60f, ref acc));
+            Assert.Greater(acc, 0f);
+        }
+
+        [Test]
+        public void Movement_WalkingEnoughFrames_Completes()
+        {
+            float acc = 0f;
+            int frames = 0;
+            bool done = false;
+            // 3m를 8m/s로 걸으면 0.375초 — 60fps에서 23프레임이면 충분하다.
+            while (frames < 60 && !done)
+            {
+                done = MovementProgress.Accumulate(8f / 60f, ref acc);
+                frames++;
+            }
+            Assert.IsTrue(done, "걸어서 이동 퀘스트를 채우지 못한다");
+            Assert.AreEqual(0f, acc, 0.001f, "채운 뒤에는 누적이 비어야 한다");
+        }
+
+        [Test]
+        public void Movement_Teleport_IsNotCounted()
+        {
+            // 서브에리어 진입은 2000m 점프다. 그걸 "걸었다"로 세면 안 된다.
+            float acc = 0f;
+            Assert.IsFalse(MovementProgress.Accumulate(2000f, ref acc));
+            Assert.AreEqual(0f, acc, 0.001f);
+        }
+
+        [Test]
+        public void Movement_TeleportThreshold_LeavesNormalWalkingIntact()
+        {
+            // 상한이 정상 이동을 잘라내면 안 된다 — 8m/s가 한 프레임에 5m를 가려면
+            // 0.6초짜리 프레임이어야 한다.
+            Assert.Greater(MovementProgress.TeleportMeters, 8f / 30f);
+            Assert.Greater(MovementProgress.TeleportMeters, MovementProgress.RequiredMeters * 0.5f);
+        }
+
+        [Test]
+        public void Movement_NegativeDistance_IsIgnored()
+        {
+            float acc = 1f;
+            Assert.IsFalse(MovementProgress.Accumulate(-5f, ref acc));
+            Assert.AreEqual(1f, acc, 0.001f);
+        }
     }
 }
 #endif
