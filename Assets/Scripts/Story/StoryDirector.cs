@@ -195,16 +195,41 @@ namespace InsectGame.Story
         /// 알 수 없다). 이쪽은 화면 쪽이 끝났다고 <b>알려 주는</b> 형태다: UI가 스토리를 아는
         /// 방향은 허용되지만 그 반대는 의존 방향에 어긋난다.
         /// </summary>
+        /// <summary>
+        /// <b>이기자마자 대사를 띄우지 않는다.</b> <c>BattleEnded</c>는 KO 순간에 울리는데
+        /// 전투 결과 화면은 그로부터 4초를 더 떠 있다(연출 페이즈가 끼면 6초 가까이). 그 위로
+        /// 대화 모달이 열리면 <b>획득 EXP·캔디가 적힌 보상 패널을 통째로 덮는다</b>.
+        /// </summary>
         private void OnBattleEnded(bool playerWon)
         {
-            if (!playerWon) return;
-            pendingBattleWin = true;
-            pendingBattleWinSeconds = 0f;
+            if (playerWon) DeferTrigger(TriggerBattleWin, null);
         }
 
-        // ── 결과 화면 뒤로 미뤄 둔 BattleWin ──
-        private bool pendingBattleWin;
-        private float pendingBattleWinSeconds;
+        /// <summary>
+        /// 수문장 격파도 같은 자리에서 난다 — 오히려 더 이르다. <c>DefeatGuardian</c>은
+        /// <c>CheckGuardianDefeat</c>에서 불리는데 그건 <b>결과 화면이 뜨기도 전</b>이라,
+        /// 미루지 않으면 <c>gd_*</c> 비트가 전투 UI와 겹친 채로 열린다.
+        ///
+        /// 게다가 같은 전투에서 <c>BattleWin</c>도 함께 자격을 얻는다(유적 이후 리전은
+        /// <c>gd_X</c>와 <c>chN_clash</c>가 같은 리전에 나란히 있다). 둘을 <b>순서대로</b>
+        /// 흘려야 앞 대사가 뒤 대사에 밀려나지 않는다 — 그래서 큐다.
+        /// </summary>
+        private void OnGuardianDefeated(string regionId)
+        {
+            if (!string.IsNullOrEmpty(regionId)) DeferTrigger(TriggerGuardianDefeat, regionId);
+        }
+
+        // ── 전투 화면 뒤로 미뤄 둔 트리거 ──────────────────────────────────────
+        private struct PendingTrigger
+        {
+            public string type;
+            public string param;
+        }
+
+        private readonly List<PendingTrigger> pendingTriggers = new List<PendingTrigger>();
+        private float pendingSeconds;
+        // 전투 화면이 닫혔다는 통지를 받았다 — 그 뒤로는 모달만 기다리면 되고 시간은 안 센다.
+        private bool presentationClosed;
 
         /// <summary>
         /// 미뤄 둔 발화를 포기하지 않고 <b>그냥 쏘는</b> 시각(초). 컷신의
@@ -213,34 +238,81 @@ namespace InsectGame.Story
         /// 닫혔다고 알려 주지 않으면(미배선·예외로 EndBattle 중단·씬 교체) 보상 패널을 덮는
         /// 쪽이 진행이 멈추는 것보다 훨씬 낫다.
         /// </summary>
-        private const float BattleWinGiveUpSeconds = 12f;
+        private const float PendingGiveUpSeconds = 12f;
+
+        private void DeferTrigger(string type, string param)
+        {
+            for (int i = 0; i < pendingTriggers.Count; i++)
+                if (pendingTriggers[i].type == type && pendingTriggers[i].param == param) return;
+
+            if (pendingTriggers.Count == 0)
+            {
+                pendingSeconds = 0f;
+                presentationClosed = false;
+            }
+            pendingTriggers.Add(new PendingTrigger { type = type, param = param });
+        }
 
         /// <summary>
-        /// 전투 화면(결과 포함)이 완전히 닫혔다 — 미뤄 둔 <c>BattleWin</c>을 지금 쏜다.
-        /// <c>BattleScreenUI.EndBattle</c>이 부른다. 미뤄 둔 게 없으면 아무 일도 안 한다.
+        /// 전투 화면(결과 포함)이 완전히 닫혔다 — 미뤄 둔 트리거를 지금 흘린다.
+        /// <c>BattleScreenUI.EndBattle</c>과 <c>RaidBattleUI</c>의 정리 경로가 부른다.
+        /// 미뤄 둔 게 없으면 아무 일도 안 한다.
         /// </summary>
         public void NotifyBattlePresentationClosed()
         {
-            if (!pendingBattleWin) return;
-            pendingBattleWin = false;
-            EvaluateTriggers(TriggerBattleWin, null);
+            presentationClosed = true;
+            DrainPendingTriggers();
+        }
+
+        /// <summary>
+        /// 미뤄 둔 트리거를 <b>하나씩</b> 흘린다. 한 편이 화면에 뜨면 거기서 멈추고, 그 비트가
+        /// 완료될 때(<see cref="CompleteBeat"/>) 다음이 이어진다.
+        ///
+        /// 밀어 넣으면 안 되는 이유가 조용하다: <c>NpcDialogueUI.ShowStory</c>는 열려 있는
+        /// 모달을 <c>CloseModal</c>로 정리하는데, 그 경로가 <c>CompleteBeat</c>를 부른다 —
+        /// <b>읽지도 않은 대사가 보상까지 지급된 채 열람 처리된다.</b> 화면엔 새 대사만 남아
+        /// 무엇이 사라졌는지도 모른다.
+        /// </summary>
+        private void DrainPendingTriggers()
+        {
+            while (pendingTriggers.Count > 0)
+            {
+                // 한 편이 떠 있거나(pendingBeatId) 컷신이 도는 중(레지스트리)이면 기다린다.
+                if (!string.IsNullOrEmpty(pendingBeatId)) return;
+                if (InsectGame.UI.ModalUIRegistry.IsAnyOpen()) return;
+
+                PendingTrigger t = pendingTriggers[0];
+                pendingTriggers.RemoveAt(0);
+                EvaluateTriggers(t.type, t.param);
+            }
+
+            // 다 흘렸다 — 다음 전투를 위해 되돌린다.
+            presentationClosed = false;
+            pendingSeconds = 0f;
         }
 
         private void Update()
         {
-            if (!pendingBattleWin) return;
+            if (pendingTriggers.Count == 0) return;
 
             // timeScale에 끌려다니면 안 된다 — 히트스톱·슬로모션이 결과 화면 직전까지 걸린다.
-            pendingBattleWinSeconds += Time.unscaledDeltaTime;
-            if (pendingBattleWinSeconds < BattleWinGiveUpSeconds) return;
+            pendingSeconds += Time.unscaledDeltaTime;
 
-            Debug.LogWarning("[Story] 전투 화면이 닫혔다는 통지가 없어 BattleWin을 그대로 발화한다");
-            NotifyBattlePresentationClosed();
-        }
+            // 대사·컷신이 떠 있는 동안은 시간이 지나도 밀어 넣지 않는다(위 주석의 그 손실).
+            if (!string.IsNullOrEmpty(pendingBeatId)) return;
+            if (InsectGame.UI.ModalUIRegistry.IsAnyOpen()) return;
 
-        private void OnGuardianDefeated(string regionId)
-        {
-            if (!string.IsNullOrEmpty(regionId)) EvaluateTriggers(TriggerGuardianDefeat, regionId);
+            // 전투 화면은 IModalUI가 아니라 레지스트리로 알 수 없다 — 통지가 정상 경로다.
+            // 통지를 이미 받았다면 모달만 걷히면 바로 흘린다(여기서 또 기다리면, 결과 화면
+            // 위에 다른 창을 잠깐 열었다 닫은 것만으로 대사가 최대 12초 늦게 뜬다).
+            if (!presentationClosed)
+            {
+                if (pendingSeconds < PendingGiveUpSeconds) return;
+                // 그게 끝내 안 오면 겹치더라도 쏜다 — 진행을 잃는 것보다 낫다.
+                Debug.LogWarning("[Story] 전투 화면 종료 통지가 없어 미뤄 둔 트리거를 그대로 발화한다");
+            }
+
+            DrainPendingTriggers();
         }
 
         private void OnDexUpdated(InsectGame.Dex.DexSaveData _)
@@ -423,6 +495,17 @@ namespace InsectGame.Story
         private void FireBeat(StoryBeat beat)
         {
             if (beat == null) return;
+
+            // **읽고 있는 비트를 밀어내지 않는다.** `EvaluateTriggers`는 같은 비트의 중복
+            // 발화만 막았을 뿐(`beat.beatId == pendingBeatId`), **다른** 비트가 끼어드는 건
+            // 막지 못했다. 그런데 `NpcDialogueUI.ShowStory`는 열린 모달을 `CloseModal`로
+            // 정리하고, 그 경로가 `CompleteBeat`를 부른다 — 읽지 않은 대사가 보상까지 받고
+            // 열람 처리된다(다시 볼 곳은 저널뿐이다).
+            //
+            // 실제 경로: 유적 이후 리전은 수문장을 잡으면 `gd_X`와 `chN_clash`가 **함께**
+            // 자격을 얻는다. 놓친 트리거는 큐가 들고 있다가 이 비트가 끝나면 이어서 흘린다.
+            if (!string.IsNullOrEmpty(pendingBeatId)) return;
+
             pendingBeatId = beat.beatId;
 
             if (storyBeatTriggered != null)
@@ -467,6 +550,11 @@ namespace InsectGame.Story
             if (CloudSaveManager.Instance != null) CloudSaveManager.Instance.SaveToCloud();
 
             StoryBeatCompleted?.Invoke(beat);   // 모달 닫힘 → 조우 카메라 포커스 조기 릴리즈
+
+            // 한 편이 끝났으니 미뤄 둔 다음 편을 이어 붙인다. 컷신이 방금 시작됐다면
+            // (StoryBeatCompleted 구독자) 레지스트리 가드에 걸려 여기서는 넘어가고,
+            // 컷신이 끝난 뒤 Update가 집는다.
+            DrainPendingTriggers();
         }
 
         private void MarkSeen(string beatId)

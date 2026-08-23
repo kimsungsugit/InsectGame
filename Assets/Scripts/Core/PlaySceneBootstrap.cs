@@ -558,8 +558,9 @@ namespace InsectGame.Core
             storyDirector.AutoWire(candyInventory, itemInventory);
             storyDirector.AutoWire(dex);   // DexProgress 트리거 소스 — Start 전에 주입해야 구독이 걸린다
             cloudSave.RegisterReloadable(storyDirector);
-            // 전투 결과 화면이 닫힌 뒤에 BattleWin 비트를 띄우기 위한 통지 경로.
+            // 전투 결과 화면이 닫힌 뒤에 BattleWin·GuardianDefeat 비트를 띄우기 위한 통지 경로.
             battleScreen.AutoWire(storyDirector);
+            raidBattleUi.AutoWire(storyDirector);
 
             // 캐시 상점 + 가챠 시스템
             CashShopManager cashShop = EnsureComponent<CashShopManager>("World/CashShop");

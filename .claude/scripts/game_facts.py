@@ -557,6 +557,13 @@ def story_trigger_wiring() -> dict:
     - in_switch: `case TriggerX:` 또는 상수 정의가 switch 문맥에 존재
     - has_event_source: 그 트리거를 EvaluateTriggers(TriggerX, ...)로 호출하는 지점이 있음
       (Immediate는 Start에서, 나머지는 OnXxx 이벤트 핸들러에서)
+
+    **지연 발화도 배선으로 친다.** BattleWin/GuardianDefeat는 전투 결과 화면과 겹치지 않게
+    `DeferTrigger(TriggerX, ...)`로 큐에 넣었다가 화면이 닫힐 때 흘린다 — 이벤트 핸들러가
+    `EvaluateTriggers`를 직접 부르지 않는다. 그렇다고 그냥 인정해 주면 **큐에 넣기만 하고
+    아무도 안 빼는** 코드가 통과한다(그 비트는 영영 안 뜬다). 그래서 배출부의 존재를 함께
+    확인한다 — `EvaluateTriggers(`를 상수가 아닌 인자로 부르는 지점(= 큐를 흘리는 루프)이
+    하나라도 있어야 지연분을 배선으로 센다.
     """
     raw = _read("story_director")
     # 상수 정의는 원본에서 읽는다 — strip_cs가 "Y" 리터럴을 지우면 값을 못 읽는다.
@@ -567,6 +574,15 @@ def story_trigger_wiring() -> dict:
     src = strip_cs(raw)
     in_switch = set(re.findall(r"case\s+(Trigger\w+)\s*:", src))
     fired = set(re.findall(r"EvaluateTriggers\(\s*(Trigger\w+)", src))
+
+    # 배출부: EvaluateTriggers를 Trigger 상수가 **아닌** 인자로 부르는 지점(큐를 흘리는 루프).
+    # **선언부를 먼저 지운다** — `private bool EvaluateTriggers(string triggerType, ...)`의
+    # `string`이 그대로 매칭돼, 배출부를 통째로 지워도 PASS가 나왔다(검출력 실측에서 잡혔다).
+    calls_only = re.sub(
+        r"(?:private|public|internal|protected)[^\n]*EvaluateTriggers\s*\([^)]*\)", "", src)
+    drains = bool(re.search(r"EvaluateTriggers\(\s*(?!Trigger\w)[A-Za-z_]", calls_only))
+    if drains:
+        fired |= set(re.findall(r"DeferTrigger\(\s*(Trigger\w+)", src))
 
     out = {}
     for const, ttype in consts.items():

@@ -674,6 +674,7 @@ def main():
     print()
     print("## 가정 / 한계")
     print("- 스토리 비트는 Assets/Resources/Story.json에서 json.load로 읽는다(정규식 아님).")
+    print("  지연 발화(DeferTrigger)도 배선으로 세되, 큐를 흘리는 지점이 있을 때만 센다.")
     print("- 트리거 배선(검사 6)은 StoryDirector의 Trigger 상수·switch case·EvaluateTriggers")
     print("  발화 지점을 교차검사. 새 trigger.type의 배선 누락(영구 미발화)을 잡는다.")
     print("- SubAreaEnter param은 리전 밖 서브에리어 ID일 수 있어 완화(미존재만 잡지 않음).")

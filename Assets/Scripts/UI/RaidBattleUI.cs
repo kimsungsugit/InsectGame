@@ -789,6 +789,10 @@ namespace InsectGame.UI
             // 프리즈는 bool 하나라 주인이 여럿이면 마지막에 쓴 쪽이 이긴다.
             if (playerMovement != null && !ModalUIRegistry.IsAnyOpen())
                 playerMovement.SetFrozen(false);
+
+            // 레이드에서도 수문장을 잡는다(아래 DefeatGuardian) — 화면을 다 걷은 뒤에
+            // 알려야 gd_* 비트가 결과 화면과 겹치지 않는다. 1v1과 같은 이유·같은 순서.
+            if (storyDirector != null) storyDirector.NotifyBattlePresentationClosed();
         }
 
 
@@ -834,6 +838,15 @@ namespace InsectGame.UI
             raidController.RaidTeamRushResolved += OnRaidTeamRushResolved;
             raidController.RaidBossResponseResolved += OnRaidBossResponseResolved;
             raidController.RaidRoundCompleted += OnRaidRoundCompleted;
+        }
+
+        // 전투가 끝났다고 알려 줄 곳. 없어도 레이드는 그대로 돌아간다 — 스토리 쪽이 12초 뒤
+        // 스스로 쏜다(StoryDirector.PendingGiveUpSeconds).
+        private InsectGame.Story.StoryDirector storyDirector;
+
+        public void AutoWire(InsectGame.Story.StoryDirector director)
+        {
+            if (storyDirector == null) storyDirector = director;
         }
 
         public void AutoWire(BattleArenaController a)
