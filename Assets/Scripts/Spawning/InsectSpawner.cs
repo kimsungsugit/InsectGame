@@ -252,24 +252,12 @@ namespace InsectGame.Spawning
                     candidates = regionFiltered;
             }
 
-            // 서브에리어 전용 곤충 우선
-            if (currentSubArea != null && currentSubArea.exclusiveInsectIds != null && currentSubArea.exclusiveInsectIds.Length > 0)
-            {
-                Vector3 spawnPos = point.GetRandomPosition();
-                if (currentSubArea.ContainsPoint(spawnPos))
-                {
-                    List<InsectData> subFiltered = new List<InsectData>();
-                    foreach (var c in candidates)
-                    {
-                        foreach (string sid in currentSubArea.exclusiveInsectIds)
-                        {
-                            if (c.insectId == sid) { subFiltered.Add(c); break; }
-                        }
-                    }
-                    if (subFiltered.Count > 0)
-                        candidates = subFiltered;
-                }
-            }
+            // (서브에리어 전용 곤충 필터가 여기 있었으나 **도달할 수 없는 코드**였다.
+            //  Update는 currentSubArea가 있으면 조기 반환하고, TrySpawn의 다른 두 호출부
+            //  — SpawnInitialInsects(Start)와 RepopulateCleansedRegion(서브에리어 가드) — 도
+            //  서브에리어 중에는 오지 않는다. 서브에리어 스폰은 SpawnSubAreaInsects가 전담한다.
+            //  게다가 검사에 쓰던 GetRandomPosition()이 실제 스폰 좌표와 **다른 난수**라
+            //  살아 있었다 해도 엉뚱한 지점으로 판정했다.)
 
             float rareBoost = (itemEffects != null ? itemEffects.GetRareSpawnMultiplier() : 1f)
                             * (outfitBonus != null ? outfitBonus.GetRareSpawnMultiplier() : 1f);
@@ -583,11 +571,27 @@ namespace InsectGame.Spawning
             // 현재 리전 라벨의 포인트만 플레이어 주변으로 당기고, 나머지는 링 원위치 유지.
             // (옛: 전 포인트를 무조건 플레이어 나선(10+i*3m)으로 → 배열 앞쪽(초원/연못) 라벨만
             //  60m 디스폰 안에 남아, 어느 리전에 가도 초원/연못 곤충만 체감되는 문제)
+            // 포인트 카운트를 실제 활성 개체로 재동기화한다. 옛 코드는 상한에 걸린 포인트를
+            // 무조건 0으로 밀어(ResetCount) 상한 2가 "동시 2마리"가 아니라 "8초당 2마리"가 됐다.
+            for (int i = 0; i < spawnPoints.Length; i++)
+                if (spawnPoints[i] != null) spawnPoints[i].BeginRecount();
+            for (int i = 0; i < activeInsects.Count; i++)
+            {
+                InsectEntity live = activeInsects[i];
+                if (live != null && live.OwnerPoint != null) live.OwnerPoint.NotifyLive();
+            }
+
             int localIndex = 0;
             for (int i = 0; i < spawnPoints.Length; i++)
             {
                 if (spawnPoints[i] == null) continue;
-                if (!spawnPoints[i].CanSpawn) spawnPoints[i].ResetCount();
+
+                // **서브에리어 포인트는 옮기지 않는다.** 부모 리전 ID를 그대로 달고 있어
+                // 아래 리전 필터에 함께 걸리는데, 끌려오면 게이트 원 바깥 가장자리에만 있어야 할
+                // 전용종이 필드 한복판에 뜬다(숲이면 필드 포인트 5개 대 서브 포인트 8개라
+                // 플레이어 주변 스폰의 과반이 전용종이 된다). 한 번 끌려오면 리전을 뜨기 전까지
+                // 원위치로도 안 돌아온다.
+                if (spawnPoints[i].isSubAreaPoint) continue;
 
                 if (playerRegionId != null && spawnPoints[i].regionId == playerRegionId)
                 {
@@ -638,7 +642,10 @@ namespace InsectGame.Spawning
 
             // 메인 필드: Lv.1~max 범위에서 지수 분포 (항상 1부터)
             // 서브구역: min~max 범위에서 완화된 지수 분포 (고렙 보상)
-            bool isSubArea = point != null && point.regionInsectIds != null && point.regionInsectIds.Length <= 5;
+            // 옛 판정은 `regionInsectIds.Length <= 5` 휴리스틱이었다. 지금은 오판이 없지만
+            // (리전 풀 14~20종 / 서브에리어 2~4종) 리전 풀이 줄거나 서브에리어에 6번째 종이
+            // 붙는 순간 레벨 곡선이 조용히 뒤집힌다 — add-region/add-insect 어느 쪽도 안 잡는다.
+            bool isSubArea = point != null && point.isSubAreaPoint;
 
             int spawnMin, spawnMax;
             float power;

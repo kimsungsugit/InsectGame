@@ -361,14 +361,18 @@
 - [x] SubAreaWorldBuilder 재감사 (**P1:3**, 2026-08-23) — **[E]를 세 시스템이 폴링하는데 사슬이 둘까지만 이어져 있었다.** 포획(`CaptureInputController`)과 상호작용(`WorldInteractionController`)은 `HasPriorityTarget`으로 서로 양보하는데 서브에리어 진입만 그 밖에 있었다. 진입 반경 12m와 포획 탐색 반경 8m가 **겹치는 자리가 흔해서**, 입구 근처에서 곤충을 잡으려고 [E]를 누르면 포획과 진입이 동시에 발화한다 — 어느 쪽이 먼저 도는지는 Update 실행 순서라 정해져 있지 않고, 진입이 먼저면 플레이어가 2000m 밖으로 순간이동한 뒤 포획이 시작된다. → `CaptureInputController.HasCatchTarget`을 열고 서브에리어가 양보하게 했다(여기만 620×100 전용 버튼이 따로 있어 [E]가 유일한 진입로가 아니다). **P1**: `OnDisable`에서 `SubAreaChanged`를 해지하는데 `OnEnable`이 없다 — 한 번이라도 꺼졌다 켜지면 진입·이탈이 영구히 죽는다. `subscription_lint`는 UI 루트 하위만 보므로 `World/` 아래인 이 파일은 검사 밖이었다. **P1**: 진입/퇴장 토스트가 픽셀 좌표계인데 y가 90 고정이라 노치 아래로 들어간다 → `Mathf.Max(90f, UISafeLayout.Px.ContentTop)`(인셋 0이면 그대로). 머티리얼 정리·Y 안전망·25m 이탈 단일 경로(`RequestExit`)·버튼 클릭-이동 등록은 clean
 - [x] BlightVfx (P1:1, P2:5 처리 + 자체 2건, 2026-08-23) — 런타임 머티리얼 누수 · 붕괴 상태 누수 · 서브에리어 중 탈색 무음 실패
 - [x] RegionBlightManager + 오염 거점 라운드 회귀 (P1:2, P2:4 처리 + 자체 1건, 2026-08-23) — 완료 불가 퀘스트 · 보상 문구 소실 · 재배치 폴백
+- [x] InsectSpawner 재감사 (P0:1, P1:1, P2:1 처리, 2026-08-23) — 서브에리어 포인트가 필드로 끌려오던 전용종 유출
+- [x] AuthManager 재감사 (P1:3, P2:1 처리, 2026-08-23) — 로그아웃 뒤 세션 부활 · 네트워크 오류에 토큰 영구 삭제
+- [x] NpcDuelController 재감사 (P1:2, P2:2 처리, 2026-08-23) — 결과 토스트가 한 번도 안 뜨던 결함
+- [x] LoginUI 재감사 (P1:3, P2:1 처리, 2026-08-23) — 회원가입 폼 파괴 · 폰트 상속 잘림 · 구독 비대칭
 ## Uncovered (우선순위순)
 
-2026-08-23 재생성(`audit_candidates.py --emit-md`) — 오염 거점 라운드로 코드가 움직인 뒤.
+> **2026-08-23 기준 비어 있다 — 소진.** 이 라운드로 큐 6건을 전부 처리했다.
+> 다음 audit은 코드가 더 움직인 뒤에 의미가 생긴다:
+> `python -X utf8 .claude/scripts/audit_candidates.py --emit-md`
+>
+> (`- [ ]`가 0이면 `audit_flow_inject`·`audit_reminder` 훅이 함께 침묵한다.)
 
-- [ ] InsectSpawner 재감사 (Spawning/InsectSpawner.cs, 911줄, score 26) — 08-07 감사 이후 136줄 변경
-- [ ] AuthManager 재감사 (Core/AuthManager.cs, 1123줄, score 3) — 08-07 감사 이후 127줄 변경
-- [ ] NpcDuelController 재감사 (NPC/NpcDuelController.cs, 440줄, score 4) — 08-08 감사 이후 56줄 변경
-- [ ] LoginUI 재감사 (UI/LoginUI.cs, 1137줄, score 184) — 08-06 감사 이후 47줄 변경
 
 ## Round Log
 
@@ -381,7 +385,7 @@
 - 2026-08-23: 싱글턴 수명 · DontDestroyOnLoad 가드 — **P1:3 처리 + `singleton_lint.py` 신설.** 앞 라운드가 주석 하나를 의심한 데서 시작했는데, 파 보니 **DDOL 호출 3개가 전부 죽은 코드**였다 — `transform.parent == null` 가드 뒤에 있고 부트스트랩은 언제나 `World/` 아래 자식으로 만든다. 죽은 줄이 거짓 주석 둘을 낳았고 하나는 실제 손해(로그아웃의 마지막 클라우드 플러시가 다음 줄의 씬 재로드에 끊긴다)였다. 수명을 바꾸는 대신(루트로 올리면 재로드 때 중복이 생겨 부트스트랩이 죽는 컴포넌트를 배선한다) 재로드를 `IsSaving`이 내려갈 때까지 미뤘다. 그리고 싱글턴 9종 전부 파기 시 static을 비우게 하고 그 짝을 검사기로 고정했다 — 감사 시점엔 9종 중 **1종**만 하고 있었다. 검증: 컴파일 error CS 0 / warning CS 0, ci_check 통과(검사 10종), PlayMode 672/672.
 - 2026-08-23: WorldInteractionController 재감사 — **P1:3 처리, 자체 발견 4건.** 우선순위 판정과 조우 카메라는 clean이었고, 결함은 전부 그 주변에서 나왔다. ① 원형 버튼 텍스처가 파기되지 않는다 — 런타임 `Texture2D`는 씬이 내려가도 안 사라지고 로그아웃이 씬을 재로드한다. **같은 누수를 형제 둘(`CaptureInputController`·`VirtualJoystickUI`)에서도 발견**해 함께 고쳤다. ② `Instance?.`는 Unity의 파괴 검사를 우회한다 — 저장소에 19곳인데 `Instance`를 비우는 싱글턴은 하나뿐이었다. 호출부가 아니라 뿌리(싱글턴 OnDestroy)를 고쳤다. ③ 데이터가 길이를 정하는 프롬프트가 고정 상자였다(`LabelFit`). 그리고 **주석이 거짓말을 하고 있었다**: "CloudSaveManager는 DontDestroyOnLoad"라는데 `World/` 아래 자식이라 그 가드가 통과하지 않는다 — 로그아웃의 마지막 클라우드 플러시가 실제로 끊긴다. 주석을 사실로 고치고 수명 자체는 큐에 올렸다. 검증: 컴파일 error CS 0 / warning CS 0, ci_check 통과, PlayMode 672/672.
 - 2026-08-23: QuickAccessBarUI 재감사 — **P1:2, P2:3 처리/보고.** 라이브 P0은 없었다 — 배선도 인덱스 표도 지금은 맞다. 문제는 **맞다는 것을 아무도 강제하지 않는 것**이었다: 같은 표가 네 벌(배열·Update 키 switch·OnGUI 키 switch·IsActive/OnClick case)인데 서로 인덱스로만 이어져 있어, 버튼 하나를 중간에 끼우면 전부 한 칸씩 밀려 C가 훈련을 열고 배지가 지도에 붙는다. 키 표 2벌을 `buttons[].key`에서 파생시키고(파싱 실패는 경고), 배지는 플래그로, `OnClick` default에는 경고를 넣었다. 덤으로 죽은 `IModalUI` 구현을 걷어냈다 — `Register`를 부르는 곳이 없어 `IsOpen`이 영원히 false인데 시그니처만 모달이었다. 검증: 컴파일 error CS 0 / warning CS 0, ci_check 통과, PlayMode 672/672.
-- 2026-08-23: RegionBlightManager + 오염 거점 라운드 회귀 — **P1:2, P2:4 처리 + 자체 발견 1건.** 매니저 자체는 clean이었다(상태 정합·이벤트 4구독·세이브 8지점·idempotent 가드 전부 확인, XML cref 오타 하나뿐). **결함은 전부 그 주변에 있었다.** 자체 발견이 가장 컸다: `q_blight_both`가 **영영 완료되지 않는다** — `NotifyAction`은 활성 퀘스트 하나만 올리는데(`:699`) 거점 2곳에 목표 1+2를 두어, 첫 정화를 앞 퀘스트가 소비하고 남은 정화는 하나뿐이었다. 목표를 1로 내리고 **`blight_lint` 검사 18**(정화 퀘스트 목표 합계 ≤ 거점 수)로 고정했다 — quest_lint는 ID·배선·순서만 보고 달성 가능성은 안 본다. P1 둘: ①첫 승리가 정화도 겸하면 **보상 획득 문구가 통째로 사라졌다**(AddItem은 토스트를 안 띄운다). 파일럿 2곳은 첫 만남이 이미 오염 상태라 이게 예외가 아니라 **기본 경로**였다 — 전원이 아이템을 모르고 받았다. 그 문구를 합치자 800×44 고정 상자의 raw `GUI.Label`이 드러나 `LabelFit`으로 바꾸고 `text_fit_lint`의 텍스트 출처에 `LastResultText`를 좁게 올렸다(검출력 실측: 되돌리면 FAIL). ②정화 재배치 코루틴이 대기 후 서브에리어를 재확인하지 않고, 탈출 조건이 리전 마릿수인데 `GetAvailableSpawnPoint`는 **아무 리전으로 폴백**한다 — 정화한 리전은 안 차고 이웃에 여섯 마리를 밀어 넣을 수 있었다. 나머지: `TrySpawnSpecific` 리전 상한 검사, `OnDisable`만 있던 구독 비대칭에 `OnEnable` 재구독. 검증: 컴파일 error CS 0 / warning CS 0, ci_check 11종 통과, blight_lint 19검사 0 FAIL, PlayMode 704/704.
+- 2026-08-23: **audit 큐 4건 전수 — 큐 소진**(사용자 요청 "남은 큐 다 진행해") — **P0:1, P1:9, P2:5 처리.** 가장 큰 둘은 서로 다른 파일에 있었다. ①`InsectSpawner`: 서브에리어 스폰포인트가 **부모 리전 ID를 그대로 달고 있어** 재배치가 그걸 플레이어 링(10~43m)으로 끌고 왔다 — 게이트 원 바깥에만 있어야 할 전용종이 필드 한복판에 뜨고, 숲 기준 필드 포인트 5개 대 서브 포인트 8개라 **주변 스폰의 과반이 전용종**이 됐다. `SpawnPoint.isSubAreaPoint` 명시 플래그로 재배치에서 빼고, 레벨 곡선 판정의 `Length <= 5` 휴리스틱도 같은 플래그로 교체했다. 겸사겸사 8초마다 살아 있는 곤충이 붙은 포인트를 0으로 밀던 `ResetCount`를 실제 개체 재동기화(`BeginRecount`/`NotifyLive`)로 바꿨다 — 상한 2가 "동시 2마리"가 아니라 "8초당 2마리"였다. ②`NpcDuelController`: **대결 결과 토스트가 한 번도 뜬 적이 없었다.** `SetResult`가 `DuelEnded` 시점(결과 화면이 열리는 프레임)에 시각을 찍는데 결과 화면은 4초를 채우고 닫히고 토스트 창은 3.5초다 — 필드가 보이기 0.5초 전에 죽었다. 시각 스탬프를 버리고 1회 소비형(`TryConsumeResult`)으로 바꿔 **필드가 처음 그릴 때** 창을 시작한다. 직전 라운드에 조립한 보상·정화 문구가 그제서야 실제로 보인다. `AuthManager`는 P1이 셋이었다: 로그아웃·계정삭제가 진행 중인 갱신 코루틴을 세우지 않아 **응답이 오면 지운 토큰을 다시 써 세션이 부활**했고(세대 카운터로 무효화), 네트워크 오류와 인증 거절이 같은 처리라 **타임아웃 한 번에 refresh 토큰이 영구 삭제**됐으며(게스트는 복구 불가), 계정 삭제 요청 둘만 timeout이 없어 무제한 대기 시 클라우드 저장이 세션 내내 막혔다. `LoginUI`는 회원가입 중 클라이언트 검증 실패가 **폼을 통째로 파괴**했고(닉네임·비밀번호 확인 소실), 캐릭터 생성 패널만 폰트 크기를 안 정해 직전 패널 값(60/50pt)을 물려받아 제목과 항목 이름이 잘렸다. 검사기도 늘렸다 — `text_fit_lint`에 `errorMessage` 출처를 추가하니 **`RegionMapUI`에서 새 위반이 하나 나왔다**(wordWrap=false + 26pt). 검증: 컴파일 error CS 0 / warning CS 0, ci_check 11종 통과, PlayMode 704/704.
 > 영역별 처리 이력은 위 Covered 인덱스가 이미 갖고 있다.
 >
 > 개수를 두 곳에 적었다가 실제로 어긋났다 — 상단은 "최근 10건", 여기는 "최근 3건만 둔다"라고

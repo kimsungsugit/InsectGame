@@ -47,18 +47,22 @@ namespace InsectGame.NPC
 
         private static string DefeatedBossKey => SaveScope.PrefsKey("InsectGame.DefeatedLedgerBosses");
 
-        /// <summary>직전 대결 결과 문구 — WorldInteractionController가 잠깐 띄운다.</summary>
+        /// <summary>직전 대결 결과 문구 — <see cref="TryConsumeResult"/>로 꺼내 간다.</summary>
         public string LastResultText { get; private set; } = string.Empty;
-        public float LastResultTime { get; private set; } = float.MinValue;
+        private bool hasPendingResult;
 
         public void AutoWire(InsectBattleController battle, BattleTeamManager team,
             PlayerInsectCollection col, InsectDatabase db, PlayerItemInventory inventory,
             ItemDatabase itemDb, RegionManager region)
         {
             if (itemDatabase == null) itemDatabase = itemDb;
-            if (battleController == null && battle != null)
+            if (battleController == null && battle != null) battleController = battle;
+            // **구독을 대입 분기 밖에 둔다.** 안에 있으면 인스펙터로 필드를 채운 인스턴스나
+            // 두 번째 AutoWire(다른 battleController)는 영영 구독되지 않아 대결이 끝나도
+            // 보상·쿨다운이 돌지 않는다. `-=` 뒤 `+=`라 중복 구독은 되지 않는다.
+            if (battleController != null)
             {
-                battleController = battle;
+                battleController.DuelEnded -= OnDuelEnded;
                 battleController.DuelEnded += OnDuelEnded;
             }
             if (teamManager == null) teamManager = team;
@@ -242,7 +246,12 @@ namespace InsectGame.NPC
 
             CatcherKidNpc kid = activeKid;
             activeKid = null;
-            if (kid != null) kid.MarkDuelFinished(Time.time, DuelCooldownSeconds);
+
+            // 이 컨트롤러가 시작하지 않은 듀얼이면 아무것도 하지 않는다. 옛 코드는 그대로
+            // 진행해 **초기화된 적 없는 activeRarity**(기본 Common)로 보상을 주고
+            // NotifyNpcDuelWon까지 올렸다 — 남이 연 듀얼에 이쪽이 상을 준 셈이다.
+            if (kid == null) return;
+            kid.MarkDuelFinished(Time.time, DuelCooldownSeconds);
 
             if (!playerWon)
             {
@@ -350,7 +359,10 @@ namespace InsectGame.NPC
         {
             if (string.IsNullOrEmpty(itemId)) return string.Empty;
             ItemData item = itemDatabase != null ? itemDatabase.FindById(itemId) : null;
-            return item != null && !string.IsNullOrEmpty(item.displayName) ? item.displayName : itemId;
+            // **폴백으로 raw ID를 내보내지 않는다.** 표에 없는 ID면 화면에 "net_basic ×2 획득"이
+            // 그대로 뜬다. 호출부는 빈 문자열을 "아이템 문구 생략"으로 처리하므로,
+            // 이름을 모르면 조용히 빼는 쪽이 맞다(아이템 자체는 인벤토리에 들어간다).
+            return item != null && !string.IsNullOrEmpty(item.displayName) ? item.displayName : string.Empty;
         }
 
         // ── 대상 선정 ──
@@ -443,7 +455,24 @@ namespace InsectGame.NPC
         private void SetResult(string text)
         {
             LastResultText = text;
-            LastResultTime = Time.time;
+            hasPendingResult = true;
+        }
+
+        /// <summary>
+        /// 결과 문구를 <b>한 번만</b> 꺼내 간다 — 화면에 올리는 쪽이 자기 타이머로 표시한다.
+        ///
+        /// 옛 구현은 <c>SetResult</c> 시각을 찍고 소비자가 3.5초 창을 봤는데, 그 시각은
+        /// <c>DuelEnded</c> 시점(= 전투 결과 화면이 열리는 프레임)이다. 결과 화면은 4초를
+        /// 채운 뒤에야 닫히고(<c>BattleScreenUI</c>의 <c>resultTimer &gt; 4f</c>) 그동안은
+        /// 모달이라 필드가 그리지도 않는다 — **토스트는 필드가 보이기 0.5초 전에 이미 죽었다.**
+        /// 승리 아이템도, 거점이 무너졌다는 문구도 플레이어에게 도달한 적이 없다.
+        /// </summary>
+        public bool TryConsumeResult(out string text)
+        {
+            text = LastResultText;
+            if (!hasPendingResult || string.IsNullOrEmpty(text)) return false;
+            hasPendingResult = false;
+            return true;
         }
     }
 }

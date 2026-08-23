@@ -66,6 +66,9 @@ TWO_LINE_RATIO = 1.6
 UNBOUNDED_TEXT = re.compile(
     r"\.description\b|\.displayName\b|\blines\s*\[|GetOwnedDisplayName\s*\(|activeGuidedText\b"
     r"|\.LastResultText\b"
+    # errorMessage: Firebase가 돌려주는 문구라 길이를 서버가 정한다. LoginUI가 55f 고정 상자에
+    # 래핑으로 그려 둘째 줄이 잘렸다 — 2026-08-23 LoginUI 재감사에서 손으로 잡았다.
+    r"|\berrorMessage\b"
 )
 
 # `이름 = new GUIStyle(...) { ... }` 또는 `이름 = Label(24, ...)` 형태에서 스타일 속성을 읽는다.

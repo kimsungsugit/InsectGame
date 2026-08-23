@@ -690,7 +690,9 @@ namespace InsectGame.UI
 
             mapErrStyle.normal.textColor = new Color(1f, 0.6f, 0.6f, alpha);
             GUI.color = Color.white;
-            GUI.Label(new Rect(bx, by, bw, bh), errorMessage, mapErrStyle);
+            // 문구 길이를 데이터가 정하고(리전 표시명이 들어간다) mapErrStyle은 wordWrap=false라
+            // 폭을 넘으면 가로로 잘린다 — 가운데 정렬이면 앞뒤가 함께 잘려 더 나쁘다.
+            UIHelper.LabelFit(new Rect(bx, by, bw, bh), errorMessage, mapErrStyle);
         }
 
         // ─── 도감 브라우저(정보패널 [도감]으로 진입) ───

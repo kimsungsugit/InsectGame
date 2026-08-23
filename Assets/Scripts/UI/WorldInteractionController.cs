@@ -381,15 +381,28 @@ namespace InsectGame.UI
             scanTimer = 0f;
         }
 
+        // 대결 결과 토스트 — 표시 시각을 **여기서** 찍는다(컨트롤러가 아니라).
+        // 컨트롤러가 찍으면 그 시각이 전투 결과 화면이 열리는 프레임이라, 화면이 4초를
+        // 채우고 닫힐 때쯤엔 3.5초 창이 이미 지나 토스트가 한 번도 안 보인다.
+        private string resultToastText = string.Empty;
+        private float resultToastShownAt = float.MinValue;
+
         private void OnGUI()
         {
+            // 모달(전투 화면 포함) 중에는 그리지도 않고 **꺼내 오지도 않는다** —
+            // 여기서 소비하면 필드로 돌아오기 전에 창이 시작돼 같은 결함을 반복한다.
+            if (ModalUIRegistry.IsAnyOpen()) return;
+
             // 대결 결과 토스트는 대상이 없어도(대결 직후엔 아이가 쿨다운이라 대상에서 빠진다) 떠야 한다.
-            bool showResult = duelController != null
-                && !string.IsNullOrEmpty(duelController.LastResultText)
-                && Time.time - duelController.LastResultTime < ResultToastSeconds;
+            if (duelController != null && duelController.TryConsumeResult(out string freshResult))
+            {
+                resultToastText = freshResult;
+                resultToastShownAt = Time.time;
+            }
+            bool showResult = !string.IsNullOrEmpty(resultToastText)
+                && Time.time - resultToastShownAt < ResultToastSeconds;
 
             if (!hasPriorityTarget && !showResult) return;
-            if (ModalUIRegistry.IsAnyOpen()) return;
 
             EnsureStyles();
             EnsureCircleTex();
@@ -403,7 +416,7 @@ namespace InsectGame.UI
                 // 그 규칙 그대로 LabelFit으로 맞춰 넣는다.
                 UIHelper.LabelFit(
                     new Rect(UIScale.VirtualScreenWidth / 2f - 400f, UISafeLayout.ContentBottom - 150f, 800f, 44f),
-                    duelController.LastResultText,
+                    resultToastText,
                     promptStyle);
             }
 

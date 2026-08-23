@@ -59,6 +59,9 @@ namespace InsectGame.UI
         private GUIStyle radioStyle;
         private GUIStyle radioSelectedStyle;
         private GUIStyle sectionLabelStyle;
+
+        /// <summary>클라우드 로드 결과를 기다리는 중인가 — OnEnable 재구독의 조건.</summary>
+        private bool waitingForCloudLoad;
         private GUIStyle brandEyebrowStyle;
         private GUIStyle helperStyle;
         private GUIStyle linkStyle;
@@ -97,6 +100,8 @@ namespace InsectGame.UI
                 AuthManager.Instance.RegisterCompleted += OnRegisterCompleted;
                 AuthManager.Instance.AuthFailed += OnAuthFailed;
             }
+            // 로드를 기다리던 중에 꺼졌다 켜졌다면 되살린다(기다리는 중이 아니면 아무것도 안 한다).
+            SubscribeCloudLoad();
         }
 
         private void OnDisable()
@@ -107,6 +112,24 @@ namespace InsectGame.UI
                 AuthManager.Instance.RegisterCompleted -= OnRegisterCompleted;
                 AuthManager.Instance.AuthFailed -= OnAuthFailed;
             }
+            // 유일한 해제가 콜백 안에 있었는데, 세이브 충돌로 로드가 멈추면(CloudSaveManager가
+            // SaveConflictUI 해결까지 LoadCompleted를 미룬다) 그 콜백이 영영 안 온다 —
+            // 비활성 LoginUI에 핸들러가 남아 재로그인 시 ResetForNewAccount가 두 번 돈다.
+            if (CloudSaveManager.Instance != null)
+                CloudSaveManager.Instance.LoadCompleted -= OnCloudLoadCompleted;
+        }
+
+        /// <summary>
+        /// 클라우드 로드 결과 구독. <b>무조건 걸면 안 된다</b> — 로드를 기다리는 동안에만
+        /// 유효한 구독이라, 대기 중이 아닐 때 붙여 두면 남의 로드 완료에 반응해
+        /// 캐릭터 생성 판정이 엉뚱한 시점에 돈다. 그래서 대기 플래그를 함께 본다.
+        /// <c>-=</c> 뒤 <c>+=</c>라 중복 구독은 되지 않는다.
+        /// </summary>
+        private void SubscribeCloudLoad()
+        {
+            if (!waitingForCloudLoad || CloudSaveManager.Instance == null) return;
+            CloudSaveManager.Instance.LoadCompleted -= OnCloudLoadCompleted;
+            CloudSaveManager.Instance.LoadCompleted += OnCloudLoadCompleted;
         }
 
         private void OnDestroy()
@@ -123,7 +146,15 @@ namespace InsectGame.UI
         {
             errorMessage = reason ?? "인증 실패 — 다시 로그인 해주세요";
             errorTimer = 5f;
-            phase = LoginPhase.Login;
+
+            // **회원가입 화면은 건드리지 않는다.** RegisterWithEmail은 클라이언트 검증 실패에도
+            // AuthFailed를 먼저 쏘는데, 옛 코드는 그때도 로그인 패널로 되돌려 **닉네임과 비밀번호
+            // 확인이 통째로 날아갔다** — 비밀번호가 짧다는 안내를 받으려고 폼을 잃는 셈이었다.
+            if (phase != LoginPhase.Register) phase = LoginPhase.Login;
+
+            // 토큰 갱신 실패 경로는 AuthFailed만 쏘고 LoginCompleted를 안 준다 —
+            // 여기서 안 풀면 모든 버튼이 GUI.enabled=false로 굳는다.
+            isProcessing = false;
         }
 
         private void Update()
@@ -386,7 +417,7 @@ namespace InsectGame.UI
             if (errorTimer > 0 && !string.IsNullOrEmpty(errorMessage))
             {
                 errorStyle.fontSize = 30;
-                GUI.Label(new Rect(cx, cy, fieldW, 55f), errorMessage, errorStyle);
+                UIHelper.LabelFit(new Rect(cx, cy, fieldW, 55f), errorMessage, errorStyle);
             }
 
             versionStyle.fontSize = Mathf.RoundToInt(18f * layoutScale);
@@ -530,7 +561,7 @@ namespace InsectGame.UI
             if (errorTimer > 0 && !string.IsNullOrEmpty(errorMessage))
             {
                 errorStyle.fontSize = 30;
-                GUI.Label(new Rect(cx, cy, fieldW, 55f), errorMessage, errorStyle);
+                UIHelper.LabelFit(new Rect(cx, cy, fieldW, 55f), errorMessage, errorStyle);
             }
         }
 
@@ -581,6 +612,17 @@ namespace InsectGame.UI
             float cy = py + 44f;
             float fieldW = pw - 125f;
 
+            // **폰트 크기를 여기서 정한다.** 이 패널만 설정을 빠뜨려 직전에 그린 패널이 남긴
+            // 값을 물려받았다 — 회원가입(subtitle 60 / label 35)이나 로딩(subtitle 50)을 거쳐
+            // 오면 50f·30f 상자에 그만큼이 들어가 제목과 모든 항목 이름이 잘렸다.
+            // 스타일이 공유 객체라 정적 검사기도 못 잡는다(설정이 다른 메서드에 있다).
+            // 한글 줄높이 ≈ fontSize × 1.35 기준으로 상자에 맞춘 값이다.
+            subtitleStyle.fontSize = 36;      // 50f 상자
+            labelStyle.fontSize = 22;         // 30f 상자
+            fieldStyle.fontSize = 25;         // 35f 상자
+            sectionLabelStyle.fontSize = 22;  // 30f 상자 (InitStyles의 28은 여기서 잘린다)
+            btnGreenStyle.fontSize = 34;      // 58f 버튼
+
             // 타이틀
             GUI.Label(new Rect(px, cy, pw, 50f), "캐릭터 생성", subtitleStyle);
             cy += 63f;
@@ -590,48 +632,48 @@ namespace InsectGame.UI
             cy += 194f;
 
             // 이름
-            GUI.Label(new Rect(cx, cy, 75f, 30f), "이름:", labelStyle);
+            GUI.Label(new Rect(cx, cy, 75f, 30f), "이름:", labelStyle);   // 오른쪽 필드가 cx+82f — 넓히면 겹친다
             characterName = GUI.TextField(new Rect(cx + 82f, cy, fieldW - 82f, 35f), characterName, 12, fieldStyle);
             cy += 50f;
 
             // 성별
             string[] genderLabels = { "남자", "여자" };
-            GUI.Label(new Rect(cx, cy, 75f, 30f), "성별:", sectionLabelStyle);
+            GUI.Label(new Rect(cx, cy, 120f, 30f), "성별:", sectionLabelStyle);
             cy += 35f;
             selectedGender = DrawRadioRow(cx, cy, fieldW, genderLabels, selectedGender);
             cy += UIScale.IsMobileLayout ? 58f : 45f;
 
             // 피부색
             string[] skinLabels = { "밝은", "보통", "어두운", "진한" };
-            GUI.Label(new Rect(cx, cy, 75f, 30f), "피부색:", sectionLabelStyle);
+            GUI.Label(new Rect(cx, cy, 120f, 30f), "피부색:", sectionLabelStyle);
             cy += 35f;
             selectedSkinColor = DrawRadioRow(cx, cy, fieldW, skinLabels, selectedSkinColor);
             cy += UIScale.IsMobileLayout ? 58f : 45f;
 
             // 머리 스타일
             string[] hairLabels = { "짧은", "중간", "긴", "올림" };
-            GUI.Label(new Rect(cx, cy, 75f, 30f), "머리:", sectionLabelStyle);
+            GUI.Label(new Rect(cx, cy, 120f, 30f), "머리:", sectionLabelStyle);
             cy += 35f;
             selectedHairStyle = DrawRadioRow(cx, cy, fieldW, hairLabels, selectedHairStyle);
             cy += UIScale.IsMobileLayout ? 58f : 45f;
 
             // 머리 색상
             string[] hairColorLabels = { "검정", "갈색", "금발", "빨강", "보라", "파랑" };
-            GUI.Label(new Rect(cx, cy, 75f, 30f), "머리색:", sectionLabelStyle);
+            GUI.Label(new Rect(cx, cy, 120f, 30f), "머리색:", sectionLabelStyle);
             cy += 35f;
             selectedHairColor = DrawRadioRow(cx, cy, fieldW, hairColorLabels, selectedHairColor);
             cy += UIScale.IsMobileLayout ? 58f : 45f;
 
             // 표정
             string[] faceLabels = { "미소", "활짝", "차분", "무표정" };
-            GUI.Label(new Rect(cx, cy, 75f, 30f), "표정:", sectionLabelStyle);
+            GUI.Label(new Rect(cx, cy, 120f, 30f), "표정:", sectionLabelStyle);
             cy += 35f;
             selectedFaceType = DrawRadioRow(cx, cy, fieldW, faceLabels, selectedFaceType);
             cy += UIScale.IsMobileLayout ? 58f : 45f;
 
             // 의상
             string[] outfitLabels = { "탐험가", "연구원", "자유" };
-            GUI.Label(new Rect(cx, cy, 75f, 30f), "의상:", sectionLabelStyle);
+            GUI.Label(new Rect(cx, cy, 120f, 30f), "의상:", sectionLabelStyle);
             cy += 35f;
             selectedOutfit = DrawRadioRow(cx, cy, fieldW, outfitLabels, selectedOutfit);
             cy += 63f;
@@ -688,7 +730,8 @@ namespace InsectGame.UI
                 // 일반 계정: 클라우드 데이터 확인
                 if (CloudSaveManager.Instance != null)
                 {
-                    CloudSaveManager.Instance.LoadCompleted += OnCloudLoadCompleted;
+                    waitingForCloudLoad = true;
+                    SubscribeCloudLoad();
                     CloudSaveManager.Instance.LoadFromCloud();
                     phase = LoginPhase.Loading;
                 }
@@ -722,7 +765,9 @@ namespace InsectGame.UI
 
         private void OnCloudLoadCompleted(bool hasData)
         {
-            CloudSaveManager.Instance.LoadCompleted -= OnCloudLoadCompleted;
+            waitingForCloudLoad = false;
+            if (CloudSaveManager.Instance != null)
+                CloudSaveManager.Instance.LoadCompleted -= OnCloudLoadCompleted;
             // 토큰 갱신 실패로 이미 로그아웃된 상태면(AuthFailed가 phase=Login으로 전환) 신규 유저로 오인하지
             // 않는다. 로그아웃 상태에서 CharacterCreate로 가면 비로그인 전역 스코프에 캐릭터가 쌓여
             // 다음 정상 로그인 시 계정 데이터와 어긋난다.

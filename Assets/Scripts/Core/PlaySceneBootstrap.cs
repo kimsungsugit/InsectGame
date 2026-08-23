@@ -3823,6 +3823,9 @@ namespace InsectGame.Core
                         pointObj.transform.position = pos;
                         SpawnPoint sp = pointObj.AddComponent<SpawnPoint>();
                         sp.regionId = region.regionId;
+                        // 부모 리전 ID를 달고 있어 리전 필터로는 구분이 안 된다 — 명시 플래그로
+                        // 표시해야 재배치가 이걸 필드로 끌고 오지 않는다(전용종 필드 유출).
+                        sp.isSubAreaPoint = true;
                         sp.regionInsectIds = sub.exclusiveInsectIds;
                         sp.regionMinLevel = sub.minLevel;
                         sp.regionMaxLevel = sub.maxLevel;

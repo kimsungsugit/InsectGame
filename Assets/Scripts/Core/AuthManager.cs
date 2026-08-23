@@ -780,7 +780,12 @@ namespace InsectGame.Core
                 // 갇힌다. WorldChannelManager(12초)와 같은 계열로 맞춘다.
                 req.timeout = 15;
 
+                int generation = authGeneration;
+                lastRefreshSucceeded = false;
                 yield return req.SendWebRequest();
+
+                // 응답을 기다리는 사이 로그아웃·계정삭제가 있었다면 이 결과는 죽은 것이다.
+                if (generation != authGeneration) yield break;
 
                 if (req.result == UnityWebRequest.Result.Success)
                 {
@@ -797,17 +802,28 @@ namespace InsectGame.Core
                     // SetLoggedIn 경로를 거치지 않는 갱신이라 acquiredAt를 여기서 직접 갱신.
                     // 빠뜨리면 TryAutoLogin → 3000초 후 매 프레임 자동 갱신 폭주.
                     idTokenAcquiredAt = Time.realtimeSinceStartup;
+                    lastRefreshSucceeded = true;
                     SaveTokens();
                     LoginCompleted?.Invoke(true, null);
                 }
                 else
                 {
-                    // 토큰 갱신 실패 — silent ClearAuth 대신 사용자에게 알림 후 로그아웃
-                    string reason = req.responseCode == 401 || req.responseCode == 403
-                        ? "세션 만료 — 다시 로그인 해주세요"
-                        : "인증 갱신 실패 — 네트워크 확인 후 다시 로그인 해주세요";
-                    ClearAuth();
-                    AuthFailed?.Invoke(reason);
+                    // **네트워크 실패와 인증 실패를 가른다.** 옛 코드는 문구만 갈라 놓고 둘 다
+                    // ClearAuth()를 불렀다 — 타임아웃 한 번(지하철·엘리베이터)에 refresh 토큰이
+                    // 영구 삭제됐고, **게스트 계정은 비밀번호가 없어 복구가 불가능**해서 uid 스코프
+                    // 세이브가 통째로 고아가 됐다.
+                    bool rejected = req.responseCode == 400
+                        || req.responseCode == 401 || req.responseCode == 403;
+                    if (rejected)
+                    {
+                        ClearAuth();
+                        AuthFailed?.Invoke("세션 만료 — 다시 로그인 해주세요");
+                    }
+                    else
+                    {
+                        // 서버가 거절한 게 아니다 — 세션을 유지하고 잠시 뒤 다시 시도한다.
+                        AuthFailed?.Invoke("인증 갱신 실패 — 네트워크를 확인해주세요. 잠시 후 다시 시도합니다");
+                    }
                 }
             }
         }
@@ -866,6 +882,10 @@ namespace InsectGame.Core
             using (UnityWebRequest del = UnityWebRequest.Delete(docUrl))
             {
                 del.SetRequestHeader("Authorization", "Bearer " + IdToken);
+                // 이 파일의 다른 요청 7개는 전부 15초인데 삭제 경로 둘만 무제한이었다.
+                // 무제한 대기에 걸리면 SetDeletionInProgress(true)가 실패 분기에서만 풀리므로
+                // 세션 내내 클라우드 저장이 막힌 채 확인 UI도 영영 응답을 못 받는다.
+                del.timeout = 15;
                 yield return del.SendWebRequest();
                 // 문서 삭제 실패는 치명적 아님(없을 수도) — 계속 진행.
             }
@@ -881,9 +901,16 @@ namespace InsectGame.Core
                 req.uploadHandler = new UploadHandlerRaw(bodyRaw);
                 req.downloadHandler = new DownloadHandlerBuffer();
                 req.SetRequestHeader("Content-Type", "application/json");
+                req.timeout = 15;
                 yield return req.SendWebRequest();
                 ok = req.result == UnityWebRequest.Result.Success;
-                if (!ok) err = ParseFirebaseError(req.downloadHandler.text);
+                if (!ok)
+                {
+                    // 타임아웃이면 본문이 비어 ParseFirebaseError가 "알 수 없는 오류"만 낸다.
+                    err = req.result == UnityWebRequest.Result.ConnectionError
+                        ? "네트워크 오류 — 연결을 확인한 뒤 다시 시도해주세요"
+                        : ParseFirebaseError(req.downloadHandler.text);
+                }
             }
 
             // 3) 성공 시에만 로컬 정리 + 로그아웃. 실패 시 로컬·세션 유지 → 사용자가 재시도 가능
@@ -946,6 +973,14 @@ namespace InsectGame.Core
 
         private void ClearAuth()
         {
+            // **진행 중인 갱신을 무효화한다.** 안 하면 로그아웃·계정삭제 뒤에도 코루틴이 계속
+            // 돌다가 응답이 오면 성공 분기가 IsLoggedIn=true + SaveTokens()로 **방금 지운 토큰을
+            // 다시 쓴다.** 호출부(AccountSettingsUI.LogoutAndReload)가 씬 재로드 전 최대 3초를
+            // 기다리므로 그 창이 실제로 열려 있고, 되살아난 토큰으로 다음 부팅의 TryAutoLogin이
+            // 방금 나간(또는 삭제한) 계정으로 재로그인한다.
+            authGeneration++;
+            refreshInProgress = false;
+
             IsLoggedIn = false;
             UserId = null;
             Email = null;
@@ -966,6 +1001,18 @@ namespace InsectGame.Core
         private const float IdTokenLifetimeSeconds = 3600f;
         private const float IdTokenRefreshAheadSeconds = 600f; // 만료 10분 전 갱신
         private bool refreshInProgress;
+
+        /// <summary>
+        /// 인증 세대. <see cref="ClearAuth"/>가 올린다 — 진행 중이던 갱신 코루틴이 자기가
+        /// 시작될 때의 세대와 다르면 결과를 버린다(취소 토큰 역할).
+        /// </summary>
+        private int authGeneration;
+
+        /// <summary>직전 갱신이 성공했는가 — 실패 시 재시도 간격을 줄이는 데 쓴다.</summary>
+        private bool lastRefreshSucceeded;
+
+        /// <summary>갱신이 네트워크 문제로 실패했을 때 다시 시도하기까지(초).</summary>
+        private const float RefreshRetrySeconds = 90f;
 
         private void SetLoggedIn(string uid, string email, string name,
             string idToken, string refreshToken)
@@ -990,7 +1037,13 @@ namespace InsectGame.Core
             // Unity 메인 스레드인 Update에서 REST 로그인 코루틴을 시작합니다.
             ProcessPendingGoogleSignInResult();
 #endif
-            // 토큰 자동 갱신: 만료 임박 시 1회 RefreshIdTokenCoroutine 호출
+            // 토큰 자동 갱신: 만료 임박 시 1회 RefreshIdTokenCoroutine 호출.
+            //
+            // **마스터는 제외한다.** MasterAccount.RefreshToken은 "master_refresh"라는 상수라
+            // 비어 있지 않아 아래 가드를 그대로 통과하는데 Firebase는 그 토큰을 모른다 —
+            // 약 50분 뒤 400을 받고 플레이 중에 강제 로그아웃된다.
+            // TryAutoLogin과 DeleteAccount는 이미 마스터를 예외 처리하는데 여기만 빠져 있었다.
+            if (IsMasterAccount) return;
             if (!IsLoggedIn || refreshInProgress || string.IsNullOrEmpty(RefreshToken)) return;
             float elapsed = Time.realtimeSinceStartup - idTokenAcquiredAt;
             if (elapsed >= IdTokenLifetimeSeconds - IdTokenRefreshAheadSeconds)
@@ -1002,10 +1055,21 @@ namespace InsectGame.Core
 
         private IEnumerator AutoRefreshThenClear()
         {
+            int generation = authGeneration;
             yield return StartCoroutine(RefreshIdTokenCoroutine());
-            // RefreshIdTokenCoroutine 성공 시 SetLoggedIn 분기를 안 거치고 IdToken만 갱신하므로
-            // idTokenAcquiredAt를 여기서 직접 갱신.
-            idTokenAcquiredAt = Time.realtimeSinceStartup;
+
+            // 로그아웃·계정삭제가 끼어들었으면 아무것도 되돌리지 않는다 —
+            // refreshInProgress는 ClearAuth가 이미 내렸다.
+            if (generation != authGeneration) yield break;
+
+            // 성공 시 SetLoggedIn 분기를 안 거치고 IdToken만 갱신하므로 여기서 직접 갱신한다.
+            //
+            // **실패했을 때 지금 시각으로 밀면 안 된다** — 그러면 다음 시도가 50분 뒤가 되어
+            // 그 사이 토큰이 진짜로 만료된다. 네트워크가 돌아오는 대로 다시 붙게 짧게 잡는다.
+            idTokenAcquiredAt = lastRefreshSucceeded
+                ? Time.realtimeSinceStartup
+                : Time.realtimeSinceStartup
+                  - (IdTokenLifetimeSeconds - IdTokenRefreshAheadSeconds) + RefreshRetrySeconds;
             refreshInProgress = false;
         }
 
