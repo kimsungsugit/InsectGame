@@ -53,6 +53,13 @@ description: 공유 파일별 에이전트 수정 경계와 충돌 방지 절차
 | | data-architect | unlockedRegions/defeatedGuardians PlayerPrefs 직렬화 |
 | `RegionTerrainBuilder.cs` | visual-dev | BuildXxxTerrain() 프로시저럴 지형/오브젝트 디자인 |
 | | game-designer | BuildAllRegions switch 분기 추가 (신규 리전 등록 트리거) |
+| `CutsceneLibrary.cs` | game-designer | 어느 비트에 붙일지, 자막 문구 |
+| | visual-dev | 카메라 좌표(camFrom/camTo/lookAt), 컷 길이·shake·dim |
+| `CutsceneDirector.cs` | game-designer | 재생 시점(StoryBeatCompleted), 전투 지연 큐, 프리즈 복귀 |
+| | visual-dev | 카메라 프레이밍 적용, 딤 강도 |
+| | ui-dev | 자막 렌더(OnGUI), IModalUI 스택, 건너뛰기 버튼 |
+| `NpcBossDuels.cs` | game-designer | 상대 곤충·레벨·보상 아이템·재도전 쿨다운 |
+| | battle-dev | `isFinal`(보스 BGM 분기), 대결 진입 연동 |
 | `PlayerVisualBuilder.cs` | visual-dev | BuildAll() 슬림 비례, BuildHair*, Accessory 노드 추가, Material/슈더 fallback |
 | | data-architect | 8슬롯 ↔ 노드 매핑(Hat/Top/Outerwear 등), RefreshOutfitColors 흐름 |
 | `SubAreaWorldBuilder.cs` | visual-dev | BuildCave/BuildDeepForest 등 프로시저럴 지형 + 조명 |

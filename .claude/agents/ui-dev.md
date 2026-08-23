@@ -50,6 +50,8 @@ tools:
 - `Assets/Scripts/UI/UIDirectScroll.cs` - IMGUI 목록 휠·터치 드래그 직접 스크롤
 - `Assets/Scripts/UI/UITheme.cs` - UI 테마/스타일
 - `Assets/Scripts/UI/UITween.cs` - UI 트윈 애니메이션
+- `Assets/Scripts/UI/InsectBrowseSort.cs` - 보유 곤충 정렬 순수부(등급/레벨/CP/최근)
+- `Assets/Scripts/UI/StoryJournalUI.cs` - 스토리 저널 챕터 탭·다시 읽기 렌더
 - `Assets/Scripts/UI/AccountLinkUI.cs` - 게스트→정식 계정 연동 화면
 - `Assets/Scripts/UI/SaveConflictUI.cs` - 로컬/클라우드 세이브 충돌 선택 모달 ※세이브 구조는 data-architect
 - `Assets/Scripts/UI/WorldFieldMultiplayerUI.cs` - 필드 멀티 초대·친구 목록 (픽셀 좌표계 — `UISafeLayout.Px` 사용)

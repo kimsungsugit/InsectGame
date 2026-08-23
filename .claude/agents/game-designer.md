@@ -33,6 +33,11 @@ tools:
 - `Assets/Scripts/Story/StoryStageDirection.cs` - NPC 연출 스텝 데이터 + 타임아웃 순수부
 - `Assets/Scripts/Story/StoryStageLibrary.cs` - NPC 연출 저작(등장·퇴장·인사)
 - `Assets/Scripts/Story/StoryStageDirector.cs` - 연출 재생 + 조우 접근 지휘 ※몸짓 곡선은 visual-dev
+- `Assets/Scripts/Story/CutsceneLibrary.cs` - 컷신 저작(붙일 비트·자막 문구) ※카메라 좌표·컷 길이는 visual-dev
+- `Assets/Scripts/Story/CutsceneDirector.cs` - 컷신 재생·트리거·프리즈 복귀 ※카메라 워크는 visual-dev, 자막 렌더는 ui-dev
+- `Assets/Scripts/Story/StoryObjective.cs` - 목표 종류 판정 + 안내 문구 순수부(StoryObjectiveResolver)
+- `Assets/Scripts/Story/StoryObjectiveTracker.cs` - 목표 → 월드 좌표·자동 주행 해석
+- `Assets/Scripts/NPC/NpcBossDuels.cs` - 명부회 간부 고정 상대·레벨·보상 표 ※isFinal의 BGM 분기는 battle-dev
 
 ## 역할
 

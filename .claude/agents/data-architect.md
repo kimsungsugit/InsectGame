@@ -48,6 +48,7 @@ tools:
 - `Assets/Scripts/Core/AtomicFileWriter.cs` - 세이브 원자적 쓰기(temp→replace). 중간 크래시로 반쪽 JSON이 남지 않게 한다
 - `Assets/Scripts/Core/ICloudReloadable.cs` - 클라우드 복원 후 재로드 계약
 - `Assets/Scripts/Data/InsectExpansionDefinitions.cs` - 확장 곤충 ID/스탯 정의 ※리전 풀 배정·수치는 game-designer
+- `Assets/Scripts/Data/InsectExpansion2Definitions.cs` - 2막 곤충 66종 ID/스탯 정의 ※리전 풀 배정·수치는 game-designer
 
 ### Editor (데이터 애셋 생성)
 - `Assets/Editor/ItemRarityPaletteBuilder.cs` - `Resources/ItemRarityPalette.asset` 재현 가능 생성 ※색·그라디언트는 visual-dev
@@ -66,6 +67,7 @@ tools:
 - `Assets/Scripts/NPC/NpcDialogueDatabase.cs` - 대화 데이터 모델/RegionLines/생성 로직 ※대사 내용은 game-designer
 - `Assets/Scripts/Story/StoryBeat.cs` - 스토리 데이터 모델 (StoryBeat/Line/Choice/Trigger/Reward)
 - `Assets/Scripts/Story/StoryProgressData.cs` - 스토리 진행 세이브 모델
+- `Assets/Scripts/Story/CutsceneData.cs` - 컷신 샷 데이터 모델 + 타임라인 순수부(CutsceneTimeline)
 
 ## 세이브 파일 구조
 | 파일 | 내용 | 서비스 |
