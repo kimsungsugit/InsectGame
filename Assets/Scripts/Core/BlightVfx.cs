@@ -33,9 +33,14 @@ namespace InsectGame.Core
         private const float RetrySeconds = 1.5f;
 
         // ── 오염 안개 ──
-        private const int HazeCount = 7;
-        private const float HazeRadius = 6.5f;
+        // 배치모드 캡처로 실제 화면을 보고 잡은 값이다. 처음엔 7개 × 지름 2.5 × 알파 0.30이었는데
+        // **안개가 아니라 창백한 풍선처럼 보였다** — 구체가 크면 조명이 표면에 얹혀 덩어리로 읽히고,
+        // 구조물을 가려 거점이 무엇인지도 안 보였다. 작고 옅게, 대신 수를 늘린다.
+        private const int HazeCount = 11;
+        private const float HazeRadius = 4.6f;
         private const float HazeRiseSeconds = 5.5f;
+        private const float HazeMinScale = 0.42f;
+        private const float HazeGrowth = 0.75f;
 
         // ── 정화 연출 ──
         private const float CollapseSeconds = 1.5f;
@@ -66,6 +71,9 @@ namespace InsectGame.Core
         }
 
         private readonly Dictionary<string, Site> sites = new Dictionary<string, Site>();
+
+        /// <summary>보스를 못 찾았다고 이미 경고한 리전 — 매 주기 같은 경고를 쏟지 않는다.</summary>
+        private readonly HashSet<string> warnedMissingBoss = new HashSet<string>();
         private float retryTimer;
 
         public void AutoWire(RegionManager region, RegionBlightManager blightManager,
@@ -150,7 +158,19 @@ namespace InsectGame.Core
         /// </summary>
         private void BuildSite(RegionData region)
         {
-            if (!TryResolveSitePosition(region, out Vector3 pos)) return;   // NPC가 아직 안 떴다
+            if (!TryResolveSitePosition(region, out Vector3 pos))
+            {
+                // NPC가 아직 안 떴을 수 있으니 매번 경고하지는 않는다. 다만 계속 못 찾으면
+                // 그 리전은 거점이 영영 안 서는데 아무 흔적도 안 남는다 — 한 번은 말한다.
+                if (warnedMissingBoss.Add(region.regionId))
+                {
+                    Debug.LogWarning($"[BlightVfx] {region.regionId}의 거점 보스"
+                        + $" '{region.blightBossNpcId}'를 월드에서 못 찾아 거점을 세우지 못한다"
+                        + $" (스토리 NPC {(npcManager != null ? npcManager.StoryNpcs.Count : -1)}명 조회)"
+                        + " — VillageBuilder 앵커의 regionId/storyNpcId를 확인할 것");
+                }
+                return;
+            }
 
             Site site = new Site();
             // **`Scenery_` 프리픽스가 기능이다.** SubAreaWorldBuilder.HideMainWorld가 메인월드를
@@ -304,7 +324,7 @@ namespace InsectGame.Core
             // 다른 리전에 있는 동안에는 쉰다. 거점은 세션 내내 서 있으므로 게이트가 없으면
             // 방문한 거점 수만큼의 안개가 끝까지 매 프레임 돈다 — 보이지도 않는 채로.
             WaitForSeconds idle = new WaitForSeconds(0.5f);
-            Color hazeCol = new Color(0.42f, 0.44f, 0.33f, 0.30f);
+            Color hazeCol = new Color(0.42f, 0.44f, 0.33f, 0.16f);
             GameObject[] puffs = new GameObject[HazeCount];
             Renderer[] rends = new Renderer[HazeCount];
             float[] phase = new float[HazeCount];
@@ -332,10 +352,10 @@ namespace InsectGame.Core
 
                     float t = phase[i];
                     float angle = (i * Mathf.PI * 2f / HazeCount) + t * 1.4f;
-                    float radius = HazeRadius * (0.35f + t * 0.65f);
+                    float radius = HazeRadius * (0.3f + t * 0.7f);
                     puffs[i].transform.localPosition = new Vector3(
-                        Mathf.Cos(angle) * radius, 0.4f + t * 3.2f, Mathf.Sin(angle) * radius);
-                    puffs[i].transform.localScale = Vector3.one * (0.9f + t * 1.6f);
+                        Mathf.Cos(angle) * radius, 0.25f + t * 2.6f, Mathf.Sin(angle) * radius);
+                    puffs[i].transform.localScale = Vector3.one * (HazeMinScale + t * HazeGrowth);
 
                     // 바닥에서 피어나 꼭대기에서 사라진다 — 양 끝에서 알파가 0이라 튀지 않는다.
                     float alpha = hazeCol.a * Mathf.Sin(t * Mathf.PI);

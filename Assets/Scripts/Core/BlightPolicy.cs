@@ -33,6 +33,18 @@ namespace InsectGame.Core
         public const float GroundDrainAmount = 0.72f;
 
         /// <summary>
+        /// 탈색과 함께 낮추는 밝기 배수.
+        ///
+        /// <b>채도만 빼면 안 되는 이유를 실제 화면에서 배웠다.</b> 파일럿 리전인 산은
+        /// 지면색이 이미 (0.35, 0.325, 0.24)인 무채색 갈색이라 뺄 채도가 없다 — 옛 공식은
+        /// 그 색을 (0.340, 0.319, 0.267)로 만들었다. 사실상 그대로이고 파랑은 오히려 올라간다.
+        /// 배치모드 캡처로 오염/정화를 나란히 찍어 보니 두 장이 구분되지 않았다.
+        ///
+        /// 밝기를 함께 내리면 어떤 원색에서도 변화가 보인다(산 기준 약 30% 어두워진다).
+        /// </summary>
+        public const float DrainBrightness = 0.62f;
+
+        /// <summary>
         /// 이 리전의 동시 출현 상한. 오염이면 <see cref="ScarcityDivisor"/>로 나누되
         /// <see cref="MinActive"/> 아래로는 내려가지 않는다.
         ///
@@ -59,7 +71,12 @@ namespace InsectGame.Core
             float t = Mathf.Clamp01(amount);
             float lum = source.r * 0.299f + source.g * 0.587f + source.b * 0.114f;
             // 완전 무채색이 아니라 누렇게 죽은 회색으로 간다 — 잿빛보다 "말라 죽은" 인상이 난다.
-            Color drained = new Color(lum * 1.04f, lum * 0.98f, lum * 0.86f, source.a);
+            // 밝기도 함께 내린다: 채도만 빼면 원래 무채색인 리전(산)에서 아무 변화가 안 보인다.
+            Color drained = new Color(
+                lum * 1.04f * DrainBrightness,
+                lum * 0.98f * DrainBrightness,
+                lum * 0.86f * DrainBrightness,
+                source.a);
             return new Color(
                 Mathf.Lerp(source.r, drained.r, t),
                 Mathf.Lerp(source.g, drained.g, t),

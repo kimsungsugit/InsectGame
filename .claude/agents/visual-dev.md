@@ -56,6 +56,7 @@ OnGUI의 Rect 좌표와 레이아웃은 **ui-dev 영역**입니다. 여기서는
 - `Assets/Scripts/Core/VillageBuilder.cs` - 마을 프로시저럴 지형/건물
 - `Assets/Scripts/Core/BlightVfx.cs` - 오염 거점 구조물·안개·지면 탈색·정화 붕괴 연출
 - `Assets/Editor/LiveSceneCapture.cs` - 배치모드 실화면 캡처(3D 변경을 눈으로 확인) ※IMGUI는 안 잡힘
+- `Assets/Editor/BlightSiteDebugMenu.cs` - 오염 거점 육안 확인용 에디터 메뉴(이동·정화·초기화)
 
 ## 현재 비주얼 시스템
 

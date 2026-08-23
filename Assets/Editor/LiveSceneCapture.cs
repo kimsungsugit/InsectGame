@@ -66,6 +66,30 @@ namespace InsectGame.EditorTools
             public Vector3 offset;   // 대상 기준 카메라 위치
             public Vector3 look;     // 대상 기준 시선 지점
             public string target;    // 따라갈 GameObject 이름(비면 Camera.main 구도 그대로)
+
+            /// <summary>
+            /// 촬영 전에 플레이어를 옮겨 둘 리전 ID(비면 이동 없음).
+            ///
+            /// 초원 밖의 것을 찍으려면 이게 필요하다 — 플레이어는 늘 초원에서 시작하고,
+            /// 리전에 실제로 들어가야만 그 리전에 붙은 것들(수문장 봉인·오염 거점 구조물 등)이
+            /// 지어진다. 좌표만 옮기면 <c>RegionManager.Update</c>가 리전 변경을 알아서 잡는다.
+            /// </summary>
+            public string region;
+
+            /// <summary>리전으로 옮기는 시각(초). 부트스트랩이 끝난 뒤여야 한다.</summary>
+            public float regionAt;
+
+            /// <summary>
+            /// 현재 리전의 오염 거점을 정화하는 시각(초). 음수면 하지 않는다.
+            ///
+            /// 오염과 정화를 <b>한 번의 실행에서</b> 찍기 위한 것이다 — 전/후를 따로 돌리면
+            /// 조명·시각·플레이어 위치가 미묘하게 달라 비교가 흐려진다.
+            /// 실제 승리 경로와 같은 <c>CleanseByBoss</c>를 부른다(디버그 전용 뒷문 금지).
+            /// </summary>
+            public float cleanseAt;
+
+            /// <summary>촬영 전에 정화 기록을 지울 것인가.</summary>
+            public bool resetBlight;
         }
 
         [MenuItem("InsectGame/Live Scene Capture")]
@@ -73,6 +97,7 @@ namespace InsectGame.EditorTools
         {
             settings = ReadSettings();
             Directory.CreateDirectory(Path.GetFullPath(ProjectPath(settings.outDir)));
+
 
             // 빈 씬으로 들어가면 카메라조차 없다 — 실제 게임 씬을 연 뒤 플레이모드로 간다.
             // PlaySceneBootstrap이 카메라·플레이어·NPC·곤충을 전부 코드로 짓는다.
@@ -96,13 +121,101 @@ namespace InsectGame.EditorTools
             startTime = Time.realtimeSinceStartup;
             nextShot = 0;
             written = 0;
+            regionMoved = false;
+            cleansed = false;
             EditorApplication.update += Tick;
             Log("플레이모드 진입 — 촬영 대기");
+        }
+
+        private static bool regionMoved;
+        private static bool cleansed;
+
+        /// <summary>
+        /// 정화 기록을 지운다. 정화는 세이브에 남으므로 안 지우면 <b>두 번째 실행부터 거점이
+        /// 아예 안 선다</b>(실제로 그렇게 빈 화면을 찍었다). 촬영은 반복 가능해야 비교가 된다.
+        /// </summary>
+        private static void ResetBlightRecord()
+        {
+            string key = InsectGame.Core.SaveScope.PrefsKey(
+                InsectGame.Core.GameConstants.PrefsKeys.BlightCleansed);
+            PlayerPrefs.DeleteKey(key);
+            PlayerPrefs.Save();
+            var blight = UnityEngine.Object.FindFirstObjectByType<InsectGame.Core.RegionBlightManager>();
+            if (blight != null) blight.ReloadFromDisk();   // 인메모리 캐시도 되돌린다
+            Log($"정화 기록 초기화 ({key})");
+        }
+
+        /// <summary>현재 리전의 거점을 무너뜨린다 — 승리 경로와 같은 함수를 쓴다.</summary>
+        private static void CleanseCurrentRegion()
+        {
+            var rm = UnityEngine.Object.FindFirstObjectByType<InsectGame.Core.RegionManager>();
+            var blight = UnityEngine.Object.FindFirstObjectByType<InsectGame.Core.RegionBlightManager>();
+            if (rm == null || blight == null || rm.CurrentRegion == null)
+            {
+                Log("정화 실패 — RegionManager/RegionBlightManager/현재 리전 없음");
+                return;
+            }
+            InsectGame.Data.RegionData here = rm.CurrentRegion;
+            bool ok = blight.CleanseByBoss(here.blightBossNpcId, here.regionId);
+            Log($"정화 {(ok ? "성공" : "실패")} — {here.regionId}");
+        }
+
+        /// <summary>
+        /// 플레이어를 리전 중심으로 옮긴다. 좌표만 바꾸면 <c>RegionManager.Update</c>가
+        /// 리전 변경을 잡고, 그에 붙은 구독자(스포너·스토리·오염 거점 비주얼)가 따라 움직인다.
+        ///
+        /// y는 지형 높이를 모르니 조금 띄워 두고 중력에 맡긴다 — 파묻히면 아무것도 안 보인다.
+        /// </summary>
+        private static void MoveToRegion(string regionId)
+        {
+            var rm = UnityEngine.Object.FindFirstObjectByType<InsectGame.Core.RegionManager>();
+            GameObject player = GameObject.Find("Player");
+            if (rm == null || player == null)
+            {
+                Log($"리전 이동 실패 — RegionManager={(rm != null)} Player={(player != null)}");
+                return;
+            }
+            InsectGame.Data.RegionData r = rm.GetRegionById(regionId);
+            if (r == null)
+            {
+                Log($"리전 '{regionId}'를 못 찾았다");
+                return;
+            }
+            // **지형 높이를 찾아 붙인다.** 그냥 현재 y로 옮기면 리전마다 지면 높이가 달라
+            // 파묻히거나(카메라가 땅속에서 갈색 화면만 찍는다 — 실제로 겪었다) 공중에 뜬다.
+            Vector3 p = r.centerPosition;
+            if (Physics.Raycast(new Vector3(p.x, 300f, p.z), Vector3.down, out RaycastHit hit, 600f))
+            {
+                p.y = hit.point.y + 1.2f;
+            }
+            else
+            {
+                p.y = player.transform.position.y + 5f;
+                Log($"지면을 못 찾았다 — 현재 높이 +5로 둔다 ({regionId})");
+            }
+            player.transform.position = p;
+            Log($"리전 이동 → {regionId} {p}");
         }
 
         private static void Tick()
         {
             float elapsed = Time.realtimeSinceStartup - startTime;
+
+            if (!regionMoved && !string.IsNullOrEmpty(settings.region) && elapsed >= settings.regionAt)
+            {
+                regionMoved = true;
+                // **플레이 모드에서** 지운다. 에디터 모드에는 AuthManager가 없어 전역 키가
+                // 잡히는데 실행 중에는 계정 스코프 키를 쓴다 — 엉뚱한 키를 지우고 "초기화했다"고
+                // 로그만 남긴 채 거점이 안 서는 일을 실제로 겪었다.
+                if (settings.resetBlight) ResetBlightRecord();
+                MoveToRegion(settings.region);
+            }
+
+            if (!cleansed && settings.cleanseAt >= 0f && elapsed >= settings.cleanseAt)
+            {
+                cleansed = true;
+                CleanseCurrentRegion();
+            }
 
             if (nextShot < settings.times.Length && elapsed >= settings.times[nextShot])
             {
@@ -206,6 +319,10 @@ namespace InsectGame.EditorTools
                 offset = Vec(Arg("-captureOffset"), new Vector3(0f, 1.2f, -2.6f)),
                 look = Vec(Arg("-captureLook"), new Vector3(0f, 0.85f, 0f)),
                 target = Arg("-captureTarget") ?? "Player",
+                region = Arg("-captureRegion") ?? "",
+                regionAt = Floats(Arg("-captureRegionAt"), new[] { 2f })[0],
+                cleanseAt = Floats(Arg("-captureCleanseAt"), new[] { -1f })[0],
+                resetBlight = Arg("-captureResetBlight") != null,
             };
             Size(Arg("-captureSize"), out s.width, out s.height);
             // "-captureTarget none"이면 게임 카메라 구도를 그대로 쓴다.
@@ -258,7 +375,10 @@ namespace InsectGame.EditorTools
             return string.Join("|",
                 s.scene, s.outDir, string.Join(",", s.times),
                 s.width.ToString(), s.height.ToString(),
-                V(s.offset), V(s.look), s.target ?? "");
+                V(s.offset), V(s.look), s.target ?? "",
+                s.region ?? "", s.regionAt.ToString(CultureInfo.InvariantCulture),
+                s.cleanseAt.ToString(CultureInfo.InvariantCulture),
+                s.resetBlight ? "1" : "0");
         }
 
         private static string V(Vector3 v) => string.Format(CultureInfo.InvariantCulture,
@@ -277,6 +397,10 @@ namespace InsectGame.EditorTools
                 offset = Vec(p[5], Vector3.zero),
                 look = Vec(p[6], Vector3.zero),
                 target = p.Length > 7 ? p[7] : "Player",
+                region = p.Length > 8 ? p[8] : "",
+                regionAt = p.Length > 9 ? Floats(p[9], new[] { 2f })[0] : 2f,
+                cleanseAt = p.Length > 10 ? Floats(p[10], new[] { -1f })[0] : -1f,
+                resetBlight = p.Length > 11 && p[11] == "1",
             };
         }
 

@@ -100,6 +100,36 @@ namespace InsectGame.Tests
             Assert.Less(Spread(got), Spread(src), "탈색 후에도 색조가 그대로다");
         }
 
+        /// <summary>
+        /// **이미 무채색인 지면에서도 변화가 보여야 한다.**
+        ///
+        /// 파일럿 리전인 산의 지면이 (0.35, 0.325, 0.24)인 무채색 갈색이라, 채도만 빼던 옛
+        /// 공식은 그걸 (0.340, 0.319, 0.267)로 만들었다 — 사실상 그대로였고 파랑은 오히려
+        /// 올라갔다. 배치모드 캡처로 오염/정화를 나란히 찍었더니 두 장이 구분되지 않았다.
+        /// 밝기 저하가 그 구멍을 막는다.
+        /// </summary>
+        [Test]
+        public void TintOf_AlreadyDesaturatedGround_StillDarkensVisibly()
+        {
+            Color mountainGround = new Color(0.35f, 0.325f, 0.24f);   // 산 지면의 실제 색
+            Color got = BlightPolicy.TintOf(mountainGround);
+
+            Assert.Less(Lum(got), Lum(mountainGround) * 0.85f,
+                $"탈색 후 밝기가 {Lum(got):F3} — 원본 {Lum(mountainGround):F3}의 85% 미만이어야 눈에 띈다");
+            Assert.Less(got.b, mountainGround.b, "파랑이 올라가면 오히려 더 파래 보인다");
+        }
+
+        /// <summary>탈색은 밝기를 낮춘다 — 어느 원색에서든.</summary>
+        [TestCase(0.35f, 0.325f, 0.24f)]   // 산 (무채색 갈색)
+        [TestCase(0.2f, 0.4f, 0.18f)]      // 숲 (초록)
+        [TestCase(0.3f, 0.275f, 0.2f)]     // 유적
+        [TestCase(0.8f, 0.85f, 0.7f)]      // 밝은 지면
+        public void TintOf_AlwaysDarkens(float r, float g, float b)
+        {
+            Color src = new Color(r, g, b);
+            Assert.Less(Lum(BlightPolicy.TintOf(src)), Lum(src));
+        }
+
         /// <summary>알파는 건드리지 않는다 — 반투명 지형/오버레이가 통째로 불투명해진다.</summary>
         [Test]
         public void TintOf_KeepsAlpha()
