@@ -257,10 +257,15 @@ GUI.DrawTexture(barRect, Texture2D.whiteTexture);
 
 ### 대신 전수는 손으로 한다 — 이 표를 뽑아서 본다
 
+**`GUI.Button`만 세면 안 된다.** 이 저장소의 HUD 절반은 버튼 위젯을 쓰지 않고
+`Event.current` + `Rect.Contains`로 직접 히트테스트한다(`PlayerStatusHUD`의 닫힘 탭,
+`TutorialQuestUI`의 퀘스트 칩). 버튼 문자열로만 훑다가 **가장 큰 HUD인 상태 패널을
+통째로 놓쳤다**(2026-08-23). 두 관용구를 함께 센다:
+
 ```
-for f in $(grep -rl "GUI.Button(\|UISurface.Button(" --include=*.cs Assets/Scripts); do
-  printf "%-50s 버튼%-3s 등록%-3s 프리즈%-3s IModal%s\n" "${f#Assets/Scripts/}" \
-    "$(grep -c "GUI.Button(\|UISurface.Button(" "$f")" \
+for f in $(grep -rl "GUI.Button(\|UISurface.Button(\|EventType.MouseDown" --include=*.cs Assets/Scripts); do
+  printf "%-50s 입력%-3s 등록%-3s 프리즈%-3s IModal%s\n" "${f#Assets/Scripts/}" \
+    "$(grep -c "GUI.Button(\|UISurface.Button(\|EventType.MouseDown" "$f")" \
     "$(grep -c "RegisterBlockingRect" "$f")" \
     "$(grep -c "SetFrozen(true)" "$f")" \
     "$(grep -c ", IModalUI" "$f")"
@@ -268,12 +273,15 @@ done
 ```
 
 읽는 법: **프리즈를 걸고 그리는 화면과 전체화면 모달은 안전하다**(그 상태에서는 클릭-이동이
-이미 막힌다). 위험한 것은 **플레이어가 자유롭게 움직이는 동안 그려지는 버튼**뿐이다 —
+이미 막힌다). 위험한 것은 **플레이어가 자유롭게 움직이는 동안 그려지는 것**뿐이다 —
 로그인·오프닝(월드 없음), 미니게임·포획 선택(프리즈)은 제외하고 남는 것을 본다.
+
+`evt.Use()`는 방어가 **아니다.** 그건 IMGUI 안에서만 유효한데 `PlayerMovement`는
+`Input.GetMouseButtonDown(0)`을 Update에서 따로 폴링한다 — IMGUI 밖이라 소비 여부를 모른다.
 
 2026-08-23 기준 등록된 파일: `CaptureInputController`, `WorldInteractionController`,
 `QuickAccessBarUI`, `WorldFieldMultiplayerUI`, `TutorialQuestUI`, `SubAreaWorldBuilder`,
-`MinimapUI`(버튼은 없지만 불투명 패널이라 같이 막는다).
+`MinimapUI`·`PlayerStatusHUD`(버튼 위젯은 없지만 불투명 패널이라 같이 막는다).
 
 ## 구독은 `OnEnable`에서 되살린다 — `subscription_lint.py`가 잡는다
 

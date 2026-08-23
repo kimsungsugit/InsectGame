@@ -138,12 +138,24 @@ namespace InsectGame.UI
                 xpBarAnim = Mathf.MoveTowards(xpBarAnim, xpRatio, Time.deltaTime * 2f);
             }
 
-            if (subAreaAlertTimer > 0f)
+            // 모달이 열려 있는 동안에는 배너 수명을 태우지 않는다 — 위 OnGUI가 그리지 않으므로
+            // 그대로 두면 창을 닫았을 때 이미 사라진 뒤다(TutorialQuestUI의 완료 배너와 같은 처리).
+            if (subAreaAlertTimer > 0f && !ModalUIRegistry.IsAnyOpen())
                 subAreaAlertTimer -= Time.deltaTime;
         }
 
         private void OnGUI()
         {
+            // **모달 위에는 그리지 않는다.** 형제 HUD(MinimapUI·퀘스트 칩·목표 행)가 이미
+            // 같은 규칙을 따르는데 이 파일만 빠져 있었다. 두 가지가 겹쳐 있었다:
+            //   ① 480×540 불투명 패널이 도감·상점·배틀 위에 얹힌다(IMGUI는 그리기 순서가
+            //      컴포넌트 순서에 달려 있어 어떤 날은 위, 어떤 날은 아래로 나온다).
+            //   ② 더 나쁜 쪽은 입력이다 — 이 화면은 `GUI.Button`이 아니라 `Event.current`로
+            //      직접 히트테스트하고 `evt.Use()`로 소비한다. IMGUI는 z-order로 히트테스트를
+            //      가르지 않으므로, 모달의 좌상단 컨트롤을 누른 탭을 **이쪽이 먼저 먹고**
+            //      상태 패널만 접혔다 펴진다(모바일 기본은 닫힘이라 그 자리에 탭이 서 있다).
+            if (ModalUIRegistry.IsAnyOpen()) return;
+
             UIScale.Begin();
             DrawSubAreaAlert();
 
@@ -167,11 +179,21 @@ namespace InsectGame.UI
             // 닫힘 탭 — 패널이 닫혀 있을수록(toggleAnim↓) 진하게. 좌측 가장자리에 떠 재확장 진입점이자
             // 레벨 요약을 보여 준다. 패널보다 먼저 그려 펼칠 때 들어오는 패널이 자연스럽게 덮도록 한다.
             Rect tabRect = DrawCollapsedTab(safeL, py, 1f - toggleAnim);
+            // **필드 위에 겹쳐 그리는 것은 자기 영역을 매 프레임 등록한다.** 안 하면 그 탭이
+            // 월드 클릭-이동으로 새어 캐릭터가 화면 좌상단 방향으로 걸어간다 —
+            // `PlayerMovement`는 `Input.GetMouseButtonDown(0)`을 Update에서 따로 폴링하므로
+            // 위의 `evt.Use()`가 막아 주지 못한다(IMGUI 밖이다). rules/ui-layout.md.
+            //
+            // 이 파일이 앞선 전수 점검에서 빠진 이유: `GUI.Button`이 아니라 `Event.current`로
+            // 직접 히트테스트해서, 버튼 문자열로 훑는 방법에 안 걸렸다. 그 검색법도 함께 고쳤다.
+            if (toggleAnim < 0.999f) FieldHudInput.RegisterBlockingRect(tabRect);
 
             Rect panelToggleRect = default;
             bool panelVisible = toggleAnim > 0.001f;
             if (panelVisible)
             {
+                FieldHudInput.RegisterBlockingRect(new Rect(px, py, panelW, panelH));
+
                 GUI.color = PanelBgCol;
                 GUI.DrawTexture(new Rect(px, py, panelW, panelH), Texture2D.whiteTexture);
 
