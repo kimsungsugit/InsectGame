@@ -41,6 +41,13 @@ namespace InsectGame.Capture
         private Texture2D circleRingTex;     // 원형 버튼 링
         private Rect catchButtonRect;        // 직전 OnGUI에서 갱신된 잡기 버튼 가상 rect(멀티터치 raw 히트테스트용)
 
+        /// <summary>
+        /// 지금 [E]가 포획으로 갈 대상이 있는가. <see cref="WorldInteractionController.HasPriorityTarget"/>과
+        /// 같은 성격의 신호다 — 같은 키를 노리는 다른 시스템이 양보 여부를 판단하는 데 쓴다.
+        /// 0.15초 간격 스캔 결과를 그대로 읽는다(프로퍼티에서 계산하지 않는다).
+        /// </summary>
+        public bool HasCatchTarget => nearestInsect != null && nearestInsect.Data != null;
+
         private void Update()
         {
             if (attemptCooldown > 0f) attemptCooldown -= Time.deltaTime;

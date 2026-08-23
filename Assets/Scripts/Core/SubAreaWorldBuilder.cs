@@ -93,6 +93,37 @@ namespace InsectGame.Core
             return ModalUIRegistry.IsAnyOpen() || IsPlayerFrozen();
         }
 
+        /// <summary>
+        /// [E]를 노리는 다른 시스템. **서브에리어 진입은 이 둘에 양보한다.**
+        ///
+        /// 같은 [E]를 세 시스템이 폴링한다 — 포획(`CaptureInputController`), 건물·NPC 상호작용
+        /// (`WorldInteractionController`), 그리고 여기. 앞의 둘은 `HasPriorityTarget`으로 서로
+        /// 양보하는데 서브에리어만 그 사슬 밖에 있었다. 진입 반경은 12m이고 포획 탐색 반경은 8m라
+        /// **겹치는 자리가 흔하다**: 입구 근처에서 곤충을 잡으려고 [E]를 누르면 포획과 진입이
+        /// 동시에 발화하고, 어느 쪽이 먼저 돌지는 Update 실행 순서에 달려 있어 정해져 있지 않다.
+        /// (진입이 먼저면 플레이어가 2000m 밖으로 순간이동한 뒤 포획이 시작된다.)
+        ///
+        /// 셋 중 서브에리어가 양보하는 이유는 **여기만 큰 전용 버튼이 따로 있기 때문**이다
+        /// (620×100, 하단 중앙). [E]는 편의지 유일한 진입로가 아니다.
+        /// </summary>
+        private WorldInteractionController worldInteractions;
+        private InsectGame.Capture.CaptureInputController captureInput;
+
+        public void AutoWire(WorldInteractionController interactions,
+            InsectGame.Capture.CaptureInputController capture)
+        {
+            if (worldInteractions == null) worldInteractions = interactions;
+            if (captureInput == null) captureInput = capture;
+        }
+
+        /// <summary>이번 [E]를 포획이나 상호작용이 가져가는가.</summary>
+        private bool InteractKeyClaimed()
+        {
+            if (worldInteractions != null && worldInteractions.HasPriorityTarget) return true;
+            if (captureInput != null && captureInput.HasCatchTarget) return true;
+            return false;
+        }
+
         public void AutoWire(RegionManager rm, CameraFollower cam)
         {
             if (regionManager != null)
@@ -101,6 +132,17 @@ namespace InsectGame.Core
             if (regionManager != null)
                 regionManager.SubAreaChanged += OnSubAreaChanged;
             if (cameraFollower == null) cameraFollower = cam;
+        }
+
+        // `AutoWire`는 Bootstrap에서 한 번만 불린다 — `OnDisable`에서 해지한 구독을 여기서
+        // 되살리지 않으면 이 컴포넌트가 한 번이라도 꺼졌다 켜지는 순간 서브에리어 진입·이탈이
+        // 영구히 죽는다. `-=` 뒤 `+=`라 중복 구독이 되지 않는다.
+        // (`subscription_lint`는 UI 루트 하위만 보므로 `World/` 아래인 이 파일은 검사 밖이다.)
+        private void OnEnable()
+        {
+            if (regionManager == null) return;
+            regionManager.SubAreaChanged -= OnSubAreaChanged;
+            regionManager.SubAreaChanged += OnSubAreaChanged;
         }
 
         private void OnDisable()
@@ -145,7 +187,8 @@ namespace InsectGame.Core
             if (!actionBlocked && isInSubArea && Input.GetKeyDown(KeyCode.F2)) RequestExit();
 
             // [E]: 메인 월드에서 nearbySubArea 있으면 진입 트리거 (사용자 선택)
-            if (!actionBlocked && !isInSubArea && regionManager != null && regionManager.NearbySubArea != null
+            if (!actionBlocked && !isInSubArea && !InteractKeyClaimed()
+                && regionManager != null && regionManager.NearbySubArea != null
                 && Input.GetKeyDown(KeyCode.E))
             {
                 regionManager.RequestEnterSubArea();
@@ -197,7 +240,8 @@ namespace InsectGame.Core
             // [E] 진입 OnGUI Event 백업 — Update의 Input.GetKeyDown이 focus/IME로 놓칠 때 대비
             // (F2 퇴장과 동일 패턴). 사용자 보고 "E 눌러도 진입 안 됨"의 직접 원인.
             if (!actionBlocked && e != null && e.type == EventType.KeyDown && e.keyCode == KeyCode.E
-                && !isInSubArea && regionManager != null && regionManager.NearbySubArea != null)
+                && !isInSubArea && !InteractKeyClaimed()
+                && regionManager != null && regionManager.NearbySubArea != null)
             {
                 regionManager.RequestEnterSubArea();
                 e.Use();
@@ -216,7 +260,11 @@ namespace InsectGame.Core
                 float alpha = Mathf.Clamp01(notifyTimer / 3f);
                 float w = 560f;
                 float h = 56f;
-                Rect r = new Rect((Screen.width - w) * 0.5f, 90f, w, h);
+                // 픽셀 좌표계다(`UIScale.Begin()`을 쓰지 않는다). 고정 90px은 노치·상단 인셋이
+                // 있는 기기에서 토스트를 그 아래로 밀어 넣는다 — 인셋이 0인 데스크톱에서는
+                // 90이 그대로 이기고, 인셋이 있으면 그만큼 내려간다(rules/ui-layout.md의 Px 파사드).
+                float toastY = Mathf.Max(90f, UISafeLayout.Px.ContentTop);
+                Rect r = new Rect((Screen.width - w) * 0.5f, toastY, w, h);
                 Color bg = NotifyBgCol;
                 bg.a = 0.78f * alpha;
                 GUI.color = bg;

@@ -611,6 +611,9 @@ namespace InsectGame.Core
                     worldInteract.RegisterPoints(villageResult.interactions);
                 }
 
+                // [E] 삼자 충돌 해소 — 서브에리어 진입은 포획·상호작용에 양보한다(전용 버튼이 있다).
+                subAreaWorld.AutoWire(worldInteract, inputController);
+
                 InsectGame.NPC.NpcManager npcManager =
                     EnsureComponent<InsectGame.NPC.NpcManager>("World/NpcManager");
                 npcManager.AutoWire(spawner, regionMgr, player.transform);
