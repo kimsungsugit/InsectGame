@@ -577,8 +577,8 @@ namespace InsectGame.Core
             quickBar.AutoWire(outfitUi, cashShopUI);
             quickBar.AutoWire(questUi);
 
-            // 마스터 계정이면 보석 99999 지급
-            if (AuthManager.Instance != null && AuthManager.Instance.IsMasterAccount)
+            // 마스터 계정이면 보석 99999 지급 ("특권 없이" 모드에서는 주지 않는다)
+            if (AuthManager.Instance != null && AuthManager.Instance.MasterPrivilegesActive)
             {
                 if (cashShop != null) cashShop.AddGems(99999 - cashShop.Gems);
             }

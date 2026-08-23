@@ -96,6 +96,9 @@ namespace InsectGame.Core
                 return;
             }
 
+            // 저장된 모드로 초기화 — 체크박스를 안 건드린 호출부가 모드를 뒤집지 않게.
+            PendingMasterPlainMode = MasterPlainMode;
+
             TryAutoLogin();
         }
 
@@ -120,7 +123,8 @@ namespace InsectGame.Core
                     PlayerPrefs.GetString(EmailKey, ""),
                     PlayerPrefs.GetString(NameKey, "마스터"),
                     MasterAccount.Token, MasterAccount.RefreshToken);
-                ApplyMasterPrivileges();
+                // 특권 없이 모드면 건드리지 않는다 — 여기서 다시 박으면 처음부터 하던 판이 뒤집힌다.
+                if (!MasterPlainMode) ApplyMasterPrivileges();
                 LoginCompleted?.Invoke(true, null);
                 return;
             }
@@ -216,6 +220,46 @@ namespace InsectGame.Core
         /// <summary>마스터 계정 여부 (Firebase 없이 로컬 로그인됨).</summary>
         public bool IsMasterAccount => UserId == MasterAccount.Uid;
 
+        // ── 마스터 "특권 없이 (처음부터)" 모드 ──────────────────────────────
+        //
+        // 마스터는 원래 진행을 건너뛰라고 있는 계정이라 매 로그인마다 전 지역 해금·전 수문장
+        // 격파·재화 999999를 박는다(<see cref="ApplyMasterPrivileges"/>). 그 상태로는
+        // **스토리를 처음부터 검증할 수 없다** — 수문장을 미리 격파로 기록해 버려서
+        // `GuardianDefeated`가 뜨지 않고 `GuardianDefeat` 트리거 비트 6개(gd_*)가 통째로
+        // 안 나온다. `requiredRegionId` 게이트도 전부 열린 지도 위에서는 무의미하다.
+        //
+        // 그래서 스위치를 둔다. **켜는 순간 한 번만** 세이브를 비우고, 켜져 있는 동안은
+        // 아무것도 하지 않는다 — 로그아웃했다 들어와도 진행이 이어진다(그러지 않으면 로그인할
+        // 때마다 세이브가 날아가는 함정이 된다).
+        //
+        // **자동 로그인도 이 값을 본다.** 안 그러면 다음 콜드 스타트에 특권이 도로 박혀
+        // 처음부터 하던 판이 조용히 뒤집힌다.
+        private const string MasterPlainModeKey = "InsectGame.MasterPlainMode";
+
+        /// <summary>마스터가 특권 없이(일반 계정처럼) 플레이하는 중인가. 기기에 기억된다.</summary>
+        public static bool MasterPlainMode
+        {
+            get => PlayerPrefs.GetInt(MasterPlainModeKey, 0) == 1;
+            private set
+            {
+                PlayerPrefs.SetInt(MasterPlainModeKey, value ? 1 : 0);
+                PlayerPrefs.Save();
+            }
+        }
+
+        /// <summary>
+        /// 마스터 특권이 지금 실제로 걸려 있는가. <b>게임플레이 우회는 이걸 본다</b> —
+        /// 클라우드·소셜을 끄는 판단은 여전히 <see cref="IsMasterAccount"/>다(특권을 껐다고
+        /// 진짜 Firebase 계정이 생기는 건 아니다).
+        /// </summary>
+        public bool MasterPrivilegesActive => IsMasterAccount && !MasterPlainMode;
+
+        /// <summary>
+        /// 로그인 화면 체크박스 값. 마스터 자격 증명으로 로그인할 때만 읽힌다.
+        /// Awake에서 저장값으로 초기화하므로, 설정하지 않는 호출부가 모드를 뒤집지 않는다.
+        /// </summary>
+        public bool PendingMasterPlainMode { get; set; }
+
         /// <summary>게스트(익명) 계정 여부 — 로그인됐지만 이메일이 없는 상태(마스터 제외).
         /// 정식 계정 연동(LinkGuestWithEmail)을 권유할 대상.</summary>
         public bool IsGuest => IsLoggedIn && !IsMasterAccount && string.IsNullOrEmpty(Email);
@@ -226,9 +270,16 @@ namespace InsectGame.Core
             // Resources/master_config.json 에서 로드되며, 프로덕션 빌드에는 이 분기가 컴파일되지 않음(MasterAccount).
             if (MasterAccount.TryMatch(email, password))
             {
+                bool wasPlain = MasterPlainMode;
+                bool plain = PendingMasterPlainMode;
+                MasterPlainMode = plain;
+
                 SetLoggedIn(MasterAccount.Uid, email, "마스터",
                     MasterAccount.Token, MasterAccount.RefreshToken);
-                ApplyMasterPrivileges();
+
+                if (!plain) ApplyMasterPrivileges();
+                else if (!wasPlain) BeginMasterFreshStart();   // 켠 그 로그인에서만
+
                 LoginCompleted?.Invoke(true, null);
                 return;
             }
@@ -253,6 +304,41 @@ namespace InsectGame.Core
             AuthManager inst = Instance;
             string uid = inst != null ? inst.UserId : null;
             return string.IsNullOrEmpty(uid) ? baseKey : baseKey + "." + uid;
+        }
+
+        /// <summary>
+        /// 마스터를 <b>새 게임 상태로</b> 되돌린다. "특권 없이" 스위치를 켠 그 로그인에서 한 번만 돈다.
+        ///
+        /// 두 가지를 해야 한다 — 세이브만 지우면 부족하다. 지난 로그인이 PlayerPrefs에 박아 둔
+        /// 흔적 중 <b>계정 스코프가 아닌 것</b>(재화 미러)이 남아, 새 지갑이 그걸 마이그레이션으로
+        /// 빨아들여 999999로 시작한다(<c>CashShopManager</c>의 Gems 1회 이전 경로).
+        /// 계정 스코프 쪽(해금·수문장·캐릭터 생성·퀘스트)은 <c>ClearCurrentAccountLocal</c>이 지우고,
+        /// 지워지면 <c>RegionManager</c>가 기본값 "meadow"·수문장 없음으로 떨어진다.
+        /// </summary>
+        private void BeginMasterFreshStart()
+        {
+            // 세이브 8종(story_progress.json 포함) + 계정별 PlayerPrefs
+            SaveScope.ClearCurrentAccountLocal();
+            ClearLegacyProgressMirrors();
+            // 레거시 전역 퀘스트 키 — 계정 스코프가 아니라 위 정리에 안 걸린다.
+            PlayerPrefs.DeleteKey(GameConstants.PrefsKeys.QuestCompleted);
+            PlayerPrefs.DeleteKey(GameConstants.PrefsKeys.QuestProgress);
+            PlayerPrefs.DeleteKey(GameConstants.PrefsKeys.QuestUnseen);
+            PlayerPrefs.Save();
+            Debug.Log("[Auth] 마스터 처음부터 — 계정 로컬 세이브와 특권 흔적을 지웠다");
+        }
+
+        /// <summary>
+        /// 계정 스코프가 아닌 진행/재화 미러 키. <see cref="ClearAllLocalData"/>와
+        /// <see cref="BeginMasterFreshStart"/>가 공유한다 — 목록을 두 벌 들면 한쪽만 늘어난다.
+        /// </summary>
+        private static void ClearLegacyProgressMirrors()
+        {
+            PlayerPrefs.DeleteKey("player_level");
+            PlayerPrefs.DeleteKey("player_xp");
+            PlayerPrefs.DeleteKey("player_candies");
+            PlayerPrefs.DeleteKey("player_coins");
+            PlayerPrefs.DeleteKey("InsectGame.Gems");
         }
 
         private void ApplyMasterPrivileges()
@@ -844,11 +930,7 @@ namespace InsectGame.Core
 
             // 전역(비계정) 미러/세션 키만 개별 삭제. PlayerPrefs.DeleteAll()은 같은 기기의 다른
             // 계정 스코프 키(.<otherUid>)와 기기 설정(볼륨 등)까지 파괴하므로 금지 — 공유 기기 격리 무력화.
-            PlayerPrefs.DeleteKey("player_level");
-            PlayerPrefs.DeleteKey("player_xp");
-            PlayerPrefs.DeleteKey("player_candies");
-            PlayerPrefs.DeleteKey("player_coins");
-            PlayerPrefs.DeleteKey("InsectGame.Gems");
+            ClearLegacyProgressMirrors();
             PlayerPrefs.DeleteKey("InsectGame.CurrentWorldId");
             PlayerPrefs.DeleteKey("InsectGame.LastSaveTs");
             string deletedUid = UserId;

@@ -230,7 +230,7 @@ namespace InsectGame.Core
             CashShopItem item = GetItem(itemId);
             if (item == null || item.gemPrice <= 0) return false;
 
-            bool isMaster = AuthManager.Instance != null && AuthManager.Instance.IsMasterAccount;
+            bool isMaster = AuthManager.Instance != null && AuthManager.Instance.MasterPrivilegesActive;
             // Gems 프로퍼티 사용 — wallet 우선 (single source of truth).
             // 옛은 stale gems 캐시 사용으로 외부 wallet 변경 후 잘못된 검사 가능.
             if (!isMaster && Gems < item.gemPrice) return false;

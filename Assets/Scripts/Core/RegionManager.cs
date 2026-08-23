@@ -174,7 +174,8 @@ namespace InsectGame.Core
             if (region == null) return false;
             // 마스터 계정은 모든 리전 우회 — AuthManager.ApplyMasterPrivileges가 PlayerPrefs를 갱신하지만
             // RegionManager.LoadUnlockState 이후 마스터 로그인 시 HashSet에 반영 안 되는 race 차단.
-            if (AuthManager.Instance != null && AuthManager.Instance.IsMasterAccount) return true;
+            // **"특권 없이" 모드면 우회하지 않는다** — 그 모드의 요점이 지역 게이트를 살리는 것이다.
+            if (AuthManager.Instance != null && AuthManager.Instance.MasterPrivilegesActive) return true;
             if (region.regionId == "meadow") return true;
             return unlockedRegions.Contains(region.regionId);
         }

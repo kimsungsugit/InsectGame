@@ -514,7 +514,7 @@ namespace InsectGame.Core
             OutfitItem item = outfitLookup[itemId];
             if (ownedItems.Contains(itemId)) return false;
 
-            bool isMaster = AuthManager.Instance != null && AuthManager.Instance.IsMasterAccount;
+            bool isMaster = AuthManager.Instance != null && AuthManager.Instance.MasterPrivilegesActive;
             if (!isMaster)
             {
                 if (item.price <= 0) return false;
@@ -532,7 +532,7 @@ namespace InsectGame.Core
             OutfitItem item = outfitLookup[itemId];
             if (ownedItems.Contains(itemId)) return false;
 
-            bool isMaster = AuthManager.Instance != null && AuthManager.Instance.IsMasterAccount;
+            bool isMaster = AuthManager.Instance != null && AuthManager.Instance.MasterPrivilegesActive;
             if (!isMaster)
             {
                 if (item.gemPrice <= 0) return false;

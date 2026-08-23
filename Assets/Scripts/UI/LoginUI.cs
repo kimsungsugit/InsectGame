@@ -37,6 +37,12 @@ namespace InsectGame.UI
         private static string CharFaceTypeKey => InsectGame.Core.SaveScope.PrefsKey("InsectGame.Character.FaceType");
 
         // 스타일 캐시
+        // ── 마스터 "특권 없이 (처음부터)" 체크박스 ──
+        // 화면에 그리는 값은 여기 들고, 저장은 AuthManager.MasterPlainMode가 한다.
+        // 매 프레임 PlayerPrefs를 읽으면 방금 누른 값이 곧바로 덮인다 — 1회만 읽는다.
+        private bool masterPlainMode;
+        private bool masterPlainLoaded;
+
         private GUIStyle panelStyle;
         private GUIStyle panelShadowStyle;
         private GUIStyle titleStyle;
@@ -286,6 +292,30 @@ namespace InsectGame.UI
             passwordInput = GUI.PasswordField(new Rect(cx, cy, fieldW, fieldH), passwordInput, '*', 64, fieldStyle);
             cy += fieldH + 25f;
 
+            // ── 마스터 전용 스위치 ──
+            // 마스터 계정 자체가 에디터/개발 빌드에서만 컴파일되므로(MasterAccount.IsEnabled)
+            // 이 줄도 그때만 그린다. 프로덕션 빌드에는 존재하지 않는다.
+            if (MasterAccount.IsEnabled)
+            {
+                if (!masterPlainLoaded)
+                {
+                    masterPlainMode = AuthManager.MasterPlainMode;
+                    masterPlainLoaded = true;
+                }
+
+                float toggleH = Mathf.Lerp(48f, 56f, layoutScale);
+                btnGrayStyle.fontSize = Mathf.RoundToInt(26f * layoutScale);
+                if (GUI.Button(new Rect(cx, cy, fieldW, toggleH),
+                        (masterPlainMode ? "[V]  " : "[  ]  ") + "마스터 특권 없이 (처음부터)",
+                        btnGrayStyle))
+                    masterPlainMode = !masterPlainMode;
+                cy += toggleH + 4f;
+
+                helperStyle.fontSize = Mathf.RoundToInt(20f * layoutScale);
+                GUI.Label(new Rect(cx, cy, fieldW, 30f), MasterPlainHint(), helperStyle);
+                cy += 32f;
+            }
+
             // 로그인 버튼
             btnGreenStyle.fontSize = Mathf.RoundToInt(38f * layoutScale);
             GUI.enabled = !isProcessing;
@@ -294,6 +324,8 @@ namespace InsectGame.UI
                 if (!isProcessing && AuthManager.Instance != null)
                 {
                     isProcessing = true;
+                    // 마스터 자격 증명일 때만 읽힌다. 일반 계정 로그인에는 영향이 없다.
+                    AuthManager.Instance.PendingMasterPlainMode = masterPlainMode;
                     AuthManager.Instance.LoginWithEmail(emailInput, passwordInput);
                 }
             }
@@ -711,6 +743,21 @@ namespace InsectGame.UI
                     TutorialQuestManager.Instance?.ResetForNewAccount();
                 phase = LoginPhase.CharacterCreate;
             }
+        }
+
+        /// <summary>
+        /// 체크박스 아래 한 줄. <b>세 상태를 구분해야 한다</b> — 특히 "지금 누르면 세이브가
+        /// 지워지는가"를 눌러 보기 전에 알 수 있어야 한다.
+        /// 초기화는 스위치를 <b>켜는 그 로그인</b>에서만 일어나고, 켠 채로 다시 로그인하면
+        /// 진행이 이어진다(AuthManager.BeginMasterFreshStart).
+        /// </summary>
+        private string MasterPlainHint()
+        {
+            if (!masterPlainMode)
+                return "전 지역 해금 · 수문장 격파 처리 · 재화 999999로 시작합니다";
+            if (AuthManager.MasterPlainMode)
+                return "특권 없음 — 진행 중인 마스터 세이브를 이어서 시작합니다";
+            return "로그인하면 마스터 세이브를 지우고 처음부터 시작합니다";
         }
 
         // ── 캐릭터 생성 확인 ──
