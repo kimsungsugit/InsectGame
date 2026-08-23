@@ -34,6 +34,17 @@ desktop.ini
 # Unity asset store
 /[Aa]ssets/AssetStoreTools*
 
+# Unity가 Assets/ 안에 만드는 일시적 산출물 — 커밋 대상이 아닌데 Assets/ 아래라 위의
+# /Library, /Temp 규칙에 안 걸린다. 실제로 이 둘이 `git add -A`에 쓸려 커밋된 적이 있다.
+#
+# InitTestScene<guid>.unity: PlayMode 테스트 러너가 실행할 때마다 새 GUID로 만들고 지운다.
+#   테스트가 도는 중에 커밋하면 남의 실행 흔적이 섞여 들어간다.
+# GDKEditionAutoGen/: com.unity.microsoft.gdk 패키지가 임포트 때 스스로 생성한다.
+/[Aa]ssets/InitTestScene*.unity
+/[Aa]ssets/InitTestScene*.unity.meta
+/[Aa]ssets/[Rr]esources/GDKEditionAutoGen/
+/[Aa]ssets/[Rr]esources/GDKEditionAutoGen.meta
+
 # Builds
 *.apk
 *.aab
