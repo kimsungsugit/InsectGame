@@ -29,7 +29,7 @@ namespace InsectGame.Core
         private bool loaded;
 
         /// <summary>
-        /// 리전이 방금 정화됐다 — 리전당 <b>일생 한 번만</b> 울린다(<see cref="Cleanse"/>의
+        /// 리전이 방금 정화됐다 — 리전당 <b>일생 한 번만</b> 울린다(<see cref="CleanseByBoss"/>의
         /// idempotent 가드). 스폰 복구·연출·스토리 트리거가 이걸 듣는다.
         /// 부팅이나 클라우드 로드로 상태를 맞출 때는 울리지 않는다 — 앱을 켤 때마다
         /// 이미 정화한 리전에서 정화 컷신이 다시 도는 것을 막는다.

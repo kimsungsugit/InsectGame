@@ -289,6 +289,11 @@ namespace InsectGame.NPC
                 itemInventory.AddItem(duel.rewardItemId, duel.rewardCount);
 
             // 간부전도 '동네 최강자' 서브 퀘스트에 센다 — 아이 대결과 같은 1v1 듀얼이다.
+            //
+            // **여기는 firstWin으로 가르지 않는다**(보상과 비대칭인 게 의도다). 저 퀘스트가 세는
+            // 것은 "이긴 상대 수"가 아니라 "이긴 대결 수"이고, 아이 대결도 같은 상대에게 쿨다운
+            // 뒤 다시 이기면 다시 센다. 파밍 우려도 없다 — 오염 재도전은 거점당 한 번뿐이고
+            // 정화되는 순간 CanBossDuel이 다시 닫힌다.
             TutorialQuestManager.Instance?.NotifyNpcDuelWon();
 
             // 오염 거점 정화 — **지금 서 있는 리전의 거점을 이 인물이 맡고 있을 때만.**

@@ -342,6 +342,9 @@ namespace InsectGame.Spawning
         {
             if (database == null || string.IsNullOrEmpty(insectId)) return false;
             if (activeInsects.Count >= maxActiveTotal) return false;
+            // 지금 유일한 호출부(정화 직후)는 상한이 막 넓어진 뒤라 무해하지만, 검사를 빼 두면
+            // 다음 호출부가 리전 상한을 조용히 넘긴다.
+            if (CountActiveInRegion(regionId) >= RegionCap(regionId)) return false;
 
             InsectData data = database.GetById(insectId);
             if (data == null) return false;
@@ -711,8 +714,32 @@ namespace InsectGame.Spawning
             if (regionManager != null)
                 regionManager.SubAreaChanged -= OnSubAreaChanged;
             regionManager = rm;
+            Subscribe();
+        }
+
+        /// <summary>
+        /// 구독을 한자리에 모은다 — <c>AutoWire</c>와 <c>OnEnable</c>이 함께 부른다.
+        /// <c>OnDisable</c>이 해지만 하고 되살리는 곳이 없으면, 컴포넌트가 한 번 꺼졌다 켜지는
+        /// 순간 서브에리어 스폰과 정화 복구가 조용히 죽는다(rules/ui-layout.md가 UI에서 겪은
+        /// 것과 같은 형태의 결함이다 — <c>-=</c> 뒤 <c>+=</c>라 중복 구독은 되지 않는다).
+        /// </summary>
+        private void Subscribe()
+        {
             if (regionManager != null)
+            {
+                regionManager.SubAreaChanged -= OnSubAreaChanged;
                 regionManager.SubAreaChanged += OnSubAreaChanged;
+            }
+            if (blight != null)
+            {
+                blight.RegionCleansed -= OnRegionCleansed;
+                blight.RegionCleansed += OnRegionCleansed;
+            }
+        }
+
+        private void OnEnable()
+        {
+            Subscribe();
         }
 
         /// <summary>
@@ -723,8 +750,7 @@ namespace InsectGame.Spawning
             if (blight != null)
                 blight.RegionCleansed -= OnRegionCleansed;
             blight = blightManager;
-            if (blight != null)
-                blight.RegionCleansed += OnRegionCleansed;
+            Subscribe();
         }
 
         private void OnDisable()
@@ -768,6 +794,11 @@ namespace InsectGame.Spawning
             yield return new WaitForSeconds(RepopulateDelaySeconds);
             if (blight == null || blight.IsBlighted(regionId)) yield break;   // 그새 상태가 바뀌었다
 
+            // 그 사이 서브에리어로 들어갔을 수 있다 — 형제 코루틴 SpawnSubAreaInsectsDelayed가
+            // 같은 자리에 같은 가드를 둔다. 안 두면 HideMainWorld가 숨긴 메인 월드 좌표에
+            // 곤충이 떠서 보이지도 않는 채 maxActiveTotal 예산만 먹는다.
+            if (currentSubArea != null) yield break;
+
             Data.RegionData region = regionManager != null ? regionManager.GetRegionById(regionId) : null;
             if (region != null && !string.IsNullOrEmpty(region.blightReturningInsectId))
                 TrySpawnSpecific(region.blightReturningInsectId, regionId);
@@ -777,6 +808,11 @@ namespace InsectGame.Spawning
             {
                 if (CountActiveInRegion(regionId) >= cap) break;
                 if (activeInsects.Count >= maxActiveTotal) break;
+                // **GetAvailableSpawnPoint는 선호 리전에 쓸 포인트가 없으면 아무 리전으로 폴백한다.**
+                // 그런데 위 탈출 조건은 이 리전의 마릿수만 센다 — 가드가 없으면 스폰될 때마다
+                // NotifySpawned가 포인트를 쿨다운에 넣어 후반이 폴백에 걸리고, 정작 정화한
+                // 리전은 안 차는데 이웃 리전에 여섯 마리를 밀어 넣는다.
+                if (!HasAvailableSpawnPoint(regionId)) break;
                 TrySpawn(regionId);
             }
         }
