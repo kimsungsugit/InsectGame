@@ -53,6 +53,16 @@ namespace InsectGame.Core
             public Color groundOriginal;
             public bool groundTinted;
             public Coroutine haze;
+            /// <summary>붕괴가 시작됐다 — 완주 전에 또 시작하지 않기 위한 가드.</summary>
+            public bool collapsing;
+
+            /// <summary>
+            /// 이 거점이 만든 런타임 머티리얼. <b>GameObject를 지워도 머티리얼은 안 지워진다</b> —
+            /// <c>SubAreaWorldBuilder</c>가 정확히 같은 결함을 한 번 고쳤고(그 파일의
+            /// <c>DestroySubAreaWorld</c> 주석), 텍스처 쪽도 세 파일에서 같은 이유로 고쳤다.
+            /// 로그아웃·계정삭제가 씬을 재로드해도 런타임 에셋은 남는다.
+            /// </summary>
+            public readonly List<Material> materials = new List<Material>();
         }
 
         private readonly Dictionary<string, Site> sites = new Dictionary<string, Site>();
@@ -75,6 +85,24 @@ namespace InsectGame.Core
         private void OnDestroy()
         {
             if (blight != null) blight.RegionCleansed -= OnRegionCleansed;
+
+            // 정화되지 않은 채 씬이 내려가는 거점 — GameObject는 씬과 함께 사라지지만
+            // 런타임 머티리얼은 남는다. 지면 머티리얼은 이쪽 소유가 아니므로 색만 되돌린다.
+            foreach (Site site in sites.Values)
+            {
+                RestoreGround(site);
+                ReleaseMaterials(site.materials);
+            }
+            sites.Clear();
+        }
+
+        /// <summary>런타임 머티리얼 일괄 파기 — <c>SubAreaWorldBuilder.DestroySubAreaWorld</c>와 같은 형태.</summary>
+        private static void ReleaseMaterials(List<Material> bag)
+        {
+            if (bag == null) return;
+            for (int i = 0; i < bag.Count; i++)
+                if (bag[i] != null) Destroy(bag[i]);
+            bag.Clear();
         }
 
         private void Update()
@@ -86,11 +114,28 @@ namespace InsectGame.Core
             if (retryTimer > 0f) return;
             retryTimer = RetrySeconds;
 
+            // 서브에리어에 있는 동안에는 세우지 않는다. **CurrentRegion은 그때도 부모 리전을
+            // 그대로 가리키므로** 이 가드가 없으면 동굴 안에서 거점이 지어지는데, 그 시점엔
+            // SubAreaWorldBuilder.HideMainWorld가 `Region_*` 지면을 SetActive(false)로 꺼 둔 상태다.
+            // GameObject.Find는 비활성 오브젝트를 못 찾으므로 TintGround가 조용히 실패하고,
+            // sites에 이미 등록돼 다시 시도하지도 않는다 — **그 세션 내내 그 리전만 탈색이 빠진다.**
+            if (regionManager.CurrentSubArea != null) return;
+
             RegionData here = regionManager.CurrentRegion;
             if (here == null || !here.HasBlightSite) return;
-            if (!blight.IsBlighted(here.regionId)) return;
-            if (sites.ContainsKey(here.regionId)) return;
 
+            if (sites.TryGetValue(here.regionId, out Site standing))
+            {
+                // 이미 세운 거점이 있다 — 그 사이에 정화 상태가 **밖에서** 뒤집혔을 수 있다.
+                // RegionBlightManager.ReloadFromDisk는 로그인 직후 컷신이 쏟아지지 않게
+                // 의도적으로 RegionCleansed를 울리지 않으므로(그쪽 주석), 다른 기기에서 정화한
+                // 진행이 클라우드로 들어오면 여기서만 따라잡을 수 있다.
+                if (!standing.collapsing && !blight.IsBlighted(here.regionId))
+                    BeginCollapse(here.regionId, standing);
+                return;
+            }
+
+            if (!blight.IsBlighted(here.regionId)) return;
             BuildSite(here);
         }
 
@@ -108,7 +153,11 @@ namespace InsectGame.Core
             if (!TryResolveSitePosition(region, out Vector3 pos)) return;   // NPC가 아직 안 떴다
 
             Site site = new Site();
-            site.root = new GameObject("BlightSite_" + region.regionId);
+            // **`Scenery_` 프리픽스가 기능이다.** SubAreaWorldBuilder.HideMainWorld가 메인월드를
+            // 이름 프리픽스로 골라 끄고 되살리는데(Region_/Scenery_/Path_ 등), 여기서 빠지면
+            // 서브에리어 진입 중 혼자 살아남는 메인월드 소품이 된다. 지금은 서브에리어 원점이
+            // 2km 밖이라 화면에 안 잡히지만, 그 거리에 기대는 것보다 기존 경로에 얹는 게 맞다.
+            site.root = new GameObject("Scenery_BlightSite_" + region.regionId);
             site.root.transform.position = pos;
             // 리전 중심을 등지게 세운다 — 플레이어는 대개 중심 쪽에서 다가온다.
             Vector3 outward = pos - region.centerPosition;
@@ -116,9 +165,9 @@ namespace InsectGame.Core
             if (outward.sqrMagnitude > 0.01f)
                 site.root.transform.rotation = Quaternion.LookRotation(outward.normalized);
 
-            BuildStructure(site.root.transform, region.regionId);
+            BuildStructure(site.root.transform, region.regionId, site.materials);
             TintGround(region, site);
-            site.haze = StartCoroutine(HazeLoop(site.root.transform));
+            site.haze = StartCoroutine(HazeLoop(site.root.transform, site.materials, region.regionId));
 
             sites[region.regionId] = site;
         }
@@ -159,11 +208,17 @@ namespace InsectGame.Core
         /// 더 중요하다(하수 둘에게 같은 상의를 입힌 것과 같은 이유).
         /// 리전 ID로 난수를 고정해 두 곳의 상자 배치만 달라진다.
         /// </summary>
-        private void BuildStructure(Transform root, string regionId)
+        private void BuildStructure(Transform root, string regionId, List<Material> bag)
         {
-            Color postCol = new Color(0.20f, 0.19f, 0.21f);
             Color crateCol = new Color(0.34f, 0.29f, 0.22f);
             Color netCol = new Color(0.12f, 0.12f, 0.14f, 0.55f);
+
+            // 색이 같은 파츠는 머티리얼 하나를 나눠 쓴다 — 기둥 4개·상자 대여섯 개에 각각
+            // 새 머티리얼을 만들면 거점 하나에 20개 넘게 쌓인다. 색이 개별로 변하는 것은
+            // 안개 구체뿐이라(HazeLoop) 나머지는 공유해도 서로 간섭하지 않는다.
+            Material woodMat = Track(bag, Mat(new Color(0.20f, 0.19f, 0.21f)));
+            Material crateMat = Track(bag, Mat(crateCol));
+            Material netMat = Track(bag, Transparent(netCol));
 
             // 기둥 4개 + 가로대 — 그물을 거는 틀.
             float halfW = 2.6f, halfD = 1.4f, postH = 3.1f;
@@ -171,18 +226,18 @@ namespace InsectGame.Core
             {
                 float sx = (i % 2 == 0) ? -halfW : halfW;
                 float sz = (i < 2) ? -halfD : halfD;
-                GameObject post = Prim(PrimitiveType.Cylinder, "Post", root, Mat(postCol));
+                GameObject post = Prim(PrimitiveType.Cylinder, "Post", root, woodMat);
                 post.transform.localPosition = new Vector3(sx, postH * 0.5f, sz);
                 post.transform.localScale = new Vector3(0.16f, postH * 0.5f, 0.16f);
             }
-            GameObject beam = Prim(PrimitiveType.Cube, "Beam", root, Mat(postCol));
+            GameObject beam = Prim(PrimitiveType.Cube, "Beam", root, woodMat);
             beam.transform.localPosition = new Vector3(0f, postH, 0f);
             beam.transform.localScale = new Vector3(halfW * 2f + 0.3f, 0.18f, 0.18f);
 
             // 그물 — 반투명 판 두 장을 살짝 기울여 늘어진 인상을 만든다.
             for (int i = 0; i < 2; i++)
             {
-                GameObject net = Prim(PrimitiveType.Cube, "Net", root, Transparent(netCol));
+                GameObject net = Prim(PrimitiveType.Cube, "Net", root, netMat);
                 net.transform.localPosition = new Vector3(i == 0 ? -1.3f : 1.3f, postH * 0.55f, 0f);
                 net.transform.localRotation = Quaternion.Euler(0f, 0f, i == 0 ? 7f : -7f);
                 net.transform.localScale = new Vector3(2.3f, postH * 0.9f, 0.05f);
@@ -195,7 +250,7 @@ namespace InsectGame.Core
             int crates = 5 + rng.Next(0, 4);
             for (int i = 0; i < crates; i++)
             {
-                GameObject crate = Prim(PrimitiveType.Cube, "Crate", root, Mat(crateCol));
+                GameObject crate = Prim(PrimitiveType.Cube, "Crate", root, crateMat);
                 float cx = -2.2f + (float)rng.NextDouble() * 4.4f;
                 float cz = 1.9f + (float)rng.NextDouble() * 1.6f;
                 float cy = 0.36f + (i % 3) * 0.72f;
@@ -205,7 +260,8 @@ namespace InsectGame.Core
             }
 
             // 장부대 — 상자 옆의 낮은 받침. 여기가 "이름표를 붙이는 자리"다.
-            GameObject desk = Prim(PrimitiveType.Cube, "LedgerDesk", root, Mat(new Color(0.28f, 0.24f, 0.20f)));
+            GameObject desk = Prim(PrimitiveType.Cube, "LedgerDesk", root,
+                Track(bag, Mat(new Color(0.28f, 0.24f, 0.20f))));
             desk.transform.localPosition = new Vector3(2.9f, 0.5f, 0.2f);
             desk.transform.localScale = new Vector3(1.1f, 0.1f, 0.7f);
         }
@@ -220,9 +276,15 @@ namespace InsectGame.Core
         private void TintGround(RegionData region, Site site)
         {
             GameObject go = GameObject.Find("Region_" + region.regionId);
-            if (go == null) return;
-            Renderer r = go.GetComponent<Renderer>();
-            if (r == null || r.material == null) return;
+            Renderer r = go != null ? go.GetComponent<Renderer>() : null;
+            if (r == null || r.material == null)
+            {
+                // 조용히 넘어가면 그 리전만 탈색이 빠진 채로 남고 아무도 이유를 모른다.
+                // 구조물과 안개는 그대로 세운다 — 거점이 있다는 것 자체는 여전히 보여야 한다.
+                Debug.LogWarning("[BlightVfx] Region_" + region.regionId
+                    + " 지면을 찾지 못해 탈색을 건너뛴다 — 부트스트랩이 리전 지면을 만들었는가?");
+                return;
+            }
 
             site.ground = r;
             site.groundOriginal = r.material.color;
@@ -237,8 +299,11 @@ namespace InsectGame.Core
         /// <c>BattleArenaController.PoisonImpact3D</c>의 형태를 상주형으로 바꾼 것이다.
         /// 거점 root의 자식이라 정화 때 구조물과 함께 사라진다.
         /// </summary>
-        private IEnumerator HazeLoop(Transform root)
+        private IEnumerator HazeLoop(Transform root, List<Material> bag, string regionId)
         {
+            // 다른 리전에 있는 동안에는 쉰다. 거점은 세션 내내 서 있으므로 게이트가 없으면
+            // 방문한 거점 수만큼의 안개가 끝까지 매 프레임 돈다 — 보이지도 않는 채로.
+            WaitForSeconds idle = new WaitForSeconds(0.5f);
             Color hazeCol = new Color(0.42f, 0.44f, 0.33f, 0.30f);
             GameObject[] puffs = new GameObject[HazeCount];
             Renderer[] rends = new Renderer[HazeCount];
@@ -246,13 +311,18 @@ namespace InsectGame.Core
 
             for (int i = 0; i < HazeCount; i++)
             {
-                puffs[i] = Prim(PrimitiveType.Sphere, "Haze", root, Transparent(hazeCol));
+                // 알파가 개체마다 따로 움직여야 해서 여기만 공유하지 않는다.
+                puffs[i] = Prim(PrimitiveType.Sphere, "Haze", root, Track(bag, Transparent(hazeCol)));
                 rends[i] = puffs[i].GetComponent<Renderer>();
                 phase[i] = i / (float)HazeCount;   // 고르게 흩어 놓아 한꺼번에 튀지 않게 한다
             }
 
             while (root != null)
             {
+                bool here = regionManager != null && regionManager.CurrentRegion != null
+                    && regionManager.CurrentRegion.regionId == regionId;
+                if (!here) { yield return idle; continue; }
+
                 for (int i = 0; i < HazeCount; i++)
                 {
                     if (puffs[i] == null) yield break;
@@ -280,9 +350,46 @@ namespace InsectGame.Core
 
         private void OnRegionCleansed(string regionId)
         {
-            if (!sites.TryGetValue(regionId, out Site site)) return;
+            if (!sites.TryGetValue(regionId, out Site site) || site.collapsing) return;
+            BeginCollapse(regionId, site);
+        }
+
+        /// <summary>
+        /// 붕괴를 시작한다. <b>여기서 dict에서 빼지 않는다</b> — 코루틴이 완주하지 못하면
+        /// (컴포넌트 비활성·파기) 구조물은 선 채 지면은 탈색된 채 남는데, 그 시점엔
+        /// <c>IsBlighted</c>가 이미 false라 <c>Update</c>의 재건 경로도 닫혀 있어
+        /// **되돌릴 방법이 없다.** 제거는 <see cref="FinishCollapse"/>가 맡는다.
+        /// </summary>
+        private void BeginCollapse(string regionId, Site site)
+        {
+            site.collapsing = true;
+
+            // 비활성 상태에서는 StartCoroutine이 예외를 던진다(형제 구독자
+            // InsectSpawner.OnRegionCleansed가 같은 가드를 둔다). 연출을 포기하고
+            // 상태만 즉시 정리한다 — 남겨 두는 쪽이 훨씬 나쁘다.
+            if (!isActiveAndEnabled)
+            {
+                FinishCollapse(regionId, site);
+                return;
+            }
+            StartCoroutine(CollapseSite(regionId, site));
+        }
+
+        /// <summary>붕괴 마무리 — 지면 복원·오브젝트 파기·머티리얼 회수·등록 해제를 한자리에 모은다.</summary>
+        private void FinishCollapse(string regionId, Site site)
+        {
+            RestoreGround(site);
+            if (site.root != null) Destroy(site.root);
+            ReleaseMaterials(site.materials);
             sites.Remove(regionId);
-            StartCoroutine(CollapseSite(site));
+        }
+
+        /// <summary>탈색해 둔 지면을 원래 색으로 되돌린다(보간 오차를 남기지 않는다).</summary>
+        private static void RestoreGround(Site site)
+        {
+            if (!site.groundTinted || site.ground == null || site.ground.material == null) return;
+            site.ground.material.color = site.groundOriginal;
+            site.groundTinted = false;
         }
 
         /// <summary>
@@ -291,7 +398,7 @@ namespace InsectGame.Core
         /// 세 가지가 <b>같은 시간축에서</b> 일어나야 한 사건으로 읽힌다. 순서대로 재생하면
         /// 링이 끝나고 나서 땅이 밝아져 인과가 끊긴다.
         /// </summary>
-        private IEnumerator CollapseSite(Site site)
+        private IEnumerator CollapseSite(string regionId, Site site)
         {
             if (site == null) yield break;
 
@@ -340,10 +447,9 @@ namespace InsectGame.Core
                 yield return null;
             }
 
-            if (site.groundTinted && site.ground != null && site.ground.material != null)
-                site.ground.material.color = site.groundOriginal;   // 보간 오차를 남기지 않는다
-
-            if (site.root != null) Destroy(site.root);
+            // 지면 복원·파기·회수·등록 해제를 한자리에 모아 둔다(비활성 경로와 같은 코드).
+            // GameObject만 지우면 머티리얼이 남는다 — 그게 SubAreaWorldBuilder가 겪은 결함이다.
+            FinishCollapse(regionId, site);
         }
 
         /// <summary>
@@ -352,15 +458,19 @@ namespace InsectGame.Core
         /// </summary>
         private IEnumerator Shockwave(Vector3 center)
         {
+            List<Material> bag = new List<Material>();
             Color ringCol = new Color(0.85f, 0.93f, 0.72f, 0.65f);
-            GameObject ring = Prim(PrimitiveType.Cylinder, "CleanseRing", null, Transparent(ringCol));
+            GameObject ring = Prim(PrimitiveType.Cylinder, "CleanseRing", null,
+                Track(bag, Transparent(ringCol)));
             ring.transform.position = center + new Vector3(0f, 0.06f, 0f);
 
+            // 조각 10개는 색이 안 변하니 머티리얼 하나를 나눠 쓴다(링만 알파가 줄어든다).
             const int Shards = 10;
+            Material shardMat = Track(bag, Mat(new Color(0.30f, 0.28f, 0.24f)));
             GameObject[] shards = new GameObject[Shards];
             for (int i = 0; i < Shards; i++)
             {
-                shards[i] = Prim(PrimitiveType.Cube, "Shard", null, Mat(new Color(0.30f, 0.28f, 0.24f)));
+                shards[i] = Prim(PrimitiveType.Cube, "Shard", null, shardMat);
                 shards[i].transform.position = center + new Vector3(0f, 0.5f, 0f);
             }
 
@@ -392,9 +502,17 @@ namespace InsectGame.Core
             if (ring != null) Destroy(ring);
             for (int i = 0; i < Shards; i++)
                 if (shards[i] != null) Destroy(shards[i]);
+            ReleaseMaterials(bag);
         }
 
         // ── 프리미티브 헬퍼 ──
+
+        /// <summary>머티리얼을 회수 목록에 올리고 그대로 돌려준다 — 등록을 빠뜨릴 자리를 없앤다.</summary>
+        private static Material Track(List<Material> bag, Material m)
+        {
+            if (bag != null && m != null) bag.Add(m);
+            return m;
+        }
 
         private static GameObject Prim(PrimitiveType type, string name, Transform parent, Material mat)
         {
