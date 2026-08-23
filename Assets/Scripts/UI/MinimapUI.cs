@@ -118,6 +118,11 @@ namespace InsectGame.UI
             float cy = y + size / 2f;
             float mapRadius = size / 2f - 12f;
 
+            // 버튼은 없지만 **불투명 패널**이다 — 여기를 탭하면 뒤 월드로 레이가 나가
+            // 캐릭터가 화면 좌상단 방향으로 걸어간다. 퀵액세스 바가 자기 배경까지 등록하는
+            // 것과 같은 이유다(rules/ui-layout.md).
+            FieldHudInput.RegisterBlockingRect(rect);
+
             // 배경 — 아래에 붙는 퀘스트 칩과 같은 서피스를 쓴다(각진 4줄 테두리였다).
             UISurface.HudCard(rect);
 

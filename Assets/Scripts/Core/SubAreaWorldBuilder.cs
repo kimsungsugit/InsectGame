@@ -236,6 +236,7 @@ namespace InsectGame.Core
                 if (isInSubArea)
                 {
                     Rect r = GetEntryExitButtonRect();
+                    BlockFieldClicks(r);
                     GUI.backgroundColor = NotifyExitCol;
                     if (GUI.Button(r, "메인 월드로 나가기", GetEntryExitButtonStyle()))
                         RequestExit();
@@ -246,6 +247,7 @@ namespace InsectGame.Core
                 {
                     SubAreaData sub = regionManager.NearbySubArea;
                     Rect r = GetEntryExitButtonRect();
+                    BlockFieldClicks(r);
                     GUI.backgroundColor = NotifyEnterCol;
                     if (GUI.Button(r, $"{GetSubAreaDisplayName(sub)} 들어가기", GetEntryExitButtonStyle()))
                     {
@@ -255,6 +257,26 @@ namespace InsectGame.Core
                 }
             }
             GUI.color = Color.white;
+        }
+
+        /// <summary>
+        /// 이 버튼 위의 탭이 <b>월드 클릭-이동으로 새지 않게</b> 영역을 등록한다.
+        /// 안 하면 "들어가기"를 누른 그 탭이 동시에 클릭-이동을 걸어, 서브에리어로 들어간
+        /// 직후 캐릭터가 <b>새 월드의 엉뚱한 지점으로</b> 걸어간다(목적지는 옛 월드 좌표다).
+        /// `PlayerMovement`가 `Input.GetMouseButtonDown(0)`을 Update에서 따로 폴링하는데,
+        /// 그 시점엔 모달도 없고 IMGUI는 EventSystem을 안 거쳐 이 등록이 유일한 방어선이다
+        /// (rules/ui-layout.md — 같은 결함을 QuickAccessBarUI·WorldFieldMultiplayerUI·
+        /// TutorialQuestUI에서 이미 고쳤다. 이 화면의 버튼이 그중 가장 크다: 620×100).
+        ///
+        /// <b>이 화면은 픽셀 좌표로 그린다</b>(`UIScale.Begin()`을 쓰지 않는다) — 등록은
+        /// 가상 좌표를 받으므로 `UIScale.Scale`로 나눠 넘긴다.
+        /// </summary>
+        private static void BlockFieldClicks(Rect pixelRect)
+        {
+            float s = UIScale.Scale;
+            if (s <= 0f) return;
+            FieldHudInput.RegisterBlockingRect(
+                new Rect(pixelRect.x / s, pixelRect.y / s, pixelRect.width / s, pixelRect.height / s));
         }
 
         private Rect GetEntryExitButtonRect()

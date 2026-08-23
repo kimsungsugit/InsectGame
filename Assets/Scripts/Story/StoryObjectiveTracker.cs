@@ -63,10 +63,30 @@ namespace InsectGame.Story
         public bool HasWorldTarget => hasWorldTarget;
         public Vector3 TargetPosition => targetPosition;
         public bool IsRunning => playerMovement != null && playerMovement.IsAutoRunning;
-        /// <summary>목표가 지금 리전에 있는가. 아니면 이동 전에 텔레포트가 필요하다.</summary>
-        public bool TargetInCurrentRegion =>
-            regionManager != null && regionManager.CurrentRegion != null
-            && targetRegionId == regionManager.CurrentRegion.regionId;
+        /// <summary>
+        /// 걸어서 갈 수 있는 목표인가 — 아니면 지도(텔레포트) 경로로 보낸다.
+        ///
+        /// <b>리전 밖에 서 있을 수 있다.</b> <c>RegionManager</c>는 플레이어 위치가 어느 리전
+        /// 원 안에도 없으면 <c>CurrentRegion</c>을 null로 둔다 — 리전 사이 빈 땅을 지나는
+        /// 동안이 그렇다. 그 상태를 "다른 리전"으로 읽으면 <b>바로 앞 목표를 눌러도 지도가
+        /// 열린다</b>(걸어가면 되는데). 모르는 것이지 다른 것이 아니다.
+        ///
+        /// 그때는 목표 리전의 <b>해금 여부</b>로 가른다 — 잠긴 곳은 어차피 걸어 들어갈 수
+        /// 없으므로 지도로 보내고, 열린 곳이면 걸어가게 둔다.
+        /// </summary>
+        public bool TargetInCurrentRegion
+        {
+            get
+            {
+                if (regionManager == null || string.IsNullOrEmpty(targetRegionId)) return false;
+
+                RegionData current = regionManager.CurrentRegion;
+                if (current != null) return targetRegionId == current.regionId;
+
+                RegionData target = regionManager.GetRegionById(targetRegionId);
+                return target != null && regionManager.IsRegionAccessible(target);
+            }
+        }
 
         /// <summary>수평 거리(m). 목표가 없으면 0.</summary>
         public float DistanceToTarget

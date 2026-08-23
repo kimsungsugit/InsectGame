@@ -240,13 +240,40 @@ GUI.DrawTexture(barRect, Texture2D.whiteTexture);
 화면(`UISafeLayout.Px` 사용)이 그대로 넘기면 스케일이 1이 아닌 기기에서 엉뚱한 영역이 막힌다
 (`WorldFieldMultiplayerUI.BlockFieldClicks`가 그 변환의 본보기다).
 
-2026-08-17 audit에서 **세 파일 중 둘이 빠져 있었다** — `CaptureInputController`만 등록하고
-`QuickAccessBarUI`(메뉴를 열 때마다 매번)와 `WorldFieldMultiplayerUI`("3:3 대전"을 누르면
-도전과 동시에 캐릭터가 상대 뒤로 걸어감)는 호출이 0건이었다. 둘 다 P0으로 처리했다.
+**네 번 났다.** 2026-08-17에 `QuickAccessBarUI`(메뉴를 열 때마다)와 `WorldFieldMultiplayerUI`
+("3:3 대전"을 누르면 도전과 동시에 캐릭터가 상대 뒤로 걸어감)가 P0이었고, 2026-08-23에
+`TutorialQuestUI`(퀘스트 칩·✕·목표 행)와 `SubAreaWorldBuilder`(진입/퇴장 버튼)가 또 나왔다.
+마지막 것이 **이 게임에서 가장 큰 필드 버튼**이다(620×100, 하단 중앙) — 누르면 서브에리어로
+들어가면서 동시에 **옛 월드 좌표를 향한 클릭-이동**이 걸린다.
+
+`TutorialQuestUI`의 목표 행은 그중 새 코드였다. **규칙이 여기 적혀 있는데도 같은 함정을
+그대로 밟았다** — 필드에 버튼을 새로 그릴 때 이 절을 다시 읽을 것.
 
 검사기를 두지 않은 이유: "필드 위 비모달 버튼"을 정적으로 판정하려면 모달 여부·그리기 조건을
 따라가야 해서 오탐이 크다. 전체 화면 모달은 등록하면 **안 되고**(모달 중에는 애초에 클릭-이동이
-막힌다), 그 구분이 소스 패턴으로는 안 드러난다.
+막힌다), 그 구분이 소스 패턴으로는 안 드러난다. 실제로 "IModalUI가 아닌데 버튼이 있고 등록이
+없다"로 규칙을 짜 보면 네 건 중 **하나만** 잡고(나머지 셋은 IModalUI를 함께 구현한다) 로그인·
+미니게임·오프닝이 거짓양성으로 걸린다.
+
+### 대신 전수는 손으로 한다 — 이 표를 뽑아서 본다
+
+```
+for f in $(grep -rl "GUI.Button(\|UISurface.Button(" --include=*.cs Assets/Scripts); do
+  printf "%-50s 버튼%-3s 등록%-3s 프리즈%-3s IModal%s\n" "${f#Assets/Scripts/}" \
+    "$(grep -c "GUI.Button(\|UISurface.Button(" "$f")" \
+    "$(grep -c "RegisterBlockingRect" "$f")" \
+    "$(grep -c "SetFrozen(true)" "$f")" \
+    "$(grep -c ", IModalUI" "$f")"
+done
+```
+
+읽는 법: **프리즈를 걸고 그리는 화면과 전체화면 모달은 안전하다**(그 상태에서는 클릭-이동이
+이미 막힌다). 위험한 것은 **플레이어가 자유롭게 움직이는 동안 그려지는 버튼**뿐이다 —
+로그인·오프닝(월드 없음), 미니게임·포획 선택(프리즈)은 제외하고 남는 것을 본다.
+
+2026-08-23 기준 등록된 파일: `CaptureInputController`, `WorldInteractionController`,
+`QuickAccessBarUI`, `WorldFieldMultiplayerUI`, `TutorialQuestUI`, `SubAreaWorldBuilder`,
+`MinimapUI`(버튼은 없지만 불투명 패널이라 같이 막는다).
 
 ## 구독은 `OnEnable`에서 되살린다 — `subscription_lint.py`가 잡는다
 
