@@ -125,11 +125,31 @@ Dictionary 비결정 — 그럴 땐 prereq로 한 번에 하나만 적격이 되
 python -X utf8 .claude/scripts/story_lint.py
 ```
 
-21검사가 전부 PASS여야 한다(FAIL 0, WARN 0):
+22검사가 전부 PASS여야 한다(FAIL 0, WARN 0):
 - beatId 중복 / prerequisite 무결성(끊김·순환) / 트리거 param 대상 존재 /
   분기 도달성(choices.nextBeatId) / onComplete 보상·unlock ID 존재 /
   **트리거 배선 정합(JSON↔StoryDirector)** / **requiredRegionId 정합(리전 게이트)** /
-  **일생 1회 트리거의 스파인 사용**(GuardianDefeat가 어느 비트의 prereq도 아닐 것)
+  **일생 1회 트리거의 스파인 사용**(GuardianDefeat가 어느 비트의 prereq도 아닐 것) /
+  **스토리 인물 4중 등록**(앰비언트·소개 비트·표시명·외형)
+
+### 스토리 NPC를 새로 세운다면 — 등록이 여섯 곳이다
+
+비트만 쓰면 안 된다. 아래를 다 채워야 그 인물이 제 이름과 얼굴로 서고 말을 한다.
+검사기가 넷을 보고 **둘(앵커 각도·보스 표의 레벨)은 사람이 판단해야 한다**:
+
+| # | 곳 | 빠뜨리면 | 잡는 검사 |
+|---|---|---|---|
+| 1 | `VillageBuilder` 앵커 (`storyNpcId` **리터럴**) | 월드에 안 선다 | 검사 3 |
+| 2 | `NpcManager.StoryNpcDisplayName` | **"마을 어르신"으로 뜬다** | 검사 22 |
+| 3 | `NpcVisualBuilder.StoryNpcAppearance` | **마을 어르신 얼굴로 뜬다** | 검사 22 |
+| 4 | `NpcDialogueDatabase.StoryNpcLines` | 주민 잡담으로 떨어진다 | 검사 20 |
+| 5 | `NpcBossDuels.Table` (싸울 상대면) | 도전이 안 열린다 | `blight_lint` 1 |
+| 6 | 소개 비트(`speakerNpcId` 또는 `NpcTalk` param) | `HasMetStoryNpc` false → 보스전 불가 | 검사 19 |
+
+**앵커 각도는 손으로 고른다.** 서브에리어 진입 반경 안에 서면 말을 걸려다 구역에 빨려
+들어가고, 같은 리전의 다른 인물과 겹치면 누구에게 말을 거는지 알 수 없다. 그 리전의
+기존 앵커 각도·거리와 서브에리어 중심을 계산해 고른 뒤 **근거를 주석에 남긴다**
+(`VillageBuilder`의 hollow·forest 앵커 주석이 본보기다).
 
 특히 **트리거 배선 정합**이 FAIL이면 Phase 2의 StoryDirector 등록이 누락된 것 —
 "switch case 없음" / "이벤트 발화 지점 없음" 진단으로 해당 지점을 채운다.

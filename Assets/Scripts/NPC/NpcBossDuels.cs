@@ -64,6 +64,17 @@ namespace InsectGame.NPC
                 rewardItemId = "wound_salve_great", rewardCount = 3,
                 retryCooldownSeconds = RetryCooldown,
             },
+            // 핀 — 숲 그물터 말단. **하수 중에서도 아래다.** 숲 입장이 Lv.12라 그 위에 살짝만
+            // 얹는다(16) — 여기서 막히면 1막 초입에서 진행이 서고, 사내·여자(34/32)와 같은 급으로
+            // 두면 "말단"이라는 배치 자체가 무너진다. 세 하수의 16/32/34가 곧 그들의 위계다.
+            // 부리는 곤충도 숲 어디서나 우는 여름매미다 — 그물에 걸린 걸 그대로 쓴다.
+            new BossDuel
+            {
+                storyNpcId = "ledger_thug_pin", displayName = "검은 옷의 청년",
+                insectId = "cicada_summer", level = 16,
+                rewardItemId = "net_silver", rewardCount = 1,
+                retryCooldownSeconds = RetryCooldown,
+            },
             // 집게 — 포획반장. 완력형이라 땅속을 헤집는 지네를 부린다.
             new BossDuel
             {

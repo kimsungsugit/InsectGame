@@ -24,7 +24,7 @@ namespace InsectGame.Story
         /// <summary>최종장 마무리 — 마지막 빈칸이 메워지고 그것이 설 자리를 잃는다.</summary>
         public const string FinalSeal = "cs_final_seal";
         /// <summary>
-        /// 오염 거점이 무너지고 그 리전에 곤충이 돌아온다. <b>거점 둘이 같은 컷신을 쓴다</b> —
+        /// 오염 거점이 무너지고 그 리전에 곤충이 돌아온다. <b>거점 전부가 같은 컷신을 쓴다</b> —
         /// 좌표가 전부 플레이어 기준 상대라 산에서도 유적에서도 그대로 맞고, 자막도 장소를
         /// 지목하지 않는다. 장소별 감상은 비트의 <c>lines[]</c>가 이미 말한다.
         /// </summary>

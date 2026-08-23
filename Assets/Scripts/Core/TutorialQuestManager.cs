@@ -385,21 +385,23 @@ namespace InsectGame.Core
                 {
                     questId = "q_blight_first", title = "무너뜨린 거점",
                     description = "명부회가 세운 오염 거점을 하나 무너뜨리세요. 그 지역에 곤충이 돌아옵니다.",
-                    hint = "산이나 유적에서 검은 옷의 사람에게 말을 걸어 보세요",
+                    hint = "숲·산·유적에서 검은 옷의 사람에게 말을 걸어 보세요",
                     type = QuestType.CleanseBlight, targetCount = 1,
                     prerequisiteQuestId = "q_complete",
                     rewardCandy = 60, rewardExp = 120,
                     rewardItemId = "net_gold", rewardItemCount = 1
                 },
                 // **목표는 1이지 2가 아니다.** NotifyAction은 **활성 퀘스트 하나만** 올리는데
-                // (`:699`), 첫 정화는 그 앞의 q_blight_first가 이미 소비한다. 거점이 둘뿐이라
-                // 여기 2를 적으면 남은 정화가 하나뿐이라 **영영 완료되지 않는다.**
-                // 체인 전체로 보면 1 + 1 = 거점 2곳이 맞다.
+                // (`:699`), 첫 정화는 그 앞의 q_blight_first가 이미 소비한다.
+                // **체인 합계가 거점 수를 넘으면 뒤 퀘스트가 영영 완료되지 않는다** — 거점이
+                // 둘이던 시절 1 + 2를 적어 실제로 죽어 있었다. 지금은 셋이지만 합계는 그대로
+                // 1 + 1로 둔다: 거점이 다시 줄어도 안전하고, 어차피 "하나 더"가 이 퀘스트의
+                // 요구다(어느 거점이든 상관없다). blight_lint 검사 18이 이 합계를 본다.
                 new TutorialQuest
                 {
                     questId = "q_blight_both", title = "돌아온 자리",
                     description = "남은 오염 거점도 마저 정화하세요.",
-                    hint = "산과 유적 중 아직 남은 쪽의 거점을 무너뜨리세요",
+                    hint = "숲·산·유적 중 아직 남은 거점을 무너뜨리세요",
                     type = QuestType.CleanseBlight, targetCount = 1,
                     prerequisiteQuestId = "q_blight_first",
                     rewardCandy = 120, rewardExp = 240,

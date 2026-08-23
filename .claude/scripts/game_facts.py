@@ -52,6 +52,8 @@ PATHS = {
     "region_data": "Assets/Scripts/Data/RegionData.cs",
     "tutorial_data": "Assets/Scripts/Core/TutorialQuestData.cs",
     "npc_dialogue": "Assets/Scripts/NPC/NpcDialogueDatabase.cs",
+    "npc_manager": "Assets/Scripts/NPC/NpcManager.cs",
+    "npc_visual": "Assets/Scripts/NPC/NpcVisualBuilder.cs",
     "story_json": "Assets/Resources/Story.json",
     "story_director": "Assets/Scripts/Story/StoryDirector.cs",
     "item_db": "Assets/Scripts/Data/ItemDatabase.cs",
@@ -631,6 +633,43 @@ def story_npc_ambient_ids() -> set:
         raise ExtractorBroken("StoryNpcLines에서 키를 하나도 못 읽었다 — 초기화 형태가 바뀌었는가?")
     return ids
 
+
+def _switch_case_ids(key: str, func: str) -> set:
+    """`func` 메서드 본문의 `case "id":` 집합.
+
+    본문만 보는 이유: 같은 파일 다른 switch의 case까지 세면 "등록됐다"가 거짓으로 참이 된다.
+    메서드 끝은 다음 `private`/`public` 선언으로 자른다(이 저장소의 두 switch 모두 그 형태다).
+    """
+    src = "\n".join(l.split("//", 1)[0] for l in _read(key).splitlines())
+    # **선언**을 찾는다 — 이름만으로 찾으면 같은 파일 위쪽의 **호출부**가 먼저 걸려
+    # 본문이 아니라 그 뒤 빈 구간을 읽고 "case 0건"으로 죽는다(실제로 그랬다).
+    m = re.search(r"static\s+[\w.\[\]]+\s+" + re.escape(func) + r"\s*\(", src)
+    if m is None:
+        raise ExtractorBroken(f"{key}에서 {func} 선언을 못 찾았다 — 시그니처가 바뀌었는가?")
+    rest = src[m.end():]
+    end = min((i for i in (rest.find("\n        private "), rest.find("\n        public "))
+               if i >= 0), default=len(rest))
+    ids = set(re.findall(r'case\s+"(\w+)"\s*:', rest[:end]))
+    if not ids:
+        raise ExtractorBroken(f"{func}에서 case를 하나도 못 읽었다 — switch 형태가 바뀌었는가?")
+    return ids
+
+
+def story_npc_display_ids() -> set:
+    """표시명 switch에 등록된 스토리 NPC(NpcManager.StoryNpcDisplayName).
+
+    **빠뜨리면 default로 떨어져 그 인물이 "마을 어르신"으로 뜬다.** 조용하다.
+    """
+    return _switch_case_ids("npc_manager", "StoryNpcDisplayName")
+
+
+def story_npc_appearance_ids() -> set:
+    """외형 switch에 등록된 스토리 NPC(NpcVisualBuilder.StoryNpcAppearance).
+
+    **빠뜨리면 default로 떨어져 마을 어르신 외형(백발·모자·따뜻한 상의)으로 뜬다.**
+    명부회 하수가 마을 어르신 얼굴로 서 있어도 예외도 경고도 안 난다.
+    """
+    return _switch_case_ids("npc_visual", "StoryNpcAppearance")
 
 
 def stage_offsets() -> dict:

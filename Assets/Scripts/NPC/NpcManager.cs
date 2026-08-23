@@ -249,6 +249,7 @@ namespace InsectGame.NPC
                 // 2막에서 명부회 간부를 만나고 나서야 이들이 무엇이었는지 알게 된다.
                 case "ledger_thug_cord": return "검은 옷의 사내";
                 case "ledger_thug_rule": return "검은 옷의 여자";
+                case "ledger_thug_pin": return "검은 옷의 청년";
                 default: return "마을 어르신";
             }
         }

@@ -170,6 +170,13 @@ namespace InsectGame.NPC
                         hair = HairPalette[3], top = TopPalette[5], bottom = BottomPalette[0],
                         skin = SkinPalette[1], hat = HatPalette[1],
                     };
+                case "ledger_thug_pin": // 핀 — 그물터 말단. 모자 있고 앞머리를 덮었다(가장 어리다)
+                    return new NpcAppearance
+                    {
+                        isChild = false, hairStyle = 1, hasHat = true,
+                        hair = HairPalette[1], top = TopPalette[5], bottom = BottomPalette[0],
+                        skin = SkinPalette[0], hat = HatPalette[1],
+                    };
                 case "catcher_rival": // 라온 — 곤충잡이 아이(뜰채·모자·밝은 상의)
                     return new NpcAppearance
                     {

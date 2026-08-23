@@ -61,6 +61,8 @@ namespace InsectGame.Story
         // 가리키고 물러섰다면, 여기서는 손에서 도구를 내려놓는다 — 현장을 인정하는 장면이다.
         // 워프하지 않는 이유는 위와 같다(말을 건 상대라 이미 대화 거리).
 
+        /// <summary>숲 그물터 — 청년이 그물을 걷다 멈추고 움찔한다. 셋 중 가장 먼저 흔들린다.</summary>
+        public const string BlightForestConfront = "st_bl_forest_confront";
         /// <summary>산 채집장 — 여자가 뜰채를 내려놓고 능선을 가리킨다. 자기 현장을 시인한다.</summary>
         public const string BlightMountainConfront = "st_bl_mountain_confront";
         /// <summary>유적 창고 — 사내가 상자를 내밀다 멈추고 고개를 떨군다. 처음으로 대답이 없다.</summary>
@@ -87,6 +89,7 @@ namespace InsectGame.Story
                 case Ch11ScholarLead: steps = BuildCh11ScholarLead(); return true;
                 case Ch12ChiefEnter: steps = BuildCh12ChiefEnter(); return true;
 
+                case BlightForestConfront: steps = BuildBlightForestConfront(); return true;
                 case BlightMountainConfront: steps = BuildBlightMountainConfront(); return true;
                 case BlightRuinsConfront: steps = BuildBlightRuinsConfront(); return true;
 
@@ -369,6 +372,22 @@ namespace InsectGame.Story
         /// 여기서는 그 반대로 — 뜰채를 한 번 휘두르고(내려놓는 동작을 대신한다) 능선을 가리킨 뒤
         /// 이쪽을 본다. 가리키는 곳에 자기가 걷어 낸 자리가 있다.
         /// </summary>
+        /// <summary>
+        /// 숲. 여자·사내와 달리 이 청년은 <b>변명부터 한다.</b> 그물을 걷던 손(NetSwing)이
+        /// 멈추고 움찔한 뒤(Recoil) 마주 본다 — 순서가 반대면 "들켰다"가 아니라 "맞선다"가 된다.
+        /// 사이는 셋 중 가장 짧게 둔다. 무게를 잡을 위치의 인물이 아니다.
+        /// </summary>
+        private static StoryStageStep[] BuildBlightForestConfront()
+        {
+            return new[]
+            {
+                StoryStageStep.Play("ledger_thug_pin", NpcGesture.NetSwing),
+                StoryStageStep.Play("ledger_thug_pin", NpcGesture.Recoil),
+                StoryStageStep.Face("ledger_thug_pin", 0.25f),
+                StoryStageStep.Pause(0.35f),
+            };
+        }
+
         private static StoryStageStep[] BuildBlightMountainConfront()
         {
             return new[]

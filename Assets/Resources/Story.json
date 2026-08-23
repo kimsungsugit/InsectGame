@@ -3036,6 +3036,206 @@
       "cutsceneId": ""
     },
     {
+      "beatId": "bl_forest_arrive",
+      "chapterId": "bl",
+      "order": 190,
+      "prerequisiteBeatId": "",
+      "requiredBeatId": "ch3_warning",
+      "requiredRegionId": "forest",
+      "trigger": {
+        "type": "NpcTalk",
+        "param": "ledger_thug_pin"
+      },
+      "speakerNpcId": "ledger_thug_pin",
+      "lines": [
+        {
+          "speaker": "검은 옷의 청년",
+          "text": "…이쪽은 안 돼. 통제 구역이야."
+        },
+        {
+          "speaker": "검은 옷의 청년",
+          "text": "그물은 아침에 걷어. 그때까진 아무것도 못 지나가."
+        },
+        {
+          "speaker": "세라",
+          "text": "그물이… 나무와 나무 사이를 통째로 가로질러 쳐져 있어요."
+        },
+        {
+          "speaker": "세라",
+          "text": "저건 한 마리를 잡는 그물이 아니에요. 지나가는 걸 전부 받는 그물이에요."
+        },
+        {
+          "speaker": "검은 옷의 청년",
+          "text": "…나는 치라니까 친 거야. 그 이상은 몰라."
+        }
+      ],
+      "choices": [],
+      "onComplete": {
+        "rewardCandy": 15,
+        "rewardExp": 30,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
+      }
+    },
+    {
+      "beatId": "bl_forest_sign",
+      "chapterId": "bl",
+      "order": 191,
+      "prerequisiteBeatId": "bl_forest_arrive",
+      "requiredRegionId": "forest",
+      "trigger": {
+        "type": "CaptureInsect",
+        "param": ""
+      },
+      "speakerNpcId": "ruins_scholar",
+      "lines": [
+        {
+          "speaker": "세라",
+          "text": "방금 그 한 마리, 오늘 이 숲에서 처음 본 거예요."
+        },
+        {
+          "speaker": "세라",
+          "text": "숲이 이렇게 조용할 리가 없어요. 여긴 원래 가장 시끄러운 곳이에요."
+        }
+      ],
+      "choices": [],
+      "onComplete": {
+        "rewardCandy": 12,
+        "rewardExp": 25,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
+      }
+    },
+    {
+      "beatId": "bl_forest_confront",
+      "chapterId": "bl",
+      "order": 192,
+      "prerequisiteBeatId": "bl_forest_arrive",
+      "requiredRegionId": "forest",
+      "trigger": {
+        "type": "NpcTalk",
+        "param": "ledger_thug_pin"
+      },
+      "speakerNpcId": "ledger_thug_pin",
+      "lines": [
+        {
+          "speaker": "검은 옷의 청년",
+          "text": "…또 왔네. 그물 걷어 달라고?"
+        },
+        {
+          "speaker": "검은 옷의 청년",
+          "text": "내가 친 것도 아니야. 위에서 치라니까 쳤어."
+        },
+        {
+          "speaker": "검은 옷의 청년",
+          "text": "몇 마리가 걸리든 그건 내 몫이 아니고."
+        },
+        {
+          "speaker": "세라",
+          "text": "당신 몫이 아니면, 누구 몫이죠?"
+        },
+        {
+          "speaker": "검은 옷의 청년",
+          "text": "…"
+        },
+        {
+          "speaker": "세라",
+          "text": "대답을 못 하시네요. 그럼 지금은 당신 몫이에요."
+        }
+      ],
+      "choices": [],
+      "onComplete": {
+        "rewardCandy": 25,
+        "rewardExp": 55,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
+      },
+      "stageEnterId": "st_bl_forest_confront"
+    },
+    {
+      "beatId": "bl_forest_clash",
+      "chapterId": "bl",
+      "order": 193,
+      "prerequisiteBeatId": "bl_forest_arrive",
+      "requiredRegionId": "forest",
+      "trigger": {
+        "type": "BattleWin",
+        "param": ""
+      },
+      "speakerNpcId": "ruins_scholar",
+      "lines": [
+        {
+          "speaker": "세라",
+          "text": "그물이 성글어졌어요. 걸리는 게 줄었다는 뜻이 아니라—"
+        },
+        {
+          "speaker": "세라",
+          "text": "빠져나가는 게 늘었다는 뜻이에요."
+        }
+      ],
+      "choices": [],
+      "onComplete": {
+        "rewardCandy": 15,
+        "rewardExp": 30,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
+      }
+    },
+    {
+      "beatId": "bl_forest_restore",
+      "chapterId": "bl",
+      "order": 194,
+      "prerequisiteBeatId": "bl_forest_confront",
+      "requiredRegionId": "forest",
+      "trigger": {
+        "type": "RegionCleansed",
+        "param": "forest"
+      },
+      "speakerNpcId": "ruins_scholar",
+      "lines": [
+        {
+          "speaker": "검은 옷의 청년",
+          "text": "…걷을게. 어차피 아침엔 걷는 거였어."
+        },
+        {
+          "speaker": "세라",
+          "text": "로살리아하늘소예요. 도감엔 이름이 있는데, 실물을 본 사람은 거의 없는—"
+        },
+        {
+          "speaker": "세라",
+          "text": "…있었네요. 계속 여기 있었어요. 지나갈 수가 없었을 뿐이에요."
+        }
+      ],
+      "choices": [],
+      "onComplete": {
+        "rewardCandy": 40,
+        "rewardExp": 80,
+        "rewardItemId": "",
+        "rewardItemCount": 0,
+        "rewardInsectId": "",
+        "rewardInsectDisplayName": "",
+        "rewardInsectLevel": 0,
+        "unlockQuestId": ""
+      },
+      "cutsceneId": "cs_bl_cleanse"
+    },
+    {
       "beatId": "bl_mountain_arrive",
       "chapterId": "bl",
       "order": 200,

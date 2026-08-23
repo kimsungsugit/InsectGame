@@ -155,6 +155,14 @@ namespace InsectGame.Core
                     guardianInsectId = "beetle_hercules",
                     guardianDisplayName = "숲의 문지기 헤라클레스",
                     guardianLevel = 28,
+                    // 오염 거점 — 세 곳 중 **가장 이른 곳**이다(입장 Lv.12).
+                    // 산·유적의 하수(32/34)를 여기 세울 수 없어 하수를 새로 둔다: 갓 들어온
+                    // 말단이라 레벨이 낮고, 그래서 "나는 시키는 대로 했을 뿐"이 성립한다.
+                    // 돌아오는 종은 로살리아하늘소 — 도감에 이름은 있어도 실물을 본 사람이
+                    // 거의 없는 종이라, 정화 직후 눈앞에 나타나는 것 자체가 사건이 된다.
+                    blightBossNpcId = "ledger_thug_pin",
+                    blightSiteName = "명부회 그물터",
+                    blightReturningInsectId = "beetle_longhorn_rosalia",
                     subAreas = new SubAreaData[]
                     {
                         new SubAreaData

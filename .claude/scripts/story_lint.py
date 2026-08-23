@@ -716,6 +716,37 @@ def evaluate_signals() -> list:
         "FAIL" if outside_room else "PASS",
     ))
 
+    # 22. 스토리 NPC가 **표시명·외형 switch에 등록돼 있는가.**
+    #
+    #     검사 20이 앰비언트 대사를 보듯, 이건 그 인물의 **이름과 얼굴**을 본다.
+    #     두 switch 모두 `default`가 마을 어르신이라 빠뜨려도 예외·경고가 없다 —
+    #     검은 옷의 하수가 "마을 어르신"이라는 이름표를 달고 백발에 모자를 쓰고 서 있어도
+    #     게임은 아무 말도 하지 않는다. 눈으로만 잡히던 자리다.
+    #
+    #     신규 스토리 NPC는 여섯 곳에 등록해야 하고(StoryBible 7-4) 나머지 넷은
+    #     이미 검사 중이었다: 앵커(검사 3)·앰비언트(검사 20)·소개 비트(검사 19)·
+    #     대결 표(blight_lint 검사 1). 남은 둘이 여기다.
+    #
+    #     village_elder는 두 switch의 `default` 가지 그 자체라 case가 없는 게 정상이다.
+    DEFAULT_NPC = "village_elder"
+    display_ids = game_facts.story_npc_display_ids()
+    appearance_ids = game_facts.story_npc_appearance_ids()
+    need = world_npcs - {DEFAULT_NPC}
+
+    switch_problems = ([f"{n}(표시명 없음 → \"마을 어르신\"으로 뜬다)"
+                        for n in sorted(need - display_ids)]
+                       + [f"{n}(외형 없음 → 마을 어르신 얼굴로 뜬다)"
+                          for n in sorted(need - appearance_ids)]
+                       + [f"{n}(월드에 없는 인물)"
+                          for n in sorted((display_ids | appearance_ids) - world_npcs)])
+    signals.append((
+        "스토리 인물 표시명·외형 switch (없으면 마을 어르신으로 뜬다)",
+        "0건 누락",
+        f"{len(switch_problems)}건 ({switch_problems})" if switch_problems
+        else f"0건 (인물 {len(need)}명 × 2 switch, default={DEFAULT_NPC})",
+        "FAIL" if switch_problems else "PASS",
+    ))
+
     return signals
 
 
@@ -757,6 +788,9 @@ def main():
     print("- 검사 21은 SubAreaWorldBuilder의 CreateBoundaryWalls 크기와 FindSafeSpawnPosition의")
     print("  입구 좌표를 읽어 연출 워프 지점이 방 안인지 본다. 방은 축정렬 정사각이고 오프셋도")
     print("  월드축이라 좌표가 결정적이다 — 벽 밖이면 배우가 막혀 대사만 뜬다(무증상).")
+    print("- 검사 22는 NpcManager.StoryNpcDisplayName / NpcVisualBuilder.StoryNpcAppearance의")
+    print("  case를 읽어 월드 배치 인물과 대조한다. 둘 다 default가 마을 어르신이라")
+    print("  누락이 무증상이다 — village_elder만 그 default 가지라서 면제한다.")
     print("- 검사 19는 NpcBossDuels.cs의 storyNpcId를 정규식으로 읽어 Story.json의")
     print("  speakerNpcId ∪ NpcTalk param과 대조한다(소개 없는 보스 = 영구 도전 불가).")
     fail = sum(1 for s in signals if s[3] == "FAIL")

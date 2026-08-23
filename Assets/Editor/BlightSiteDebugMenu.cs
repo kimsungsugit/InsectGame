@@ -9,7 +9,7 @@ namespace InsectGame.EditorTools
     /// <summary>
     /// 오염 거점을 <b>눈으로 확인하기 위한</b> 에디터 전용 메뉴.
     ///
-    /// 왜 필요한가: 거점은 산(Lv.28)과 유적(Lv.36)에 있는데 플레이어는 늘 초원에서 시작한다.
+    /// 왜 필요한가: 거점은 숲(Lv.12)·산(Lv.28)·유적(Lv.36)에 있는데 플레이어는 늘 초원에서 시작한다.
     /// 그리고 오염/정화는 <b>3D 월드 연출이라 테스트로 검증할 수 없다</b> — IMGUI는 배치모드
     /// 캡처에 안 잡히고, 3D는 잡히지만 캡처 도구가 플레이어를 따라가므로 초원 밖으로 못 간다
     /// (그래서 <see cref="LiveSceneCapture"/>에 <c>-captureRegion</c>을 붙였다).
@@ -22,12 +22,18 @@ namespace InsectGame.EditorTools
     {
         private const string Root = "InsectGame/오염 거점/";
 
-        [MenuItem(Root + "산으로 이동", false, 100)]
+        // MenuItem 경로는 컴파일 상수여야 해서 거점마다 한 줄씩 손으로 는다 —
+        // 여기만 데이터 주도가 안 된다. 거점을 늘리면 이 셋도 함께 늘릴 것.
+        [MenuItem(Root + "숲으로 이동", false, 100)]
+        private static void GoForest() => TeleportTo("forest");
+
+        [MenuItem(Root + "산으로 이동", false, 101)]
         private static void GoMountain() => TeleportTo("mountain");
 
-        [MenuItem(Root + "유적으로 이동", false, 101)]
+        [MenuItem(Root + "유적으로 이동", false, 102)]
         private static void GoRuins() => TeleportTo("ruins");
 
+        [MenuItem(Root + "숲으로 이동", true)]
         [MenuItem(Root + "산으로 이동", true)]
         [MenuItem(Root + "유적으로 이동", true)]
         private static bool ValidateTeleport() => Application.isPlaying;
@@ -46,7 +52,7 @@ namespace InsectGame.EditorTools
             RegionData here = region.CurrentRegion;
             if (here == null || !here.HasBlightSite)
             {
-                Debug.LogWarning("[BlightDebug] 지금 리전에는 거점이 없다 — 먼저 산이나 유적으로 이동할 것");
+                Debug.LogWarning("[BlightDebug] 지금 리전에는 거점이 없다 — 먼저 숲·산·유적 중 한 곳으로 이동할 것");
                 return;
             }
             if (blight.IsCleansed(here.regionId))

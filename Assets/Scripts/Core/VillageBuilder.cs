@@ -182,6 +182,27 @@ namespace InsectGame.Core
                     storyNpcId = "ledger_thug_rule", wanderRadius = 0f
                 });
             }
+            // 핀 — 숲 그물터를 지키는 말단. **자(rule)와 같은 숲에 선다.** 겹치는 게 아니라
+            // 위계를 보이는 배치다: 자는 "전부 한 번에 거둬들이면 될 일"이라 말만 하고,
+            // 실제로 그물을 치고 지키는 건 이 청년이다.
+            //
+            // 40°/0.34R — 숲에는 이미 셋이 서 있어 각도를 골라야 한다(세라 90°/0.22R,
+            // 자 250°/0.28R, 서브에리어는 깊은 숲 123.7°·숲속 동굴 315°).
+            // 서브에리어 **진입 반경 안에 서면 말을 걸려다 구역에 빨려 들어간다**(hollow 앵커의
+            // 그 문제다). 40°에서 깊은 숲까지 36.8m(반경 21)·동굴까지 33.6m(반경 15)·
+            // 세라까지 21.4m로 전부 밖이다 — 여기 적은 건 **월드 좌표**다(RegionDefinitions가
+            // center·radius에 WorldScale 1.5를 일괄 적용하고, 이 함수는 그 뒤의 값을 받는다).
+            // 거점 구조물은 여기서 다시 5.5m 바깥에 서므로(BlightVfx.SiteBehindNpc) 더 멀어진다.
+            Data.RegionData thugForestPin = FindRegion(regions, "forest");
+            if (thugForestPin != null)
+            {
+                result.npcAnchors.Add(new NpcSpawnAnchor
+                {
+                    position = Polar(thugForestPin.centerPosition, 40f, thugForestPin.radius * 0.34f),
+                    kind = NpcKind.StoryNpc, regionId = "forest",
+                    storyNpcId = "ledger_thug_pin", wanderRadius = 0f
+                });
+            }
             Data.RegionData thugSwamp = FindRegion(regions, "swamp");
             if (thugSwamp != null)
             {
