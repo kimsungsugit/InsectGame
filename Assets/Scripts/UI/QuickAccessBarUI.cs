@@ -4,7 +4,16 @@ using UnityEngine;
 
 namespace InsectGame.UI
 {
-    public class QuickAccessBarUI : MonoBehaviour, IModalUI
+    /// <summary>
+    /// 화면 진입점 10개를 한 줄로 모은 바. 데스크톱은 하단 가로, 모바일은 우측 세로다.
+    ///
+    /// <b>이 컴포넌트는 모달이 아니다.</b> 예전엔 모바일에서 "메뉴 버튼 → 팝업" 2탭이라
+    /// 그 팝업이 모달이었는데, 버튼 10개를 직접 노출하도록 바꾸면서 팝업이 사라졌다.
+    /// <c>IModalUI</c> 구현과 <c>mobileMenuOpen</c>은 그 잔재로 남아 있었다 —
+    /// <b>어디서도 <c>Register</c>하지 않아 <c>IsOpen</c>은 영원히 false였고</b>,
+    /// 그런데도 시그니처만 보면 이 바가 모달 스택에 참여하는 것처럼 읽혔다.
+    /// </summary>
+    public class QuickAccessBarUI : MonoBehaviour
     {
         [SerializeField] private DexScreenUI dexScreen;
         [SerializeField] private BattleTeamUI battleTeamUI;
@@ -25,17 +34,19 @@ namespace InsectGame.UI
         private struct ButtonDef
         {
             public string label;
+            /// <summary>
+            /// 안내 문구이자 <b>실제 키 바인딩</b>. <see cref="Hotkeys"/>가 이 문자열을
+            /// <c>KeyCode</c>로 파싱해 쓴다 — 키 표를 따로 적어 두지 않는다.
+            /// </summary>
             public string key;
             public Color color;
+            /// <summary>미확인 완료 배지를 그리는 버튼인가(퀘스트 하나뿐이다).</summary>
+            public bool questBadge;
         }
 
         private GUIStyle cachedBtnStyle;
         private GUIStyle mobileGridButtonStyle;
         private GUIStyle badgeStyleCache;
-        private bool mobileMenuOpen;
-
-        // buttons[] 중 '퀘스트' 항목 인덱스 — 미확인 완료 배지를 이 버튼에만 그린다.
-        private const int QuestButtonIndex = 4;
 
         /// <summary>데스크톱 하단 바의 버튼 높이. 배치의 단일 출처다.</summary>
         public const float BarButtonHeight = 64f;
@@ -48,26 +59,13 @@ namespace InsectGame.UI
         /// </summary>
         public const float BarReservedHeight = BarButtonHeight + 8f + 4f;
 
-        public bool IsOpen => mobileMenuOpen;
-
-        public void CloseModal()
-        {
-            mobileMenuOpen = false;
-            ModalUIRegistry.Unregister(this);
-        }
-
-        private void OnDisable()
-        {
-            ModalUIRegistry.Unregister(this);
-        }
-
         private readonly ButtonDef[] buttons = new ButtonDef[]
         {
             new ButtonDef { label = "도감", key = "N", color = new Color(1f, 0.85f, 0.3f) },
             new ButtonDef { label = "배틀팀", key = "T", color = new Color(1f, 0.5f, 0.2f) },
             new ButtonDef { label = "훈련", key = "G", color = new Color(0.4f, 0.85f, 0.4f) },
             new ButtonDef { label = "컬렉션", key = "C", color = new Color(0.4f, 0.6f, 1f) },
-            new ButtonDef { label = "퀘스트", key = "Q", color = new Color(0.3f, 0.9f, 0.7f) },
+            new ButtonDef { label = "퀘스트", key = "Q", color = new Color(0.3f, 0.9f, 0.7f), questBadge = true },
             new ButtonDef { label = "지도", key = "M", color = new Color(0.7f, 0.5f, 0.9f) },
             // '캐릭터'[V] 항목이 여기 있었다. 여는 화면(CharacterViewerUI)이 상점[F4]·의상[P]·
             // 좌상단 PlayerStatusHUD의 완전한 중복이라 화면째 제거했다(사용자 요청).
@@ -75,24 +73,47 @@ namespace InsectGame.UI
             new ButtonDef { label = "상점", key = "F4", color = new Color(1f, 0.4f, 0.4f) },
             new ButtonDef { label = "PVP", key = "F6", color = new Color(0.25f, 0.75f, 1f) },
             // 스토리 저널 — 60비트로 늘어난 서사의 진행 상황을 보는 유일한 창구.
-            // 인덱스가 TryHotkey의 switch case 번호다(9). 배열·Update·OnGUI 3곳이 짝이다.
+            // 인덱스가 IsActive/OnClick의 case 번호다(9) — 그 둘은 아직 손으로 짝을 맞춘다.
             new ButtonDef { label = "이야기", key = "J", color = new Color(1f, 0.79f, 0.3f) },
         };
+
+        /// <summary>
+        /// 버튼별 키 바인딩. <b><c>buttons[].key</c>에서 파생한다</b> — 예전엔 같은 표를
+        /// <c>Update</c>와 <c>OnGUI</c>에 <b>두 벌 더</b> 적어 두었고, 그 둘은 인덱스로만
+        /// 배열과 이어져 있었다. 항목을 중간에 하나 끼우면 세 표가 통째로 한 칸씩 어긋나
+        /// <b>C가 훈련을 열고 배지가 지도에 붙는다</b> — 예외도 경고도 없다.
+        /// (실제로 '캐릭터'[V] 항목을 배열에서 뺀 적이 있다.)
+        ///
+        /// 파싱 실패는 <c>KeyCode.None</c>으로 두고 경고한다. 조용히 안 먹는 키보다 낫다.
+        /// </summary>
+        private KeyCode[] hotkeyCache;
+
+        private KeyCode[] Hotkeys()
+        {
+            if (hotkeyCache != null) return hotkeyCache;
+
+            hotkeyCache = new KeyCode[buttons.Length];
+            for (int i = 0; i < buttons.Length; i++)
+            {
+                if (System.Enum.TryParse<KeyCode>(buttons[i].key, false, out KeyCode code))
+                {
+                    hotkeyCache[i] = code;
+                    continue;
+                }
+                hotkeyCache[i] = KeyCode.None;
+                Debug.LogWarning($"[QuickBar] '{buttons[i].label}'의 키 표기 '{buttons[i].key}'를 "
+                    + "KeyCode로 읽지 못했다 — 그 버튼은 키보드로 열리지 않는다");
+            }
+            return hotkeyCache;
+        }
 
         private void Update()
         {
             if (IsInputBlocked()) return;
 
-            if (Input.GetKeyDown(KeyCode.N)) TryHotkey(0);
-            if (Input.GetKeyDown(KeyCode.T)) TryHotkey(1);
-            if (Input.GetKeyDown(KeyCode.G)) TryHotkey(2);
-            if (Input.GetKeyDown(KeyCode.C)) TryHotkey(3);
-            if (Input.GetKeyDown(KeyCode.Q)) TryHotkey(4);
-            if (Input.GetKeyDown(KeyCode.M)) TryHotkey(5);
-            if (Input.GetKeyDown(KeyCode.P)) TryHotkey(6);
-            if (Input.GetKeyDown(KeyCode.F4)) TryHotkey(7);
-            if (Input.GetKeyDown(KeyCode.F6)) TryHotkey(8);
-            if (Input.GetKeyDown(KeyCode.J)) TryHotkey(9);
+            KeyCode[] keys = Hotkeys();
+            for (int i = 0; i < keys.Length; i++)
+                if (keys[i] != KeyCode.None && Input.GetKeyDown(keys[i])) TryHotkey(i);
         }
 
         private void OnGUI()
@@ -101,25 +122,17 @@ namespace InsectGame.UI
             if (IsInputBlocked()) return;
 
             Event e = Event.current;
-            if (e != null && e.type == EventType.KeyDown)
+            if (e != null && e.type == EventType.KeyDown && e.keyCode != KeyCode.None)
             {
-                // handled를 TryHotkey의 반환값으로 받는다. 모달 때문에 무시된 키를
-                // e.Use()로 소비하면 그 모달의 텍스트필드가 글자를 못 받는다.
-                bool handled = false;
-                switch (e.keyCode)
+                // 소비는 TryHotkey가 통과했을 때만 한다. 모달 때문에 무시된 키를
+                // e.Use()로 삼키면 그 모달의 텍스트필드가 글자를 못 받는다.
+                KeyCode[] keys = Hotkeys();
+                for (int i = 0; i < keys.Length; i++)
                 {
-                    case KeyCode.N: handled = TryHotkey(0); break;
-                    case KeyCode.T: handled = TryHotkey(1); break;
-                    case KeyCode.G: handled = TryHotkey(2); break;
-                    case KeyCode.C: handled = TryHotkey(3); break;
-                    case KeyCode.Q: handled = TryHotkey(4); break;
-                    case KeyCode.M: handled = TryHotkey(5); break;
-                    case KeyCode.P: handled = TryHotkey(6); break;
-                    case KeyCode.F4: handled = TryHotkey(7); break;
-                    case KeyCode.F6: handled = TryHotkey(8); break;
-                    case KeyCode.J: handled = TryHotkey(9); break;
+                    if (keys[i] != e.keyCode) continue;
+                    if (TryHotkey(i)) e.Use();
+                    break;
                 }
-                if (handled) e.Use();
             }
 
             UIScale.Begin();
@@ -186,7 +199,7 @@ namespace InsectGame.UI
                     GUI.color = Color.white;
                 }
 
-                if (i == QuestButtonIndex) DrawQuestBadge(new Rect(bx, y, btnW, btnH));
+                if (def.questBadge) DrawQuestBadge(new Rect(bx, y, btnW, btnH));
             }
 
             GUI.backgroundColor = Color.white;
@@ -242,7 +255,7 @@ namespace InsectGame.UI
                     GUI.color = Color.white;
                 }
 
-                if (i == QuestButtonIndex) DrawQuestBadge(new Rect(colX, by, colW, cellH));
+                if (def.questBadge) DrawQuestBadge(new Rect(colX, by, colW, cellH));
             }
             GUI.backgroundColor = Color.white;
         }
@@ -360,6 +373,13 @@ namespace InsectGame.UI
                 case 7: if (cashShopUI != null) cashShopUI.Toggle(); break;
                 case 8: if (socialPvpUI != null) socialPvpUI.Toggle(); break;
                 case 9: if (storyJournalUI != null) storyJournalUI.Toggle(); break;
+                // 배열에 버튼만 늘리고 여기(와 IsActive)를 안 늘리면 그 버튼은 **아무 일도
+                // 하지 않는다** — 눌러도 조용해서 배포까지 살아남는다. 누를 때만 찍히므로
+                // 매 프레임 스팸이 되지 않는다.
+                default:
+                    Debug.LogWarning($"[QuickBar] '{buttons[index].label}'(index {index})에 화면 "
+                        + "배선이 없다 — buttons[]를 늘렸으면 IsActive/OnClick switch도 함께 늘린다");
+                    break;
             }
         }
 

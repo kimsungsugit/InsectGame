@@ -121,9 +121,13 @@ namespace InsectGame.UI
             DrawKeyRow(x, ref y, lineH, "T", "배틀 팀", keyStyle, descStyle);
             DrawKeyRow(x, ref y, lineH, "G", "훈련", keyStyle, descStyle);
             DrawKeyRow(x, ref y, lineH, "N", "도감", keyStyle, descStyle);
-            // 컬렉션 실제 바인딩은 C다(QuickAccessBarUI:58,74,97). TAB은 이 게임에서
+            // 컬렉션 실제 바인딩은 C다(`QuickAccessBarUI.buttons[]`의 key가 단일 출처다 —
+            // 예전 주석이 적어 둔 줄 번호는 이미 어긋나 있었다). TAB은 이 게임에서
             // 미니게임 확인/로비 오버레이 토글이고 IMGUI에선 포커스 이동 키다 —
             // 안내대로 누르면 컬렉션이 아니라 엉뚱한 동작을 했다.
+            //
+            // **이 목록 자체가 그 배열의 사본이다** — 6개만 적혀 있고 Q/P/F4/F6/J는 빠졌다.
+            // 바인딩을 바꾸면 여기도 손으로 따라가야 한다(감사 P2로 남겼다).
             DrawKeyRow(x, ref y, lineH, "C", "컬렉션", keyStyle, descStyle);
             DrawKeyRow(x, ref y, lineH, "M", "지도", keyStyle, descStyle);
         }
