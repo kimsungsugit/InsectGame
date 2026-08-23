@@ -1716,8 +1716,44 @@ namespace InsectGame.UI
             if (playerStats == null || enemyStats == null) return;
 
             float arenaBot = UIScale.VirtualScreenHeight * 0.60f;
+            // 장부 게이지를 적 상자 **위**에 올린다 — HP와 나란히 두면 어느 쪽이 위험한지
+            // 한눈에 안 갈린다. 명부회 보스전이 아니면 아무것도 안 그린다.
+            DrawLedgerGauge(UIScale.VirtualScreenWidth - 440, arenaBot - 26f, 420);
             DrawHpBox(20, arenaBot + 8, 420, playerStats, displayPlayerHp, true);
             DrawHpBox(UIScale.VirtualScreenWidth - 440, arenaBot + 8, 420, enemyStats, displayEnemyHp, false);
+        }
+
+        /// <summary>
+        /// 「장부」 게이지 — 명부회 보스전에만 뜬다(<c>LedgerThreshold</c>가 0이면 그리지 않는다).
+        ///
+        /// <b>예고가 이 요소의 전부다.</b> 같은 행동을 되풀이하면 차오르는 걸 눈으로 보고,
+        /// 임계 두 칸 전부터 붉어진다. 그걸 보고도 못 바꿨을 때만 맞아야 긴장이지,
+        /// 아무 신호 없이 큰 게 들어오면 그냥 사고다.
+        /// </summary>
+        private void DrawLedgerGauge(float x, float y, float w)
+        {
+            if (battleController == null) return;
+            int threshold = battleController.LedgerThreshold;
+            if (!LedgerPressure.IsActive(threshold)) return;
+
+            int tally = battleController.LedgerTally;
+            float fill = LedgerPressure.Fill01(tally, threshold);
+            bool warn = LedgerPressure.IsWarning(tally, threshold);
+            const float h = 26f;
+
+            UISurface.Flat(new Rect(x, y, w, h), new Color(0.09f, 0.09f, 0.14f, 0.94f));
+            if (fill > 0.001f)
+            {
+                Color col = warn ? new Color(0.95f, 0.35f, 0.3f) : new Color(0.85f, 0.72f, 0.35f);
+                UISurface.Flat(new Rect(x, y, w * fill, h), col);
+            }
+
+            Color prev = hpTextCache.normal.textColor;
+            hpTextCache.normal.textColor = warn ? new Color(1f, 0.86f, 0.82f) : new Color(0.93f, 0.9f, 0.78f);
+            // 문구 길이가 상태로 갈리므로 LabelFit으로 상자에 맞춘다(상자를 키우면 아레나를 침범한다).
+            UIHelper.LabelFit(new Rect(x, y, w, h), warn ? "장부 — 곧 적힌다" : "장부", hpTextCache);
+            // **되돌려 놓는다.** 이 스타일은 아래 HP 숫자가 이어서 쓴다(흰색 전제).
+            hpTextCache.normal.textColor = prev;
         }
 
         private void DrawHpBox(float x, float y, float w, InsectBattleStats stats, float dispHp, bool isPlayer)

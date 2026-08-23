@@ -178,6 +178,9 @@ namespace InsectGame.NPC
                 return false;
             }
 
+            // 장부를 건다 — 이 압박은 명부회 보스전에만 붙는다(아이 대결·야생 전투엔 없다).
+            battleController.ArmLedger(duel.ledgerThreshold);
+
             activeKid = null;
             activeBossId = storyNpcId;
             activeRarity = enemyData.rarity;

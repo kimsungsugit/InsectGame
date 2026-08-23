@@ -190,6 +190,45 @@ namespace InsectGame.Tests
             }
         }
 
+        /// <summary>
+        /// <b>명부회 보스는 전원 장부를 든다.</b> 하나가 0이면 그 인물만 아무 압박 없이
+        /// 싸워, 조직의 서명이던 것이 그 사람에게만 없는 상태가 된다 — 예외도 경고도
+        /// 안 나고 그냥 밋밋한 전투가 된다.
+        ///
+        /// 하한도 함께 본다. <c>MinThreshold</c> 아래면 반복 한 번(+2)에 즉시 터져
+        /// <b>피할 방법이 사라진다</b>(<c>LedgerPressure.IsActive</c>가 그때 장부를 통째로 끈다).
+        /// </summary>
+        [Test]
+        public void EveryBoss_ArmsTheLedger()
+        {
+            foreach (NpcBossDuels.BossDuel d in NpcBossDuels.All())
+            {
+                Assert.GreaterOrEqual(d.ledgerThreshold, InsectGame.Battle.LedgerPressure.MinThreshold,
+                    $"{d.storyNpcId}의 ledgerThreshold가 {d.ledgerThreshold} — 장부가 안 걸리거나 피할 수 없다");
+            }
+        }
+
+        /// <summary>
+        /// <b>임계는 곧 계급이다.</b> 하수가 간부보다 빨리 적으면 위계가 뒤집혀,
+        /// 초반 하수전이 최종전보다 가혹해진다. 레벨과 임계가 같은 방향을 가리켜야 한다
+        /// (레벨이 높을수록 임계는 낮다 = 빨리 적는다).
+        /// </summary>
+        [Test]
+        public void Threshold_TightensWithRank()
+        {
+            NpcBossDuels.BossDuel[] all = NpcBossDuels.All();
+            foreach (NpcBossDuels.BossDuel low in all)
+            {
+                foreach (NpcBossDuels.BossDuel high in all)
+                {
+                    if (low.level >= high.level) continue;
+                    Assert.GreaterOrEqual(low.ledgerThreshold, high.ledgerThreshold,
+                        $"{low.storyNpcId}(Lv.{low.level}, 임계 {low.ledgerThreshold})가 " +
+                        $"{high.storyNpcId}(Lv.{high.level}, 임계 {high.ledgerThreshold})보다 빨리 적는다 — 위계가 뒤집혔다");
+                }
+            }
+        }
+
         private static string ReadRepoText(string relativePath)
         {
             string full = System.IO.Path.Combine(Application.dataPath, "..", relativePath);

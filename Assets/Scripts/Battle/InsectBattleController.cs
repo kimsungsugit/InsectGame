@@ -38,6 +38,16 @@ namespace InsectGame.Battle
         private InsectEntity enemyEntity;
         private bool enemyShinyAtStart; // 시작 시점 스냅샷 — 도주/풀 재사용된 라이브 참조로 보상 오등록 방지
         private bool duelMode;          // NPC 대결 — 포획 롤·야생 아이템 드랍 없음(StartDuel 참조)
+
+        // ── 「장부」 압박(명부회 보스전 전용) ─────────────────────────────
+        // 규칙과 상수는 LedgerPressure(순수부)가 들고, 임계는 NpcBossDuels 표가 든다.
+        // 여기는 그 둘을 잇는 **상태**만 갖는다.
+        private int ledgerThreshold;                              // 0 = 장부 없음(야생·아이 대결)
+        private int ledgerTally;
+        private int lastActionKey = LedgerPressure.NoActionKey;
+        // 이번 적 턴에 「장부에 올랐다」가 터졌는가 — GetDamage가 읽어 피해를 키운다.
+        private bool ledgerTriggered;
+        private int ledgerReadCount;
         private InsectSkill[] playerOverrideSkills;
         private int[] playerCooldowns;
         private int enemyCooldown;
@@ -129,6 +139,13 @@ namespace InsectGame.Battle
             // "독에 걸려 있어야 의상 보너스가 켜지는" 상태였다. 교체(SwapPlayerInsect)와 레이드
             // (RaidBattleController가 시작 시 직접 대입)는 이미 첫 턴부터 적용된다 — 여기만 빠졌다.
             RecalculateBonuses();
+            // 장부는 보스 듀얼에서만 켠다. **여기서 반드시 끈다** — 안 그러면 보스전 뒤
+            // 이어지는 야생 전투가 임계를 물려받아 잡곤충이 정독을 쓴다.
+            ledgerThreshold = 0;
+            ledgerTally = 0;
+            lastActionKey = LedgerPressure.NoActionKey;
+            ledgerTriggered = false;
+            ledgerReadCount = 0;
             lastCandyReward = 0;
             lastExpReward = 0;
             lastItemId = string.Empty;
@@ -140,6 +157,45 @@ namespace InsectGame.Battle
             battleEnded = false;
             // onStarted/BattleUpdated는 호출부가 야생/듀얼 고유 필드(enemyEntity 등)를 채운 뒤에 울린다 —
             // BattleScreenUI.OnBattleUpdated가 GetEnemyEntity()를 읽어 아레나 위치를 잡기 때문이다.
+        }
+
+        /// <summary>
+        /// 이 전투에 「장부」를 건다 — <see cref="NPC.NpcDuelController.TryStartBossDuel"/>이
+        /// <c>StartDuel</c> 직후에 부른다. <c>StartDuel</c>의 인자로 받지 않는 이유는
+        /// 아이 대결이 같은 함수를 쓰기 때문이다(그쪽엔 장부가 없다).
+        /// </summary>
+        public void ArmLedger(int threshold)
+        {
+            ledgerThreshold = LedgerPressure.IsActive(threshold) ? threshold : 0;
+            ledgerTally = 0;
+            lastActionKey = LedgerPressure.NoActionKey;
+            ledgerTriggered = false;
+            ledgerReadCount = 0;
+        }
+
+        /// <summary>현재 장부 값 — UI 게이지가 읽는다.</summary>
+        public int LedgerTally => ledgerTally;
+
+        /// <summary>이 전투의 장부 임계. 0이면 장부 없음(게이지를 안 그린다).</summary>
+        public int LedgerThreshold => ledgerThreshold;
+
+        /// <summary>
+        /// 이번 전투에서 「장부에 올랐다」가 터진 횟수. 게이지는 터지는 순간 0으로 돌아가
+        /// <b>밖에서는 발동을 볼 수 없다</b> — 값이 줄어든 게 완화(-1) 때문인지 발동 때문인지
+        /// 구분이 안 된다. 그래서 누적 횟수를 따로 센다(배치모드 검증이 이걸 읽는다).
+        /// </summary>
+        public int LedgerReadCount => ledgerReadCount;
+
+        /// <summary>
+        /// 플레이어의 이번 행동을 장부에 적는다. 직전과 같은 행동이면 차고, 바꾸면 지워진다.
+        /// <b>적 턴보다 먼저</b> 불려야 한다 — 그래야 이번 턴 반복이 이번 턴 반격에 반영된다.
+        /// </summary>
+        private void NoteLedgerAction(int actionKey)
+        {
+            if (!LedgerPressure.IsActive(ledgerThreshold)) return;
+            bool repeated = lastActionKey != LedgerPressure.NoActionKey && lastActionKey == actionKey;
+            lastActionKey = actionKey;
+            ledgerTally = LedgerPressure.NextTally(ledgerTally, ledgerThreshold, repeated);
         }
 
         public void UseSkill(int skillIndex)
@@ -173,6 +229,7 @@ namespace InsectGame.Battle
                 }
             }
 
+            NoteLedgerAction(skillIndex);
             if (enemyStats.CurrentHp > 0)
             {
                 UseEnemyTurn();
@@ -204,6 +261,8 @@ namespace InsectGame.Battle
                 TryPlayHitFlash(false);
             }
 
+            // 쿨다운 없는 기본공격 연타가 이 압박이 겨냥하는 바로 그 패턴이다.
+            NoteLedgerAction(LedgerPressure.BasicAttackKey);
             if (enemyStats.CurrentHp > 0)
             {
                 UseEnemyTurn();
@@ -242,6 +301,7 @@ namespace InsectGame.Battle
                 return true;
             }
 
+            NoteLedgerAction(LedgerPressure.EscapeKey);
             UseEnemyTurn();
             TickEffects();
             TickCooldowns();
@@ -412,6 +472,12 @@ namespace InsectGame.Battle
         private int GetDamage(InsectBattleStats attacker, int baseDamage)
         {
             float multiplier = Mathf.Clamp(1f + attacker.AttackBonus, 0.3f, 3f);
+            // 장부 정독은 **적이 때릴 때만** 걸린다. attacker 참조로 가른다 —
+            // duelMode 같은 상태로 가르면 플레이어 공격까지 배율을 먹는다.
+            if (ledgerTriggered && ReferenceEquals(attacker, enemyStats))
+            {
+                multiplier *= LedgerPressure.ReadDamageMultiplier;
+            }
             int damage = Mathf.RoundToInt((baseDamage + attacker.Level * 2) * multiplier);
             return Mathf.Max(1, damage);
         }
@@ -448,8 +514,28 @@ namespace InsectGame.Battle
                 enemySkill = null;
             }
 
+            // 「장부에 올랐다」 — 되풀이한 자리를 친다. 게이지는 도로 비운다(톱니형).
+            // **피해 배율은 GetDamage 한 곳에서만** 걸린다 — ApplySkill의 분기가 여럿이라
+            // 각 분기에 곱하면 하나를 빠뜨리고 그게 조용히 어긋난다.
+            //
+            // **때리는 턴에만 쓴다.** 이번 행동이 버프·회복·독·기절이면 곱할 피해가 없어
+            // 게이지만 비워지고 아무 일도 안 일어난다 — 경고를 보고 각오한 쪽에서는 압박이
+            // 실력이 아니라 운으로 읽힌다(배치 실측에서 정독 4회 중 1회가 그렇게 낭비됐다).
+            // 그래서 칠 것이 없으면 장부를 든 채 다음 턴을 기다린다.
+            ledgerTriggered = LedgerPressure.IsFull(ledgerTally, ledgerThreshold)
+                && LedgerPressure.DealsImmediateDamage(
+                    enemySkill != null ? enemySkill.effectType : Data.SkillEffectType.Damage,
+                    enemySkill != null);
+            if (ledgerTriggered)
+            {
+                ledgerTally = 0;
+                ledgerReadCount++;
+                TryPlayEffectText("장부에 올랐다!", new Color(0.95f, 0.35f, 0.3f));
+            }
+
             LastEnemySkill = enemySkill;   // UI가 EnemyAttack 연출(속성·근접여부)에 사용
             ApplySkill(enemyStats, playerStats, enemySkill, false);
+            ledgerTriggered = false;
             if (enemySkill != null)
             {
                 enemyCooldown = enemySkill.cooldownTurns;

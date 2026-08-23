@@ -23,6 +23,8 @@ tools:
 - `Assets/Scripts/Battle/BattleArenaController.cs` - 배틀 아레나 ※비주얼은 visual-dev
 - `Assets/Scripts/Battle/RaidRoundResolver.cs` - 레이드 동시 라운드 판정(순수 정적). 1v1과 달리 버프 만료가 없다 — 의도된 divergence, 상한은 `MaxBuffStacks`
 - `Assets/Scripts/Battle/RaidRoundModels.cs` - 레이드 라운드 결과 모델(순수 데이터). 슬롯 피해 배열에 세터를 만들지 말 것 — 컨트롤러가 따로 합산해 이중 가산이 된다
+- `Assets/Editor/LedgerDuelProbe.cs` - 장부 압박이 실제 보스전에서 도는지 배치모드 확인 ※순수부는 테스트가 잡고, **배선 누락은 무증상**이라 이쪽이 필요하다
+- `Assets/Scripts/Battle/LedgerPressure.cs` - 명부회 보스전 「장부」 압박 순수 계산부 ※임계값(누가 얼마나 빨리 적는가)은 `NpcBossDuels` 표가 든다 — 여기에 인물 ID를 두지 않는다
 - `Assets/Scripts/Battle/RaidSupportPlanner.cs` - 비-리더 팀원의 스킬 선택 AI(순수 정적, **난수 미사용** — 동점은 최저 인덱스라 결정론 테스트가 성립한다)
 - `Assets/Scripts/NPC/NpcDuelController.cs` - 곤충잡이 아이 1v1 대결(듀얼 진입·보상) ※아이 상태·상대 배정은 capture-dev
 
