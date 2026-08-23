@@ -231,7 +231,22 @@ def main():
         str(len(save_bad)) + "건 " + str(save_bad) if save_bad else "정상 (클라우드 %d/5)" % n,
         not save_bad)
 
-    # 18. VFX가 전역 렌더 설정을 만지지 않는가.
+    # 18. 정화 퀘스트가 실제로 완료 가능한가.
+    #
+    #     스토리 퀘스트는 **활성인 것 하나만** 진행한다(TutorialQuestManager.NotifyAction —
+    #     `ActiveQuest.type == type`일 때만 IncrementProgress). 그래서 체인으로 엮인
+    #     CleanseBlight 퀘스트들의 목표 **합계**가 거점 수를 넘으면 뒤쪽 퀘스트가 영영
+    #     완료되지 않는다 — 앞 퀘스트가 정화를 이미 써 버렸기 때문이다.
+    #     실제로 겪었다: 거점 2곳에 목표 1 + 2를 두어 뒤 퀘스트가 죽어 있었다.
+    #     quest_lint는 ID·배선·순서만 보고 "달성 가능한가"는 안 본다.
+    chain_target = sum(q["target"] for q in gf.quest_defs()
+                       if q["type"] == "CleanseBlight" and q["category"] == "Story")
+    add("정화 스토리 퀘스트 달성 가능성", "목표 합계 <= 거점 수",
+        "합계 %d / 거점 %d%s" % (chain_target, len(sites),
+                                "" if chain_target <= len(sites) else " — **뒤쪽 퀘스트가 영영 완료 안 된다**"),
+        chain_target <= len(sites))
+
+    # 19. VFX가 전역 렌더 설정을 만지지 않는가.
     #     SubAreaEnvironment가 Start에 RenderSettings 기본값을 1회 스냅샷하고 매 프레임 덮는다.
     #     오염 fog를 켜면 서브에리어에 한 번 들어갔다 나오는 순간 조용히 지워진다.
     vfx_rel = "Assets/Scripts/Core/BlightVfx.cs"

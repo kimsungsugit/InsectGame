@@ -297,18 +297,23 @@ namespace InsectGame.NPC
             bool cleansed = blight != null && regionManager != null && regionManager.CurrentRegion != null
                 && blight.CleanseByBoss(bossId, regionManager.CurrentRegion.regionId);
 
+            // 보상 문구와 정화 문구를 **함께** 낸다. 나눠서 정화만 띄우면 첫 승리에서
+            // 아이템은 실제로 들어왔는데 그 사실을 아무 데서도 알리지 않는다
+            // (AddItem은 토스트를 안 띄운다) — 받은 줄도 모르는 보상이 된다.
+            string itemName = ResolveItemName(duel.rewardItemId);
+            string gained = firstWin && !string.IsNullOrEmpty(itemName)
+                ? $" {itemName} ×{duel.rewardCount} 획득"
+                : string.Empty;
+
             if (cleansed)
             {
                 RegionData here = regionManager.CurrentRegion;
                 string siteName = string.IsNullOrEmpty(here.blightSiteName) ? "거점" : here.blightSiteName;
-                SetResult($"{duel.displayName}을(를) 이겼다! {siteName}이(가) 무너진다");
+                SetResult($"{duel.displayName}을(를) 이겼다!{gained} · {siteName}이(가) 무너진다");
                 return;
             }
 
-            string itemName = ResolveItemName(duel.rewardItemId);
-            SetResult(!firstWin || string.IsNullOrEmpty(itemName)
-                ? $"{duel.displayName}을(를) 이겼다!"
-                : $"{duel.displayName}을(를) 이겼다! {itemName} ×{duel.rewardCount} 획득");
+            SetResult($"{duel.displayName}을(를) 이겼다!{gained}");
         }
 
         // ── 보상 ──

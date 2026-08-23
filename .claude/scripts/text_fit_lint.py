@@ -57,8 +57,15 @@ TWO_LINE_RATIO = 1.6
 #   displayName  : 종·아이템 이름. 데이터가 정하고 한국어라 폭을 많이 먹는다
 #   lines[       : NPC/스토리 대사 배열
 #   GetOwnedDisplayName / activeGuidedText : 런타임 조립 표시명·가이드 문구
+# 길이를 데이터가 정하는 텍스트 출처. **넓히면 안 된다** — 한 줄 라벨은 원래 높이가
+# fontSize의 1.2배쯤이라 출처를 안 좁히면 정상 라벨까지 247건이 걸린다(모듈 주석 참조).
+#
+# LastResultText: NPC 대결 결과 토스트. 상대 이름 + 보상 아이템 + 거점 이름이 붙어 길이가
+# 데이터로 정해지는데 800×44 고정 상자였다 — 2026-08-23 오염 거점 라운드에서 문구가
+# 길어지며 손으로 잡았다. 지금은 LabelFit이라 안 잡히지만 GUI.Label로 되돌아가면 다시 잡는다.
 UNBOUNDED_TEXT = re.compile(
     r"\.description\b|\.displayName\b|\blines\s*\[|GetOwnedDisplayName\s*\(|activeGuidedText\b"
+    r"|\.LastResultText\b"
 )
 
 # `이름 = new GUIStyle(...) { ... }` 또는 `이름 = Label(24, ...)` 형태에서 스타일 속성을 읽는다.

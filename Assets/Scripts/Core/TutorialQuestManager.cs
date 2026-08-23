@@ -391,12 +391,16 @@ namespace InsectGame.Core
                     rewardCandy = 60, rewardExp = 120,
                     rewardItemId = "net_gold", rewardItemCount = 1
                 },
+                // **목표는 1이지 2가 아니다.** NotifyAction은 **활성 퀘스트 하나만** 올리는데
+                // (`:699`), 첫 정화는 그 앞의 q_blight_first가 이미 소비한다. 거점이 둘뿐이라
+                // 여기 2를 적으면 남은 정화가 하나뿐이라 **영영 완료되지 않는다.**
+                // 체인 전체로 보면 1 + 1 = 거점 2곳이 맞다.
                 new TutorialQuest
                 {
                     questId = "q_blight_both", title = "돌아온 자리",
-                    description = "오염 거점 두 곳을 모두 정화하세요.",
-                    hint = "산과 유적 양쪽의 거점을 무너뜨리세요",
-                    type = QuestType.CleanseBlight, targetCount = 2,
+                    description = "남은 오염 거점도 마저 정화하세요.",
+                    hint = "산과 유적 중 아직 남은 쪽의 거점을 무너뜨리세요",
+                    type = QuestType.CleanseBlight, targetCount = 1,
                     prerequisiteQuestId = "q_blight_first",
                     rewardCandy = 120, rewardExp = 240,
                     rewardItemId = "full_restore", rewardItemCount = 2

@@ -398,7 +398,10 @@ namespace InsectGame.UI
 
             if (showResult)
             {
-                GUI.Label(
+                // 길이를 **데이터가** 정한다(상대 이름 + 보상 아이템 + 거점 이름) — 800×44 고정
+                // 상자에 raw GUI.Label로 그리면 긴 조합에서 조용히 잘린다. rules/ui-layout.md의
+                // 그 규칙 그대로 LabelFit으로 맞춰 넣는다.
+                UIHelper.LabelFit(
                     new Rect(UIScale.VirtualScreenWidth / 2f - 400f, UISafeLayout.ContentBottom - 150f, 800f, 44f),
                     duelController.LastResultText,
                     promptStyle);
