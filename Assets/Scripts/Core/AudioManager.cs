@@ -111,9 +111,18 @@ namespace InsectGame.Core
                 return;
             }
             Instance = this;
-            if (transform.parent == null) DontDestroyOnLoad(gameObject);
+            // 죽은 DontDestroyOnLoad 가드를 지웠다(경위는 `AuthManager` 클래스 주석). 씬 스코프다.
             EnsureInitialized();
         }
+
+        // 파기될 때 static을 비운다. 안 그러면 `Instance != null`(UnityEngine.Object의 파괴 검사)과
+        // `Instance?.`(진짜 null 검사)가 서로 다른 답을 내고, 후자는 파기된 객체로 호출이 들어간다.
+        // `singleton_lint.py`가 이 짝을 강제한다.
+        private void OnDestroy()
+        {
+            if (ReferenceEquals(Instance, this)) Instance = null;
+        }
+
 
         // 모바일 백그라운드 진입 시 BGM/Ambient 음소거 (배터리 절감 + UX)
         private void OnApplicationPause(bool pauseStatus)

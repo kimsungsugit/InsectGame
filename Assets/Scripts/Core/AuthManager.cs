@@ -9,6 +9,14 @@ namespace InsectGame.Core
     /// Firebase REST API 기반 인증 매니저.
     /// 이메일/게스트/Google/Kakao 로그인과 토큰 자동 갱신을 지원합니다.
     /// </summary>
+    // **이 매니저는 씬 스코프다 — DontDestroyOnLoad가 아니다.**
+    //
+    // 예전엔 Awake에 `if (transform.parent == null) DontDestroyOnLoad(gameObject);`가 있었는데,
+    // 만드는 곳은 `PlaySceneBootstrap` 하나뿐이고 거기서 `World/AuthManager`로 **부모를 달아**
+    // 만든다(`EnsureObject`가 경로대로 계층을 세운다). 그래서 그 가드는 **한 번도 통과한 적이
+    // 없다.** 그런데 죽은 줄을 근거로 "씬을 재로드해도 살아 있다"는 주석이 두 곳에 생겼고
+    // (`Logout`의 플러시, `AccountSettingsUI`의 재시작) 둘 다 틀렸다. 줄을 지우고 사실을 적는다.
+    // 씬 재로드(로그아웃·계정삭제)는 이 매니저를 파기하고 부트스트랩이 새로 만든다.
     public class AuthManager : MonoBehaviour
     {
         public static AuthManager Instance { get; private set; }
@@ -81,7 +89,6 @@ namespace InsectGame.Core
             if (Instance == null)
             {
                 Instance = this;
-                if (transform.parent == null) DontDestroyOnLoad(gameObject);
             }
             else if (Instance != this)
             {
@@ -91,6 +98,15 @@ namespace InsectGame.Core
 
             TryAutoLogin();
         }
+
+        // 파기될 때 static을 비운다. 안 그러면 `Instance != null`(UnityEngine.Object의 파괴 검사)과
+        // `Instance?.`(진짜 null 검사)가 서로 다른 답을 내고, 후자는 파기된 객체로 호출이 들어간다.
+        // `singleton_lint.py`가 이 짝을 강제한다.
+        private void OnDestroy()
+        {
+            if (ReferenceEquals(Instance, this)) Instance = null;
+        }
+
 
         private void TryAutoLogin()
         {

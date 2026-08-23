@@ -59,13 +59,22 @@ namespace InsectGame.Core
             if (Instance == null)
             {
                 Instance = this;
-                if (transform.parent == null) DontDestroyOnLoad(gameObject);
             }
             else if (Instance != this)
             {
                 Destroy(this);
                 return;
             }
+        }
+
+        // **씬 스코프다.** 죽은 DontDestroyOnLoad 가드를 지운 경위는 `AuthManager` 클래스 주석 참조 —
+        // 이 매니저가 씬과 함께 파기되는 것이 로그아웃 플러시가 끊기던 이유다.
+        // 파기될 때 static을 비운다. 안 그러면 `Instance != null`(UnityEngine.Object의 파괴 검사)과
+        // `Instance?.`(진짜 null 검사)가 서로 다른 답을 내고, 후자는 파기된 객체로 호출이 들어간다.
+        // `singleton_lint.py`가 이 짝을 강제한다.
+        private void OnDestroy()
+        {
+            if (ReferenceEquals(Instance, this)) Instance = null;
         }
 
         private static bool IsFirebaseConfigured()

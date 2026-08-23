@@ -1,3 +1,4 @@
+using System.Collections;
 using InsectGame.Core;
 using InsectGame.Opening;
 using UnityEngine;
@@ -274,9 +275,39 @@ namespace InsectGame.UI
             return AuthManager.Instance != null && AuthManager.Instance.IsGuest;
         }
 
+        /// <summary>클라우드 플러시를 기다리는 상한(초). 네트워크가 죽어도 로그아웃은 끝나야 한다.</summary>
+        private const float LogoutFlushWaitSeconds = 3f;
+
         private void LogoutAndReload()
         {
             if (AuthManager.Instance != null) AuthManager.Instance.Logout();
+            StartCoroutine(ReloadAfterFlush());
+        }
+
+        /// <summary>
+        /// 로그아웃의 마지막 클라우드 플러시가 끝난 뒤 재로드한다.
+        ///
+        /// <b>예전엔 곧바로 재로드했다.</b> "CloudSaveManager는 DontDestroyOnLoad라 in-flight
+        /// 요청이 완료된다"는 전제였는데, 그 DDOL은 `transform.parent == null` 가드 뒤에 있었고
+        /// 부트스트랩이 `World/` 아래 자식으로 만들어 **통과한 적이 없다**. 즉 재로드가 그 코루틴을
+        /// 오브젝트째 죽였다 — 로컬 세이브는 남지만 클라우드 사본이 한 세션 낡는다.
+        ///
+        /// 수명을 바꾸는 대신(루트로 올리면 재로드 때 `EnsureObject`가 중복을 만들고 그 중복이
+        /// 자기를 Destroy해 부트스트랩이 죽는 컴포넌트를 배선한다) 여기서 기다린다.
+        /// </summary>
+        private IEnumerator ReloadAfterFlush()
+        {
+            // SaveToCloud가 코루틴을 시작하는 프레임을 한 번 넘겨준다(IsSaving이 켜지기 전일 수 있다).
+            yield return null;
+
+            float deadline = Time.unscaledTime + LogoutFlushWaitSeconds;
+            while (Time.unscaledTime < deadline)
+            {
+                CloudSaveManager cloud = CloudSaveManager.Instance;
+                if (cloud == null || !cloud.IsSaving) break;
+                yield return null;
+            }
+
             ReloadScene();
         }
 
