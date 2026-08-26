@@ -23,6 +23,8 @@ namespace InsectGame.Story
         // DexProgress 트리거 소스. 다른 의존성과 생성 순서가 달라 별도 AutoWire로 받는다.
         private InsectGame.Dex.DexController dexController;
         private RegionBlightManager blight;
+        // BattleWin 트리거의 **두 번째** 소스. 레이드도 전투이므로 이기면 같은 트리거를 쏜다.
+        private RaidBattleController raidController;
         // 보상 지급 의존성 — 트리거 소스와 분리해 별도 AutoWire(keyGuide/quickBar 다중 AutoWire 관례).
         private PlayerCandyInventory candyInventory;
         private PlayerItemInventory itemInventory;
@@ -119,6 +121,25 @@ namespace InsectGame.Story
             if (blight == null) blight = blightManager;
         }
 
+        /// <summary>
+        /// <c>BattleWin</c>의 두 번째 소스. <c>DexController</c>와 같은 이유로 <b>Start보다 먼저</b>
+        /// 불려야 한다.
+        ///
+        /// <b>없으면 Epic·Legendary를 이겨도 스토리가 모른다.</b> <c>CaptureChoiceUI</c>는
+        /// 그 두 등급에 <b>포획과 1v1을 둘 다 막고 레이드만</b> 연다(<c>IsRaidTarget</c>). 그런데
+        /// 레이드 승리는 포획(<c>AddCapturedInsect</c>)만 흘리고 <c>InsectBattleController.BattleEnded</c>는
+        /// 안 울린다 — 그래서 <c>CaptureInsect</c> 비트는 도달하는데 <c>BattleWin</c> 비트만 못 했다.
+        ///
+        /// 최종장 <c>fin_seal</c>이 그 함정에 정확히 빠졌다: 저작이 <c>BattleWin mantis_unnamed</c>인데
+        /// 그 종이 Legendary라 <b>1v1로 만날 방법이 아예 없었다.</b> 게다가 그 비트는 스파인이라
+        /// (<c>ch12_clash</c>의 prereq · <c>fin_epilogue</c>의 게이트) 캠페인이 엔딩 직전에서
+        /// 영구 정지한다. 예외도 경고도 안 난다.
+        /// </summary>
+        public void AutoWire(RaidBattleController raid)
+        {
+            if (raidController == null) raidController = raid;
+        }
+
         private void Awake()
         {
             progress = Load();
@@ -153,6 +174,8 @@ namespace InsectGame.Story
             }
             if (battleController != null)
                 battleController.BattleEnded += OnBattleEnded;
+            if (raidController != null)
+                raidController.RaidEnded += OnRaidEnded;
             if (questManager != null)
                 questManager.QuestCompleted += OnQuestCompleted;
             // LevelReach / CaptureInsect 소스 — 닫힌 enum의 나머지 두 타입도 배선(누락 시 영구 미발화).
@@ -179,6 +202,8 @@ namespace InsectGame.Story
             }
             if (battleController != null)
                 battleController.BattleEnded -= OnBattleEnded;
+            if (raidController != null)
+                raidController.RaidEnded -= OnRaidEnded;
             if (questManager != null)
                 questManager.QuestCompleted -= OnQuestCompleted;
             if (progressController != null)
@@ -243,7 +268,34 @@ namespace InsectGame.Story
         /// </summary>
         private void OnBattleEnded(bool playerWon)
         {
-            if (playerWon) DeferTrigger(TriggerBattleWin, null);
+            // **종 ID를 지금 읽어 큐에 싣는다.** 발화는 결과 화면이 닫힌 뒤로 미뤄지는데, 그때
+            // 컨트롤러를 다시 물으면 이미 다음 전투가 시작됐을 수 있다(필드에서 연달아 붙는다).
+            // 무param 비트는 이 값을 보지 않으므로 기존 저작은 그대로다.
+            if (playerWon)
+                DeferTrigger(TriggerBattleWin, battleController != null ? battleController.EnemyInsectId : null);
+        }
+
+        /// <summary>
+        /// 레이드 승리도 <c>BattleWin</c>이다 — <b>Epic·Legendary는 그 길밖에 없다.</b>
+        ///
+        /// <c>CaptureChoiceUI.IsRaidTarget</c>이 그 두 등급에 포획과 1v1을 <b>둘 다 막고</b>
+        /// 레이드만 연다. 그래서 종을 지정한 <c>BattleWin</c> 비트가 Epic·Legendary를 물면
+        /// 1v1 경로가 존재하지 않아 <b>영영 발화하지 않는다</b>(AutoWire 요약 참조).
+        ///
+        /// 무param 비트에도 이롭다 — 예전에는 그 리전에서 레이드만 이기고 넘어간 플레이어가
+        /// "그곳에서 전투 승리" 비트를 통째로 건너뛰었다.
+        ///
+        /// <c>OnBattleEnded</c>와 같은 이유로 <b>결과 화면 뒤로 미루고</b>, 종 ID는 지금 읽는다
+        /// (<c>RaidBattleUI</c>의 정리 경로가 <c>NotifyBattlePresentationClosed</c>를 부른다).
+        /// </summary>
+        private void OnRaidEnded(bool playerWon)
+        {
+            if (!playerWon) return;
+            string bossId = raidController != null && raidController.BossStats != null
+                && raidController.BossStats.Data != null
+                    ? raidController.BossStats.Data.insectId
+                    : null;
+            DeferTrigger(TriggerBattleWin, bossId);
         }
 
         /// <summary>
@@ -434,8 +486,17 @@ namespace InsectGame.Story
                             || beat.trigger.param == eventParam;
                         break;
                     case TriggerBattleWin:
-                        // param 비면 아무 승리(곤충 지정은 미지원).
-                        matches = string.IsNullOrEmpty(beat.trigger.param);
+                        // param 비면 아무 승리, 채우면 **그 종을 이겼을 때만**(CaptureInsect와 같은 규약).
+                        //
+                        // 종 지정이 없던 시절 `fin_seal`(엔딩)이 `BattleWin ""` + req `nameless`였다.
+                        // 무명과 대면한 직후 그 리전에서 **아무 야생 곤충이나 이기면** 엔딩 대사와
+                        // 컷신·보상이 한꺼번에 터졌다 — 최종 수문장 격파와는 무관하게.
+                        //
+                        // 종을 지정해도 **재발화형은 유지된다**: 지정 종은 그 리전 스폰 풀에 있어야
+                        // 하므로(story_lint 검사 11) 다시 만나 다시 이길 수 있다. 그래서 스파인에
+                        // 걸어도 안전하다 — GuardianDefeat처럼 일생 1회가 아니다.
+                        matches = string.IsNullOrEmpty(beat.trigger.param)
+                            || beat.trigger.param == eventParam;
                         break;
                     case TriggerLevelReach:
                     case TriggerDexProgress:

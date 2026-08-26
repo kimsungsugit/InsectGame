@@ -351,10 +351,16 @@ def evaluate_signals() -> list:
         "FAIL" if missing_quest else "PASS",
     ))
 
-    # 11. 특정 곤충 포획 목표가 그 리전에서 실제로 잡히는가.
-    #     CaptureInsect에 param을 주면 "그 종을 잡아야" 발화한다. 그런데 requiredRegionId까지
-    #     걸려 있으면 **그 리전 풀에 그 종이 없을 때 영영 발화하지 않는다** — 런타임엔 아무 신호도
-    #     없고 플레이어는 "왜 다음 이야기가 안 나오지"만 겪는다. 1막 확장이 이 형태를 5건 썼다.
+    # 11. 특정 곤충 목표(포획·전투)가 그 리전에서 실제로 만나지는가.
+    #     CaptureInsect/BattleWin에 param을 주면 "그 종을 잡아야/이겨야" 발화한다. 그런데
+    #     requiredRegionId까지 걸려 있으면 **그 리전 풀에 그 종이 없을 때 영영 발화하지 않는다** —
+    #     런타임엔 아무 신호도 없고 플레이어는 "왜 다음 이야기가 안 나오지"만 겪는다.
+    #     1막 확장이 포획에서 이 형태를 5건 썼다.
+    #
+    #     **BattleWin은 뒤늦게 종 지정이 생겼다.** 그전엔 `fin_seal`(엔딩)이 무param이라
+    #     무명과 대면한 직후 그 리전에서 아무 야생 곤충이나 이기면 엔딩이 터졌다. 종을 달면서
+    #     이 검사가 그쪽까지 봐야 한다 — 게다가 `fin_seal`은 **스파인**이라(ch12_clash의 prereq)
+    #     서식하지 않는 종을 물리면 캠페인이 그 자리에서 영구 정지한다.
     pool_by_region = {rid: set(ids) for rid, _level, ids in game_facts.region_pools()}
     # 서브에리어 전용 종도 그 리전에서 잡히므로 함께 센다.
     region_src = game_facts._read("region_defs")
@@ -365,26 +371,28 @@ def evaluate_signals() -> list:
         for block in re.findall(r'exclusiveInsectIds\s*=\s*new\[\]\s*\{(.*?)\}', body, re.S):
             pool_by_region[rid].update(re.findall(r'"([a-z_0-9]+)"', block))
 
+    SPECIES_TRIGGERS = ("CaptureInsect", "BattleWin")
     unreachable_target = []
     for b in beats:
         trig = b.get("trigger") or {}
-        if trig.get("type") != "CaptureInsect":
+        if trig.get("type") not in SPECIES_TRIGGERS:
             continue
         species = trig.get("param")
         region = b.get("requiredRegionId")
         if not species or not region:
             continue
         if species not in pool_by_region.get(region, set()):
-            unreachable_target.append(f"{b['beatId']}:{species}@{region}")
+            unreachable_target.append(
+                f"{b['beatId']}:{trig['type']} {species}@{region}")
 
     targeted = sum(1 for b in beats
-                   if (b.get("trigger") or {}).get("type") == "CaptureInsect"
+                   if (b.get("trigger") or {}).get("type") in SPECIES_TRIGGERS
                    and (b.get("trigger") or {}).get("param"))
     signals.append((
-        "특정 곤충 포획 목표의 서식 정합",
+        "특정 곤충 목표의 서식 정합 (포획·전투)",
         "0건 미서식",
         f"{len(unreachable_target)}건 ({unreachable_target})" if unreachable_target
-        else f"0건 (지정 포획 {targeted}건)",
+        else f"0건 (종 지정 {targeted}건)",
         "FAIL" if unreachable_target else "PASS",
     ))
 
@@ -747,7 +755,58 @@ def evaluate_signals() -> list:
         "FAIL" if switch_problems else "PASS",
     ))
 
+    # 23. **레이드 승리가 `BattleWin`을 흘리는가** — Epic·Legendary는 그 길밖에 없다.
+    #
+    #     `CaptureChoiceUI.IsRaidTarget`은 등급만 본다: Epic·Legendary면 **포획도 1v1도 막고**
+    #     레이드만 연다. 그런데 레이드 승리는 `AddCapturedInsect`(→ CaptureInsect 트리거)만
+    #     흘리고 `InsectBattleController.BattleEnded`는 울리지 않는다. 그래서 오랫동안
+    #     **CaptureInsect 비트는 그 등급에 도달하는데 BattleWin 비트만 도달하지 못했다.**
+    #
+    #     최종장 `fin_seal`이 정확히 그 함정에 빠졌다 — `BattleWin mantis_unnamed`인데
+    #     그 종이 Legendary라 1v1로 만날 방법이 아예 없었고, 게다가 스파인이라
+    #     (`ch12_clash`의 prereq · `fin_epilogue`의 게이트) 캠페인이 엔딩 직전에서 영구 정지했다.
+    #     예외도 경고도 안 난다. 배치 걸음조차 1v1을 **시뮬레이션**해서 통과시켰다.
+    #
+    #     두 지점 다 있어야 한다 — 구독(StoryDirector)과 주입(Bootstrap). 하나만 빠져도 무증상이다.
+    raid_wiring = []
+    try:
+        director_src = game_facts._read("story_director")
+    except Exception:
+        director_src = _read_repo("Assets/Scripts/Story/StoryDirector.cs")
+    boot_src = _read_repo("Assets/Scripts/Core/PlaySceneBootstrap.cs")
+
+    if "RaidEnded += " not in director_src:
+        raid_wiring.append("StoryDirector가 RaidEnded를 구독하지 않는다")
+    if "RaidEnded -= " not in director_src:
+        raid_wiring.append("StoryDirector가 RaidEnded를 해제하지 않는다")
+    if not re.search(r"storyDirector\.AutoWire\(\s*raidController\s*\)", boot_src):
+        raid_wiring.append("Bootstrap이 storyDirector.AutoWire(raidController)를 안 부른다")
+
+    # 종을 지정한 BattleWin 비트 중 Epic·Legendary를 문 것 — 배선이 끊기면 그것들이 먼저 죽는다.
+    at_risk = sorted(
+        b["beatId"] for b in beats
+        if (b.get("trigger") or {}).get("type") == "BattleWin"
+        and (b.get("trigger") or {}).get("param"))
+    signals.append((
+        "레이드 승리 → BattleWin 배선 (Epic·Legendary는 1v1이 없다)",
+        "0건 누락",
+        f"{len(raid_wiring)}건 ({raid_wiring})" if raid_wiring
+        else f"0건 (구독·해제·주입 3지점 · 종 지정 BattleWin {len(at_risk)}건: {at_risk})",
+        "FAIL" if raid_wiring else "PASS",
+    ))
+
     return signals
+
+
+def _read_repo(rel_path: str) -> str:
+    """저장소 루트 기준 파일 읽기 — game_facts에 별칭이 없는 파일용."""
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    full = os.path.join(root, rel_path.replace("/", os.sep))
+    try:
+        with open(full, encoding="utf-8") as fh:
+            return fh.read()
+    except OSError as exc:
+        raise ExtractorBroken(f"{rel_path}를 읽지 못했다: {exc}")
 
 
 def render(signals) -> str:

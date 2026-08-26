@@ -183,6 +183,7 @@ namespace InsectGame.Tests
                 StoryStageLibrary.Ch10InkEnter,
                 StoryStageLibrary.Ch11ScholarLead,
                 StoryStageLibrary.Ch12ChiefEnter,
+                StoryStageLibrary.GardenScholarGlass,
             };
 
             foreach (string id in entrances)

@@ -151,6 +151,83 @@ namespace InsectGame.Core
                 });
             }
 
+            // ── 1막 동행자 배치 — 연못·습지·산·유적·꽃밭 ──
+            // 예전에는 1막 동행자가 초원(어르신·라온)과 숲(세라)에만 서 있었다. 그런데 대사는
+            // 연못·습지·산·유적에서도 라온과 세라가 한다 — **몸 없는 목소리**였다. 2막은 리전마다
+            // 동행자를 세워 두는데(아래 ver2 블록) 1막만 그러지 않아 두 막의 연출이 갈렸다.
+            //
+            // 더 실질적인 이유: **여운(NpcTalk) 비트는 그 리전에 NPC가 서 있어야 성립한다.**
+            // ch2~ch6 여운이 오래 0건이었던 건 저작을 안 해서가 아니라 말 걸 상대가 없어서였다.
+            //
+            // 화자는 각 챕터의 실제 speakerNpcId를 따른다 — 연못·습지는 라온(ch2_water·ch4_bond),
+            // 산·유적은 세라(ch5_summit·ch6_secret). **어르신은 초원에 남긴다**(StoryBible 4장 —
+            // 2막에서 유일하게 움직이지 않는 사람).
+            //
+            // 각도는 서브에리어 **진입 반경 밖**으로 잡는다. 반경 안에 서면 말을 걸려다 구역에
+            // 빨려 들어간다(핀 앵커 주석의 그 문제다). 아래는 전부 월드 좌표 기준 실측이고,
+            // 가장 가까운 서브에리어까지 남는 여유는 괄호 안 값이다:
+            //   연못 20°/0.38R  → 깊은 곳 23.2m(반경 15, +8.2)
+            //   습지 85°/0.36R  → 습지 동굴 23.9m(반경 15, +8.9)
+            //   산   65°/0.32R  → 산 정상 26.0m(반경 18, +8.0)
+            //   유적 290°/0.34R → 유적 지하 26.8m(반경 15, +11.8)
+            //   꽃밭 155°/0.34R → 꽃 미로 26.1m(반경 18, +8.1)
+            // 전초기지(0.4R)·잡기 아이·검은 옷의 하수와도 12m 이상 떨어뜨렸다.
+            //
+            // **storyNpcId는 반드시 리터럴로** — 아래 하수 블록 주석과 같은 이유(story_lint 검사 3).
+            Data.RegionData storyPond = FindRegion(regions, "pond");
+            if (storyPond != null)
+            {
+                result.npcAnchors.Add(new NpcSpawnAnchor
+                {
+                    position = Polar(storyPond.centerPosition, 20f, storyPond.radius * 0.38f),
+                    kind = NpcKind.StoryNpc, regionId = "pond",
+                    storyNpcId = "catcher_rival", wanderRadius = 0f
+                });
+            }
+            Data.RegionData storySwamp = FindRegion(regions, "swamp");
+            if (storySwamp != null)
+            {
+                result.npcAnchors.Add(new NpcSpawnAnchor
+                {
+                    position = Polar(storySwamp.centerPosition, 85f, storySwamp.radius * 0.36f),
+                    kind = NpcKind.StoryNpc, regionId = "swamp",
+                    storyNpcId = "catcher_rival", wanderRadius = 0f
+                });
+            }
+            Data.RegionData storyMountain = FindRegion(regions, "mountain");
+            if (storyMountain != null)
+            {
+                result.npcAnchors.Add(new NpcSpawnAnchor
+                {
+                    position = Polar(storyMountain.centerPosition, 65f, storyMountain.radius * 0.32f),
+                    kind = NpcKind.StoryNpc, regionId = "mountain",
+                    storyNpcId = "ruins_scholar", wanderRadius = 0f
+                });
+            }
+            Data.RegionData storyRuins = FindRegion(regions, "ruins");
+            if (storyRuins != null)
+            {
+                result.npcAnchors.Add(new NpcSpawnAnchor
+                {
+                    position = Polar(storyRuins.centerPosition, 290f, storyRuins.radius * 0.34f),
+                    kind = NpcKind.StoryNpc, regionId = "ruins",
+                    storyNpcId = "ruins_scholar", wanderRadius = 0f
+                });
+            }
+            // 꽃밭 — 분기 지역이라 여태 스토리 NPC가 **한 명도** 없었다. `garden_intro`의 라온이
+            // "세라한테 물어봐야겠어"로 닫는데 정작 세라가 그 자리에 없었다. 꽃밭 비트 넷의
+            // 화자가 세라이므로 여기 세운다(세라 합류 전 진입은 requiredBeatId로 저작이 막는다).
+            Data.RegionData storyGarden = FindRegion(regions, "garden");
+            if (storyGarden != null)
+            {
+                result.npcAnchors.Add(new NpcSpawnAnchor
+                {
+                    position = Polar(storyGarden.centerPosition, 155f, storyGarden.radius * 0.34f),
+                    kind = NpcKind.StoryNpc, regionId = "garden",
+                    storyNpcId = "ruins_scholar", wanderRadius = 0f
+                });
+            }
+
             // ── 1막 악당 전조 — 검은 옷의 두 사람 ──
             // 정체를 밝히지 않는다. 지역마다 한 명씩 세워 두고, 마주칠 때마다 하는 말이
             // 조금씩 노골적으로 바뀐다(연못: 멀리서 관찰 → 유적: 대놓고 경고).

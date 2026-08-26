@@ -13,13 +13,19 @@ using UnityEngine;
 namespace InsectGame.EditorTools
 {
     /// <summary>
-    /// 오염 거점 스토리 비트를 <b>실제로 발화시켜</b> 순서대로 확인하는 배치모드 도구.
+    /// 스토리 비트를 <b>실제로 발화시켜</b> 순서대로 확인하는 배치모드 도구.
     ///
     /// <code>
     /// Unity.exe -batchmode -projectPath &lt;proj&gt; -logFile &lt;log&gt; \
     ///   -executeMethod InsectGame.EditorTools.StoryBeatWalkthrough.Run \
-    ///   -walkOut .claude/cache/story-walk.md [-walkRegion mountain]
+    ///   -walkOut .claude/cache/story-walk.md [-walkRegion mountain] [-walkMode campaign]
     /// </code>
+    ///
+    /// <c>-walkMode</c>는 <c>blight</c>(기본 · 오염 거점 아크)와 <c>campaign</c>(1막 본편 + 꽃밭)
+    /// 둘이다. 거점 모드는 <c>NpcTalk</c>·<c>CaptureInsect</c>·<c>BattleWin</c>·<c>RegionCleansed</c>만
+    /// 두드리므로, <b><c>SubAreaEnter</c>와 <c>GuardianDefeat</c>에 걸린 비트는 오래 사각지대였다</b>
+    /// — 본편에서 가장 많이 쓰는 두 트리거인데도 그랬다. campaign 모드가 그 둘을 실제 경로로 두드린다
+    /// (근접 → [E] 진입 → 이탈 / <c>RegionManager.DefeatGuardian</c>).
     ///
     /// <b>왜 이게 필요한가.</b> <c>story_lint</c>는 Story.json을 <b>정적으로</b> 읽어 게이트·
     /// 참조 무결성만 본다. 비트가 <b>정말로 뜨는지</b>는 못 본다 — 발화는 트리거 이벤트,
@@ -69,6 +75,14 @@ namespace InsectGame.EditorTools
 
         private static string outPath;
         private static string onlyRegion;
+        /// <summary>
+        /// 무엇을 걸을 것인가 — <c>blight</c>(기본, 오염 거점 아크) 또는 <c>campaign</c>(1막 본편 + 꽃밭).
+        ///
+        /// 거점 아크만 걷던 시절에는 <c>SubAreaEnter</c>·<c>GuardianDefeat</c> 구동부가 아예 없었다.
+        /// 그 둘은 <b>정적 검사로는 발화를 증명할 수 없는</b> 트리거인데(story_lint는 Story.json을
+        /// 읽을 뿐이고 IMGUI는 캡처가 안 된다) 본편 비트 상당수가 거기 걸려 있다.
+        /// </summary>
+        private static string walkMode;
 
         private static float startTime;
         private static float bootDeadline;
@@ -107,13 +121,15 @@ namespace InsectGame.EditorTools
         {
             outPath = ReadArg("-walkOut", DefaultOut);
             onlyRegion = ReadArg("-walkRegion", "");
+            walkMode = ReadArg("-walkMode", "blight");
 
             UnityEditor.SceneManagement.EditorSceneManager.OpenScene(
                 DefaultScene, UnityEditor.SceneManagement.OpenSceneMode.Single);
 
-            SessionState.SetString(StageKey, outPath + "|" + onlyRegion);
+            SessionState.SetString(StageKey, outPath + "|" + onlyRegion + "|" + walkMode);
             Log("scene=" + DefaultScene + " out=" + outPath
-                + " region=" + (onlyRegion == "" ? "(전부)" : onlyRegion));
+                + " region=" + (onlyRegion == "" ? "(전부)" : onlyRegion)
+                + " mode=" + walkMode);
             EditorApplication.EnterPlaymode();
         }
 
@@ -127,6 +143,7 @@ namespace InsectGame.EditorTools
             string[] parts = stage.Split('|');
             outPath = parts.Length > 0 ? parts[0] : DefaultOut;
             onlyRegion = parts.Length > 1 ? parts[1] : "";
+            walkMode = parts.Length > 2 && parts[2] != "" ? parts[2] : "blight";
 
             startTime = Time.realtimeSinceStartup;
             bootDeadline = startTime + BootSeconds;
@@ -157,9 +174,10 @@ namespace InsectGame.EditorTools
                 if (now < bootDeadline) return;
                 if (!Bootstrapped()) { bootDeadline = now + 1f; return; }
                 booted = true;
-                BuildSteps();
-                if (steps.Count == 0) { Finish("걸어볼 거점이 없다"); return; }
-                Log("거점 " + SiteCount() + "개 · 걸음 " + steps.Count + "개 시작");
+                if (IsCampaign) BuildCampaignSteps(); else BuildSteps();
+                if (steps.Count == 0) { Finish("걸어볼 것이 없다"); return; }
+                Log((IsCampaign ? "본편" : "거점 " + SiteCount() + "개")
+                    + " · 걸음 " + steps.Count + "개 시작");
             }
 
             TickJanitor(now);
@@ -344,6 +362,172 @@ namespace InsectGame.EditorTools
             }
         }
 
+        private static bool IsCampaign { get { return walkMode == "campaign"; } }
+
+        /// <summary>
+        /// 1막 본편 + 꽃밭 걸음. 거점 걸음(<see cref="BuildSteps"/>)이 <c>NpcTalk</c>·<c>CaptureInsect</c>·
+        /// <c>BattleWin</c>·<c>RegionCleansed</c>만 두드리는 것과 달리, 여기서는
+        /// <b><c>SubAreaEnter</c>와 <c>GuardianDefeat</c>도 실제 경로로</b> 두드린다.
+        ///
+        /// 리전 순서가 곧 여운 체인 순서다 — 연못(ch2)·숲(ch3)·습지(ch4)·산(ch5)·유적(ch6)을
+        /// 이 차례로 걸어야 같은 NPC의 여운이 하나씩 열린다(체인은 직전 여운을 prereq로 문다).
+        /// 순서를 바꾸면 뒤 여운이 안 열리는데, 그건 결함이 아니라 저작 그대로다.
+        /// </summary>
+        private static void BuildCampaignSteps()
+        {
+            steps = new List<Step>();
+            steps.Add(new Step
+            {
+                site = "-",
+                label = "진행 기록 초기화(스토리 열람 + 수문장)",
+                act = ResetProgress,
+                until = () => true,
+            });
+
+            // 초원 — 서브에리어에 이야기가 있다는 걸 처음 가르치는 자리
+            Region("초원(meadow)", "meadow");
+            SubAreaBeat("초원(meadow)", "meadow_cave", "ch1_cave", "동굴 진입");
+
+            // 연못 — 대치 슬롯이 NpcTalk뿐이던 자리를 서브에리어로 채웠다
+            Region("연못(pond)", "pond");
+            SubAreaBeat("연못(pond)", "pond_reeds", "ch2_reeds", "갈대 진입");
+            Beat("연못(pond)", "전투 승리", "ch2_clash", WinBattle, 4);
+            Beat("연못(pond)", "수문장 격파", "gd_pond", () => Guardian("pond"), 3);
+            Beat("연못(pond)", "말 걸기(여운)", "ch2_echo", () => Talk("catcher_rival"), 6);
+
+            // 숲 — 세라는 원래 여기 서 있었다(앵커 추가 대상 아님)
+            Region("숲(forest)", "forest");
+            Beat("숲(forest)", "말 걸기(여운)", "ch3_echo", () => Talk("ruins_scholar"), 6);
+            Beat("숲(forest)", "수문장 격파", "gd_forest", () => Guardian("forest"), 3);
+
+            // 습지 — 라온 앵커 신규
+            Region("습지(swamp)", "swamp");
+            SubAreaBeat("습지(swamp)", "swamp_fog", "ch4_fog", "안개 진입");
+            Beat("습지(swamp)", "말 걸기(여운)", "ch4_echo", () => Talk("catcher_rival"), 6);
+            Beat("습지(swamp)", "수문장 격파", "gd_swamp", () => Guardian("swamp"), 3);
+
+            // 산 — 세라 앵커 신규. ch5_clash와 bl_mountain_clash가 같은 트리거를 다툰다(정상)
+            Region("산(mountain)", "mountain");
+            Beat("산(mountain)", "전투 승리", "ch5_clash", WinBattle, 4);
+            Beat("산(mountain)", "말 걸기(여운)", "ch5_echo", () => Talk("ruins_scholar"), 6);
+            Beat("산(mountain)", "수문장 격파", "gd_mountain", () => Guardian("mountain"), 3);
+
+            // 유적 — 세라 앵커 신규
+            Region("유적(ruins)", "ruins");
+            Beat("유적(ruins)", "말 걸기(여운)", "ch6_echo", () => Talk("ruins_scholar"), 6);
+
+            // 꽃밭 — 이 라운드의 핵심. 비트 1개짜리였던 분기 지역에 5비트를 채웠다
+            Region("꽃밭(garden)", "garden");
+            SubAreaBeat("꽃밭(garden)", "garden_greenhouse", "garden_glass", "온실 진입(대치 연출)");
+            Beat("꽃밭(garden)", "포획", "garden_sign", () => Capture("butterfly_azure"), 4);
+            Beat("꽃밭(garden)", "전투 승리", "garden_clash", WinBattle, 4);
+            SubAreaBeat("꽃밭(garden)", "garden_maze", "garden_fence", "미로 진입(떡밥 절반)");
+            Beat("꽃밭(garden)", "수문장 격파", "gd_garden", () => Guardian("garden"), 3);
+
+            // 이름 없는 자리 — 최종 수문장에 서사를 붙였다
+            const string fin = "이름 없는 자리(nameless)";
+            Region(fin, "nameless");
+            Beat(fin, "수문장 격파", "gd_nameless", () => Guardian("nameless"), 3);
+
+            // 최종장 — `fin_seal`이 **아무 승리로도 터지던** 자리다. 종 지정이 붙었으니
+            // 여기서 마지막 두 걸음이 갈린다: 잡몹을 이기면 엔딩이 **안 나야** 하고,
+            // 이름 없는 사마귀를 이겨야 난다. 그 순서 그대로 걷는다.
+            SubAreaBeat(fin, "nameless_ledger", "ch12_confront", "장부의 방(관장 대면)");
+            SubAreaBeat(fin, "nameless_core", "fin_unnamed", "빈칸(무명 대면·컷신)");
+            steps.Add(new Step
+            {
+                site = fin,
+                label = "잡몹 1v1 승리 — 엔딩이 뜨면 안 된다",
+                // moth_pale은 Common이라 1v1이 실제로 열린다(레이드 대상이 아니다).
+                act = () => WinBattleAgainst("moth_pale"),
+                // 발화 자체를 기다리지 않는다. 큐가 비고 조용하면 통과 — 즉 아무 비트도 안 떴다는 뜻.
+                until = () => Idle() && !firedLog.Contains("fin_seal"),
+                maxTries = 1,
+            });
+            // **레이드로 건다.** mantis_unnamed는 Legendary라 CaptureChoiceUI가 1v1을 막는다 —
+            // 1v1로 걸으면 게임에 없는 경로를 통과시키는 셈이 되고, 그게 이 결함을 놓친 이유다.
+            Beat(fin, "이름 없는 사마귀 레이드 격파(엔딩)", "fin_seal",
+                () => WinRaidAgainst("mantis_unnamed"), 3);
+            Beat(fin, "전투 승리(관장 마지막 말)", "ch12_clash", WinBattle, 3);
+        }
+
+        private static void Region(string site, string regionId)
+        {
+            steps.Add(new Step
+            {
+                site = site,
+                label = "리전 이동",
+                act = () => MoveToRegion(regionId),
+                until = () =>
+                {
+                    var rm = UnityEngine.Object.FindFirstObjectByType<RegionManager>();
+                    return rm != null && rm.CurrentRegion != null && rm.CurrentRegion.regionId == regionId;
+                },
+                maxTries = 3,
+            });
+        }
+
+        /// <summary>선행 채우기 → 행위 → 발화 확인.</summary>
+        private static void Beat(string site, string label, string beatId, Action act, int tries)
+        {
+            steps.Add(new Step
+            {
+                site = site,
+                label = "선행 채우기(" + beatId + ")",
+                act = () => SeedPrerequisites(beatId),
+                until = () => true,
+            });
+            steps.Add(BeatStep(site, label, beatId, act, tries));
+        }
+
+        /// <summary>
+        /// 서브에리어 비트 한 벌 — <b>근접 → 진입 → 이탈</b> 세 걸음이다.
+        ///
+        /// 진입은 <c>RequestEnterSubArea</c> 하나로 안 된다. 그 함수는 <c>nearbySubArea</c>가
+        /// 차 있어야 하고, 그건 <c>RegionManager.Update</c>가 <b>위치로</b>만 채운다 —
+        /// 플레이어가 걸어 들어가는 그 경로다. 그래서 먼저 좌표를 옮기고 한 프레임 기다린다.
+        ///
+        /// <b>이탈을 빠뜨리면 그 뒤 걸음이 전부 죽는다.</b> 진입이 sticky를 켜고 플레이어를
+        /// (2000,0,2000)으로 옮기는데, sticky 동안 <c>Update</c>가 위치 판정을 통째로 건너뛰어
+        /// 다음 <c>리전 이동</c>이 영영 성립하지 않는다.
+        /// </summary>
+        private static void SubAreaBeat(string site, string subAreaId, string beatId, string label)
+        {
+            steps.Add(new Step
+            {
+                site = site,
+                label = "선행 채우기(" + beatId + ")",
+                act = () => SeedPrerequisites(beatId),
+                until = () => true,
+            });
+            steps.Add(new Step
+            {
+                site = site,
+                label = "서브에리어 근접(" + subAreaId + ")",
+                act = () => MoveToSubArea(subAreaId),
+                until = () =>
+                {
+                    var rm = UnityEngine.Object.FindFirstObjectByType<RegionManager>();
+                    return rm != null && rm.NearbySubArea != null
+                        && rm.NearbySubArea.subAreaId == subAreaId;
+                },
+                maxTries = 3,
+            });
+            steps.Add(BeatStep(site, label, beatId, EnterNearbySubArea, 3));
+            steps.Add(new Step
+            {
+                site = site,
+                label = "서브에리어 이탈",
+                act = ExitSubArea,
+                until = () =>
+                {
+                    var rm = UnityEngine.Object.FindFirstObjectByType<RegionManager>();
+                    return rm != null && rm.CurrentSubArea == null && !rm.SubAreaSticky;
+                },
+                maxTries = 3,
+            });
+        }
+
         private static Step BeatStep(string site, string label, string beatId, Action act, int tries)
         {
             return new Step
@@ -375,10 +559,25 @@ namespace InsectGame.EditorTools
         /// 전투 승리를 실제 구독 경로로 흘린다. 이벤트는 밖에서 올릴 수 없어 대리자를 꺼내 부른다 —
         /// 그래서 <b>구독이 비어 있으면 여기서 잡힌다</b>(그 자체가 영구 미발화 결함이다).
         /// </summary>
-        private static void WinBattle()
+        private static void WinBattle() { WinBattleAgainst(null); }
+
+        /// <summary>
+        /// <paramref name="insectId"/>를 이긴 것으로 흘린다. null이면 상대를 지정하지 않는다
+        /// (무param <c>BattleWin</c> 비트만 자격을 갖는다).
+        ///
+        /// <c>BattleWin</c>이 종 지정을 받게 되면서 필요해졌다 — <c>StoryDirector.OnBattleEnded</c>가
+        /// <c>InsectBattleController.EnemyInsectId</c>를 읽어 큐에 싣기 때문에, 상대를 안 세우면
+        /// <c>fin_seal</c>처럼 종을 문 비트는 **영영 안 뜬다**(그리고 그건 결함처럼 보인다).
+        ///
+        /// 전투 자체는 여기서도 시뮬레이션이다(이 도구가 늘 그랬듯). 다만 상대만은
+        /// <b>실제 종 데이터</b>로 세워서, 스토리로 흘러가는 값이 진짜와 같아지게 한다.
+        /// </summary>
+        private static void WinBattleAgainst(string insectId)
         {
             var bc = UnityEngine.Object.FindFirstObjectByType<InsectGame.Battle.InsectBattleController>();
             if (bc == null) { Log("InsectBattleController 없음"); return; }
+
+            if (!string.IsNullOrEmpty(insectId) && !SeatEnemy(bc, insectId)) return;
 
             FieldInfo f = typeof(InsectGame.Battle.InsectBattleController)
                 .GetField("BattleEnded", BindingFlags.Instance | BindingFlags.NonPublic);
@@ -391,6 +590,72 @@ namespace InsectGame.EditorTools
             d.Invoke(true);
             // 결과 화면이 닫혔다고 알린다 — 안 알리면 미뤄 둔 트리거가 12초를 기다린다.
             if (director != null) director.NotifyBattlePresentationClosed();
+        }
+
+        /// <summary>
+        /// <b>레이드</b> 승리를 흘린다. Epic·Legendary는 이 길밖에 없다 —
+        /// <c>CaptureChoiceUI.IsRaidTarget</c>이 그 두 등급에 포획과 1v1을 둘 다 막는다.
+        ///
+        /// 그래서 <c>fin_seal</c>(<c>BattleWin mantis_unnamed</c>, Legendary)은 1v1로 걸으면
+        /// <b>실제 게임에 없는 경로를 통과시키는 셈</b>이 된다. 저작이 도달 가능한지 보려면
+        /// 플레이어가 실제로 쓸 수 있는 길로 걸어야 한다.
+        /// </summary>
+        private static void WinRaidAgainst(string insectId)
+        {
+            var rc = UnityEngine.Object.FindFirstObjectByType<InsectGame.Battle.RaidBattleController>();
+            if (rc == null) { Log("RaidBattleController 없음"); return; }
+
+            var db = UnityEngine.Object.FindFirstObjectByType<InsectDatabase>();
+            InsectData data = db != null ? db.GetById(insectId) : null;
+            if (data == null) { Log("**곤충 '" + insectId + "'를 DB에서 못 찾았다**"); return; }
+
+            PropertyInfo p = typeof(InsectGame.Battle.RaidBattleController)
+                .GetProperty("BossStats", BindingFlags.Instance | BindingFlags.Public);
+            if (p == null || p.SetMethod == null)
+            {
+                Log("**BossStats 세터를 못 찾았다** — 이름이 바뀌었다면 여기도 고쳐야 한다");
+                return;
+            }
+            p.SetMethod.Invoke(rc, new object[] { new InsectGame.Battle.InsectBattleStats(data, 70) });
+
+            FieldInfo f = typeof(InsectGame.Battle.RaidBattleController)
+                .GetField("RaidEnded", BindingFlags.Instance | BindingFlags.NonPublic);
+            var d = f != null ? f.GetValue(rc) as Action<bool> : null;
+            if (d == null)
+            {
+                Log("**RaidEnded 구독자가 없다** — 레이드 승리가 스토리에 안 흐른다");
+                return;
+            }
+            d.Invoke(true);
+            if (director != null) director.NotifyBattlePresentationClosed();
+        }
+
+        /// <summary>
+        /// 컨트롤러의 <c>enemyStats</c>에 실제 종 데이터를 앉힌다.
+        ///
+        /// <c>StartDuel</c>을 부르지 않는 이유: 그건 프리즈·전투 UI·보상 경로까지 켜서
+        /// 걸음의 <c>Idle()</c> 판정과 다툰다. 여기서 검증하려는 건 전투가 아니라
+        /// <b>이긴 종이 스토리까지 흘러가는가</b>이므로, 그 한 값만 진짜로 만든다.
+        /// </summary>
+        private static bool SeatEnemy(InsectGame.Battle.InsectBattleController bc, string insectId)
+        {
+            var db = UnityEngine.Object.FindFirstObjectByType<InsectDatabase>();
+            InsectData data = db != null ? db.GetById(insectId) : null;
+            if (data == null)
+            {
+                Log("**곤충 '" + insectId + "'를 DB에서 못 찾았다** — 종 지정 승리를 못 만든다");
+                return false;
+            }
+
+            FieldInfo f = typeof(InsectGame.Battle.InsectBattleController)
+                .GetField("enemyStats", BindingFlags.Instance | BindingFlags.NonPublic);
+            if (f == null)
+            {
+                Log("**enemyStats 필드를 못 찾았다** — 이름이 바뀌었다면 여기도 고쳐야 한다");
+                return false;
+            }
+            f.SetValue(bc, new InsectGame.Battle.InsectBattleStats(data, 60));
+            return true;
         }
 
         private static void Cleanse(string boss, string regionId)
@@ -417,6 +682,67 @@ namespace InsectGame.EditorTools
             else
                 p.y = player.transform.position.y + 5f;
             player.transform.position = p;
+        }
+
+        /// <summary>서브에리어 중심으로 옮긴다 — 이게 <c>RegionManager.Update</c>의 근접 판정을 채운다.</summary>
+        private static void MoveToSubArea(string subAreaId)
+        {
+            var rm = UnityEngine.Object.FindFirstObjectByType<RegionManager>();
+            GameObject player = GameObject.Find("Player");
+            if (rm == null || rm.Regions == null || player == null) return;
+
+            foreach (RegionData r in rm.Regions)
+            {
+                if (r == null || r.subAreas == null) continue;
+                foreach (SubAreaData sub in r.subAreas)
+                {
+                    if (sub == null || sub.subAreaId != subAreaId) continue;
+                    Vector3 p = sub.centerPosition;
+                    RaycastHit hit;
+                    if (Physics.Raycast(new Vector3(p.x, 300f, p.z), Vector3.down, out hit, 600f))
+                        p.y = hit.point.y + 1.2f;
+                    else
+                        p.y = player.transform.position.y + 5f;
+                    player.transform.position = p;
+                    return;
+                }
+            }
+            Log("서브에리어 '" + subAreaId + "'를 못 찾았다");
+        }
+
+        /// <summary>[E] 키에 해당한다 — 근접 상태에서만 성립하는 명시 진입.</summary>
+        private static void EnterNearbySubArea()
+        {
+            var rm = UnityEngine.Object.FindFirstObjectByType<RegionManager>();
+            if (rm == null) { Log("RegionManager 없음"); return; }
+            if (rm.NearbySubArea == null) { Log("근접한 서브에리어가 없다 — 진입 불가"); return; }
+            rm.RequestEnterSubArea();
+        }
+
+        /// <summary>F2·퇴장 버튼과 같은 경로. 빌더가 월드를 되돌리고 플레이어를 원위치시킨다.</summary>
+        private static void ExitSubArea()
+        {
+            var builder = UnityEngine.Object.FindFirstObjectByType<SubAreaWorldBuilder>();
+            if (builder != null) { builder.RequestExit(); return; }
+
+            // 빌더가 없는 구성(최소 씬)에서는 매니저를 직접 푼다.
+            var rm = UnityEngine.Object.FindFirstObjectByType<RegionManager>();
+            if (rm != null) rm.ForceExitSubArea();
+        }
+
+        /// <summary>
+        /// 수문장 격파 — <c>BattleScreenUI.CheckGuardianDefeat</c>가 부르는 그 함수다.
+        /// <b>리전당 일생 1회</b>라(idempotent 가드) 이미 격파한 상태면 조용히 아무 일도 안 난다.
+        /// 그래서 <see cref="ResetProgress"/>가 격파 기록도 함께 지운다.
+        /// </summary>
+        private static void Guardian(string regionId)
+        {
+            var rm = UnityEngine.Object.FindFirstObjectByType<RegionManager>();
+            if (rm == null) { Log("RegionManager 없음"); return; }
+            if (rm.IsGuardianDefeated(regionId))
+                Log("이미 격파된 수문장 — " + regionId + " (GuardianDefeated가 안 울린다)");
+            rm.DefeatGuardian(regionId);
+            if (director != null) director.NotifyBattlePresentationClosed();
         }
 
         /// <summary>
@@ -467,6 +793,13 @@ namespace InsectGame.EditorTools
 
             string key = SaveScope.PrefsKey(GameConstants.PrefsKeys.BlightCleansed);
             PlayerPrefs.DeleteKey(key);
+
+            // 수문장 격파 기록 — **본편 걸음에는 이게 꼭 필요하다.** DefeatGuardian은 idempotent라
+            // 이미 격파된 리전에서는 GuardianDefeated가 아예 안 울리고, 그러면 gd_* 비트가
+            // "발화 없음"으로 잡혀 결함처럼 보인다(실제로는 두 번째 실행이라서다).
+            // 키 문자열은 RegionManager.GuardianKey가 private이라 여기 한 번 더 적는다 —
+            // 어긋나면 초기화가 조용히 아무것도 안 지운다.
+            PlayerPrefs.DeleteKey(SaveScope.PrefsKey("InsectGame.DefeatedGuardians"));
             PlayerPrefs.Save();
 
             if (director != null)
@@ -476,6 +809,8 @@ namespace InsectGame.EditorTools
             }
             var blight = UnityEngine.Object.FindFirstObjectByType<RegionBlightManager>();
             if (blight != null) blight.ReloadFromDisk();
+            var regions = UnityEngine.Object.FindFirstObjectByType<RegionManager>();
+            if (regions != null) regions.ReloadFromDisk();
             Log("진행 기록 초기화 완료");
         }
 
@@ -496,16 +831,19 @@ namespace InsectGame.EditorTools
 
             bool allPassed = true;
             var sb = new StringBuilder();
-            sb.AppendLine("# 오염 거점 스토리 비트 — 실제 발화 걸음");
+            sb.AppendLine(IsCampaign
+                ? "# 1막 본편 + 꽃밭 스토리 비트 — 실제 발화 걸음"
+                : "# 오염 거점 스토리 비트 — 실제 발화 걸음");
             sb.AppendLine();
             if (!string.IsNullOrEmpty(error))
             {
                 sb.AppendLine("> **중단**: " + error);
                 sb.AppendLine();
             }
-            sb.AppendLine("거점 " + SiteCount() + "개 · 걸음 " + (steps != null ? steps.Count : 0) + "개");
+            sb.AppendLine((IsCampaign ? "본편" : "거점 " + SiteCount() + "개")
+                + " · 걸음 " + (steps != null ? steps.Count : 0) + "개");
             sb.AppendLine();
-            sb.AppendLine("| 거점 | 걸음 | 기대 비트 | 시도 | 결과 |");
+            sb.AppendLine("| 구역 | 걸음 | 기대 비트 | 시도 | 결과 |");
             sb.AppendLine("|---|---|---|---|---|");
             if (steps != null)
             {

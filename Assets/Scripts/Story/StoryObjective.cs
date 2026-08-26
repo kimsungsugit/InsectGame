@@ -231,7 +231,13 @@ namespace InsectGame.Story
             }
 
             if (triggerType == StoryDirector.TriggerBattleWin)
+            {
+                // 종을 지정한 비트(fin_seal 등)는 **무엇을 이겨야 하는지** 말해 준다.
+                // 안 그러면 "이름 없는 자리에서 전투 승리"로 떨어져, 아무거나 이기면 되는 줄 안다.
+                if (!string.IsNullOrEmpty(insectName))
+                    return elsewhere ? $"{regionName}에서 {insectName} 쓰러뜨리기" : $"{insectName} 쓰러뜨리기";
                 return elsewhere ? $"{regionName}에서 전투 승리" : "야생 곤충과 전투 승리";
+            }
 
             if (triggerType == StoryDirector.TriggerRegionCleansed)
                 return elsewhere ? $"{regionName}의 명부회 거점 무너뜨리기" : "명부회 거점 무너뜨리기";

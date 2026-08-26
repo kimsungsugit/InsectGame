@@ -351,6 +351,17 @@ namespace InsectGame.Core
             CreateSimplePath("Path_Meadow_Swamp", GetCenter(regions, "meadow"), GetCenter(regions, "swamp"), 2.5f, pathMat);
             CreateSimplePath("Path_Meadow_Garden", GetCenter(regions, "meadow"), GetCenter(regions, "garden"), 2.5f, pathMat);
 
+            // ── 1막 진행 사슬 ── 2막 블록이 아래에서 하는 일을 1막에도 한다.
+            // 해금은 meadow→pond→forest→swamp→mountain→ruins 한 줄로 도는데, 그중 땅에 길이
+            // 깔린 건 mountain→ruins 하나뿐이었다. **`pond→forest`와 `swamp→mountain`은
+            // 지도 간선조차 없었다** — 다음 목적지로 가는 길만 골라서 안 보였다.
+            // (meadow→garden은 위에 이미 있다. 사슬이 아닌 공간 인접선은 지도에만 둔다 —
+            //  길로 깔면 사슬과 구분이 안 돼 오히려 엉뚱한 쪽으로 이끈다.)
+            CreateSimplePath("Path_Meadow_Pond", GetCenter(regions, "meadow"), GetCenter(regions, "pond"), 2.5f, pathMat);
+            CreateSimplePath("Path_Pond_Forest", GetCenter(regions, "pond"), GetCenter(regions, "forest"), 2.5f, pathMat);
+            CreateSimplePath("Path_Forest_Swamp", GetCenter(regions, "forest"), GetCenter(regions, "swamp"), 2.5f, pathMat);
+            CreateSimplePath("Path_Swamp_Mountain", GetCenter(regions, "swamp"), GetCenter(regions, "mountain"), 2.5f, pathMat);
+
             Material stonePath = CreateMat(new Color(0.5f, 0.45f, 0.4f));
             CreateSimplePath("Path_Mountain_Ruins", GetCenter(regions, "mountain"), GetCenter(regions, "ruins"), 3f, stonePath);
 
@@ -385,7 +396,13 @@ namespace InsectGame.Core
 
                 GameObject path = GameObject.CreatePrimitive(PrimitiveType.Plane);
                 path.name = $"{name}_{i}";
-                path.transform.position = segMid + new Vector3(0f, 0.12f, 0f);
+                // 지면 장식의 적층 순서 — 0.00 베이스 지면 / 0.08 리전 평면 / 0.15 경사면 / **0.18 길**.
+                // 길이 맨 위여야 한다. 예전엔 0.12여서 **경사면(0.15) 아래에 깔렸고**, 경사면은
+                // 두 리전 중심 사이 가운데 40%를 덮으므로 길이 **한복판에서 끊겨 보였다** —
+                // 하필 길의 존재 이유(어디로 가는지)가 가장 필요한 구간이다.
+                // meadow―swamp·mountain―ruins가 실제로 그 상태였고, 경사면은 지금 전부 0→0이라
+                // (GetRegionElevation 평탄화) 가릴 높이차도 없는 장식이다.
+                path.transform.position = segMid + new Vector3(0f, 0.18f, 0f);
                 path.transform.rotation = Quaternion.Euler(0f, angle, 0f);
                 path.transform.localScale = new Vector3(width / 10f, 1f, segLen / 10f);
                 path.GetComponent<MeshRenderer>().material = mat;

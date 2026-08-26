@@ -112,13 +112,33 @@ EditMode 러너를 되살리려면 `Assets/Scripts`·`Assets/Editor`·`Assets/Te
 "$UNITY_EDITOR_PATH" -batchmode -projectPath "C:/Project/곤충게임" \
   -logFile .claude/cache/story-walk.log \
   -executeMethod InsectGame.EditorTools.StoryBeatWalkthrough.Run \
-  -walkOut .claude/cache/story-walk.md [-walkRegion mountain]
+  -walkOut .claude/cache/story-walk.md [-walkRegion mountain] [-walkMode campaign]
 ```
 
 거점 목록을 박아두지 않는다 — `RegionData.HasBlightSite`를 런타임에 훑으므로 거점을
 늘리면 걸음도 저절로 는다. 종료 코드는 모든 걸음이 통과했을 때만 0이고, 보고서에
 **실제 발화 순서**가 남는다. 선행 비트만 `CompleteBeat`로 채우고(검증 대상이 아니다)
 무엇을 채웠는지 보고서에 적는다.
+
+**모드가 둘이다 — 기본값만 돌리면 본편은 한 걸음도 안 걷는다.**
+
+| `-walkMode` | 걷는 것 | 두드리는 트리거 |
+|---|---|---|
+| `blight` (기본) | 오염 거점 아크 `bl_*` | `NpcTalk` · `CaptureInsect` · `BattleWin` · `RegionCleansed` |
+| `campaign` | 1막 본편 + 꽃밭 | 위 + **`SubAreaEnter`** · **`GuardianDefeat`** |
+
+`SubAreaEnter`와 `GuardianDefeat`는 **본편에서 가장 많이 쓰는 두 트리거인데 오래 사각지대였다** —
+거점 아크가 둘 다 안 쓰는 탓에 구동부 자체가 없었다. 2026-08-26에 붙였다.
+
+- **서브에리어는 세 걸음이다** — 근접 → `[E]` 진입 → 이탈. `RequestEnterSubArea`는
+  `nearbySubArea`가 차 있어야 하고 그건 `RegionManager.Update`가 **위치로만** 채운다.
+  **이탈을 빠뜨리면 그 뒤가 전부 죽는다**: 진입이 sticky를 켜고 플레이어를 (2000,0,2000)으로
+  옮기는데, sticky 동안 `Update`가 위치 판정을 건너뛰어 다음 리전 이동이 영영 성립하지 않는다.
+- **`GuardianDefeat`는 리전당 일생 1회다**(`DefeatGuardian`의 idempotent 가드). 두 번째
+  실행에서 `gd_*`가 "발화 없음"으로 잡히면 결함이 아니라 격파 기록이 남아서다 —
+  그래서 `ResetProgress`가 `InsectGame.DefeatedGuardians`도 함께 지운다.
+- **걷는 순서가 곧 여운 체인 순서다.** 여운은 같은 NPC의 직전 여운을 prereq로 물기 때문에
+  연못(ch2) → 숲(ch3) → 습지(ch4) → 산(ch5) → 유적(ch6) 차례로 걸어야 하나씩 열린다.
 
 읽을 때 헷갈리는 것: **한 걸음에 시도가 2회로 찍히는 게 정상일 수 있다.** 같은 트리거에
 본편 비트가 함께 자격을 가지면 챕터 우선순위가 이겨 그쪽이 먼저 나간다(산에서 포획하면

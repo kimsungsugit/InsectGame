@@ -570,6 +570,9 @@ namespace InsectGame.Core
                 storyDirector.AutoWire(blight);
             storyDirector.AutoWire(candyInventory, itemInventory);
             storyDirector.AutoWire(dex);   // DexProgress 트리거 소스 — Start 전에 주입해야 구독이 걸린다
+            // BattleWin의 **두 번째** 소스. Epic·Legendary는 CaptureChoiceUI가 1v1을 막고
+            // 레이드만 열어서, 이걸 빠뜨리면 그 등급을 이겨도 스토리가 모른다(fin_seal이 그랬다).
+            storyDirector.AutoWire(raidController);
             cloudSave.RegisterReloadable(storyDirector);
             // 전투 결과 화면이 닫힌 뒤에 BattleWin·GuardianDefeat 비트를 띄우기 위한 통지 경로.
             battleScreen.AutoWire(storyDirector);

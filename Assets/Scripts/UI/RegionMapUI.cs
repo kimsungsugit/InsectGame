@@ -41,9 +41,20 @@ namespace InsectGame.UI
         private readonly Dictionary<int, string> hiddenNameCache = new Dictionary<int, string>();
 
         // 리전 간 공간 인접(길). RegionData.connections는 전부 null이라 여기서 토폴로지 유지. 정적이라 프레임당 할당 없음.
+        //
+        // **1막 진행 사슬 6링크가 전부 여기 있어야 한다.** 해금은
+        // meadow→pond→forest→swamp→mountain→ruins(+garden) 한 줄로 도는데,
+        // 예전엔 그중 `pond→forest`와 `swamp→mountain`이 **지도에도 땅에도 없었다** —
+        // 다음 목적지로 가는 길만 골라서 안 그려져 있었다. 공간상 가장 가까운 쌍이
+        // meadow―swamp(101m)이고 사슬인 pond→forest는 280m라, 지도를 눈으로 훑으면
+        // 오히려 사슬이 아닌 쪽이 길처럼 보인다.
+        //
+        // 사슬이 아닌 간선(meadow―forest·meadow―swamp·forest―mountain)은 그대로 둔다.
+        // 이 표는 진행 순서가 아니라 **공간 인접**이고, 그쪽은 실제로 가깝다.
         private static readonly string[,] Connections = {
             {"meadow","pond"}, {"meadow","forest"}, {"meadow","swamp"}, {"meadow","garden"},
             {"mountain","ruins"}, {"forest","swamp"}, {"forest","mountain"},
+            {"pond","forest"}, {"swamp","mountain"},
             // ── 2막(ver2) ── 유적 너머로 이어지는 사슬. 빠뜨리면 지도에 길이 안 그려져
             // 신규 리전이 허공에 뜬 섬으로 보인다.
             {"ruins","hollow"}, {"hollow","dunes"}, {"dunes","frostline"},

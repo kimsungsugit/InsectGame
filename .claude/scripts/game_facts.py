@@ -712,16 +712,35 @@ def stage_offsets() -> dict:
     return out
 
 
-def _boundary_half_size(body: str):
-    """`CreateBoundaryWalls(mat, halfSize, height)`의 halfSize.
+# 방을 봉하는 호출과 그 halfSize 인자 위치(0-based).
+#   CreateBoundaryWalls(mat, halfSize, height)
+#   CreateGlassWall(glassMat, frameMat, halfSize, height)
+# **둘 다 collider를 남기는 축정렬 정사각 벽이다** — 유리라고 통과되지 않는다
+# (SubAreaWorldBuilder의 "유리지만 collider 보존" 주석). 그래서 방 크기 판정에서
+# 둘을 같게 다뤄야 한다. 예전엔 CreateBoundaryWalls만 읽어서 **온실(garden_greenhouse)이
+# subarea_room_bounds()에서 통째로 빠졌고**, story_lint 검사 21이 `half is None`을
+# 건너뛰는 탓에 그 방의 연출 워프 좌표는 **아무도 검사하지 않았다**(무증상 구멍).
+_ROOM_WALL_CALLS = (("CreateBoundaryWalls(", 1), ("CreateGlassWall(", 2))
 
-    첫 인자에 `Mat(new Color(0.4f, 0.4f, 0.4f))`처럼 콤마가 들어 있어 단순 정규식으로는
+
+def _boundary_half_size(body: str):
+    """이 빌더가 세우는 방의 halfSize. 못 찾으면 None.
+
+    인자에 `Mat(new Color(0.4f, 0.4f, 0.4f))`처럼 콤마가 들어 있어 단순 정규식으로는
     괄호 안의 색 성분을 크기로 읽는다(실제로 0.2를 방 크기로 보고했다). 괄호를 세어 자른다.
     """
-    idx = body.find("CreateBoundaryWalls(")
+    for call, size_index in _ROOM_WALL_CALLS:
+        half = _wall_call_arg(body, call, size_index)
+        if half is not None:
+            return half
+    return None
+
+
+def _wall_call_arg(body: str, call: str, size_index: int):
+    idx = body.find(call)
     if idx < 0:
         return None
-    i = idx + len("CreateBoundaryWalls(")
+    i = idx + len(call)
     depth, arg, args = 0, [], []
     while i < len(body):
         ch = body[i]
@@ -739,9 +758,9 @@ def _boundary_half_size(body: str):
             continue
         arg.append(ch)
         i += 1
-    if len(args) < 2:
+    if len(args) <= size_index:
         return None
-    m = re.fullmatch(r"\s*(-?[\d.]+)f?\s*", args[1])
+    m = re.fullmatch(r"\s*(-?[\d.]+)f?\s*", args[size_index])
     return float(m.group(1)) if m else None
 
 

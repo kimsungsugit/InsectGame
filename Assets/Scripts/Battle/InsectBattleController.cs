@@ -33,6 +33,21 @@ namespace InsectGame.Battle
         // 적이 직전 턴에 사용한 스킬(null=기본공격/쿨다운) — UI가 EnemyAttack 페이즈 연출에 사용.
         public InsectSkill LastEnemySkill { get; private set; }
 
+        /// <summary>
+        /// 이번 전투 상대의 <b>종 ID</b>. 아직 전투를 시작하지 않았으면 null.
+        ///
+        /// <c>BattleEnded</c>가 <c>Action&lt;bool&gt;</c>이라 "무엇을 이겼는가"를 못 싣는다.
+        /// 시그니처를 바꾸면 구독자 셋(UI·튜토리얼 퀘스트·스토리)과 배치 검증 도구의 리플렉션이
+        /// 함께 따라오므로, 대신 <b>발화 시점에 읽을 수 있는 상태</b>로 노출한다.
+        /// <c>enemyStats</c>는 <c>BeginBattleCommon</c>에서 한 번만 잡히고 전투 중 교체되지 않으므로
+        /// <c>BattleEnded</c> 시점에도 유효하다.
+        ///
+        /// <c>StoryDirector</c>가 <c>BattleWin</c> 트리거의 종 지정에 쓴다 — 그쪽은 결과 화면
+        /// 뒤로 발화를 <b>미루므로</b> 이 값을 그때 다시 읽으면 늦다. 미룰 때 param에 실어야 한다.
+        /// </summary>
+        public string EnemyInsectId =>
+            enemyStats != null && enemyStats.Data != null ? enemyStats.Data.insectId : null;
+
         private InsectBattleStats playerStats;
         private InsectBattleStats enemyStats;
         private InsectEntity enemyEntity;

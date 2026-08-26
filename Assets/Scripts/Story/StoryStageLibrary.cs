@@ -55,6 +55,12 @@ namespace InsectGame.Story
         public const string Ch11ScholarLead = "st_ch11_scholar_lead";
         /// <summary>12장 · 이름 없는 장부 — <b>관장 하월</b>이 뒤에서 천천히 다가온다.</summary>
         public const string Ch12ChiefEnter = "st_ch12_chief_enter";
+        /// <summary>
+        /// 꽃밭 온실 — 세라가 앞서 들어가 <b>바닥</b>을 가리킨다. 11장 우듬지와 **짝을 이루는 연출**이다:
+        /// 예비 울타리 두 곳(꽃밭·우듬지)에서만 동행자가 앞서 가고, 대치가 아니라 발견이 된다.
+        /// 다른 점은 사이(間)뿐 — 여기서는 아직 답을 모르므로 가리키기 전에 한 박자 멈춘다.
+        /// </summary>
+        public const string GardenScholarGlass = "st_garden_scholar_glass";
 
         // ── 오염 거점 대치 (NpcTalk 비트) ──
         // 위 1막 대치들과 같은 자리·같은 배우인데 **몸짓이 반대로 간다.** 1막에서는 막고
@@ -88,6 +94,7 @@ namespace InsectGame.Story
                 case Ch10InkEnter: steps = BuildCh10InkEnter(); return true;
                 case Ch11ScholarLead: steps = BuildCh11ScholarLead(); return true;
                 case Ch12ChiefEnter: steps = BuildCh12ChiefEnter(); return true;
+                case GardenScholarGlass: steps = BuildGardenScholarGlass(); return true;
 
                 case BlightForestConfront: steps = BuildBlightForestConfront(); return true;
                 case BlightMountainConfront: steps = BuildBlightMountainConfront(); return true;
@@ -336,6 +343,29 @@ namespace InsectGame.Story
                 StoryStageStep.Warp("ruins_scholar", new Vector3(-8.5f, 0f, -1f)),
                 StoryStageStep.MoveTo("ruins_scholar", new Vector3(0.8f, 0f, 3.4f), 1f),
                 StoryStageStep.Face("ruins_scholar", 0.25f),
+                StoryStageStep.Play("ruins_scholar", NpcGesture.Point),
+            };
+        }
+
+        /// <summary>
+        /// 온실은 이 게임에서 **가장 좁은 대치 무대**다 — 방 반쪽이 10m뿐이라(다른 대치는 11~14m)
+        /// 워프·목적지를 안쪽으로 당겨 잡았다. 입구가 z=-8이므로 방 로컬 좌표는
+        /// 워프 (-6.5, -7.5) · 도착 (0.7, -5.2)이고, 벽(±10)에서 각각 2.5m·4.8m 남는다.
+        ///
+        /// 이 방이 <c>CreateBoundaryWalls</c>가 아니라 <c>CreateGlassWall</c>로 봉해져 있어
+        /// **story_lint 검사 21이 오랫동안 이 방을 아예 안 봤다**(<c>half is None</c>이면 건너뛴다).
+        /// 유리에도 collider가 남아 있어 벽 밖 워프면 똑같이 배우가 막히는데도 그랬다.
+        /// 이 연출을 붙이면서 <c>game_facts._boundary_half_size</c>가 두 호출을 다 읽게 고쳤다.
+        /// </summary>
+        private static StoryStageStep[] BuildGardenScholarGlass()
+        {
+            return new[]
+            {
+                StoryStageStep.Warp("ruins_scholar", new Vector3(-6.5f, 0f, 0.5f)),
+                StoryStageStep.MoveTo("ruins_scholar", new Vector3(0.7f, 0f, 2.8f), 1f),
+                StoryStageStep.Face("ruins_scholar", 0.3f),
+                // 한 박자 — 11장 세라는 알아보고 가리키지만, 여기서는 아직 모른 채 들여다본다.
+                StoryStageStep.Pause(0.35f),
                 StoryStageStep.Play("ruins_scholar", NpcGesture.Point),
             };
         }

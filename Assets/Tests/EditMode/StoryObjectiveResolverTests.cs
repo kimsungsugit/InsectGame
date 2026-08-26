@@ -488,6 +488,20 @@ namespace InsectGame.Tests
         }
 
         [Test]
+        public void DescribeActionObjective_BattleWin_NamesSpeciesWhenTargeted()
+        {
+            // 종을 지정한 전투 비트(fin_seal)는 **무엇을 이겨야 하는지** 말해야 한다.
+            // 안 그러면 "이름 없는 자리에서 전투 승리"로 떨어져 아무거나 이기면 되는 줄 안다 —
+            // 그게 정확히 종 지정을 도입하기 전 엔딩이 터지던 조건이다.
+            Assert.AreEqual("이름 없는 자리에서 이름 없는 사마귀 쓰러뜨리기",
+                StoryObjectiveResolver.DescribeActionObjective(
+                    "BattleWin", "이름 없는 자리", false, "이름 없는 사마귀", null, -1, -1));
+            Assert.AreEqual("이름 없는 사마귀 쓰러뜨리기",
+                StoryObjectiveResolver.DescribeActionObjective(
+                    "BattleWin", "이름 없는 자리", true, "이름 없는 사마귀", null, -1, -1));
+        }
+
+        [Test]
         public void DescribeActionObjective_ProgressTriggers_ShowCurrentValue()
         {
             // 현재값이 있으면 함께 보여준다 — "얼마나 남았는가"가 곧 안내다.

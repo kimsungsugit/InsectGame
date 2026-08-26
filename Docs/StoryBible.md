@@ -10,7 +10,7 @@
 
 ---
 
-## 0. 1막 요약 (ver1 · ch1~ch6 + side/npc · 26비트)
+## 0. 1막 요약 (ver1 · ch1~ch6 + side/npc)
 
 초원에서 시작한 채집가가 곤충들이 사라지는 현상 **「잦아듦」**을 쫓아 연못·숲·습지·산을 지나
 고대 유적에 이른다. 유적 신전에서 세라가 진실에 닿는다 — **봉인의 정체는 '기록'이었다.**
@@ -23,10 +23,11 @@
 | 라온 | `catcher_rival` | 라이벌 → 동료. 습지에서 "혼자 될 일이 아니더라" |
 | 세라 | `ruins_scholar` | 유적 학자. 숲에서 합류. 봉인=기록의 발견자 |
 
-**남은 떡밥 하나** — `garden_intro`에서 라온이 던지고 답이 없다:
+**남은 떡밥 하나** — `garden_intro`에서 라온이 던진다:
 > "왜 꽃밭만 무사한 걸까? 세라한테 물어봐야겠어."
 
-2막은 이 질문에 답하며 닫힌다.
+꽃밭 안에서 **절반이 열리고**(`garden_fence` — "누가 심고, 누가 다듬었어요"),
+2막 `ch11_confront`가 나머지를 닫는다. 6-1장 참조.
 
 ### ch1 체인 재배선 (2026-08-07) — 기존 세이브가 라온을 못 만나던 문제
 
@@ -157,6 +158,9 @@ ch1의 5비트가 **`QuestComplete` 체인**으로 묶여 있었다:
 **이 템플릿이 "계속 이어붙일 수 있음"의 핵심이다.** 지역을 추가하면 5비트를 복제하고
 ID·리전만 갈면 된다.
 
+정형은 원래 ver2를 위해 쓰였고 **1막은 이 표보다 먼저 저작돼 어긋나 있었다.**
+2026-08-26에 1막도 같은 형태로 맞췄다 — 무엇이 비어 있었고 어떻게 메웠는지는 6-1장.
+
 | # | 역할 | trigger | 성격 |
 |---|---|---|---|
 | 1 | **도착** | `RegionEnter <region>` | **스파인** — 다음 챕터 도착 비트의 prereq |
@@ -186,14 +190,23 @@ ID·리전만 갈면 된다.
 먼저 뜰지 알 수 없다. 그래서 **직전 여운을 prereq로 물려** 항상 하나만 적격이게 한다 —
 "대화할 때마다 다음 이야기"가 순서대로 나온다.
 
-체인 (`talk_*`는 1막에 이미 있는 비트다):
+체인 (`talk_*`는 1막에 이미 있는 앰비언트 비트다):
 
 ```
 village_elder   : talk_elder   → ch11_echo
-catcher_rival   : talk_rival   → ch8_echo  → ch12_echo
-ruins_scholar   : talk_scholar → ch7_echo  → ch9_echo → fin_epilogue
+catcher_rival   : talk_rival   → ch2_echo → ch4_echo → ch8_echo → ch12_echo
+ruins_scholar   : talk_scholar → ch3_echo → ch5_echo → ch6_echo → ch7_echo → ch9_echo → fin_epilogue
 ledger_ink      : ch10_echo
 ```
+
+**1막 다섯 칸은 2026-08-26에 끼워 넣었다**(6-1장). 그때 기존 `ch7_echo`·`ch8_echo`의
+`prerequisiteBeatId`만 앞 칸으로 바꿨고 **대사는 한 줄도 안 고쳤다.** 이미 그 비트를 본
+세이브는 `seenBeatIds`에 박혀 있어 영향이 없고, 아직 안 본 세이브는 새 1막 칸을 먼저
+듣게 되는데 그것들이 전부 `NpcTalk`(재발화형)이라 말을 더 걸면 순서대로 열린다.
+
+체인을 늘릴 때 **분기 지역(꽃밭)의 여운을 이 체인에 끼우지 않는다.** 꽃밭은 안 가도
+클리어되므로, 끼우면 안 간 플레이어의 뒤 칸이 통째로 막힌다. 그래서 꽃밭은 여운 대신
+**서브에리어 대치를 둘** 쓴다(`garden_glass`·`garden_fence`).
 
 여운 대사는 **장소에 의존하지 않게** 쓴다. 앞 챕터의 여운을 안 듣고 진도를 뺀 유저에게
 뒤늦게 뜰 수 있기 때문이다.
@@ -229,7 +242,124 @@ ledger_ink      : ch10_echo
 
 ---
 
-## 7. 비트 배치표 (34비트)
+## 6-1. 1막의 지형 연관성 보강 — 2026-08-26
+
+6장의 5비트 정형은 **2막에만 적용돼 있었다.** 1막은 저작 순서상 정형보다 먼저 쓰였고,
+그 결과 "맵을 걸어가는 것"과 "이야기가 진행되는 것"이 세 군데서 갈라져 있었다.
+
+| 끊긴 곳 | 실측(보강 전) |
+|---|---|
+| 서브에리어 | 26개 중 스토리가 붙은 건 11개. **초원·연못·습지·꽃밭 8개는 전부 0** |
+| 1막 정형 | ch2·ch5에 격전 없음, **ch2~ch6 여운 0건** |
+| 동행자 배치 | 앵커가 초원 2 · 숲 1뿐 — 연못·습지·산·유적·꽃밭에서 세라와 라온은 몸 없는 목소리 |
+| 수문장 | 13개 중 서사 반응 6개(전부 유적 이후). 최종 수문장도 없음 |
+| 꽃밭 | 비트 1개 · NPC 0명 · 서브에리어 스토리 0 · 수문장 격파에 아무 일도 안 일어남 |
+
+**여운이 0건이던 건 저작을 안 해서가 아니라 말 걸 상대가 없어서였다.** `NpcTalk`은
+그 리전에 NPC가 서 있어야 성립한다 — 원인이 저작이 아니라 배치에 있었다.
+
+신규 20비트 + 동행자 앵커 5곳으로 메웠다. **새 trigger.type도 새 인물도 만들지 않았다** —
+기존 3인(어르신·라온·세라)만 재배치했으므로 `NpcManager.StoryNpcDisplayName` /
+`NpcVisualBuilder.StoryNpcAppearance`의 무증상 함정(검사 22)을 애초에 안 건드린다.
+
+### 꽃밭 — 분기로 두되 서사를 채운다
+
+꽃밭은 초원 수문장 격파(Lv.13쯤)로 열리는데 `requiredLevel`은 **게이트가 아니라 스폰
+레벨 라벨**이다(`PlayerMovement.cs`의 해금 집합만 본다는 주석). 그래서 플레이어는 Lv.13에
+들어와 떡밥을 받고, 답은 `ch11_confront`(Lv.58)에 있었다 — **45레벨의 간극**이다.
+게다가 진행 사슬 밖이라 안 가도 클리어된다. 그 상태로 세라가 "꽃밭과 여기"라고 말하면
+회수가 아니라 처음 듣는 정보가 된다.
+
+| beatId | trigger | 게이트 | 역할 |
+|---|---|---|---|
+| `garden_sign` | `CaptureInsect ""` + req `garden` | prereq `garden_intro` | 라온 — 여기 애들은 도망칠 생각을 안 한다 |
+| `garden_glass` | `SubAreaEnter garden_greenhouse` | + `requiredBeatId ch3_reach_forest` | **대치.** 유리 아래 돌에 새긴 문양 |
+| `garden_clash` | `BattleWin ""` + req `garden` | + `requiredBeatId ch3_reach_forest` | 줄어든 적이 없어서 강하다 |
+| `garden_fence` | `SubAreaEnter garden_maze` | prereq `garden_glass` | **떡밥 절반 회수.** 미로는 자란 게 아니라 놓인 것 |
+| `gd_garden` | `GuardianDefeat garden` | prereq `garden_glass` (leaf) | 문지기의 정체 + 황금 그물 |
+
+**세라가 화자인 셋에는 `requiredBeatId: ch3_reach_forest`를 문다.** 세라는 숲(ch3)에서
+합류하는데 꽃밭은 그보다 훨씬 먼저 열리므로, 안 잠그면 **만난 적 없는 사람이 말한다.**
+`RegionEnter`라 재발화형이고, 꽃밭 비트는 전부 `chapterId: side`라 검사 17(챕터 도달
+순서)의 본편 축에 끼어들지 않는다.
+
+`gd_garden`이 지금까지 **아무 의미도 없던** 꽃밭 수문장(호랑나비 Lv.33)에 값을 준다 —
+`GetNextRegionId("garden")`이 null이라 격파해도 해금이 없다. 그 설계는 그대로 두고
+보상을 서사와 아이템으로 준다.
+
+### 서브에리어 — 초반에 "여긴 이야기가 있다"를 가르친다
+
+진입이 `[E]` 명시 선택이라(`RegionManager.RequestEnterSubArea`), 플레이어는 첫 20레벨
+동안 "서브에리어 = 선택 사항인 스폰 창고"를 학습하고 나서 숲부터 갑자기 필수 진행로를
+만났다. 초원·연못에 학습 비트를 심고, 대치 슬롯이 `NpcTalk`뿐이던 연못·습지의 정형을
+서브에리어 대치로 마저 채웠다.
+
+| beatId | 서브에리어 | 화자 |
+|---|---|---|
+| `ch1_cave` | 초원 동굴 | 어르신 — "도감의 빈칸은 대개 이런 데 숨어 있어" (「빈칸」의 첫 씨앗) |
+| `ch2_reeds` | 갈대 밀림 | 라온 — 바깥은 조용한데 여긴 소리가 난다 |
+| `ch4_fog` | 안개 습지 | 세라 — "안 보이는 것과 없는 것은 다른데" (「지워진 개체」의 씨앗) |
+
+`ch1_cave`는 튜토리얼 직후라 2줄로 짧게 쓴다.
+
+### 격전 2 + 여운 5 + 수문장 5
+
+격전은 ch2(연못)·ch5(산)에 없던 자리를 채운다. **산에서 `ch5_clash`와
+`bl_mountain_clash`가 동시에 자격을 갖는 건 정상이다** — 챕터 우선순위(`bl`=2000)가
+본편을 먼저 내보내고 거점 비트는 다음 승리에 뜬다. `StoryBeatWalkthrough` 보고서에
+"한 걸음에 시도 2회"로 찍힌다.
+
+여운 5개(`ch2_echo`~`ch6_echo`)는 전부 그 챕터의 **도착 비트를 `requiredBeatId`로** 문다.
+`prerequisiteBeatId`가 체인의 순서를 맡고 이쪽이 단계를 맡는 구조(6장)를 그대로 따른다 —
+게이트 대상이 전부 `RegionEnter`라 검사 16(재발화성)도 통과한다.
+
+수문장 5개(`gd_pond`·`gd_forest`·`gd_swamp`·`gd_mountain`·`gd_nameless`)는 전부 **leaf**다.
+초원은 `ch1_guardian_win`이 이미 그 자리를 맡고 있어 뺐다. `gd_pond`는 연못 수문장이
+`dragonfly_emperor`이고 `ch2_emperor`(그 종 포획)가 이미 있어 **잡는 것과 이기는 것**이
+짝을 이룬다. `gd_nameless`는 최종 수문장(`mantis_unnamed` Lv.70)을 `fin_seal`의 보상
+"이름을 되찾은 사마귀"와 잇는다.
+
+> **한계** — `GuardianDefeat`는 `RegionManager.DefeatGuardian`의 idempotent 가드 때문에
+> 리전당 **일생 1회**만 울린다. 이미 격파한 세이브는 이 5개를 영영 못 본다. leaf라 진행
+> 정지는 없다(2막 `gd_*` 6개가 이미 같은 성질이다). 스파인 규칙상 다른 선택지가 없다.
+
+### 동행자 앵커 5곳 — `VillageBuilder`
+
+| 리전 | 인물 | 각도/거리 | 가장 가까운 서브에리어까지 |
+|---|---|---|---|
+| `pond` | 라온 | 20° / 0.38R | 깊은 곳 23.2m (진입 반경 15, +8.2) |
+| `swamp` | 라온 | 85° / 0.36R | 습지 동굴 23.9m (15, +8.9) |
+| `mountain` | 세라 | 65° / 0.32R | 산 정상 26.0m (18, +8.0) |
+| `ruins` | 세라 | 290° / 0.34R | 유적 지하 26.8m (15, +11.8) |
+| `garden` | 세라 | 155° / 0.34R | 꽃 미로 26.1m (18, +8.1) |
+
+**어르신은 초원에 남긴다** — 4장의 "2막에서 유일하게 움직이지 않는 사람"을 1막에서도
+지킨다. 좌표는 전부 월드 기준이다(`RegionDefinitions`가 `WorldScale` 1.5를 일괄 적용한 뒤의 값).
+서브에리어 진입 반경 안에 서면 말을 걸려다 구역에 빨려 들어간다 — 전초기지(0.4R)·잡기 아이·
+검은 옷의 하수와도 12m 이상 떨어뜨렸다.
+
+### 걸어갈 길도 함께 깔았다
+
+비트를 채워도 **다음 지역으로 가는 길이 안 보이면** 연관성은 완성되지 않는다. 1막 진행 사슬
+6링크 중 `pond→forest`와 `swamp→mountain`은 **지도 간선에도 월드 길에도 없었고**, 나머지도
+땅에 길이 깔린 건 `mountain→ruins` 하나뿐이었다. 공교롭게 공간상 가장 가까운 쌍이
+meadow―swamp(101m)이고 사슬인 `pond→forest`는 280m라, 지도를 훑으면 **사슬이 아닌 쪽이
+오히려 길처럼 보였다.**
+
+`RegionMapUI.Connections`에 두 간선을, `WorldTerrainBuilder.BuildExtraPaths`에 1막 사슬 길
+네 개를 넣었다(2막 사슬은 이미 깔려 있다 — 그쪽 주석이 "지도에는 길이 있는데 땅에는 없으면
+어디로 가야 할지 알 수 없다"고 적어 둔 그 원칙이다).
+
+그때 **길이 경사면 아래에 깔려 있던 것**도 같이 고쳤다. 지면 장식의 y는
+`0.00 베이스 / 0.08 리전 평면 / 0.15 경사면 / 0.18 길` 순인데 길이 0.12였다. 경사면은 두 리전
+중심 사이 **가운데 40%**를 덮으므로, 길이 하필 한복판에서 끊겨 보였다 — 길의 존재 이유가
+가장 필요한 구간이다. `meadow―swamp`와 `mountain―ruins`가 실제로 그 상태였다.
+사슬이 아닌 공간 인접선은 **지도에만 둔다** — 길로 깔면 사슬과 구분이 안 돼 오히려 엉뚱한
+쪽으로 이끈다.
+
+---
+
+## 7. ver2 비트 배치표
 
 보상 스케일은 1막(캔디 5~50 / XP 0~100)보다 한 단계 위다 — 2막은 Lv.42~70 구간이다.
 
@@ -299,14 +429,82 @@ ledger_ink      : ch10_echo
 | `ch12_clash` | `BattleWin ""` (req `nameless`) | `ch12_arrive` | 관장 하월 | 나는 30년을 서둘렀고 너는 한 마리씩 만났다. 결과가 이 꼴이라니 | 캔디55 / XP130 |
 | `ch12_echo` | `NpcTalk catcher_rival` | `ch8_echo` | 라온 | (복귀) 늦어서 미안. 마지막은 같이 가야지 | 캔디45 / XP90 |
 | `fin_unnamed` | `SubAreaEnter nameless_core` | `ch12_confront` | 세라 | **무명과의 대면.** 그것은 이름을 달라고 한다. 주면 자리를 얻는다. **주지 않는 것이 이기는 것** | 캔디150 / XP300 |
-| `fin_seal` | `BattleWin ""` (req `nameless`) | `fin_unnamed` | 세라 | 마지막 빈칸이 메워진다. 이름 없는 것은 설 자리를 잃고 물러난다 | 캔디150 / XP300 + 곤충 보상 |
+| `fin_seal` | `BattleWin mantis_unnamed` (req `nameless`) | `fin_unnamed` | 세라 | 마지막 빈칸이 메워진다. 이름 없는 것은 설 자리를 잃고 물러난다 | 캔디150 / XP300 + 곤충 보상 |
 | `fin_epilogue` | `NpcTalk ruins_scholar` | `ch9_echo` | 세라 | **에필로그.** 빈칸은 사라지지 않았어요. 종이 사라지면 또 생기죠. 그러니 계속 만나요 — 3막의 문 | 캔디120 / XP250 |
 
 `fin_seal`의 곤충 보상은 `mantis_unnamed`(이름을 되찾은 사마귀, Lv.60)다 —
 `ch6_secret`이 `dragonfly_ancient`를 준 것과 같은 자리이고, 최종 수문장과 같은 종을
 "이름을 돌려받은 개체"로 받는다는 뜻이다.
 
-비트 총량: 26(1막) + 34(2막) = **60**.
+### 최종장이 잡몹 승리로 터지던 자리 — 2026-08-27
+
+`fin_seal`은 오랫동안 `BattleWin ""`였다. 그래서 무명과 대면한(`fin_unnamed`) 직후
+`nameless`에서 **아무 야생 곤충이나 이기면** 엔딩 대사와 컷신(`cs_final_seal`), 곤충 보상이
+한꺼번에 터졌다 — 최종 수호자 격파와는 아무 상관 없이. 이 게임의 마지막 장면이
+지나가던 인분무 한 마리에 걸려 있었다.
+
+원인은 저작이 아니라 트리거였다. `StoryDirector.EvaluateTriggers`의 `BattleWin`이
+**param을 아예 안 봤다**("곤충 지정은 미지원"). `CaptureInsect`는 처음부터 봤는데
+(`ch2_emperor`·`ch5_apollo` 등 5건이 그걸 쓴다) 전투 쪽만 빠져 있었다.
+
+`BattleWin`도 `CaptureInsect`와 같은 규약으로 맞췄다 — **param이 비면 아무 승리, 채우면
+그 종을 이겼을 때만.** `fin_seal`은 `mantis_unnamed`를 문다.
+
+- **재발화형이 유지된다.** 지정 종은 그 리전 풀에 있어야 하므로(`story_lint` 검사 11이
+  포획·전투 양쪽을 본다) 다시 만나 다시 이길 수 있다. `fin_seal`은 `ch12_clash`의 prereq인
+  **스파인**이라 이 성질이 필수다 — `GuardianDefeat`를 못 쓴 이유가 정확히 그것이었다.
+- **기존 세이브도 안 막힌다.** `mantis_unnamed`는 `nameless` 필드 풀과 `nameless_core`에
+  모두 있고 최종 수호자이기도 하다. 엔딩 직전에서 멈춘 세이브는 그 종을 찾아 이기면 이어진다.
+- **HUD 안내가 무엇을 이겨야 하는지 말한다.** `DescribeActionObjective`가 종 이름을 실어
+  "이름 없는 자리에서 이름 없는 사마귀 쓰러뜨리기"로 뜬다. 예전엔 "…에서 전투 승리"였고,
+  그건 실제로 아무거나 이기면 되던 시절의 정확한 안내였다.
+- `BattleEnded`는 `Action<bool>`이라 종을 못 싣는다. 시그니처를 바꾸면 구독자 셋과 배치
+  도구의 리플렉션이 따라오므로, `InsectBattleController.EnemyInsectId`로 노출하고
+  **미룰 때 param에 실었다** — 발화는 결과 화면 뒤로 미뤄지는데 그때 다시 물으면 이미
+  다음 전투가 시작됐을 수 있다.
+
+검증은 걸음 도구가 든다(`-walkMode campaign`). 최종장 구간에 **잡몹을 이겨도 엔딩이 안 뜨는
+걸음**을 먼저 두고, 그다음 이름 없는 사마귀를 이겨 `fin_seal`이 뜨는 걸음을 둔다 —
+고치기 전이었다면 첫 걸음에서 FAIL이 난다.
+
+#### 그 수정이 곧바로 낳은 P0 — Epic·Legendary에는 1v1이 없다
+
+종을 달자마자 더 깊은 곳이 드러났다. **`mantis_unnamed`는 Legendary다.** 그리고
+`CaptureChoiceUI.IsRaidTarget`은 등급만 보고 Epic·Legendary면 **포획도 1v1도 막고
+레이드만 연다** — `[B]`가 아예 안 열린다. 그런데 레이드 승리는 `AddCapturedInsect`
+(→ `CaptureInsect` 트리거)만 흘리고 `InsectBattleController.BattleEnded`는 울리지 않았다.
+
+결과: `fin_seal`이 요구하는 "이름 없는 사마귀와의 1v1 승리"가 **게임에 존재하지 않는
+사건**이 됐다. 스파인이라 캠페인이 엔딩 직전에서 영구 정지한다.
+
+이 결함이 무서운 건 **앞 라운드의 검증을 그대로 통과했다는 것**이다. 걸음 도구의
+`WinBattleAgainst`가 1v1을 시뮬레이션해 `BattleEnded`를 직접 쏘았기 때문에, 저작·트리거·
+발화 순서가 전부 맞다고 나왔다 — 플레이어가 그 자리에 **도달할 수 있는가**만 아무도 안 봤다.
+
+| 왜 이 등급 구분이 여기까지 오는가 | |
+|---|---|
+| `ch2_emperor`(왕잠자리 Epic) · `ch4_firefly`(푸른반딧불이 Epic) | **무사하다** — `CaptureInsect`라서 레이드 승리의 포획이 그대로 흘린다 |
+| `fin_seal`(이름 없는 사마귀 Legendary) | **끊겼다** — `BattleWin`이라 레이드에서 오는 길이 없었다 |
+
+고친 방향은 **레이드도 전투로 세는 것**이다. `StoryDirector`가 `RaidBattleController.RaidEnded`를
+구독해 보스 종과 함께 `BattleWin`을 흘린다. 무param 비트에도 이롭다 — 예전에는 그 리전에서
+레이드만 이기고 넘어간 플레이어가 "그곳에서 전투 승리" 비트를 통째로 건너뛰었다.
+
+`story_lint` 검사 23이 **구독·해제·주입 3지점**을 고정한다. 하나만 빠져도 무증상이라서다.
+걸음 도구도 `WinRaidAgainst`로 바꿨다 — **플레이어가 실제로 쓸 수 있는 길로 걸어야** 저작이
+도달 가능한지 알 수 있다.
+
+> **새 `BattleWin` 종 지정을 저작할 때 등급을 먼저 본다.** Epic·Legendary면 그 비트는
+> 레이드 경로에만 걸린다(레이드는 5인 풀팀을 요구한다 — `CountBattleReadyTeamMembers`).
+> 스파인에 걸 거라면 그 요구까지 함께 감수하는 것인지 확인할 것.
+
+비트 총량은 **여기 적지 않는다** — ver1 26 + ver2 34 = 60으로 박아 뒀다가 오염 거점(`bl` 15개)과
+1막 보강(6-1장 20개)이 붙으면서 두 번 어긋났다. 단일 출처는 `Assets/Resources/Story.json`이고,
+`story_lint`가 매번 실측을 찍는다("beatId 중복 … N개 비트"). 챕터별 분포가 필요하면:
+
+```
+python -X utf8 -c "import json,io,collections; print(collections.Counter(x['chapterId'] for x in json.load(io.open('Assets/Resources/Story.json',encoding='utf-8'))['beats']))"
+```
 
 ### 구현 대응표 — 수문장
 
@@ -403,8 +601,18 @@ Lv.50~64에서 이미 잡은 종이 절반 가까이 나왔다. 리전당 4종�
 | `st_ch8_grip_enter` | `ch8_confront` | **집게** | 첫 간부 대면. 정면에서 곧장 나온다(숨지 않는다). 뜰채를 휘둘러 신분을 먼저 알린다 |
 | `st_ch9_scale_enter` | `ch9_confront` | **저울** | 옆에서 나타나 플레이어가 아니라 **세라를** 가리킨다 |
 | `st_ch10_ink_enter` | `ch10_confront` | **먹** | 느리게 걸어와 끄덕임 하나. 가장 긴 사이 — 장부를 덮는 박자 |
-| `st_ch11_scholar_lead` | `ch11_confront` | 세라 | 여기만 동행자가 **앞서** 간다. 대치가 아니라 발견 |
+| `st_ch11_scholar_lead` | `ch11_confront` | 세라 | 동행자가 **앞서** 간다. 대치가 아니라 발견 |
 | `st_ch12_chief_enter` | `ch12_confront` | **관장 하월** | 유일하게 뒤에서 다가온다 — 이미 여기 있었다는 뜻. 몸짓 없이 마주 서고 끝 |
+| `st_garden_scholar_glass` | `garden_glass` | 세라 | 위와 **짝**. 다른 건 사이(間) 하나 — 아직 모른 채 들여다보고 나서 가리킨다 |
+
+**「앞서 가는 연출」은 예비 울타리 두 곳에만 쓴다**(꽃밭 온실 · 우듬지 꼭대기). 나머지 대치는
+전부 상대가 다가오거나 막아서는 그림이라, 동행자가 앞서는 순간이 곧 "여긴 적이 없던 땅"의 표시다.
+
+> **온실은 가장 좁은 대치 무대다** — 방 반쪽이 10m(다른 대치는 11~14m). 게다가 이 방만
+> `CreateBoundaryWalls`가 아니라 `CreateGlassWall`로 봉해져 있어 **`story_lint` 검사 21이
+> 이 방을 아예 안 보고 있었다**(`half is None`이면 건너뛴다). 유리에도 collider가 남아
+> 벽 밖 워프면 똑같이 배우가 막히는데도 그랬다. 연출을 붙이면서
+> `game_facts._boundary_half_size`가 두 호출을 다 읽게 고쳤다 — 검사 대상 방이 25 → 26개가 됐다.
 
 ### 연출을 더 붙일 때 지킬 것
 
