@@ -29,7 +29,10 @@ namespace InsectGame.Core
         private Vector3 clickTarget;
         private bool movingToClick;
         // 진입 차단 안내 — 그리기는 PlayerHintOverlay(UI)가 한다. 문구는 설정 시 1회만 만든다.
+        // blockedMessageRegionId가 그 "1회"를 지킨다: IsBlockedPosition은 벽에 붙어 있는
+        // 동안 **매 프레임 2회** 들어오므로, 캐시 키 없이 보간하면 걷는 내내 문자열이 쌓인다.
         private string blockedMessage;
+        private string blockedMessageRegionId;
         private float blockedMsgTimer;
 
         // ── 자동 주행(메인퀘스트 목표로 이동) ──
@@ -574,7 +577,11 @@ namespace InsectGame.Core
                 {
                     if (r.ContainsPoint(pos) && !regionManager.IsRegionAccessible(r))
                     {
-                        blockedMessage = $"{r.displayName} 진입에 레벨이 부족합니다!";
+                        if (blockedMessageRegionId != r.regionId)
+                        {
+                            blockedMessageRegionId = r.regionId;
+                            blockedMessage = BuildBlockedMessage(r);
+                        }
                         blockedMsgTimer = 2f;
                         return true;
                     }
@@ -606,6 +613,32 @@ namespace InsectGame.Core
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// 진입 차단 안내 — <b>레벨이 아니라 수문장</b>이 막고 있다는 것을 정확히 말한다.
+        ///
+        /// 옛 문구는 "…진입에 레벨이 부족합니다!"였는데
+        /// <see cref="RegionManager.IsRegionAccessible"/>은 <b>레벨을 전혀 보지 않는다</b> —
+        /// 해금 집합만 본다. <c>requiredLevel</c>은 그 리전의 <b>스폰 레벨</b>과 지도 난이도
+        /// 표시에만 쓰이므로, 문구를 믿은 플레이어는 아무리 레벨을 올려도 열리지 않는 문 앞에서
+        /// 레벨업을 하러 간다. 같은 상황에서 지도(<c>RegionMapUI</c>)는 이미 "이전 지역의 수문장
+        /// 격파"라고 옳게 말하고 있었다 — 두 화면이 서로 다른 이유를 대고 있었던 셈이다.
+        ///
+        /// 열쇠는 <b>잠긴 리전 안이 아니라 바로 앞 리전</b>에 있으므로
+        /// <see cref="RegionManager.GetGatekeeperRegion"/>으로 앞 리전의 수문장을 짚어 준다.
+        /// 그게 없으면(데이터 누락·미배선) 원인을 지어내지 말고 사실만 말한다.
+        ///
+        /// 조사는 "…에게"로 잇는다. 수문장 이름이 데이터에서 오는데 받침이 갈려서
+        /// ("사마귀" / "장수말벌") 을/를 어느 쪽으로 고정해도 절반은 어색해진다.
+        /// </summary>
+        private string BuildBlockedMessage(Data.RegionData region)
+        {
+            Data.RegionData gate = regionManager.GetGatekeeperRegion(region.regionId);
+            if (gate != null && !string.IsNullOrEmpty(gate.guardianDisplayName))
+                return $"{region.displayName} — {gate.guardianDisplayName}에게 이겨야 열립니다";
+
+            return $"{region.displayName} — 아직 갈 수 없습니다";
         }
 
         // F9 unstick — 끼임 escape. SubArea 안이면 SubAreaWorldBuilder의 FindSafeSpawnPosition과

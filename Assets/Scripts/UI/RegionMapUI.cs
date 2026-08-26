@@ -577,7 +577,11 @@ namespace InsectGame.UI
 
             DiffLabel(region.requiredLevel, out string diff, out Color diffCol);
             DrawInfoLine(ix, ref y, iw, "난이도", diff, diffCol, linePitch);
-            DrawInfoLine(ix, ref y, iw, "요구 레벨", $"Lv {region.requiredLevel}", new Color(0.8f, 0.85f, 0.95f), linePitch);
+            // "요구"가 아니라 "권장"이다 — 진입 요건은 레벨이 아니라 앞 리전의 수문장 격파고
+            // (RegionManager.IsRegionAccessible), requiredLevel은 이 리전의 스폰 레벨과 바로 위
+            // 난이도 라벨을 정하는 값이다. "요구 레벨 Lv 6"은 필드 차단 배너가 하던 것과 똑같은
+            // 거짓말이라, 레벨만 채우면 들어갈 수 있다고 읽힌다.
+            DrawInfoLine(ix, ref y, iw, "권장 레벨", $"Lv {region.requiredLevel}", new Color(0.8f, 0.85f, 0.95f), linePitch);
             DrawInfoLine(ix, ref y, iw, "상태", accessible ? "해금됨" : "잠김",
                 accessible ? new Color(0.4f, 0.9f, 0.5f) : new Color(0.9f, 0.45f, 0.4f), linePitch);
 

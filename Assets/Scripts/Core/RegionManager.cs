@@ -350,6 +350,26 @@ namespace InsectGame.Core
             }
         }
 
+        /// <summary>
+        /// 이 리전을 여는 열쇠 — <b>어느 리전의 수문장</b>을 쓰러뜨려야 하는가.
+        ///
+        /// 해금은 <see cref="DefeatGuardian"/>이 <c>GetNextRegionId</c>로 <b>다음</b> 리전을
+        /// 여는 구조라, 잠긴 리전의 열쇠는 그 리전 안이 아니라 <b>바로 앞 리전</b>에 있다.
+        /// 안내 문구가 이걸 모르면 플레이어를 들어가지도 못하는 리전 쪽으로 되돌려 보낸다.
+        ///
+        /// 꽃밭도 규칙이 같다 — 앞 리전이 초원이고 초원 수문장 격파가 함께 열어 준다.
+        /// 시작 리전(초원)처럼 앞이 없는 곳은 null을 준다(애초에 잠기지 않는다).
+        ///
+        /// <c>GetPreviousRegionId</c>를 public으로 바꾸지 않고 감싸는 이유:
+        /// <c>RegionProgressionTests</c>가 그 <b>시그니처 문자열</b>로 본문을 찾아
+        /// 진행 체인을 검사한다(`private string GetPreviousRegionId`).
+        /// </summary>
+        public RegionData GetGatekeeperRegion(string regionId)
+        {
+            string prevId = GetPreviousRegionId(regionId);
+            return string.IsNullOrEmpty(prevId) ? null : GetRegionById(prevId);
+        }
+
         // --- 저장/로드 ---
 
         // 클라우드 로드 후 PlayerPrefs(지역 해금/수문장)를 다시 읽어 인메모리 갱신.

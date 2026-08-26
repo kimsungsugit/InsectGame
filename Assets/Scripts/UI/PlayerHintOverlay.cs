@@ -4,7 +4,7 @@ using UnityEngine;
 namespace InsectGame.UI
 {
     /// <summary>
-    /// 필드 안내 문구 두 줄 — "이동 잠금 해제(ESC)"와 "리전 진입 레벨 부족".
+    /// 필드 안내 문구 두 줄 — "이동 잠금 해제(ESC)"와 "잠긴 리전 진입 차단".
     /// 상태의 주인은 <see cref="PlayerMovement"/>(Core)이고 여기선 그리기만 한다.
     ///
     /// <b>왜 UI로 옮겨왔나.</b> 예전엔 <c>PlayerMovement</c>가 자기 <c>OnGUI</c>에서 직접 그렸는데,
@@ -80,7 +80,8 @@ namespace InsectGame.UI
                 Color col = BlockTextCol;
                 col.a = blockedAlpha;
                 blockStyle.normal.textColor = col;   // 알파가 매 프레임 바뀐다(struct라 할당 아님)
-                // 리전 이름이 길이를 정하는데 상자는 고정이다 — 넘치면 글자를 줄여 맞춘다.
+                // 리전 이름 + 수문장 이름이 길이를 정하는데 상자는 고정이다(최장 30자쯤:
+                // "이름 없는 자리 — 우듬지의 세계수나비에게 이겨야 열립니다"). 넘치면 글자를 줄여 맞춘다.
                 UIHelper.LabelFit(
                     new Rect(UISafeLayout.ContentLeft, y, UISafeLayout.ContentWidth, h),
                     playerMovement.BlockedMessage, blockStyle);

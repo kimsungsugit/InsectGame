@@ -314,7 +314,7 @@ namespace InsectGame.Core
             // 모바일 터치 이동 — 가상 조이스틱(UI→Core 입력 푸시)
             InsectGame.UI.VirtualJoystickUI joystick = EnsureComponent<InsectGame.UI.VirtualJoystickUI>("UI/VirtualJoystick");
             joystick.AutoWire(playerMov);
-            // 필드 안내 문구(이동 잠금·리전 레벨 부족). PlayerMovement가 자기 OnGUI에서 픽셀 좌표로
+            // 필드 안내 문구(이동 잠금·잠긴 리전 진입 차단). PlayerMovement가 자기 OnGUI에서 픽셀 좌표로
             // 그리던 것을 가상 캔버스 안으로 들여왔다(BattleEffectTextOverlay와 같은 이유).
             InsectGame.UI.PlayerHintOverlay hintOverlay =
                 EnsureComponent<InsectGame.UI.PlayerHintOverlay>("UI/PlayerHintOverlay");
