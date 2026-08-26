@@ -55,7 +55,14 @@ namespace InsectGame.Core
         {
             if (baseMax <= 0) return baseMax;   // 스포너가 "리전 상한 없음"으로 쓰는 값 — 건드리지 않는다
             if (!blighted) return baseMax;
-            return Mathf.Max(MinActive, baseMax / ScarcityDivisor);
+            // <b>MinActive는 하한이지 보장 수량이 아니다.</b> baseMax가 그보다 작을 때
+            // 하한을 그대로 돌려주면 <b>오염된 리전이 멀쩡한 리전보다 곤충이 많아진다</b> —
+            // 줄이는 정책이 늘리는 정책이 된다. baseMax=1에서 실제로 2를 돌려주고 있었다.
+            //
+            // 도달 가능한 값이다: <c>GameplayTuningProfile.maxActivePerRegion</c>이
+            // <c>[Range(1, 15)]</c>라 인스펙터에서 1을 넣을 수 있고,
+            // <c>InsectSpawner.ApplyTuning</c>이 <c>Mathf.Max(1, …)</c>로 그대로 받는다.
+            return Mathf.Min(baseMax, Mathf.Max(MinActive, baseMax / ScarcityDivisor));
         }
 
         /// <summary>

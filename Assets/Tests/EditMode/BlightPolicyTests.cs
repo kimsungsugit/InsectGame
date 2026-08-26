@@ -19,7 +19,15 @@ namespace InsectGame.Tests
 
         /// <summary>
         /// 오염이 스폰을 0으로 만들면 그 리전의 포획·전투 비트가 영영 발화하지 못한다.
-        /// 어떤 기본값을 넣어도 하한 아래로 내려가지 않아야 한다.
+        /// <b>지키려는 건 "0이 아님"이고 <see cref="BlightPolicy.MinActive"/>는 그 수단이다.</b>
+        ///
+        /// 그 둘을 같은 것으로 적었다가 어긋났다. 예전 판은 어떤 기본값에서도 <c>MinActive</c>
+        /// 이상을 요구했는데, <c>baseMax=1</c>이면 그건 <b>멀쩡한 리전(1)보다 오염 리전(2)에
+        /// 곤충이 많다</b>는 뜻이 된다 — 줄이는 정책이 늘리는 정책이 되고, 그 상태로 통과했다.
+        ///
+        /// 하한은 리전이 허용하는 만큼까지다: <c>min(MinActive, baseMax)</c>.
+        /// 절대 불변식(<b>1 이상</b>)은 그대로 못 박는다 — 캠페인 정지는 거기서 난다.
+        /// 도달 가능한 값이라 1도 함께 본다(<c>GameplayTuningProfile</c>이 <c>[Range(1, 15)]</c>).
         /// </summary>
         [TestCase(1)]
         [TestCase(2)]
@@ -30,8 +38,11 @@ namespace InsectGame.Tests
         public void MaxActiveFor_Blighted_NeverDropsBelowMinActive(int baseMax)
         {
             int actual = BlightPolicy.MaxActiveFor(true, baseMax);
-            Assert.GreaterOrEqual(actual, BlightPolicy.MinActive,
-                $"기본 {baseMax}에서 오염 상한이 {actual} — 하한 {BlightPolicy.MinActive} 미만이면 캠페인이 멈춘다");
+            int floor = Mathf.Min(BlightPolicy.MinActive, baseMax);
+            Assert.GreaterOrEqual(actual, floor,
+                $"기본 {baseMax}에서 오염 상한이 {actual} — 하한 {floor} 미만이면 캠페인이 멈춘다");
+            Assert.GreaterOrEqual(actual, 1,
+                $"기본 {baseMax}에서 오염 상한이 {actual} — 0이면 그 리전 비트가 영영 발화 못 한다");
         }
 
         [Test]
@@ -53,6 +64,30 @@ namespace InsectGame.Tests
         {
             // 줄어들지 않으면 오염이 게임플레이로 드러나지 않는다.
             Assert.Less(BlightPolicy.MaxActiveFor(true, 10), BlightPolicy.MaxActiveFor(false, 10));
+        }
+
+        /// <summary>
+        /// <b>오염이 곤충을 늘려서는 안 된다 — 정의역 전체에서.</b>
+        ///
+        /// 이 검사가 <c>baseMax=10</c> 하나만 보던 동안 <c>baseMax=1</c>이 뒤집혀 있었다:
+        /// <c>Mathf.Max(MinActive, 1/3)</c>이 2라, 오염된 리전이 멀쩡한 리전(1)보다
+        /// **곤충이 많았다.** 하한을 보장 수량으로 쓴 탓이다.
+        ///
+        /// 범위는 <c>GameplayTuningProfile.maxActivePerRegion</c>의 <c>[Range(1, 15)]</c>다 —
+        /// 인스펙터에서 넣을 수 있는 값 전부가 정의역이므로 전부 본다.
+        /// </summary>
+        [Test]
+        public void MaxActiveFor_Blighted_NeverExceedsClean_AcrossTuningRange()
+        {
+            for (int baseMax = 1; baseMax <= 15; baseMax++)
+            {
+                int clean = BlightPolicy.MaxActiveFor(false, baseMax);
+                int blighted = BlightPolicy.MaxActiveFor(true, baseMax);
+                Assert.LessOrEqual(blighted, clean,
+                    $"기본 {baseMax}에서 오염 상한이 {blighted} — 멀쩡한 리전({clean})보다 많다");
+                Assert.GreaterOrEqual(blighted, 1,
+                    $"기본 {baseMax}에서 오염 상한이 {blighted} — 0이면 그 리전 비트가 영영 발화 못 한다");
+            }
         }
 
         /// <summary>
