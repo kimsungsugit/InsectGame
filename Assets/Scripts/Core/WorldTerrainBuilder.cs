@@ -424,6 +424,21 @@ namespace InsectGame.Core
             return 40f;
         }
 
+        /// <summary>
+        /// 이 빌더가 만든 런타임 머티리얼 — <c>RegionTerrainBuilder</c>와 같은 이유로 회수한다
+        /// (GameObject를 지워도 머티리얼은 남고, 로그아웃·계정삭제가 씬을 재로드한다).
+        /// 여기서 나온 것도 <c>SetTransparent</c>로 변형되므로 색상 캐시를 쓰지 않는다.
+        /// </summary>
+        private readonly System.Collections.Generic.List<Material> runtimeMaterials =
+            new System.Collections.Generic.List<Material>();
+
+        private void OnDestroy()
+        {
+            for (int i = 0; i < runtimeMaterials.Count; i++)
+                if (runtimeMaterials[i] != null) Destroy(runtimeMaterials[i]);
+            runtimeMaterials.Clear();
+        }
+
         private Material CreateMat(Color color)
         {
             Shader shader = Shader.Find("Standard");
@@ -432,6 +447,7 @@ namespace InsectGame.Core
             if (shader == null) shader = Shader.Find("Sprites/Default");
             Material mat = shader != null ? new Material(shader) : new Material(Shader.Find("Hidden/InternalErrorShader"));
             mat.color = color;
+            runtimeMaterials.Add(mat);
             return mat;
         }
 

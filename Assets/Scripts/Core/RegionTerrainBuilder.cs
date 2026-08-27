@@ -1579,6 +1579,25 @@ namespace InsectGame.Core
             if (mr != null) mr.material = mat;
         }
 
+        /// <summary>
+        /// 이 빌더가 만든 런타임 머티리얼. <b>GameObject를 지워도 이건 안 지워진다</b> —
+        /// 로그아웃·계정삭제가 씬을 재로드하므로 회수하지 않으면 재로드마다 지형 한 벌이 샌다.
+        ///
+        /// <b>색상 캐시를 쓰지 않는 이유</b>: 여기서 나온 머티리얼은 뒤에서 변형된다
+        /// (<c>SetTransparent</c>가 물·얼음에, 발광 설정이 따로). 색으로 공유하면 같은 색의
+        /// 불투명 지형까지 함께 투명해진다. <c>VillageBuilder</c>는 생성 뒤 아무도 안 건드려서
+        /// 캐시가 성립한다 — 그쪽과 방식이 갈리는 건 그 차이 때문이다.
+        /// </summary>
+        private readonly System.Collections.Generic.List<Material> runtimeMaterials =
+            new System.Collections.Generic.List<Material>();
+
+        private void OnDestroy()
+        {
+            for (int i = 0; i < runtimeMaterials.Count; i++)
+                if (runtimeMaterials[i] != null) Destroy(runtimeMaterials[i]);
+            runtimeMaterials.Clear();
+        }
+
         private Material Mat(Color color)
         {
             Shader shader = Shader.Find("Standard");
@@ -1587,6 +1606,7 @@ namespace InsectGame.Core
             if (shader == null) shader = Shader.Find("Sprites/Default");
             Material mat = shader != null ? new Material(shader) : new Material(Shader.Find("Hidden/InternalErrorShader"));
             mat.color = color;
+            runtimeMaterials.Add(mat);
             return mat;
         }
 

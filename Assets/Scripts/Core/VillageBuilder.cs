@@ -1439,6 +1439,26 @@ namespace InsectGame.Core
             text.color = new Color(1f, 0.95f, 0.80f);
         }
 
+        /// <summary>
+        /// 런타임 머티리얼 회수. <b>GameObject를 지워도 머티리얼은 안 지워진다</b> —
+        /// <c>new Material(...)</c>로 만든 것은 씬이 내려가도 남는다.
+        ///
+        /// 이 게임은 <b>로그아웃·계정삭제가 씬을 재로드</b>하므로(그래서 싱글턴 9종이
+        /// <c>OnDestroy</c>에서 static을 비운다), 재로드마다 마을 한 벌 분량이 통째로 샌다.
+        /// <c>SubAreaWorldBuilder</c>·<c>BlightVfx</c>는 이미 같은 이유로 회수하고 있었고
+        /// 월드 빌더 셋(여기·<c>RegionTerrainBuilder</c>·<c>WorldTerrainBuilder</c>)만 빠져 있었다.
+        ///
+        /// 색상 캐시라 개수는 유한하고, 캐시가 안전한 이유는 <see cref="Mat"/>가 생성 시
+        /// 색만 설정하고 그 뒤 아무도 변형하지 않기 때문이다 — 지형 빌더 둘은
+        /// <c>SetTransparent</c>로 변형해서 같은 캐시를 쓸 수 없다(그쪽은 목록으로 추적한다).
+        /// </summary>
+        private void OnDestroy()
+        {
+            foreach (Material m in materialCache.Values)
+                if (m != null) Destroy(m);
+            materialCache.Clear();
+        }
+
         /// <summary>색상당 1개 머티리얼 캐시 — RegionTerrainBuilder/부트스트랩과 동일한 셰이더 fallback 체인.</summary>
         private Material Mat(Color color)
         {
