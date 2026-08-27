@@ -369,15 +369,20 @@
 - [x] InsectBattleController 재감사 (P0:1, 2026-08-27) — Epic·Legendary는 1v1이 없어 `BattleWin` 종 지정이 도달 불가였다(레이드→BattleWin 배선 신설)
 - [x] BlightPolicy (P1:1, 2026-08-27) — 상한이 낮으면 오염이 곤충을 **늘리고** 있었다(하한을 보장 수량으로 씀)
 - [x] VillageBuilder 재감사 (P1:1 + 형제 2건, 2026-08-27) — 월드 빌더 셋이 런타임 머티리얼을 회수하지 않았다(씬 재로드마다 누수)
+- [x] BattleScreenUI 재감사 (P0:0, P1:0, 2026-08-27) — clean. 과거 P0 둘(OnEnable 재구독·슬로우모션 복구) 정상, OnGUI 할당 0
+- [x] RegionManager 재감사 (P0:0, P1:0, 2026-08-27) — clean. 1막 리전 겹침은 테스트가 명시 제외한 수용 부채이고 진행 정지는 없다
+- [x] StoryDirector 재감사 (P0:0, P1:0, P2:1 보고, 2026-08-27) — 미뤄 둔 트리거는 견고. CaptureInsect만 즉시 발화라 전투 보상 패널과 겹친다(P2)
 ## Uncovered (우선순위순)
 
-> **2026-08-27 재생성** — 1막 지형 연관성 보강 3라운드로 코드가 움직여 큐가 다시 찼다.
-> `python -X utf8 .claude/scripts/audit_candidates.py --emit-md` 출력 그대로다
-> (미검토 파일 먼저 · 재감사는 감사 이후 변경량순 — 그 정렬이 도구의 단일 출처).
-
-- [ ] BattleScreenUI 재감사 (UI/BattleScreenUI.cs, 3851줄, score 372) — 2026-08-17 감사 이후 2026-08-23까지 84줄 변경
-- [ ] RegionManager 재감사 (Core/RegionManager.cs, 403줄, score 19) — 2026-08-08 감사 이후 2026-08-26까지 44줄 변경
-
+> **2026-08-27 기준 비어 있다 — 소진.** 이날 큐를 재생성해 6건을 처리했고,
+> 마지막 라운드가 만든 변경까지 다시 돌린 뒤 `audit_candidates.py`가 **후보 0건**을 냈다
+> (미검토 `.cs` 없음 · 감사 이후 40줄 이상 바뀐 `.cs` 없음).
+>
+> 다음 audit은 코드가 더 움직인 뒤에 의미가 생긴다:
+> `python -X utf8 .claude/scripts/audit_candidates.py --emit-md`
+> (출력은 stdout뿐이다 — 이 절에 **직접 옮겨 적어야** 훅이 본다.)
+>
+> (`- [ ]`가 0이면 `audit_flow_inject`·`audit_reminder` 훅이 함께 침묵한다.)
 
 ## Round Log
 
@@ -386,11 +391,11 @@
 
 > 이 로그는 **쓰기 전용**이다 — audit 스킬 Step 4가 추가하지만 어느 단계도 읽지 않는다.
 > 그런데 Step 1이 이 파일을 통째로 Read하므로 쌓아두면 매 라운드 컨텍스트를 먹는다.
-- 2026-08-23: QuickAccessBarUI 재감사 — **P1:2, P2:3 처리/보고.** 라이브 P0은 없었다 — 배선도 인덱스 표도 지금은 맞다. 문제는 **맞다는 것을 아무도 강제하지 않는 것**이었다: 같은 표가 네 벌(배열·Update 키 switch·OnGUI 키 switch·IsActive/OnClick case)인데 서로 인덱스로만 이어져 있어, 버튼 하나를 중간에 끼우면 전부 한 칸씩 밀려 C가 훈련을 열고 배지가 지도에 붙는다. 키 표 2벌을 `buttons[].key`에서 파생시키고(파싱 실패는 경고), 배지는 플래그로, `OnClick` default에는 경고를 넣었다. 덤으로 죽은 `IModalUI` 구현을 걷어냈다 — `Register`를 부르는 곳이 없어 `IsOpen`이 영원히 false인데 시그니처만 모달이었다. 검증: 컴파일 error CS 0 / warning CS 0, ci_check 통과, PlayMode 672/672.
-- 2026-08-23: **audit 큐 4건 전수 — 큐 소진**(사용자 요청 "남은 큐 다 진행해") — **P0:1, P1:9, P2:5 처리.** 가장 큰 둘은 서로 다른 파일에 있었다. ①`InsectSpawner`: 서브에리어 스폰포인트가 **부모 리전 ID를 그대로 달고 있어** 재배치가 그걸 플레이어 링(10~43m)으로 끌고 왔다 — 게이트 원 바깥에만 있어야 할 전용종이 필드 한복판에 뜨고, 숲 기준 필드 포인트 5개 대 서브 포인트 8개라 **주변 스폰의 과반이 전용종**이 됐다. `SpawnPoint.isSubAreaPoint` 명시 플래그로 재배치에서 빼고, 레벨 곡선 판정의 `Length <= 5` 휴리스틱도 같은 플래그로 교체했다. 겸사겸사 8초마다 살아 있는 곤충이 붙은 포인트를 0으로 밀던 `ResetCount`를 실제 개체 재동기화(`BeginRecount`/`NotifyLive`)로 바꿨다 — 상한 2가 "동시 2마리"가 아니라 "8초당 2마리"였다. ②`NpcDuelController`: **대결 결과 토스트가 한 번도 뜬 적이 없었다.** `SetResult`가 `DuelEnded` 시점(결과 화면이 열리는 프레임)에 시각을 찍는데 결과 화면은 4초를 채우고 닫히고 토스트 창은 3.5초다 — 필드가 보이기 0.5초 전에 죽었다. 시각 스탬프를 버리고 1회 소비형(`TryConsumeResult`)으로 바꿔 **필드가 처음 그릴 때** 창을 시작한다. 직전 라운드에 조립한 보상·정화 문구가 그제서야 실제로 보인다. `AuthManager`는 P1이 셋이었다: 로그아웃·계정삭제가 진행 중인 갱신 코루틴을 세우지 않아 **응답이 오면 지운 토큰을 다시 써 세션이 부활**했고(세대 카운터로 무효화), 네트워크 오류와 인증 거절이 같은 처리라 **타임아웃 한 번에 refresh 토큰이 영구 삭제**됐으며(게스트는 복구 불가), 계정 삭제 요청 둘만 timeout이 없어 무제한 대기 시 클라우드 저장이 세션 내내 막혔다. `LoginUI`는 회원가입 중 클라이언트 검증 실패가 **폼을 통째로 파괴**했고(닉네임·비밀번호 확인 소실), 캐릭터 생성 패널만 폰트 크기를 안 정해 직전 패널 값(60/50pt)을 물려받아 제목과 항목 이름이 잘렸다. 검사기도 늘렸다 — `text_fit_lint`에 `errorMessage` 출처를 추가하니 **`RegionMapUI`에서 새 위반이 하나 나왔다**(wordWrap=false + 26pt). 검증: 컴파일 error CS 0 / warning CS 0, ci_check 11종 통과, PlayMode 704/704.
 - 2026-08-27: LedgerPressure(clean) + InsectBattleController 재감사 — **P0:1 처리 + `story_lint` 검사 23 신설.** 1순위 `LedgerPressure`는 clean이었다(공개 멤버 전부 19테스트, 소비 경로도 `BeginBattleCommon`이 6필드 전부 리셋, 다타 스킬이 없어 배율 중복도 없음). 진짜는 그 옆에 있었다 — **같은 라운드에 내가 만든 P0**다. 최종장 `fin_seal`을 `BattleWin mantis_unnamed`로 고쳤는데 **그 종이 Legendary**고, `CaptureChoiceUI.IsRaidTarget`은 Epic·Legendary에 **포획과 1v1을 둘 다 막고 레이드만 연다**. 그런데 레이드 승리는 `AddCapturedInsect`만 흘리고 `BattleEnded`는 안 울려서, `CaptureInsect` 비트(ch2_emperor·ch4_firefly, 둘 다 Epic)는 멀쩡한데 **`BattleWin`만 도달 불가**였다 — 게다가 스파인이라 캠페인이 엔딩 직전에서 영구 정지한다. **앞 라운드 검증이 이걸 통과시킨 게 핵심 교훈이다**: 걸음 도구가 1v1을 시뮬레이션해 `BattleEnded`를 직접 쏘아, 저작·트리거·순서는 다 맞다고 나왔지만 **플레이어가 그 자리에 도달할 수 있는가**는 아무도 안 봤다. 고친 방향은 레이드도 전투로 세는 것(`StoryDirector`가 `RaidEnded` 구독 → 보스 종과 함께 `BattleWin`). 무param 비트에도 이롭다 — 레이드만 이기고 넘어간 플레이어가 "그곳에서 전투 승리"를 통째로 건너뛰던 것도 함께 닫혔다. 검사 23이 구독·해제·주입 3지점을 고정하고(수정 전 소스에 걸어 보면 3건 FAIL), 걸음 도구도 `WinRaidAgainst`로 바꿔 **실제 플레이어 경로로** 걷는다. 검증: 컴파일 error CS 0, ci_check 통과, story_lint 23 PASS, PlayMode 733/733, campaign·blight 걸음 전 걸음 통과.
 - 2026-08-27: BlightPolicy — **P1:1 처리.** 순수 계산부라 표면 점검이었는데 `MaxActiveFor`에 정의역 구멍이 있었다: `Mathf.Max(MinActive, baseMax / ScarcityDivisor)`가 **하한을 보장 수량으로** 써서, `baseMax=1`이면 오염 리전이 **2**를 돌려준다 — 멀쩡한 리전(1)보다 곤충이 많아진다. 줄이는 정책이 늘리는 정책이 됐다. 도달 가능한 값이다: `GameplayTuningProfile.maxActivePerRegion`이 `[Range(1, 15)]`라 인스펙터에서 1을 넣을 수 있고 `InsectSpawner.ApplyTuning`이 `Mathf.Max(1, …)`로 그대로 받는다. `Mathf.Min(baseMax, …)`로 가뒀다. **기존 테스트가 못 잡은 이유가 그대로 교훈이다** — `MaxActiveFor_Blighted_IsScarcerThanClean`이 `baseMax=10` 하나만 봤다. 튜닝 Range 전체(1~15)를 도는 검사를 더했더니 **기존 테스트와 정면으로 부딪혔다**: `NeverDropsBelowMinActive(1)`이 "어떤 기본값에서도 MinActive(2) 이상"을 요구해, `baseMax=1`에서 '2 이상'과 '1 이하'가 동시에 성립할 수 없었다. 그 테스트의 **자기 문서**가 판정을 줬다 — 지키려는 건 "0이 아님"이고 MinActive는 그 수단이다. 하한을 `min(MinActive, baseMax)`로 정확히 다시 적고 절대 불변식(1 이상)은 따로 못 박았다. 수단을 목적으로 적어 둔 탓에 결함이 테스트를 통과하고 있었다. `TintOf`의 누적 탈색 의심은 거짓양성이었다 — `BlightVfx`가 언제나 보관된 `site.groundOriginal`을 넘긴다. 검증: 컴파일 error CS 0, ci_check 통과, blight_lint 20 PASS, PlayMode 734/734.
 - 2026-08-27: VillageBuilder 재감사 — **P1:1 + 형제 2건 처리.** 체크리스트로는 clean이었다(생명주기 메서드·조회·이벤트·싱글턴이 전무한 순수 빌더). 결함은 **머티리얼 수명**에 있었다 — `materialCache`에 `new Material(...)`을 색상당 1개씩 만들고 `OnDestroy`가 아예 없었다. GameObject를 지워도 머티리얼은 안 지워지고 이 게임은 **로그아웃·계정삭제가 씬을 재로드**하므로 재로드마다 마을 한 벌이 통째로 샌다. 형제 빌더 둘(`RegionTerrainBuilder` 88 호출부, `WorldTerrainBuilder` 16)은 **캐시조차 없이** 같은 누수였다 — 직전 라운드가 UI 텍스처에서 '형제 둘에서도 발견'한 것과 같은 형태다. 셋 다 회수하되 **방식이 갈린다**: VillageBuilder는 생성 뒤 아무도 안 건드려 색상 캐시가 성립하고, 지형 빌더 둘은 `SetTransparent`로 변형하므로 색으로 공유하면 같은 색 불투명 지형까지 투명해진다 — 그쪽은 목록 추적이다. `TintOf` 누적 탈색과 `SubAreaWorldBuilder` 미회수 의심은 둘 다 거짓양성이었다. 검사기는 두지 않았다 — 저장소 전수 설문에서 26파일 중 18이 '미회수'로 잡혔는데 그 상당수가 static 캐시(UIHelper 등)나 헬퍼 경유 회수(SubAreaWorldBuilder)라 규칙이 크리스프하지 않다(P2 보고). 검증: 컴파일 error CS 0, ci_check 통과, PlayMode 734/734.
+- 2026-08-27: BattleScreenUI · RegionManager 재감사 — **둘 다 clean(P0:0 P1:0).** BattleScreenUI는 큐 최고점(score 372)이었지만 실제로는 방어가 촘촘했다: `OnGUI` 매프레임 할당 0, `FindFirstObjectByType`는 null 캐싱, 과거 P0 둘(`OnEnable` 재구독 · `OnDisable` 슬로우모션 복구)도 그대로다. 그리기 시점에 공유 `GUIStyle`을 변형하는 곳은 장부 게이지 하나뿐이고 색을 정확히 되돌린다. **스킬 문서가 적은 그대로였다 — 채점은 '열어볼 순서'이지 '무엇이 문제인지'가 아니다.** `GUI.DrawTexture(whiteTexture)` 617곳(BattleScreenUI 327 · RaidBattleUI.Draw 290)은 `ui-layout.md`의 `UISurface` 규칙과 어긋나지만 전투 화면 2종의 렌더 방식 자체이고 IMGUI는 배치 캡처가 안 돼 검증 수단이 없다 — 감사 자동수정 대상이 아니다(P2). RegionManager는 리전 원 겹침 2쌍(meadow―swamp 41.9m · swamp―mountain 0.15m)이 나왔으나 `SecondActRegions_DoNotOverlapAnyRegion`이 **주석으로 명시 제외**한 기존 배치다. swamp 중심이 meadow 밖 25.6m라 `RegionEnter swamp`가 도달 가능해 진행 정지도 없다 — 발견되지 않은 결함이 아니라 문서화된 수용 부채다. 클라우드 재로드 등록·조회 캐싱도 정상. 검증: ci_check 통과, PlayMode 734/734.
+- 2026-08-27: StoryDirector 재감사 — **P0:0 P1:0 · P2:1 보고.** 이번 세션 제 변경 67줄이 대상이었다. 미뤄 둔 트리거 체계는 견고했다: 중복 제거((type,param) 동일 시 skip) · 12초 안전망(`Time.unscaledDeltaTime`) · 모달/컷신 대기 · `RaidEnded` 구독↔해제 짝. **종 param이 붙으며 중복 제거가 덜 뭉치게 된 것**은 회귀가 아니다 — 승리 둘이 각각 평가되고 `IsSeen`이 이중 발화를 막는다. P2: `OnInsectCaptured`만 **즉시** 발화한다(BattleWin·GuardianDefeat·RegionCleansed는 전부 미룬다). 전투 중 포획과 레이드 승리 포획은 결과 화면 직전에 일어나고 `BattleScreenUI`는 자기 그리기를 모달로 억제하지 않으므로, 대사창이 **획득 EXP·캔디 패널 위로 열린다** — 미루기를 도입한 그 이유 그대로다. 고치려면 '결과 화면이 **열렸다**'를 알리는 짝 API가 필요한데(지금은 닫힘 통지만 있다) UI 2파일과 StoryDirector에 걸치는 설계 변경이고, IMGUI라 배치 캡처로 결과를 눈으로 못 본다 — 자동 수정 대상이 아니다. 검증: ci_check 통과, story_lint 23 PASS, PlayMode 734/734.
 > 영역별 처리 이력은 위 Covered 인덱스가 이미 갖고 있다.
 >
 > 개수를 두 곳에 적었다가 실제로 어긋났다 — 상단은 "최근 10건", 여기는 "최근 3건만 둔다"라고
