@@ -5,7 +5,8 @@
 
 - **Covered**: 처리 완료 영역 인덱스. 서술 원문은 `.claude/audit-archive/covered-detail.md`
 - **Uncovered**: 다음 audit 후보 큐. 위에서 아래로 우선순위.
-  **비면 `python -X utf8 .claude/scripts/audit_candidates.py --emit-md`로 재생성**
+  **비면 `python -X utf8 .claude/scripts/audit_candidates.py --write`로 재생성**
+  (`--emit-md`는 stdout에만 찍는다 — `--write`가 이 절을 직접 갈아 끼운다)
 - **Round Log**: **최근 5건만** 둔다(이 줄이 개수의 단일 출처). 넘치면
   `.claude/audit-archive/round-log-2026H2.md`로 이관 — 아카이브는 날짜순 정렬
 
@@ -371,7 +372,8 @@
 - [x] VillageBuilder 재감사 (P1:1 + 형제 2건, 2026-08-27) — 월드 빌더 셋이 런타임 머티리얼을 회수하지 않았다(씬 재로드마다 누수)
 - [x] BattleScreenUI 재감사 (P0:0, P1:0, 2026-08-27) — clean. 과거 P0 둘(OnEnable 재구독·슬로우모션 복구) 정상, OnGUI 할당 0
 - [x] RegionManager 재감사 (P0:0, P1:0, 2026-08-27) — clean. 1막 리전 겹침은 테스트가 명시 제외한 수용 부채이고 진행 정지는 없다
-- [x] StoryDirector 재감사 (P0:0, P1:0, P2:1 보고, 2026-08-27) — 미뤄 둔 트리거는 견고. CaptureInsect만 즉시 발화라 전투 보상 패널과 겹친다(P2)
+- [x] StoryDirector 재감사 (P0:0, P1:0, 2026-08-27) — 미뤄 둔 트리거는 견고
+- [x] 포획 트리거 미루기 (P2→처리 + 조용한 누락 1건, 2026-08-27) — 전투·레이드 포획이 보상 패널을 덮던 것 + 스토리 보상 곤충의 포획 비트가 버려지던 것
 ## Uncovered (우선순위순)
 
 > **2026-08-27 기준 비어 있다 — 소진.** 이날 큐를 재생성해 6건을 처리했고,
@@ -379,8 +381,8 @@
 > (미검토 `.cs` 없음 · 감사 이후 40줄 이상 바뀐 `.cs` 없음).
 >
 > 다음 audit은 코드가 더 움직인 뒤에 의미가 생긴다:
-> `python -X utf8 .claude/scripts/audit_candidates.py --emit-md`
-> (출력은 stdout뿐이다 — 이 절에 **직접 옮겨 적어야** 훅이 본다.)
+> `python -X utf8 .claude/scripts/audit_candidates.py --write`
+> (`--emit-md`는 stdout 전용이라 손으로 옮겨 적어야 한다. `--write`가 이 절을 직접 채운다.)
 >
 > (`- [ ]`가 0이면 `audit_flow_inject`·`audit_reminder` 훅이 함께 침묵한다.)
 

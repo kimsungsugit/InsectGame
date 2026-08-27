@@ -356,8 +356,47 @@ def reason_of(r):
     return ", ".join(bits) if bits else "표면 점검"
 
 
+def _write_uncovered(lines):
+    """`audit-progress.md`의 `## Uncovered` 절을 후보 목록으로 갈아 끼운다.
+
+    **그 절만 바꾼다** — Covered·Round Log는 손대지 않는다(라운드 서술이 거기 쌓인다).
+    안내 문단(`>` 인용)은 큐가 비어 있을 때의 설명이라 함께 걷어낸다.
+    """
+    path = PROGRESS
+    try:
+        with open(path, encoding="utf-8") as fh:
+            src = fh.read()
+    except OSError as exc:
+        print(f"\n[!] audit-progress.md를 못 읽었다: {exc}")
+        return
+
+    # **줄 시작에 앵커한다.** 파일 상단 안내문이 `` `## Uncovered`의 `- [ ]` 개수가 ``처럼
+    # 그 문자열을 **산문 안에** 들고 있어서, 앵커가 없으면 거기에 먼저 걸린다 —
+    # 그러면 `.*?`가 다음 `## `(= Covered)까지 먹어 **안내문 5줄을 통째로 날린다**(실측).
+    m = re.search(r"^(## Uncovered[^\n]*\n)(.*?)(?=^## )", src, re.S | re.M)
+    if not m:
+        print("\n[!] '## Uncovered' 절을 못 찾았다 — 구조가 바뀌었다면 파서부터 확인할 것.")
+        return
+
+    body = "\n" + "\n".join(lines) + "\n"
+    out = src[:m.start(2)] + body + src[m.end(2):]
+    try:
+        with open(path, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(out)
+    except OSError as exc:
+        print(f"\n[!] audit-progress.md를 못 썼다: {exc}")
+        return
+    print(f"\n→ audit-progress.md의 Uncovered에 {len(lines)}건 기록했다.")
+
+
 def main():
     emit_md = "--emit-md" in sys.argv
+    # `--emit-md`는 stdout에만 찍는다. 그걸 모르고 출력만 보고 넘어가면 큐가 빈 채로 남고,
+    # `- [ ]`가 0이면 audit_flow_inject·audit_reminder 훅이 **함께 침묵해** 자동 플로우가 멈춘다
+    # (2026-05-27 ~ 07-17에 실제로 그렇게 멈춰 있었다). --write가 그 손옮김을 없앤다.
+    write_md = "--write" in sys.argv
+    if write_md:
+        emit_md = True
     top = 15
     if "--top" in sys.argv:
         try:
@@ -421,18 +460,25 @@ def main():
         return 0
 
     if emit_md:
+        lines = []
         for r in picked:
             if r["restale"]:
                 a, m, churn = r["restale"]
-                print(
+                lines.append(
                     f"- [ ] {r['stem']} 재감사 ({r['rel']}, {r['loc']}줄, score {r['score']}) "
                     f"— {a} 감사 이후 {m}까지 {churn}줄 변경"
                 )
             else:
-                print(
+                lines.append(
                     f"- [ ] {r['stem']} ({r['rel']}, {r['loc']}줄, score {r['score']}) "
                     f"— {reason_of(r)}"
                 )
+        for line in lines:
+            print(line)
+        if write_md:
+            _write_uncovered(lines)
+        else:
+            print("\n(stdout 전용 — 파일에 쓰려면 --write)")
     else:
         fresh = [r for r in results if not r["restale"]]
         stale = [r for r in results if r["restale"]]

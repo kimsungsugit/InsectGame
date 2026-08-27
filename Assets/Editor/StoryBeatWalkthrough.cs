@@ -618,6 +618,12 @@ namespace InsectGame.EditorTools
             }
             p.SetMethod.Invoke(rc, new object[] { new InsectGame.Battle.InsectBattleStats(data, 70) });
 
+            // **실제 레이드 승리는 포획도 함께 준다**(`OnRaidVictory`가 `AddCapturedInsect`를
+            // 부른 **뒤** `RaidEnded`를 쏜다). 그 순서를 그대로 재현해야 "전투 안에서 잡은 포획"
+            // 경로가 걸린다 — 포획만 따로 두면 `StoryDirector.LateUpdate`의 미루기 분기가
+            // 한 번도 안 돌고, 그 상태로 통과하면 이 도구가 또 없는 경로를 검증하는 셈이다.
+            Capture(insectId);
+
             FieldInfo f = typeof(InsectGame.Battle.RaidBattleController)
                 .GetField("RaidEnded", BindingFlags.Instance | BindingFlags.NonPublic);
             var d = f != null ? f.GetValue(rc) as Action<bool> : null;

@@ -335,15 +335,32 @@ namespace InsectGame.Story
 
         private void DeferTrigger(string type, string param)
         {
+            if (!BeginDefer(type, param)) return;
+            pendingTriggers.Add(new PendingTrigger { type = type, param = param });
+        }
+
+        /// <summary>
+        /// 큐 <b>맨 앞</b>에 넣는다. 포획이 쓴다 — 게임에서는 포획이 전투 종료보다 먼저
+        /// 일어나는데 미루기 판정은 프레임 끝에 하므로, 그냥 붙이면 발화 순서가 뒤집힌다.
+        /// </summary>
+        private void DeferTriggerFirst(string type, string param)
+        {
+            if (!BeginDefer(type, param)) return;
+            pendingTriggers.Insert(0, new PendingTrigger { type = type, param = param });
+        }
+
+        /// <summary>중복이면 false. 큐가 비어 있었다면 대기 시계를 새로 건다.</summary>
+        private bool BeginDefer(string type, string param)
+        {
             for (int i = 0; i < pendingTriggers.Count; i++)
-                if (pendingTriggers[i].type == type && pendingTriggers[i].param == param) return;
+                if (pendingTriggers[i].type == type && pendingTriggers[i].param == param) return false;
 
             if (pendingTriggers.Count == 0)
             {
                 pendingSeconds = 0f;
                 presentationClosed = false;
             }
-            pendingTriggers.Add(new PendingTrigger { type = type, param = param });
+            return true;
         }
 
         /// <summary>
@@ -426,10 +443,59 @@ namespace InsectGame.Story
             EvaluateTriggers(TriggerLevelReach, level.ToString());
         }
 
+        /// <summary>
+        /// 이번 프레임에 들어온 포획 — <b>아직 어디서 잡은 것인지 모른다.</b>
+        /// 판정은 <see cref="LateUpdate"/>가 한다(그 이유는 거기에 적었다).
+        /// 가챠 다연차처럼 한 프레임에 여러 건이 들어올 수 있어 목록이다.
+        /// </summary>
+        private readonly List<string> frameCaptures = new List<string>();
+
         private void OnInsectCaptured(PlayerInsectData insect)
         {
             // InsectCaptured는 실제 포획/획득(AddInsectInternal)에서만 발화 — XP·치료·진화 오발화 없음.
-            EvaluateTriggers(TriggerCaptureInsect, insect != null ? insect.insectId : null);
+            //
+            // **여기서 바로 쏘지 않는다.** 전투·레이드 안에서 잡은 것이면 곧 결과 화면이 뜨는데,
+            // 그걸 알려 주는 신호(BattleEnded/RaidEnded)는 **같은 프레임 뒤에** 온다.
+            // 지금 쏘면 대사창이 획득 EXP·캔디 패널 위로 열린다 — `BattleWin`을 미루는 그 이유다.
+            frameCaptures.Add(insect != null ? insect.insectId : null);
+        }
+
+        /// <summary>
+        /// 포획을 <b>프레임 끝에</b> 판정한다. 여기까지 오면 같은 프레임의 전투 종료가
+        /// 이미 큐에 들어와 있으므로, "전투 안에서 잡았는가"를 <b>상태를 묻지 않고</b> 알 수 있다.
+        ///
+        /// 컨트롤러에 물어보는 길은 막혀 있었다 — <c>InsectBattleController.IsBattleInProgress()</c>는
+        /// <c>playerStats</c>/<c>enemyStats</c>가 한 번도 null이 되지 않아 첫 전투 이후 늘 true이고,
+        /// <c>RaidBattleController.IsActive</c>는 포획이 일어나는 <c>OnRaidVictory</c>보다 <b>먼저</b>
+        /// false가 된다. 둘 다 "지금 전투 중인가"를 못 답한다.
+        ///
+        /// <b>전투가 아니면 지연이 없다.</b> 필드·미니게임 포획은 큐가 비어 있어 그 자리에서 쏜다 —
+        /// 무조건 <c>DeferTrigger</c>로 보내면 종료 통지가 오지 않아 <b>12초를 기다린다</b>.
+        ///
+        /// <b>덤으로 조용한 누락 하나가 함께 닫혔다.</b> <see cref="CompleteBeat"/>는
+        /// <c>GrantReward</c>(곤충 지급)를 <c>pendingBeatId</c>를 <b>비우기 전에</b> 부른다.
+        /// 그래서 스토리 보상으로 받은 곤충의 <c>CaptureInsect</c>는 즉시 평가되던 시절
+        /// <see cref="FireBeat"/>의 <c>pendingBeatId</c> 가드에 걸려 **그냥 버려졌다**
+        /// (예외도 경고도 없다). 프레임 끝으로 옮기니 그때는 이미 비워져 있어 정상 발화한다 —
+        /// 배치 걸음에서 `ch12_sign`이 그 증거로 새로 떴다.
+        /// </summary>
+        private void LateUpdate()
+        {
+            if (frameCaptures.Count == 0) return;
+
+            // 같은 프레임에 전투 종료가 들어왔는가. 들어왔으면 그 뒤로 함께 미룬다.
+            bool battlePending = false;
+            for (int i = 0; i < pendingTriggers.Count; i++)
+                if (pendingTriggers[i].type == TriggerBattleWin) { battlePending = true; break; }
+
+            for (int i = 0; i < frameCaptures.Count; i++)
+            {
+                // 포획이 전투 종료보다 **먼저** 일어났으므로 큐에서도 앞에 세운다 —
+                // 미루기를 붙이면서 발화 순서가 뒤집히지 않게 한다.
+                if (battlePending) DeferTriggerFirst(TriggerCaptureInsect, frameCaptures[i]);
+                else EvaluateTriggers(TriggerCaptureInsect, frameCaptures[i]);
+            }
+            frameCaptures.Clear();
         }
 
         // WorldInteractionController가 스토리 NPC에게 대화(E) 시 호출 — 그 NPC의 NpcTalk 비트를 발화.
