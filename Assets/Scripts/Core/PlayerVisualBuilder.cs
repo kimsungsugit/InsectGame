@@ -4,50 +4,28 @@ using UnityEngine;
 namespace InsectGame.Core
 {
     /// <summary>
-    /// 캐릭터 외형 중 <b>의상이 아닌</b> 부분(성별·머리·얼굴). PlayerPrefs가 정하는 값들을 한 덩어리로 묶어
-    /// <see cref="PlayerVisualBuilder.BuildForPreview"/>가 주입받을 수 있게 한다 —
-    /// 프리뷰 마네킹은 PlayerPrefs를 직접 읽지 않고 이걸 받는다.
-    /// </summary>
-    public struct AppearanceSpec
-    {
-        public int gender;
-        public int hairStyle;
-        public int hairColor;
-        public int faceType;
-
-        public static AppearanceSpec FromPlayerPrefs()
-        {
-            return new AppearanceSpec
-            {
-                gender = PlayerPrefs.GetInt(SaveScope.PrefsKey("InsectGame.Character.Gender"), 0),
-                hairStyle = PlayerPrefs.GetInt(SaveScope.PrefsKey("InsectGame.Character.HairStyle"), 0),
-                hairColor = PlayerPrefs.GetInt(SaveScope.PrefsKey("InsectGame.Character.HairColor"), 0),
-                faceType = PlayerPrefs.GetInt(SaveScope.PrefsKey("InsectGame.Character.FaceType"), 0),
-            };
-        }
-
-        /// <summary>프리뷰 썸네일 캐시 키용. 외형이 바뀌면 구운 썸네일이 전부 낡는다.</summary>
-        public int Hash()
-        {
-            return ((gender * 31 + hairStyle) * 31 + hairColor) * 31 + faceType;
-        }
-    }
-
-    /// <summary>
     /// 3D 플레이어 캐릭터의 프로시저럴 생성/외형 갱신 담당. 필드의 실제 플레이어와
     /// 의상 미리보기용 마네킹(<see cref="BuildForPreview"/>)이 같은 코드로 지어진다.
     /// - 치비 ~3.5등신 비례
     /// - CharacterOutfitManager.OutfitChanged 구독 → ApplyToCharacter가 색·형태 갱신 (재생성 X)
-    /// 노드 이름은 PlayerMovement.cs(transform.Find), CharacterOutfitManager.ApplyToCharacter(),
-    /// OutfitShapeLibrary의 bind/hideNodes가 의존하므로 변경하지 말 것:
-    /// Body/Shirt/ArmL/ArmR/HandL/HandR/LegL/LegR/BootL/BootR/
-    /// Backpack/NetHandle/NetRing/Cap/CapBrim/HatRoot/HeadPivot.
+    /// 노드 이름은 <b>암묵 계약</b>이라 변경하지 말 것 — 다섯 곳이 문자열로 찾는다:
+    /// PlayerMovement(transform.Find), CharacterOutfitManager.ApplyToCharacter(),
+    /// OutfitShapeLibrary의 bind/hideNodes, NpcWalkAnimator(같은 이름을 NPC에 복제),
+    /// CharacterModelPreviewRenderer.FocusNodesFor. 틀리면 예외 없이 그냥 동작하지 않는다.
+    /// Body/Shirt/Neck/Head/HeadPivot/ArmL/ArmR/HandL/HandR/
+    /// LegLPivot/LegRPivot/LegL/LegR/BootL/BootR/
+    /// Backpack/BackpackStrap/NetHandle/NetRing/Cap/CapBrim/HatRoot.
     /// </summary>
     public class PlayerVisualBuilder : MonoBehaviour
     {
-        // ── 슬림 비례 상수 (포트레이트 6.4등신 ↔ 3D 매핑) ──
-        // CharacterPortraitRenderer: headW=24/headH=30, bodyW=42(38)/bodyH=62, legW=13/legH=95.
-        // 3D 변환: 캡슐 본래 폭 1m → 0.5×0.5면 정사이즈, 옛 0.78×0.66은 과체중.
+        // ── 비례 ──
+        // 치비 3.4~3.5등신: 발바닥 ≈ 0.045m, 정수리 ≈ 1.45m → 전고 ≈ 1.41m, 머리 높이 0.408m.
+        // 2D 포트레이트(CharacterPortraitRenderer)도 같은 톤(≈3.3등신)으로 맞춰져 있다.
+        // 머리 확대는 headPivotScale로 한다 — 얼굴 부품(눈/코/입/모자)이 headPivot 자식이라
+        // 함께 스케일되어 배치가 자동 유지된다(부품 재배치 불필요).
+        //
+        // 참고: 이 아래 메서드 본문의 좌표 주석 일부는 옛 6.4등신 시절 값이 남아 있다
+        // (예: "위치 1.40 유지", "어깨 ±0.29 / Y 1.40"). 실제 값은 코드가 맞다.
 
         /// <summary>
         /// <see cref="MakeMaterial"/>가 만든 <b>모든</b> 런타임 머티리얼. 정리의 단일 출처다.
@@ -87,6 +65,16 @@ namespace InsectGame.Core
         private bool builtOnce;
         private bool previewMode;
         private AppearanceSpec look;
+
+        /// <summary>
+        /// 이 캐릭터가 실제로 쓰는 피부색. <c>CharacterOutfitManager.ApplyToCharacter</c>가
+        /// outer_none(겉옷 벗음)일 때 팔을 이 색으로 되돌리는 데 쓴다.
+        ///
+        /// 그쪽이 자기 상수를 들고 있으면 생성 화면에서 어두운 피부를 골랐을 때
+        /// <b>팔만 밝은 살색으로 남는다</b> — 소유자를 여기 하나로 둔다.
+        /// 마네킹(previewMode)도 자기 spec을 들고 있어 프리뷰까지 자동으로 맞는다.
+        /// </summary>
+        public Color SkinTone => look.SkinTone;
 
         private void Awake()
         {
@@ -158,10 +146,33 @@ namespace InsectGame.Core
             // 마네킹은 파괴가 정상 수명이다 — 여기서 강제로 지우지 않으면 다시 지을 때마다
             // 머티리얼 17~20개(성별·머리 스타일에 따라)가 영구히 샌다.
             // 조회는 목록 전체에 대해 **한 번만** 한다(예전엔 필드마다 11번 돌았다).
-            MeshRenderer[] renderers = previewMode ? null : GetComponentsInChildren<MeshRenderer>(true);
+            // 이 계층은 지금 통째로 파괴되는 중이라 자식 렌더러가 무엇을 sharedMaterial로
+            // 들고 있든 다시 그려질 일이 없다 — 그래서 무조건 파기한다.
+            //
+            // 예전엔 실플레이어일 때 "sharedMaterial로 아직 쓰이면 스킵"했는데, 그 조건이
+            // 사실상 **항상** 참이었다: ApplyToCharacter가 색을 칠하지 않는 노드
+            // (눈·동공·하이라이트·눈썹·입·홍조·속눈썹·머리·피부·리본 ≈ 10~12개)는 끝까지
+            // sharedMaterial이라 하나도 안 지워졌다. "플레이어가 영구 객체"라는 전제도 틀렸다 —
+            // DontDestroyOnLoad가 없어 로그아웃·계정삭제의 씬 재로드마다 그만큼씩 샌다
+            // (b9a9771이 월드 빌더에서 고친 것과 같은 유형이다).
+            //
+            // 검정/마젠타 회귀는 **살아 있는** 캐릭터에서 캐시를 지웠을 때의 문제라
+            // 이 시점에는 해당하지 않는다. NpcVisualBuilder.CleanupMaterials도 무조건 파기다.
             for (int i = 0; i < runtimeMaterials.Count; i++)
-                SafeDestroyMat(runtimeMaterials[i], renderers);
+            {
+                if (runtimeMaterials[i] != null) Destroy(runtimeMaterials[i]);
+            }
             runtimeMaterials.Clear();
+
+            // ApplyPartColor가 renderer.material(getter)로 만든 인스턴스는 위 목록에 없다 —
+            // 소유자가 CharacterOutfitManager 쪽이라 여기서만 회수할 수 있다.
+            // 마네킹은 외형이 바뀔 때마다 통째로 파괴·재생성되므로 그때마다 8~14개가 샜다.
+            MeshRenderer[] renderers = GetComponentsInChildren<MeshRenderer>(true);
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                if (renderers[i] != null && renderers[i].sharedMaterial != null)
+                    Destroy(renderers[i].sharedMaterial);
+            }
 
             // spawn 의상 파츠(OP_*)의 머티리얼은 **여기 목록에 없다** — 생성 지점이
             // OutfitShapeLibrary.CreatePartMaterial로 따로 있기 때문이다. 그쪽 TrimContainer는
@@ -174,24 +185,6 @@ namespace InsectGame.Core
             skinMat = hairMat = null;
         }
 
-        /// <summary>
-        /// <paramref name="renderers"/>가 null이면(마네킹) 무조건 파기한다. 위 주석의 검정/마젠타
-        /// 회귀는 영구 객체인 실플레이어에서 ApplyToCharacter 전에 캐시를 지웠을 때만 나는 문제라
-        /// 곧 사라질 마네킹엔 해당하지 않는다.
-        /// </summary>
-        private void SafeDestroyMat(Material m, MeshRenderer[] renderers)
-        {
-            if (m == null) return;
-            if (renderers == null) { Destroy(m); return; }
-
-            // sharedMaterial로 아직 사용 중인지 확인 — 사용 중이면 Unity가 자체 cleanup
-            for (int i = 0; i < renderers.Length; i++)
-            {
-                if (renderers[i] != null && renderers[i].sharedMaterial == m) return;
-            }
-            Destroy(m);
-        }
-
         private void TrySubscribeOutfitChanged()
         {
             if (subscribedToOutfit) return;
@@ -201,6 +194,73 @@ namespace InsectGame.Core
             subscribedToOutfit = true;
         }
 
+        // ── 프로시저럴 메시 헬퍼 ──────────────────────────────
+        //
+        // 내장 프리미티브와 **같은 규약**의 단위 메시를 쓴다(구체 지름 1, 캡슐 높이 2·반지름 0.5).
+        // 그래야 기존 localPosition/localScale을 한 줄도 안 바꾸고 메시만 갈아끼울 수 있다 —
+        // 이 파일의 좌표는 여러 차례 회귀를 거치며 맞춰진 값이라 건드릴수록 위험하다.
+        //
+        // 예외는 RoundedBox다. 둥근 모서리는 비균등 스케일에 왜곡되므로(0.21×0.15×0.30 부츠에
+        // 스케일을 걸면 모서리 반경이 축마다 달라진다) 크기를 메시에 굽고 scale은 1로 둔다.
+
+        /// <summary>지름 1 구체. 내장 Sphere(515정점)의 자리를 대신한다.</summary>
+        private static Mesh UnitSphere(int rings, int segments)
+        {
+            return ProcMeshLibrary.LowSphere(0.5f, 0.5f, 0.5f, rings, segments);
+        }
+
+        /// <summary>
+        /// 높이 2·반지름 0.5 캡슐. 내장 Capsule(552정점)과 같은 규약이다.
+        /// <paramref name="taper"/>는 아래쪽 반지름 비율 — 1이면 원통, 0.7이면 어깨→손목처럼 가늘어진다.
+        /// </summary>
+        private static Mesh UnitCapsule(float taper)
+        {
+            float rTop = 0.5f;
+            float rBottom = 0.5f * taper;
+            return ProcMeshLibrary.TaperedCapsule(rTop, rBottom, 2f - rTop - rBottom, 8, 10);
+        }
+
+        /// <summary>
+        /// 지름 1 원판(+Z를 향한다). 눈·동공·하이라이트·홍조가 쓰던 <b>눌린 구체</b>를 대신한다 —
+        /// 그 8개가 캐릭터 정점의 40%였다. bulge는 z 스케일에 함께 눌리므로 넉넉히 잡아 둔다.
+        /// </summary>
+        private static Mesh UnitDisc(int segments)
+        {
+            return ProcMeshLibrary.Disc(0.5f, 0.5f, 0.4f, segments);
+        }
+
+        /// <summary>
+        /// 커스텀 메시 노드 하나. <c>CreatePrimitive</c>가 아니라서 콜라이더가 생겼다 파괴되는
+        /// 왕복이 없다 — 한 캐릭터에 그 왕복이 54번 있었다.
+        /// </summary>
+        private static GameObject Part(string name, Transform parent, Mesh mesh, Material mat,
+            Vector3 pos, Vector3 scale)
+        {
+            GameObject go = ProcMeshLibrary.CreateNode(name, parent, mesh, mat, pos);
+            go.transform.localScale = scale;
+            return go;
+        }
+
+        /// <summary>회전이 있는 파츠용.</summary>
+        private static GameObject Part(string name, Transform parent, Mesh mesh, Material mat,
+            Vector3 pos, Vector3 scale, Vector3 euler)
+        {
+            GameObject go = ProcMeshLibrary.CreateNode(name, parent, mesh, mat, pos, Quaternion.Euler(euler));
+            go.transform.localScale = scale;
+            return go;
+        }
+
+        /// <summary>
+        /// 크기를 메시에 구운 둥근 상자 파츠. <b>스케일을 걸지 않는다</b>(모서리 왜곡 방지).
+        /// 몸통·셔츠·부츠·손처럼 90° 모서리가 "부품을 겹쳐놓은" 인상을 주던 자리에 쓴다.
+        /// </summary>
+        private static GameObject BoxPart(string name, Transform parent, Material mat,
+            Vector3 pos, Vector3 size, float radius, int subdiv)
+        {
+            Mesh mesh = ProcMeshLibrary.RoundedBox(size, radius, subdiv);
+            return ProcMeshLibrary.CreateNode(name, parent, mesh, mat, pos);
+        }
+
         private static bool shaderDiagLogged;
 
         /// <summary>
@@ -208,7 +268,7 @@ namespace InsectGame.Core
         /// <see cref="runtimeMaterials"/>에 등록돼 <c>OnDestroy</c>가 일괄 정리한다 —
         /// static이면 등록할 곳이 없어 인스턴스 메서드다.
         /// </summary>
-        private Material MakeMaterial(Color color)
+        private Material MakeMaterial(Color color, SurfaceKind kind)
         {
             // Unity 6 + Built-in Pipeline 환경 가정. Standard 못 찾으면 URP/Unlit 순으로 fallback.
             // 최종 fallback도 실패하면 캐릭터가 검정/마젠타 → 진단 로그로 알림.
@@ -238,26 +298,28 @@ namespace InsectGame.Core
             mat.color = color;
             // URP 환경 호환: _BaseColor property도 함께 설정 (Standard는 무시)
             if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", color);
+            // 부위별 광택/금속감. 이게 없으면 피부·천·가죽·금속이 전부 Standard 기본값(0.5)으로
+            // 렌더돼 한 덩어리 점토처럼 보인다 — kind를 인자로 강제하는 이유다(빠뜨리면 컴파일 실패).
+            CharacterPalette.ApplySurface(mat, kind);
             runtimeMaterials.Add(mat);
             return mat;
         }
 
         private void BuildAll()
         {
-            // ── 진단 로그 (검은 캐릭터 보고 시 추적용) ──
-            Debug.Log("[PlayerVisualBuilder] BuildAll 시작 — player에 머티리얼 + 자식 노드 생성");
-
             // ── 기본 색상 (의상 미장착 시) ──
-            outerwearMat = MakeMaterial(new Color(0.2f, 0.4f, 0.85f));      // 자켓
-            topMat = MakeMaterial(new Color(0.98f, 0.96f, 0.92f));          // 셔츠
-            bottomMat = MakeMaterial(new Color(0.18f, 0.22f, 0.28f));       // 바지
-            skinMat = MakeMaterial(new Color(0.92f, 0.78f, 0.62f));         // 클래스 필드로 승격 (OnDestroy 정리)
-            hatMat = MakeMaterial(new Color(1.0f, 0.65f, 0.2f));            // 모자
-            shoesMat = MakeMaterial(new Color(0.2f, 0.12f, 0.06f));         // 부츠
-            backpackMat = MakeMaterial(new Color(1.0f, 0.65f, 0.2f));       // 배낭
-            backpackStrapMat = MakeMaterial(new Color(0.7f, 0.45f, 0.14f));
-            toolMat = MakeMaterial(new Color(0.6f, 0.4f, 0.2f));            // 잠자리채 손잡이
-            toolRingMat = MakeMaterial(new Color(0.95f, 0.92f, 0.88f));     // 잠자리채 망
+            outerwearMat = MakeMaterial(new Color(0.2f, 0.4f, 0.85f), SurfaceKind.Cloth);      // 자켓
+            topMat = MakeMaterial(new Color(0.98f, 0.96f, 0.92f), SurfaceKind.Cloth);          // 셔츠
+            bottomMat = MakeMaterial(new Color(0.18f, 0.22f, 0.28f), SurfaceKind.Cloth);       // 바지
+            // 피부색은 생성 화면이 고른 값(InsectGame.Character.SkinColor)을 따른다. 옛 하드코딩
+            // (0.92,0.78,0.62)은 그 키를 읽지 않아 2D 초상화만 바뀌고 필드 캐릭터는 늘 같았다.
+            skinMat = MakeMaterial(CharacterPalette.Skin(look.skinColor), SurfaceKind.Skin);
+            hatMat = MakeMaterial(new Color(1.0f, 0.65f, 0.2f), SurfaceKind.Cloth);            // 모자
+            shoesMat = MakeMaterial(new Color(0.2f, 0.12f, 0.06f), SurfaceKind.Leather);         // 부츠
+            backpackMat = MakeMaterial(new Color(1.0f, 0.65f, 0.2f), SurfaceKind.Leather);       // 배낭
+            backpackStrapMat = MakeMaterial(new Color(0.7f, 0.45f, 0.14f), SurfaceKind.Leather);
+            toolMat = MakeMaterial(new Color(0.6f, 0.4f, 0.2f), SurfaceKind.Leather);            // 잠자리채 손잡이
+            toolRingMat = MakeMaterial(new Color(0.95f, 0.92f, 0.88f), SurfaceKind.Metal);     // 잠자리채 망
 
             int gender = look.gender;
 
@@ -277,22 +339,18 @@ namespace InsectGame.Core
 
             // ── 몸통 (자켓 외피) — Cube로 변경: 미리보기 직사각형 비례와 정합. ──
             // Y 0.7 → 0.78 (조금 길게). 위치 1.40 유지 (Y range 1.01~1.79).
-            GameObject body = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            body.name = "Body";
-            body.transform.SetParent(t, false);
-            body.transform.localPosition = new Vector3(0f, 0.77f, 0f);
-            body.transform.localScale = new Vector3(bodyScaleX, 0.46f, bodyScaleZ);
-            body.GetComponent<MeshRenderer>().material = outerwearMat;
-            Object.Destroy(body.GetComponent<Collider>());
+            // 90° 모서리 Cube였다 — 벽돌을 얹은 것처럼 보이던 가장 큰 원인이다.
+            // 둥근 상자는 크기를 메시에 굽고 스케일을 걸지 않는다(모서리 반경 왜곡 방지).
+            BoxPart("Body", t, outerwearMat, new Vector3(0f, 0.77f, 0f),
+                new Vector3(bodyScaleX, 0.46f, bodyScaleZ), 0.085f, 3);
 
             // ── 셔츠 (Top) — Body 안쪽 면적으로 살짝 작게, 자켓 열린 사이로 보이는 영역 ──
-            shirtRoot = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            shirtRoot.name = "Shirt";
-            shirtRoot.transform.SetParent(t, false);
-            shirtRoot.transform.localPosition = new Vector3(0f, 0.83f, 0.15f);
-            shirtRoot.transform.localScale = new Vector3(0.34f, 0.40f, 0.20f);
-            shirtRoot.GetComponent<MeshRenderer>().material = topMat;
-            Object.Destroy(shirtRoot.GetComponent<Collider>());
+            // 셔츠는 자켓 사이로 <b>살짝</b> 보이는 가슴 패널이다. 옛 값(z 0.15 / 폭 0.34)은
+            // 몸통 앞면(z 0.19)보다 0.06 앞으로 튀어나오고 폭도 몸통의 71%라, 흰 판이 앞을 통째로
+            // 덮고 자켓은 양옆에만 남았다 — 측면에서 보면 판때기를 붙인 것처럼 보였다.
+            // 좁히고 몸통 안으로 넣어 자켓이 앞을 덮게 한다.
+            shirtRoot = BoxPart("Shirt", t, topMat, new Vector3(0f, 0.83f, 0.10f),
+                new Vector3(0.24f, 0.36f, 0.20f), 0.05f, 2);
 
             // ── 목 ──
             GameObject neck = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
@@ -309,15 +367,11 @@ namespace InsectGame.Core
             headPivot.transform.localPosition = new Vector3(0f, 1.22f, 0.03f);
             headPivot.transform.localScale = Vector3.one * headPivotScale;
 
-            GameObject head = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            head.name = "Head";
-            head.transform.SetParent(headPivot.transform, false);
-            head.transform.localPosition = Vector3.zero;
             // 치비 둥근 머리: 옛 (−0.10, +0.12, −0.04) 달걀형(세로로 긺) → X/Y를 거의 균등하게.
             // Z는 −0.04 유지 — 얼굴 부품 z위치(0.32 등)가 머리 앞면에 그대로 얹히도록(재배치 회피).
-            head.transform.localScale = new Vector3(headScale - 0.02f, headScale - 0.04f, headScale - 0.04f);
-            head.GetComponent<MeshRenderer>().material = skinMat;
-            Object.Destroy(head.GetComponent<Collider>());
+            // 머리는 화면에서 가장 크게 보이므로 다른 부위보다 세그먼트를 넉넉히 준다.
+            Part("Head", headPivot.transform, UnitSphere(10, 14), skinMat, Vector3.zero,
+                new Vector3(headScale - 0.02f, headScale - 0.04f, headScale - 0.04f));
 
             // ── 모자 (Hat) — hatRoot 컨테이너로 묶어 SetActive(false)로 통째로 숨기기 가능 ──
             hatRoot = new GameObject("HatRoot");
@@ -349,56 +403,27 @@ namespace InsectGame.Core
             // ── 머리카락 ──
             int hairStyle = look.hairStyle;
             int hairColorIdx = look.hairColor;
-            Color[] hairColors = {
-                new Color(0.12f, 0.08f, 0.05f),
-                new Color(0.35f, 0.2f, 0.1f),
-                new Color(0.85f, 0.7f, 0.3f),
-                new Color(0.6f, 0.15f, 0.1f),
-                new Color(0.2f, 0.15f, 0.35f),
-                new Color(0.15f, 0.3f, 0.5f),
-            };
-            Color hairColor = hairColors[Mathf.Clamp(hairColorIdx, 0, hairColors.Length - 1)];
-            hairMat = MakeMaterial(hairColor);
+            hairMat = MakeMaterial(CharacterPalette.Hair(hairColorIdx), SurfaceKind.Hair);
             BuildHair(headPivot, hairStyle, gender, hairMat);
 
             // ── 팔 (어깨 ±0.29 / Y 1.40 / 캡슐 길이 0.50 / 회전 0°) ──
             // 옛 Y=1.55 + 길이 0.50 → 상단 1.80m로 Body 상단(1.79)과 일치하나 시각적으로 어깨가 여전히 높음.
             // Y 1.40 + 길이 0.50 → 캡슐 범위 1.15~1.65m로 Body(1.01~1.79) 중간 → 자연스러운 인체 비례.
             // 머리(2.20) 영역과 충분히 분리. X ±0.29 Body 가장자리 겹침, Z=0° 수직, swing은 X만.
-            outerwearArmL = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-            outerwearArmL.name = "ArmL";
-            outerwearArmL.transform.SetParent(t, false);
-            outerwearArmL.transform.localPosition = new Vector3(-0.29f, 0.78f, 0f);
-            outerwearArmL.transform.localScale = new Vector3(0.135f, 0.23f, 0.135f);
-            outerwearArmL.transform.localRotation = Quaternion.identity;
-            outerwearArmL.GetComponent<MeshRenderer>().material = outerwearMat;
-            Object.Destroy(outerwearArmL.GetComponent<Collider>());
-
-            outerwearArmR = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-            outerwearArmR.name = "ArmR";
-            outerwearArmR.transform.SetParent(t, false);
-            outerwearArmR.transform.localPosition = new Vector3(0.29f, 0.78f, 0f);
-            outerwearArmR.transform.localScale = new Vector3(0.135f, 0.23f, 0.135f);
-            outerwearArmR.transform.localRotation = Quaternion.identity;
-            outerwearArmR.GetComponent<MeshRenderer>().material = outerwearMat;
-            Object.Destroy(outerwearArmR.GetComponent<Collider>());
+            // 굵기가 일정한 캡슐이라 사지가 파이프처럼 보였다 — 어깨에서 손목으로 가늘어지게.
+            Mesh armMesh = UnitCapsule(0.72f);
+            outerwearArmL = Part("ArmL", t, armMesh, outerwearMat,
+                new Vector3(-0.29f, 0.78f, 0f), new Vector3(0.135f, 0.23f, 0.135f));
+            outerwearArmR = Part("ArmR", t, armMesh, outerwearMat,
+                new Vector3(0.29f, 0.78f, 0f), new Vector3(0.135f, 0.23f, 0.135f));
 
             // ── 손 (팔 끝점: y = 1.40 - 0.25 = 1.15. 손목/손바닥 자연 매달림 = 0.95) ──
-            GameObject handL = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            handL.name = "HandL";
-            handL.transform.SetParent(t, false);
-            handL.transform.localPosition = new Vector3(-0.29f, 0.52f, 0f);
-            handL.transform.localScale = new Vector3(0.115f, 0.115f, 0.115f);
-            handL.GetComponent<MeshRenderer>().material = skinMat;
-            Object.Destroy(handL.GetComponent<Collider>());
-
-            GameObject handR = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            handR.name = "HandR";
-            handR.transform.SetParent(t, false);
-            handR.transform.localPosition = new Vector3(0.29f, 0.52f, 0f);
-            handR.transform.localScale = new Vector3(0.115f, 0.115f, 0.115f);
-            handR.GetComponent<MeshRenderer>().material = skinMat;
-            Object.Destroy(handR.GetComponent<Collider>());
+            // 구체 하나라 주먹이라기보다 공에 가까웠다. 손가락은 만들지 않는다 —
+            // 손 지름이 0.115m라 치비 스케일에서 손가락은 1~2픽셀이다. 대신 세로로 길고
+            // 앞뒤로 납작한 미튼(벙어리장갑) 형태가 같은 비용에 확실히 손처럼 보인다.
+            Vector3 handSize = new Vector3(0.105f, 0.135f, 0.095f);
+            BoxPart("HandL", t, skinMat, new Vector3(-0.29f, 0.52f, 0f), handSize, 0.042f, 2);
+            BoxPart("HandR", t, skinMat, new Vector3(0.29f, 0.52f, 0f), handSize, 0.042f, 2);
 
             // ── 다리 + 부츠 (LegPivot으로 묶어 회전 시 발도 함께 움직이도록) ──
             // 옛은 BootL/R이 Player 직접 자식이라 PlayerMovement.AnimateWalk의 LegL/R 회전이 발에 전파 안 됨
@@ -410,41 +435,23 @@ namespace InsectGame.Core
             legLPivot.transform.SetParent(t, false);
             legLPivot.transform.localPosition = new Vector3(-0.13f, 0.48f, 0f);
 
-            GameObject legL = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-            legL.name = "LegL";
-            legL.transform.SetParent(legLPivot.transform, false);
-            legL.transform.localPosition = new Vector3(0f, -0.14f, 0f);  // Pivot 아래 0.14m = 절대 Y 0.34
-            legL.transform.localScale = new Vector3(legScale, 0.20f, legScale);
-            legL.GetComponent<MeshRenderer>().material = bottomMat;
-            Object.Destroy(legL.GetComponent<Collider>());
+            Mesh legMesh = UnitCapsule(0.78f);   // 허벅지 → 발목
+            Vector3 bootSize = new Vector3(0.21f, 0.15f, 0.30f);
+            const float bootRadius = 0.052f;
 
-            GameObject bootL = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            bootL.name = "BootL";
-            bootL.transform.SetParent(legLPivot.transform, false);
-            bootL.transform.localPosition = new Vector3(0f, -0.36f, 0.07f);  // Pivot 아래 0.36m = 절대 Y 0.12, 발바닥 ~0.045
-            bootL.transform.localScale = new Vector3(0.21f, 0.15f, 0.30f);
-            bootL.GetComponent<MeshRenderer>().material = shoesMat;
-            Object.Destroy(bootL.GetComponent<Collider>());
+            Part("LegL", legLPivot.transform, legMesh, bottomMat,
+                new Vector3(0f, -0.14f, 0f), new Vector3(legScale, 0.20f, legScale));   // Pivot 아래 0.14m = 절대 Y 0.34
+            BoxPart("BootL", legLPivot.transform, shoesMat,
+                new Vector3(0f, -0.36f, 0.07f), bootSize, bootRadius, 2);   // 절대 Y 0.12, 발바닥 ~0.045
 
             GameObject legRPivot = new GameObject("LegRPivot");
             legRPivot.transform.SetParent(t, false);
             legRPivot.transform.localPosition = new Vector3(0.13f, 0.48f, 0f);
 
-            GameObject legR = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-            legR.name = "LegR";
-            legR.transform.SetParent(legRPivot.transform, false);
-            legR.transform.localPosition = new Vector3(0f, -0.14f, 0f);
-            legR.transform.localScale = new Vector3(legScale, 0.20f, legScale);
-            legR.GetComponent<MeshRenderer>().material = bottomMat;
-            Object.Destroy(legR.GetComponent<Collider>());
-
-            GameObject bootR = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            bootR.name = "BootR";
-            bootR.transform.SetParent(legRPivot.transform, false);
-            bootR.transform.localPosition = new Vector3(0f, -0.36f, 0.07f);
-            bootR.transform.localScale = new Vector3(0.21f, 0.15f, 0.30f);
-            bootR.GetComponent<MeshRenderer>().material = shoesMat;
-            Object.Destroy(bootR.GetComponent<Collider>());
+            Part("LegR", legRPivot.transform, legMesh, bottomMat,
+                new Vector3(0f, -0.14f, 0f), new Vector3(legScale, 0.20f, legScale));
+            BoxPart("BootR", legRPivot.transform, shoesMat,
+                new Vector3(0f, -0.36f, 0.07f), bootSize, bootRadius, 2);
 
             // ── 배낭 (Backpack) ──
             backpackRoot = GameObject.CreatePrimitive(PrimitiveType.Cube);
@@ -488,65 +495,76 @@ namespace InsectGame.Core
 
             // 악세서리는 미리 만들지 않는다 — OutfitShapeLibrary의 레시피가 장착 시점에
             // 루트 아래 OP_Accessory 컨테이너로 필요한 파츠만 만든다.
+
+            // 얼굴을 살아 있게 — 눈 깜빡임(과 필요하면 표정). 걷기와 직교하므로 별도 컴포넌트다.
+            // 마네킹에도 붙인다: 의상 화면에서 정지한 인형보다 깜빡이는 쪽이 낫고,
+            // 썸네일을 구울 때는 CharacterModelPreviewRenderer가 ResetToNeutral로 눈을 뜨게 한다.
+            if (gameObject.GetComponent<CharacterFaceAnimator>() == null)
+                gameObject.AddComponent<CharacterFaceAnimator>();
+
+            LogVertexBudget();
+        }
+
+        /// <summary>
+        /// 이 캐릭터가 실제로 쓰는 정점 수를 한 번 찍는다.
+        ///
+        /// 프로시저럴 메시로 옮기기 전에는 약 10,400정점이었다 — 그중 4,120이 얼굴 8노드의
+        /// 눌린 구체였다. 예산을 넘으면 어느 부위가 다시 무거워졌는지 여기서 먼저 보인다.
+        /// 에디터 전용이라 기기 빌드에는 들어가지 않는다.
+        /// </summary>
+        [System.Diagnostics.Conditional("UNITY_EDITOR")]
+        private void LogVertexBudget()
+        {
+            const int Budget = 3500;
+
+            int total = 0;
+            MeshFilter[] filters = GetComponentsInChildren<MeshFilter>(true);
+            for (int i = 0; i < filters.Length; i++)
+            {
+                if (filters[i] != null && filters[i].sharedMesh != null)
+                    total += filters[i].sharedMesh.vertexCount;
+            }
+
+            string label = previewMode ? "마네킹" : "플레이어";
+            if (total > Budget)
+            {
+                Debug.LogWarning($"[PlayerVisualBuilder] {label} 정점 {total} — 예산 {Budget} 초과 " +
+                                 $"(노드 {filters.Length}개). 어느 부위가 무거워졌는지 확인할 것.");
+            }
+            else
+            {
+                Debug.Log($"[PlayerVisualBuilder] {label} 정점 {total}/{Budget} (노드 {filters.Length}개)");
+            }
         }
 
         private void BuildFace(GameObject headPivot, float headScale, int gender)
         {
-            Material eyeMat = MakeMaterial(Color.white);
-            Material pupilMat = MakeMaterial(new Color(0.12f, 0.08f, 0.05f));
+            Material eyeMat = MakeMaterial(Color.white, SurfaceKind.Wet);
+            Material pupilMat = MakeMaterial(new Color(0.12f, 0.08f, 0.05f), SurfaceKind.Wet);
 
-            GameObject eyeL = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            eyeL.name = "EyeL";
-            eyeL.transform.SetParent(headPivot.transform, false);
             // 치비 큰 눈: 옛 0.11 → 0.15/0.17(세로로 큰 동그란 눈), 살짝 아래·바깥(귀여운 인상).
-            eyeL.transform.localPosition = new Vector3(-0.12f, -0.03f, 0.32f);
-            eyeL.transform.localScale = new Vector3(0.15f, 0.17f, 0.06f);
-            eyeL.GetComponent<MeshRenderer>().material = eyeMat;
-            Object.Destroy(eyeL.GetComponent<Collider>());
+            // 눌린 구체(515정점)에서 원판(17정점)으로 — 이 얼굴 8노드가 캐릭터 정점의 40%였다.
+            Mesh eyeMesh = UnitDisc(16);
+            Part("EyeL", headPivot.transform, eyeMesh, eyeMat,
+                new Vector3(-0.12f, -0.03f, 0.32f), new Vector3(0.15f, 0.17f, 0.06f));
+            Part("EyeR", headPivot.transform, eyeMesh, eyeMat,
+                new Vector3(0.12f, -0.03f, 0.32f), new Vector3(0.15f, 0.17f, 0.06f));
 
-            GameObject eyeR = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            eyeR.name = "EyeR";
-            eyeR.transform.SetParent(headPivot.transform, false);
-            eyeR.transform.localPosition = new Vector3(0.12f, -0.03f, 0.32f);
-            eyeR.transform.localScale = new Vector3(0.15f, 0.17f, 0.06f);
-            eyeR.GetComponent<MeshRenderer>().material = eyeMat;
-            Object.Destroy(eyeR.GetComponent<Collider>());
+            Mesh pupilMesh = UnitDisc(12);
+            Part("PupilL", headPivot.transform, pupilMesh, pupilMat,
+                new Vector3(-0.12f, -0.04f, 0.35f), new Vector3(0.09f, 0.11f, 0.02f));
+            Part("PupilR", headPivot.transform, pupilMesh, pupilMat,
+                new Vector3(0.12f, -0.04f, 0.35f), new Vector3(0.09f, 0.11f, 0.02f));
 
-            GameObject pupilL = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            pupilL.name = "PupilL";
-            pupilL.transform.SetParent(headPivot.transform, false);
-            pupilL.transform.localPosition = new Vector3(-0.12f, -0.04f, 0.35f);
-            pupilL.transform.localScale = new Vector3(0.09f, 0.11f, 0.02f);
-            pupilL.GetComponent<MeshRenderer>().material = pupilMat;
-            Object.Destroy(pupilL.GetComponent<Collider>());
-
-            GameObject pupilR = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            pupilR.name = "PupilR";
-            pupilR.transform.SetParent(headPivot.transform, false);
-            pupilR.transform.localPosition = new Vector3(0.12f, -0.04f, 0.35f);
-            pupilR.transform.localScale = new Vector3(0.09f, 0.11f, 0.02f);
-            pupilR.GetComponent<MeshRenderer>().material = pupilMat;
-            Object.Destroy(pupilR.GetComponent<Collider>());
-
-            Material hlMat = MakeMaterial(new Color(1f, 1f, 1f, 0.9f));
-            GameObject hlL = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            hlL.name = "HighlightL";
-            hlL.transform.SetParent(headPivot.transform, false);
-            hlL.transform.localPosition = new Vector3(-0.10f, 0.01f, 0.36f);
-            hlL.transform.localScale = new Vector3(0.045f, 0.045f, 0.01f);
-            hlL.GetComponent<MeshRenderer>().material = hlMat;
-            Object.Destroy(hlL.GetComponent<Collider>());
-
-            GameObject hlR = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            hlR.name = "HighlightR";
-            hlR.transform.SetParent(headPivot.transform, false);
-            hlR.transform.localPosition = new Vector3(0.10f, 0.01f, 0.36f);
-            hlR.transform.localScale = new Vector3(0.045f, 0.045f, 0.01f);
-            hlR.GetComponent<MeshRenderer>().material = hlMat;
-            Object.Destroy(hlR.GetComponent<Collider>());
+            Material hlMat = MakeMaterial(new Color(1f, 1f, 1f, 0.9f), SurfaceKind.Wet);
+            Mesh hlMesh = UnitDisc(8);
+            Part("HighlightL", headPivot.transform, hlMesh, hlMat,
+                new Vector3(-0.10f, 0.01f, 0.36f), new Vector3(0.045f, 0.045f, 0.01f));
+            Part("HighlightR", headPivot.transform, hlMesh, hlMat,
+                new Vector3(0.10f, 0.01f, 0.36f), new Vector3(0.045f, 0.045f, 0.01f));
 
             int faceType = look.faceType;
-            Material browMat = MakeMaterial(new Color(0.2f, 0.15f, 0.1f));
+            Material browMat = MakeMaterial(new Color(0.2f, 0.15f, 0.1f), SurfaceKind.Hair);
             GameObject browL = GameObject.CreatePrimitive(PrimitiveType.Cube);
             browL.name = "BrowL";
             browL.transform.SetParent(headPivot.transform, false);
@@ -566,16 +584,11 @@ namespace InsectGame.Core
             // 코는 몸의 피부 머티리얼을 그대로 쓴다. 예전엔 여기서 같은 색으로 **하나 더** 만들면서
             // 이름까지 필드와 같아(지역 변수가 필드를 가림) 피부색을 한 곳에서 바꾸려 하면
             // 코만 옛 색으로 남는 함정이었다. BuildAll이 이 메서드보다 먼저 필드를 채운다.
-            GameObject nose = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            nose.name = "Nose";
-            nose.transform.SetParent(headPivot.transform, false);
             // 치비: 코는 작은 점으로 (큰 눈 강조). 위치도 눈 아래로 내림.
-            nose.transform.localPosition = new Vector3(0f, -0.10f, 0.35f);
-            nose.transform.localScale = new Vector3(0.024f, 0.022f, 0.02f);
-            nose.GetComponent<MeshRenderer>().material = skinMat;
-            Object.Destroy(nose.GetComponent<Collider>());
+            Part("Nose", headPivot.transform, UnitSphere(4, 6), skinMat,
+                new Vector3(0f, -0.10f, 0.35f), new Vector3(0.024f, 0.022f, 0.02f));
 
-            Material mouthMat = MakeMaterial(new Color(0.8f, 0.4f, 0.35f));
+            Material mouthMat = MakeMaterial(new Color(0.8f, 0.4f, 0.35f), SurfaceKind.Skin);
             GameObject mouth = GameObject.CreatePrimitive(PrimitiveType.Cube);
             mouth.name = "Mouth";
             mouth.transform.SetParent(headPivot.transform, false);
@@ -596,24 +609,14 @@ namespace InsectGame.Core
 
             if (gender == 1)
             {
-                Material blushMat = MakeMaterial(new Color(1f, 0.6f, 0.6f, 0.4f));
-                GameObject blushL = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                blushL.name = "BlushL";
-                blushL.transform.SetParent(headPivot.transform, false);
-                blushL.transform.localPosition = new Vector3(-0.16f, -0.10f, 0.30f);
-                blushL.transform.localScale = new Vector3(0.08f, 0.05f, 0.02f);
-                blushL.GetComponent<MeshRenderer>().material = blushMat;
-                Object.Destroy(blushL.GetComponent<Collider>());
+                Material blushMat = MakeMaterial(new Color(1f, 0.6f, 0.6f, 0.4f), SurfaceKind.Skin);
+                Mesh blushMesh = UnitDisc(10);
+                Part("BlushL", headPivot.transform, blushMesh, blushMat,
+                    new Vector3(-0.16f, -0.10f, 0.30f), new Vector3(0.08f, 0.05f, 0.02f));
+                Part("BlushR", headPivot.transform, blushMesh, blushMat,
+                    new Vector3(0.16f, -0.10f, 0.30f), new Vector3(0.08f, 0.05f, 0.02f));
 
-                GameObject blushR = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                blushR.name = "BlushR";
-                blushR.transform.SetParent(headPivot.transform, false);
-                blushR.transform.localPosition = new Vector3(0.16f, -0.10f, 0.30f);
-                blushR.transform.localScale = new Vector3(0.08f, 0.05f, 0.02f);
-                blushR.GetComponent<MeshRenderer>().material = blushMat;
-                Object.Destroy(blushR.GetComponent<Collider>());
-
-                Material lashMat = MakeMaterial(new Color(0.1f, 0.08f, 0.05f));
+                Material lashMat = MakeMaterial(new Color(0.1f, 0.08f, 0.05f), SurfaceKind.Hair);
                 GameObject lashL = GameObject.CreatePrimitive(PrimitiveType.Cube);
                 lashL.name = "LashL";
                 lashL.transform.SetParent(headPivot.transform, false);
@@ -634,21 +637,11 @@ namespace InsectGame.Core
 
         private void BuildEars(GameObject headPivot, Material skinMat)
         {
-            GameObject earL = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            earL.name = "EarL";
-            earL.transform.SetParent(headPivot.transform, false);
-            earL.transform.localPosition = new Vector3(-0.34f, -0.02f, 0f);
-            earL.transform.localScale = new Vector3(0.05f, 0.08f, 0.06f);
-            earL.GetComponent<MeshRenderer>().material = skinMat;
-            Object.Destroy(earL.GetComponent<Collider>());
-
-            GameObject earR = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            earR.name = "EarR";
-            earR.transform.SetParent(headPivot.transform, false);
-            earR.transform.localPosition = new Vector3(0.34f, -0.02f, 0f);
-            earR.transform.localScale = new Vector3(0.05f, 0.08f, 0.06f);
-            earR.GetComponent<MeshRenderer>().material = skinMat;
-            Object.Destroy(earR.GetComponent<Collider>());
+            Mesh earMesh = UnitSphere(5, 7);
+            Part("EarL", headPivot.transform, earMesh, skinMat,
+                new Vector3(-0.34f, -0.02f, 0f), new Vector3(0.05f, 0.08f, 0.06f));
+            Part("EarR", headPivot.transform, earMesh, skinMat,
+                new Vector3(0.34f, -0.02f, 0f), new Vector3(0.05f, 0.08f, 0.06f));
         }
 
         private void BuildHair(GameObject headPivot, int style, int gender, Material hairMat)
@@ -662,181 +655,118 @@ namespace InsectGame.Core
             }
         }
 
-        private void BuildShortHair(GameObject headPivot, int gender, Material mat)
+        /// <summary>
+        /// 여성 앞머리. 스타일마다 두께가 다르다.
+        ///
+        /// 예전엔 이 블록이 <see cref="BuildShortHair"/> 안에만 있었는데, <see cref="BuildLongHair"/>가
+        /// 그 메서드를 부른 뒤 <b>자기 앞머리를 또 만들었다</b> — 여성+긴머리에서 "HairBangs"라는
+        /// 같은 이름의 Cube 둘(두께 0.08 / 0.10)이 같은 자리에 겹쳐 z-fighting이 났다.
+        /// 생성 지점을 하나로 모으고 호출을 한 번씩만 두어 구조적으로 막는다.
+        /// </summary>
+        private void BuildBangs(GameObject headPivot, Material mat, float thickness)
         {
-            GameObject hairTop = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            hairTop.name = "HairTop";
-            hairTop.transform.SetParent(headPivot.transform, false);
-            hairTop.transform.localPosition = new Vector3(0f, 0.22f, -0.02f);
-            hairTop.transform.localScale = new Vector3(0.62f, 0.34f, 0.60f);
-            hairTop.GetComponent<MeshRenderer>().material = mat;
-            Object.Destroy(hairTop.GetComponent<Collider>());
+            GameObject bangs = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            bangs.name = "HairBangs";
+            bangs.transform.SetParent(headPivot.transform, false);
+            bangs.transform.localPosition = new Vector3(0f, 0.18f, 0.16f);
+            bangs.transform.localScale = new Vector3(0.4f, thickness, 0.1f);
+            bangs.GetComponent<MeshRenderer>().material = mat;
+            Object.Destroy(bangs.GetComponent<Collider>());
+        }
 
-            GameObject hairSideL = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            hairSideL.name = "HairSideL";
-            hairSideL.transform.SetParent(headPivot.transform, false);
-            hairSideL.transform.localPosition = new Vector3(-0.2f, 0.05f, -0.02f);
-            hairSideL.transform.localScale = new Vector3(0.12f, 0.2f, 0.35f);
-            hairSideL.GetComponent<MeshRenderer>().material = mat;
-            Object.Destroy(hairSideL.GetComponent<Collider>());
+        /// <param name="withBangs">
+        /// 긴머리는 자기 두께의 앞머리를 따로 만들므로 false로 부른다 — 앞머리 노드 중복 방지.
+        /// </param>
+        private void BuildShortHair(GameObject headPivot, int gender, Material mat, bool withBangs = true)
+        {
+            Mesh cap = UnitSphere(8, 12);      // 머리를 덮는 큰 덩어리
+            Mesh tuft = UnitSphere(6, 8);      // 옆·뒤 작은 덩어리
 
-            GameObject hairSideR = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            hairSideR.name = "HairSideR";
-            hairSideR.transform.SetParent(headPivot.transform, false);
-            hairSideR.transform.localPosition = new Vector3(0.2f, 0.05f, -0.02f);
-            hairSideR.transform.localScale = new Vector3(0.12f, 0.2f, 0.35f);
-            hairSideR.GetComponent<MeshRenderer>().material = mat;
-            Object.Destroy(hairSideR.GetComponent<Collider>());
+            Part("HairTop", headPivot.transform, cap, mat,
+                new Vector3(0f, 0.22f, -0.02f), new Vector3(0.62f, 0.34f, 0.60f));
+            Part("HairSideL", headPivot.transform, tuft, mat,
+                new Vector3(-0.2f, 0.05f, -0.02f), new Vector3(0.12f, 0.2f, 0.35f));
+            Part("HairSideR", headPivot.transform, tuft, mat,
+                new Vector3(0.2f, 0.05f, -0.02f), new Vector3(0.12f, 0.2f, 0.35f));
+            Part("HairBack", headPivot.transform, tuft, mat,
+                new Vector3(0f, 0.08f, -0.15f), new Vector3(0.45f, 0.28f, 0.2f));
 
-            GameObject hairBack = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            hairBack.name = "HairBack";
-            hairBack.transform.SetParent(headPivot.transform, false);
-            hairBack.transform.localPosition = new Vector3(0f, 0.08f, -0.15f);
-            hairBack.transform.localScale = new Vector3(0.45f, 0.28f, 0.2f);
-            hairBack.GetComponent<MeshRenderer>().material = mat;
-            Object.Destroy(hairBack.GetComponent<Collider>());
-
-            if (gender == 1)
-            {
-                GameObject bangs = GameObject.CreatePrimitive(PrimitiveType.Cube);
-                bangs.name = "HairBangs";
-                bangs.transform.SetParent(headPivot.transform, false);
-                bangs.transform.localPosition = new Vector3(0f, 0.18f, 0.16f);
-                bangs.transform.localScale = new Vector3(0.4f, 0.08f, 0.1f);
-                bangs.GetComponent<MeshRenderer>().material = mat;
-                Object.Destroy(bangs.GetComponent<Collider>());
-            }
+            if (gender == 1 && withBangs) BuildBangs(headPivot, mat, 0.08f);
         }
 
         private void BuildMediumHair(GameObject headPivot, int gender, Material mat)
         {
             BuildShortHair(headPivot, gender, mat);
 
-            GameObject hairExtL = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-            hairExtL.name = "HairExtL";
-            hairExtL.transform.SetParent(headPivot.transform, false);
-            hairExtL.transform.localPosition = new Vector3(-0.2f, -0.1f, -0.05f);
-            hairExtL.transform.localScale = new Vector3(0.1f, 0.18f, 0.12f);
-            hairExtL.GetComponent<MeshRenderer>().material = mat;
-            Object.Destroy(hairExtL.GetComponent<Collider>());
+            Mesh strandMesh = UnitCapsule(0.85f);   // 끝으로 갈수록 살짝 가늘어지는 머리 다발
 
-            GameObject hairExtR = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-            hairExtR.name = "HairExtR";
-            hairExtR.transform.SetParent(headPivot.transform, false);
-            hairExtR.transform.localPosition = new Vector3(0.2f, -0.1f, -0.05f);
-            hairExtR.transform.localScale = new Vector3(0.1f, 0.18f, 0.12f);
-            hairExtR.GetComponent<MeshRenderer>().material = mat;
-            Object.Destroy(hairExtR.GetComponent<Collider>());
-
-            GameObject hairBackExt = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-            hairBackExt.name = "HairBackExt";
-            hairBackExt.transform.SetParent(headPivot.transform, false);
-            hairBackExt.transform.localPosition = new Vector3(0f, -0.08f, -0.18f);
-            hairBackExt.transform.localScale = new Vector3(0.35f, 0.2f, 0.15f);
-            hairBackExt.GetComponent<MeshRenderer>().material = mat;
-            Object.Destroy(hairBackExt.GetComponent<Collider>());
+            Part("HairExtL", headPivot.transform, strandMesh, mat,
+                new Vector3(-0.2f, -0.1f, -0.05f), new Vector3(0.1f, 0.18f, 0.12f));
+            Part("HairExtR", headPivot.transform, strandMesh, mat,
+                new Vector3(0.2f, -0.1f, -0.05f), new Vector3(0.1f, 0.18f, 0.12f));
+            Part("HairBackExt", headPivot.transform, strandMesh, mat,
+                new Vector3(0f, -0.08f, -0.18f), new Vector3(0.35f, 0.2f, 0.15f));
         }
 
         private void BuildLongHair(GameObject headPivot, int gender, Material mat)
         {
-            BuildShortHair(headPivot, gender, mat);
+            // 앞머리는 아래에서 긴머리 두께(0.10)로 직접 만든다 — 여기서 받으면 둘이 겹친다.
+            BuildShortHair(headPivot, gender, mat, withBangs: false);
+
+            Mesh longStrandMesh = UnitCapsule(0.8f);
 
             for (int i = 0; i < 3; i++)
             {
                 float x = (i - 1) * 0.12f;
-                GameObject strand = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-                strand.name = $"HairLong_{i}";
-                strand.transform.SetParent(headPivot.transform, false);
-                strand.transform.localPosition = new Vector3(x, -0.3f, -0.12f);
-                strand.transform.localScale = new Vector3(0.12f, 0.35f, 0.1f);
-                strand.GetComponent<MeshRenderer>().material = mat;
-                Object.Destroy(strand.GetComponent<Collider>());
+                Part($"HairLong_{i}", headPivot.transform, longStrandMesh, mat,
+                    new Vector3(x, -0.3f, -0.12f), new Vector3(0.12f, 0.35f, 0.1f));
             }
 
-            GameObject frontL = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-            frontL.name = "HairFrontL";
-            frontL.transform.SetParent(headPivot.transform, false);
-            frontL.transform.localPosition = new Vector3(-0.18f, -0.12f, 0.1f);
-            frontL.transform.localScale = new Vector3(0.06f, 0.22f, 0.06f);
-            frontL.GetComponent<MeshRenderer>().material = mat;
-            Object.Destroy(frontL.GetComponent<Collider>());
-
-            GameObject frontR = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-            frontR.name = "HairFrontR";
-            frontR.transform.SetParent(headPivot.transform, false);
-            frontR.transform.localPosition = new Vector3(0.18f, -0.12f, 0.1f);
-            frontR.transform.localScale = new Vector3(0.06f, 0.22f, 0.06f);
-            frontR.GetComponent<MeshRenderer>().material = mat;
-            Object.Destroy(frontR.GetComponent<Collider>());
+            Part("HairFrontL", headPivot.transform, longStrandMesh, mat,
+                new Vector3(-0.18f, -0.12f, 0.1f), new Vector3(0.06f, 0.22f, 0.06f));
+            Part("HairFrontR", headPivot.transform, longStrandMesh, mat,
+                new Vector3(0.18f, -0.12f, 0.1f), new Vector3(0.06f, 0.22f, 0.06f));
 
             if (gender == 1)
             {
-                GameObject bangs = GameObject.CreatePrimitive(PrimitiveType.Cube);
-                bangs.name = "HairBangs";
-                bangs.transform.SetParent(headPivot.transform, false);
-                bangs.transform.localPosition = new Vector3(0f, 0.18f, 0.16f);
-                bangs.transform.localScale = new Vector3(0.4f, 0.1f, 0.1f);
-                bangs.GetComponent<MeshRenderer>().material = mat;
-                Object.Destroy(bangs.GetComponent<Collider>());
+                BuildBangs(headPivot, mat, 0.10f);
 
                 for (int i = 0; i < 2; i++)
                 {
                     float x = (i == 0) ? -0.08f : 0.08f;
-                    GameObject longStrand = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-                    longStrand.name = $"HairVeryLong_{i}";
-                    longStrand.transform.SetParent(headPivot.transform, false);
-                    longStrand.transform.localPosition = new Vector3(x, -0.55f, -0.12f);
-                    longStrand.transform.localScale = new Vector3(0.1f, 0.3f, 0.08f);
-                    longStrand.GetComponent<MeshRenderer>().material = mat;
-                    Object.Destroy(longStrand.GetComponent<Collider>());
+                    Part($"HairVeryLong_{i}", headPivot.transform, longStrandMesh, mat,
+                        new Vector3(x, -0.55f, -0.12f), new Vector3(0.1f, 0.3f, 0.08f));
                 }
             }
         }
 
         private void BuildUpHair(GameObject headPivot, int gender, Material mat)
         {
-            GameObject hairTop = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            hairTop.name = "HairTop";
-            hairTop.transform.SetParent(headPivot.transform, false);
-            hairTop.transform.localPosition = new Vector3(0f, 0.26f, -0.02f);
-            hairTop.transform.localScale = new Vector3(0.55f, 0.30f, 0.52f);
-            hairTop.GetComponent<MeshRenderer>().material = mat;
-            Object.Destroy(hairTop.GetComponent<Collider>());
+            Part("HairTop", headPivot.transform, UnitSphere(8, 12), mat,
+                new Vector3(0f, 0.26f, -0.02f), new Vector3(0.55f, 0.30f, 0.52f));
 
             if (gender == 0)
             {
-                GameObject spike = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-                spike.name = "HairSpike";
-                spike.transform.SetParent(headPivot.transform, false);
-                spike.transform.localPosition = new Vector3(0f, 0.35f, 0.05f);
-                spike.transform.localScale = new Vector3(0.15f, 0.18f, 0.12f);
-                spike.transform.localRotation = Quaternion.Euler(-20f, 0f, 0f);
-                spike.GetComponent<MeshRenderer>().material = mat;
-                Object.Destroy(spike.GetComponent<Collider>());
+                // 스파이크는 끝이 뾰족할수록 좋다 — 테이퍼를 세게 준다.
+                Mesh spikeMesh = UnitCapsule(0.35f);
+
+                Part("HairSpike", headPivot.transform, spikeMesh, mat,
+                    new Vector3(0f, 0.35f, 0.05f), new Vector3(0.15f, 0.18f, 0.12f),
+                    new Vector3(-20f, 0f, 0f));
 
                 for (int side = -1; side <= 1; side += 2)
                 {
-                    GameObject sideSpike = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-                    sideSpike.name = $"HairSideSpike_{(side > 0 ? "R" : "L")}";
-                    sideSpike.transform.SetParent(headPivot.transform, false);
-                    sideSpike.transform.localPosition = new Vector3(side * 0.15f, 0.28f, 0f);
-                    sideSpike.transform.localScale = new Vector3(0.08f, 0.12f, 0.08f);
-                    sideSpike.transform.localRotation = Quaternion.Euler(0f, 0f, -side * 30f);
-                    sideSpike.GetComponent<MeshRenderer>().material = mat;
-                    Object.Destroy(sideSpike.GetComponent<Collider>());
+                    Part($"HairSideSpike_{(side > 0 ? "R" : "L")}", headPivot.transform, spikeMesh, mat,
+                        new Vector3(side * 0.15f, 0.28f, 0f), new Vector3(0.08f, 0.12f, 0.08f),
+                        new Vector3(0f, 0f, -side * 30f));
                 }
             }
             else
             {
-                GameObject bun = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                bun.name = "HairBun";
-                bun.transform.SetParent(headPivot.transform, false);
-                bun.transform.localPosition = new Vector3(0f, 0.15f, -0.22f);
-                bun.transform.localScale = new Vector3(0.22f, 0.22f, 0.22f);
-                bun.GetComponent<MeshRenderer>().material = mat;
-                Object.Destroy(bun.GetComponent<Collider>());
+                Part("HairBun", headPivot.transform, UnitSphere(7, 10), mat,
+                    new Vector3(0f, 0.15f, -0.22f), new Vector3(0.22f, 0.22f, 0.22f));
 
-                Material ribbonMat = MakeMaterial(new Color(0.9f, 0.3f, 0.4f));
+                Material ribbonMat = MakeMaterial(new Color(0.9f, 0.3f, 0.4f), SurfaceKind.Cloth);
                 GameObject ribbon = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
                 ribbon.name = "HairRibbon";
                 ribbon.transform.SetParent(headPivot.transform, false);
@@ -845,23 +775,13 @@ namespace InsectGame.Core
                 ribbon.GetComponent<MeshRenderer>().material = ribbonMat;
                 Object.Destroy(ribbon.GetComponent<Collider>());
 
-                GameObject bangs = GameObject.CreatePrimitive(PrimitiveType.Cube);
-                bangs.name = "HairBangs";
-                bangs.transform.SetParent(headPivot.transform, false);
-                bangs.transform.localPosition = new Vector3(0f, 0.18f, 0.16f);
-                bangs.transform.localScale = new Vector3(0.4f, 0.08f, 0.1f);
-                bangs.GetComponent<MeshRenderer>().material = mat;
-                Object.Destroy(bangs.GetComponent<Collider>());
+                BuildBangs(headPivot, mat, 0.08f);
 
+                Mesh sideHairMesh = UnitCapsule(0.8f);
                 for (int side = -1; side <= 1; side += 2)
                 {
-                    GameObject sideHair = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-                    sideHair.name = $"HairSide_{(side > 0 ? "R" : "L")}";
-                    sideHair.transform.SetParent(headPivot.transform, false);
-                    sideHair.transform.localPosition = new Vector3(side * 0.2f, -0.05f, 0.05f);
-                    sideHair.transform.localScale = new Vector3(0.06f, 0.15f, 0.06f);
-                    sideHair.GetComponent<MeshRenderer>().material = mat;
-                    Object.Destroy(sideHair.GetComponent<Collider>());
+                    Part($"HairSide_{(side > 0 ? "R" : "L")}", headPivot.transform, sideHairMesh, mat,
+                        new Vector3(side * 0.2f, -0.05f, 0.05f), new Vector3(0.06f, 0.15f, 0.06f));
                 }
             }
         }

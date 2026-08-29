@@ -23,7 +23,9 @@ namespace InsectGame.Spawning
             MeshRenderer mr = gameObject.GetComponent<MeshRenderer>();
             if (mr == null) mr = gameObject.AddComponent<MeshRenderer>();
 
-            mf.sharedMesh = CreateDiamondMesh();
+            // 옛 CreateDiamondMesh()는 픽업이 뜰 때마다 new Mesh()를 만들었고 파괴 경로에
+            // 회수가 없었다 — 수명 120초 × 반복 스폰만큼 실제로 샜다. 이제 프로세스당 1개다.
+            mf.sharedMesh = ProcMeshLibrary.Diamond(0.5f, 1f, 0.6f);
             Shader shader = Shader.Find("Standard");
             if (shader == null) shader = Shader.Find("Universal Render Pipeline/Lit");
             if (shader == null) shader = Shader.Find("Sprites/Default");
@@ -57,6 +59,20 @@ namespace InsectGame.Spawning
                 Destroy(gameObject);
         }
 
+        /// <summary>
+        /// 머티리얼은 픽업마다 <c>themeColor</c>가 달라 공유할 수 없다 — 인스턴스를 만든 만큼
+        /// 회수한다. 이 오브젝트는 수명 120초 만료(<see cref="Update"/>)와 획득
+        /// (<see cref="OnTriggerEnter"/>) 두 경로로 파괴되는데, 어느 쪽에도 회수가 없었다.
+        ///
+        /// <b>메시는 건드리지 않는다</b> — <see cref="ProcMeshLibrary"/>의 프로세스 수명 캐시라
+        /// 다른 픽업이 같은 것을 쓰고 있다. 여기서 파괴하면 다음 픽업이 빈 메시로 뜬다.
+        /// </summary>
+        private void OnDestroy()
+        {
+            MeshRenderer mr = GetComponent<MeshRenderer>();
+            if (mr != null && mr.sharedMaterial != null) Destroy(mr.sharedMaterial);
+        }
+
         private void OnTriggerEnter(Collider other)
         {
             if (other == null || itemData == null || inventory == null) return;
@@ -65,29 +81,6 @@ namespace InsectGame.Spawning
             inventory.AddItem(itemData.itemId, 1);
             if (AudioManager.Instance != null) AudioManager.Instance.PlaySFX(SfxType.ItemPickup);
             Destroy(gameObject);
-        }
-
-        private Mesh CreateDiamondMesh()
-        {
-            Mesh mesh = new Mesh();
-            Vector3[] verts = new Vector3[]
-            {
-                new Vector3(0, 1, 0),
-                new Vector3(0.5f, 0, 0.5f),
-                new Vector3(0.5f, 0, -0.5f),
-                new Vector3(-0.5f, 0, -0.5f),
-                new Vector3(-0.5f, 0, 0.5f),
-                new Vector3(0, -0.6f, 0),
-            };
-            int[] tris = new int[]
-            {
-                0,1,2, 0,2,3, 0,3,4, 0,4,1,
-                5,2,1, 5,3,2, 5,4,3, 5,1,4,
-            };
-            mesh.vertices = verts;
-            mesh.triangles = tris;
-            mesh.RecalculateNormals();
-            return mesh;
         }
     }
 }

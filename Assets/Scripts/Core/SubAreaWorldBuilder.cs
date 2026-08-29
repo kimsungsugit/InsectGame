@@ -68,7 +68,7 @@ namespace InsectGame.Core
         /// <c>new Material(...)</c>은 GameObject가 아니라 별개 오브젝트라 명시적으로 파괴해야 한다.
         /// 한 번 지을 때마다 <c>Mat()</c>이 41번 불리고, 서브에리어는 25m 이탈·[E] 재진입으로
         /// 세션 내내 반복해서 들락거리므로 방치하면 계속 쌓인다.
-        /// (같은 이유로 <c>NpcVisualBuilder.CleanupMaterials</c>·<c>PlayerVisualBuilder.SafeDestroyMat</c>가 있다.)
+        /// (같은 이유로 <c>NpcVisualBuilder.CleanupMaterials</c>·<c>PlayerVisualBuilder.OnDestroy</c>가 있다.)
         /// </summary>
         private readonly List<Material> runtimeMaterials = new List<Material>();
         // Update의 Y 안전망용 player transform 캐싱 — 매 프레임 GameObject.Find 회귀 차단

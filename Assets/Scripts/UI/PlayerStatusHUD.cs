@@ -82,8 +82,32 @@ namespace InsectGame.UI
 
         private bool subscribedInsects;
 
+        /// <summary>
+        /// 표시용 캐릭터 이름. <b>매 프레임 PlayerPrefs를 두드리지 않는다</b> — OnGUI에서 불리므로
+        /// 여기서 1회만 읽고 캐싱한다(클라우드 복원이 값을 바꾸면 다음 활성화에서 갱신된다).
+        /// 비어 있으면 옛 표기를 그대로 쓴다.
+        /// </summary>
+        private string cachedPlayerName;
+
+        private string PlayerDisplayName
+        {
+            get
+            {
+                if (cachedPlayerName == null)
+                {
+                    string saved = PlayerPrefs.GetString(
+                        InsectGame.Core.SaveScope.PrefsKey("InsectGame.Character.Name"), "");
+                    cachedPlayerName = string.IsNullOrWhiteSpace(saved) ? "PLAYER" : saved;
+                }
+                return cachedPlayerName;
+            }
+        }
+
         private void OnEnable()
         {
+            // 계정이 바뀌거나 클라우드 복원이 끝난 뒤 다시 켜지면 이름을 새로 읽는다.
+            cachedPlayerName = null;
+
             if (!mobileLayoutInitialized)
             {
                 mobileLayoutInitialized = true;
@@ -249,7 +273,10 @@ namespace InsectGame.UI
             int xp = progress.CurrentXp;
             int xpNeeded = progress.XpToNextLevel;
 
-            GUI.Label(new Rect(px + 20, cy, 150, 28), "PLAYER", sectionTitleStyle);
+            // 캐릭터 이름. 오래 리터럴 "PLAYER"였다 — 생성 화면이 이름을 받아 저장하고
+            // 클라우드 동기까지 하는데 게임 어디에서도 보여주지 않아 사실상 버려지는 값이었다.
+            // 한글 12자가 150px 상자를 넘길 수 있어 LabelFit으로 줄여 맞춘다(ui-layout.md).
+            UIHelper.LabelFit(new Rect(px + 20, cy, 150, 28), PlayerDisplayName, sectionTitleStyle);
 
             float lvBadgeX = px + 20;
             float lvBadgeY = cy + 32;

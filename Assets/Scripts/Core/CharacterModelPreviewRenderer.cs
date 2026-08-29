@@ -38,6 +38,12 @@ namespace InsectGame.Core
         /// <summary>true일 때만 PlayerPrefs에서 외형을 다시 읽는다. <see cref="InvalidatePreview"/>가 세운다.</summary>
         private bool appearanceDirty = true;
 
+        /// <summary>
+        /// 설정되면 PlayerPrefs 대신 이 외형으로 마네킹을 짓는다.
+        /// 캐릭터 생성 화면 전용 — 그 화면은 저장하기 <b>전에</b> 결과를 보여줘야 한다.
+        /// </summary>
+        private AppearanceSpec? appearanceOverride;
+
         // ── 큰 패널 ──
         private RenderTexture currentRT;
         private OutfitLoadout requestLoadout;
@@ -148,6 +154,20 @@ namespace InsectGame.Core
             appearanceDirty = true;
         }
 
+        /// <summary>
+        /// 아직 저장되지 않은 편집 중 외형을 강제한다. <c>null</c>이면 PlayerPrefs로 되돌아간다.
+        ///
+        /// <b>다 쓰면 반드시 null로 되돌릴 것.</b> 안 그러면 나중에 의상 화면을 열었을 때
+        /// 캐릭터 생성 당시 만지던 외형이 계속 보인다 — <see cref="appearanceDirty"/>가
+        /// <see cref="InvalidatePreview"/>에서만 서기 때문에 스스로 풀리지 않는다.
+        /// (<c>LoginUI</c>는 게임 시작과 <c>OnDisable</c> 양쪽에서 해제한다.)
+        /// </summary>
+        public void SetAppearanceOverride(AppearanceSpec? spec)
+        {
+            appearanceOverride = spec;
+            appearanceDirty = true;   // EnsureMannequin이 다시 판정하게
+        }
+
         // ── 렌더 루프 ──
 
         private void Update()
@@ -198,6 +218,11 @@ namespace InsectGame.Core
             soloLoadout.Clear();
             soloLoadout.Set(slot, itemId);
             ApplyLoadout(soloLoadout);
+
+            // 썸네일은 한 장씩 구워져 캐시에 남는다 — 하필 눈을 감은 프레임에 찍히면 그 카드는
+            // 계속 감은 눈으로 보인다. 굽기 직전에 눈을 뜬 상태로 되돌린다.
+            CharacterFaceAnimator face = mannequin.GetComponent<CharacterFaceAnimator>();
+            if (face != null) face.ResetToNeutral();
 
             RenderTexture rt = CreateRT(ThumbSize, ThumbSize);
             RenderMannequin(rt, ThumbAngleFor(slot), FocusNodesFor(slot));
@@ -308,7 +333,7 @@ namespace InsectGame.Core
             if (mannequin != null && !appearanceDirty) return;
             appearanceDirty = false;
 
-            AppearanceSpec spec = AppearanceSpec.FromPlayerPrefs();
+            AppearanceSpec spec = appearanceOverride ?? AppearanceSpec.FromPlayerPrefs();
             int h = spec.Hash();
             if (mannequin != null && mannequinLookHash == h) return;
 

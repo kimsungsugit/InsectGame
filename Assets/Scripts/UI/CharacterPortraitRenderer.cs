@@ -256,13 +256,7 @@ namespace InsectGame.UI
         public static void DrawForCreation(float cx, float cy, float scale,
             int gender, int skinColorIdx, int hairColorIdx, int hairStyle, int faceType, int outfitIdx)
         {
-            Color[] outfitColors =
-            {
-                new Color(0.2f, 0.4f, 0.85f),
-                new Color(0.9f, 0.9f, 0.92f),
-                new Color(0.7f, 0.25f, 0.25f)
-            };
-            Color topCol = outfitColors[Mathf.Clamp(outfitIdx, 0, 2)];
+            Color topCol = PresetTopColors[Mathf.Clamp(outfitIdx, 0, PresetTopColors.Length - 1)];
             Color bottomCol = new Color(0.18f, 0.22f, 0.28f);
             Color shoeCol = new Color(0.2f, 0.12f, 0.06f);
             Color hatCol = new Color(0f, 0f, 0f, 0f);
@@ -627,30 +621,39 @@ namespace InsectGame.UI
             }
         }
 
+        /// <summary>
+        /// 2D 초상의 피부색. 값의 소유자는 <see cref="InsectGame.Core.CharacterPalette"/>다 —
+        /// 여기 사본을 두던 시절엔 3D 쪽(0.92,0.78,0.62)과 <b>미묘하게 값이 달라</b>
+        /// UI 속 얼굴과 필드 캐릭터의 피부톤이 어긋났다. clamp는 팔레트가 한다.
+        /// </summary>
+        /// <summary>
+        /// 생성 화면 2D 폴백에서 쓰는 프리셋 대표 상의색.
+        ///
+        /// <b>길이가 <c>CharacterPresetLibrary.Count</c>와 같아야 한다</b> — 짧으면 뒤쪽 프리셋이
+        /// clamp돼 앞 프리셋과 같은 색으로 그려진다(프리셋이 3개에서 5개로 늘었을 때 실제로 그랬다).
+        /// <c>CharacterPaletteTests</c>가 길이를 고정한다.
+        ///
+        /// 값은 각 프리셋이 입는 겉옷(없으면 상의)의 primaryColor를 따른다:
+        /// 탐험가·밤의 채집가·직접 만들기는 outer_jacket, 관찰자는 top_shirt, 아이는 top_polo.
+        /// </summary>
+        internal static readonly Color[] PresetTopColors =
+        {
+            new Color(0.20f, 0.40f, 0.85f),   // 초원의 탐험가 — outer_jacket
+            new Color(0.98f, 0.96f, 0.92f),   // 숲의 관찰자 — outer_none → top_shirt
+            new Color(0.53f, 0.81f, 0.98f),   // 들판의 아이 — outer_none → top_polo
+            new Color(0.20f, 0.40f, 0.85f),   // 밤의 채집가 — outer_jacket
+            new Color(0.20f, 0.40f, 0.85f),   // 직접 만들기 — outer_jacket
+        };
+
         public static Color GetSkinColor(int idx)
         {
-            Color[] colors =
-            {
-                new Color(1.0f, 0.87f, 0.75f),
-                new Color(0.9f, 0.75f, 0.6f),
-                new Color(0.65f, 0.5f, 0.35f),
-                new Color(0.4f, 0.28f, 0.18f)
-            };
-            return colors[Mathf.Clamp(idx, 0, colors.Length - 1)];
+            return InsectGame.Core.CharacterPalette.Skin(idx);
         }
 
+        /// <summary>2D 초상의 머리색. 위와 같은 이유로 팔레트가 단일 출처다.</summary>
         public static Color GetHairColor(int idx)
         {
-            Color[] colors =
-            {
-                new Color(0.12f, 0.08f, 0.05f),
-                new Color(0.35f, 0.2f, 0.1f),
-                new Color(0.85f, 0.7f, 0.3f),
-                new Color(0.6f, 0.15f, 0.1f),
-                new Color(0.2f, 0.15f, 0.35f),
-                new Color(0.15f, 0.3f, 0.5f)
-            };
-            return colors[Mathf.Clamp(idx, 0, colors.Length - 1)];
+            return InsectGame.Core.CharacterPalette.Hair(idx);
         }
 
         /// <summary>

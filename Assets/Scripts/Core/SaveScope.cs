@@ -42,6 +42,9 @@ namespace InsectGame.Core
             "InsectGame.Equipped",
             "InsectGame.OwnedOutfits",
             "InsectGame.Character.Name",
+            // 첫 파트너 곤충 선택. **문자열 목록에 넣는다** — 위 주석이 경고하는 실수의 반대다.
+            // Int 목록에 넣으면 GetInt로 복사돼 ""가 되고, 선택이 조용히 기본값으로 돌아간다.
+            "InsectGame.Character.StarterInsect",
         };
 
         // Int 타입 PlayerPrefs 베이스 키 (SetInt/GetInt로 저장됨). 마이그레이션 시 반드시 GetInt/SetInt로
@@ -64,7 +67,7 @@ namespace InsectGame.Core
         // 5: 스코핑 키 5개 추가(QuestSideProgress/QuestSideRepeat/QuestUnseen/TutorialHidden/
         //    WeeklyContestClaimed). 올려야 기존 기기의 전역 키가 계정 스코프로 이전된다.
         // 6: BlightCleansed(신규) + DefeatedLedgerBosses(누락분) 추가.
-        private const int MigrationVersion = 6;
+        private const int MigrationVersion = 7;
 
         private static readonly string[] ScopedFiles =
         {

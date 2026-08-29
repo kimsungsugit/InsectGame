@@ -2381,7 +2381,7 @@ namespace InsectGame.Battle
         /// <summary>
         /// 이 전투가 만든 런타임 머티리얼. <b><c>Destroy(gameObject)</c>는 머티리얼을 지우지 않는다</b> —
         /// 같은 저장소가 <c>OutfitShapeLibrary.TrimContainer</c>에서 GameObject보다 머티리얼을 먼저 파괴하고
-        /// <c>PlayerVisualBuilder.SafeDestroyMat</c>·<c>NpcVisualBuilder.CleanupMaterials</c>를 두는 이유다.
+        /// <c>PlayerVisualBuilder.OnDestroy</c>·<c>NpcVisualBuilder.CleanupMaterials</c>를 두는 이유다.
         ///
         /// 여기선 <b>스킬 연출마다</b> 이펙트 오브젝트(링·스파크·구름·기둥…)가 새로 나고 그때마다
         /// 머티리얼도 새로 난다. 오브젝트는 코루틴이 지우지만 머티리얼은 아무도 안 지워서, 전투가 길수록

@@ -36,6 +36,10 @@ OnGUI의 Rect 좌표와 레이아웃은 **ui-dev 영역**입니다. 여기서는
 - `Assets/Scripts/Core/RegionTerrainBuilder.cs` - 리전별 필드 지형 생성 (언덕, 길, 바위, 나무)
 
 ### 캐릭터/의상 비주얼
+- `Assets/Editor/OutfitRenderProbe.cs` - 의상을 입힌 마네킹을 3D 리그로 직접 촬영해 spawn/bind 파츠가 실제로 그려지는지 확인 ※IMGUI를 안 거치므로 배치모드로 돈다
+- `Assets/Scripts/Core/CharacterFaceAnimator.cs` - 눈 깜빡임·표정 전환 ※걷기(PlayerMovement.AnimateWalk)와 직교한 별도 컴포넌트로 유지할 것. 눈 스케일은 base에 대입(곱셈 누적 금지)
+- `Assets/Scripts/Core/ProcMeshLibrary.cs` - 캐릭터용 프로시저럴 메시 생성기(Disc/LowSphere/RoundedBox/TaperedCapsule/Diamond) + 프로세스 수명 정적 캐시 ※bind 가능 노드(Cap·NetHandle 등)에는 쓰지 말 것 — ApplyBound가 sharedMesh·localScale을 덮어쓴다
+- `Assets/Scripts/Core/CharacterPalette.cs` - 피부·머리 색 팔레트와 부위별 PBR 재질(SurfaceKind)의 단일 출처. 3D 캐릭터·마네킹·2D 초상·NPC가 전부 여기를 읽는다 ※인덱스 순서는 세이브가 가리키므로 바꾸지 말 것
 - `Assets/Scripts/Core/CharacterOutfitManager.cs` - 의상 관리
 - `Assets/Scripts/Core/OutfitShapeLibrary.cs` - 의상 파츠 레시피(itemId → OutfitPart[]) 형태의 단일 출처 ※스키마·앵커 확장은 data-architect 공유
 - `Assets/Scripts/Core/CharacterModelPreviewRenderer.cs` - 의상 미리보기용 3D 마네킹 리그·썸네일 렌더 ※화면 배치는 ui-dev

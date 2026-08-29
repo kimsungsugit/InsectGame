@@ -8,6 +8,16 @@ namespace InsectGame.UI
     {
         private enum LoginPhase { Login, Register, Loading, CharacterCreate, Done }
 
+        /// <summary>
+        /// 캐릭터 생성의 단계. <see cref="LoginPhase.CharacterCreate"/> 안에서만 의미가 있다.
+        ///
+        /// 왜 한 화면에 다 안 넣나: 프리셋 카드 + 3D 프리뷰 + 세부 항목을 세로로 쌓으면
+        /// 약 1,490px이 되는데 패널 상한이 1,313px이다. 짧은 화면에서는 더 줄어든다.
+        /// 스크롤은 3D 프리뷰가 화면 밖으로 나가 존재 이유가 사라지고, 탭은 "다 골랐나"를
+        /// 사용자가 추적해야 한다. 프리셋 → 세부는 본래 순차적이라 단계 분할이 맞다.
+        /// </summary>
+        internal enum CreateStep { Preset, Customize, Starter }
+
         private LoginPhase phase = LoginPhase.Login;
         private string emailInput = "";
         private string passwordInput = "";
@@ -17,7 +27,18 @@ namespace InsectGame.UI
         private float errorTimer;
         private bool isProcessing;
 
+        /// <summary>
+        /// 의상 프리셋 라디오 라벨 = 프리셋 이름. <see cref="CharacterPresetLibrary.DisplayNames"/>가
+        /// 배열을 새로 만들므로 <b>OnGUI에서 직접 부르지 않는다</b> — 여기서 1회만 굽는다.
+        /// </summary>
+        private static string[] outfitLabelsCache;
+
+        internal static string[] OutfitLabels =>
+            outfitLabelsCache ?? (outfitLabelsCache = CharacterPresetLibrary.DisplayNames());
+
         // 캐릭터 생성
+        private CreateStep createStep = CreateStep.Preset;
+        private int selectedStarter;
         private string characterName = "탐험가";
         private int selectedSkinColor;  // 0~3
         private int selectedHairStyle;  // 0~3
@@ -42,6 +63,18 @@ namespace InsectGame.UI
         // 매 프레임 PlayerPrefs를 읽으면 방금 누른 값이 곧바로 덮인다 — 1회만 읽는다.
         private bool masterPlainMode;
         private bool masterPlainLoaded;
+
+        /// <summary>
+        /// 3D 마네킹 프리뷰. <b>없어도 동작한다</b> — null이면 2D 초상화로 물러난다.
+        /// 그래서 배선이 실패해도 회귀가 아니라 옛 모습으로 돌아갈 뿐이다.
+        /// </summary>
+        private InsectGame.Core.CharacterModelPreviewRenderer modelPreview;
+
+        /// <summary>프리뷰에 넘기는 조합. 매 프레임 새로 만들지 않으려고 재사용한다.</summary>
+        private readonly InsectGame.Core.OutfitLoadout previewLoadout = new InsectGame.Core.OutfitLoadout();
+
+        private float previewYaw = InsectGame.Core.CharacterModelPreviewRenderer.FrontYaw;
+        private bool draggingPreview;
 
         private GUIStyle panelStyle;
         private GUIStyle panelShadowStyle;
@@ -106,6 +139,10 @@ namespace InsectGame.UI
 
         private void OnDisable()
         {
+            // 생성 화면을 벗어나며 비활성화되는 경우, 프리뷰가 저장 안 된 외형을 계속 들고 있지
+            // 않게 한다 — 안 그러면 나중에 의상 화면이 생성 당시 만지던 얼굴을 보여준다.
+            ClearPreviewOverride();
+
             if (AuthManager.Instance != null)
             {
                 AuthManager.Instance.LoginCompleted -= OnLoginCompleted;
@@ -150,7 +187,17 @@ namespace InsectGame.UI
             // **회원가입 화면은 건드리지 않는다.** RegisterWithEmail은 클라이언트 검증 실패에도
             // AuthFailed를 먼저 쏘는데, 옛 코드는 그때도 로그인 패널로 되돌려 **닉네임과 비밀번호
             // 확인이 통째로 날아갔다** — 비밀번호가 짧다는 안내를 받으려고 폼을 잃는 셈이었다.
-            if (phase != LoginPhase.Register) phase = LoginPhase.Login;
+            if (phase != LoginPhase.Register)
+            {
+                // 생성 화면에서 토큰이 끊기면 이 경로로 나간다 — 프리뷰 override를 여기서 풀지
+                // 않으면 세션 내내 남는다. OnDisable에 기대면 안 된다: LoginUI를
+                // SetActive(false)하는 코드가 저장소에 없어 그 콜백은 씬 teardown에서만 돌고,
+                // 그때는 렌더러도 함께 죽어 의미가 없다.
+                // 남으면 이후 의상 화면의 큰 패널과 썸네일 24장이 전부 '버려진 얼굴'로 구워진다
+                // (CharacterOutfitUI는 InvalidatePreview만 부르는데 그건 override를 안 건드린다).
+                if (phase == LoginPhase.CharacterCreate) ClearPreviewOverride();
+                phase = LoginPhase.Login;
+            }
 
             // 토큰 갱신 실패 경로는 AuthFailed만 쏘고 LoginCompleted를 안 준다 —
             // 여기서 안 풀면 모든 버튼이 GUI.enabled=false로 굳는다.
@@ -599,8 +646,99 @@ namespace InsectGame.UI
 
         // ── 캐릭터 생성 패널 ──
 
+        /// <summary>
+        /// 프리뷰를 <b>뺀</b> 고정 콘텐츠 높이(px) — 타이틀·입력·라디오·버튼.
+        ///
+        /// 프리뷰만 따로 빼는 이유: 화면이 짧으면 프리뷰를 줄여서 나머지를 지킬 수 있지만,
+        /// 버튼과 라디오는 줄일 수 없기 때문이다. 하단 "모험 시작" 버튼이 패널 밖으로 밀리면
+        /// 캐릭터 생성을 끝낼 수 없어 게임에 진입조차 못 한다 — 그건 세로가 짧은 가로모드에서만
+        /// 나타나 개발 중에는 보이지 않는다. <c>CharacterCreateFlowTests</c>가 이 값을 고정한다.
+        /// </summary>
+        internal static float FixedContentHeight(CreateStep step, bool mobile)
+        {
+            float radioRow = mobile ? 58f : 45f;
+            float titleBlock = 44f + 63f;
+            float afterPreview = 24f;
+            float buttonBlock = 20f + 58f + 24f;
+
+            if (step == CreateStep.Preset)
+            {
+                // 세로 배치: 프리뷰 아래에 이름 입력 + 프리셋 2행
+                return titleBlock + afterPreview + 50f + 2f * (35f + radioRow) + buttonBlock;
+            }
+
+            if (step == CreateStep.Starter)
+            {
+                // 곤충 카드 3장이 가로로 놓이고 그 아래 버튼. 프리뷰는 이 단계에 없다.
+                return titleBlock + StarterCardHeight + 24f + buttonBlock;
+            }
+
+            // 세부 조정은 <b>좌우 2열</b>이다 — 프리뷰가 왼쪽, 항목 5개가 오른쪽.
+            // 세로로 쌓으면 5행(라벨 35 + 라디오 45~58)이 400~465px라 프리뷰를 최소로 줄여도
+            // 가로모드 화면을 넘겼다. 2열이면 그 5행이 프리뷰와 같은 세로를 공유한다.
+            // 여기서 세는 건 프리뷰 <b>바깥</b>의 고정 높이뿐이다.
+            return titleBlock + afterPreview + buttonBlock;
+        }
+
+        /// <summary>
+        /// 이 패널 높이에서 3D 프리뷰에 줄 높이. 남는 만큼 쓰되
+        /// <see cref="MinPreviewH"/> 아래로는 내려가지 않는다(그보다 작으면 캐릭터를 알아볼 수 없다).
+        /// </summary>
+        internal static float PreviewHeightFor(CreateStep step, bool mobile, float panelHeight)
+        {
+            // 스타터 단계에는 3D 프리뷰가 없다 — 곤충 카드가 화면을 채운다.
+            if (step == CreateStep.Starter) return 0f;
+
+            float spare = panelHeight - FixedContentHeight(step, mobile);
+
+            if (step == CreateStep.Customize)
+            {
+                // 2열에서는 오른쪽 항목 5행이 세로를 지배한다 — 프리뷰가 그보다 커질 이유가 없다.
+                spare = Mathf.Min(spare, CustomizeRowsHeight(mobile));
+            }
+
+            float cap = step == CreateStep.Preset ? PreviewH : PreviewH * 1.1f;
+            return Mathf.Clamp(spare, MinPreviewH, cap);
+        }
+
+        /// <summary>세부 조정 오른쪽 열의 5행 높이 — 이 값이 그 단계의 세로를 정한다.</summary>
+        internal static float CustomizeRowsHeight(bool mobile)
+        {
+            float rowH = mobile ? 58f : 45f;
+            return 5f * (rowH + 12f);
+        }
+
+        /// <summary>
+        /// 이 단계가 실제로 차지하는 총 세로. 패널 높이를 넘으면 하단 버튼이 밖으로 밀린다.
+        ///
+        /// 세부 조정은 2열이라 <b>프리뷰와 항목 중 큰 쪽</b>이 몸통 높이가 된다 —
+        /// 둘을 더하면 안 된다(그게 세로 배치였던 시절의 계산이고, 그래서 넘쳤다).
+        /// </summary>
+        internal static float TotalContentHeight(CreateStep step, bool mobile, float panelHeight)
+        {
+            // 스타터 단계는 고정 높이(카드가 이미 FixedContentHeight에 들어 있다).
+            if (step == CreateStep.Starter) return FixedContentHeight(step, mobile);
+
+            float previewH = PreviewHeightFor(step, mobile, panelHeight);
+            float body = step == CreateStep.Customize
+                ? Mathf.Max(previewH, CustomizeRowsHeight(mobile))
+                : previewH;
+            return FixedContentHeight(step, mobile) + body;
+        }
+
+        /// <summary>스타터 곤충 카드 높이. 이름 + 설명 두 줄이 들어간다.</summary>
+        internal const float StarterCardHeight = 210f;
+
+        private const float PreviewH = 300f;
+        private const float PreviewW = 200f;
+
+        /// <summary>프리뷰 최소 높이. 이보다 작으면 3D를 보여주는 의미가 없다.</summary>
+        internal const float MinPreviewH = 96f;
+
         private void DrawCharacterCreatePanel()
         {
+            ApplyCreateStyles();
+
             float pw = Mathf.Min(940f, Screen.width * 0.88f);
             float ph = Mathf.Min(1313f, Screen.height * 0.95f);
             float px = (Screen.width - pw) * 0.5f;
@@ -608,93 +746,322 @@ namespace InsectGame.UI
 
             DrawDecoratedPanel(new Rect(px, py, pw, ph));
 
-            float cx = px + 63f;
-            float cy = py + 44f;
-            float fieldW = pw - 125f;
+            if (createStep == CreateStep.Preset) DrawPresetStep(px, py, pw, ph);
+            else if (createStep == CreateStep.Customize) DrawCustomizeStep(px, py, pw, ph);
+            else DrawStarterStep(px, py, pw, ph);
+        }
 
-            // **폰트 크기를 여기서 정한다.** 이 패널만 설정을 빠뜨려 직전에 그린 패널이 남긴
-            // 값을 물려받았다 — 회원가입(subtitle 60 / label 35)이나 로딩(subtitle 50)을 거쳐
-            // 오면 50f·30f 상자에 그만큼이 들어가 제목과 모든 항목 이름이 잘렸다.
-            // 스타일이 공유 객체라 정적 검사기도 못 잡는다(설정이 다른 메서드에 있다).
-            // 한글 줄높이 ≈ fontSize × 1.35 기준으로 상자에 맞춘 값이다.
+        /// <summary>
+        /// <b>단계마다 폰트 크기를 다시 정해야 한다.</b> GUIStyle이 공유 객체라, 회원가입
+        /// (subtitle 60 / label 35)이나 로딩(subtitle 50)을 거쳐 오면 그 값이 그대로 남아
+        /// 50f·30f 상자에 큰 글자가 들어가 제목과 항목 이름이 잘린다.
+        /// 설정이 다른 메서드에 있어 정적 검사기도 못 잡는 함정이라 한 곳에 모아 둔다.
+        /// 한글 줄높이 ≈ fontSize × 1.35 기준으로 상자에 맞춘 값이다.
+        /// </summary>
+        private void ApplyCreateStyles()
+        {
             subtitleStyle.fontSize = 36;      // 50f 상자
             labelStyle.fontSize = 22;         // 30f 상자
             fieldStyle.fontSize = 25;         // 35f 상자
             sectionLabelStyle.fontSize = 22;  // 30f 상자 (InitStyles의 28은 여기서 잘린다)
             btnGreenStyle.fontSize = 34;      // 58f 버튼
+            btnGrayStyle.fontSize = 30;       // 58f 버튼(뒤로)
+        }
 
-            // 타이틀
-            GUI.Label(new Rect(px, cy, pw, 50f), "캐릭터 생성", subtitleStyle);
+        // ── 1단계: 프리셋 ──
+
+        private void DrawPresetStep(float px, float py, float pw, float ph)
+        {
+            float cx = px + 63f;
+            float cy = py + 44f;
+            float fieldW = pw - 125f;
+
+            GUI.Label(new Rect(px, cy, pw, 50f), "캐릭터 선택", subtitleStyle);
             cy += 63f;
 
-            // 캐릭터 미리보기 (간단한 사각형 조합 실루엣)
-            DrawCharacterPreview(px + pw * 0.5f - 50f, cy, 100f, 175f);
-            cy += 194f;
+            float previewH = PreviewHeightFor(CreateStep.Preset, UIScale.IsMobileLayout, ph);
+            float previewW = PreviewW * (previewH / PreviewH);
+            DrawLivePreview(px + pw * 0.5f - previewW * 0.5f, cy, previewW, previewH);
+            cy += previewH + 24f;
 
-            // 이름
             GUI.Label(new Rect(cx, cy, 75f, 30f), "이름:", labelStyle);   // 오른쪽 필드가 cx+82f — 넓히면 겹친다
             characterName = GUI.TextField(new Rect(cx + 82f, cy, fieldW - 82f, 35f), characterName, 12, fieldStyle);
             cy += 50f;
 
-            // 성별
-            string[] genderLabels = { "남자", "여자" };
-            GUI.Label(new Rect(cx, cy, 120f, 30f), "성별:", sectionLabelStyle);
-            cy += 35f;
-            selectedGender = DrawRadioRow(cx, cy, fieldW, genderLabels, selectedGender);
-            cy += UIScale.IsMobileLayout ? 58f : 45f;
+            // 프리셋은 개수가 5개라 한 줄에 넣으면 라벨이 잘린다 — 두 줄로 나눈다.
+            string[] names = OutfitLabels;
+            int firstRow = Mathf.CeilToInt(names.Length * 0.5f);
+            cy = DrawPresetRow(cx, cy, fieldW, names, 0, firstRow);
+            cy = DrawPresetRow(cx, cy, fieldW, names, firstRow, names.Length);
+            cy += 20f;
 
-            // 피부색
-            string[] skinLabels = { "밝은", "보통", "어두운", "진한" };
-            GUI.Label(new Rect(cx, cy, 120f, 30f), "피부색:", sectionLabelStyle);
-            cy += 35f;
-            selectedSkinColor = DrawRadioRow(cx, cy, fieldW, skinLabels, selectedSkinColor);
-            cy += UIScale.IsMobileLayout ? 58f : 45f;
+            if (GUI.Button(new Rect(cx, cy, fieldW, 58f), "다음 — 세부 조정", btnGreenStyle))
+            {
+                createStep = CreateStep.Customize;
+            }
+        }
 
-            // 머리 스타일
-            string[] hairLabels = { "짧은", "중간", "긴", "올림" };
-            GUI.Label(new Rect(cx, cy, 120f, 30f), "머리:", sectionLabelStyle);
-            cy += 35f;
-            selectedHairStyle = DrawRadioRow(cx, cy, fieldW, hairLabels, selectedHairStyle);
-            cy += UIScale.IsMobileLayout ? 58f : 45f;
+        /// <summary>
+        /// 프리셋 버튼 한 줄. 고르면 <b>외형 전체</b>가 그 프리셋 값으로 바뀐다 —
+        /// 프리셋은 의상만이 아니라 사람 하나를 표현하기 때문이다.
+        /// </summary>
+        private float DrawPresetRow(float x, float y, float totalW, string[] names, int from, int to)
+        {
+            int count = to - from;
+            if (count <= 0) return y;
 
-            // 머리 색상
-            string[] hairColorLabels = { "검정", "갈색", "금발", "빨강", "보라", "파랑" };
-            GUI.Label(new Rect(cx, cy, 120f, 30f), "머리색:", sectionLabelStyle);
-            cy += 35f;
-            selectedHairColor = DrawRadioRow(cx, cy, fieldW, hairColorLabels, selectedHairColor);
-            cy += UIScale.IsMobileLayout ? 58f : 45f;
+            float btnW = (totalW - (count - 1) * 8f) / count;
+            float h = UIScale.IsMobileLayout ? 58f : 45f;
 
-            // 표정
-            string[] faceLabels = { "미소", "활짝", "차분", "무표정" };
-            GUI.Label(new Rect(cx, cy, 120f, 30f), "표정:", sectionLabelStyle);
-            cy += 35f;
-            selectedFaceType = DrawRadioRow(cx, cy, fieldW, faceLabels, selectedFaceType);
-            cy += UIScale.IsMobileLayout ? 58f : 45f;
+            for (int i = 0; i < count; i++)
+            {
+                int index = from + i;
+                float bx = x + i * (btnW + 8f);
+                GUIStyle style = (index == selectedOutfit) ? radioSelectedStyle : radioStyle;
+                if (GUI.Button(new Rect(bx, y, btnW, h), names[index], style))
+                {
+                    ApplyPreset(index);
+                }
+            }
+            return y + h + 35f;
+        }
 
-            // 의상
-            string[] outfitLabels = { "탐험가", "연구원", "자유" };
-            GUI.Label(new Rect(cx, cy, 120f, 30f), "의상:", sectionLabelStyle);
-            cy += 35f;
-            selectedOutfit = DrawRadioRow(cx, cy, fieldW, outfitLabels, selectedOutfit);
+        /// <summary>프리셋의 외형을 현재 선택으로 끌어온다. 이후 세부 조정에서 바꿀 수 있다.</summary>
+        private void ApplyPreset(int index)
+        {
+            selectedOutfit = index;
+            InsectGame.Core.CharacterPresetLibrary.Preset p = InsectGame.Core.CharacterPresetLibrary.Get(index);
+            selectedGender = p.Gender;
+            selectedHairStyle = p.HairStyle;
+            selectedHairColor = p.HairColor;
+            selectedFaceType = p.FaceType;
+            selectedSkinColor = p.SkinColor;
+        }
+
+        // ── 2단계: 세부 조정 ──
+
+        /// <summary>
+        /// 세부 조정 — <b>좌우 2열</b>. 왼쪽에 3D 프리뷰, 오른쪽에 항목 5개.
+        ///
+        /// 세로로 쌓으면 5행(라벨 35 + 라디오 45~58)만 400~465px라, 프리뷰를 최소로 줄여도
+        /// 가로모드 화면에서 하단 버튼이 밀려났다. 패널 폭이 940px이라 좌우로 나눌 여유가 있다.
+        /// </summary>
+        private void DrawCustomizeStep(float px, float py, float pw, float ph)
+        {
+            bool mobile = UIScale.IsMobileLayout;
+            float cx = px + 63f;
+            float cy = py + 44f;
+            float fieldW = pw - 125f;
+
+            GUI.Label(new Rect(px, cy, pw, 50f), "세부 조정", subtitleStyle);
             cy += 63f;
 
-            // 모험 시작 버튼
-            if (GUI.Button(new Rect(cx, cy, fieldW, 58f), "모험 시작!", btnGreenStyle))
+            float rowsH = CustomizeRowsHeight(mobile);
+            float previewH = PreviewHeightFor(CreateStep.Customize, mobile, ph);
+            float previewW = Mathf.Min(PreviewW, fieldW * 0.34f);
+
+            DrawLivePreview(cx, cy + (rowsH - previewH) * 0.5f, previewW, previewH);
+
+            // 오른쪽 열 — 라벨과 라디오를 한 줄에 둔다(세로로 나누면 행마다 35px가 더 든다).
+            float colX = cx + previewW + 24f;
+            float colW = fieldW - previewW - 24f;
+            float labelW = 96f;
+            float rowH = mobile ? 58f : 45f;
+            float ry = cy;
+
+            selectedGender = DrawLabeledRadio(colX, ry, colW, labelW, rowH, "성별",
+                GenderLabels, selectedGender);
+            ry += rowH + 12f;
+
+            selectedSkinColor = DrawLabeledRadio(colX, ry, colW, labelW, rowH, "피부색",
+                SkinLabels, selectedSkinColor);
+            ry += rowH + 12f;
+
+            selectedHairStyle = DrawLabeledRadio(colX, ry, colW, labelW, rowH, "머리",
+                HairStyleLabels, selectedHairStyle);
+            ry += rowH + 12f;
+
+            selectedHairColor = DrawLabeledRadio(colX, ry, colW, labelW, rowH, "머리색",
+                HairColorLabels, selectedHairColor);
+            ry += rowH + 12f;
+
+            selectedFaceType = DrawLabeledRadio(colX, ry, colW, labelW, rowH, "표정",
+                FaceLabels, selectedFaceType);
+
+            cy += rowsH + 24f + 20f;
+
+            float backW = fieldW * 0.32f;
+            if (GUI.Button(new Rect(cx, cy, backW, 58f), "◀ 뒤로", btnGrayStyle))
+            {
+                createStep = CreateStep.Preset;
+            }
+            if (GUI.Button(new Rect(cx + backW + 12f, cy, fieldW - backW - 12f, 58f), "다음 — 첫 파트너", btnGreenStyle))
+            {
+                createStep = CreateStep.Starter;
+            }
+        }
+
+        // ── 3단계: 첫 파트너 곤충 ──
+
+        /// <summary>
+        /// 첫 파트너를 고른다. 지급 자체는 여전히 <c>ch1_intro</c> 비트가 하고, 여기서는
+        /// 선택만 저장한다 — 그래서 Story.json을 건드리지 않고도 선택식이 된다.
+        /// </summary>
+        private void DrawStarterStep(float px, float py, float pw, float ph)
+        {
+            float cx = px + 63f;
+            float cy = py + 44f;
+            float fieldW = pw - 125f;
+
+            GUI.Label(new Rect(px, cy, pw, 50f), "첫 파트너 선택", subtitleStyle);
+            cy += 63f;
+
+            int count = InsectGame.Data.StarterInsectCatalog.Count;
+            float gap = 14f;
+            float cardW = (fieldW - (count - 1) * gap) / count;
+
+            for (int i = 0; i < count; i++)
+            {
+                InsectGame.Data.StarterInsectCatalog.Choice c = InsectGame.Data.StarterInsectCatalog.Get(i);
+                Rect card = new Rect(cx + i * (cardW + gap), cy, cardW, StarterCardHeight);
+
+                GUIStyle style = (i == selectedStarter) ? radioSelectedStyle : radioStyle;
+                if (GUI.Button(card, GUIContent.none, style))
+                {
+                    selectedStarter = i;
+                }
+
+                // 이름과 설명은 버튼 위에 따로 그린다 — 버튼 라벨 하나로는 두 줄 서식을 못 준다.
+                UIHelper.LabelFit(new Rect(card.x + 12f, card.y + 18f, card.width - 24f, 40f),
+                    c.DisplayName, subtitleStyle);
+                UIHelper.LabelFit(new Rect(card.x + 12f, card.y + 74f, card.width - 24f, StarterCardHeight - 92f),
+                    c.Blurb, labelStyle);
+            }
+            cy += StarterCardHeight + 24f;
+
+            float backW = fieldW * 0.32f;
+            if (GUI.Button(new Rect(cx, cy, backW, 58f), "◀ 뒤로", btnGrayStyle))
+            {
+                createStep = CreateStep.Customize;
+            }
+            if (GUI.Button(new Rect(cx + backW + 12f, cy, fieldW - backW - 12f, 58f), "모험 시작!", btnGreenStyle))
             {
                 SaveCharacterCreation();
                 ApplyCharacterOutfitPreset();
+                InsectGame.Data.StarterInsectCatalog.SaveChoice(
+                    InsectGame.Data.StarterInsectCatalog.Get(selectedStarter).InsectId);
+                PlayerPrefs.Save();
+                ClearPreviewOverride();
                 OnGameReady();
             }
         }
 
-        private int DrawRadioRow(float x, float y, float totalW, string[] labels, int selected)
+        // 라디오 라벨은 static으로 둔다 — OnGUI에서 매 프레임 배열을 새로 만들지 않기 위해서다.
+        private static readonly string[] GenderLabels = { "남자", "여자" };
+        private static readonly string[] SkinLabels = { "밝은", "보통", "어두운", "진한" };
+        private static readonly string[] HairStyleLabels = { "짧은", "중간", "긴", "올림" };
+        private static readonly string[] HairColorLabels = { "검정", "갈색", "금발", "빨강", "보라", "파랑" };
+        private static readonly string[] FaceLabels = { "미소", "활짝", "차분", "무표정" };
+
+        /// <summary>라벨 + 라디오를 한 줄에. 세로로 나누면 행마다 35px가 더 든다.</summary>
+        private int DrawLabeledRadio(float x, float y, float totalW, float labelW, float rowH,
+            string label, string[] options, int selected)
         {
+            GUI.Label(new Rect(x, y + (rowH - 30f) * 0.5f, labelW, 30f), label, sectionLabelStyle);
+            return DrawRadioRow(x + labelW, y, totalW - labelW, options, selected, rowH);
+        }
+
+        // ── 3D 라이브 프리뷰 ──
+
+        /// <summary>
+        /// 지금 고른 외형·의상 그대로의 3D 캐릭터.
+        ///
+        /// <b>여기서 <c>Camera.Render</c>를 부르지 않는다</b> — 렌더러의 <c>Update</c>가 그린다.
+        /// OnGUI 도중 카메라를 렌더하면 IMGUI가 깨진다(<c>CharacterOutfitUI</c>와 같은 규약).
+        /// 첫 프레임은 아직 그린 게 없어 <c>null</c>이 오므로 2D 초상화로 물러난다 —
+        /// 렌더러 배선이 실패한 경우의 안전망도 겸한다.
+        /// </summary>
+        private void DrawLivePreview(float x, float y, float w, float h)
+        {
+            Rect box = new Rect(x, y, w, h);
+
+            if (modelPreview != null)
+            {
+                modelPreview.SetAppearanceOverride(new InsectGame.Core.AppearanceSpec
+                {
+                    gender = selectedGender,
+                    hairStyle = selectedHairStyle,
+                    hairColor = selectedHairColor,
+                    faceType = selectedFaceType,
+                    skinColor = selectedSkinColor,
+                });
+
+                previewLoadout.Clear();
+                string[] items = InsectGame.Core.CharacterPresetLibrary.Get(selectedOutfit).OutfitItemIds;
+                InsectGame.Core.CharacterOutfitManager mgr = InsectGame.Core.CharacterOutfitManager.Instance;
+                if (items != null && mgr != null)
+                {
+                    for (int i = 0; i < items.Length; i++)
+                    {
+                        InsectGame.Core.OutfitItem item = mgr.FindItem(items[i]);
+                        if (item != null) previewLoadout.Set(item.slot, items[i]);
+                    }
+                }
+
+                HandlePreviewDrag(box);
+
+                Texture tex = modelPreview.GetPreview(previewLoadout, previewYaw);
+                if (tex != null)
+                {
+                    GUI.DrawTexture(box, tex, ScaleMode.ScaleToFit);
+                    return;
+                }
+            }
+
+            // 2D 폴백 — 새 7등신 포트레이트: 시각 높이 ≈ 212·s, 가로 ≈ 65·s. 박스에 90% 마진으로 fit.
+            float previewScale = Mathf.Min(w / 70f, h / 220f);
+            CharacterPortraitRenderer.DrawForCreation(x + w * 0.5f, y + h * 0.5f, previewScale,
+                selectedGender, selectedSkinColor, selectedHairColor, selectedHairStyle, selectedFaceType, selectedOutfit);
+        }
+
+        /// <summary>
+        /// 프리뷰를 드래그해 돌린다. 전체화면 모달이라 <c>FieldHudInput.RegisterBlockingRect</c>는
+        /// 필요 없다 — 그 규칙은 플레이어가 자유롭게 움직이는 동안 그려지는 필드 버튼이 대상이다.
+        /// </summary>
+        private void HandlePreviewDrag(Rect box)
+        {
+            Event e = Event.current;
+            if (e == null) return;
+
+            // 누른 곳이 프리뷰 밖이면 명시적으로 false로 되돌린다.
+            // "안이면 true"만 두면, 패널 밖에서 버튼을 뗐을 때 MouseUp이 오지 않아
+            // draggingPreview가 true로 굳는다 — 그 뒤로는 패널 어디를 끌어도 모델이 돌고
+            // e.Use()가 드래그 이벤트를 삼켜 다른 조작이 먹지 않는다.
+            if (e.type == EventType.MouseDown)
+            {
+                draggingPreview = box.Contains(e.mousePosition);
+            }
+            else if (e.type == EventType.MouseUp)
+            {
+                draggingPreview = false;
+            }
+            else if (e.type == EventType.MouseDrag && draggingPreview)
+            {
+                previewYaw += e.delta.x * 0.5f;
+                e.Use();
+            }
+        }
+
+        /// <param name="rowH">0이면 기존 기본 높이를 쓴다(다른 화면의 호출부가 그대로 돌게).</param>
+        private int DrawRadioRow(float x, float y, float totalW, string[] labels, int selected, float rowH = 0f)
+        {
+            float h = rowH > 0f ? rowH : (UIScale.IsMobileLayout ? 50f : 35f);
             float btnW = (totalW - (labels.Length - 1) * 8f) / labels.Length;
             for (int i = 0; i < labels.Length; i++)
             {
                 float bx = x + i * (btnW + 8f);
                 GUIStyle style = (i == selected) ? radioSelectedStyle : radioStyle;
-                if (GUI.Button(new Rect(bx, y, btnW, UIScale.IsMobileLayout ? 50f : 35f), labels[i], style))
+                if (GUI.Button(new Rect(bx, y, btnW, h), labels[i], style))
                 {
                     selected = i;
                 }
@@ -702,14 +1069,24 @@ namespace InsectGame.UI
             return selected;
         }
 
-        private void DrawCharacterPreview(float x, float y, float w, float h)
+        /// <summary>
+        /// 3D 프리뷰 렌더러를 받는다. Bootstrap이 렌더러를 만든 <b>뒤에</b> 불러야 한다 —
+        /// LoginUI는 그보다 먼저 생성되므로 생성자에서 찾을 수 없다.
+        /// </summary>
+        public void AutoWire(InsectGame.Core.CharacterModelPreviewRenderer preview)
         {
-            // 새 7등신 포트레이트: 캐릭터 시각 높이 ≈ 212·s, 가로 ≈ 65·s. 박스에 90% 마진으로 fit.
-            float previewScale = Mathf.Min(w / 70f, h / 220f);
-            float cx = x + w * 0.5f;
-            float cy = y + h * 0.5f;
-            CharacterPortraitRenderer.DrawForCreation(cx, cy, previewScale,
-                selectedGender, selectedSkinColor, selectedHairColor, selectedHairStyle, selectedFaceType, selectedOutfit);
+            modelPreview = preview;
+        }
+
+        /// <summary>
+        /// 생성 화면을 벗어날 때 프리뷰가 <b>저장 안 된 외형</b>을 계속 들고 있지 않게 한다.
+        /// 이걸 빠뜨리면 나중에 의상 화면이 생성 당시 만지던 얼굴을 보여준다.
+        /// </summary>
+        private void ClearPreviewOverride()
+        {
+            if (modelPreview == null) return;
+            modelPreview.SetAppearanceOverride(null);
+            modelPreview.InvalidatePreview();
         }
 
         // ── 이벤트 핸들러 ──
@@ -754,7 +1131,7 @@ namespace InsectGame.UI
             {
                 // 새 유저이므로 캐릭터 생성으로
                 TutorialQuestManager.Instance?.ResetForNewAccount();
-                phase = LoginPhase.CharacterCreate;
+                EnterCharacterCreate();
             }
             else
             {
@@ -786,7 +1163,7 @@ namespace InsectGame.UI
                 // 새 유저 -> 캐릭터 생성
                 if (CloudSaveManager.Instance != null && CloudSaveManager.Instance.LastLoadWasNotFound)
                     TutorialQuestManager.Instance?.ResetForNewAccount();
-                phase = LoginPhase.CharacterCreate;
+                EnterCharacterCreate();
             }
         }
 
@@ -826,7 +1203,23 @@ namespace InsectGame.UI
                 return;
             }
 
+            EnterCharacterCreate();
+        }
+
+        /// <summary>
+        /// 생성 화면에 들어갈 때는 <b>항상 1단계부터</b>다. 리셋을 빠뜨리면 로그아웃 후 다시
+        /// 만들 때 지난번 세부 조정 화면이 먼저 뜬다.
+        /// 기본 프리셋의 외형도 함께 끌어와 첫 프리뷰가 빈 기본값이 아니게 한다.
+        /// </summary>
+        private void EnterCharacterCreate()
+        {
             phase = LoginPhase.CharacterCreate;
+            createStep = CreateStep.Preset;
+            previewYaw = InsectGame.Core.CharacterModelPreviewRenderer.FrontYaw;
+            // 재진입(인증 실패 후 재로그인 등)에서 지난 선택이 남지 않게 함께 되돌린다.
+            selectedStarter = 0;
+            draggingPreview = false;
+            ApplyPreset(selectedOutfit);
         }
 
         // ── 캐릭터 데이터 저장 ──
@@ -848,40 +1241,18 @@ namespace InsectGame.UI
 
         // ── 의상 프리셋 적용 ──
 
+        /// <summary>
+        /// 고른 프리셋의 의상을 실제로 입힌다. 프리셋 정의는
+        /// <see cref="CharacterPresetLibrary"/>가 단일 출처다.
+        /// </summary>
         private void ApplyCharacterOutfitPreset()
         {
-            if (CharacterOutfitManager.Instance == null) return;
+            CharacterOutfitManager mgr = CharacterOutfitManager.Instance;
+            if (mgr == null) return;
 
-            switch (selectedOutfit)
-            {
-                case 0: // 탐험가
-                    CharacterOutfitManager.Instance.Equip("hat_cap");
-                    CharacterOutfitManager.Instance.Equip("top_shirt");
-                    CharacterOutfitManager.Instance.Equip("outer_jacket");
-                    CharacterOutfitManager.Instance.Equip("bot_pants");
-                    CharacterOutfitManager.Instance.Equip("shoe_boots");
-                    CharacterOutfitManager.Instance.Equip("bag_basic");
-                    CharacterOutfitManager.Instance.Equip("tool_net");
-                    break;
-                case 1: // 연구원
-                    CharacterOutfitManager.Instance.Equip("hat_none");
-                    CharacterOutfitManager.Instance.Equip("top_shirt");
-                    CharacterOutfitManager.Instance.Equip("outer_labcoat");
-                    CharacterOutfitManager.Instance.Equip("bot_pants");
-                    CharacterOutfitManager.Instance.Equip("shoe_sneakers");
-                    CharacterOutfitManager.Instance.Equip("bag_science");
-                    CharacterOutfitManager.Instance.Equip("tool_magnify");
-                    break;
-                case 2: // 자유
-                    CharacterOutfitManager.Instance.Equip("hat_none");
-                    CharacterOutfitManager.Instance.Equip("top_polo");
-                    CharacterOutfitManager.Instance.Equip("outer_none");
-                    CharacterOutfitManager.Instance.Equip("bot_shorts");
-                    CharacterOutfitManager.Instance.Equip("shoe_sandals");
-                    CharacterOutfitManager.Instance.Equip("bag_none");
-                    CharacterOutfitManager.Instance.Equip("tool_none");
-                    break;
-            }
+            string[] items = CharacterPresetLibrary.Get(selectedOutfit).OutfitItemIds;
+            if (items == null) return;
+            for (int i = 0; i < items.Length; i++) mgr.Equip(items[i]);
         }
 
         // ── 게임 시작 ──

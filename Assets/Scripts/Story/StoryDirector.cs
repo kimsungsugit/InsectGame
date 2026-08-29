@@ -712,7 +712,7 @@ namespace InsectGame.Story
             }
 
             MarkSeen(beatId);
-            GrantReward(beat.onComplete);
+            GrantReward(beat.onComplete, beatId);
             if (pendingBeatId == beatId) pendingBeatId = null;
 
             Save();
@@ -823,7 +823,11 @@ namespace InsectGame.Story
         }
 
         // 보상 지급 — TutorialQuestManager.CompleteQuest 패턴 동일(null 시 경고 후 계속).
-        private void GrantReward(StoryReward reward)
+        /// <param name="beatId">
+        /// 어느 비트의 보상인가. 첫 파트너 곤충만 플레이어 선택으로 바꾸므로 그 판정에 쓴다 —
+        /// 호출부가 하나뿐이고 거기 beat이 있어서 값을 그냥 넘겨받는다.
+        /// </param>
+        private void GrantReward(StoryReward reward, string beatId)
         {
             if (reward == null) return;
 
@@ -847,9 +851,17 @@ namespace InsectGame.Story
 
             if (!string.IsNullOrEmpty(reward.rewardInsectId))
             {
+                // 첫 파트너만 플레이어가 고른 종으로 바꾼다. **beatId로 게이트한다** —
+                // 값 비교(rewardInsectId == "rhinoceros_beetle")로 하면 나중에 장수풍뎅이를 주는
+                // 비트를 하나 더 저작했을 때 그것까지 조용히 하이재킹된다.
+                // (지금 rewardInsectId가 채워진 비트는 ch1_intro·ch6_secret·fin_seal 셋이다.)
+                string insectId = beatId == StarterInsectCatalog.StarterBeatId
+                    ? StarterInsectCatalog.ResolveChoice(reward.rewardInsectId)
+                    : reward.rewardInsectId;
+
                 if (insectCollection != null)
                 {
-                    insectCollection.AddCapturedInsect(reward.rewardInsectId, Mathf.Max(1, reward.rewardInsectLevel));
+                    insectCollection.AddCapturedInsect(insectId, Mathf.Max(1, reward.rewardInsectLevel));
 
                     // 도감 등록은 지급과 한 쌍이다(`TutorialQuestManager`와 같은 형태). 빠뜨리면
                     // 준 곤충이 도감에 없어 100% 완주가 막히는데, **여기선 자기 발등도 찍는다** —
@@ -858,11 +870,11 @@ namespace InsectGame.Story
                     // 휴면 상태지만, 첫 곤충 보상 비트를 저작하는 순간 발현된다.
                     if (dexController != null)
                     {
-                        dexController.RegisterEncounter(reward.rewardInsectId);
-                        dexController.RegisterCapture(reward.rewardInsectId);
+                        dexController.RegisterEncounter(insectId);
+                        dexController.RegisterCapture(insectId);
                     }
                 }
-                else Debug.LogWarning($"[Story] insectCollection null — 곤충 보상 손실 {reward.rewardInsectId}");
+                else Debug.LogWarning($"[Story] insectCollection null — 곤충 보상 손실 {insectId}");
             }
 
             // unlockQuestId: 스토리→퀘스트 역주입은 설계상 배제(단방향 관찰). 여기서 처리하지 않는다.

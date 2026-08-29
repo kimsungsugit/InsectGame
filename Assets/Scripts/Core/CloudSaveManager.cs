@@ -425,6 +425,8 @@ namespace InsectGame.Core
                 // 미수집이라 다른 기기 접속 시 외형(피부/머리/표정/성별) 전부 초기화됐음.
                 charCreated = PlayerPrefs.GetInt(SaveScope.PrefsKey("InsectGame.Character.Created"), 0),
                 charName = PlayerPrefs.GetString(SaveScope.PrefsKey("InsectGame.Character.Name"), ""),
+                charStarter = PlayerPrefs.GetString(
+                    SaveScope.PrefsKey(InsectGame.Data.StarterInsectCatalog.PrefsKeyBase), ""),
                 charSkin = PlayerPrefs.GetInt(SaveScope.PrefsKey("InsectGame.Character.SkinColor"), 0),
                 charHair = PlayerPrefs.GetInt(SaveScope.PrefsKey("InsectGame.Character.HairStyle"), 0),
                 charGender = PlayerPrefs.GetInt(SaveScope.PrefsKey("InsectGame.Character.Gender"), 0),
@@ -524,6 +526,9 @@ namespace InsectGame.Core
             // 캐릭터 외형 — 옛 클라우드 문서엔 없을 수 있어 sentinel(-1)이면 로컬 유지(초기화 방지).
             if (data.charCreated == 1) PlayerPrefs.SetInt(SaveScope.PrefsKey("InsectGame.Character.Created"), 1);
             if (!string.IsNullOrEmpty(data.charName)) PlayerPrefs.SetString(SaveScope.PrefsKey("InsectGame.Character.Name"), data.charName);
+            // 빈 값이면 로컬 유지 — 이 필드가 없던 시절의 문서를 복원해도 선택이 안 지워진다.
+            if (!string.IsNullOrEmpty(data.charStarter))
+                PlayerPrefs.SetString(SaveScope.PrefsKey(InsectGame.Data.StarterInsectCatalog.PrefsKeyBase), data.charStarter);
             if (data.charSkin >= 0) PlayerPrefs.SetInt(SaveScope.PrefsKey("InsectGame.Character.SkinColor"), data.charSkin);
             if (data.charHair >= 0) PlayerPrefs.SetInt(SaveScope.PrefsKey("InsectGame.Character.HairStyle"), data.charHair);
             if (data.charGender >= 0) PlayerPrefs.SetInt(SaveScope.PrefsKey("InsectGame.Character.Gender"), data.charGender);
@@ -667,6 +672,7 @@ namespace InsectGame.Core
             sb.Append(","); AppendStringField(sb, "storyProgress", data.storyProgress);
             sb.Append(","); AppendIntField(sb, "charCreated", data.charCreated);
             sb.Append(","); AppendStringField(sb, "charName", data.charName);
+            sb.Append(","); AppendStringField(sb, "charStarter", data.charStarter);
             sb.Append(","); AppendIntField(sb, "charSkin", data.charSkin);
             sb.Append(","); AppendIntField(sb, "charHair", data.charHair);
             sb.Append(","); AppendIntField(sb, "charGender", data.charGender);
@@ -714,6 +720,7 @@ namespace InsectGame.Core
             // 캐릭터 외형 — 옛 문서엔 없을 수 있어 sentinel(-1)로 받아 ApplySaveData에서 로컬 보존.
             data.charCreated = ExtractIntValueOrDefault(json, "charCreated", 0);
             data.charName = ExtractStringValue(json, "charName");
+            data.charStarter = ExtractStringValue(json, "charStarter");
             data.charSkin = ExtractIntValueOrDefault(json, "charSkin", -1);
             data.charHair = ExtractIntValueOrDefault(json, "charHair", -1);
             data.charGender = ExtractIntValueOrDefault(json, "charGender", -1);
@@ -887,6 +894,12 @@ namespace InsectGame.Core
         // 캐릭터 외형 — int는 -1 sentinel(옛 클라우드 문서 누락 시 로컬 유지), charCreated만 0 기본.
         public int charCreated;
         public string charName;
+        /// <summary>
+        /// 첫 파트너 곤충 선택. <b>sentinel이 ""</b>다(int 필드의 -1과 대칭) —
+        /// 빈 값이면 로컬을 덮지 않으므로, 이 필드를 모르는 옛 문서에서 복원해도
+        /// 선택이 날아가지 않는다.
+        /// </summary>
+        public string charStarter = "";
         public int charSkin = -1;
         public int charHair = -1;
         public int charGender = -1;

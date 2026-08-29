@@ -189,26 +189,45 @@ namespace InsectGame.Tests
         [Test]
         public void AppearanceSpec_Hash_EqualSpecsAreEqual()
         {
-            AppearanceSpec a = new AppearanceSpec { gender = 1, hairStyle = 2, hairColor = 3, faceType = 4 };
-            AppearanceSpec b = new AppearanceSpec { gender = 1, hairStyle = 2, hairColor = 3, faceType = 4 };
+            AppearanceSpec a = new AppearanceSpec { gender = 1, hairStyle = 2, hairColor = 3, faceType = 4, skinColor = 2 };
+            AppearanceSpec b = new AppearanceSpec { gender = 1, hairStyle = 2, hairColor = 3, faceType = 4, skinColor = 2 };
 
             Assert.AreEqual(a.Hash(), b.Hash());
         }
 
+        /// <summary>
+        /// 해시가 한 필드라도 놓치면 <c>EnsureMannequin</c>이 재생성을 건너뛰어 마네킹이 옛 외형으로
+        /// 남는다 — 그 화면에서는 "고른 게 반영 안 됨"으로 보인다. 필드를 늘릴 때마다 여기도 늘린다.
+        /// </summary>
         [Test]
         public void AppearanceSpec_Hash_EachFieldMatters()
         {
-            AppearanceSpec baseline = new AppearanceSpec { gender = 1, hairStyle = 2, hairColor = 3, faceType = 4 };
+            AppearanceSpec baseline = new AppearanceSpec { gender = 1, hairStyle = 2, hairColor = 3, faceType = 4, skinColor = 2 };
 
             AppearanceSpec g = baseline; g.gender = 0;
             AppearanceSpec hs = baseline; hs.hairStyle = 5;
             AppearanceSpec hc = baseline; hc.hairColor = 5;
             AppearanceSpec ft = baseline; ft.faceType = 5;
+            AppearanceSpec sk = baseline; sk.skinColor = 0;
 
             Assert.AreNotEqual(baseline.Hash(), g.Hash(), "성별");
             Assert.AreNotEqual(baseline.Hash(), hs.Hash(), "헤어스타일");
             Assert.AreNotEqual(baseline.Hash(), hc.Hash(), "헤어색");
             Assert.AreNotEqual(baseline.Hash(), ft.Hash(), "얼굴형");
+            Assert.AreNotEqual(baseline.Hash(), sk.Hash(), "피부색");
+        }
+
+        /// <summary>
+        /// 외형이 자기 피부색·머리색을 직접 답할 수 있어야 한다 — 옛 구조에서는 빌더가 그 색을
+        /// 하드코딩해서 <c>SkinColor</c> 선택이 3D에 전혀 반영되지 않았다.
+        /// </summary>
+        [Test]
+        public void AppearanceSpec_Tones_FollowPaletteIndices()
+        {
+            AppearanceSpec spec = new AppearanceSpec { skinColor = 3, hairColor = 2 };
+
+            Assert.AreEqual(CharacterPalette.Skin(3), spec.SkinTone);
+            Assert.AreEqual(CharacterPalette.Hair(2), spec.HairTone);
         }
     }
 }

@@ -133,7 +133,7 @@ namespace InsectGame.Core
                     Color.white, Color.white, 0, true, "",
                     new OutfitStatBonus { atkBonus = 0.01f }),
                 MakeItem("top_polo", "폴로 셔츠", "시원한 하늘색 폴로", OutfitSlot.Top,
-                    new Color(0.53f, 0.81f, 0.98f), Color.white, 180, false, "",
+                    new Color(0.53f, 0.81f, 0.98f), Color.white, 180, true, "",
                     new OutfitStatBonus { atkBonus = 0.01f, defBonus = 0.01f }),
                 MakeItem("top_vest", "탐험 조끼", "주머니가 많은 조끼", OutfitSlot.Top,
                     new Color(0.6f, 0.55f, 0.4f), Color.white, 250, false, "",
@@ -150,7 +150,7 @@ namespace InsectGame.Core
                     new Color(0.25f, 0.25f, 0.28f), Color.white, 0, true, "",
                     new OutfitStatBonus { defBonus = 0.01f }),
                 MakeItem("bot_shorts", "반바지", "활동적인 반바지", OutfitSlot.Bottom,
-                    new Color(0.87f, 0.82f, 0.7f), Color.white, 120, false, "",
+                    new Color(0.87f, 0.82f, 0.7f), Color.white, 120, true, "",
                     new OutfitStatBonus { moveSpeedBonus = 0.02f }),
                 MakeItem("bot_cargo", "카고 팬츠", "수납이 많은 카고 팬츠", OutfitSlot.Bottom,
                     new Color(0.6f, 0.55f, 0.4f), Color.white, 250, false, "",
@@ -183,10 +183,10 @@ namespace InsectGame.Core
                     new Color(0.35f, 0.22f, 0.1f), Color.white, 0, true, "",
                     new OutfitStatBonus { moveSpeedBonus = 0.03f }),
                 MakeItem("shoe_sneakers", "운동화", "가벼운 운동화", OutfitSlot.Shoes,
-                    Color.white, new Color(0.9f, 0.2f, 0.2f), 150, false, "",
+                    Color.white, new Color(0.9f, 0.2f, 0.2f), 150, true, "",
                     new OutfitStatBonus { moveSpeedBonus = 0.05f }),
                 MakeItem("shoe_sandals", "샌들", "편안한 샌들", OutfitSlot.Shoes,
-                    new Color(0.5f, 0.35f, 0.2f), Color.white, 90, false, "",
+                    new Color(0.5f, 0.35f, 0.2f), Color.white, 90, true, "",
                     new OutfitStatBonus { moveSpeedBonus = 0.03f }),
                 MakeItem("shoe_waders", "장화", "물가 탐험용 장화", OutfitSlot.Shoes,
                     new Color(0.2f, 0.6f, 0.2f), Color.white, 0, false, "region_pond",
@@ -216,7 +216,7 @@ namespace InsectGame.Core
                     new Color(1.0f, 0.84f, 0.0f), new Color(1.0f, 0.9f, 0.4f), 1000, false, "",
                     new OutfitStatBonus { captureChanceBonus = 0.02f, rareSpawnBonus = 0.01f }),
                 MakeItem("tool_magnify", "돋보기", "관찰용 돋보기", OutfitSlot.Tool,
-                    new Color(0.75f, 0.75f, 0.8f), new Color(0.6f, 0.85f, 1.0f), 300, false, "",
+                    new Color(0.75f, 0.75f, 0.8f), new Color(0.6f, 0.85f, 1.0f), 300, true, "",
                     new OutfitStatBonus { expMultiplier = 0.02f }),
                 MakeItem("tool_camera", "관찰 카메라", "곤충 촬영용 카메라", OutfitSlot.Tool,
                     new Color(0.15f, 0.15f, 0.15f), new Color(0.3f, 0.3f, 0.3f), 600, false, "",
@@ -623,7 +623,11 @@ namespace InsectGame.Core
             Color defaultShirt = new Color(0.98f, 0.96f, 0.92f);
             Color defaultPants = new Color(0.25f, 0.25f, 0.28f);
             Color defaultBoot = new Color(0.35f, 0.22f, 0.1f);
-            Color skinColor = new Color(0.92f, 0.78f, 0.62f);
+            // outer_none일 때 팔로 되돌릴 피부색. 소유자는 빌더다 — 여기 상수를 두면 생성 화면에서
+            // 어두운 피부를 골랐을 때 몸은 맞는데 팔만 밝은 살색으로 남는다. 마네킹도 자기
+            // AppearanceSpec을 들고 있어 프리뷰까지 자동으로 맞는다.
+            PlayerVisualBuilder visual = player.GetComponent<PlayerVisualBuilder>();
+            Color skinColor = visual != null ? visual.SkinTone : CharacterPalette.DefaultSkin;
 
             // 모자 — 색을 먼저 적용해 Cap/CapBrim을 되살린 뒤, 레시피가 있으면 그때 다시 숨긴다.
             // 순서가 뒤집히면 왕관 → 탐험가 캡으로 갈아입을 때 Cap이 숨겨진 채 남아 맨머리가 된다.
@@ -688,6 +692,18 @@ namespace InsectGame.Core
             // 악세서리 — 전량 레시피다. 옛 PlayerVisualBuilder.ApplyAccessory는 미리 만든 4노드 중
             // 하나만 켜는 방식이라 15종 중 8종(날개·오라·후광·스카프 등)이 전부 가슴팍 큐브였다.
             ApplyShapeRecipe(player, OutfitSlot.Accessory, Resolve(loadout, OutfitSlot.Accessory));
+        }
+
+        /// <summary>
+        /// itemId로 카탈로그 항목을 찾는다. 없으면 null.
+        ///
+        /// 소유 여부와 무관하다 — 캐릭터 생성 화면의 프리뷰가 "이 프리셋은 어느 슬롯에 뭘 입히나"를
+        /// 알아내는 데 쓴다. 실제 장착은 <see cref="Equip"/>이 소유를 검사한다.
+        /// </summary>
+        public OutfitItem FindItem(string itemId)
+        {
+            if (string.IsNullOrEmpty(itemId)) return null;
+            return outfitLookup.TryGetValue(itemId, out OutfitItem item) ? item : null;
         }
 
         /// <summary>로드아웃이 있으면 그쪽 itemId를, 없으면 실제 장착을 쓴다.</summary>

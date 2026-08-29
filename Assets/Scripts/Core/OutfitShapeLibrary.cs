@@ -104,7 +104,23 @@ namespace InsectGame.Core
                 : SpawnPrefix + slot;
         }
 
-        private static readonly Color SkinColor = new Color(0.92f, 0.78f, 0.62f);
+        /// <summary>
+        /// <see cref="PartColorRole.Skin"/> 파츠가 쓰는 색. <b>지금 이 role을 쓰는 레시피는 없다</b>
+        /// (전부 Primary/Secondary/Fixed 계열) — 그래서 외형별 피부색을 여기까지 끌고 오지 않고
+        /// 팔레트 기본값을 가리키기만 한다. 값이 갈라지는 것만 막는 게 목적이다.
+        /// role을 실제로 쓰는 레시피가 생기면 그때 <c>Apply</c>가 피부색을 인자로 받아야 한다.
+        /// </summary>
+        private static readonly Color SkinColor = CharacterPalette.DefaultSkin;
+
+        /// <summary>
+        /// 의상 spawn 파츠(왕관·망토·날개 등)가 그림자를 드리우는가.
+        ///
+        /// 오래 <c>Off</c>였다 — 캐릭터 본체는 그림자를 드리우는데 덧붙인 의상만 안 드리워서
+        /// 큰 파츠일수록 붕 떠 보였다. 켜는 비용은 캐릭터당 그림자 패스 렌더러 0~6개다.
+        /// 모바일에서 문제가 되면 이 상수 하나만 되돌리면 된다.
+        /// </summary>
+        private const UnityEngine.Rendering.ShadowCastingMode PartShadowMode =
+            UnityEngine.Rendering.ShadowCastingMode.On;
 
         // ── 조회 ──────────────────────────────────────────────
 
@@ -291,7 +307,7 @@ namespace InsectGame.Core
                 go.transform.SetParent(container, false);
                 go.AddComponent<MeshFilter>();
                 MeshRenderer r = go.AddComponent<MeshRenderer>();
-                r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                r.shadowCastingMode = PartShadowMode;
                 r.sharedMaterial = CreatePartMaterial(root, c);
                 t = go.transform;
             }

@@ -44,6 +44,10 @@ tools:
 - `Assets/Scripts/Core/InsectSizeCalculator.cs` - 개체 크기·무게 계산 ※기준값·배율 튜닝은 game-designer
 - `Assets/Scripts/Core/GameConstants.cs` - 전역 상수
 - `Assets/Scripts/Core/CharacterOutfitData.cs` - 의상 데이터 모델
+- `Assets/Scripts/Data/StarterInsectCatalog.cs` - 첫 파트너 곤충 선택지 + PlayerPrefs 오버라이드 ※ResolveChoice의 화이트리스트는 조작 방어다(빼면 임의 곤충을 1레벨에 받는다). 지급은 여전히 ch1_intro 비트가 한다
+- `Assets/Scripts/Data/CharacterAppearanceConfig.cs` - 캐릭터 외형 SO(색 팔레트·프리셋). 선택적 오버라이드이며 에셋이 없는 게 정상 경로 — 코드 폴백을 반드시 유지
+- `Assets/Scripts/Core/CharacterPresetLibrary.cs` - 생성 화면 프리셋의 단일 출처(코드 기본값 + SO 오버라이드) ※인덱스는 Character.OutfitPreset으로 저장되므로 순서 불변
+- `Assets/Scripts/Core/AppearanceSpec.cs` - 외형(성별·머리·얼굴·피부) 스펙 + PlayerPrefs 로드 + 프리뷰 캐시 해시 ※필드를 늘리면 Hash()도 함께. 색값 자체는 visual-dev의 CharacterPalette
 - `Assets/Scripts/Core/SaveScope.cs` - 계정 스코핑 + 세이브 마이그레이션 버전. 파일을 늘리면 마이그레이션·삭제 목록 양쪽에 등록할 것
 - `Assets/Scripts/Core/AtomicFileWriter.cs` - 세이브 원자적 쓰기(temp→replace). 중간 크래시로 반쪽 JSON이 남지 않게 한다
 - `Assets/Scripts/Core/ICloudReloadable.cs` - 클라우드 복원 후 재로드 계약
@@ -51,6 +55,8 @@ tools:
 - `Assets/Scripts/Data/InsectExpansion2Definitions.cs` - 2막 곤충 66종 ID/스탯 정의 ※리전 풀 배정·수치는 game-designer
 
 ### Editor (데이터 애셋 생성)
+- `Assets/Editor/StarterInsectProbe.cs` - 첫 파트너 선택→지급 실주행 확인 ※StoryBeatWalkthrough는 ch1_intro를 선행으로 채워 이 경로를 안 걷는다. 보상은 대사창을 **닫을 때** 난다
+- `Assets/Editor/CharacterAppearanceConfigBuilder.cs` - `Resources/CharacterAppearanceConfig.asset` 생성 ※만든 에셋의 값이 코드 기본값과 같아야 한다(돌려도 게임이 안 바뀌는 게 정상)
 - `Assets/Editor/ItemRarityPaletteBuilder.cs` - `Resources/ItemRarityPalette.asset` 재현 가능 생성 ※색·그라디언트는 visual-dev
 
 ### Dex 모듈 (전체)

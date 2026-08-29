@@ -488,6 +488,40 @@ def evaluate_signals() -> list:
         "FAIL" if problems else "PASS"
     ))
 
+    # 11. 스타터 곤충 3종 — 실재 + 등급 일치
+    # 이 검사가 없었으면 잡지 못했을 실수가 실제로 있었다: `dragonfly_lake`를 Rare로 알고
+    # 후보에 넣었는데, 활성 DB(`CreateStableInsect`)에서는 **Uncommon**이었다.
+    # 옛 `CreateInsect` 목록에만 Rare로 적혀 있어 같은 id의 등급이 두 곳에서 갈린다.
+    # 등급이 섞이면 `basePower = 8 + rarity*5`라 어느 카드를 고르느냐로 시작 전투력이 달라지는데,
+    # 화면에는 아무 표시도 없어 플레이어는 알 방법이 없다.
+    starter_src = _read_clean("Assets/Scripts/Data/StarterInsectCatalog.cs")
+    starter_ids = re.findall(r'new Choice\(\s*(?:DefaultId|"([^"]+)")', starter_src)
+    # DefaultId로 적힌 첫 항목은 상수를 따라간다.
+    default_id = re.search(r'DefaultId\s*=\s*"([^"]+)"', starter_src)
+    starter_ids = [i if i else (default_id.group(1) if default_id else "") for i in starter_ids]
+    starter_ids = [i for i in starter_ids if i]
+
+    starter_problems = []
+    starter_rarities = set()
+    if not starter_ids:
+        starter_problems.append("추출 실패 — StarterInsectCatalog의 Choice 배열 형식이 바뀌었나")
+    for iid in starter_ids:
+        actual = known_rarity.get(iid)
+        if actual is None:
+            starter_problems.append(f"{iid}(DB에 없음 — 지급 시 LogWarning만 뜨고 곤충이 안 들어온다)")
+        else:
+            starter_rarities.add(actual)
+    if len(starter_rarities) > 1:
+        starter_problems.append(f"등급이 섞임 {sorted(starter_rarities)} — 고르는 카드로 시작 전투력이 갈린다")
+
+    signals.append((
+        "스타터 곤충 실재 + 등급 일치",
+        "전부 존재 & 같은 등급",
+        f"{len(starter_problems)}건 ({starter_problems[:3]})" if starter_problems
+        else f"0건 ({len(starter_ids)}종 전부 {sorted(starter_rarities)[0] if starter_rarities else '?'})",
+        "FAIL" if starter_problems else "PASS"
+    ))
+
     return signals
 
 

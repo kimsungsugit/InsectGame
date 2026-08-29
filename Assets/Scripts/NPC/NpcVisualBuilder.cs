@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using InsectGame.Core;
 using UnityEngine;
 
 namespace InsectGame.NPC
@@ -63,6 +64,12 @@ namespace InsectGame.NPC
             new Color(0.4f, 0.4f, 0.45f),
         };
 
+        /// <summary>
+        /// NPC 피부 <b>다양성</b>용 4색. 플레이어의 <c>CharacterPalette.Skin</c>(생성 화면의
+        /// "밝은/보통/어두운/진한" 선택지)과는 성격이 다르므로 통합하지 않는다 — 인덱스를 그대로
+        /// 옮기면 스토리 NPC 9종의 고정 외형이 통째로 바뀐다(그건 이 작업의 목표가 아니다).
+        /// 첫 항이 플레이어의 옛 하드코딩 피부색과 같은 값인 건 우연이 아니라 복제의 흔적이다.
+        /// </summary>
         private static readonly Color[] SkinPalette =
         {
             new Color(0.92f, 0.78f, 0.62f),
@@ -206,20 +213,21 @@ namespace InsectGame.NPC
         {
             if (root == null) return;
 
-            Material topMat = MakeMaterial(a.top);
-            Material bottomMat = MakeMaterial(a.bottom);
-            Material skinMat = MakeMaterial(a.skin);
-            Material hairMat = MakeMaterial(a.hair);
-            Material shirtMat = MakeMaterial(Color.Lerp(a.top, Color.white, 0.45f));
-            Material shoesMat = MakeMaterial(new Color(0.2f, 0.12f, 0.06f));
+            Material topMat = MakeMaterial(a.top, SurfaceKind.Cloth);
+            Material bottomMat = MakeMaterial(a.bottom, SurfaceKind.Cloth);
+            Material skinMat = MakeMaterial(a.skin, SurfaceKind.Skin);
+            Material hairMat = MakeMaterial(a.hair, SurfaceKind.Hair);
+            Material shirtMat = MakeMaterial(Color.Lerp(a.top, Color.white, 0.45f), SurfaceKind.Cloth);
+            Material shoesMat = MakeMaterial(new Color(0.2f, 0.12f, 0.06f), SurfaceKind.Leather);
 
-            // ── 몸통 (Cube — 플레이어 치비 비례 이식, NpcWalkAnimator가 "Body"명으로 캐시) ──
-            MakePart(PrimitiveType.Cube, "Body", root,
-                new Vector3(0f, 0.77f, 0f), new Vector3(0.46f, 0.46f, 0.36f), topMat);
+            // ── 몸통 (둥근 상자 — 플레이어 치비 비례 이식, NpcWalkAnimator가 "Body"명으로 캐시) ──
+            MakeBoxPart("Body", root, new Vector3(0f, 0.77f, 0f),
+                new Vector3(0.46f, 0.46f, 0.36f), 0.085f, 3, topMat);
 
             // ── 셔츠 (앞면 패널) ──
-            MakePart(PrimitiveType.Cube, "Shirt", root,
-                new Vector3(0f, 0.83f, 0.14f), new Vector3(0.34f, 0.40f, 0.20f), shirtMat);
+            // 플레이어와 같은 이유로 좁혔다 — 넓으면 흰 판이 앞을 덮어 상의 색이 안 보인다.
+            MakeBoxPart("Shirt", root, new Vector3(0f, 0.83f, 0.10f),
+                new Vector3(0.24f, 0.36f, 0.20f), 0.05f, 2, shirtMat);
 
             // ── 머리 (HeadPivot 컨테이너 + Head 구) ──
             GameObject headPivot = new GameObject("HeadPivot");
@@ -227,19 +235,21 @@ namespace InsectGame.NPC
             headPivot.transform.localPosition = new Vector3(0f, 1.22f, 0.03f);
             headPivot.transform.localScale = Vector3.one * 0.60f;
 
-            MakePart(PrimitiveType.Sphere, "Head", headPivot.transform,
+            MakeMeshPart("Head", headPivot.transform, UnitSphere(10, 14),
                 Vector3.zero, new Vector3(0.70f, 0.68f, 0.68f), skinMat);
 
             // ── 눈 (흰자 + 동공) ──
-            Material eyeMat = MakeMaterial(Color.white);
-            Material pupilMat = MakeMaterial(new Color(0.12f, 0.08f, 0.05f));
-            MakePart(PrimitiveType.Sphere, "EyeL", headPivot.transform,
+            Material eyeMat = MakeMaterial(Color.white, SurfaceKind.Wet);
+            Material pupilMat = MakeMaterial(new Color(0.12f, 0.08f, 0.05f), SurfaceKind.Wet);
+            Mesh eyeMesh = UnitDisc(16);
+            Mesh pupilMesh = UnitDisc(12);
+            MakeMeshPart("EyeL", headPivot.transform, eyeMesh,
                 new Vector3(-0.12f, -0.03f, 0.32f), new Vector3(0.15f, 0.17f, 0.06f), eyeMat);
-            MakePart(PrimitiveType.Sphere, "EyeR", headPivot.transform,
+            MakeMeshPart("EyeR", headPivot.transform, eyeMesh,
                 new Vector3(0.12f, -0.03f, 0.32f), new Vector3(0.15f, 0.17f, 0.06f), eyeMat);
-            MakePart(PrimitiveType.Sphere, "PupilL", headPivot.transform,
+            MakeMeshPart("PupilL", headPivot.transform, pupilMesh,
                 new Vector3(-0.12f, -0.04f, 0.35f), new Vector3(0.09f, 0.11f, 0.02f), pupilMat);
-            MakePart(PrimitiveType.Sphere, "PupilR", headPivot.transform,
+            MakeMeshPart("PupilR", headPivot.transform, pupilMesh,
                 new Vector3(0.12f, -0.04f, 0.35f), new Vector3(0.09f, 0.11f, 0.02f), pupilMat);
 
             // ── 머리카락 (스타일 3종 단순 변주) ──
@@ -248,7 +258,7 @@ namespace InsectGame.NPC
             // ── 모자 ──
             if (a.hasHat)
             {
-                Material hatMat = MakeMaterial(a.hat);
+                Material hatMat = MakeMaterial(a.hat, SurfaceKind.Cloth);
                 MakePart(PrimitiveType.Cylinder, "Cap", headPivot.transform,
                     new Vector3(0f, 0.3f, -0.02f), new Vector3(0.30f, 0.12f, 0.30f), hatMat);
                 MakePart(PrimitiveType.Cube, "CapBrim", headPivot.transform,
@@ -256,16 +266,16 @@ namespace InsectGame.NPC
             }
 
             // ── 팔 ──
-            MakePart(PrimitiveType.Capsule, "ArmL", root,
+            Mesh armMesh = UnitCapsule(0.72f);
+            MakeMeshPart("ArmL", root, armMesh,
                 new Vector3(-0.29f, 0.78f, 0f), new Vector3(0.135f, 0.23f, 0.135f), topMat);
-            MakePart(PrimitiveType.Capsule, "ArmR", root,
+            MakeMeshPart("ArmR", root, armMesh,
                 new Vector3(0.29f, 0.78f, 0f), new Vector3(0.135f, 0.23f, 0.135f), topMat);
 
-            // ── 손 ──
-            MakePart(PrimitiveType.Sphere, "HandL", root,
-                new Vector3(-0.29f, 0.52f, 0f), new Vector3(0.115f, 0.115f, 0.115f), skinMat);
-            MakePart(PrimitiveType.Sphere, "HandR", root,
-                new Vector3(0.29f, 0.52f, 0f), new Vector3(0.115f, 0.115f, 0.115f), skinMat);
+            // ── 손 (미튼) ──
+            Vector3 handSize = new Vector3(0.105f, 0.135f, 0.095f);
+            MakeBoxPart("HandL", root, new Vector3(-0.29f, 0.52f, 0f), handSize, 0.042f, 2, skinMat);
+            MakeBoxPart("HandR", root, new Vector3(0.29f, 0.52f, 0f), handSize, 0.042f, 2, skinMat);
 
             // ── 다리 + 부츠 (LegPivot로 묶어 회전 시 발도 함께 — 플레이어와 동일 구조) ──
             BuildLeg(root, "L", -0.13f, bottomMat, shoesMat);
@@ -276,8 +286,8 @@ namespace InsectGame.NPC
             {
                 root.localScale = Vector3.one * 0.75f;
 
-                Material netHandleMat = MakeMaterial(new Color(0.6f, 0.4f, 0.2f));
-                Material netRingMat = MakeMaterial(new Color(0.95f, 0.92f, 0.88f));
+                Material netHandleMat = MakeMaterial(new Color(0.6f, 0.4f, 0.2f), SurfaceKind.Leather);
+                Material netRingMat = MakeMaterial(new Color(0.95f, 0.92f, 0.88f), SurfaceKind.Metal);
                 GameObject handle = MakePart(PrimitiveType.Cylinder, "NetHandle", root,
                     new Vector3(0.29f, 0.74f, 0.02f), new Vector3(0.04f, 0.40f, 0.04f), netHandleMat);
                 handle.transform.localRotation = Quaternion.Euler(20f, 0f, -15f);
@@ -298,7 +308,7 @@ namespace InsectGame.NPC
 
         /// <summary>
         /// Build가 생성한 인스턴스 머티리얼 정리 — NPC 컴포넌트 OnDestroy에서 호출.
-        /// (PlayerVisualBuilder.SafeDestroyMat 패턴의 NPC판: NPC 파괴 시점엔 sharedMaterial
+        /// (PlayerVisualBuilder.OnDestroy 패턴의 NPC판: NPC 파괴 시점엔 sharedMaterial
         /// 사용자가 함께 사라지므로 고유 sharedMaterial을 전부 Destroy해도 안전.)
         /// </summary>
         public static void CleanupMaterials(Transform root)
@@ -320,34 +330,73 @@ namespace InsectGame.NPC
             pivot.transform.SetParent(root, false);
             pivot.transform.localPosition = new Vector3(x, 0.48f, 0f);
 
-            MakePart(PrimitiveType.Capsule, $"Leg{side}", pivot.transform,
+            MakeMeshPart($"Leg{side}", pivot.transform, UnitCapsule(0.78f),
                 new Vector3(0f, -0.14f, 0f), new Vector3(0.20f, 0.20f, 0.20f), bottomMat);
-            MakePart(PrimitiveType.Cube, $"Boot{side}", pivot.transform,
-                new Vector3(0f, -0.36f, 0.07f), new Vector3(0.21f, 0.15f, 0.30f), shoesMat);
+            MakeBoxPart($"Boot{side}", pivot.transform, new Vector3(0f, -0.36f, 0.07f),
+                new Vector3(0.21f, 0.15f, 0.30f), 0.052f, 2, shoesMat);
         }
 
         private static void BuildHair(Transform headPivot, int style, Material hairMat)
         {
             // 공통: 정수리 덮개
-            MakePart(PrimitiveType.Sphere, "HairTop", headPivot,
+            MakeMeshPart("HairTop", headPivot, UnitSphere(8, 12),
                 new Vector3(0f, 0.22f, -0.02f), new Vector3(0.62f, 0.34f, 0.60f), hairMat);
 
             switch (style)
             {
                 case 1: // 중간머리 — 옆/뒤 볼륨 추가
-                    MakePart(PrimitiveType.Sphere, "HairSideL", headPivot,
+                    Mesh tuft = UnitSphere(6, 8);
+                    MakeMeshPart("HairSideL", headPivot, tuft,
                         new Vector3(-0.2f, 0.05f, -0.02f), new Vector3(0.12f, 0.2f, 0.35f), hairMat);
-                    MakePart(PrimitiveType.Sphere, "HairSideR", headPivot,
+                    MakeMeshPart("HairSideR", headPivot, tuft,
                         new Vector3(0.2f, 0.05f, -0.02f), new Vector3(0.12f, 0.2f, 0.35f), hairMat);
-                    MakePart(PrimitiveType.Sphere, "HairBack", headPivot,
+                    MakeMeshPart("HairBack", headPivot, tuft,
                         new Vector3(0f, 0.08f, -0.15f), new Vector3(0.45f, 0.28f, 0.2f), hairMat);
                     break;
                 case 2: // 올림머리 — 뒤통수 번(bun)
-                    MakePart(PrimitiveType.Sphere, "HairBun", headPivot,
+                    MakeMeshPart("HairBun", headPivot, UnitSphere(7, 10),
                         new Vector3(0f, 0.15f, -0.22f), new Vector3(0.22f, 0.22f, 0.22f), hairMat);
                     break;
                     // case 0: 짧은머리 — HairTop만
             }
+        }
+
+        // ── 프로시저럴 메시 헬퍼 (PlayerVisualBuilder와 같은 규약) ──
+        //
+        // 내장 프리미티브와 같은 단위 크기 메시를 쓰므로 기존 localPosition/localScale을
+        // 그대로 둔 채 메시만 갈아끼운다. 노드 이름은 NpcWalkAnimator가 문자열로 찾으므로 불변.
+
+        private static GameObject MakeMeshPart(string name, Transform parent, Mesh mesh,
+            Vector3 localPos, Vector3 localScale, Material mat)
+        {
+            GameObject go = ProcMeshLibrary.CreateNode(name, parent, mesh, mat, localPos);
+            go.transform.localScale = localScale;
+            return go;
+        }
+
+        /// <summary>크기를 메시에 구운 둥근 상자 — 스케일을 걸지 않는다(모서리 반경 왜곡 방지).</summary>
+        private static GameObject MakeBoxPart(string name, Transform parent, Vector3 localPos,
+            Vector3 size, float radius, int subdiv, Material mat)
+        {
+            Mesh mesh = ProcMeshLibrary.RoundedBox(size, radius, subdiv);
+            return ProcMeshLibrary.CreateNode(name, parent, mesh, mat, localPos);
+        }
+
+        private static Mesh UnitSphere(int rings, int segments)
+        {
+            return ProcMeshLibrary.LowSphere(0.5f, 0.5f, 0.5f, rings, segments);
+        }
+
+        private static Mesh UnitCapsule(float taper)
+        {
+            float rTop = 0.5f;
+            float rBottom = 0.5f * taper;
+            return ProcMeshLibrary.TaperedCapsule(rTop, rBottom, 2f - rTop - rBottom, 8, 10);
+        }
+
+        private static Mesh UnitDisc(int segments)
+        {
+            return ProcMeshLibrary.Disc(0.5f, 0.5f, 0.4f, segments);
         }
 
         private static GameObject MakePart(PrimitiveType type, string name, Transform parent,
@@ -366,8 +415,11 @@ namespace InsectGame.NPC
 
         private static bool shaderDiagLogged;
 
-        /// <summary>PlayerVisualBuilder.MakeMaterial 방식 복제 — Standard→URP→Unlit 폴백.</summary>
-        private static Material MakeMaterial(Color color)
+        /// <summary>
+        /// PlayerVisualBuilder.MakeMaterial 방식 복제 — Standard→URP→Unlit 폴백 + 부위별 PBR 재질.
+        /// 재질을 안 나누면 NPC가 플레이어와 나란히 섰을 때 혼자 무광 점토로 보인다.
+        /// </summary>
+        private static Material MakeMaterial(Color color, SurfaceKind kind)
         {
             Shader shader = Shader.Find("Standard");
             if (shader == null) shader = Shader.Find("Universal Render Pipeline/Lit");
@@ -385,6 +437,7 @@ namespace InsectGame.NPC
             Material mat = new Material(shader);
             mat.color = color;
             if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", color);
+            CharacterPalette.ApplySurface(mat, kind);
             return mat;
         }
     }
