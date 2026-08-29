@@ -498,6 +498,17 @@ namespace InsectGame.Core
             quickBar.AutoWire(socialPvpUi);
             quickBar.AutoWire(battleScreen, raidBattleUi, playerMov);
 
+            // 가방(IMGUI) — 보유 아이템을 보고 쓰는 화면. 퀵바 [I]가 유일한 진입점이다.
+            // uGUI PlayerItemInventoryGridUIController가 같은 일을 하도록 만들어져 있지만
+            // **저장소 어디에서도 그걸 열지 않아** 부스터·치료제가 영영 쓸 수 없었다.
+            // captureItemDefs를 함께 넘기는 이유: net_basic은 ItemDatabase에 없어서
+            // DB 조회만으로는 보유 중인데 목록에서 사라진다.
+            InsectGame.UI.InventoryUI inventoryScreen =
+                EnsureComponent<InsectGame.UI.InventoryUI>("UI/InventoryScreen");
+            inventoryScreen.AutoWire(itemInventory, itemDatabase, itemEffects);
+            inventoryScreen.AutoWire(captureItemDefs);
+            quickBar.AutoWire(inventoryScreen);
+
             InsectGame.UI.PlayerStatusHUD statusHud = EnsureComponent<InsectGame.UI.PlayerStatusHUD>("UI/PlayerStatusHUD");
             statusHud.AutoWire(progress, candyInventory, insectCollection, itemInventory, dex, battleTeam, regionMgr);
             statusHud.AutoWire(wallet);
@@ -626,7 +637,8 @@ namespace InsectGame.Core
                     EnsureComponent<InsectGame.UI.HospitalUI>("UI/Hospital");
                 hospitalUi.AutoWire(insectCollection, database, wallet, candyInventory);
                 worldInteract.AutoWire(hospitalUi);
-                inventoryUi.AutoWire(hospitalUi);   // 대상지정 치료 아이템 → 병원 선택기
+                inventoryUi.AutoWire(hospitalUi);   // 대상지정 치료 아이템 → 병원 선택기 (uGUI 잔존 경로)
+                inventoryScreen.AutoWire(hospitalUi);   // 가방에서 치료제 사용 → 병원 곤충 선택기
                 battleTeamUi.AutoWire(hospitalUi);  // 팀에 부상이 있으면 헤더 버튼으로 병원 이동
                 if (villageResult != null)
                 {

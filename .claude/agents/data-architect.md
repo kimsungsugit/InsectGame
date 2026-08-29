@@ -34,6 +34,7 @@ tools:
 ### Core 플레이어 데이터/세이브
 - `Assets/Scripts/Core/PlayerProgressSaveService.cs` - 로컬 세이브
 - `Assets/Scripts/Core/CloudSaveManager.cs` - Firestore 클라우드 (120초 자동)
+- `Assets/Scripts/Core/QuestSaveMerge.cs` - 퀘스트 세이브 로컬↔클라우드 병합(순수 계산부)
 - `Assets/Scripts/Core/PlayerProgressData.cs` - 진행도 데이터
 - `Assets/Scripts/Core/PlayerProgressController.cs` - 진행도 로직
 - `Assets/Scripts/Core/PlayerCandyInventory.cs` - 캔디

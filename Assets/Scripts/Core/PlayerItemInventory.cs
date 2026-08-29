@@ -103,6 +103,13 @@ namespace InsectGame.Core
             }
             Save(save);
             ItemsChanged?.Invoke(save);
+            // q_item("아이템 활용") 진행 — **소비가 성립한 이 지점이 단일 출처다.**
+            // 예전엔 ItemEffectManager.ActivateItem에 있었는데 그건 시간제 부스터만 지나간다:
+            // 채집망(CaptureChoiceUI)·치료제(HospitalUI)는 여기만 지나가고 저쪽을 안 거쳐
+            // **퀘스트 설명이 지목하는 "채집망"으로는 영영 진행되지 않았다**(예외도 경고도 없다).
+            // 소비 경로 4곳(가방·포획 버튼·포획 단축키·병원)이 전부 이 메서드를 통과한다 —
+            // 판매 등 소비가 아닌 호출자는 없다.
+            TutorialQuestManager.Instance?.NotifyItemUsed();
             return true;
         }
 

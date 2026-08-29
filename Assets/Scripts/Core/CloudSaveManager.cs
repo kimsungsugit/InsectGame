@@ -512,16 +512,25 @@ namespace InsectGame.Core
             PlayerPrefs.SetString(AuthManager.ScopedKey(GameConstants.PrefsKeys.BlightCleansed),
                 data.blightCleansed ?? "");
             // 클라우드 퀘스트 데이터를 현재 계정의 계정별 키에 적용(이후 ReloadFromDisk가 인메모리 갱신).
-            PlayerPrefs.SetString(AuthManager.ScopedKey(GameConstants.PrefsKeys.QuestProgress),
-                data.questProgress ?? "");
-            PlayerPrefs.SetString(AuthManager.ScopedKey(GameConstants.PrefsKeys.QuestCompleted),
-                data.questCompleted ?? "");
-            PlayerPrefs.SetString(AuthManager.ScopedKey(GameConstants.PrefsKeys.ActiveQuest),
-                data.activeQuest ?? "");
-            PlayerPrefs.SetString(AuthManager.ScopedKey(GameConstants.PrefsKeys.QuestSideProgress),
-                data.questSideProgress ?? "");
-            PlayerPrefs.SetString(AuthManager.ScopedKey(GameConstants.PrefsKeys.QuestSideRepeat),
-                data.questSideRepeat ?? "");
+            //
+            // **부트 로드는 병합이다 — 덮어쓰기가 아니다.** 예전엔 `?? ""`로 null만 막고 빈 문자열은
+            // 그대로 썼는데, 클라우드가 낡았거나(오프라인·PATCH 실패) 이 필드가 없던 시절 문서면
+            // **로그인할 때마다 깬 퀘스트가 미완료로 되돌아갔다**. 이 메서드의 다른 필드는 전부
+            // 빈 값을 로컬 보존으로 처리한다(gems 음수 sentinel, charStarter 빈 문자열,
+            // ApplyCloudFile의 forceReplace) — 퀘스트 5줄만 그 원칙 밖에 있었다.
+            //
+            // 퀘스트 완료는 단조 증가라 합집합·최댓값이 안전하다. forceReplace(사용자가 충돌
+            // 화면에서 "클라우드 사용"을 고름)일 때만 통째로 치환한다 — 되돌리겠다는 명시적 의사다.
+            ApplyQuestField(GameConstants.PrefsKeys.QuestProgress, data.questProgress, forceReplace,
+                QuestSaveMerge.MaxIntDict);
+            ApplyQuestField(GameConstants.PrefsKeys.QuestCompleted, data.questCompleted, forceReplace,
+                QuestSaveMerge.UnionCsv);
+            ApplyQuestField(GameConstants.PrefsKeys.ActiveQuest, data.activeQuest, forceReplace,
+                QuestSaveMerge.PreferCloudActive);
+            ApplyQuestField(GameConstants.PrefsKeys.QuestSideProgress, data.questSideProgress, forceReplace,
+                QuestSaveMerge.MaxIntDict);
+            ApplyQuestField(GameConstants.PrefsKeys.QuestSideRepeat, data.questSideRepeat, forceReplace,
+                QuestSaveMerge.MaxIntDict);
 
             // 캐릭터 외형 — 옛 클라우드 문서엔 없을 수 있어 sentinel(-1)이면 로컬 유지(초기화 방지).
             if (data.charCreated == 1) PlayerPrefs.SetInt(SaveScope.PrefsKey("InsectGame.Character.Created"), 1);
@@ -830,6 +839,23 @@ namespace InsectGame.Core
         {
             string path = SaveScope.FilePath(fileName);
             AtomicFileWriter.WriteAllText(path, content);
+        }
+
+        /// <summary>
+        /// 퀘스트 PlayerPrefs 한 필드를 적용한다. <c>ApplyCloudFile</c>과 같은 규칙 —
+        /// 부트 로드(<paramref name="forceReplace"/>=false)는 로컬 진행을 지키며 병합하고,
+        /// 명시적 "클라우드 사용"만 통째로 치환한다.
+        /// </summary>
+        private void ApplyQuestField(string baseKey, string cloudValue, bool forceReplace,
+            System.Func<string, string, string> merge)
+        {
+            string key = AuthManager.ScopedKey(baseKey);
+            if (forceReplace)
+            {
+                PlayerPrefs.SetString(key, cloudValue ?? "");
+                return;
+            }
+            PlayerPrefs.SetString(key, merge(PlayerPrefs.GetString(key, ""), cloudValue ?? ""));
         }
 
         // 내용 있으면 저장, 비었고 forceReplace면 삭제(깨끗한 치환). 부트 로드는 forceReplace=false라 보존.

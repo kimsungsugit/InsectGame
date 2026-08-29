@@ -41,8 +41,9 @@ namespace InsectGame.Core
             activeItem = item;
             remainingSeconds = Mathf.Max(1f, item.durationSeconds);
             ActiveItemChanged?.Invoke(item);
-            // q_item 진행도 — 단일 진입점 (CaptureChoiceUI/PlayerItemInventoryGridUIController 모두 통과)
-            TutorialQuestManager.Instance?.NotifyItemUsed();
+            // q_item 진행 알림은 여기 있었으나 PlayerItemInventory.UseItem으로 옮겼다.
+            // 이 메서드는 **시간제 부스터만** 지나간다 — 채집망·치료제는 도달하지 않는다.
+            // 게다가 가방 경로는 UseItem 직후 여기를 부르므로 양쪽에 두면 한 번 써도 2가 오른다.
             return true;
         }
 

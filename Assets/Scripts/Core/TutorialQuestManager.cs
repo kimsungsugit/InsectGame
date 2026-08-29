@@ -268,7 +268,7 @@ namespace InsectGame.Core
                 {
                     questId = "q_item", title = "아이템 활용",
                     description = "아이템을 사용해보세요 (채집망 등)",
-                    hint = "인벤토리에서 아이템을 선택해 사용하세요",
+                    hint = "[I] 가방에서 아이템 사용 (채집망은 곤충 앞에서)",
                     type = QuestType.UseItem, targetCount = 1,
                     prerequisiteQuestId = "q_battle",
                     rewardCandy = 5,
@@ -810,17 +810,21 @@ namespace InsectGame.Core
             questProgress[questId] += amount;
 
             TutorialQuest quest = GetQuest(questId);
-            if (quest == null) return;
+            // 배열에 없는 ID여도 올린 진행은 남긴다 — 인메모리만 바꾸면 다음 로드에서 되감긴다.
+            if (quest == null) { SaveProgress(); return; }
+
+            // **이벤트보다 먼저 저장한다.** 예전엔 Invoke 뒤에 있어서, 구독자(UI) 하나가 예외를
+            // 던지면 그 아래 줄에 영영 도달하지 못했다 — 인메모리는 진행됐는데 디스크는 그대로라
+            // 앱을 껐다 켜면 되감긴다. 예외도 경고도 없이 진행만 사라진다.
+            SaveProgress();
 
             QuestProgressUpdated?.Invoke(quest, questProgress[questId], quest.targetCount);
 
+            // 완료면 CompleteQuest가 완료 상태를 한 번 더 저장한다(진행 저장과 합쳐 2회).
+            // 퀘스트 진행은 포획·전투처럼 드문 사건이라 그 값이 flush 비용보다 싸다.
             if (questProgress[questId] >= quest.targetCount)
             {
                 CompleteQuest(questId);
-            }
-            else
-            {
-                SaveProgress();
             }
         }
 
@@ -828,19 +832,26 @@ namespace InsectGame.Core
         {
             completedQuests.Add(questId);
             TutorialQuest quest = GetQuest(questId);
-            if (quest == null) return;
-
-            GrantRewards(quest);
+            // 배열에 없는 ID여도 완료 기록은 남긴다 — 인메모리만 완료로 두면 다음 로드에서 되살아난다.
+            if (quest == null) { SaveProgress(); return; }
 
             // 완료했지만 아직 퀘스트 창에서 안 본 목록에 추가 → 퀵바 배지 +1. 창을 열면 MarkQuestsSeen로 비운다.
             unseenCompleted.Add(questId);
 
-            QuestCompleted?.Invoke(quest);
+            // **상태를 바꿨으면 보상·이벤트보다 먼저 저장한다.** 예전엔 GrantRewards와
+            // QuestCompleted 발화 뒤에 있었다 — 보상 지급이나 구독자 하나가 예외를 던지면
+            // 이 줄에 영영 못 와서 **인메모리는 완료인데 디스크는 미완료**로 갈린다.
+            // 그 상태로 앱을 껐다 켜면 방금 깬 퀘스트가 그대로 되살아난다.
             SaveProgress();
+
+            GrantRewards(quest);
+            QuestCompleted?.Invoke(quest);
+            // 다음 활성 퀘스트까지 확정한 뒤 클라우드에 올린다 — 순서가 반대면 클라우드의
+            // activeQuest만 한 박자 낡은 값으로 남는다.
+            ActivateNextQuest();
             // 퀘스트 완료 보상은 캔디/XP/아이템/곤충 → 클라우드 즉시 동기 (다른 기기 진입 시 재진행 방지).
             // IncrementProgress의 잦은 호출은 120초 자동저장에 맡겨 API 폭주 차단.
             if (CloudSaveManager.Instance != null) CloudSaveManager.Instance.SaveToCloud();
-            ActivateNextQuest();
         }
 
         // 보상 지급(캔디/XP/아이템/곤충 + 팀 비었으면 스타터 1슬롯 배치). 스토리·서브 퀘스트 공용.
@@ -959,9 +970,9 @@ namespace InsectGame.Core
             int cur = GetSideProgress(q.questId) + amount;
             sideProgress[q.questId] = cur;
             int target = EffectiveTarget(q);
+            SaveProgress();   // 이벤트보다 먼저 — IncrementProgress와 같은 이유(구독자 예외가 진행을 삼킨다)
             QuestProgressUpdated?.Invoke(q, cur, target);
             if (cur >= target) CompleteSideQuest(q);
-            else SaveProgress();
         }
 
         private void CompleteSideQuest(TutorialQuest q)
@@ -978,8 +989,8 @@ namespace InsectGame.Core
                 sideProgress.Remove(q.questId);
             }
             unseenCompleted.Add(q.questId);
+            SaveProgress();   // 상태 변경 직후 — 구독자 예외가 저장을 막지 못하게(CompleteQuest와 같은 이유)
             QuestCompleted?.Invoke(q);
-            SaveProgress();
             // 반복 서브는 잦아 즉시 클라우드 PATCH를 생략(120s 오토세이브에 위임 — API 폭주 차단).
             // 비반복 서브(영구 완료)만 즉시 동기(다른 기기 재획득 방지).
             if (!q.repeatable && CloudSaveManager.Instance != null) CloudSaveManager.Instance.SaveToCloud();

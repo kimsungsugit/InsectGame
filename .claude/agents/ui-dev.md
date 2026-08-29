@@ -28,6 +28,7 @@ tools:
 - `Assets/Scripts/UI/CollectionUI.cs` - 보유 곤충 UI
 - `Assets/Scripts/UI/BattleTeamUI.cs` - 팀 편성 UI ※배틀 로직은 battle-dev
 - `Assets/Scripts/UI/HospitalUI.cs` - 병원 치료·아이템 대상 선택 UI
+- `Assets/Scripts/UI/InventoryUI.cs` - 가방(보유 아이템 목록·사용) UI
 - `Assets/Scripts/UI/RegionMapUI.cs` - 지역 맵 UI
 - `Assets/Scripts/UI/SettingsPanel.cs` - 설정 패널
 - `Assets/Scripts/UI/AccountSettingsUI.cs` - 계정/오프닝 다시 보기 패널

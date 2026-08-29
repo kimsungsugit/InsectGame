@@ -5,10 +5,10 @@ using UnityEngine;
 namespace InsectGame.UI
 {
     /// <summary>
-    /// 화면 진입점 10개를 한 줄로 모은 바. 데스크톱은 하단 가로, 모바일은 우측 세로다.
+    /// 화면 진입점 11개를 한 줄로 모은 바. 데스크톱은 하단 가로, 모바일은 우측 세로다.
     ///
     /// <b>이 컴포넌트는 모달이 아니다.</b> 예전엔 모바일에서 "메뉴 버튼 → 팝업" 2탭이라
-    /// 그 팝업이 모달이었는데, 버튼 10개를 직접 노출하도록 바꾸면서 팝업이 사라졌다.
+    /// 그 팝업이 모달이었는데, 버튼을 직접 노출하도록 바꾸면서 팝업이 사라졌다.
     /// <c>IModalUI</c> 구현과 <c>mobileMenuOpen</c>은 그 잔재로 남아 있었다 —
     /// <b>어디서도 <c>Register</c>하지 않아 <c>IsOpen</c>은 영원히 false였고</b>,
     /// 그런데도 시그니처만 보면 이 바가 모달 스택에 참여하는 것처럼 읽혔다.
@@ -25,6 +25,7 @@ namespace InsectGame.UI
         [SerializeField] private TutorialQuestUI questUI;
         [SerializeField] private SocialPvpUI socialPvpUI;
         [SerializeField] private StoryJournalUI storyJournalUI;
+        [SerializeField] private InventoryUI inventoryScreen;
 
         // 전투/포획/미니게임 등 입력 차단용 신호 (CaptureInputController와 동일).
         [SerializeField] private BattleScreenUI battleScreen;
@@ -73,8 +74,13 @@ namespace InsectGame.UI
             new ButtonDef { label = "상점", key = "F4", color = new Color(1f, 0.4f, 0.4f) },
             new ButtonDef { label = "PVP", key = "F6", color = new Color(0.25f, 0.75f, 1f) },
             // 스토리 저널 — 60비트로 늘어난 서사의 진행 상황을 보는 유일한 창구.
-            // 인덱스가 IsActive/OnClick의 case 번호다(9) — 그 둘은 아직 손으로 짝을 맞춘다.
+            // 인덱스가 IsActive/OnClick의 case 번호다 — 그 둘은 아직 손으로 짝을 맞춘다.
             new ButtonDef { label = "이야기", key = "J", color = new Color(1f, 0.79f, 0.3f) },
+            // 가방 — 보유 아이템을 보고 쓰는 유일한 창구. **여기 없던 동안 아이템 시스템이
+            // 통째로 잠겨 있었다**(uGUI 인벤토리는 만들어지기만 하고 여는 코드가 없었다).
+            // 맨 뒤에 붙인 이유는 아래 IsActive/OnClick의 case 번호가 이 배열 인덱스이기 때문이다 —
+            // 중간에 끼우면 그 아래 전부가 한 칸씩 어긋난다.
+            new ButtonDef { label = "가방", key = "I", color = new Color(1f, 0.66f, 0.38f) },
         };
 
         /// <summary>
@@ -206,7 +212,7 @@ namespace InsectGame.UI
             UIScale.End();
         }
 
-        // 모바일: 우측 가장자리에 10개 기능을 '직접' 노출하는 세로 퀵바.
+        // 모바일: 우측 가장자리에 전 기능을 '직접' 노출하는 세로 퀵바.
         // (기존엔 메뉴 버튼→팝업 2탭이라 번거로웠음. 메뉴 단계 제거.)
         private void DrawMobileQuickBar()
         {
@@ -216,7 +222,7 @@ namespace InsectGame.UI
             float gap = 8f;
             float colW = 152f;
             // 우측 상단 정렬 — 우하단의 원형 '잡기' 버튼 + '계정' 버튼 공간을 비운다.
-            // 상단 ~60% 영역에 10개를 배치(셀 높이 적응, 터치 최소 48).
+            // 상단 ~60% 영역에 배치(셀 높이 적응, 터치 최소 48).
             float regionH = UISafeLayout.ContentHeight * 0.6f;
             float cellH = Mathf.Clamp((regionH - 12f - (n - 1) * gap) / n, 48f, 88f);
             float totalH = n * cellH + (n - 1) * gap;
@@ -317,6 +323,7 @@ namespace InsectGame.UI
                 case 7: return cashShopUI != null && cashShopUI.IsOpen;
                 case 8: return socialPvpUI != null && socialPvpUI.IsOpen;
                 case 9: return storyJournalUI != null && storyJournalUI.IsOpen;
+                case 10: return inventoryScreen != null && inventoryScreen.IsOpen;
                 default: return false;
             }
         }
@@ -373,6 +380,7 @@ namespace InsectGame.UI
                 case 7: if (cashShopUI != null) cashShopUI.Toggle(); break;
                 case 8: if (socialPvpUI != null) socialPvpUI.Toggle(); break;
                 case 9: if (storyJournalUI != null) storyJournalUI.Toggle(); break;
+                case 10: if (inventoryScreen != null) inventoryScreen.Toggle(); break;
                 // 배열에 버튼만 늘리고 여기(와 IsActive)를 안 늘리면 그 버튼은 **아무 일도
                 // 하지 않는다** — 눌러도 조용해서 배포까지 살아남는다. 누를 때만 찍히므로
                 // 매 프레임 스팸이 되지 않는다.
@@ -412,6 +420,11 @@ namespace InsectGame.UI
         public void AutoWire(SocialPvpUI social)
         {
             if (socialPvpUI == null) socialPvpUI = social;
+        }
+
+        public void AutoWire(InventoryUI inventory)
+        {
+            if (inventoryScreen == null) inventoryScreen = inventory;
         }
 
         // 전투/포획/미니게임 중 입력 가드용 신호 주입.
