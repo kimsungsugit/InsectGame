@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using InsectGame.Core;
 using InsectGame.Data;
 using InsectGame.Spawning;
@@ -8,8 +9,6 @@ namespace InsectGame.Battle
 {
     public class BattleArenaController : MonoBehaviour
     {
-        public static BattleArenaController Instance { get; private set; }
-
         private GameObject arenaRoot;
         private GameObject playerModel;
         private GameObject enemyModel;
@@ -24,20 +23,50 @@ namespace InsectGame.Battle
         private Vector3 bossBattlePos;
 
         private bool isActive;
+        private CameraFollower cachedCameraFollower;
 
         private int selectedTeamIndex = -1;
+
+        // 전투 모델 스케일 — 전투는 필드 rarity 배율(1.0~1.9) 미적용·고정 배율(등급 무관 동일 크기).
+        // 곤충이 화면에서 과대해 하향(카메라·battlePos·FOV·아레나 지오메트리는 불변 = "모델만 축소").
+        // 보스는 위압 비율 유지, 팀은 5마리 호 배치라 더 작게.
+        private const float BattleInsectScale = 1.1f;   // 1v1 플레이어/적 (기존 1.5)
+        // 레이드 카메라를 눈높이로 낮추고 뒤로 물리면서 두 대상 모두 멀어졌다 — 그만큼 키운다.
+        private const float BossInsectScale = 2.3f;     // 레이드 보스 (기존 1.85)
+        private const float TeamInsectScale = 1.0f;     // 레이드 팀원 (기존 0.8)
+
+        // 스킬 연출 코루틴 진행 여부 — UI 페이즈 전이를 연출 길이에 맞춰 게이팅(BattleScreenUI.PhaseAnimDone).
+        private bool playingSkill;
+        public bool IsPlayingSkill => playingSkill;
+
+        // `bossAttackTargetSlot` 필드와 `SetBossAttackTargetSlot`가 여기 있었다. 유일한 호출부
+        // (`RaidBattleUI.TriggerBossAttackEffect`)가 5f0776f의 라운드 파이프라인 교체로 죽으면서
+        // **쓰는 쪽 없이 읽히기만 하는 필드**가 됐다 — 초기값이 있어 컴파일 경고도 나지 않는다.
+        // 대상 지정은 `PlayRaidBossAttack(element, isAoe, targetSlot, onComplete)`의 매개변수로 옮겨갔다.
+        // 되살리지 말 것: 지금 호출해도 `PlayRaidBossAttack`의 인자 분기가 먼저 이겨 아무 효과가 없다
+        // (호출부 0인 `RaidRoundModels.SetBossDamage`를 제거했던 것과 같은 함정).
 
         public bool IsActive => isActive;
         public Vector3 ArenaCenter => arenaCenter;
         public Vector3 PlayerModelPos => playerBattlePos;
         public Vector3 EnemyModelPos => enemyBattlePos;
+        public GameObject PlayerModel => playerModel;
+        public GameObject EnemyModel => enemyModel;
+        public GameObject BossModel => bossModel;
+        public int TeamModelCount => teamModels != null ? teamModels.Length : 0;
+        public GameObject GetTeamModel(int index)
+        {
+            if (teamModels == null || index < 0 || index >= teamModels.Length) return null;
+            return teamModels[index];
+        }
 
         public void SetSelectedTeamIndex(int index) { selectedTeamIndex = index; }
 
-        private void Awake()
+        // 씬 전환/컴포넌트 비활성화 시 정리 — CleanupArena 위임 (DRY + model 필드 null화 포함).
+        // 옛은 OnDisable과 CleanupArena가 동일 작업을 중복 수행 + OnDisable에 model null화 누락.
+        private void OnDisable()
         {
-            if (Instance != null && Instance != this) { Destroy(gameObject); return; }
-            Instance = this;
+            CleanupArena();
         }
 
         public void SetupNormalBattle(InsectData playerInsect, int playerLevel,
@@ -49,8 +78,9 @@ namespace InsectGame.Battle
             // 아레나를 필드와 완전 분리된 위치에 생성 (필드 오브젝트와 겹침 방지)
             arenaCenter = new Vector3(1000f, 0f, 1000f);
 
-            playerBattlePos = arenaCenter + new Vector3(-2.5f, 0.5f, 0f);
-            enemyBattlePos = arenaCenter + new Vector3(2.5f, 0.5f, 0f);
+            // 플레이어 앞(가까이), 적 뒤(멀리) — 깊이감 있는 대결 구도
+            playerBattlePos = arenaCenter + new Vector3(-1.2f, 0.5f, -2.5f);
+            enemyBattlePos = arenaCenter + new Vector3(1.2f, 0.5f, 2.5f);
 
             arenaRoot = new GameObject("BattleArena");
             arenaRoot.transform.position = arenaCenter;
@@ -58,12 +88,15 @@ namespace InsectGame.Battle
             CreateArenaFloor();
             CreateBattleLight();
 
-            playerModel = CreateBattleInsect(playerInsect, playerLevel, false, playerBattlePos, 1.5f);
+            playerModel = CreateBattleInsect(playerInsect, playerLevel, false, playerBattlePos, BattleInsectScale);
             playerModel.name = "BattleInsect_Player";
 
-            enemyModel = CreateBattleInsect(enemyInsect, enemyLevel, enemyShiny, enemyBattlePos, 1.5f);
+            enemyModel = CreateBattleInsect(enemyInsect, enemyLevel, enemyShiny, enemyBattlePos, BattleInsectScale);
             enemyModel.name = "BattleInsect_Enemy";
-            enemyModel.transform.rotation = Quaternion.Euler(0f, 180f, 0f);
+
+            // 서로 마주보게
+            playerModel.transform.LookAt(enemyBattlePos);
+            enemyModel.transform.LookAt(playerBattlePos);
 
             // 카메라를 아레나 정면으로 이동
             SetupBattleCamera();
@@ -80,8 +113,12 @@ namespace InsectGame.Battle
             // 아레나를 필드와 완전 분리된 위치에 생성 (필드 오브젝트와 겹침 방지)
             arenaCenter = new Vector3(1000f, 0f, 1000f);
 
-            bossBattlePos = arenaCenter + new Vector3(0f, 1f, 3f);
-            playerBattlePos = arenaCenter + new Vector3(0f, 0.5f, -3f);
+            // 보스: 멀리 위에, 팀: 가까이 아래 — 올려보는 구도.
+            // 간격을 7.5 → 5로 좁히고 보스를 1.2 → 2.2로 높였다. 카메라가 팀 뒤에서 볼 때
+            // 둘의 **화면상 높이 차**가 줄어 팀과 보스가 함께 하단 스킬 패널 위쪽에 들어온다.
+            // 예전 배치는 팀이 화면 아래 80% 부근에 떨어져 패널에 통째로 가려졌다.
+            bossBattlePos = arenaCenter + new Vector3(0f, 2.2f, 3f);
+            playerBattlePos = arenaCenter + new Vector3(0f, 0.5f, -2f);
             enemyBattlePos = bossBattlePos;
 
             arenaRoot = new GameObject("RaidArena");
@@ -90,7 +127,7 @@ namespace InsectGame.Battle
             CreateArenaFloor();
             CreateBattleLight();
 
-            bossModel = CreateBattleInsect(bossInsect, bossLevel, bossShiny, bossBattlePos, 2.5f);
+            bossModel = CreateBattleInsect(bossInsect, bossLevel, bossShiny, bossBattlePos, BossInsectScale);
             bossModel.name = "RaidInsect_Boss";
             bossModel.transform.rotation = Quaternion.Euler(0f, 180f, 0f);
 
@@ -98,15 +135,19 @@ namespace InsectGame.Battle
 
             int count = teamInsects != null ? teamInsects.Length : 0;
             teamModels = new GameObject[count];
-            float spacing = count > 1 ? 4f / (count - 1) : 0f;
-            float startX = count > 1 ? -2f : 0f;
 
+            // 호 형태 배치: 카메라에서 봤을 때 겹치지 않게
             for (int i = 0; i < count; i++)
             {
                 if (teamInsects[i] == null) continue;
-                Vector3 pos = arenaCenter + new Vector3(startX + i * spacing, 0.5f, -3f);
-                teamModels[i] = CreateBattleInsect(teamInsects[i], teamLevels[i], false, pos, 1.0f);
+                float t = count > 1 ? (float)i / (count - 1) : 0.5f;
+                float x = Mathf.Lerp(-2.6f, 2.6f, t);
+                // 호 중심은 playerBattlePos에서 파생한다 — 좌표를 두 곳에 적지 않는다.
+                float z = playerBattlePos.z - arenaCenter.z + Mathf.Abs(t - 0.5f) * 1.2f;
+                Vector3 pos = arenaCenter + new Vector3(x, 0.5f, z);
+                teamModels[i] = CreateBattleInsect(teamInsects[i], teamLevels[i], false, pos, TeamInsectScale);
                 teamModels[i].name = $"RaidInsect_Team_{i}";
+                teamModels[i].transform.LookAt(bossBattlePos); // 보스를 바라봄
             }
 
             SetupBattleCamera();
@@ -124,6 +165,26 @@ namespace InsectGame.Battle
             entity.BuildForBattle(insectData, level, isShiny);
 
             return insectObj;
+        }
+
+        // 1v1 배틀 중 플레이어 곤충 교체 시 호출. 이전 모델을 파괴하고 새 곤충으로 재생성.
+        public void RebuildPlayerInsect(InsectData newInsect, int newLevel)
+        {
+            if (!isActive || arenaRoot == null || newInsect == null) return;
+
+            if (playerModel != null)
+            {
+                Destroy(playerModel);
+                playerModel = null;
+            }
+
+            playerModel = CreateBattleInsect(newInsect, newLevel, false, playerBattlePos, BattleInsectScale);
+            playerModel.name = "BattleInsect_Player";
+
+            if (enemyModel != null)
+                playerModel.transform.LookAt(enemyModel.transform.position);
+            else
+                playerModel.transform.LookAt(enemyBattlePos);
         }
 
         private void CreateArenaFloor()
@@ -160,20 +221,38 @@ namespace InsectGame.Battle
             centerLine.GetComponent<MeshRenderer>().material = lineMat;
             Object.Destroy(centerLine.GetComponent<Collider>());
 
-            // 아레나 경계벽 — 필드가 보이지 않도록 차단
+            // 경기장 바깥 지면 — 밝은 원판(반지름 4)과 경계벽 사이의 빈 공간을 메운다.
+            // 이게 없으면 카메라를 뒤로 물린 만큼 원판 밖으로 필드가 비쳐 보인다.
+            GameObject outerGround = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+            outerGround.name = "ArenaOuterGround";
+            outerGround.transform.SetParent(arenaRoot.transform, false);
+            outerGround.transform.localPosition = new Vector3(0f, -0.2f, 0f);
+            outerGround.transform.localScale = new Vector3(ArenaWallSpan * 2.2f, 0.1f, ArenaWallSpan * 2.2f);
+            outerGround.GetComponent<MeshRenderer>().material =
+                CreateSafeMaterial(new Color(0.07f, 0.10f, 0.06f));
+            Object.Destroy(outerGround.GetComponent<Collider>());
+
+            // 아레나 경계벽 — 필드가 보이지 않도록 차단.
+            // **카메라보다 멀리** 세운다: 전투 카메라는 1v1이 z≈-6.5, 레이드가 z≈-9.5로 아레나 뒤에
+            // 서는데 예전 벽은 ±5에 있었다. 그래서 카메라가 남쪽 벽의 **바깥 면**을 정면으로 마주 봐
+            // 화면이 통째로 벽에 막혔다 — 레이드에서 곤충이 하나도 보이지 않던 원인이다.
+            // 벽을 옮길 때는 `RaidCamBackDistance`/1v1 카메라 오프셋보다 크게 유지할 것.
             Material wallMat = CreateSafeMaterial(new Color(0.2f, 0.35f, 0.18f));
             string[] wallNames = { "WallN", "WallS", "WallE", "WallW" };
+            float span = ArenaWallSpan;
+            float thick = 0.4f;
+            float wallH = ArenaWallHeight;
             Vector3[] wallPositions = {
-                new Vector3(0f, 2.5f, 5f),
-                new Vector3(0f, 2.5f, -5f),
-                new Vector3(5f, 2.5f, 0f),
-                new Vector3(-5f, 2.5f, 0f)
+                new Vector3(0f, wallH * 0.5f, span),
+                new Vector3(0f, wallH * 0.5f, -span),
+                new Vector3(span, wallH * 0.5f, 0f),
+                new Vector3(-span, wallH * 0.5f, 0f)
             };
             Vector3[] wallScales = {
-                new Vector3(10f, 5f, 0.2f),
-                new Vector3(10f, 5f, 0.2f),
-                new Vector3(0.2f, 5f, 10f),
-                new Vector3(0.2f, 5f, 10f)
+                new Vector3(span * 2f, wallH, thick),
+                new Vector3(span * 2f, wallH, thick),
+                new Vector3(thick, wallH, span * 2f),
+                new Vector3(thick, wallH, span * 2f)
             };
             for (int i = 0; i < 4; i++)
             {
@@ -186,6 +265,14 @@ namespace InsectGame.Battle
                 Object.Destroy(wall.GetComponent<Collider>());
             }
         }
+
+        /// <summary>
+        /// 아레나 경계벽까지의 거리. <b>전투 카메라가 이 안에 들어와야</b> 벽이 시야를 막지 않는다 —
+        /// 레이드 카메라는 팀 뒤 <see cref="RaidCamBackDistance"/>에 서므로 그보다 넉넉히 크다.
+        /// 공개인 이유는 <c>RaidCameraFramingTests</c>가 그 관계를 고정하기 때문이다.
+        /// </summary>
+        public const float ArenaWallSpan = 13f;
+        public const float ArenaWallHeight = 10f;
 
         private void CreateBattleLight()
         {
@@ -226,20 +313,23 @@ namespace InsectGame.Battle
 
             if (attacker == null || target == null) return;
 
-            StartCoroutine(AttackCoroutine(attacker, attacker.transform.position, target.transform.position, onImpact));
+            StartCoroutine(AttackCoroutine(attacker, target, onImpact));
         }
 
-        private IEnumerator AttackCoroutine(GameObject attacker, Vector3 startPos, Vector3 targetPos, System.Action onImpact)
+        private IEnumerator AttackCoroutine(GameObject attacker, GameObject target, System.Action onImpact)
         {
-            float t = 0f;
+            Vector3 startPos = attacker.transform.position;
+            Vector3 targetPos = target != null ? target.transform.position : startPos;
 
-            // Phase 1: rush (0~0.3s)
+            // 근접: 적 앞 95%까지 러시 → 임팩트 → 원위치 복귀
+            // Phase 1: rush 95% (0~0.3s)
+            float t = 0f;
             while (t < 0.3f)
             {
                 t += Time.deltaTime;
                 float progress = t / 0.3f;
                 float eased = progress * progress * (3f - 2f * progress);
-                Vector3 pos = Vector3.Lerp(startPos, targetPos, eased * 0.7f);
+                Vector3 pos = Vector3.Lerp(startPos, targetPos, eased * 0.95f);
                 pos.y += Mathf.Sin(eased * Mathf.PI) * 0.8f;
                 attacker.transform.position = pos;
                 yield return null;
@@ -248,17 +338,17 @@ namespace InsectGame.Battle
             onImpact?.Invoke();
             CreateImpactEffect(targetPos);
 
-            GameObject target = (attacker == playerModel) ? enemyModel : playerModel;
             if (target != null)
                 StartCoroutine(ShakeModel(target, 0.3f, 0.3f));
 
             // Phase 2: return (0.3s)
             t = 0f;
+            Vector3 contactPos = Vector3.Lerp(startPos, targetPos, 0.95f);
             while (t < 0.3f)
             {
                 t += Time.deltaTime;
                 float progress = t / 0.3f;
-                attacker.transform.position = Vector3.Lerp(targetPos * 0.7f + startPos * 0.3f, startPos, progress);
+                attacker.transform.position = Vector3.Lerp(contactPos, startPos, progress);
                 yield return null;
             }
 
@@ -347,40 +437,357 @@ namespace InsectGame.Battle
             if (teamModels == null || bossModel == null) { onComplete?.Invoke(); yield break; }
 
             Vector3 bossPos = bossModel.transform.position;
-
+            Vector3[] starts = new Vector3[teamModels.Length];
+            bool[] active = new bool[teamModels.Length];
             for (int i = 0; i < teamModels.Length; i++)
             {
                 if (teamModels[i] == null) continue;
-                Vector3 start = teamModels[i].transform.position;
-                float dur = 0.25f;
-                float t = 0f;
-                while (t < dur)
+                starts[i] = teamModels[i].transform.position;
+                active[i] = true;
+            }
+
+            // 모든 팀원이 같은 타임라인에서 동시에 돌진한다. 이전 구현은 멤버마다
+            // yield한 뒤 복귀해 합체공격이 사실상 5연속 단일 공격처럼 보였다.
+            playingSkill = true;
+            const float rushDuration = 0.42f;
+            float t = 0f;
+            while (t < rushDuration)
+            {
+                t += Time.deltaTime;
+                float progress = Mathf.Clamp01(t / rushDuration);
+                float eased = progress * progress * (3f - 2f * progress);
+                for (int i = 0; i < teamModels.Length; i++)
                 {
-                    t += Time.deltaTime;
-                    float progress = t / dur;
-                    float eased = progress * progress;
-                    Vector3 pos = Vector3.Lerp(start, bossPos, eased * 0.6f);
+                    if (!active[i] || teamModels[i] == null) continue;
+                    float spread = (i - (teamModels.Length - 1) * 0.5f) * 0.18f;
+                    Vector3 target = bossPos + Vector3.right * spread;
+                    Vector3 pos = Vector3.Lerp(starts[i], target, eased * 0.78f);
                     pos.y += Mathf.Sin(eased * Mathf.PI) * 0.5f;
                     teamModels[i].transform.position = pos;
-                    yield return null;
                 }
-
-                CreateImpactEffect(bossPos);
-                StartCoroutine(ShakeModel(bossModel, 0.2f, 0.4f));
-
-                t = 0f;
-                while (t < 0.15f)
-                {
-                    t += Time.deltaTime;
-                    teamModels[i].transform.position = Vector3.Lerp(bossPos * 0.5f + start * 0.5f, start, t / 0.15f);
-                    yield return null;
-                }
-                teamModels[i].transform.position = start;
+                yield return null;
             }
 
             CreateBigExplosion(bossPos);
-            yield return new WaitForSeconds(0.5f);
+            StartCoroutine(ShakeModel(bossModel, 0.45f, 0.5f));
+            if (cachedCameraFollower == null && Camera.main != null)
+                cachedCameraFollower = Camera.main.GetComponent<CameraFollower>();
+            if (cachedCameraFollower != null)
+                cachedCameraFollower.Shake(0.55f, 0.55f);
 
+            const float returnDuration = 0.28f;
+            t = 0f;
+            Vector3[] contacts = new Vector3[teamModels.Length];
+            for (int i = 0; i < teamModels.Length; i++)
+                if (active[i] && teamModels[i] != null)
+                    contacts[i] = teamModels[i].transform.position;
+            while (t < returnDuration)
+            {
+                t += Time.deltaTime;
+                float progress = Mathf.Clamp01(t / returnDuration);
+                for (int i = 0; i < teamModels.Length; i++)
+                {
+                    if (!active[i] || teamModels[i] == null) continue;
+                    teamModels[i].transform.position = Vector3.Lerp(contacts[i], starts[i], progress);
+                }
+                yield return null;
+            }
+
+            for (int i = 0; i < teamModels.Length; i++)
+                if (active[i] && teamModels[i] != null)
+                    teamModels[i].transform.position = starts[i];
+
+            playingSkill = false;
+            onComplete?.Invoke();
+        }
+
+        /// <summary>
+        /// 레이드 팀 행동을 같은 타임라인에 겹쳐 재생한다. 슬롯과 속성 배열은 같은 길이여야 하며,
+        /// 사망/누락 모델은 자동으로 건너뛴다.
+        /// </summary>
+        public void PlayRaidVolley(
+            int[] slots,
+            InsectElement[] elements,
+            System.Action onComplete)
+        {
+            StartCoroutine(RaidVolleyCoroutine(slots, elements, onComplete));
+        }
+
+        private IEnumerator RaidVolleyCoroutine(
+            int[] slots,
+            InsectElement[] elements,
+            System.Action onComplete)
+        {
+            int count = slots != null ? slots.Length : 0;
+            if (!isActive || bossModel == null || teamModels == null || count == 0)
+            {
+                onComplete?.Invoke();
+                yield break;
+            }
+
+            GameObject[] attackers = new GameObject[count];
+            Vector3[] starts = new Vector3[count];
+            Vector3[] contacts = new Vector3[count];
+            GameObject[] projectiles = new GameObject[count];
+            bool[] melee = new bool[count];
+            bool[] valid = new bool[count];
+            bool[] impacted = new bool[count];
+            Vector3 bossPos = bossModel.transform.position;
+            int validCount = 0;
+
+            for (int i = 0; i < count; i++)
+            {
+                int slot = slots[i];
+                if (slot < 0 || slot >= teamModels.Length || teamModels[slot] == null)
+                    continue;
+
+                attackers[i] = teamModels[slot];
+                starts[i] = attackers[i].transform.position;
+                InsectElement element = elements != null && i < elements.Length
+                    ? elements[i]
+                    : InsectElement.Bug;
+                melee[i] = IsMeleeElement(element);
+                valid[i] = true;
+                validCount++;
+
+                if (!melee[i])
+                {
+                    projectiles[i] = CreateElementProjectile(element, GetElementColor3D(element));
+                    projectiles[i].transform.position = starts[i] + Vector3.up * 0.5f;
+                }
+            }
+
+            if (validCount == 0)
+            {
+                onComplete?.Invoke();
+                yield break;
+            }
+
+            playingSkill = true;
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.PlaySFX(SfxType.SkillUse);
+
+            // 0.035초의 짧은 스태거만 두어 충돌음은 연속으로 들리되, 한 마리가 복귀한 뒤
+            // 다음 멤버가 출발하는 직렬 연출은 만들지 않는다.
+            const float stagger = 0.035f;
+            const float actionDuration = 0.46f;
+            float totalDuration = actionDuration + Mathf.Max(0, count - 1) * stagger;
+            float timer = 0f;
+            while (timer < totalDuration)
+            {
+                timer += Time.deltaTime;
+                for (int i = 0; i < count; i++)
+                {
+                    if (!valid[i] || attackers[i] == null) continue;
+                    float local = Mathf.Clamp01((timer - i * stagger) / actionDuration);
+                    if (local <= 0f) continue;
+
+                    int slot = slots[i];
+                    float spread = (slot - (teamModels.Length - 1) * 0.5f) * 0.16f;
+                    Vector3 target = bossPos + Vector3.right * spread + Vector3.up * 0.15f;
+                    float eased = local * local * (3f - 2f * local);
+                    InsectElement element = elements != null && i < elements.Length
+                        ? elements[i]
+                        : InsectElement.Bug;
+                    Color elementColor = GetElementColor3D(element);
+
+                    if (melee[i])
+                    {
+                        Vector3 pos = Vector3.Lerp(starts[i], target, eased * 0.78f);
+                        pos.y += Mathf.Sin(eased * Mathf.PI) * 0.65f;
+                        attackers[i].transform.position = pos;
+                        CreateTrailParticle(pos, elementColor, 0.08f);
+                    }
+                    else if (projectiles[i] != null)
+                    {
+                        Vector3 start = starts[i] + Vector3.up * 0.5f;
+                        Vector3 pos = Vector3.Lerp(start, target, eased);
+                        pos += GetElementTrajectoryOffset(element, local);
+                        projectiles[i].transform.position = pos;
+                        projectiles[i].transform.Rotate(Vector3.up, 720f * Time.deltaTime);
+                        CreateTrailParticle(pos, elementColor, 0.07f);
+                    }
+
+                    if (!impacted[i] && local >= 0.98f)
+                    {
+                        impacted[i] = true;
+                        contacts[i] = attackers[i].transform.position;
+                        if (projectiles[i] != null)
+                        {
+                            Destroy(projectiles[i]);
+                            projectiles[i] = null;
+                        }
+                        CreateElementImpact3D(target, element, elementColor);
+                    }
+                }
+                yield return null;
+            }
+
+            StartCoroutine(ShakeModel(bossModel, 0.42f, 0.42f));
+            if (cachedCameraFollower == null && Camera.main != null)
+                cachedCameraFollower = Camera.main.GetComponent<CameraFollower>();
+            if (cachedCameraFollower != null)
+                cachedCameraFollower.Shake(0.38f, 0.42f);
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.PlaySFX(SfxType.Hit);
+
+            const float returnDuration = 0.26f;
+            timer = 0f;
+            while (timer < returnDuration)
+            {
+                timer += Time.deltaTime;
+                float progress = Mathf.Clamp01(timer / returnDuration);
+                for (int i = 0; i < count; i++)
+                {
+                    if (!valid[i] || !melee[i] || attackers[i] == null) continue;
+                    attackers[i].transform.position = Vector3.Lerp(contacts[i], starts[i], progress);
+                }
+                yield return null;
+            }
+
+            for (int i = 0; i < count; i++)
+            {
+                if (projectiles[i] != null) Destroy(projectiles[i]);
+                if (valid[i] && attackers[i] != null)
+                    attackers[i].transform.position = starts[i];
+            }
+
+            playingSkill = false;
+            onComplete?.Invoke();
+        }
+
+        /// <summary>
+        /// 레이드 보스의 예고된 단일/전체 공격을 실제 대상 모델에 동시 재생한다.
+        /// </summary>
+        public void PlayRaidBossAttack(
+            InsectElement element,
+            bool isAoe,
+            int targetSlot,
+            System.Action onComplete)
+        {
+            StartCoroutine(RaidBossAttackCoroutine(element, isAoe, targetSlot, onComplete));
+        }
+
+        private IEnumerator RaidBossAttackCoroutine(
+            InsectElement element,
+            bool isAoe,
+            int targetSlot,
+            System.Action onComplete)
+        {
+            if (!isActive || bossModel == null || teamModels == null)
+            {
+                onComplete?.Invoke();
+                yield break;
+            }
+
+            List<GameObject> targets = new List<GameObject>();
+            if (isAoe)
+            {
+                for (int i = 0; i < teamModels.Length; i++)
+                    if (teamModels[i] != null)
+                        targets.Add(teamModels[i]);
+            }
+            else if (targetSlot >= 0 && targetSlot < teamModels.Length && teamModels[targetSlot] != null)
+            {
+                targets.Add(teamModels[targetSlot]);
+            }
+            else
+            {
+                GameObject fallback = ResolveBossTarget();
+                if (fallback != null) targets.Add(fallback);
+            }
+
+            if (targets.Count == 0)
+            {
+                onComplete?.Invoke();
+                yield break;
+            }
+
+            playingSkill = true;
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.PlaySkillSFX(element);
+
+            Vector3 bossStart = bossModel.transform.position;
+            Vector3 targetCenter = Vector3.zero;
+            for (int i = 0; i < targets.Count; i++)
+                targetCenter += targets[i].transform.position;
+            targetCenter /= targets.Count;
+
+            bool meleeAttack = IsMeleeElement(element);
+            GameObject[] projectiles = meleeAttack ? null : new GameObject[targets.Count];
+            if (!meleeAttack)
+            {
+                Color color = GetElementColor3D(element);
+                for (int i = 0; i < targets.Count; i++)
+                {
+                    projectiles[i] = CreateElementProjectile(element, color);
+                    projectiles[i].transform.position = bossStart + Vector3.up * 0.6f;
+                }
+            }
+
+            const float castDuration = 0.42f;
+            float timer = 0f;
+            while (timer < castDuration)
+            {
+                timer += Time.deltaTime;
+                float progress = Mathf.Clamp01(timer / castDuration);
+                float eased = progress * progress * (3f - 2f * progress);
+                if (meleeAttack)
+                {
+                    Vector3 lungeTarget = Vector3.Lerp(bossStart, targetCenter, isAoe ? 0.22f : 0.52f);
+                    Vector3 pos = Vector3.Lerp(bossStart, lungeTarget, eased);
+                    pos.y += Mathf.Sin(progress * Mathf.PI) * (isAoe ? 1.4f : 0.8f);
+                    bossModel.transform.position = pos;
+                }
+                else
+                {
+                    for (int i = 0; i < targets.Count; i++)
+                    {
+                        if (projectiles[i] == null || targets[i] == null) continue;
+                        Vector3 end = targets[i].transform.position + Vector3.up * 0.4f;
+                        Vector3 pos = Vector3.Lerp(bossStart + Vector3.up * 0.6f, end, eased);
+                        pos += GetElementTrajectoryOffset(element, progress);
+                        projectiles[i].transform.position = pos;
+                        CreateTrailParticle(pos, GetElementColor3D(element), 0.09f);
+                    }
+                }
+                yield return null;
+            }
+
+            Color impactColor = GetElementColor3D(element);
+            for (int i = 0; i < targets.Count; i++)
+            {
+                if (projectiles != null && projectiles[i] != null)
+                    Destroy(projectiles[i]);
+                if (targets[i] == null) continue;
+                CreateElementImpact3D(targets[i].transform.position, element, impactColor);
+                StartCoroutine(ShakeModel(targets[i], 0.42f, isAoe ? 0.32f : 0.42f));
+            }
+
+            if (isAoe)
+                CreateBigExplosion(targetCenter);
+            if (cachedCameraFollower == null && Camera.main != null)
+                cachedCameraFollower = Camera.main.GetComponent<CameraFollower>();
+            if (cachedCameraFollower != null)
+                cachedCameraFollower.Shake(isAoe ? 0.55f : 0.35f, isAoe ? 0.55f : 0.35f);
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.PlaySFX(SfxType.Hit);
+
+            const float recoverDuration = 0.30f;
+            Vector3 bossContact = bossModel.transform.position;
+            timer = 0f;
+            while (timer < recoverDuration)
+            {
+                timer += Time.deltaTime;
+                bossModel.transform.position = Vector3.Lerp(
+                    bossContact,
+                    bossStart,
+                    Mathf.Clamp01(timer / recoverDuration));
+                yield return null;
+            }
+            bossModel.transform.position = bossStart;
+
+            playingSkill = false;
             onComplete?.Invoke();
         }
 
@@ -417,29 +824,109 @@ namespace InsectGame.Battle
             Camera cam = Camera.main;
             if (cam == null) return;
 
-            // 카메라를 아레나 정면 위에서 약간 비스듬히 내려다보게
-            Vector3 camPos = arenaCenter + new Vector3(0f, 5f, -7f);
-            cam.transform.position = camPos;
-            cam.transform.LookAt(arenaCenter + Vector3.up * 0.5f);
+            bool isRaid = bossModel != null;
+            Vector3 camPos;
+            Vector3 lookTarget;
 
-            // CameraFollower의 배틀 모드도 이 위치로 오버라이드
+            if (isRaid)
+            {
+                // 레이드: 팀 뒤쪽 높은 곳에서 보스를 **정면으로** 본다.
+                // 좌표는 실제 배치(팀 호 중심·보스 위치)에서 파생한다 — 값을 두 곳에 적지 않는다.
+                ComputeRaidCameraFraming(playerBattlePos, bossBattlePos, out camPos, out lookTarget);
+            }
+            else
+            {
+                // 1v1: 플레이어 뒤 어깨 너머에서 적을 바라보는 각도
+                // 대결 긴장감 + 플레이어 곤충이 가까이 보임
+                camPos = playerBattlePos + new Vector3(1.5f, 2.8f, -4f);
+                lookTarget = Vector3.Lerp(playerBattlePos, enemyBattlePos, 0.6f) + Vector3.up * 0.3f;
+            }
+
+            cam.transform.position = camPos;
+            cam.transform.LookAt(lookTarget);
+
             CameraFollower follower = cam.GetComponent<CameraFollower>();
             if (follower != null)
             {
-                follower.EnterBattleMode(playerBattlePos, enemyBattlePos);
-                // 오버라이드: 직접 위치 설정
-                cam.transform.position = camPos;
-                cam.transform.LookAt(arenaCenter + Vector3.up * 0.5f);
+                if (isRaid)
+                {
+                    // 팔로워에게 이 구도를 그대로 넘긴다. 좌표 쌍 오버로드를 쓰면 팔로워가 대결 축의
+                    // **측면**에 카메라를 놓고 LateUpdate가 매 프레임 그걸 적용해, 위에서 잡은 정면
+                    // 구도가 같은 프레임에 덮인다(레이드가 옆에서 보이던 원인).
+                    follower.EnterBattleModeFramed(camPos, lookTarget);
+                }
+                else
+                {
+                    // 1v1은 팔로워의 측면 구도를 그대로 쓴다(사용자 선택 — 레이드만 정면으로 바꿨다).
+                    // 그래서 아래 두 줄은 이 프레임 한 번만 유효하고 곧 팔로워 값으로 덮인다.
+                    follower.EnterBattleMode(playerBattlePos, enemyBattlePos);
+                    cam.transform.position = camPos;
+                    cam.transform.LookAt(lookTarget);
+                }
             }
+        }
+
+        // 레이드 카메라 구도 — 눈으로 보고 조정하는 값이다.
+        // 보스를 더 크게/작게 보고 싶으면 RaidCamBackDistance만 움직이면 된다.
+        //
+        // 높이를 4.6 → 1.1로 낮춘 이유: 카메라가 팀보다 4.6m 위에서 22도로 내려다보면
+        // 가까운 팀은 화면 아래 80% 부근, 먼 보스는 60% 부근에 떨어진다. 하단 스킬 패널이
+        // 세로에서 화면의 1/3을 덮으므로 팀 5마리가 통째로 그 뒤에 숨었다. 눈높이에 가깝게
+        // 낮추고 뒤로 물리면 팀과 보스의 화면상 높이 차가 6도 안으로 좁혀져 둘 다 패널 위에 남는다.
+        // (거리는 `ArenaWallSpan`보다 작아야 한다 — 넘으면 카메라가 경계벽 밖으로 나간다.)
+        private const float RaidCamBackDistance = 7.5f;   // 팀 호 중심에서 뒤로
+        private const float RaidCamHeight = 1.1f;         // 팀 발치 기준 높이
+        private const float RaidCamLookBias = 0.5f;       // 시선 지점(팀→보스 보간). 클수록 보스가 화면 위로
+        private const float RaidCamLookLift = 0f;         // 시선 지점 높이 보정(팀↔보스 보간값 그대로)
+
+        /// <summary>
+        /// 팀 뒤 위쪽에서 보스를 정면으로 보는 카메라 구도. 화면 상단-중앙에 보스,
+        /// 하단 전경에 팀 뒷모습이 오도록 팀→보스 축 <b>뒤쪽</b>에 카메라를 놓는다.
+        /// 순수 계산이라 <c>RaidCameraFramingTests</c>가 측면 구도 회귀를 고정한다.
+        /// </summary>
+        public static void ComputeRaidCameraFraming(
+            Vector3 teamPos, Vector3 bossPos, out Vector3 camPos, out Vector3 lookTarget)
+        {
+            Vector3 axis = bossPos - teamPos;
+            axis.y = 0f;   // 수평 성분만 — 보스가 팀보다 높이 서 있어도 카메라가 기울지 않게
+            axis = axis.sqrMagnitude > 0.0001f ? axis.normalized : Vector3.forward;
+
+            camPos = teamPos - axis * RaidCamBackDistance + Vector3.up * RaidCamHeight;
+            lookTarget = Vector3.Lerp(teamPos, bossPos, RaidCamLookBias) + Vector3.up * RaidCamLookLift;
         }
 
         // ===== 3D Skill Effect System =====
 
+        // 근접/원거리 판정 — 물리·근거리 속성(흙/금속/벌레/무속성)은 러시, 나머지 투사체 속성은 원거리 발사.
+        // 스킬 데이터에 별도 필드 없이 element로 파생(데이터 무변경). BattleScreenUI/RaidBattleUI가 호출.
+        public static bool IsMeleeElement(InsectElement element)
+        {
+            switch (element)
+            {
+                case InsectElement.Earth:
+                case InsectElement.Metal:
+                case InsectElement.Bug:
+                case InsectElement.None:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
         public void PlaySkillEffect(bool isPlayerAttacking, InsectElement element, SkillEffectType effectType, System.Action onImpact = null)
+        {
+            PlaySkillEffect(isPlayerAttacking, element, effectType, onImpact, false);
+        }
+
+        public void PlaySkillEffect(bool isPlayerAttacking, InsectElement element, SkillEffectType effectType, System.Action onImpact, bool isMelee)
         {
             if (!isActive) return;
 
-            if (effectType == SkillEffectType.BuffAttack)
+            if (AudioManager.Instance != null) AudioManager.Instance.PlaySkillSFX(element);
+
+            // 자기 강화(공격/방어 버프·회복)는 시전자에 버프 연출. 대상 약화(디버프)는 대상에 디버프 연출.
+            if (effectType == SkillEffectType.BuffAttack || effectType == SkillEffectType.DefenseBuff
+                || effectType == SkillEffectType.Heal)
             {
                 PlayBuffEffect(isPlayerAttacking, element);
                 onImpact?.Invoke();
@@ -451,32 +938,95 @@ namespace InsectGame.Battle
                 onImpact?.Invoke();
                 return;
             }
+            // Stun/PoisonDot은 대상을 때리는 공격 연출(아래 러시/투사체) 경유.
 
-            StartCoroutine(SkillAttackCoroutine(isPlayerAttacking, element, onImpact));
+            playingSkill = true;
+            StartCoroutine(SkillAttackCoroutine(isPlayerAttacking, element, onImpact, isMelee));
         }
 
-        private IEnumerator SkillAttackCoroutine(bool isPlayerAttacking, InsectElement element, System.Action onImpact)
+        // 레이드 보스 공격 대상 팀 모델의 **폴백** — 첫 유효 팀 모델.
+        // 피격 슬롯 지정은 호출부가 `PlayRaidBossAttack`의 targetSlot 인자로 넘기고 그쪽이 먼저 처리한다.
+        // 여기까지 오는 건 그 인자가 범위 밖이거나 해당 모델이 이미 파괴된 경우뿐이다.
+        private GameObject ResolveBossTarget()
         {
-            GameObject attacker = isPlayerAttacking ? playerModel : enemyModel;
+            if (teamModels == null) return null;
+            for (int i = 0; i < teamModels.Length; i++)
+                if (teamModels[i] != null) return teamModels[i];
+            return null;
+        }
+
+        private IEnumerator SkillAttackCoroutine(bool isPlayerAttacking, InsectElement element, System.Action onImpact, bool isMelee)
+        {
+            GameObject attacker = isPlayerAttacking ? playerModel : (bossModel != null ? bossModel : enemyModel);
             if (isPlayerAttacking && teamModels != null && selectedTeamIndex >= 0 && selectedTeamIndex < teamModels.Length)
                 attacker = teamModels[selectedTeamIndex];
 
-            GameObject target = isPlayerAttacking ? (bossModel ?? enemyModel) : playerModel;
-            if (attacker == null || target == null) { onImpact?.Invoke(); yield break; }
+            // 대상: 플레이어 공격→보스(1v1은 적), 적/보스 공격→플레이어(1v1) 또는 팀원(레이드).
+            GameObject target = isPlayerAttacking
+                ? (bossModel ?? enemyModel)
+                : (bossModel != null ? ResolveBossTarget() : playerModel);
+            if (attacker == null || target == null) { onImpact?.Invoke(); playingSkill = false; yield break; }
 
             Vector3 startPos = attacker.transform.position;
             Vector3 targetPos = target.transform.position;
             Color elemColor = GetElementColor3D(element);
 
+            if (isMelee)
+            {
+                // 근접 스킬: 러시 → 임팩트 → 복귀 (투사체 없음)
+                float t = 0f;
+                while (t < 0.3f)
+                {
+                    t += Time.deltaTime;
+                    float progress = t / 0.3f;
+                    float eased = progress * progress * (3f - 2f * progress);
+                    Vector3 pos = Vector3.Lerp(startPos, targetPos, eased * 0.95f);
+                    pos.y += Mathf.Sin(eased * Mathf.PI) * 0.8f;
+                    attacker.transform.position = pos;
+                    CreateTrailParticle(pos, elemColor, 0.1f);
+                    yield return null;
+                }
+
+                onImpact?.Invoke();
+                CreateElementImpact3D(targetPos, element, elemColor);
+                StartCoroutine(ShakeModel(target, 0.4f, 0.35f));
+
+                if (cachedCameraFollower == null && Camera.main != null)
+                    cachedCameraFollower = Camera.main.GetComponent<CameraFollower>();
+                if (cachedCameraFollower != null)
+                {
+                    float intensity = (element == InsectElement.Earth || element == InsectElement.Metal) ? 0.35f : 0.2f;
+                    cachedCameraFollower.Shake(intensity, 0.25f);
+                }
+
+                if (AudioManager.Instance != null)
+                    AudioManager.Instance.PlaySFX(SfxType.Hit);
+
+                // 복귀
+                t = 0f;
+                Vector3 contactPos = Vector3.Lerp(startPos, targetPos, 0.95f);
+                while (t < 0.3f)
+                {
+                    t += Time.deltaTime;
+                    float progress = t / 0.3f;
+                    attacker.transform.position = Vector3.Lerp(contactPos, startPos, progress);
+                    yield return null;
+                }
+                attacker.transform.position = startPos;
+                playingSkill = false;
+                yield break;
+            }
+
+            // 원거리: 투사체 발사
             // Phase 1: element projectile (0~0.4s)
             GameObject projectile = CreateElementProjectile(element, elemColor);
             projectile.transform.position = startPos + Vector3.up * 0.5f;
 
-            float t = 0f;
-            while (t < 0.4f)
+            float tt = 0f;
+            while (tt < 0.4f)
             {
-                t += Time.deltaTime;
-                float progress = t / 0.4f;
+                tt += Time.deltaTime;
+                float progress = tt / 0.4f;
                 float eased = progress * progress * (3f - 2f * progress);
                 Vector3 pos = Vector3.Lerp(startPos + Vector3.up * 0.5f, targetPos + Vector3.up * 0.5f, eased);
                 pos += GetElementTrajectoryOffset(element, progress);
@@ -493,10 +1043,20 @@ namespace InsectGame.Battle
             CreateElementImpact3D(targetPos, element, elemColor);
             StartCoroutine(ShakeModel(target, 0.4f, 0.35f));
 
+            // 카메라 쉐이크 (속성별 강도 차이)
+            if (cachedCameraFollower == null && Camera.main != null)
+                cachedCameraFollower = Camera.main.GetComponent<CameraFollower>();
+            if (cachedCameraFollower != null)
+            {
+                float intensity = (element == InsectElement.Earth || element == InsectElement.Metal) ? 0.35f : 0.2f;
+                cachedCameraFollower.Shake(intensity, 0.25f);
+            }
+
             if (AudioManager.Instance != null)
                 AudioManager.Instance.PlaySFX(SfxType.Hit);
 
             yield return new WaitForSeconds(0.4f);
+            playingSkill = false;
         }
 
         private GameObject CreateElementProjectile(InsectElement element, Color color)
@@ -1437,6 +1997,25 @@ namespace InsectGame.Battle
 
         // --- Skill Effect Helpers ---
 
+        // UI 효과 텍스트 색상 (1v1 / 5v1 컨트롤러 공용)
+        public static Color GetUIElementColor(InsectElement element)
+        {
+            switch (element)
+            {
+                case InsectElement.Bug:      return new Color(0.7f, 0.85f, 0.3f);
+                case InsectElement.Metal:    return new Color(0.75f, 0.78f, 0.85f);
+                case InsectElement.Earth:    return new Color(0.65f, 0.45f, 0.25f);
+                case InsectElement.Leaf:     return new Color(0.35f, 0.8f, 0.35f);
+                case InsectElement.Water:    return new Color(0.3f, 0.65f, 1f);
+                case InsectElement.Wind:     return new Color(0.7f, 0.95f, 0.9f);
+                case InsectElement.Light:    return new Color(1f, 0.95f, 0.55f);
+                case InsectElement.Electric: return new Color(1f, 0.95f, 0.3f);
+                case InsectElement.Dark:     return new Color(0.45f, 0.35f, 0.6f);
+                case InsectElement.Poison:   return new Color(0.7f, 0.4f, 0.85f);
+                default:                     return new Color(0.9f, 0.9f, 0.9f);
+            }
+        }
+
         private Color GetElementColor3D(InsectElement element)
         {
             switch (element)
@@ -1499,7 +2078,7 @@ namespace InsectGame.Battle
             Destroy(p);
         }
 
-        private static Material CreateTransparentMaterial(Color color)
+        private Material CreateTransparentMaterial(Color color)
         {
             Material mat = CreateSafeMaterial(color);
             mat.SetFloat("_Mode", 3);
@@ -1515,9 +2094,252 @@ namespace InsectGame.Battle
 
         // ===== End Skill Effect System =====
 
+        // ===== Faint / Hit Flash / Floating Effect Text =====
+
+        public class EffectTextEntry
+        {
+            public string text;
+            public Color color;
+            public float startTime;
+            public float duration;
+        }
+
+        private readonly List<EffectTextEntry> activeEffectTexts = new List<EffectTextEntry>();
+        private const int MaxConcurrentEffectTexts = 3;
+
+        // HitFlash/Faint 호출 시마다 GetComponentsInChildren 반복 방지용 캐시
+        private readonly Dictionary<GameObject, MeshRenderer[]> rendererCache = new Dictionary<GameObject, MeshRenderer[]>();
+
+        private MeshRenderer[] GetRenderersCached(GameObject model)
+        {
+            if (model == null) return new MeshRenderer[0];
+            if (rendererCache.TryGetValue(model, out var cached))
+            {
+                if (cached != null && cached.Length > 0 && cached[0] != null)
+                    return cached;
+                rendererCache.Remove(model);
+            }
+            var fresh = model.GetComponentsInChildren<MeshRenderer>();
+            rendererCache[model] = fresh;
+            return fresh;
+        }
+
+        /// <summary>
+        /// 지금 떠 있는 문구. 만료 항목은 <b>여기서</b> 걷어낸다 — 그리는 쪽(<c>BattleEffectTextOverlay</c>)이
+        /// 목록을 수정할 수 없고 이 컴포넌트엔 <c>Update</c>가 없기 때문이다. 호출은 프레임당 한 번
+        /// (오버레이 그리기)이고 항목은 최대 <see cref="MaxConcurrentEffectTexts"/>개다.
+        /// </summary>
+        public IReadOnlyList<EffectTextEntry> GetActiveEffectTexts()
+        {
+            float now = Time.time;
+            for (int i = activeEffectTexts.Count - 1; i >= 0; i--)
+            {
+                EffectTextEntry e = activeEffectTexts[i];
+                if (e == null || now - e.startTime >= e.duration)
+                    activeEffectTexts.RemoveAt(i);
+            }
+            return activeEffectTexts;
+        }
+
+        public void PlayEffectText(string text, Color color)
+        {
+            if (string.IsNullOrEmpty(text)) return;
+            // 가장 오래된 항목 제거 (최대 3개 유지)
+            if (activeEffectTexts.Count >= MaxConcurrentEffectTexts)
+                activeEffectTexts.RemoveAt(0);
+
+            activeEffectTexts.Add(new EffectTextEntry
+            {
+                text = text,
+                color = color,
+                startTime = Time.time,
+                duration = 1.0f
+            });
+        }
+
+        // 이 자리에 `OnGUI`가 있었다. 아레나는 3D 연출을 맡는 컴포넌트인데 화면 문구까지 직접
+        // 그리고 있었고, 거긴 `UIScale` 밖이라 **픽셀 좌표**였다 — 스케일이 1이 아닌 기기에서
+        // 이 문구만 다른 UI보다 25% 작게 찍혔다. 그리기는 `BattleEffectTextOverlay`(UI)로 옮겼다.
+        // 여기서 부를 수는 없다: UI가 이미 Battle을 참조하므로 반대 방향은 순환이 된다.
+
+        public IEnumerator PlayFaintCoroutine(GameObject model)
+        {
+            if (model == null) yield break;
+
+            Vector3 originalPos = model.transform.position;
+            Quaternion originalRot = model.transform.rotation;
+            Vector3 targetPos = originalPos + new Vector3(0f, -0.2f, 0f);
+            Quaternion targetRot = originalRot * Quaternion.Euler(0f, 0f, 90f);
+
+            MeshRenderer[] renderers = GetRenderersCached(model);
+            int count = renderers != null ? renderers.Length : 0;
+            Color[] originalColors = new Color[count];
+            bool[] hasBaseColor = new bool[count];
+            Color[] originalBaseColors = new Color[count];
+
+            for (int i = 0; i < count; i++)
+            {
+                if (renderers[i] == null) continue;
+                Material mat = renderers[i].material; // 인스턴스
+                // Standard/URP 셰이더를 Transparent(Fade) 모드로 전환해야 알파 페이드가 시각적으로 보임.
+                SetMaterialTransparentFade(mat);
+                originalColors[i] = mat.HasProperty("_Color") ? mat.color : Color.white;
+                if (mat.HasProperty("_BaseColor"))
+                {
+                    hasBaseColor[i] = true;
+                    originalBaseColors[i] = mat.GetColor("_BaseColor");
+                }
+            }
+
+            float duration = 0.6f;
+            float t = 0f;
+            while (t < duration)
+            {
+                if (model == null) yield break;
+                t += Time.deltaTime;
+                float progress = Mathf.Clamp01(t / duration);
+                float eased = progress * progress * (3f - 2f * progress);
+
+                model.transform.position = Vector3.Lerp(originalPos, targetPos, eased);
+                model.transform.rotation = Quaternion.Slerp(originalRot, targetRot, eased);
+
+                float alpha = 1f - progress;
+                for (int i = 0; i < count; i++)
+                {
+                    if (renderers[i] == null) continue;
+                    Material mat = renderers[i].material;
+                    if (mat.HasProperty("_Color"))
+                    {
+                        Color c = originalColors[i];
+                        c.a = originalColors[i].a * alpha;
+                        mat.color = c;
+                    }
+                    if (hasBaseColor[i] && mat.HasProperty("_BaseColor"))
+                    {
+                        Color c = originalBaseColors[i];
+                        c.a = originalBaseColors[i].a * alpha;
+                        mat.SetColor("_BaseColor", c);
+                    }
+                }
+                yield return null;
+            }
+
+            if (model != null) model.SetActive(false);
+        }
+
+        // Standard / URP Lit 머티리얼을 Transparent(Fade) 모드로 전환.
+        // Opaque 모드에서는 알파 변경이 시각적으로 보이지 않으므로 페이드 전에 반드시 호출.
+        private static void SetMaterialTransparentFade(Material mat)
+        {
+            if (mat == null) return;
+            // Standard (Built-in)
+            if (mat.HasProperty("_Mode"))
+            {
+                mat.SetFloat("_Mode", 2f); // Fade
+                mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+                mat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+                mat.SetInt("_ZWrite", 0);
+                mat.DisableKeyword("_ALPHATEST_ON");
+                mat.EnableKeyword("_ALPHABLEND_ON");
+                mat.DisableKeyword("_ALPHAPREMULTIPLY_ON");
+            }
+            // URP Lit
+            if (mat.HasProperty("_Surface"))
+            {
+                mat.SetFloat("_Surface", 1f); // Transparent
+                if (mat.HasProperty("_Blend")) mat.SetFloat("_Blend", 0f); // Alpha
+                mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+                mat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+                mat.SetInt("_ZWrite", 0);
+                mat.DisableKeyword("_SURFACE_TYPE_OPAQUE");
+                mat.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            }
+            mat.renderQueue = 3000;
+        }
+
+        public IEnumerator PlayHitFlashCoroutine(GameObject model)
+        {
+            if (model == null) yield break;
+
+            Vector3 originalPos = model.transform.position;
+            // 모델 정면 방향 기준 뒤로 0.3 백스텝 (forward의 반대)
+            Vector3 backDir = -model.transform.forward;
+            if (backDir.sqrMagnitude < 0.001f) backDir = Vector3.back;
+            Vector3 backPos = originalPos + backDir.normalized * 0.3f;
+
+            MeshRenderer[] renderers = GetRenderersCached(model);
+            int count = renderers != null ? renderers.Length : 0;
+            Color[] originalColors = new Color[count];
+            bool[] hasBaseColor = new bool[count];
+            Color[] originalBaseColors = new Color[count];
+
+            for (int i = 0; i < count; i++)
+            {
+                if (renderers[i] == null) continue;
+                Material mat = renderers[i].material;
+                originalColors[i] = mat.HasProperty("_Color") ? mat.color : Color.white;
+                if (mat.HasProperty("_BaseColor"))
+                {
+                    hasBaseColor[i] = true;
+                    originalBaseColors[i] = mat.GetColor("_BaseColor");
+                }
+            }
+
+            float duration = 0.15f;
+            float t = 0f;
+            while (t < duration)
+            {
+                if (model == null) yield break;
+                t += Time.deltaTime;
+                float progress = Mathf.Clamp01(t / duration);
+                // 0~0.5 백스텝, 0.5~1 복귀
+                float backWeight = progress < 0.5f ? (progress / 0.5f) : (1f - (progress - 0.5f) / 0.5f);
+                model.transform.position = Vector3.Lerp(originalPos, backPos, backWeight);
+
+                // 빨강 추가: 0 → 0.5 → 0 (피크 0.5)
+                float redWeight = Mathf.Sin(progress * Mathf.PI) * 0.5f;
+                for (int i = 0; i < count; i++)
+                {
+                    if (renderers[i] == null) continue;
+                    Material mat = renderers[i].material;
+                    if (mat.HasProperty("_Color"))
+                    {
+                        Color flashed = Color.Lerp(originalColors[i], Color.red, redWeight);
+                        flashed.a = originalColors[i].a;
+                        mat.color = flashed;
+                    }
+                    if (hasBaseColor[i] && mat.HasProperty("_BaseColor"))
+                    {
+                        Color flashed = Color.Lerp(originalBaseColors[i], Color.red, redWeight);
+                        flashed.a = originalBaseColors[i].a;
+                        mat.SetColor("_BaseColor", flashed);
+                    }
+                }
+                yield return null;
+            }
+
+            // 원위치 / 원색 복원
+            if (model == null) yield break;
+            model.transform.position = originalPos;
+            for (int i = 0; i < count; i++)
+            {
+                if (renderers[i] == null) continue;
+                Material mat = renderers[i].material;
+                if (mat.HasProperty("_Color")) mat.color = originalColors[i];
+                if (hasBaseColor[i] && mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", originalBaseColors[i]);
+            }
+        }
+
+        // ===== End Faint / Hit Flash / Floating Effect Text =====
+
         public void CleanupArena()
         {
+            // 진행 중인 Faint/HitFlash/스킬 코루틴이 destroyed GameObject에 접근하지 않도록 우선 정지.
+            StopAllCoroutines();
             isActive = false;
+            // StopAllCoroutines가 SkillAttackCoroutine을 종료점 도달 전에 죽이면 playingSkill이 true로
+            // 고착 → 다음 배틀 PhaseAnimDone이 2s 상한까지 지연. 강제 리셋으로 차단.
+            playingSkill = false;
             if (arenaRoot != null)
             {
                 Destroy(arenaRoot);
@@ -1527,6 +2349,13 @@ namespace InsectGame.Battle
             enemyModel = null;
             bossModel = null;
             teamModels = null;
+            activeEffectTexts.Clear();
+            rendererCache.Clear();
+
+            // 이 전투가 만든 머티리얼 일괄 파기 — GameObject를 지워도 머티리얼은 남는다.
+            for (int i = 0; i < runtimeMaterials.Count; i++)
+                if (runtimeMaterials[i] != null) Destroy(runtimeMaterials[i]);
+            runtimeMaterials.Clear();
         }
 
         public void HighlightTeamMember(int index)
@@ -1549,7 +2378,18 @@ namespace InsectGame.Battle
             }
         }
 
-        private static Material CreateSafeMaterial(Color color)
+        /// <summary>
+        /// 이 전투가 만든 런타임 머티리얼. <b><c>Destroy(gameObject)</c>는 머티리얼을 지우지 않는다</b> —
+        /// 같은 저장소가 <c>OutfitShapeLibrary.TrimContainer</c>에서 GameObject보다 머티리얼을 먼저 파괴하고
+        /// <c>PlayerVisualBuilder.OnDestroy</c>·<c>NpcVisualBuilder.CleanupMaterials</c>를 두는 이유다.
+        ///
+        /// 여기선 <b>스킬 연출마다</b> 이펙트 오브젝트(링·스파크·구름·기둥…)가 새로 나고 그때마다
+        /// 머티리얼도 새로 난다. 오브젝트는 코루틴이 지우지만 머티리얼은 아무도 안 지워서, 전투가 길수록
+        /// 계속 쌓였다. 전투 종료에 한 번에 정리해 누수를 <b>전투 1회 수명</b>으로 가둔다.
+        /// </summary>
+        private readonly List<Material> runtimeMaterials = new List<Material>();
+
+        private Material CreateSafeMaterial(Color color)
         {
             Shader shader = Shader.Find("Standard");
             if (shader == null) shader = Shader.Find("Universal Render Pipeline/Lit");
@@ -1557,6 +2397,7 @@ namespace InsectGame.Battle
             if (shader == null) shader = Shader.Find("Sprites/Default");
             Material mat = shader != null ? new Material(shader) : new Material(Shader.Find("Hidden/InternalErrorShader"));
             mat.color = color;
+            runtimeMaterials.Add(mat);   // CleanupArena가 일괄 파기 — 안 하면 연출마다 샌다
             return mat;
         }
     }

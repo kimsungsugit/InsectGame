@@ -41,13 +41,16 @@ namespace InsectGame.Core
             activeItem = item;
             remainingSeconds = Mathf.Max(1f, item.durationSeconds);
             ActiveItemChanged?.Invoke(item);
+            // q_item 진행 알림은 여기 있었으나 PlayerItemInventory.UseItem으로 옮겼다.
+            // 이 메서드는 **시간제 부스터만** 지나간다 — 채집망·치료제는 도달하지 않는다.
+            // 게다가 가방 경로는 UseItem 직후 여기를 부르므로 양쪽에 두면 한 번 써도 2가 오른다.
             return true;
         }
 
         public bool ActivateItemById(string itemId)
         {
             EnsureDatabase();
-
+            if (itemDatabase == null) return false;
             ItemData item = itemDatabase.FindById(itemId);
             return ActivateItem(item);
         }
@@ -72,6 +75,21 @@ namespace InsectGame.Core
             return activeItem != null ? activeItem.rareSpawnMultiplier : 1f;
         }
 
+        public float GetAtkBonus()
+        {
+            return activeItem != null ? activeItem.atkBonus : 0f;
+        }
+
+        public float GetDefBonus()
+        {
+            return activeItem != null ? activeItem.defBonus : 0f;
+        }
+
+        public float GetFleePreventChance()
+        {
+            return activeItem != null ? activeItem.fleePreventChance : 0f;
+        }
+
         public ItemData GetActiveItem()
         {
             return activeItem;
@@ -90,6 +108,8 @@ namespace InsectGame.Core
             if (itemDatabase == null)
             {
                 itemDatabase = Resources.Load<ItemDatabase>("ItemDatabase");
+                if (itemDatabase == null)
+                    itemDatabase = ItemDatabase.CreateRuntimeDefault();
             }
         }
     }

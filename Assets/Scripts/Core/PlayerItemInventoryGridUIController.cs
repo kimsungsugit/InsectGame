@@ -24,11 +24,13 @@ namespace InsectGame.Core
             EnsureDatabase();
             if (inventory != null)
             {
+                inventory.ItemsChanged -= HandleItemsChanged;
                 inventory.ItemsChanged += HandleItemsChanged;
             }
 
             if (effectManager != null)
             {
+                effectManager.ActiveItemChanged -= HandleActiveChanged;
                 effectManager.ActiveItemChanged += HandleActiveChanged;
             }
 
@@ -50,9 +52,18 @@ namespace InsectGame.Core
             }
         }
 
+        // 잔여시간 표시는 1초 단위라 매 프레임 갱신 불필요. 디바운스로 60fps→1fps 갱신.
+        // 만료 시점은 ItemEffectManager.ActiveItemChanged 이벤트가 즉시 처리하므로 무해.
+        private float remainingTextTimer;
+
         private void Update()
         {
-            UpdateRemainingTime();
+            remainingTextTimer += Time.unscaledDeltaTime;
+            if (remainingTextTimer >= 1f)
+            {
+                remainingTextTimer = 0f;
+                UpdateRemainingTime();
+            }
         }
 
         private void HandleItemsChanged(PlayerItemSave save)
@@ -62,12 +73,15 @@ namespace InsectGame.Core
 
         private void HandleActiveChanged(ItemData item)
         {
-            if (activeItemText == null)
+            if (activeItemText != null)
             {
-                return;
+                activeItemText.text = item != null ? $"사용중: {item.displayName}" : "사용중: 없음";
             }
 
-            activeItemText.text = item != null ? $"사용중: {item.displayName}" : "사용중: 없음";
+            // 만료/시작 시점에 남은 시간 표시 즉시 갱신 — 옛은 Update 1초 디바운스 대기로 "남은 시간: 00:00" 표시 지연.
+            // 주석(line 56)이 "만료 시점은 ActiveItemChanged 즉시 처리" 명시했으나 실제 호출 누락 회귀.
+            UpdateRemainingTime();
+            remainingTextTimer = 0f;
         }
 
         private void UpdateRemainingTime()
@@ -131,9 +145,16 @@ namespace InsectGame.Core
                 return;
             }
 
+            // **템플릿은 건너뛴다.** `PlaySceneBootstrap`이 `itemPrefab`을 바로 이 `contentRoot`의
+            // 자식으로 만들기 때문에, 그냥 전부 지우면 첫 갱신에서 템플릿까지 파괴 예약되고
+            // 두 번째 갱신부터는 위 `itemPrefab == null` 가드에 걸려 조기 반환한다 —
+            // 그리드가 **옛 수량으로 영구히 얼어붙는다**(아이템을 써도 개수가 그대로다).
+            Transform template = itemPrefab.transform;
             for (int i = contentRoot.childCount - 1; i >= 0; i--)
             {
-                Destroy(contentRoot.GetChild(i).gameObject);
+                Transform child = contentRoot.GetChild(i);
+                if (child == template) continue;
+                Destroy(child.gameObject);
             }
 
             PlayerItemSave save = inventory.GetSnapshot();
@@ -151,27 +172,48 @@ namespace InsectGame.Core
 
                 ItemData data = itemDatabase.FindById(record.itemId);
                 ItemInventoryGridItem item = Instantiate(itemPrefab, contentRoot);
+                // 템플릿은 숨겨져 있고(`SetActive(false)`) `Instantiate`가 그 상태를 복사하므로,
+                // 켜 주지 않으면 셀이 보이지 않고 `GridLayoutGroup` 배치에서도 빠진다.
+                item.gameObject.SetActive(true);
                 item.Bind(data, record.count, TryUseItem);
             }
         }
 
         private void TryUseItem(string itemId)
         {
-            if (inventory == null || effectManager == null || itemDatabase == null)
-            {
-                return;
-            }
-
-            if (!inventory.UseItem(itemId, 1))
+            if (inventory == null || itemDatabase == null)
             {
                 return;
             }
 
             ItemData data = itemDatabase.FindById(itemId);
-            if (data != null)
+            if (data == null) return;
+
+            // 기술 디스크 — 여기서는 쓰지 않는다. 어느 곤충에게 가르칠지 고르고 교체까지 해야 하는데
+            // 그 흐름은 훈련소(TrainingUI)가 이미 갖고 있다. 소비도 그쪽이 한다.
+            if (!string.IsNullOrEmpty(data.teachSkillId))
             {
-                effectManager.ActivateItem(data);
+                Debug.Log($"[Item] {data.displayName}은 훈련소에서 사용합니다.");
+                return;
             }
+
+            // 대상지정 치료 아이템 — 병원 선택기를 열어 곤충 지정(소비는 선택 시). 여기선 소비하지 않는다.
+            if (data.isTargetedUse)
+            {
+                if (hospital != null) hospital.UseTreatmentItem(data, inventory);
+                return;
+            }
+
+            // 시간제 부스터 — 즉시 소비 후 활성.
+            if (effectManager == null) return;
+            if (!inventory.UseItem(itemId, 1)) return;
+            effectManager.ActivateItem(data);
+        }
+
+        private InsectGame.UI.HospitalUI hospital;
+        public void AutoWire(InsectGame.UI.HospitalUI hospitalUi)
+        {
+            if (hospital == null) hospital = hospitalUi;
         }
 
         public void AutoWire(PlayerItemInventory inv, ItemDatabase db, ItemEffectManager effects)

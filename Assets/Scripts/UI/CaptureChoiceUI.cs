@@ -7,7 +7,7 @@ using UnityEngine;
 
 namespace InsectGame.UI
 {
-    public class CaptureChoiceUI : MonoBehaviour
+    public class CaptureChoiceUI : MonoBehaviour, IModalUI
     {
         [SerializeField] private CaptureMinigameController minigame;
         [SerializeField] private InsectBattleController battleController;
@@ -25,6 +25,8 @@ namespace InsectGame.UI
         private CaptureItemData[] captureItems;
 
         private bool isOpen;
+        public bool IsOpen => isOpen;
+        public void CloseModal() { Hide(); }
         private InsectEntity targetInsect;
 #pragma warning disable 0414
         private int selectedTeamSlot = -1;
@@ -43,21 +45,27 @@ namespace InsectGame.UI
         {
             if (target == null || target.Data == null) return;
             targetInsect = target;
+            target.SetEngaged(true); // 포획 상호작용 중 — 곤충 도주 방지
             isOpen = true;
             selectedTeamSlot = -1;
             showTeamSelect = false;
             showItemSelect = false;
+            ModalUIRegistry.Register(this);
             if (playerMovement != null) playerMovement.SetFrozen(true);
         }
 
         public void Hide()
         {
             isOpen = false;
+            if (targetInsect != null) targetInsect.SetEngaged(false); // 포획 취소 — 곤충 정상 행동 복귀
             targetInsect = null;
             showTeamSelect = false;
             showItemSelect = false;
+            ModalUIRegistry.Unregister(this);
             if (playerMovement != null) playerMovement.SetFrozen(false);
         }
+
+        private void OnDisable() { ModalUIRegistry.Unregister(this); }
 
         private void Update()
         {
@@ -89,9 +97,11 @@ namespace InsectGame.UI
             else
             {
                 bool isRaid = IsRaidTarget();
+                bool isGuardian = targetInsect != null && targetInsect.IsGuardian;
                 if (!isRaid && (key == KeyCode.E || key == KeyCode.Alpha1))
                 {
-                    if (HasAnyCaptureItem())
+                    // 버튼과 같은 조건 — 수문장 포획은 키로도 우회할 수 없다(잡히면 리전 영구 잠김).
+                    if (HasAnyCaptureItem() && !isGuardian)
                         showItemSelect = true;
                 }
                 if (!isRaid && (key == KeyCode.B || key == KeyCode.Alpha2))
@@ -102,8 +112,9 @@ namespace InsectGame.UI
                 }
                 if (isRaid && (key == KeyCode.R || key == KeyCode.Alpha1 || key == KeyCode.Alpha3))
                 {
+                    // 버튼과 같은 조건 — 키 입력으로 비활성 버튼을 우회하면 안 된다.
                     bool hasFullTeam = teamManager != null && teamManager.FilledSlots >= 5;
-                    if (hasFullTeam)
+                    if (hasFullTeam && CountBattleReadyTeamMembers() > 0)
                         StartRaidBattle();
                 }
                 if (key == KeyCode.Escape)
@@ -133,12 +144,14 @@ namespace InsectGame.UI
                 evt.Use();
             }
 
+            UIScale.Begin();
             if (showTeamSelect)
                 DrawTeamSelect();
             else if (showItemSelect)
                 DrawItemSelect();
             else
                 DrawChoice();
+            UIScale.End();
         }
 
         private bool IsRaidTarget()
@@ -152,10 +165,11 @@ namespace InsectGame.UI
             if (targetInsect == null || targetInsect.Data == null) return;
 
             bool isRaid = IsRaidTarget();
-            float panelW = isRaid ? 760f : 760f;
-            float panelH = isRaid ? 560f : 480f;
-            float px = (Screen.width - panelW) / 2f;
-            float py = (Screen.height - panelH) / 2f;
+            Rect panel = UISafeLayout.CenteredPanel(760f, isRaid ? 560f : 480f);
+            float panelW = panel.width;
+            float panelH = panel.height;
+            float px = panel.x;
+            float py = panel.y;
 
             GUI.color = new Color(0.04f, 0.06f, 0.1f, 0.95f);
             GUI.DrawTexture(new Rect(px, py, panelW, panelH), Texture2D.whiteTexture);
@@ -172,13 +186,15 @@ namespace InsectGame.UI
             string titleText = isRaid ? "레이드 보스 발견!" : "어떻게 포획할까요?";
             GUI.Label(new Rect(px, py + 20, panelW, 48), titleText, titleStyle);
 
-            CapturePopupUI.DrawTypedInsectPortrait(px + panelW / 2f, py + 120, targetInsect.Data.insectId, targetInsect.Data.rarity, 1f);
+            InsectVisual.Draw(px + panelW / 2f, py + 120, 96f, targetInsect.Data, targetInsect.IsShiny, 1f);
 
             GUIStyle nameStyle = new GUIStyle(GUI.skin.label)
             { fontSize = 38, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             nameStyle.normal.textColor = rarityCol;
-            GUI.Label(new Rect(px, py + 160, panelW, 48),
-                $"{targetInsect.Data.displayName} Lv.{targetInsect.Level}", nameStyle);
+            // 「지워진 개체」면 본명 대신 "???" — 월드에서 실루엣·"???"로 감춰 놓고 이 창이
+            // 바로 알려주면 연출이 무의미해진다(`InsectEntity.DisplayNameForPlayer`가 단일 출처).
+            UIHelper.LabelFit(new Rect(px, py + 160, panelW, 48),
+                $"{targetInsect.DisplayNameForPlayer} Lv.{targetInsect.Level}", nameStyle);
 
             if (isRaid)
             {
@@ -206,22 +222,48 @@ namespace InsectGame.UI
                 float raidBtnY = py + 290;
 
                 bool hasFullTeam = teamManager != null && teamManager.FilledSlots >= 5;
-                GUI.backgroundColor = hasFullTeam ? new Color(0.7f, 0.2f, 0.05f) : new Color(0.3f, 0.3f, 0.3f);
-                GUI.enabled = hasFullTeam;
-                if (GUI.Button(new Rect(raidBtnX, raidBtnY, raidBtnW, raidBtnH), "레이드 시작 [R]", btnStyle))
+                // 전원 기절이면 시작해도 아무도 행동할 수 없어 레이드가 잠긴다(StartRaidBattle 주석 참조).
+                int readyCount = CountBattleReadyTeamMembers();
+                bool canRaid = hasFullTeam && readyCount > 0;
+                GUI.backgroundColor = canRaid ? new Color(0.7f, 0.2f, 0.05f) : new Color(0.3f, 0.3f, 0.3f);
+                GUI.enabled = canRaid;
+                string raidButtonText = UIScale.IsMobileLayout ? "레이드 시작" : "레이드 시작 [R]";
+                if (GUI.Button(new Rect(raidBtnX, raidBtnY, raidBtnW, raidBtnH), raidButtonText, btnStyle))
                 {
                     StartRaidBattle();
                 }
                 GUI.enabled = true;
 
+                // 안내는 한 줄만 — 편성 부족 > 전원 기절 > 일부 기절 순으로 더 급한 것을 보여준다.
+                string raidNotice = null;
+                Color raidNoticeCol = new Color(1f, 0.4f, 0.15f);
                 if (!hasFullTeam)
                 {
-                    GUIStyle raidReq = new GUIStyle(GUI.skin.label)
-                    { fontSize = 26, alignment = TextAnchor.MiddleCenter };
-                    raidReq.normal.textColor = new Color(1f, 0.4f, 0.15f);
                     int filled = teamManager != null ? teamManager.FilledSlots : 0;
-                    GUI.Label(new Rect(raidBtnX, raidBtnY + raidBtnH + 8, raidBtnW, 34),
-                        $"팀 편성 필요 ({filled}/5)  T키로 편성", raidReq);
+                    raidNotice = UIScale.IsMobileLayout
+                        ? $"팀 편성 필요 ({filled}/5) · 메뉴에서 배틀팀 편성"
+                        : $"팀 편성 필요 ({filled}/5)  T키로 편성";
+                }
+                else if (readyCount <= 0)
+                {
+                    raidNotice = "팀 전원이 기절했습니다 — 병원에서 치료 후 도전하세요";
+                }
+                else if (readyCount < BattleTeamManager.MaxSlots)
+                {
+                    raidNotice = $"기절 {BattleTeamManager.MaxSlots - readyCount}마리 · 전투 가능 {readyCount}/{BattleTeamManager.MaxSlots}";
+                    raidNoticeCol = new Color(1f, 0.75f, 0.25f);
+                }
+
+                if (raidNotice != null)
+                {
+                    GUIStyle raidReq = new GUIStyle(GUI.skin.label)
+                    { fontSize = 26, alignment = TextAnchor.UpperCenter, wordWrap = true };
+                    raidReq.normal.textColor = raidNoticeCol;
+                    // 버튼 폭(340)이 아니라 패널 폭을 쓴다 — "팀 전원이 기절했습니다 …" 같은 한 줄은
+                    // 340px에 못 들어가고, 한국어 폰트가 커지는 모바일에서 특히 잘렸다.
+                    // 2줄 높이를 주고 그래도 넘치면 LabelFit이 글자를 줄여 맞춘다(ui-layout.md).
+                    UIHelper.LabelFit(new Rect(px + 20f, raidBtnY + raidBtnH + 10f, panelW - 40f, 68f),
+                        raidNotice, raidReq);
                 }
             }
             else
@@ -232,28 +274,35 @@ namespace InsectGame.UI
                 float gap = 24f;
                 float leftX = px + panelW / 2f - btnW - gap / 2f;
 
+                // **수문장은 포획 대상이 아니다.** 잡아 버리면 개체가 사라지는데 격파 판정은
+                // 그 개체를 이겼을 때만 서므로, 그 리전이 영구히 안 열린다(진행 정지).
+                bool isGuardian = targetInsect.IsGuardian;
                 bool hasAnyNet = HasAnyCaptureItem();
-                GUI.backgroundColor = hasAnyNet ? new Color(0.2f, 0.5f, 0.3f) : new Color(0.3f, 0.3f, 0.3f);
-                GUI.enabled = hasAnyNet;
-                if (GUI.Button(new Rect(leftX, btnY, btnW, btnH), "미니게임 [E]", btnStyle))
+                bool canCapture = hasAnyNet && !isGuardian;
+                GUI.backgroundColor = canCapture ? new Color(0.2f, 0.5f, 0.3f) : new Color(0.3f, 0.3f, 0.3f);
+                GUI.enabled = canCapture;
+                string minigameText = UIScale.IsMobileLayout ? "미니게임 포획" : "미니게임 [E]";
+                if (GUI.Button(new Rect(leftX, btnY, btnW, btnH), minigameText, btnStyle))
                 {
                     showItemSelect = true;
                 }
                 GUI.enabled = true;
 
-                if (!hasAnyNet)
+                if (!canCapture)
                 {
                     GUIStyle noNet = new GUIStyle(GUI.skin.label)
                     { fontSize = 24, alignment = TextAnchor.MiddleCenter };
                     noNet.normal.textColor = new Color(1f, 0.4f, 0.3f);
-                    GUI.Label(new Rect(leftX, btnY + btnH + 6, btnW, 30),
-                        "포획 아이템 없음!", noNet);
+                    // 고정 상자에 리터럴을 그리므로 LabelFit — 수문장 문구가 더 길어 잘릴 수 있다.
+                    UIHelper.LabelFit(new Rect(leftX, btnY + btnH + 6, btnW, 30),
+                        isGuardian ? "수문장은 쓰러뜨려야 한다" : "포획 아이템 없음!", noNet);
                 }
 
                 bool hasTeam = teamManager != null && teamManager.HasAnyInsect();
                 GUI.backgroundColor = hasTeam ? new Color(0.5f, 0.2f, 0.2f) : new Color(0.3f, 0.3f, 0.3f);
                 GUI.enabled = hasTeam;
-                if (GUI.Button(new Rect(leftX + btnW + gap, btnY, btnW, btnH), "배틀 [B]", btnStyle))
+                string battleText = UIScale.IsMobileLayout ? "배틀" : "배틀 [B]";
+                if (GUI.Button(new Rect(leftX + btnW + gap, btnY, btnW, btnH), battleText, btnStyle))
                 {
                     showTeamSelect = true;
                 }
@@ -265,13 +314,17 @@ namespace InsectGame.UI
                     { fontSize = 24, alignment = TextAnchor.MiddleCenter };
                     hintStyle.normal.textColor = new Color(0.5f, 0.4f, 0.3f);
                     GUI.Label(new Rect(leftX + btnW + gap, btnY + btnH + 6, btnW, 30),
-                        "T키로 팀 편성", hintStyle);
+                        UIScale.IsMobileLayout ? "메뉴에서 배틀팀 편성" : "T키로 팀 편성", hintStyle);
                 }
             }
 
             GUI.backgroundColor = new Color(0.3f, 0.3f, 0.35f);
             GUIStyle cancelStyle = new GUIStyle(GUI.skin.button) { fontSize = 26, fontStyle = FontStyle.Bold };
-            if (GUI.Button(new Rect(px + panelW / 2f - 70, py + panelH - 70, 140, 50), "취소 [ESC]", cancelStyle))
+            float cancelW = UIScale.IsMobileLayout ? 190f : 140f;
+            float cancelH = UIScale.IsMobileLayout ? 60f : 50f;
+            string cancelText = UIScale.IsMobileLayout ? "취소" : "취소 [ESC]";
+            if (GUI.Button(new Rect(px + panelW / 2f - cancelW / 2f, py + panelH - cancelH - 18f,
+                cancelW, cancelH), cancelText, cancelStyle))
                 Hide();
             GUI.backgroundColor = Color.white;
         }
@@ -280,10 +333,12 @@ namespace InsectGame.UI
         {
             if (captureItems == null || captureItems.Length == 0) { showItemSelect = false; return; }
 
-            float panelW = 800f;
-            float panelH = 120 + captureItems.Length * 160;
-            float px = (Screen.width - panelW) / 2f;
-            float py = (Screen.height - panelH) / 2f;
+            // 아이템 수에 비례해 무한히 자라는 높이 — 안전 영역을 넘으면 clamp된다(넘치는 목록은 스크롤로 본다).
+            Rect panel = UISafeLayout.CenteredPanel(800f, 120 + captureItems.Length * 160);
+            float panelW = panel.width;
+            float panelH = panel.height;
+            float px = panel.x;
+            float py = panel.y;
 
             GUI.color = new Color(0.04f, 0.06f, 0.1f, 0.95f);
             GUI.DrawTexture(new Rect(px, py, panelW, panelH), Texture2D.whiteTexture);
@@ -318,11 +373,11 @@ namespace InsectGame.UI
                 GUI.color = Color.white;
                 GUIStyle ns = new GUIStyle(GUI.skin.label) { fontSize = 32, fontStyle = FontStyle.Bold };
                 ns.normal.textColor = hasItem ? item.themeColor : new Color(0.4f, 0.4f, 0.4f);
-                GUI.Label(new Rect(px + 90, cy + 10, panelW - 280, 42), $"[{i + 1}] {item.displayName}", ns);
+                UIHelper.LabelFit(new Rect(px + 90, cy + 10, panelW - 280, 42), $"[{i + 1}] {item.displayName}", ns);
 
                 GUIStyle ds2 = new GUIStyle(GUI.skin.label) { fontSize = 24 };
                 ds2.normal.textColor = new Color(0.55f, 0.55f, 0.55f);
-                GUI.Label(new Rect(px + 90, cy + 52, panelW - 280, 32), item.description, ds2);
+                UIHelper.LabelFit(new Rect(px + 90, cy + 52, panelW - 280, 32), item.description, ds2);
 
                 string difficulty;
                 if (item.speedMultiplier <= 0.6f) difficulty = "매우 쉬움";
@@ -337,7 +392,7 @@ namespace InsectGame.UI
                 GUIStyle countS = new GUIStyle(GUI.skin.label)
                 { fontSize = 30, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleRight };
                 countS.normal.textColor = hasItem ? new Color(1f, 0.85f, 0.3f) : new Color(0.4f, 0.3f, 0.3f);
-                GUI.Label(new Rect(px + panelW - 220, cy + 14, 80, 36), $"x{count}", countS);
+                UIHelper.LabelFit(new Rect(px + panelW - 220, cy + 14, 80, 36), $"x{count}", countS);
 
                 GUIStyle useBtn = new GUIStyle(GUI.skin.button) { fontSize = 28, fontStyle = FontStyle.Bold };
                 GUI.backgroundColor = hasItem ? new Color(0.25f, 0.5f, 0.3f) : new Color(0.2f, 0.2f, 0.2f);
@@ -359,7 +414,8 @@ namespace InsectGame.UI
             }
 
             GUIStyle backBtn = new GUIStyle(GUI.skin.button) { fontSize = 24, fontStyle = FontStyle.Bold };
-            if (GUI.Button(new Rect(px + panelW / 2f - 70, py + panelH - 60, 140, 46), "< 뒤로", backBtn))
+            float backH = UIScale.IsMobileLayout ? 60f : 46f;
+            if (GUI.Button(new Rect(px + panelW / 2f - 90f, py + panelH - backH - 10f, 180f, backH), "< 뒤로", backBtn))
                 showItemSelect = false;
         }
 
@@ -401,10 +457,11 @@ namespace InsectGame.UI
 
         private void DrawTeamSelect()
         {
-            float panelW = 820f;
-            float panelH = 720f;
-            float px = (Screen.width - panelW) / 2f;
-            float py = (Screen.height - panelH) / 2f;
+            Rect panel = UISafeLayout.CenteredPanel(820f, 720f);
+            float panelW = panel.width;
+            float panelH = panel.height;
+            float px = panel.x;
+            float py = panel.y;
 
             GUI.color = new Color(0.04f, 0.06f, 0.1f, 0.95f);
             GUI.DrawTexture(new Rect(px, py, panelW, panelH), Texture2D.whiteTexture);
@@ -416,25 +473,32 @@ namespace InsectGame.UI
             { fontSize = 36, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             titleStyle.normal.textColor = new Color(1f, 0.8f, 0.3f);
             GUI.color = Color.white;
-            GUI.Label(new Rect(px, py + 18, panelW, 44), "곤충을 선택하세요", titleStyle);
+            UIHelper.LabelFit(new Rect(px, py + 18, panelW, 44), "곤충을 선택하세요", titleStyle);
 
             GUIStyle subStyle = new GUIStyle(GUI.skin.label)
             { fontSize = 28, alignment = TextAnchor.MiddleCenter };
             subStyle.normal.textColor = new Color(0.6f, 0.6f, 0.6f);
-            GUI.Label(new Rect(px, py + 62, panelW, 36),
+            UIHelper.LabelFit(new Rect(px, py + 62, panelW, 36),
                 $"vs {targetInsect.Data.displayName} Lv.{targetInsect.Level}", subStyle);
 
             float slotY = py + 110;
-            float slotH = 100f;
+            const float slotGap = 6f;
+            float backH = UIScale.IsMobileLayout ? 60f : 46f;
+            // 패널이 안전 영역에 맞춰 줄면 슬롯도 줄여 '뒤로' 버튼과 겹치지 않게 한다.
+            float slotAvail = panelH - (slotY - py) - backH - 24f;
+            float slotH = Mathf.Clamp(
+                (slotAvail - (BattleTeamManager.MaxSlots - 1) * slotGap) / BattleTeamManager.MaxSlots,
+                UIScale.MinTouchHeight,
+                100f);
 
             for (int i = 0; i < BattleTeamManager.MaxSlots; i++)
             {
                 string instanceId = teamManager != null ? teamManager.GetSlot(i) : null;
-                DrawTeamSlotChoice(px + 24, slotY + i * (slotH + 6), panelW - 48, slotH, i, instanceId);
+                DrawTeamSlotChoice(px + 24, slotY + i * (slotH + slotGap), panelW - 48, slotH, i, instanceId);
             }
 
             GUIStyle backStyle = new GUIStyle(GUI.skin.button) { fontSize = 24, fontStyle = FontStyle.Bold };
-            if (GUI.Button(new Rect(px + panelW / 2f - 70, py + panelH - 60, 140, 46), "< 뒤로", backStyle))
+            if (GUI.Button(new Rect(px + panelW / 2f - 90f, py + panelH - backH - 10f, 180f, backH), "< 뒤로", backStyle))
                 showTeamSelect = false;
         }
 
@@ -470,24 +534,32 @@ namespace InsectGame.UI
                 GUI.color = rarityCol;
                 GUI.DrawTexture(new Rect(x, y, 5, h), Texture2D.whiteTexture);
 
-                CapturePopupUI.DrawTypedInsectPortrait(x + 80, y + h / 2f, data.insectId, data.rarity, 1f);
+                InsectVisual.Draw(x + 80, y + h / 2f, 96f, data, pid != null && pid.isShiny, 1f);
 
                 GUIStyle ns = new GUIStyle(GUI.skin.label) { fontSize = 30, fontStyle = FontStyle.Bold };
                 ns.normal.textColor = rarityCol;
                 GUI.color = Color.white;
                 int lv = pid != null ? pid.level : 1;
                 int cp = PlayerInsectCombatPower.Calculate(data, pid);
-                GUI.Label(new Rect(x + 120, y + 12, w - 280, 38), GetOwnedDisplayName(pid, data), ns);
+                UIHelper.LabelFit(new Rect(x + 120, y + 12, w - 280, 38), GetOwnedDisplayName(pid, data), ns);
 
                 GUIStyle info = new GUIStyle(GUI.skin.label) { fontSize = 24 };
                 info.normal.textColor = new Color(0.55f, 0.55f, 0.55f);
                 GUI.Label(new Rect(x + 120, y + 52, w - 280, 32), $"Lv.{lv}  |  CP {cp}", info);
 
                 GUIStyle fightBtn = new GUIStyle(GUI.skin.button) { fontSize = 28, fontStyle = FontStyle.Bold };
-                GUI.backgroundColor = new Color(0.6f, 0.2f, 0.15f);
-                if (GUI.Button(new Rect(x + w - 150, y + h / 2f - 28, 130, 56), "출격!", fightBtn))
+                // 기절(0 HP) 곤충은 출전 불가 — 병원 치료 전까지 즉사 반복 방지(지속 HP 도입에 따른 가드).
+                bool fainted = pid != null && pid.IsFainted;
+                if (fainted)
                 {
-                    StartBattleCapture(pid, data, lv);
+                    GUI.backgroundColor = new Color(0.3f, 0.3f, 0.32f);
+                    GUI.Button(new Rect(x + w - 150, y + h / 2f - 28, 130, 56), "기절", fightBtn);
+                }
+                else
+                {
+                    GUI.backgroundColor = new Color(0.6f, 0.2f, 0.15f);
+                    if (GUI.Button(new Rect(x + w - 150, y + h / 2f - 28, 130, 56), "출격!", fightBtn))
+                        StartBattleCapture(pid, data, lv);
                 }
                 GUI.backgroundColor = Color.white;
             }
@@ -506,8 +578,33 @@ namespace InsectGame.UI
             battleController.StartBattle(playerInsect, playerLevel, savedTarget, equippedSkills: equippedSkills, playerPid: playerPid);
         }
 
+        /// <summary>
+        /// 배틀팀 5슬롯 중 <b>지금 싸울 수 있는</b>(기절이 아닌) 곤충 수. 1v1의 출격 가드
+        /// (<see cref="DrawTeamSlotChoice"/>의 `pid.IsFainted`)와 같은 기준을 레이드 진입에 적용한다.
+        /// </summary>
+        private int CountBattleReadyTeamMembers()
+        {
+            if (teamManager == null || collection == null) return 0;
+
+            int ready = 0;
+            for (int i = 0; i < BattleTeamManager.MaxSlots; i++)
+            {
+                string instanceId = teamManager.GetSlot(i);
+                if (string.IsNullOrEmpty(instanceId)) continue;
+                PlayerInsectData pid = collection.GetByInstanceId(instanceId);
+                if (pid != null && !pid.IsFainted) ready++;
+            }
+            return ready;
+        }
+
         private void StartRaidBattle()
         {
+            // 전원 기절이면 시작하지 않는다 — 레이드는 팀이 행동해야 보스 턴이 오고(ResolveBossResponse)
+            // 패배 판정도 그 안에만 있어서, 살아 있는 슬롯이 하나도 없으면 ActiveSlot이 -1로 남아
+            // 어떤 스킬도 못 쓰고 종료도 안 되는 **영구 정지**가 된다.
+            // Hide() **앞에서** 막는다 — 뒤에 두면 패널이 닫혀 안내 문구까지 사라진다.
+            if (CountBattleReadyTeamMembers() <= 0) return;
+
             InsectEntity savedTarget = targetInsect;
             Hide();
             if (raidController == null || savedTarget == null || teamManager == null || collection == null) return;
@@ -541,13 +638,10 @@ namespace InsectGame.UI
             raidController.StartRaid(savedTarget, teamInsects, teamLevels, teamPids, teamSkills);
         }
 
+        // #코드 미표시 — BattleTeamUI.GetOwnedDisplayName과 같은 이유.
         private static string GetOwnedDisplayName(PlayerInsectData pid, InsectData data)
         {
-            string baseName = data != null ? data.displayName : (pid != null ? pid.insectId : "Unknown");
-            string shortId = pid == null || string.IsNullOrEmpty(pid.instanceId)
-                ? "----"
-                : pid.instanceId.Substring(0, Mathf.Min(6, pid.instanceId.Length)).ToUpperInvariant();
-            return $"{baseName} #{shortId}";
+            return data != null ? data.displayName : (pid != null ? pid.insectId : "Unknown");
         }
 
         public void AutoWire(

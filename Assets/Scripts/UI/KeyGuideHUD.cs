@@ -16,6 +16,42 @@ namespace InsectGame.UI
 
         private bool battleActive;
 
+        // GUIStyle 캐싱
+        private GUIStyle headerStyle;
+        private GUIStyle keyStyle;
+        private GUIStyle descStyle;
+        private GUIStyle centeredKeyStyle;
+        private GUIStyle hintStyle;
+        private GUIStyle titleStyle;
+        private GUIStyle itemNameStyle;
+        private GUIStyle itemCountStyle;
+        private bool stylesInit;
+
+        private void InitStyles()
+        {
+            if (stylesInit) return;
+            stylesInit = true;
+
+            headerStyle = new GUIStyle(GUI.skin.label) { fontSize = 36, fontStyle = FontStyle.Bold };
+            headerStyle.normal.textColor = new Color(0.95f, 0.88f, 0.5f);
+
+            keyStyle = new GUIStyle(GUI.skin.label) { fontSize = 32, fontStyle = FontStyle.Bold };
+            keyStyle.normal.textColor = Color.white;
+
+            descStyle = new GUIStyle(GUI.skin.label) { fontSize = 32 };
+            descStyle.normal.textColor = new Color(0.78f, 0.78f, 0.78f);
+
+            centeredKeyStyle = new GUIStyle(keyStyle) { alignment = TextAnchor.MiddleCenter };
+
+            hintStyle = new GUIStyle(GUI.skin.label) { fontSize = 32, fontStyle = FontStyle.Bold };
+
+            titleStyle = new GUIStyle(GUI.skin.label) { fontSize = 32, fontStyle = FontStyle.Bold };
+
+            itemNameStyle = new GUIStyle(GUI.skin.label) { fontSize = 30 };
+
+            itemCountStyle = new GUIStyle(GUI.skin.label) { fontSize = 30 };
+        }
+
         private void OnEnable()
         {
             if (battleController != null)
@@ -39,21 +75,30 @@ namespace InsectGame.UI
 
         private void OnGUI()
         {
-            DrawKeyGuide();
+            // 모달이 열려 있으면 HUD를 숨긴다. depth를 안 거는 전체화면 모달(CollectionUI,
+            // TrainingUI, RegionMapUI 등)과 렌더 순서가 미정의라 패널 위로 튀어나올 수 있다.
+            // UIScale.Begin() 전에 return해야 Begin/End 균형이 유지된다(MinimapUI:52 관례).
+            if (ModalUIRegistry.IsAnyOpen()) return;
+
+            UIScale.Begin();
+            InitStyles();
+            // 조작법(키 안내표) 제거 — 사용자 요청으로 미표시. 퀘스트 추적은 TutorialQuestUI가 담당.
+            // (DrawKeyGuide/DrawKeyRow는 더 이상 호출하지 않음 — 후속 정리 대상, 참조는 유지돼 경고 없음.)
             DrawCurrentRegion();
-            DrawCaptureItems();
+            if (!UIScale.IsMobileLayout) DrawCaptureItems();
+            UIScale.End();
         }
 
         private void DrawKeyGuide()
         {
             float x = 20f;
             float lineH = 62f;
-            int rowCount = 7;
+            int rowCount = 8;   // WASD·E·T·G·I·N·C·M — 행을 늘리면 여기도 함께(안 맞으면 패널 밖으로 넘친다)
             bool inMinigame = minigame != null && minigame.IsActive;
             if (inMinigame) rowCount++;
             if (battleActive) rowCount++;
             float bgH = (rowCount + 1) * lineH + 20;
-            float y = Screen.height - bgH - 18f;
+            float y = UISafeLayout.BottomY(bgH);
 
             GUI.color = new Color(0, 0, 0, 0.6f);
             GUI.DrawTexture(new Rect(x - 8, y - 8, 560, bgH), Texture2D.whiteTexture);
@@ -61,17 +106,7 @@ namespace InsectGame.UI
             GUI.DrawTexture(new Rect(x - 8, y - 8, 560, 4), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
-            GUIStyle header = new GUIStyle(GUI.skin.label)
-            { fontSize = 36, fontStyle = FontStyle.Bold };
-            header.normal.textColor = new Color(0.95f, 0.88f, 0.5f);
-
-            GUIStyle keyStyle = new GUIStyle(GUI.skin.label) { fontSize = 32, fontStyle = FontStyle.Bold };
-            keyStyle.normal.textColor = Color.white;
-
-            GUIStyle descStyle = new GUIStyle(GUI.skin.label) { fontSize = 32 };
-            descStyle.normal.textColor = new Color(0.78f, 0.78f, 0.78f);
-
-            GUI.Label(new Rect(x + 6, y, 460, lineH), "조작법", header);
+            GUI.Label(new Rect(x + 6, y, 460, lineH), "조작법", headerStyle);
             y += lineH + 2;
 
             DrawKeyRow(x, ref y, lineH, "WASD", "이동", keyStyle, descStyle);
@@ -85,8 +120,16 @@ namespace InsectGame.UI
 
             DrawKeyRow(x, ref y, lineH, "T", "배틀 팀", keyStyle, descStyle);
             DrawKeyRow(x, ref y, lineH, "G", "훈련", keyStyle, descStyle);
+            DrawKeyRow(x, ref y, lineH, "I", "가방", keyStyle, descStyle);
             DrawKeyRow(x, ref y, lineH, "N", "도감", keyStyle, descStyle);
-            DrawKeyRow(x, ref y, lineH, "TAB", "컬렉션", keyStyle, descStyle);
+            // 컬렉션 실제 바인딩은 C다(`QuickAccessBarUI.buttons[]`의 key가 단일 출처다 —
+            // 예전 주석이 적어 둔 줄 번호는 이미 어긋나 있었다). TAB은 이 게임에서
+            // 미니게임 확인/로비 오버레이 토글이고 IMGUI에선 포커스 이동 키다 —
+            // 안내대로 누르면 컬렉션이 아니라 엉뚱한 동작을 했다.
+            //
+            // **이 목록 자체가 그 배열의 사본이다** — 6개만 적혀 있고 Q/P/F4/F6/J는 빠졌다.
+            // 바인딩을 바꾸면 여기도 손으로 따라가야 한다(감사 P2로 남겼다).
+            DrawKeyRow(x, ref y, lineH, "C", "컬렉션", keyStyle, descStyle);
             DrawKeyRow(x, ref y, lineH, "M", "지도", keyStyle, descStyle);
         }
 
@@ -97,8 +140,7 @@ namespace InsectGame.UI
             GUI.DrawTexture(new Rect(x, y + 3, keyW, h - 6), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
-            GUIStyle centeredKey = new GUIStyle(ks) { alignment = TextAnchor.MiddleCenter };
-            GUI.Label(new Rect(x, y, keyW, h), key, centeredKey);
+            GUI.Label(new Rect(x, y, keyW, h), key, centeredKeyStyle);
             GUI.Label(new Rect(x + keyW + 16, y, 400, h), desc, ds);
             y += h;
         }
@@ -111,21 +153,24 @@ namespace InsectGame.UI
             string regionName = current != null ? current.displayName : "Wild";
             Color regionCol = current != null ? current.themeColor : new Color(0.5f, 0.5f, 0.5f);
 
-            float w = 520f;
-            float h = 80f;
-            float x = (Screen.width - w) / 2f;
-            float y = 14f;
+            float w = UIScale.IsMobileLayout ? 430f : 520f;
+            float h = UIScale.IsMobileLayout ? 64f : 80f;
+            // 진짜 화면 중앙이 아니라 '세이프 에어리어 중앙'으로 — 가로 비대칭 노치 보정.
+            float safeL = UIScale.VirtualSafeLeft;
+            float safeR = UIScale.VirtualSafeRight;
+            float x = safeL + (UIScale.VirtualScreenWidth - safeL - safeR - w) / 2f;
+            float y = UISafeLayout.ContentTop;
 
             GUI.color = new Color(0, 0, 0, 0.6f);
             GUI.DrawTexture(new Rect(x, y, w, h), Texture2D.whiteTexture);
             GUI.color = regionCol;
             GUI.DrawTexture(new Rect(x, y + h - 5, w, 5), Texture2D.whiteTexture);
 
-            GUIStyle style = new GUIStyle(GUI.skin.label)
-            { fontSize = 44, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            style.normal.textColor = regionCol;
+            hintStyle.fontSize = UIScale.IsMobileLayout ? 32 : 44;
+            hintStyle.alignment = TextAnchor.MiddleCenter;
+            hintStyle.normal.textColor = regionCol;
             GUI.color = Color.white;
-            GUI.Label(new Rect(x, y, w, h), regionName, style);
+            GUI.Label(new Rect(x, y, w, h), regionName, hintStyle);
         }
 
         private void DrawCaptureItems()
@@ -134,8 +179,8 @@ namespace InsectGame.UI
 
             float w = 440f;
             float h = 220f;
-            float x = Screen.width - w - 20;
-            float y = 60f;
+            float x = UIScale.VirtualScreenWidth - w - 20;
+            float y = UISafeLayout.ContentTop;
 
             GUI.color = new Color(0, 0, 0, 0.6f);
             GUI.DrawTexture(new Rect(x, y, w, h), Texture2D.whiteTexture);
@@ -143,9 +188,8 @@ namespace InsectGame.UI
             GUI.DrawTexture(new Rect(x, y, w, 4), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
-            GUIStyle titleS = new GUIStyle(GUI.skin.label) { fontSize = 32, fontStyle = FontStyle.Bold };
-            titleS.normal.textColor = new Color(0.75f, 0.75f, 0.75f);
-            GUI.Label(new Rect(x + 16, y + 10, w, 40), "포획 아이템", titleS);
+            titleStyle.normal.textColor = new Color(0.75f, 0.75f, 0.75f);
+            GUI.Label(new Rect(x + 16, y + 10, w, 40), "포획 아이템", titleStyle);
 
             float iy = y + 56;
             DrawItemCount(x + 16, iy, "기본 채집망", itemInventory.GetCount("net_basic"), new Color(0.65f, 0.65f, 0.65f));
@@ -159,14 +203,14 @@ namespace InsectGame.UI
             GUI.DrawTexture(new Rect(x, y + 10, 22, 22), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
-            GUIStyle ns = new GUIStyle(GUI.skin.label) { fontSize = 30 };
-            ns.normal.textColor = col;
-            GUI.Label(new Rect(x + 32, y, 220, 42), label, ns);
+            itemNameStyle.normal.textColor = col;
+            GUI.Label(new Rect(x + 32, y, 220, 42), label, itemNameStyle);
 
-            GUIStyle cs = new GUIStyle(GUI.skin.label)
-            { fontSize = 32, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleRight };
-            cs.normal.textColor = count > 0 ? new Color(1f, 0.92f, 0.5f) : new Color(0.4f, 0.3f, 0.3f);
-            GUI.Label(new Rect(x + 260, y, 120, 42), $"x{count}", cs);
+            itemCountStyle.fontStyle = FontStyle.Bold;
+            itemCountStyle.fontSize = 32;
+            itemCountStyle.alignment = TextAnchor.MiddleRight;
+            itemCountStyle.normal.textColor = count > 0 ? new Color(1f, 0.92f, 0.5f) : new Color(0.4f, 0.3f, 0.3f);
+            GUI.Label(new Rect(x + 260, y, 120, 42), $"x{count}", itemCountStyle);
         }
 
         public void AutoWire(CaptureMinigameController mg, InsectBattleController bc, InsectBattleUIController bui)

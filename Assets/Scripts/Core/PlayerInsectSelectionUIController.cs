@@ -86,9 +86,10 @@ namespace InsectGame.Core
                     continue;
                 }
 
+                // #코드 미표시 — 목록에서는 레벨이 개체 구분을 맡는다.
                 string label = insect != null
-                    ? $"{insect.displayName} Lv {data.level} #{GetShortInstanceId(data)}"
-                    : $"{data.insectId} #{GetShortInstanceId(data)}";
+                    ? $"{insect.displayName} Lv {data.level}"
+                    : data.insectId;
                 Button button = Instantiate(itemButtonPrefab, contentRoot);
                 TMP_Text text = button.GetComponentInChildren<TMP_Text>();
                 if (text != null)
@@ -116,9 +117,7 @@ namespace InsectGame.Core
             {
                 selectedText.text = selected == null
                     ? "-"
-                    : insect != null
-                        ? $"{insect.displayName} #{GetShortInstanceId(selected)}"
-                        : $"{selected.insectId} #{GetShortInstanceId(selected)}";
+                    : insect != null ? insect.displayName : selected.insectId;
             }
 
             if (levelUpUi != null)
@@ -175,14 +174,5 @@ namespace InsectGame.Core
             }
         }
 
-        private static string GetShortInstanceId(PlayerInsectData data)
-        {
-            if (data == null || string.IsNullOrEmpty(data.instanceId))
-            {
-                return "----";
-            }
-
-            return data.instanceId.Substring(0, Mathf.Min(6, data.instanceId.Length)).ToUpperInvariant();
-        }
     }
 }

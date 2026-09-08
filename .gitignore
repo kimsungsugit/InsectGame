@@ -34,6 +34,17 @@ desktop.ini
 # Unity asset store
 /[Aa]ssets/AssetStoreTools*
 
+# Unity가 Assets/ 안에 만드는 일시적 산출물 — 커밋 대상이 아닌데 Assets/ 아래라 위의
+# /Library, /Temp 규칙에 안 걸린다. 실제로 이 둘이 `git add -A`에 쓸려 커밋된 적이 있다.
+#
+# InitTestScene<guid>.unity: PlayMode 테스트 러너가 실행할 때마다 새 GUID로 만들고 지운다.
+#   테스트가 도는 중에 커밋하면 남의 실행 흔적이 섞여 들어간다.
+# GDKEditionAutoGen/: com.unity.microsoft.gdk 패키지가 임포트 때 스스로 생성한다.
+/[Aa]ssets/InitTestScene*.unity
+/[Aa]ssets/InitTestScene*.unity.meta
+/[Aa]ssets/[Rr]esources/GDKEditionAutoGen/
+/[Aa]ssets/[Rr]esources/GDKEditionAutoGen.meta
+
 # Builds
 *.apk
 *.aab
@@ -43,12 +54,61 @@ desktop.ini
 # Crashlytics
 crashlytics-build.properties
 
-# Test results
+# Test results / 배치 실행 로그
 TestResults.xml
 TestResults/
+# `unity-test.log`(하이픈)만 적어둔 탓에 실제 산출물인 `unity_test.log`·`unity_compile.log`
+# (언더스코어)가 매번 `git add -A`에 딸려 들어왔다. 두 표기를 모두 덮는다.
+unity-test.log
+unity_*.log
+android_build.log
+
+# Claude Code 실행 캐시 — 훅·스킬이 남기는 마지막 빌드/테스트 로그
+.claude/cache/
 
 # Claude Code local settings
 .claude/settings.local.json
 
+# 비밀 설정(자격 증명) — 소스/원격에 커밋 금지. 각 환경에서 직접 생성.
+# 형식: master_config.json={ "id": "...", "password": "..." }
+#       firebase_config.json={ "apiKey": "...", "projectId": "...", "googleWebClientId": "..." }
+/[Aa]ssets/[Rr]esources/master_config.json
+/[Aa]ssets/[Rr]esources/master_config.json.meta
+/[Aa]ssets/[Rr]esources/firebase_config.json
+/[Aa]ssets/[Rr]esources/firebase_config.json.meta
+/[Aa]ssets/google-services.json
+/[Aa]ssets/google-services.json.meta
+
 # Duplicate Unity project
 /[Mm]y [Pp]roject/
+
+# Firebase Functions generated/local files
+/functions/node_modules/
+/functions/.runtimeconfig.json
+/firebase-debug.log
+/firestore-debug.log
+/.codex/tools/
+
+# 에셋 백업 사본 — Resources 내 스테일 .bak이 커밋/로드 대상과 혼동되지 않게
+*.bak
+*.bak.meta
+
+# Python 캐시 — .claude/.codex 훅·스크립트 실행 시 생성
+__pycache__/
+*.pyc
+
+# 카카오톡으로 주고받은 기기 테스트 스크린샷 — 저장소에 둘 이유 없음
+KakaoTalk_*.jpg
+KakaoTalk_*.png
+
+# 임시 작업 디렉토리
+/.utmp/
+
+# Unity 크래시 복구 잔재 — Editor가 자동 생성하는 기본 템플릿 씬
+# (Directional Light + Main Camera만 들어있고 MonoBehaviour 0개. 정식 씬은
+#  Assets/Scenes/PlayScene.unity이며 PlaySceneBootstrap 하나로 전체를 프로시저럴 생성한다)
+/[Aa]ssets/_Recovery/
+/[Aa]ssets/_Recovery.meta
+
+# Codex 미러 실행 로그
+/.codex/*.log

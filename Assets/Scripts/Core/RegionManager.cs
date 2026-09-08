@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace InsectGame.Core
 {
-    public class RegionManager : MonoBehaviour
+    public class RegionManager : MonoBehaviour, ICloudReloadable
     {
         [SerializeField] private PlayerProgressController progress;
 
@@ -14,20 +14,78 @@ namespace InsectGame.Core
 
         private HashSet<string> unlockedRegions = new HashSet<string>();
         private HashSet<string> defeatedGuardians = new HashSet<string>();
+        private Transform cachedPlayerTransform; // Update 매 프레임 GameObject.Find 회피
 
-        private const string UnlockKey = "InsectGame.UnlockedRegions";
-        private const string GuardianKey = "InsectGame.DefeatedGuardians";
+        // SubArea 진입 시 SubAreaWorldBuilder가 플레이어를 (2000,0,2000)로 텔레포트하므로
+        // Update의 위치 기반 SubArea 판정이 false가 되어 SubAreaChanged(null) 무한 토글이 발생.
+        // sticky=true 동안 위치 판정 자체를 스킵 → SubAreaWorldBuilder가 명시적 Exit 트리거.
+        private bool subAreaSticky;
+        private string lastExitedSubAreaId;
+        private float lastExitedAtTime;
+        private const float SubAreaReentryCooldown = 1.5f;
+
+        private static string UnlockKey => SaveScope.PrefsKey("InsectGame.UnlockedRegions");
+        private static string GuardianKey => SaveScope.PrefsKey("InsectGame.DefeatedGuardians");
 
         public RegionData[] Regions => regions;
         public RegionData CurrentRegion => currentRegion;
         public SubAreaData CurrentSubArea => currentSubArea;
+        public bool SubAreaSticky => subAreaSticky;
+
+        // 사용자가 영역 안에 있지만 아직 진입 안 한 상태. SubAreaProximityChanged로 UI 표시.
+        // 옛은 ContainsPoint 시 SubAreaChanged 자동 발화 → 자동 진입. 사용자 명시 요청: [E] 키 선택.
+        private SubAreaData nearbySubArea;
+        public SubAreaData NearbySubArea => nearbySubArea;
 
         public event System.Action<RegionData> RegionChanged;
         public event System.Action<SubAreaData> SubAreaChanged;
+        public event System.Action<SubAreaData> SubAreaProximityChanged;
+
+        /// <summary>
+        /// 수문장을 처음 쓰러뜨렸을 때 그 regionId로 발화. StoryDirector의 GuardianDefeat 트리거 소스.
+        ///
+        /// <b>일생에 리전당 딱 한 번만 울린다</b> — <see cref="DefeatGuardian"/>이 idempotent 가드로
+        /// 중복 격파를 무시하기 때문이다. 그래서 이 트리거를 쓰는 스토리 비트는 **leaf 전용**이다:
+        /// 발화 순간 prereq가 미충족이면 그 비트는 영영 열리지 않고, 뒤 비트가 그걸 prereq로 삼고
+        /// 있으면 캠페인이 거기서 영구 정지한다(QuestComplete와 정확히 같은 함정).
+        /// 스파인은 RegionEnter/SubAreaEnter 같은 재발화 트리거에 건다.
+        /// </summary>
+        public event System.Action<string> GuardianDefeated;
+
+        public void SetSubAreaSticky(bool sticky, string exitedId = null)
+        {
+            subAreaSticky = sticky;
+            if (!sticky && !string.IsNullOrEmpty(exitedId))
+            {
+                lastExitedSubAreaId = exitedId;
+                lastExitedAtTime = Time.time;
+            }
+        }
+
+        /// <summary>F2 또는 외부 트리거로 SubArea 강제 종료 — sticky 풀고 즉시 SubAreaChanged(null) 발화.</summary>
+        public void ForceExitSubArea()
+        {
+            if (currentSubArea == null) return;
+            string exitedId = currentSubArea.subAreaId;
+            currentSubArea = null;
+            subAreaSticky = false;
+            lastExitedSubAreaId = exitedId;
+            lastExitedAtTime = Time.time;
+            SubAreaChanged?.Invoke(null);
+        }
 
         public void Initialize(RegionData[] regionList)
         {
             regions = regionList;
+
+            // 이전 버전은 마지막으로 진입한 SubArea를 전역 PlayerPrefs에 남겨 다음 실행 때
+            // 자동 복귀했다. 이제 플레이어는 항상 마을에서 시작하므로 레거시 키를 1회 정리한다.
+            if (PlayerPrefs.HasKey(GameConstants.PrefsKeys.LastSubAreaId))
+            {
+                PlayerPrefs.DeleteKey(GameConstants.PrefsKeys.LastSubAreaId);
+                PlayerPrefs.Save();
+            }
+
             LoadUnlockState();
         }
 
@@ -40,10 +98,19 @@ namespace InsectGame.Core
         {
             if (regions == null || regions.Length == 0) return;
 
-            GameObject player = GameObject.Find("Player");
-            if (player == null) return;
+            // 플레이어 transform 캐싱 (매 프레임 GameObject.Find 비용 회피)
+            if (cachedPlayerTransform == null)
+            {
+                GameObject p = GameObject.Find("Player");
+                if (p == null) return;
+                cachedPlayerTransform = p.transform;
+            }
 
-            Vector3 pos = player.transform.position;
+            // SubArea sticky 모드: 텔레포트 좌표(2000,0,2000)에 있는 동안 위치 기반 판정 스킵
+            // (SubAreaWorldBuilder가 명시적으로 SetSubAreaSticky(false)를 호출할 때까지 유지)
+            if (subAreaSticky) return;
+
+            Vector3 pos = cachedPlayerTransform.position;
             RegionData found = null;
             foreach (var r in regions)
             {
@@ -74,11 +141,30 @@ namespace InsectGame.Core
                 }
             }
 
-            if (foundSub != currentSubArea)
+            // 방금 Exit한 SubArea로의 자동 재진입 차단 (쿨다운 1.5초)
+            if (foundSub != null
+                && foundSub.subAreaId == lastExitedSubAreaId
+                && Time.time - lastExitedAtTime < SubAreaReentryCooldown)
             {
-                currentSubArea = foundSub;
-                SubAreaChanged?.Invoke(currentSubArea);
+                foundSub = null;
             }
+
+            // 옛은 currentSubArea를 자동 설정해 SubAreaChanged 발화 → 자동 진입.
+            // 새는 nearbySubArea만 갱신, 사용자가 [E] 키로 RequestEnterSubArea() 호출해야 진입.
+            // currentSubArea는 EnterSubArea/Exit 시점에만 변경됨.
+            if (foundSub != nearbySubArea)
+            {
+                nearbySubArea = foundSub;
+                SubAreaProximityChanged?.Invoke(nearbySubArea);
+            }
+        }
+
+        /// <summary>사용자 [E] 키 또는 UI 버튼 트리거 — nearbySubArea로 명시적 진입.</summary>
+        public void RequestEnterSubArea()
+        {
+            if (nearbySubArea == null || currentSubArea != null) return;
+            currentSubArea = nearbySubArea;
+            SubAreaChanged?.Invoke(currentSubArea);
         }
 
         // --- 지역 잠금 시스템 ---
@@ -86,6 +172,10 @@ namespace InsectGame.Core
         public bool IsRegionAccessible(RegionData region)
         {
             if (region == null) return false;
+            // 마스터 계정은 모든 리전 우회 — AuthManager.ApplyMasterPrivileges가 PlayerPrefs를 갱신하지만
+            // RegionManager.LoadUnlockState 이후 마스터 로그인 시 HashSet에 반영 안 되는 race 차단.
+            // **"특권 없이" 모드면 우회하지 않는다** — 그 모드의 요점이 지역 게이트를 살리는 것이다.
+            if (AuthManager.Instance != null && AuthManager.Instance.MasterPrivilegesActive) return true;
             if (region.regionId == "meadow") return true;
             return unlockedRegions.Contains(region.regionId);
         }
@@ -119,8 +209,33 @@ namespace InsectGame.Core
             return defeatedGuardians.Contains(regionId);
         }
 
+        /// <summary>
+        /// 전투 승리 뒤 격파 확정 — 1v1(<c>BattleScreenUI</c>)과 레이드(<c>RaidBattleUI</c>)가
+        /// 같은 한 줄을 부른다. 빈 ID(야생)·이미 깬 수문장이면 false. 두 UI에 복제돼 있던 로직을
+        /// 여기로 모았다(한쪽만 고치면 어긋난다).
+        /// </summary>
+        public bool TryDefeatGuardian(string regionId, string via)
+        {
+            if (string.IsNullOrEmpty(regionId)) return false;   // 수문장이 아니라 야생이었다
+            if (IsGuardianDefeated(regionId))
+            {
+                // 이미 깬 수문장인데 필드에 서 있었다(클라우드 로드 전 선전투 등). 격파 처리는 다시 안 하지만
+                // 봉인은 걷어야 한다 — 수문장의 Despawn은 no-op이라 그냥 두면 무한히 다시 싸울 수 있다.
+                GuardianDefeated?.Invoke(regionId);
+                return false;
+            }
+            DefeatGuardian(regionId);
+            RegionData region = GetRegionById(regionId);
+            Debug.Log($"[Guardian] {(region != null ? region.displayName : regionId)} 수문장 격파({via})! 다음 지역 해금됨");
+            return true;
+        }
+
         public void DefeatGuardian(string regionId)
         {
+            // 중복 격파 가드 — BattleScreenUI.CheckGuardianDefeat가 IsGuardianDefeated 가드 후 호출하지만
+            // 명시적 idempotent 보장 + SaveUnlockState 중복 PlayerPrefs.Save 비용 차단.
+            if (defeatedGuardians.Contains(regionId)) return;
+
             defeatedGuardians.Add(regionId);
 
             string nextRegion = GetNextRegionId(regionId);
@@ -136,25 +251,35 @@ namespace InsectGame.Core
             }
 
             SaveUnlockState();
+
+            // 해금·저장이 끝난 뒤에 알린다 — 구독자(StoryDirector)가 발화 시점에
+            // IsRegionAccessible 같은 상태를 읽어도 이미 갱신된 값을 보게 한다.
+            // 위 idempotent 가드 덕에 리전당 정확히 1회만 울린다.
+            GuardianDefeated?.Invoke(regionId);
         }
 
-        public RegionData GetRegionWithGuardianNear(Vector3 position, float searchRadius = 15f)
-        {
-            if (regions == null) return null;
-            foreach (var r in regions)
-            {
-                if (string.IsNullOrEmpty(r.guardianInsectId)) continue;
-                if (IsGuardianDefeated(r.regionId)) continue;
+        // GetRegionWithGuardianNear(위치, 반경)는 제거했다 — **좌표로는 수문장을 판별할 수 없다.**
+        // 야생 스폰 링이 플레이어를 따라오므로(InsectSpawner.RelocateSpawnPoints: 10~43m 나선 +
+        // SpawnPoint.radius 5m) 수문장 앞에 선 순간 야생이 반경 5m까지 들어온다. 어떤 반경을 골라도
+        // 야생 조우가 격파로 잡히는 구조라, 격파 판정은 개체 표식(InsectEntity.GuardianRegionId)으로
+        // 옮겼다. 이름이 그럴듯해 다시 불려 나가지 않도록 함수째 지운다.
 
-                Vector3 guardianPos = GetGuardianPosition(r);
-                if (Vector3.Distance(position, guardianPos) <= searchRadius)
-                    return r;
-            }
-            return null;
-        }
-
+        /// <summary>
+        /// 수문장이 서는 자리 — 이전 리전에서 오는 <b>길목</b>, 리전 경계 안쪽이다.
+        ///
+        /// 예전엔 두 리전 중심의 <b>중점</b>이었다. 그건 리전이 서로 겹칠 때만 경계가 되는데
+        /// 이 월드의 리전은 떨어져 있어서, 13개 중 <b>9개가 어느 리전에도 속하지 않는 허공</b>에
+        /// 섰다(hollow는 자기 중심에서 77m 밖). 전역 Ground 위라 떨어지지는 않지만 리전 안을
+        /// 아무리 둘러봐도 수문장이 안 보였고, 지도 마커도 리전 밖을 가리켰다.
+        ///
+        /// 반경의 72%에 두면 항상 리전 안이면서 중심보다 바깥이라 "길을 막는" 그림이 유지된다.
+        /// <c>RegionMapUI</c> 마커와 <c>StoryObjectiveTracker</c> 목표가 같은 함수를 쓰므로
+        /// 실물·표시·안내가 함께 움직인다.
+        /// </summary>
         public Vector3 GetGuardianPosition(RegionData region)
         {
+            if (region == null) return Vector3.zero;
+
             Vector3 fromCenter = Vector3.zero;
             string prevId = GetPreviousRegionId(region.regionId);
             if (prevId != null)
@@ -162,8 +287,34 @@ namespace InsectGame.Core
                 RegionData prev = GetRegionById(prevId);
                 if (prev != null) fromCenter = prev.centerPosition;
             }
-            return (fromCenter + region.centerPosition) / 2f;
+
+            Vector3 toPrev = fromCenter - region.centerPosition;
+            toPrev.y = 0f;
+
+            // **시작 리전(meadow)은 이전 리전이 없다 — 대신 '나가는 길'을 본다.**
+            // 예전엔 중심에 뒀는데, 첫 리전만 배치 규칙이 예외라 플레이어가 시작 지점에서
+            // 수문장을 아예 못 보고 "수문장이 없다"고 느꼈다. 수문장의 역할은 어차피 길목을
+            // 지키는 것이므로, 이전 리전이 없으면 **다음 리전 방향**의 같은 반경에 세운다.
+            // 그러면 13개 리전이 모두 "경계에 선다"는 한 가지 규칙으로 통일된다.
+            if (toPrev.sqrMagnitude < 0.01f)
+            {
+                string nextId = GetNextRegionId(region.regionId);
+                RegionData next = nextId != null ? GetRegionById(nextId) : null;
+                if (next != null)
+                {
+                    Vector3 toNext = next.centerPosition - region.centerPosition;
+                    toNext.y = 0f;
+                    if (toNext.sqrMagnitude >= 0.01f)
+                        return region.centerPosition + toNext.normalized * (region.radius * GuardianEdgeRatio);
+                }
+                return region.centerPosition;   // 앞뒤 어느 쪽도 없는 리전(있다면) — 종전대로
+            }
+
+            return region.centerPosition + toPrev.normalized * (region.radius * GuardianEdgeRatio);
         }
+
+        /// <summary>수문장을 리전 반경의 몇 %에 세울지. 1.0이면 경계 밖으로 새어 나간다.</summary>
+        private const float GuardianEdgeRatio = 0.72f;
 
         // --- 지역 순서 매핑 ---
 
@@ -176,6 +327,15 @@ namespace InsectGame.Core
                 case "forest": return "swamp";
                 case "swamp": return "mountain";
                 case "mountain": return "ruins";
+                // ── 2막(ver2) ── 유적 수문장 격파가 '봉인이 열린 날'이자 2막의 문이다.
+                // 1막에서는 ruins가 종착지라 여기 case가 없었다.
+                case "ruins": return "hollow";
+                case "hollow": return "dunes";
+                case "dunes": return "frostline";
+                case "frostline": return "emberfall";
+                case "emberfall": return "canopy";
+                case "canopy": return "nameless";
+                // nameless는 종착지 — ver3를 붙일 때 여기 case가 생긴다.
                 default: return null;
             }
         }
@@ -190,16 +350,54 @@ namespace InsectGame.Core
                 case "mountain": return "swamp";
                 case "ruins": return "mountain";
                 case "garden": return "meadow";
+                // ── 2막(ver2) ── 빠뜨리면 GetGuardianPosition의 fromCenter가 원점(0,0,0)이 되어
+                // 수문장이 맵 한복판과 리전 사이 엉뚱한 자리에 스폰된다(add-region 시나리오 E).
+                case "hollow": return "ruins";
+                case "dunes": return "hollow";
+                case "frostline": return "dunes";
+                case "emberfall": return "frostline";
+                case "canopy": return "emberfall";
+                case "nameless": return "canopy";
                 default: return null;
             }
         }
 
+        /// <summary>
+        /// 이 리전을 여는 열쇠 — <b>어느 리전의 수문장</b>을 쓰러뜨려야 하는가.
+        ///
+        /// 해금은 <see cref="DefeatGuardian"/>이 <c>GetNextRegionId</c>로 <b>다음</b> 리전을
+        /// 여는 구조라, 잠긴 리전의 열쇠는 그 리전 안이 아니라 <b>바로 앞 리전</b>에 있다.
+        /// 안내 문구가 이걸 모르면 플레이어를 들어가지도 못하는 리전 쪽으로 되돌려 보낸다.
+        ///
+        /// 꽃밭도 규칙이 같다 — 앞 리전이 초원이고 초원 수문장 격파가 함께 열어 준다.
+        /// 시작 리전(초원)처럼 앞이 없는 곳은 null을 준다(애초에 잠기지 않는다).
+        ///
+        /// <c>GetPreviousRegionId</c>를 public으로 바꾸지 않고 감싸는 이유:
+        /// <c>RegionProgressionTests</c>가 그 <b>시그니처 문자열</b>로 본문을 찾아
+        /// 진행 체인을 검사한다(`private string GetPreviousRegionId`).
+        /// </summary>
+        public RegionData GetGatekeeperRegion(string regionId)
+        {
+            string prevId = GetPreviousRegionId(regionId);
+            return string.IsNullOrEmpty(prevId) ? null : GetRegionById(prevId);
+        }
+
         // --- 저장/로드 ---
+
+        // 클라우드 로드 후 PlayerPrefs(지역 해금/수문장)를 다시 읽어 인메모리 갱신.
+        // 지도 UI(IMGUI)는 매 프레임 IsRegionUnlocked로 읽어 자동 반영.
+        public void ReloadFromDisk()
+        {
+            LoadUnlockState();
+        }
 
         private void LoadUnlockState()
         {
+            // RemoveEmptyEntries — 옛은 "meadow,," 같은 문자열에서 빈 항목이 HashSet에 누적되어
+            // SaveUnlockState 시 string.Join이 ",,meadow,," 형태로 PlayerPrefs에 잔존.
             string saved = PlayerPrefs.GetString(UnlockKey, "meadow");
-            unlockedRegions = new HashSet<string>(saved.Split(','));
+            unlockedRegions = new HashSet<string>(
+                saved.Split(new[] { ',' }, System.StringSplitOptions.RemoveEmptyEntries));
 
             string guardians = PlayerPrefs.GetString(GuardianKey, "");
             defeatedGuardians = new HashSet<string>(

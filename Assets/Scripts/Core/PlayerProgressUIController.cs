@@ -85,6 +85,13 @@ namespace InsectGame.Core
             }
         }
 
+        /// <summary>런타임에 텍스트 참조를 연결한 직후 현재 진행 상태를 다시 그린다.</summary>
+        public void Refresh()
+        {
+            HandleProgressChanged(null);
+            HandleCandyChanged(candyInventory != null ? candyInventory.Candies : 0);
+        }
+
         public void AutoWire(PlayerProgressController progress)
         {
             if (progressController == null || progressController != progress)

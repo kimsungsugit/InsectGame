@@ -15,8 +15,9 @@ namespace InsectGame.UI
         [SerializeField] private BattleTeamManager teamManager;
         [SerializeField] private PlayerInsectCollection collection;
         [SerializeField] private TrainingManager trainingManager;
+        [SerializeField] private BattleArenaController arena;
 
-        private enum Phase { None, Intro, PlayerTurn, PlayerAttack, EnemyAttack, SwapSelect, Result }
+        private enum Phase { None, Intro, PlayerTurn, PlayerAttack, EnemyAttack, TurnAnnounce, SwapSelect, Result }
 
         private Phase phase = Phase.None;
         public bool IsBattleActive => phase != Phase.None;
@@ -30,9 +31,87 @@ namespace InsectGame.UI
         private float introTimer;
         private string actionText;
         private float actionTimer;
+        // 인터-턴 배너(턴 가시성) — 다음 페이즈 전 "당신의 턴/상대의 턴"을 중앙에 표시하는 대기.
+        private const float TurnAnnounceDuration = 0.9f;
+        private float announceTimer;
+        private string announceText;
+        private bool announceIsPlayer;
+        private Phase announceNextPhase;   // 배너 종료 후 전이할 페이즈
+        private bool announceTriggerEnemy; // 종료 후 EnemyAttack 연출을 발동할지
         private int lastDamageToEnemy;
+        private bool lastWasCritical;
+        private int comboCount;
+        private float comboDisplayTimer;
+        // timeScale 단일 아비터(P3) — 크리티컬 슬로모/히트스톱이 각자 timeScale에 직접 쓰면 서로의 복원이
+        // 상대를 취소(조기취소/영구 슬로모). 두 unscaled 만료 시각만 갱신하고 매 프레임 우선순위로 timeScale 결정.
+        private float hitstopUntil;   // 히트스톱(0.05) 만료 unscaledTime
+        private float critUntil;      // 크리티컬 슬로모(0.4) 만료 unscaledTime
+        private float screenFlashTimer;
+        private Color screenFlashColor;
+
+        private GUIStyle cachedComboNumStyle;
+        private GUIStyle cachedComboLblStyle;
+
+        // OnGUI 매 프레임 호출되는 GUIStyle 캐싱 (PlayerStatusHUD 패턴)
+        private bool stylesInitialized;
+        private GUIStyle turnStyle3dCache;
+        private GUIStyle turnStyleCache;
+        private GUIStyle playerLabelCache;
+        private GUIStyle playerTagCache;
+        private GUIStyle enemyLabelCache;
+        private GUIStyle enemyTagCache;
+        private GUIStyle nameTagCache;
+        private GUIStyle hpNameStyleCache;
+        private GUIStyle hpLvStyleCache;
+        private GUIStyle hpMiniStatCache;
+        private GUIStyle hpTextCache;
+        private GUIStyle hpEffStyleCache;
+        private GUIStyle introVsStyleCache;
+        private GUIStyle introPNameStyleCache;
+        private GUIStyle introENameStyleCache;
+        private GUIStyle introFightStyleCache;
+        private GUIStyle introEncounterStyleCache;
+        private GUIStyle skillHeaderCache;
+        private GUIStyle skillKeyNumCache;
+        private GUIStyle skillNameStyleCache;
+        private GUIStyle skillTypeLabelCache;
+        private GUIStyle skillEffLabelCache;   // 상성 배지(효과적/비효과)
+        private GUIStyle skillInfoStyleCache;
+        private GUIStyle skillCdStyleCache;
+        private GUIStyle skillCdInfoCache;
+        private GUIStyle skillFKeyCache;
+        private GUIStyle skillFInfoCache;
+        private GUIStyle skillEscStyleCache;
+        private GUIStyle skillEscInfoCache;
+        private GUIStyle dmgStyle3dCache;
+        private GUIStyle critLblCache;
+        private GUIStyle skillStyle3dCache;
+        private GUIStyle skillNameAtkStyleCache;
+        private GUIStyle dmgStyleAtkCache;
+        private GUIStyle effStyleAtkCache;
+        private GUIStyle buffDebuffSkillStyleCache;
+        private GUIStyle upStyleCache;
+        private GUIStyle downStyleCache;
+        private GUIStyle actionTextStyleCache;
+        private GUIStyle victoryStyleCache;
+        private GUIStyle rewardStyleCache;
+        private GUIStyle rewardValStyleCache;
+        private GUIStyle defeatStyleCache;
+        private GUIStyle defeatGuideStyleCache;
+        private GUIStyle defeatHintStyleCache;
+        private GUIStyle phaseIndicatorStyleCache;
+        private GUIStyle swapHeaderCache;
+        private GUIStyle swapKeyStyleCache;
+        private GUIStyle swapEmptyStyleCache;
+        private GUIStyle swapNameStyleCache;
+        private GUIStyle swapInfoStyleCache;
+        private GUIStyle swapStatStyleCache;
+        private GUIStyle swapFaintStyleCache;
+        private GUIStyle swapCurStyleCache;
+
         private int lastDamageToPlayer;
         private string lastSkillName;
+        private InsectElement lastSkillElement = InsectElement.Bug;
 
         private int savedEnemyHp;
         private int savedPlayerHp;
@@ -47,6 +126,17 @@ namespace InsectGame.UI
 
         private float displayPlayerHp;
         private float displayEnemyHp;
+        // 칩바(ghost) — displayHp보다 느리게 따라와 최근 피해량을 잔상으로 표시(Phase 1 저즈).
+        private float chipPlayerHp;
+        private float chipEnemyHp;
+        // HP 리빌(P2) — displayHp는 CurrentHp가 아니라 이 값을 향해 tween. 아레나 연출 임팩트 순간 갱신해
+        // HP 감소를 타격과 정렬. 아레나 없으면(2D 폴백) Update에서 즉시 CurrentHp로.
+        private float revealPlayerHp;
+        private float revealEnemyHp;
+        // 종료 지연(P2) — 마지막 공격 연출이 결과화면보다 먼저 보이도록. OnBattleEnded가 세팅, 페이즈 머신이 소비.
+        private bool pendingResult;
+        // 기절 교체 지연(P2) — 적의 치명타 연출이 끝난 뒤 교체창으로. OnPlayerFainted가 세팅.
+        private bool pendingSwap;
 
         private int turnNumber;
 
@@ -70,12 +160,9 @@ namespace InsectGame.UI
 
         private void OnEnable()
         {
-            if (battleController != null)
-            {
-                battleController.BattleUpdated += OnBattleUpdated;
-                battleController.BattleEnded += OnBattleEnded;
-                battleController.PlayerFainted += OnPlayerFainted;
-            }
+            // OnDisable이 해지한 구독을 되살린다 — 오프닝 다시보기가 UI 루트를 토글하므로
+            // AutoWire 1회 구독만으로는 배틀 화면이 영구히 죽는다. 해지 뒤 구독이라 중복 없음.
+            SubscribeBattleController();
         }
 
         private void OnDisable()
@@ -86,6 +173,10 @@ namespace InsectGame.UI
                 battleController.BattleEnded -= OnBattleEnded;
                 battleController.PlayerFainted -= OnPlayerFainted;
             }
+            // 슬로우모션 안전 복구 (예외/씬 전환 중 timeScale 잔존 방지)
+            if (Time.timeScale < 0.99f) Time.timeScale = 1f;
+            hitstopUntil = 0f;
+            critUntil = 0f;
         }
 
         private void OnPlayerFainted()
@@ -93,18 +184,19 @@ namespace InsectGame.UI
             if (playerStats != null && playerStats.PlayerData != null)
                 faintedInsectIds.Add(playerStats.PlayerData.instanceId);
 
+            // 적의 치명타로 기절한 경우, 공격 연출(PlayerAttack/EnemyAttack) 중이면 연출이 끝난 뒤
+            // 교체창/결과화면으로(적 킬블로가 먼저 보이게). 그 외엔 즉시.
+            bool midAttack = phase == Phase.PlayerAttack || phase == Phase.EnemyAttack;
             if (HasAvailableTeamMember())
             {
-                phase = Phase.SwapSelect;
-                phaseTimer = 0f;
-                swapMessageTimer = 0f;
+                if (midAttack) pendingSwap = true;
+                else EnterSwapSelect();
             }
             else
             {
                 lastWon = false;
-                resultShown = true;
-                resultTimer = 0f;
-                phase = Phase.Result;
+                if (midAttack) pendingResult = true;   // EnterResult가 패배 SFX/BGM까지 처리
+                else EnterResult();
             }
         }
 
@@ -118,6 +210,7 @@ namespace InsectGame.UI
                 if (faintedInsectIds.Contains(slotId)) continue;
                 if (slotId == currentInsectId) continue;
                 PlayerInsectData pid = collection.GetByInstanceId(slotId);
+                if (pid != null && pid.IsFainted) continue;   // 지속 기절(0 HP)은 치료 전까지 출전 불가
                 InsectData data = pid != null ? collection.GetInsectData(pid.insectId) : null;
                 if (data != null) return true;
             }
@@ -132,6 +225,13 @@ namespace InsectGame.UI
                 enemyStats = enemy;
                 displayPlayerHp = player.CurrentHp;
                 displayEnemyHp = enemy.CurrentHp;
+                chipPlayerHp = player.CurrentHp;
+                chipEnemyHp = enemy.CurrentHp;
+                revealPlayerHp = player.CurrentHp;
+                revealEnemyHp = enemy.CurrentHp;
+                pendingResult = false;
+                pendingSwap = false;
+                announceTimer = 0f;
                 turnNumber = 0;
                 phase = Phase.Intro;
                 introTimer = 0f;
@@ -143,15 +243,14 @@ namespace InsectGame.UI
                 DisableCanvasBattleUI();
 
                 InsectEntity enemyEntity = battleController.GetEnemyEntity();
-                GameObject playerObj = GameObject.Find("Player");
-                Vector3 pPos = playerObj != null ? playerObj.transform.position : Vector3.zero;
+                Vector3 pPos = playerMovement != null ? playerMovement.transform.position : Vector3.zero;
                 Vector3 ePos = enemyEntity != null ? enemyEntity.transform.position : pPos + Vector3.forward * 5f;
 
                 // 3D 아레나 생성 (월드 위치 전달)
-                if (BattleArenaController.Instance != null)
+                if (arena != null)
                 {
                     bool enemyShiny3d = enemyEntity != null && enemyEntity.IsShiny;
-                    BattleArenaController.Instance.SetupNormalBattle(
+                    arena.SetupNormalBattle(
                         player.Data, player.Level, enemy.Data, enemy.Level, enemyShiny3d,
                         pPos, ePos);
                 }
@@ -169,6 +268,8 @@ namespace InsectGame.UI
                 playerStats = player;
                 enemyStats = enemy;
                 displayPlayerHp = player.CurrentHp;
+                chipPlayerHp = player.CurrentHp;
+                revealPlayerHp = player.CurrentHp;
                 if (player.PlayerData != null) currentInsectId = player.PlayerData.instanceId;
                 phase = Phase.PlayerTurn;
                 phaseTimer = 0f;
@@ -190,8 +291,29 @@ namespace InsectGame.UI
             lastDamageToEnemy = Mathf.Max(0, oldEnemyHp - enemy.CurrentHp);
             lastDamageToPlayer = Mathf.Max(0, oldPlayerHp - player.CurrentHp);
 
+            // 크리티컬 판정: 적 MaxHp의 25% 이상 데미지
+            lastWasCritical = lastDamageToEnemy > 0 && enemy.MaxHp > 0 && lastDamageToEnemy >= enemy.MaxHp * 0.25f;
+
             if (lastDamageToEnemy > 0)
-                enemyShake = 0.4f;
+            {
+                enemyShake = lastWasCritical ? 0.7f : 0.4f;
+                comboCount++;
+                comboDisplayTimer = 2.5f;
+
+                // 슬로우모션 + 화면 플래시 (크리티컬만)
+                if (lastWasCritical)
+                {
+                    critUntil = Time.unscaledTime + 0.25f;   // 아비터가 timeScale 적용
+                    screenFlashTimer = 0.3f;
+                    screenFlashColor = new Color(1f, 0.95f, 0.3f);
+                    if (AudioManager.Instance != null) AudioManager.Instance.PlaySFX(SfxType.CriticalHit);
+                }
+            }
+            if (lastDamageToPlayer > 0)
+            {
+                comboCount = 0; // 피격 시 콤보 리셋
+                comboDisplayTimer = 0f;
+            }
 
             phase = Phase.PlayerAttack;
             phaseTimer = 0f;
@@ -200,53 +322,132 @@ namespace InsectGame.UI
         private void OnBattleEnded(bool playerWon)
         {
             lastWon = playerWon;
-            resultShown = true;
-            resultTimer = 0f;
-            phase = Phase.Result;
-            if (AudioManager.Instance != null)
-            {
-                AudioManager.Instance.PlaySFX(playerWon ? SfxType.Victory : SfxType.Defeat);
-                AudioManager.Instance.PlayBGM(playerWon ? BgmType.Victory : BgmType.Defeat);
-            }
-            if (playerWon && TutorialQuestManager.Instance != null)
-                TutorialQuestManager.Instance.NotifyBattleWon();
+            // 튜토리얼/서브 배틀 진행은 TutorialQuestManager가 battleController.BattleEnded를 직접
+            // 구독(OnBattleEnded)해 처리한다 — 여기서 또 NotifyBattleWon을 부르면 1승이 +2로 이중 카운트.
 
             // 수문장 격파 체크
             if (playerWon)
                 CheckGuardianDefeat();
+
+            // 킬블로 연출 스포일 방지 — 공격 페이즈 중이면 연출이 끝난 뒤 결과화면으로(페이즈 머신이 EnterResult).
+            // 그 외(도주 등 즉시 종료)엔 곧바로 결과화면. 승패 SFX/BGM은 EnterResult에서(연출 도중 스포일 방지).
+            if (phase == Phase.PlayerAttack || phase == Phase.EnemyAttack)
+                pendingResult = true;
+            else
+                EnterResult();
         }
 
+        /// <summary>
+        /// 이 승리가 수문장 격파인가 — <b>싸운 개체가 그 수문장이었는지</b>로만 답한다.
+        ///
+        /// <b>종·레벨로는 판정할 수 없다.</b> 리전 13곳 중 9곳은 수문장 종이 <b>자기 리전
+        /// 야생 풀에도</b> 들어 있고(pond·garden·ruins·hollow·dunes·frostline·emberfall·
+        /// canopy·nameless), 그중 8곳은 야생 스폰 상한(<c>requiredLevel + GetRegionLevelRange</c>)이
+        /// 옛 격파 임계(<c>guardianLevel - 2</c>)를 넘는다. 그래서 <b>필드에서 마주친 야생을 이기는
+        /// 것만으로 리전이 열렸다</b> — 유적에서 야생 파라오풍뎅이 Lv40+를 이기면 2막 6리전이 도미노로.
+        ///
+        /// <b>좌표로도 판정할 수 없다.</b> 그 다음 시도가 "수문장 자리 15m 안에서 싸웠나"였는데,
+        /// 그 반경엔 야생이 그대로 들어온다: <c>InsectSpawner.RelocateSpawnPoints</c>가 현재 리전
+        /// 스폰포인트를 <b>플레이어로부터 10~43m</b> 나선 위로 끌어오고 거기서 다시
+        /// <c>SpawnPoint.radius</c>(5m)만큼 흩어지므로 <b>최근접 스폰이 플레이어에서 5m</b>다.
+        /// 수문장과 싸우려면 그 앞에 서야 하니 야생이 반경에 들어오는 건 우연이 아니라 구조이고,
+        /// 위 9개 리전에서는 종·레벨 조건까지 동시에 맞는다. 반경을 좁혀도 스폰 링이 플레이어를
+        /// 따라오는 한 같은 결함이 남는다.
+        ///
+        /// 그래서 <b>"바로 그 개체였나"</b>만 묻는다. 수문장은
+        /// <c>PlaySceneBootstrap.SpawnGuardianInsect</c>가 <c>new GameObject</c>로 세우는 단
+        /// 하나의 표식된 개체다(풀에서 오지 않는다). 값은
+        /// <c>InsectBattleController.EnemyGuardianRegionId</c> — 시작 시점 스냅샷이라
+        /// 승리 후 <c>Despawn</c>이 먼저 돌아도 안전하다.
+        /// </summary>
         private void CheckGuardianDefeat()
         {
             if (battleController == null) return;
-            InsectEntity enemy = battleController.GetEnemyEntity();
-            if (enemy == null || enemy.Data == null) return;
 
-            RegionManager regionMgr = FindFirstObjectByType<RegionManager>();
-            if (regionMgr == null || regionMgr.Regions == null) return;
+            // 스냅샷으로 판정한다 — 라이브 엔티티는 이미 디스폰됐을 수 있다.
+            if (cachedRegionMgr == null) cachedRegionMgr = FindFirstObjectByType<RegionManager>();
+            if (cachedRegionMgr == null) return;
+            if (!cachedRegionMgr.TryDefeatGuardian(battleController.EnemyGuardianRegionId, "1v1")) return;
 
-            string enemyId = enemy.Data.insectId;
-            foreach (var region in regionMgr.Regions)
+            if (TutorialQuestManager.Instance != null)
+                TutorialQuestManager.Instance.NotifyGuardianDefeated();
+        }
+
+        // 공격 페이즈 종료 판정 — 아레나(3D)면 연출 코루틴 완료 + 최소 바닥(0.3s), 상한 2s 안전망.
+        // 아레나 없으면(2D 폴백) 기존 고정 0.8s 유지(2D 애니가 phaseTimer/0.8 기준이라 잘리면 안 됨).
+        private bool PhaseAnimDone()
+        {
+            if (arena == null || !arena.IsActive) return phaseTimer > 0.8f;
+            if (phaseTimer > 2f) return true;
+            if (phaseTimer < 0.5f) return false;   // 연출이 짧아도 최소 노출 보장(턴 인터벌 확보)
+            return !arena.IsPlayingSkill;
+        }
+
+        // EnemyAttack 페이즈 진입 시 적 공격 연출 발동 — 적이 쓴 스킬 속성/근접여부로 러시·투사체·쉐이크.
+        private void TriggerEnemyAttackEffect()
+        {
+            if (arena == null || !arena.IsActive || battleController == null) return;
+            InsectSkill es = battleController.LastEnemySkill;
+            InsectElement elem = es != null ? es.element
+                : (enemyStats != null && enemyStats.Data != null ? enemyStats.Data.primaryType : InsectElement.Bug);
+            SkillEffectType eff = es != null ? es.effectType : SkillEffectType.Damage;
+            bool dealsDmg = eff == SkillEffectType.Damage;
+            arena.PlaySkillEffect(false, elem, eff,
+                () => { if (playerStats != null) revealPlayerHp = playerStats.CurrentHp; if (dealsDmg) hitstopUntil = Time.unscaledTime + 0.06f; },
+                BattleArenaController.IsMeleeElement(elem));
+        }
+
+        // 적 치명타 연출이 끝난 뒤 교체창 진입.
+        private void EnterSwapSelect()
+        {
+            phase = Phase.SwapSelect;
+            phaseTimer = 0f;
+            swapMessageTimer = 0f;
+            pendingSwap = false;
+        }
+
+        // 마지막 공격 연출이 끝난 뒤 결과화면 진입 — 승패 SFX/BGM도 여기서(연출 도중 스포일 방지).
+        private void EnterResult()
+        {
+            // **재진입 차단.** 아래 ConcludeDefeatWithoutSwap이 BattleEnded를 발화하고,
+            // 그 핸들러(OnBattleEnded)가 이 메서드를 다시 부른다 — 같은 프레임 안에서 동기로.
+            if (phase == Phase.Result) return;
+
+            // **상태를 먼저 세운다.** 순서가 이 가드의 전부다: 상태가 Conclude 뒤에 있으면
+            // 재진입이 위 가드를 통과해(그때 phase는 아직 Result가 아니다) 결과 진입이 통째로
+            // 두 번 돌고, 패배 SFX·BGM이 겹쳐 재생된다.
+            phase = Phase.Result;
+            resultShown = true;
+            resultTimer = 0f;
+            pendingResult = false;
+
+            // 교체할 팀원이 없어 여기로 온 패배는 **컨트롤러가 아직 종료 처리를 못 했다** —
+            // `PlayerFainted`가 구독자 유무만 보고 "UI가 교체로 처리한다"고 판단해 손을 뗐기 때문이다.
+            // 여기서 확정시키지 않으면 `BattleEnded`/`DuelEnded`가 영영 발화하지 않아 NPC 대결의
+            // 보상·쿨다운이 통째로 건너뛰어진다(상세는 `ConcludeDefeatWithoutSwap` 주석).
+            // 승리·도주로 온 경우엔 이미 종료돼 있어 멱등하게 무시된다.
+            if (!lastWon && battleController != null) battleController.ConcludeDefeatWithoutSwap();
+
+            if (AudioManager.Instance != null)
             {
-                if (string.IsNullOrEmpty(region.guardianInsectId)) continue;
-                if (region.guardianInsectId != enemyId) continue;
-                if (regionMgr.IsGuardianDefeated(region.regionId)) continue;
-
-                // 수문장과 레벨도 확인 (수문장 레벨 이상의 적이어야)
-                if (enemy.Level >= region.guardianLevel - 2)
-                {
-                    regionMgr.DefeatGuardian(region.regionId);
-                    Debug.Log($"[Guardian] {region.displayName} 수문장 격파! 다음 지역 해금됨");
-
-                    if (TutorialQuestManager.Instance != null)
-                        TutorialQuestManager.Instance.NotifyGuardianDefeated();
-                }
+                AudioManager.Instance.PlaySFX(lastWon ? SfxType.Victory : SfxType.Defeat);
+                AudioManager.Instance.PlayBGM(lastWon ? BgmType.Victory : BgmType.Defeat);
             }
         }
 
         private void Update()
         {
+            if (screenFlashTimer > 0f) screenFlashTimer -= Time.unscaledDeltaTime;
+            if (comboDisplayTimer > 0f) comboDisplayTimer -= Time.unscaledDeltaTime;
+
             if (phase == Phase.None) return;
+
+            // timeScale 아비터 (배틀 중에만 실행 — 비배틀 프레임에 외부 timeScale 미간섭).
+            // 히트스톱(0.05) > 크리티컬 슬로모(0.4) > 정상(1). 우리가 늦춘 범위(0.001~0.99)일 때만 복원.
+            float uNow = Time.unscaledTime;
+            if (uNow < hitstopUntil) Time.timeScale = 0.05f;
+            else if (uNow < critUntil) Time.timeScale = 0.4f;
+            else if (Time.timeScale < 0.99f && Time.timeScale > 0.001f) Time.timeScale = 1f;
 
             phaseTimer += Time.deltaTime;
             introTimer += Time.deltaTime;
@@ -254,13 +455,39 @@ namespace InsectGame.UI
             if (actionTimer > 0) actionTimer -= Time.deltaTime;
             if (playerShake > 0) playerShake -= Time.deltaTime;
             if (enemyShake > 0) enemyShake -= Time.deltaTime;
-            if (resultShown) resultTimer += Time.deltaTime;
+            // **unscaled다.** 443행의 timeScale 복원은 `> 0.001f`라 정확히 0은 구제하지 못하는데,
+            // 그 상태로 남으면 결과 화면이 4초 조건에 영영 도달하지 못해 전투가 안 끝난다.
+            // 결과 화면 중에는 timeScale이 1이라 연출 타이밍은 그대로다.
+            if (resultShown) resultTimer += Time.unscaledDeltaTime;
+
+            // 아레나(3D) 없으면 즉시 리빌(기존 2D 동작 보존). 아레나 있으면 연출 임팩트 onImpact에서 리빌.
+            // 단 턴 배너 중엔 2D도 리빌 보류 — 배너가 "상대의 턴"인데 HP가 미리 깎여 보이는 것 방지.
+            if ((arena == null || !arena.IsActive) && phase != Phase.TurnAnnounce)
+            {
+                if (playerStats != null) revealPlayerHp = playerStats.CurrentHp;
+                if (enemyStats != null) revealEnemyHp = enemyStats.CurrentHp;
+            }
 
             float hpSpeed = 60f * Time.deltaTime;
             if (playerStats != null)
-                displayPlayerHp = Mathf.MoveTowards(displayPlayerHp, playerStats.CurrentHp, hpSpeed);
+                displayPlayerHp = Mathf.MoveTowards(displayPlayerHp, revealPlayerHp, hpSpeed);
             if (enemyStats != null)
-                displayEnemyHp = Mathf.MoveTowards(displayEnemyHp, enemyStats.CurrentHp, hpSpeed);
+                displayEnemyHp = Mathf.MoveTowards(displayEnemyHp, revealEnemyHp, hpSpeed);
+
+            // 칩바 — 실제 fill(displayHp)보다 느리게 감소해 최근 피해 잔상. 회복 시엔 스냅.
+            float chipSpeed = 22f * Time.deltaTime;
+            chipPlayerHp = chipPlayerHp > displayPlayerHp
+                ? Mathf.MoveTowards(chipPlayerHp, displayPlayerHp, chipSpeed) : displayPlayerHp;
+            chipEnemyHp = chipEnemyHp > displayEnemyHp
+                ? Mathf.MoveTowards(chipEnemyHp, displayEnemyHp, chipSpeed) : displayEnemyHp;
+
+            // BGM 인텐시티: HP 30% 이하부터 가파르게 상승
+            if (AudioManager.Instance != null && playerStats != null && playerStats.MaxHp > 0)
+            {
+                float hpRatio = (float)playerStats.CurrentHp / playerStats.MaxHp;
+                float intensity = Mathf.Clamp01((0.5f - hpRatio) * 2f);
+                AudioManager.Instance.SetBattleIntensity(intensity);
+            }
 
             if (phase == Phase.Intro && introTimer > 2.0f)
             {
@@ -283,7 +510,7 @@ namespace InsectGame.UI
                 if (wantMouseClick || Input.GetMouseButtonDown(0))
                 {
                     Vector2 mousePos = wantMouseClick ? guiMousePos :
-                        new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y);
+                        UIScale.VirtualMousePosition;
                     for (int i = 0; i < swapBtnRects.Length; i++)
                     {
                         if (swapBtnRects[i].width > 0 && swapBtnAvail[i] && swapBtnRects[i].Contains(mousePos))
@@ -310,7 +537,7 @@ namespace InsectGame.UI
                 if (wantMouseClick || Input.GetMouseButtonDown(0))
                 {
                     Vector2 mousePos = wantMouseClick ? guiMousePos :
-                        new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y);
+                        UIScale.VirtualMousePosition;
                     for (int i = 0; i < skillBtnCount; i++)
                     {
                         if (skillBtnUsable[i] && skillBtnRects[i].Contains(mousePos))
@@ -327,34 +554,83 @@ namespace InsectGame.UI
                 }
             }
 
-            if (phase == Phase.PlayerAttack && phaseTimer > 0.8f)
+            if (phase == Phase.PlayerAttack && PhaseAnimDone())
             {
-                if (lastDamageToPlayer > 0)
-                {
-                    playerShake = 0.4f;
-                    phase = Phase.EnemyAttack;
-                    phaseTimer = 0f;
-                }
-                else if (!resultShown)
-                {
-                    phase = Phase.PlayerTurn;
-                    phaseTimer = 0f;
-                }
+                if (enemyStats != null) revealEnemyHp = enemyStats.CurrentHp;   // 연출 종료 시 최종 동기(보증)
+                // 종료/교체는 배너 없이 즉시(연출 스포일 방지 우선). 그 외엔 다음 턴을 배너로 안내.
+                if (pendingSwap) EnterSwapSelect();
+                else if (pendingResult) EnterResult();
+                else if (lastDamageToPlayer > 0)
+                    BeginTurnAnnounce("상대의 턴", false, Phase.EnemyAttack, triggerEnemy: true);
+                else
+                    BeginTurnAnnounce("당신의 턴", true, Phase.PlayerTurn, triggerEnemy: false);
             }
 
-            if (phase == Phase.EnemyAttack && phaseTimer > 0.8f)
+            if (phase == Phase.EnemyAttack && PhaseAnimDone())
             {
-                if (!resultShown)
-                {
-                    phase = Phase.PlayerTurn;
-                    phaseTimer = 0f;
-                }
+                if (playerStats != null) revealPlayerHp = playerStats.CurrentHp;   // 연출 종료 시 최종 동기(보증)
+                if (pendingSwap) EnterSwapSelect();
+                else if (pendingResult) EnterResult();
+                else
+                    BeginTurnAnnounce("당신의 턴", true, Phase.PlayerTurn, triggerEnemy: false);
+            }
+
+            if (phase == Phase.TurnAnnounce)
+            {
+                announceTimer -= Time.deltaTime;
+                // 탭/키 입력 시 즉시 스킵(반복 전투 배려) — 추가 상태 없이 기존 입력 플래그 재사용.
+                if (wantMouseClick) { wantMouseClick = false; announceTimer = 0f; }
+                if (announceTimer <= 0f) FinishTurnAnnounce();
             }
 
             if (phase == Phase.Result && resultTimer > 4f)
             {
                 EndBattle();
             }
+
+            // 탭 래치 차단 — `Input.GetMouseButtonDown`과 같은 한 프레임 수명으로 맞춘다.
+            // `wantMouseClick`은 OnGUI(:MouseDown)가 세우는데 소거는 SwapSelect/PlayerTurn/TurnAnnounce
+            // 분기 **안**에서만 했다. Intro·PlayerAttack·EnemyAttack·Result에서 탭하면 true로 남는다.
+            // 하필 Intro 종료와 PlayerTurn 처리가 **같은 Update 패스**에 있어(위 Intro 전이 → PlayerTurn 블록),
+            // 인트로 중 탭이 곧바로 다음 줄에서 소비된다 — 그것도 **지난 전투의** `escapeRect`/`basicAtkRect`로.
+            // 두 Rect는 EndBattle이 지우지 않아 화면상 같은 자리에 남아 있으므로, 2번째 전투부터
+            // **인트로 중 도주 버튼 근처를 탭하면 턴을 보기도 전에 도주가 실행됐다.**
+            // (같은 결함을 RaidBattleUI에서 먼저 고쳤다 — 2026-08-06 audit.)
+            wantMouseClick = false;
+        }
+
+        // 다음 턴을 알리는 중앙 배너 시작. 종료 후 nextPhase로 전이(triggerEnemy면 적 연출 발동).
+        private void BeginTurnAnnounce(string text, bool isPlayer, Phase nextPhase, bool triggerEnemy)
+        {
+            phase = Phase.TurnAnnounce;
+            phaseTimer = 0f;
+            announceTimer = TurnAnnounceDuration;
+            announceText = text;
+            announceIsPlayer = isPlayer;
+            announceNextPhase = nextPhase;
+            announceTriggerEnemy = triggerEnemy;
+        }
+
+        private void FinishTurnAnnounce()
+        {
+            phase = announceNextPhase;
+            phaseTimer = 0f;
+            if (announceTriggerEnemy)
+            {
+                playerShake = 0.4f;
+                SetEnemyActionText();          // 적 행동 텍스트(플레이어와 대칭)
+                TriggerEnemyAttackEffect();    // 적 공격 연출 발동
+            }
+        }
+
+        // 적 EnemyAttack 진입 시 "{적 이름}의 {스킬}!" 텍스트 — 3D 모드에서도 적 행동이 보이게(대칭).
+        private void SetEnemyActionText()
+        {
+            if (enemyStats == null || enemyStats.Data == null) return;
+            InsectSkill es = battleController != null ? battleController.LastEnemySkill : null;
+            string skillName = es != null && !string.IsNullOrEmpty(es.displayName) ? es.displayName : "공격";
+            actionText = $"{enemyStats.Data.displayName}의 {skillName}!";
+            actionTimer = 1.5f;
         }
 
         private void SnapshotHp()
@@ -373,15 +649,19 @@ namespace InsectGame.UI
             InsectSkill[] curSkills = battleController.GetPlayerSkills();
             InsectSkill skill = curSkills != null && index < curSkills.Length ? curSkills[index] : null;
             lastSkillName = skill != null ? skill.displayName : "공격";
+            lastSkillElement = skill != null ? skill.element : playerStats.Data.primaryType;
             actionText = $"{playerStats.Data.displayName}의 {lastSkillName}!";
             actionTimer = 1.5f;
             SnapshotHp();
 
-            if (BattleArenaController.Instance != null && BattleArenaController.Instance.IsActive)
+            if (arena != null && arena.IsActive)
             {
-                InsectElement elem = (playerStats != null && playerStats.Data != null) ? playerStats.Data.primaryType : InsectElement.Bug;
+                InsectElement elem = lastSkillElement;
                 SkillEffectType effectType = (skill != null) ? skill.effectType : SkillEffectType.Damage;
-                BattleArenaController.Instance.PlaySkillEffect(true, elem, effectType);
+                bool dealsDmg = effectType == SkillEffectType.Damage;
+                arena.PlaySkillEffect(true, elem, effectType,
+                    () => { if (enemyStats != null) revealEnemyHp = enemyStats.CurrentHp; if (dealsDmg) hitstopUntil = Time.unscaledTime + 0.06f; },
+                    BattleArenaController.IsMeleeElement(elem));
             }
 
             battleController.UseSkill(index);
@@ -393,14 +673,17 @@ namespace InsectGame.UI
             if (AudioManager.Instance != null) AudioManager.Instance.PlaySFX(SfxType.Attack);
             turnNumber++;
             lastSkillName = "기본 공격";
+            lastSkillElement = (playerStats != null && playerStats.Data != null) ? playerStats.Data.primaryType : InsectElement.Bug;
             actionText = $"{playerStats.Data.displayName}의 기본 공격!";
             actionTimer = 1.5f;
             SnapshotHp();
 
-            if (BattleArenaController.Instance != null && BattleArenaController.Instance.IsActive)
+            if (arena != null && arena.IsActive)
             {
                 InsectElement elem = (playerStats != null && playerStats.Data != null) ? playerStats.Data.primaryType : InsectElement.Bug;
-                BattleArenaController.Instance.PlaySkillEffect(true, elem, SkillEffectType.Damage);
+                arena.PlaySkillEffect(true, elem, SkillEffectType.Damage,
+                    () => { if (enemyStats != null) revealEnemyHp = enemyStats.CurrentHp; hitstopUntil = Time.unscaledTime + 0.06f; },
+                    BattleArenaController.IsMeleeElement(elem));
             }
 
             battleController.UseBasicAttack();
@@ -417,6 +700,7 @@ namespace InsectGame.UI
             if (slotId == currentInsectId) return;
 
             PlayerInsectData pid = collection.GetByInstanceId(slotId);
+            if (pid != null && pid.IsFainted) return;   // 지속 기절(0 HP)은 교체 불가(치료 필요)
             InsectData data = pid != null ? collection.GetInsectData(pid.insectId) : null;
             if (data == null) return;
 
@@ -446,9 +730,189 @@ namespace InsectGame.UI
             }
         }
 
+        private void InitStyles()
+        {
+            if (stylesInitialized) return;
+            stylesInitialized = true;
+
+            // DrawBattleOverlay
+            turnStyle3dCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 24, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            turnStyle3dCache.normal.textColor = new Color(0.9f, 0.85f, 0.5f);
+
+            turnStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 24, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            turnStyleCache.normal.textColor = new Color(0.9f, 0.85f, 0.5f);
+
+            // DrawBattleField
+            playerLabelCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 20, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            playerLabelCache.normal.textColor = new Color(0.5f, 0.85f, 1f);
+
+            playerTagCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 14, alignment = TextAnchor.MiddleCenter };
+            playerTagCache.normal.textColor = new Color(0.4f, 0.6f, 0.8f);
+
+            enemyLabelCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 20, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            enemyLabelCache.normal.textColor = new Color(1f, 0.5f, 0.4f);
+
+            enemyTagCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 14, alignment = TextAnchor.MiddleCenter };
+            enemyTagCache.normal.textColor = new Color(0.8f, 0.4f, 0.35f);
+
+            // DrawInsectSprite — fontSize depends on s, set per call
+            nameTagCache = new GUIStyle(GUI.skin.label)
+            { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+
+            // DrawHpBox
+            hpNameStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 24, fontStyle = FontStyle.Bold };
+            hpLvStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 22, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleRight };
+            hpLvStyleCache.normal.textColor = new Color(0.75f, 0.75f, 0.75f);
+            hpMiniStatCache = new GUIStyle(GUI.skin.label) { fontSize = 18 };
+            hpMiniStatCache.normal.textColor = new Color(0.55f, 0.55f, 0.6f);
+            hpTextCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 20, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            hpTextCache.normal.textColor = Color.white;
+            hpEffStyleCache = new GUIStyle(GUI.skin.label) { fontSize = 18, fontStyle = FontStyle.Bold };
+            hpEffStyleCache.normal.textColor = new Color(0.6f, 0.8f, 1f);
+
+            // DrawIntro — fontSize is dynamic for vs/fight
+            introVsStyleCache = new GUIStyle(GUI.skin.label)
+            { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            introPNameStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 28, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleRight };
+            introENameStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 28, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
+            introFightStyleCache = new GUIStyle(GUI.skin.label)
+            { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            introEncounterStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 32, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+
+            // DrawSkillPanel
+            // 아래 라벨들은 전부 세로 가운데 정렬이다. IMGUI 기본값(Upper*)은 글자를 상자 맨 위에
+            // 붙여 그려서, 상자가 글자보다 조금만 작아도 아랫부분(한글 받침·디센더)이 먼저 잘린다.
+            // Middle*이면 남는 세로가 위아래로 반씩 나뉘어 같은 상자에서도 여백이 생긴다.
+            skillHeaderCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 28, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
+            skillHeaderCache.normal.textColor = new Color(0.9f, 0.85f, 0.5f);
+            skillKeyNumCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 28, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            skillNameStyleCache = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 27,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleLeft,
+                wordWrap = true,
+                clipping = TextClipping.Clip
+            };
+            skillTypeLabelCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 20, alignment = TextAnchor.MiddleLeft };
+            // 상성 배지는 위력과 같은 줄의 오른쪽 칸이라 우측 정렬이다.
+            skillEffLabelCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 19, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleRight };
+            skillInfoStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 20, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
+            skillCdStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 20, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleRight };
+            skillCdStyleCache.normal.textColor = new Color(1f, 0.4f, 0.3f);
+            skillCdInfoCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 18, alignment = TextAnchor.MiddleRight };
+            skillCdInfoCache.normal.textColor = new Color(0.68f, 0.68f, 0.74f);
+            skillFKeyCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 26, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            skillFKeyCache.normal.textColor = new Color(1f, 0.85f, 0.3f);
+            skillFInfoCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 20, alignment = TextAnchor.MiddleCenter };
+            // 부제 두 줄은 원래 바탕색을 살짝 밝힌 정도(0.6/0.55/0.4 · 0.55/0.4/0.4)라 버튼 배경과
+            // 거의 구분되지 않았다 — 호버로 배경이 밝아지면 각각 4.01 / 3.17까지 떨어져 AA 미만이었다.
+            // 색조(따뜻한 금색 · 붉은색)는 유지한 채 밝기만 올린다: 평시 10.06 / 9.92, 호버 8.16 / 8.75.
+            skillFInfoCache.normal.textColor = new Color(0.85f, 0.79f, 0.62f);
+            skillEscStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 26, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            skillEscStyleCache.normal.textColor = new Color(0.9f, 0.5f, 0.4f);
+            skillEscInfoCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 20, alignment = TextAnchor.MiddleCenter };
+            skillEscInfoCache.normal.textColor = new Color(0.88f, 0.72f, 0.68f);
+
+            // DrawAttackAnimation — fontSize dynamic for dmg
+            dmgStyle3dCache = new GUIStyle(GUI.skin.label)
+            { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            critLblCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 28, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            critLblCache.normal.textColor = new Color(1f, 0.85f, 0.2f);
+            skillStyle3dCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 20, alignment = TextAnchor.MiddleCenter };
+            skillStyle3dCache.normal.textColor = Color.white;
+            skillNameAtkStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 30, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            dmgStyleAtkCache = new GUIStyle(GUI.skin.label)
+            { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            effStyleAtkCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 20, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+
+            // DrawBuffDebuffEffect
+            buffDebuffSkillStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 28, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            upStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 34, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            downStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 34, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+
+            // DrawActionText
+            actionTextStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 28, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+
+            // DrawResult
+            victoryStyleCache = new GUIStyle(GUI.skin.label)
+            { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            rewardStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 24, alignment = TextAnchor.MiddleCenter };
+            rewardValStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 24, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            defeatStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 50, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            defeatGuideStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 22, alignment = TextAnchor.MiddleCenter };
+            defeatHintStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 18, alignment = TextAnchor.MiddleCenter };
+
+            // DrawPhaseIndicator
+            phaseIndicatorStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 30, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+
+            // DrawSwapSelect
+            swapHeaderCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 28, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            swapKeyStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 28, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            swapEmptyStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 22, alignment = TextAnchor.MiddleCenter };
+            swapEmptyStyleCache.normal.textColor = new Color(0.3f, 0.3f, 0.3f);
+            swapNameStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 22, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            swapInfoStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 18, alignment = TextAnchor.MiddleCenter };
+            swapStatStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 17, alignment = TextAnchor.MiddleCenter };
+            swapFaintStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 24, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            swapFaintStyleCache.normal.textColor = new Color(1f, 0.3f, 0.3f, 0.9f);
+            swapCurStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 20, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            swapCurStyleCache.normal.textColor = new Color(1f, 0.3f, 0.3f, 0.9f);
+        }
+
         private void OnGUI()
         {
             if (phase == Phase.None) return;
+
+            InitStyles();
+            UIScale.Begin();
+            DrawScreenFlash();
+            DrawComboCounter();
 
             Event evt = Event.current;
             if (evt != null && evt.type == EventType.KeyDown)
@@ -509,29 +973,35 @@ namespace InsectGame.UI
                 DrawAttackAnimation(false);
                 DrawPhaseIndicator("적 곤충의 반격!");
             }
+            else if (phase == Phase.TurnAnnounce)
+                DrawTurnAnnounce();
 
             if (actionTimer > 0)
                 DrawActionText();
 
             if (resultShown)
                 DrawResult();
+
+            // "효과가 굉장했다!" 같은 전투 문구. 아레나가 자기 OnGUI에서 픽셀 좌표로 그리던 것을
+            // 가상 캔버스 안으로 들여왔다(BattleEffectTextOverlay 주석 참고).
+            BattleEffectTextOverlay.Draw(arena);
+
+            UIScale.End();
         }
 
         private void DrawBattleOverlay()
         {
-            float sw = Screen.width;
-            float sh = Screen.height;
+            float sw = UIScale.VirtualScreenWidth;
+            float sh = UIScale.VirtualScreenHeight;
 
             // 3D 아레나 활성 시: 상단 턴 표시 바만 그리고 2D 배경 스킵
-            if (BattleArenaController.Instance != null && BattleArenaController.Instance.IsActive)
+            if (arena != null && arena.IsActive)
             {
+                float barTop = UISafeLayout.ContentTop; // 노치/상태바 + 세로 마진 아래로
                 GUI.color = new Color(0.02f, 0.03f, 0.06f, 0.7f);
-                GUI.DrawTexture(new Rect(0, 0, sw, sh * 0.08f), Texture2D.whiteTexture);
+                GUI.DrawTexture(new Rect(0, 0, sw, barTop + 38f), Texture2D.whiteTexture);
                 GUI.color = Color.white;
-                GUIStyle turnStyle3d = new GUIStyle(GUI.skin.label)
-                { fontSize = 24, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-                turnStyle3d.normal.textColor = new Color(0.9f, 0.85f, 0.5f);
-                GUI.Label(new Rect(0, 4, sw, 34), $"BATTLE  -  Turn {turnNumber + 1}", turnStyle3d);
+                GUI.Label(new Rect(0, barTop, sw, 34), $"BATTLE  -  Turn {turnNumber + 1}", turnStyle3dCache);
                 return;
             }
 
@@ -592,10 +1062,7 @@ namespace InsectGame.UI
             GUI.DrawTexture(new Rect(0, arenaY - 2, sw, 2), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
-            GUIStyle turnStyle = new GUIStyle(GUI.skin.label)
-            { fontSize = 24, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            turnStyle.normal.textColor = new Color(0.9f, 0.85f, 0.5f);
-            GUI.Label(new Rect(0, 4, sw, 34), $"BATTLE  -  Turn {turnNumber + 1}", turnStyle);
+            GUI.Label(new Rect(0, 4, sw, 34), $"BATTLE  -  Turn {turnNumber + 1}", turnStyleCache);
         }
 
         private void DrawPlatformEllipse(float cx, float cy, float rx, float ry, Color fill, Color rim)
@@ -624,17 +1091,17 @@ namespace InsectGame.UI
         private void DrawBattleField()
         {
             // 3D 아레나가 활성화되어 있으면 2D 곤충 그리기 스킵
-            if (BattleArenaController.Instance != null && BattleArenaController.Instance.IsActive)
+            if (arena != null && arena.IsActive)
                 return;
 
             if (playerStats == null || enemyStats == null) return;
 
-            float arenaTop = Screen.height * 0.08f;
-            float arenaH = Screen.height * 0.52f;
+            float arenaTop = UIScale.VirtualScreenHeight * 0.08f;
+            float arenaH = UIScale.VirtualScreenHeight * 0.52f;
 
-            float playerX = Screen.width * 0.22f;
+            float playerX = UIScale.VirtualScreenWidth * 0.22f;
             float playerY = arenaTop + arenaH * 0.72f;
-            float enemyX = Screen.width * 0.72f;
+            float enemyX = UIScale.VirtualScreenWidth * 0.72f;
             float enemyY = arenaTop + arenaH * 0.38f;
 
             float breathP = Mathf.Sin(Time.time * 2.2f) * 2f;
@@ -672,25 +1139,10 @@ namespace InsectGame.UI
             DrawInsectSprite(enemyX, enemyY, enemyStats.Data, enemyScale, false);
 
             GUI.color = Color.white;
-            GUIStyle playerLabel = new GUIStyle(GUI.skin.label)
-            { fontSize = 20, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            playerLabel.normal.textColor = new Color(0.5f, 0.85f, 1f);
-            GUI.Label(new Rect(playerX - 80, playerY + 42 * playerScale / 3f, 160, 26), playerStats.Data.displayName, playerLabel);
-
-            GUIStyle playerTag = new GUIStyle(GUI.skin.label)
-            { fontSize = 14, alignment = TextAnchor.MiddleCenter };
-            playerTag.normal.textColor = new Color(0.4f, 0.6f, 0.8f);
-            GUI.Label(new Rect(playerX - 60, playerY + 42 * playerScale / 3f + 24, 120, 18), "내 곤충", playerTag);
-
-            GUIStyle enemyLabel = new GUIStyle(GUI.skin.label)
-            { fontSize = 20, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            enemyLabel.normal.textColor = new Color(1f, 0.5f, 0.4f);
-            GUI.Label(new Rect(enemyX - 80, enemyY + 38 * enemyScale / 3f, 160, 26), enemyStats.Data.displayName, enemyLabel);
-
-            GUIStyle enemyTag = new GUIStyle(GUI.skin.label)
-            { fontSize = 14, alignment = TextAnchor.MiddleCenter };
-            enemyTag.normal.textColor = new Color(0.8f, 0.4f, 0.35f);
-            GUI.Label(new Rect(enemyX - 60, enemyY + 38 * enemyScale / 3f + 24, 120, 18), "야생 곤충", enemyTag);
+            UIHelper.LabelFit(new Rect(playerX - 80, playerY + 42 * playerScale / 3f, 160, 26), playerStats.Data.displayName, playerLabelCache);
+            GUI.Label(new Rect(playerX - 60, playerY + 42 * playerScale / 3f + 24, 120, 18), "내 곤충", playerTagCache);
+            UIHelper.LabelFit(new Rect(enemyX - 80, enemyY + 38 * enemyScale / 3f, 160, 26), enemyStats.Data.displayName, enemyLabelCache);
+            GUI.Label(new Rect(enemyX - 60, enemyY + 38 * enemyScale / 3f + 24, 120, 18), "야생 곤충", enemyTagCache);
         }
 
         private void DrawInsectSprite(float cx, float cy, InsectData data, float scale, bool flip)
@@ -719,7 +1171,9 @@ namespace InsectGame.UI
                 DrawDragonfly(cx, cy, s, dir, bodyCol, darkCol, lightCol);
             else if (id.Contains("dragonfly"))
                 DrawDragonfly(cx, cy, s, dir, bodyCol, darkCol, lightCol);
-            else if (id.Contains("bee") || id.Contains("wasp") || id.Contains("hornet"))
+            // "beetle"이 "bee"를 품는다 — 가드가 없으면 아래 stag/rhinoceros/hercules 분기까지
+            // 못 가고 딱정벌레가 전부 벌로 그려진다(InsectEntity.BuildModel의 같은 가드와 짝).
+            else if ((id.Contains("bee") && !id.Contains("beetle")) || id.Contains("wasp") || id.Contains("hornet"))
                 DrawBee(cx, cy, s, dir, bodyCol, darkCol, lightCol);
             else if (id.Contains("firefly"))
                 DrawFirefly(cx, cy, s, dir, bodyCol, darkCol, lightCol);
@@ -744,11 +1198,10 @@ namespace InsectGame.UI
             else
                 DrawBeetle(cx, cy, s, dir, bodyCol, darkCol, lightCol);
 
-            GUIStyle nameTag = new GUIStyle(GUI.skin.label)
-            { fontSize = (int)(14 * s / 3f), fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            nameTag.normal.textColor = new Color(col.r, col.g, col.b, 0.9f);
+            nameTagCache.fontSize = (int)(14 * s / 3f);
+            nameTagCache.normal.textColor = new Color(col.r, col.g, col.b, 0.9f);
             GUI.color = Color.white;
-            GUI.Label(new Rect(cx - 40 * s, cy + 30 * s, 80 * s, 16 * s), data.displayName, nameTag);
+            GUI.Label(new Rect(cx - 40 * s, cy + 30 * s, 80 * s, 16 * s), data.displayName, nameTagCache);
 
             GUI.color = Color.white;
         }
@@ -1272,9 +1725,61 @@ namespace InsectGame.UI
         {
             if (playerStats == null || enemyStats == null) return;
 
-            float arenaBot = Screen.height * 0.60f;
+            float arenaBot = UIScale.VirtualScreenHeight * 0.60f;
+            // 장부 게이지를 적 상자 **위**에 올린다 — HP와 나란히 두면 어느 쪽이 위험한지
+            // 한눈에 안 갈린다. 명부회 보스전이 아니면 아무것도 안 그린다.
+            DrawLedgerGauge(UIScale.VirtualScreenWidth - 440, arenaBot - 26f, 420);
             DrawHpBox(20, arenaBot + 8, 420, playerStats, displayPlayerHp, true);
-            DrawHpBox(Screen.width - 440, arenaBot + 8, 420, enemyStats, displayEnemyHp, false);
+            DrawHpBox(UIScale.VirtualScreenWidth - 440, arenaBot + 8, 420, enemyStats, displayEnemyHp, false);
+        }
+
+        /// <summary>
+        /// 「장부」 게이지 — 명부회 보스전에만 뜬다(<c>LedgerThreshold</c>가 0이면 그리지 않는다).
+        ///
+        /// <b>예고가 이 요소의 전부다.</b> 같은 행동을 되풀이하면 차오르는 걸 눈으로 보고,
+        /// 임계 두 칸 전부터 붉어진다. 그걸 보고도 못 바꿨을 때만 맞아야 긴장이지,
+        /// 아무 신호 없이 큰 게 들어오면 그냥 사고다.
+        /// </summary>
+        private void DrawLedgerGauge(float x, float y, float w)
+        {
+            if (battleController == null) return;
+            int threshold = battleController.LedgerThreshold;
+            if (!LedgerPressure.IsActive(threshold)) return;
+
+            int tally = battleController.LedgerTally;
+            float fill = LedgerPressure.Fill01(tally, threshold);
+            // 단계 판정은 순수부가 든다 — 경고 여부만 보고 색을 고르면 **가득 찬 순간**
+            // 평상색으로 되돌아간다(IsWarning은 정의상 IsFull일 때 false다).
+            LedgerAlert alert = LedgerPressure.AlertOf(tally, threshold);
+            const float h = 26f;
+
+            UISurface.Flat(new Rect(x, y, w, h), new Color(0.09f, 0.09f, 0.14f, 0.94f));
+            if (fill > 0.001f)
+            {
+                Color col;
+                if (alert == LedgerAlert.Marked)
+                {
+                    // 이미 적힌 상태는 여러 턴 이어질 수 있다(때릴 자리가 날 때까지 기다린다).
+                    // 정지된 붉은 막대는 그냥 배경이 되므로 맥동으로 "아직 살아 있음"을 남긴다.
+                    float pulse = 0.78f + 0.22f * Mathf.PingPong(Time.time * 1.6f, 1f);
+                    col = new Color(1f * pulse, 0.22f * pulse, 0.2f * pulse);
+                }
+                else if (alert == LedgerAlert.Warning) col = new Color(0.95f, 0.35f, 0.3f);
+                else col = new Color(0.85f, 0.72f, 0.35f);
+                UISurface.Flat(new Rect(x, y, w * fill, h), col);
+            }
+
+            Color prev = hpTextCache.normal.textColor;
+            hpTextCache.normal.textColor = alert == LedgerAlert.Calm
+                ? new Color(0.93f, 0.9f, 0.78f)
+                : new Color(1f, 0.86f, 0.82f);
+            string label = alert == LedgerAlert.Marked ? "장부 — 이미 적혔다"
+                : alert == LedgerAlert.Warning ? "장부 — 곧 적힌다"
+                : "장부";
+            // 문구 길이가 상태로 갈리므로 LabelFit으로 상자에 맞춘다(상자를 키우면 아레나를 침범한다).
+            UIHelper.LabelFit(new Rect(x, y, w, h), label, hpTextCache);
+            // **되돌려 놓는다.** 이 스타일은 아래 HP 숫자가 이어서 쓴다(흰색 전제).
+            hpTextCache.normal.textColor = prev;
         }
 
         private void DrawHpBox(float x, float y, float w, InsectBattleStats stats, float dispHp, bool isPlayer)
@@ -1289,21 +1794,14 @@ namespace InsectGame.UI
             GUI.color = new Color(rarityCol.r, rarityCol.g, rarityCol.b, 0.3f);
             GUI.DrawTexture(new Rect(x, y + h - 2, w, 2), Texture2D.whiteTexture);
 
-            GUIStyle nameStyle = new GUIStyle(GUI.skin.label)
-            { fontSize = 24, fontStyle = FontStyle.Bold };
-            nameStyle.normal.textColor = rarityCol;
+            hpNameStyleCache.normal.textColor = rarityCol;
             GUI.color = Color.white;
-            GUI.Label(new Rect(x + 14, y + 10, w - 110, 32), stats.Data.displayName, nameStyle);
+            UIHelper.LabelFit(new Rect(x + 14, y + 10, w - 110, 32), stats.Data.displayName, hpNameStyleCache);
 
-            GUIStyle lvStyle = new GUIStyle(GUI.skin.label)
-            { fontSize = 22, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleRight };
-            lvStyle.normal.textColor = new Color(0.75f, 0.75f, 0.75f);
-            GUI.Label(new Rect(x + w - 100, y + 10, 86, 28), $"Lv.{stats.Level}", lvStyle);
+            GUI.Label(new Rect(x + w - 100, y + 10, 86, 28), $"Lv.{stats.Level}", hpLvStyleCache);
 
-            GUIStyle miniStat = new GUIStyle(GUI.skin.label) { fontSize = 18 };
-            miniStat.normal.textColor = new Color(0.55f, 0.55f, 0.6f);
-            GUI.Label(new Rect(x + 14, y + 42, w - 28, 22),
-                $"ATK {stats.Attack}  DEF {stats.Defense}", miniStat);
+            UIHelper.LabelFit(new Rect(x + 14, y + 42, w - 28, 22),
+                $"ATK {stats.Attack}  DEF {stats.Defense}", hpMiniStatCache);
 
             float barX = x + 14;
             float barY = y + 70;
@@ -1313,7 +1811,17 @@ namespace InsectGame.UI
             GUI.color = new Color(0.12f, 0.12f, 0.18f);
             GUI.DrawTexture(new Rect(barX, barY, barW, barH), Texture2D.whiteTexture);
 
-            float hpRatio = stats.MaxHp > 0 ? dispHp / stats.MaxHp : 0;
+            float hpRatio = stats.MaxHp > 0 ? Mathf.Clamp01(dispHp / stats.MaxHp) : 0;
+
+            // 칩바(ghost) — chipHp까지 흐릿한 적색 잔상으로 최근 피해량 시각화(main fill 뒤에 먼저 그림).
+            float chipHp = isPlayer ? chipPlayerHp : chipEnemyHp;
+            float chipRatio = stats.MaxHp > 0 ? Mathf.Clamp01(chipHp / stats.MaxHp) : 0f;
+            if (chipRatio > hpRatio + 0.001f)
+            {
+                GUI.color = new Color(0.9f, 0.3f, 0.25f, 0.7f);
+                GUI.DrawTexture(new Rect(barX, barY, barW * chipRatio, barH), Texture2D.whiteTexture);
+            }
+
             Color hpColor = hpRatio > 0.5f ? new Color(0.3f, 0.85f, 0.35f) :
                            hpRatio > 0.2f ? new Color(0.95f, 0.8f, 0.2f) :
                            new Color(0.95f, 0.25f, 0.2f);
@@ -1323,11 +1831,16 @@ namespace InsectGame.UI
             GUI.color = new Color(hpColor.r + 0.15f, hpColor.g + 0.15f, hpColor.b + 0.15f, 0.4f);
             GUI.DrawTexture(new Rect(barX, barY, barW * hpRatio, barH / 3f), Texture2D.whiteTexture);
 
-            GUIStyle hpText = new GUIStyle(GUI.skin.label)
-            { fontSize = 20, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            hpText.normal.textColor = Color.white;
+            // 피격 플래시 — 최근 피해 시 흰 오버레이(shake 타이머 재사용). 무피해/회복 시 0.
+            float hitFlash = isPlayer ? playerShake : enemyShake;
+            if (hitFlash > 0f)
+            {
+                GUI.color = new Color(1f, 1f, 1f, Mathf.Clamp01(hitFlash) * 0.5f);
+                GUI.DrawTexture(new Rect(barX, barY, barW * Mathf.Max(chipRatio, hpRatio), barH), Texture2D.whiteTexture);
+            }
+
             GUI.color = Color.white;
-            GUI.Label(new Rect(barX, barY, barW, barH), $"{Mathf.CeilToInt(dispHp)} / {stats.MaxHp}", hpText);
+            GUI.Label(new Rect(barX, barY, barW, barH), $"{Mathf.CeilToInt(dispHp)} / {stats.MaxHp}", hpTextCache);
 
             InsectBattleController.EffectSnapshot[] effects = battleController != null ? battleController.GetActiveEffects() : null;
             if (effects != null)
@@ -1335,17 +1848,22 @@ namespace InsectGame.UI
                 string effectStr = "";
                 foreach (var eff in effects)
                 {
-                    if (eff.targetIsPlayer == isPlayer)
+                    if (eff.targetIsPlayer != isPlayer) continue;
+                    string tag;
+                    switch (eff.kind)
                     {
-                        string tag = eff.value >= 0 ? $"ATK+({eff.remainingTurns})" : $"ATK-({eff.remainingTurns})";
-                        effectStr += (effectStr.Length > 0 ? " " : "") + tag;
+                        case InsectBattleController.EffectKind.DefBuff:
+                            tag = $"DEF+({eff.remainingTurns})"; break;
+                        case InsectBattleController.EffectKind.Dot:
+                            tag = $"독({eff.remainingTurns})"; break;
+                        default:
+                            tag = eff.value >= 0 ? $"ATK+({eff.remainingTurns})" : $"ATK-({eff.remainingTurns})"; break;
                     }
+                    effectStr += (effectStr.Length > 0 ? " " : "") + tag;
                 }
                 if (effectStr.Length > 0)
                 {
-                    GUIStyle effStyle = new GUIStyle(GUI.skin.label) { fontSize = 18, fontStyle = FontStyle.Bold };
-                    effStyle.normal.textColor = new Color(0.6f, 0.8f, 1f);
-                    GUI.Label(new Rect(barX, barY + barH + 4, barW, 22), effectStr, effStyle);
+                    GUI.Label(new Rect(barX, barY + barH + 4, barW, 22), effectStr, hpEffStyleCache);
                 }
             }
         }
@@ -1354,9 +1872,9 @@ namespace InsectGame.UI
         {
             if (playerStats == null || enemyStats == null) return;
 
-            float cx = Screen.width / 2f;
-            float cy = Screen.height * 0.32f;
-            float sw = Screen.width;
+            float cx = UIScale.VirtualScreenWidth / 2f;
+            float cy = UIScale.VirtualScreenHeight * 0.32f;
+            float sw = UIScale.VirtualScreenWidth;
 
             Color pc = UITheme.Instance.GetInsectRarityColor(playerStats.Data.rarity);
             Color ec = UITheme.Instance.GetInsectRarityColor(enemyStats.Data.rarity);
@@ -1370,7 +1888,7 @@ namespace InsectGame.UI
                     ? new Color(1f, 0.85f, 0.2f, bgPulse)
                     : new Color(0.6f, 0.3f, 0.9f, bgPulse);
                 GUI.color = bgCol;
-                GUI.DrawTexture(new Rect(0, 0, sw, Screen.height), Texture2D.whiteTexture);
+                GUI.DrawTexture(new Rect(0, 0, sw, UIScale.VirtualScreenHeight), Texture2D.whiteTexture);
 
                 // Radial rays for legendary
                 if ((int)enemyStats.Data.rarity >= 4)
@@ -1400,29 +1918,24 @@ namespace InsectGame.UI
                 GUI.color = new Color(0, 0, 0, 0.6f * vsAlpha);
                 GUI.DrawTexture(new Rect(cx - 200, cy - 30, 400, 100), Texture2D.whiteTexture);
 
-                GUIStyle vsStyle = new GUIStyle(GUI.skin.label)
-                { fontSize = vsFontSize, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-                vsStyle.normal.textColor = new Color(1f, 0.9f, 0.3f, vsAlpha);
+                introVsStyleCache.fontSize = vsFontSize;
+                introVsStyleCache.normal.textColor = new Color(1f, 0.9f, 0.3f, vsAlpha);
                 GUI.color = Color.white;
-                GUI.Label(new Rect(cx - 200, cy - 10, 400, 80), "VS", vsStyle);
+                GUI.Label(new Rect(cx - 200, cy - 10, 400, 80), "VS", introVsStyleCache);
 
                 // Player name slides in from left
                 float slideP = Mathf.Clamp01((introTimer - 0.1f) / 0.4f);
                 float pNameX = Mathf.Lerp(-400, cx - 350, slideP * slideP * (3f - 2f * slideP));
-                GUIStyle pNameStyle = new GUIStyle(GUI.skin.label)
-                { fontSize = 28, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleRight };
-                pNameStyle.normal.textColor = new Color(pc.r, pc.g, pc.b, slideP);
-                GUI.Label(new Rect(pNameX, cy - 50, 300, 36),
-                    $"{playerStats.Data.displayName} Lv.{playerStats.Level}", pNameStyle);
+                introPNameStyleCache.normal.textColor = new Color(pc.r, pc.g, pc.b, slideP);
+                UIHelper.LabelFit(new Rect(pNameX, cy - 50, 300, 36),
+                    $"{playerStats.Data.displayName} Lv.{playerStats.Level}", introPNameStyleCache);
 
                 // Enemy name slides in from right
                 float slideE = Mathf.Clamp01((introTimer - 0.15f) / 0.4f);
                 float eNameX = Mathf.Lerp(sw + 100, cx + 50, slideE * slideE * (3f - 2f * slideE));
-                GUIStyle eNameStyle = new GUIStyle(GUI.skin.label)
-                { fontSize = 28, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
-                eNameStyle.normal.textColor = new Color(ec.r, ec.g, ec.b, slideE);
-                GUI.Label(new Rect(eNameX, cy + 56, 300, 36),
-                    $"{enemyStats.Data.displayName} Lv.{enemyStats.Level}", eNameStyle);
+                introENameStyleCache.normal.textColor = new Color(ec.r, ec.g, ec.b, slideE);
+                UIHelper.LabelFit(new Rect(eNameX, cy + 56, 300, 36),
+                    $"{enemyStats.Data.displayName} Lv.{enemyStats.Level}", introENameStyleCache);
 
                 // Rarity color bars under names
                 if (slideP > 0.5f)
@@ -1456,11 +1969,10 @@ namespace InsectGame.UI
                 GUI.DrawTexture(new Rect(cx - 220, cy - 10, 440, 4), Texture2D.whiteTexture);
                 GUI.DrawTexture(new Rect(cx - 220, cy + 66, 440, 4), Texture2D.whiteTexture);
 
-                GUIStyle fightStyle = new GUIStyle(GUI.skin.label)
-                { fontSize = fightFontSize, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-                fightStyle.normal.textColor = new Color(1f, 0.3f, 0.15f, fightAlpha);
+                introFightStyleCache.fontSize = fightFontSize;
+                introFightStyleCache.normal.textColor = new Color(1f, 0.3f, 0.15f, fightAlpha);
                 GUI.color = Color.white;
-                GUI.Label(new Rect(cx - 200, cy, 400, 60), "FIGHT!", fightStyle);
+                GUI.Label(new Rect(cx - 200, cy, 400, 60), "FIGHT!", introFightStyleCache);
             }
             // Phase 3 (1.1s+): Enemy encounter text
             else
@@ -1474,11 +1986,9 @@ namespace InsectGame.UI
                 GUI.DrawTexture(new Rect(cx - 320, cy + 47, 640, 3), Texture2D.whiteTexture);
                 GUI.color = Color.white;
 
-                GUIStyle style = new GUIStyle(GUI.skin.label)
-                { fontSize = 32, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-                style.normal.textColor = new Color(ec.r, ec.g, ec.b, showAlpha);
-                GUI.Label(new Rect(cx - 320, cy, 640, 44),
-                    $"야생 {enemyStats.Data.displayName} Lv.{enemyStats.Level} 등장!", style);
+                introEncounterStyleCache.normal.textColor = new Color(ec.r, ec.g, ec.b, showAlpha);
+                UIHelper.LabelFit(new Rect(cx - 320, cy, 640, 44),
+                    $"야생 {enemyStats.Data.displayName} Lv.{enemyStats.Level} 등장!", introEncounterStyleCache);
             }
 
             GUI.color = Color.white;
@@ -1488,37 +1998,50 @@ namespace InsectGame.UI
         {
             if (playerStats == null || playerStats.Data == null) return;
 
-            float sw = Screen.width;
-            float panelH = 320f;
-            float panelY = Screen.height - panelH;
+            float sw = UIScale.VirtualScreenWidth;
+            bool mobile = UIScale.IsMobileLayout;
+            // 레이아웃 형태는 방향(IsPortrait) 기준 — IsMobileLayout은 '가로 모바일'에서도 true라 610px 세로 패널이
+            // 높이 1080의 56%를 덮어 곤충을 가렸음. 세로=키큰 2×2 / 가로=납작 1행. 터치 라벨 문구는 mobile 유지.
+            bool portrait = UIScale.IsPortrait;
+            float panelH = UISafeLayout.ClampHeight(portrait ? 610f : 320f);
+            // 제스처바(하단 세이프 인셋) + 세로 마진 위로 버튼을 올림. 배경은 바닥까지 채워 빈틈 방지.
+            float panelY = UISafeLayout.ContentBottom - panelH;
+            float panelBgH = UIScale.VirtualScreenHeight - panelY;
 
             GUI.color = new Color(0.03f, 0.04f, 0.09f, 0.97f);
-            GUI.DrawTexture(new Rect(0, panelY, sw, panelH), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(0, panelY, sw, panelBgH), Texture2D.whiteTexture);
 
             GUI.color = new Color(0.3f, 0.5f, 0.9f);
             GUI.DrawTexture(new Rect(0, panelY, sw, 4), Texture2D.whiteTexture);
             GUI.color = new Color(0.15f, 0.25f, 0.45f, 0.3f);
             GUI.DrawTexture(new Rect(0, panelY + 4, sw, 2), Texture2D.whiteTexture);
 
-            GUIStyle header = new GUIStyle(GUI.skin.label)
-            { fontSize = 28, fontStyle = FontStyle.Bold };
-            header.normal.textColor = new Color(0.9f, 0.85f, 0.5f);
             GUI.color = Color.white;
-            GUI.Label(new Rect(30, panelY + 12, 600, 36),
-                "스킬을 선택하세요  (숫자키 1~4 또는 클릭)", header);
+            // 가로 여백은 세이프에어리어(노치·펀치홀) 안쪽으로 잡는다 — 화면 가장자리 기준으로
+            // 30을 쓰면 인셋이 있는 기기에서 헤더와 스킬 카드가 노치 아래로 들어가 잘린다.
+            float contentX = UIScale.VirtualSafeLeft + 30f;
+            float contentW = Mathf.Max(1f,
+                sw - UIScale.VirtualSafeLeft - UIScale.VirtualSafeRight - 60f);
+            // 상자 42 — 28px 글자의 한글 세로 폭(약 38)에 위아래 여백까지. 36이던 자리라 받침이 잘렸다.
+            GUI.Label(new Rect(contentX, panelY + 10, contentW, 42),
+                mobile ? "사용할 기술을 선택하세요" : "스킬을 선택하세요  (숫자키 1~4 또는 클릭)", skillHeaderCache);
 
             InsectSkill[] skills = battleController != null ? battleController.GetPlayerSkills() : playerStats.Data.skills;
             int[] cooldowns = battleController != null ? battleController.GetPlayerCooldowns() : new int[0];
             int count = skills != null ? Mathf.Min(skills.Length, 4) : 0;
             skillBtnCount = count;
 
-            float extraW = 200f;
             float gap = 16f;
-            float availW = sw - 40f - extraW - 30f;
-            float btnW = Mathf.Max(220, Mathf.Min(320, (availW - gap * Mathf.Max(count - 1, 0)) / Mathf.Max(count, 1)));
-            float btnH = 200f;
-            float btnY = panelY + 58;
-            float startX = 30;
+            // 세로는 2열, 가로는 우측에 상세 패널(extraW) 자리를 비워 둔다. 둘 다 contentW에서 나눈다.
+            float extraW = portrait ? (contentW - gap) * 0.5f : 200f;
+            float availW = contentW - extraW - 30f;
+            float btnW = portrait
+                ? (contentW - gap) * 0.5f
+                : Mathf.Max(220, Mathf.Min(320, (availW - gap * Mathf.Max(count - 1, 0)) / Mathf.Max(count, 1)));
+            float btnH = 216f;
+            float baseBtnY = panelY + 58f;
+            float btnY = baseBtnY;
+            float startX = contentX;
 
             float pulse = 0.5f + Mathf.Sin(Time.time * 3f) * 0.15f;
 
@@ -1527,7 +2050,10 @@ namespace InsectGame.UI
                 InsectSkill skill = skills[i];
                 if (skill == null) continue;
 
-                float bx = startX + i * (btnW + gap);
+                float bx = portrait
+                    ? startX + (i % 2) * (btnW + gap)
+                    : startX + i * (btnW + gap);
+                if (portrait) btnY = baseBtnY + (i / 2) * (btnH + gap);
                 int cd = i < cooldowns.Length ? cooldowns[i] : 0;
                 bool canUse = cd <= 0;
 
@@ -1537,7 +2063,7 @@ namespace InsectGame.UI
                 bool isHovered = false;
                 if (canUse)
                 {
-                    Vector2 mouseGui = new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y);
+                    Vector2 mouseGui = UIScale.VirtualMousePosition;
                     isHovered = skillBtnRects[i].Contains(mouseGui);
                 }
 
@@ -1552,7 +2078,7 @@ namespace InsectGame.UI
                 GUI.color = bgCol;
                 GUI.DrawTexture(new Rect(bx, btnY, btnW, btnH), Texture2D.whiteTexture);
 
-                Color borderCol = GetSkillColor(skill.effectType);
+                Color borderCol = GetElementColor(skill.element);
                 if (canUse)
                 {
                     GUI.color = isHovered ? Color.white : borderCol;
@@ -1567,7 +2093,7 @@ namespace InsectGame.UI
                     GUI.DrawTexture(new Rect(bx, btnY, btnW, 2), Texture2D.whiteTexture);
                 }
 
-                Color skillIconCol = GetSkillColor(skill.effectType);
+                Color skillIconCol = GetElementColor(skill.element);
                 float iconSize = 36f;
                 float iconX = bx + 14;
                 float iconY = btnY + 14;
@@ -1589,65 +2115,103 @@ namespace InsectGame.UI
                     GUI.DrawTexture(new Rect(iconX + 10, iconY + 10, iconSize - 20, iconSize - 20), Texture2D.whiteTexture);
                 }
 
-                GUIStyle keyNum = new GUIStyle(GUI.skin.label)
-                { fontSize = 28, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-                keyNum.normal.textColor = canUse
-                    ? new Color(1f, 0.85f, 0.3f, pulse + 0.5f)
-                    : new Color(0.35f, 0.35f, 0.35f);
-                GUI.color = canUse ? new Color(0.15f, 0.12f, 0.05f) : new Color(0.08f, 0.08f, 0.08f);
-                GUI.DrawTexture(new Rect(bx + btnW - 48, btnY + 10, 38, 38), Texture2D.whiteTexture);
-                GUI.color = Color.white;
-                GUI.Label(new Rect(bx + btnW - 48, btnY + 10, 38, 38), $"{i + 1}", keyNum);
-
-                GUIStyle nameStyle = new GUIStyle(GUI.skin.label)
-                { fontSize = 26, fontStyle = FontStyle.Bold };
-                nameStyle.normal.textColor = canUse ? Color.white : new Color(0.4f, 0.4f, 0.4f);
-                GUI.Label(new Rect(bx + 14, btnY + 58, btnW - 28, 34), skill.displayName, nameStyle);
-
-                GUIStyle typeLabel = new GUIStyle(GUI.skin.label) { fontSize = 20 };
-                typeLabel.normal.textColor = canUse ? skillIconCol : new Color(0.3f, 0.3f, 0.3f);
-                string typeStr = skill.effectType == SkillEffectType.Damage ? "공격 스킬" :
-                                 skill.effectType == SkillEffectType.BuffAttack ? "버프 스킬" : "디버프 스킬";
-                GUI.Label(new Rect(bx + 14, btnY + 96, btnW - 28, 26), typeStr, typeLabel);
-
-                GUIStyle infoStyle = new GUIStyle(GUI.skin.label) { fontSize = 22, fontStyle = FontStyle.Bold };
-                infoStyle.normal.textColor = canUse ? new Color(0.9f, 0.85f, 0.65f) : new Color(0.3f, 0.3f, 0.3f);
-                string powerStr = skill.effectType == SkillEffectType.Damage ? $"위력: {skill.power}" :
-                                  skill.effectType == SkillEffectType.BuffAttack ? "공격력 UP" : "공격력 DOWN";
-                GUI.Label(new Rect(bx + 14, btnY + 126, btnW - 28, 28), powerStr, infoStyle);
-
+                // 쿨다운 붉은 딤은 글자보다 **먼저** 깐다. 예전엔 라벨을 다 그린 뒤에 덮어서
+                // 글자까지 같이 물들었고 명암비가 8.77→6.79(스킬명) · 6.08→4.94(타입·위력)로 내려갔다.
+                // 배경만 물들이면 대비가 그대로 살아 "쿨다운이라 흐린 것"과 "안 보이는 것"이 갈린다.
                 if (cd > 0)
                 {
-                    GUIStyle cdStyle = new GUIStyle(GUI.skin.label)
-                    { fontSize = 22, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleRight };
-                    cdStyle.normal.textColor = new Color(1f, 0.4f, 0.3f);
-                    GUI.Label(new Rect(bx, btnY + 162, btnW - 14, 28), $"쿨다운 {cd}턴", cdStyle);
-
                     GUI.color = new Color(1f, 0.3f, 0.2f, 0.15f);
-                    GUI.DrawTexture(new Rect(bx, btnY, btnW, btnH), Texture2D.whiteTexture);
-                }
-                else if (skill.cooldownTurns > 0)
-                {
-                    GUIStyle cdInfo = new GUIStyle(GUI.skin.label)
-                    { fontSize = 18, alignment = TextAnchor.MiddleRight };
-                    cdInfo.normal.textColor = new Color(0.45f, 0.45f, 0.5f);
-                    GUI.Label(new Rect(bx, btnY + 166, btnW - 14, 24), $"쿨다운: {skill.cooldownTurns}턴", cdInfo);
-                }
-
-                if (isHovered)
-                {
-                    GUI.color = new Color(1f, 1f, 1f, 0.06f);
                     GUI.DrawTexture(new Rect(bx, btnY, btnW, btnH), Texture2D.whiteTexture);
                     GUI.color = Color.white;
                 }
+
+                if (!mobile)
+                {
+                    // 쿨다운 번호가 (0.35,0.35,0.35) 회색이라 거의 검은 배지(0.08) 위에서 명암비 2.63이었다
+                    // — "회색이라 안 보인다"고 지목된 자리. 이미 있는 비활성 토큰을 쓴다(8.29).
+                    skillKeyNumCache.normal.textColor = canUse
+                        ? new Color(1f, 0.85f, 0.3f, pulse + 0.5f)
+                        : SkillUILayout.DisabledTextColor;
+                    GUI.color = canUse ? new Color(0.15f, 0.12f, 0.05f) : new Color(0.08f, 0.08f, 0.08f);
+                    GUI.DrawTexture(new Rect(bx + btnW - 48, btnY + 10, 38, 38), Texture2D.whiteTexture);
+                    GUI.color = Color.white;
+                    GUI.Label(new Rect(bx + btnW - 48, btnY + 10, 38, 38), $"{i + 1}", skillKeyNumCache);
+                }
+
+                // **글자를 그리기 전에 GUI.color를 반드시 흰색으로 되돌린다.**
+                // `GUI.color`는 스타일의 textColor에 곱해진다. 바로 위 아이콘 그리기가 색을 남겨 두는데,
+                // 그걸 흰색으로 되돌리는 유일한 자리가 `if (!mobile)` 안의 키 배지 블록이었다 —
+                // 즉 **모바일에서는 되돌지 않았다.** 그래서 기기에서는 데미지 스킬의 카드 글자가
+                // 전부 (0,0,0,0.6)이 곱해져 **검은색 60% = 사실상 안 보이고**, 그 외 스킬은
+                // (1,1,1,0.3)이 곱해져 30% 알파로 흐릿하게 떴다. 쿨다운 중인 카드만 위 딤 블록이
+                // 흰색을 복구해 멀쩡히 보였다 — "쓸 수 있는 스킬만 안 보인다"의 정체다.
+                // 색 토큰을 아무리 밝혀도 여기서 곱해져 사라지므로, 이 한 줄이 실제 원인이다.
+                GUI.color = Color.white;
+
+                // 카드(216) 세로 배분: 아이콘 14~50 / 이름 54~104 / 타입 110~138 / 정보 2행 144~206.
+                // 마지막 행 아래로 10px가 남아 카드 테두리(213)에 닿지 않는다.
+                Rect skillCardRect = new Rect(bx, btnY, btnW, btnH);
+                SkillCardDetailRows detailRows = SkillUILayout.GetDetailRows(
+                    skillCardRect, 144f, 14f, SkillUILayout.MinimumDetailRowHeight, 6f, 10f);
+                skillNameStyleCache.fontSize = mobile ? 30 : 27;
+                skillNameStyleCache.normal.textColor = canUse ? Color.white : SkillUILayout.DisabledTextColor;
+                // 스킬명 길이는 데이터가 정하는데 상자는 고정이다 — 두 줄이 되면 아랫줄이 통째로 잘린다.
+                UIHelper.LabelFit(SkillUILayout.GetNameRect(skillCardRect, 54f, 14f, 50f),
+                    skill.displayName, skillNameStyleCache);
+
+                skillTypeLabelCache.normal.textColor = canUse
+                    ? SkillUILayout.GetReadableAccent(skillIconCol)
+                    : SkillUILayout.DisabledSecondaryTextColor;
+                string typeStr = $"{InsectTypeChart.GetDisplayName(skill.element)} 타입 · {SkillActionLabel(skill.effectType)}";
+                // "다크 타입 · 공격 디버프"는 가로 카드(폭 220)에서 상자를 넘긴다. wordWrap이 꺼져 있어
+                // 세로가 아니라 가로로 잘리는 쪽이고, LabelFit이 두 방향을 함께 본다.
+                UIHelper.LabelFit(new Rect(bx + 14, btnY + 110, btnW - 28, 28), typeStr, skillTypeLabelCache);
+
+                // 상성 배지 — 지금 적에게 강/약(데미지 스킬만, 버프·디버프는 상성 무관). 스킬 선택 전 판단 제공.
+                if (skill.effectType == SkillEffectType.Damage && enemyStats != null && enemyStats.Data != null)
+                {
+                    float eff = InsectTypeChart.GetEffectiveness(skill.element,
+                        enemyStats.Data.primaryType, enemyStats.Data.secondaryType);
+                    if (eff > 1.05f || eff < 0.95f)
+                    {
+                        bool strong = eff > 1.05f;
+                        // 약점 붉은색은 호버 배경(0.18/0.22/0.38)에서 4.25로 떨어졌다 → 0.58/0.52로 올려 5.29.
+                        skillEffLabelCache.normal.textColor = canUse
+                            ? (strong ? new Color(0.4f, 1f, 0.5f) : new Color(1f, 0.58f, 0.52f))
+                            : SkillUILayout.DisabledSecondaryTextColor;
+                        GUI.Label(detailRows.Effectiveness,
+                            strong ? "효과적 ▲" : "비효과 ▼", skillEffLabelCache);
+                    }
+                }
+
+                skillInfoStyleCache.normal.textColor = canUse
+                    ? new Color(0.96f, 0.91f, 0.72f)
+                    : SkillUILayout.DisabledSecondaryTextColor;
+                UIHelper.LabelFit(detailRows.Power, SkillPowerLabel(skill), skillInfoStyleCache);
+
+                if (cd > 0)
+                {
+                    GUI.Label(detailRows.Cooldown, $"쿨다운 {cd}턴", skillCdStyleCache);
+                }
+                else if (skill.cooldownTurns > 0)
+                {
+                    GUI.Label(detailRows.Cooldown,
+                        $"쿨다운: {skill.cooldownTurns}턴", skillCdInfoCache);
+                }
+
+                // 예전엔 여기서 흰색 6%를 카드 전체에 한 번 더 덮었다. 호버 신호는 이미 둘이다 —
+                // 배경이 1.52배 밝아지고 테두리가 통째로 흰색이 된다. 세 번째 덧칠은 눈에 거의 안
+                // 띄면서 **글자와 배경을 같이 밝혀** 타입 줄 명암비를 4.67 → 4.14로 되돌렸다(AA 미만).
+                // 배경에만 얹어도 3.90으로 더 나쁘다(글자는 그대로인데 바닥만 밝아진다). 그래서 뺐다.
             }
 
-            float extraX = startX + count * (btnW + gap) + 24;
+            btnY = portrait ? baseBtnY + 2f * (btnH + gap) + 2f : baseBtnY;
+            float extraX = portrait ? startX : startX + count * (btnW + gap) + 24;
             float extraBtnH = 80f;
 
             {
                 basicAtkRect = new Rect(extraX, btnY, extraW, extraBtnH);
-                Vector2 mouseGui = new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y);
+                Vector2 mouseGui = UIScale.VirtualMousePosition;
                 bool hov = basicAtkRect.Contains(mouseGui);
 
                 GUI.color = hov ? new Color(0.22f, 0.18f, 0.10f) : new Color(0.14f, 0.12f, 0.08f);
@@ -1658,40 +2222,58 @@ namespace InsectGame.UI
                 GUI.DrawTexture(new Rect(extraX + extraW - 2, btnY, 2, extraBtnH), Texture2D.whiteTexture);
                 GUI.color = Color.white;
 
-                GUIStyle fKey = new GUIStyle(GUI.skin.label)
-                { fontSize = 26, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-                fKey.normal.textColor = new Color(1f, 0.85f, 0.3f);
-                GUI.Label(new Rect(extraX, btnY + 8, extraW, 32), "[F] 기본 공격", fKey);
-
-                GUIStyle fInfo = new GUIStyle(GUI.skin.label)
-                { fontSize = 20, alignment = TextAnchor.MiddleCenter };
-                fInfo.normal.textColor = new Color(0.6f, 0.55f, 0.4f);
-                GUI.Label(new Rect(extraX, btnY + 44, extraW, 26), "쿨다운 없음", fInfo);
+                // 26px 글자에 상자 32, 20px 글자에 상자 26이던 자리 — 둘 다 한글 세로 폭(1.35배)에 못 미쳐
+                // 받침이 잘렸다. 버튼 높이(80)는 그대로 두고 두 줄의 상자만 36/28로 키운다(6+36+4+28+6=80).
+                GUI.Label(new Rect(extraX, btnY + 6, extraW, 36), mobile ? "기본 공격" : "[F] 기본 공격", skillFKeyCache);
+                GUI.Label(new Rect(extraX, btnY + 46, extraW, 28), "쿨다운 없음", skillFInfoCache);
             }
 
             {
-                float escY = btnY + extraBtnH + 12;
-                escapeRect = new Rect(extraX, escY, extraW, extraBtnH);
-                Vector2 mouseGui2 = new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y);
+                float escapeX = portrait ? extraX + extraW + gap : extraX;
+                float escY = portrait ? btnY : btnY + extraBtnH + 12;
+                escapeRect = new Rect(escapeX, escY, extraW, extraBtnH);
+                Vector2 mouseGui2 = UIScale.VirtualMousePosition;
                 bool hov2 = escapeRect.Contains(mouseGui2);
 
                 GUI.color = hov2 ? new Color(0.22f, 0.10f, 0.10f) : new Color(0.12f, 0.08f, 0.08f);
                 GUI.DrawTexture(escapeRect, Texture2D.whiteTexture);
                 GUI.color = new Color(0.7f, 0.3f, 0.3f);
-                GUI.DrawTexture(new Rect(extraX, escY, extraW, 4), Texture2D.whiteTexture);
-                GUI.DrawTexture(new Rect(extraX, escY, 2, extraBtnH), Texture2D.whiteTexture);
-                GUI.DrawTexture(new Rect(extraX + extraW - 2, escY, 2, extraBtnH), Texture2D.whiteTexture);
+                GUI.DrawTexture(new Rect(escapeX, escY, extraW, 4), Texture2D.whiteTexture);
+                GUI.DrawTexture(new Rect(escapeX, escY, 2, extraBtnH), Texture2D.whiteTexture);
+                GUI.DrawTexture(new Rect(escapeX + extraW - 2, escY, 2, extraBtnH), Texture2D.whiteTexture);
                 GUI.color = Color.white;
 
-                GUIStyle escStyle = new GUIStyle(GUI.skin.label)
-                { fontSize = 26, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-                escStyle.normal.textColor = new Color(0.9f, 0.5f, 0.4f);
-                GUI.Label(new Rect(extraX, escY + 8, extraW, 32), "[ESC] 도망가기", escStyle);
+                GUI.Label(new Rect(escapeX, escY + 6, extraW, 36), mobile ? "도망가기" : "[ESC] 도망가기", skillEscStyleCache);
+                GUI.Label(new Rect(escapeX, escY + 46, extraW, 28), "확률적 성공", skillEscInfoCache);
+            }
+        }
 
-                GUIStyle escInfo = new GUIStyle(GUI.skin.label)
-                { fontSize = 20, alignment = TextAnchor.MiddleCenter };
-                escInfo.normal.textColor = new Color(0.55f, 0.4f, 0.4f);
-                GUI.Label(new Rect(extraX, escY + 44, extraW, 26), "확률적 성공", escInfo);
+        // 스킬 효과 타입 라벨(신규 타입 포함) — 스킬 패널 표시용.
+        private static string SkillActionLabel(SkillEffectType t)
+        {
+            switch (t)
+            {
+                case SkillEffectType.BuffAttack: return "공격 버프";
+                case SkillEffectType.DebuffAttack: return "공격 디버프";
+                case SkillEffectType.Heal: return "회복";
+                case SkillEffectType.PoisonDot: return "중독";
+                case SkillEffectType.Stun: return "기절";
+                case SkillEffectType.DefenseBuff: return "방어 버프";
+                default: return "공격";
+            }
+        }
+
+        private static string SkillPowerLabel(InsectSkill skill)
+        {
+            switch (skill.effectType)
+            {
+                case SkillEffectType.BuffAttack: return "공격력 UP";
+                case SkillEffectType.DebuffAttack: return "공격력 DOWN";
+                case SkillEffectType.Heal: return "HP 회복";
+                case SkillEffectType.PoisonDot: return $"지속 피해 {skill.power}";
+                case SkillEffectType.Stun: return "행동 봉인";
+                case SkillEffectType.DefenseBuff: return "방어력 UP";
+                default: return $"위력: {skill.power}";
             }
         }
 
@@ -1699,6 +2281,8 @@ namespace InsectGame.UI
         {
             switch (element)
             {
+                case InsectElement.None: return new Color(0.65f, 0.65f, 0.68f);
+                case InsectElement.Bug: return new Color(0.62f, 0.8f, 0.25f);
                 case InsectElement.Poison: return new Color(0.6f, 0.2f, 0.8f);
                 case InsectElement.Water: return new Color(0.2f, 0.5f, 1f);
                 case InsectElement.Leaf: return new Color(0.2f, 0.85f, 0.3f);
@@ -1732,45 +2316,72 @@ namespace InsectGame.UI
         {
             // 3D 모드: 2D 이펙트 대신 3D 공격 (BattleArenaController의 코루틴이 처리)
             // 여기서는 데미지 숫자 + 스킬 이름만 OnGUI로 표시
-            if (BattleArenaController.Instance != null && BattleArenaController.Instance.IsActive)
+            if (arena != null && arena.IsActive)
             {
                 float t3d = Mathf.Clamp01(phaseTimer / 0.8f);
                 int dmg3d = isPlayerAttack ? lastDamageToEnemy : lastDamageToPlayer;
                 if (dmg3d > 0 && t3d >= 0.3f)
                 {
-                    float sw3d = Screen.width;
-                    float sh3d = Screen.height;
+                    float sw3d = UIScale.VirtualScreenWidth;
+                    float sh3d = UIScale.VirtualScreenHeight;
                     float dmgY = sh3d * 0.25f - (t3d - 0.3f) * 60f;
-                    GUIStyle dmgStyle = new GUIStyle(GUI.skin.label)
-                    { fontSize = 38, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-                    dmgStyle.normal.textColor = isPlayerAttack ? new Color(1f, 0.9f, 0.3f) : new Color(1f, 0.3f, 0.3f);
-                    GUI.Label(new Rect(0, dmgY, sw3d, 50), $"-{dmg3d}", dmgStyle);
+
+                    // 등장 팝(초반 확대 후 정착) + 후반 페이드아웃 — 데미지 숫자 저즈(2D 폴백 패턴 이식).
+                    float dmgP = Mathf.Clamp01((t3d - 0.3f) / 0.7f);
+                    float dmgAlpha = Mathf.Clamp01(1.15f - dmgP);
+                    float popScale = 1f + Mathf.Sin(Mathf.Clamp01(dmgP * 2f) * Mathf.PI) * 0.3f;
+
+                    // 크리티컬이면 더 큰 폰트 + 펄스 + CRITICAL! 라벨
+                    bool isCrit = isPlayerAttack && lastWasCritical;
+                    float critPulse = isCrit ? 1f + Mathf.Abs(Mathf.Sin(Time.unscaledTime * 20f)) * 0.15f : 1f;
+                    int dmgFontSize = Mathf.RoundToInt((isCrit ? 64f * critPulse : 38f) * popScale);
+
+                    dmgStyle3dCache.fontSize = dmgFontSize;
+                    Color dmgTextCol = isCrit
+                        ? new Color(1f, 0.5f, 0.1f)
+                        : (isPlayerAttack ? new Color(1f, 0.9f, 0.3f) : new Color(1f, 0.3f, 0.3f));
+                    dmgTextCol.a = dmgAlpha;
+                    dmgStyle3dCache.normal.textColor = dmgTextCol;
+
+                    // 크리티컬 그림자 효과
+                    if (isCrit)
+                    {
+                        GUI.color = new Color(0f, 0f, 0f, 0.8f);
+                        GUI.Label(new Rect(3, dmgY + 3, sw3d, 80), $"-{dmg3d}", dmgStyle3dCache);
+                        GUI.color = Color.white;
+                    }
+                    GUI.Label(new Rect(0, dmgY, sw3d, 80), $"-{dmg3d}", dmgStyle3dCache);
+
+                    if (isCrit)
+                    {
+                        GUI.Label(new Rect(0, dmgY - 36, sw3d, 36), "★ CRITICAL! ★", critLblCache);
+                    }
 
                     if (!string.IsNullOrEmpty(lastSkillName))
                     {
-                        GUIStyle skillStyle = new GUIStyle(GUI.skin.label)
-                        { fontSize = 20, alignment = TextAnchor.MiddleCenter };
-                        skillStyle.normal.textColor = Color.white;
-                        GUI.Label(new Rect(0, dmgY + 45, sw3d, 30), lastSkillName, skillStyle);
+                        float skillY = isCrit ? dmgY + 72 : dmgY + 45;
+                        GUI.Label(new Rect(0, skillY, sw3d, 30), lastSkillName, skillStyle3dCache);
                     }
                 }
                 return;
             }
 
             float t = Mathf.Clamp01(phaseTimer / 0.8f);
-            float arenaTop = Screen.height * 0.08f;
-            float arenaH = Screen.height * 0.52f;
+            float arenaTop = UIScale.VirtualScreenHeight * 0.08f;
+            float arenaH = UIScale.VirtualScreenHeight * 0.52f;
 
-            float atkX = isPlayerAttack ? Screen.width * 0.22f : Screen.width * 0.72f;
+            float atkX = isPlayerAttack ? UIScale.VirtualScreenWidth * 0.22f : UIScale.VirtualScreenWidth * 0.72f;
             float atkY = isPlayerAttack ? arenaTop + arenaH * 0.72f : arenaTop + arenaH * 0.38f;
-            float tgtX = isPlayerAttack ? Screen.width * 0.72f : Screen.width * 0.22f;
+            float tgtX = isPlayerAttack ? UIScale.VirtualScreenWidth * 0.72f : UIScale.VirtualScreenWidth * 0.22f;
             float tgtY = isPlayerAttack ? arenaTop + arenaH * 0.38f : arenaTop + arenaH * 0.72f;
 
             int dmg = isPlayerAttack ? lastDamageToEnemy : lastDamageToPlayer;
 
             // Element-based color
             InsectBattleStats atkStats = isPlayerAttack ? playerStats : enemyStats;
-            InsectElement element = (atkStats != null && atkStats.Data != null) ? atkStats.Data.primaryType : InsectElement.Bug;
+            InsectElement element = isPlayerAttack
+                ? lastSkillElement
+                : (atkStats != null && atkStats.Data != null ? atkStats.Data.primaryType : InsectElement.Bug);
             Color elemCol = GetElementColor(element);
 
             // Buff/Debuff effect: dmg == 0 with a skill name means buff or debuff
@@ -1840,31 +2451,26 @@ namespace InsectGame.UI
                 if (!string.IsNullOrEmpty(lastSkillName) && isPlayerAttack)
                 {
                     float skillAlpha = Mathf.Clamp01(1f - dmgT * 1.5f);
-                    GUIStyle skillNameStyle = new GUIStyle(GUI.skin.label)
-                    { fontSize = 30, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-                    skillNameStyle.normal.textColor = new Color(elemCol.r, elemCol.g, elemCol.b, skillAlpha);
+                    skillNameAtkStyleCache.normal.textColor = new Color(elemCol.r, elemCol.g, elemCol.b, skillAlpha);
                     GUI.color = Color.white;
-                    GUI.Label(new Rect(tgtX - 160, tgtY - 130 - dmgT * 25f, 320, 40), lastSkillName, skillNameStyle);
+                    GUI.Label(new Rect(tgtX - 160, tgtY - 130 - dmgT * 25f, 320, 40), lastSkillName, skillNameAtkStyleCache);
                 }
 
                 float dmgAlpha = Mathf.Clamp01(1f - dmgT * 0.8f);
                 float dmgScale = 1f + Mathf.Sin(dmgT * Mathf.PI * 0.5f) * 0.35f;
                 int dmgFontSize = (int)(44 * dmgScale);
-                GUIStyle dmgStyle = new GUIStyle(GUI.skin.label)
-                { fontSize = dmgFontSize, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+                dmgStyleAtkCache.fontSize = dmgFontSize;
                 Color dmgCol = isPlayerAttack ? new Color(1, 1, 0.3f, dmgAlpha) : new Color(1, 0.3f, 0.3f, dmgAlpha);
-                dmgStyle.normal.textColor = dmgCol;
+                dmgStyleAtkCache.normal.textColor = dmgCol;
                 GUI.color = Color.white;
-                GUI.Label(new Rect(tgtX - 70, tgtY - 90 - dmgT * 55f, 140, 55), $"-{dmg}", dmgStyle);
+                GUI.Label(new Rect(tgtX - 70, tgtY - 90 - dmgT * 55f, 140, 55), $"-{dmg}", dmgStyleAtkCache);
 
                 // Effectiveness text based on element
                 if (isPlayerAttack && dmgT < 0.5f)
                 {
                     float effAlpha = Mathf.Clamp01(1f - dmgT * 2.5f);
-                    GUIStyle effStyle = new GUIStyle(GUI.skin.label)
-                    { fontSize = 20, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-                    effStyle.normal.textColor = new Color(elemCol.r, elemCol.g, elemCol.b, effAlpha);
-                    GUI.Label(new Rect(tgtX - 80, tgtY - 50 - dmgT * 30f, 160, 26), GetElementName(element), effStyle);
+                    effStyleAtkCache.normal.textColor = new Color(elemCol.r, elemCol.g, elemCol.b, effAlpha);
+                    GUI.Label(new Rect(tgtX - 80, tgtY - 50 - dmgT * 30f, 160, 26), GetElementName(element), effStyleAtkCache);
                 }
             }
 
@@ -1884,7 +2490,7 @@ namespace InsectGame.UI
             {
                 float flashAlpha = (1f - impactT / 0.15f) * 0.15f;
                 GUI.color = new Color(elemCol.r, elemCol.g, elemCol.b, flashAlpha);
-                GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.whiteTexture);
+                GUI.DrawTexture(new Rect(0, 0, UIScale.VirtualScreenWidth, UIScale.VirtualScreenHeight), Texture2D.whiteTexture);
             }
 
             switch (element)
@@ -2168,7 +2774,7 @@ namespace InsectGame.UI
             if (flicker)
             {
                 GUI.color = new Color(1f, 1f, 0.8f, 0.15f);
-                GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.whiteTexture);
+                GUI.DrawTexture(new Rect(0, 0, UIScale.VirtualScreenWidth, UIScale.VirtualScreenHeight), Texture2D.whiteTexture);
             }
 
             // 3-4 zigzag lightning bolts
@@ -2302,7 +2908,7 @@ namespace InsectGame.UI
             // Screen darkening
             float darkAlpha = (1f - impactT) * 0.3f;
             GUI.color = new Color(0.05f, 0f, 0.1f, darkAlpha);
-            GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(0, 0, UIScale.VirtualScreenWidth, UIScale.VirtualScreenHeight), Texture2D.whiteTexture);
 
             // Contracting dark-purple orb (starts big, shrinks to center)
             float orbRadius = 80f * (1f - impactT * 0.7f);
@@ -2426,11 +3032,9 @@ namespace InsectGame.UI
             if (!string.IsNullOrEmpty(lastSkillName) && t < 0.8f)
             {
                 float alpha = Mathf.Clamp01(1f - t * 1.3f);
-                GUIStyle style = new GUIStyle(GUI.skin.label)
-                { fontSize = 28, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-                style.normal.textColor = new Color(1f, 1f, 1f, alpha);
+                buffDebuffSkillStyleCache.normal.textColor = new Color(1f, 1f, 1f, alpha);
                 GUI.color = Color.white;
-                GUI.Label(new Rect(effectX - 160, effectY - 120 - t * 20f, 320, 40), lastSkillName, style);
+                GUI.Label(new Rect(effectX - 160, effectY - 120 - t * 20f, 320, 40), lastSkillName, buffDebuffSkillStyleCache);
             }
         }
 
@@ -2468,11 +3072,9 @@ namespace InsectGame.UI
 
             // "ATK UP!" text
             float txtAlpha = (1f - t) * 0.9f;
-            GUIStyle upStyle = new GUIStyle(GUI.skin.label)
-            { fontSize = 34, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            upStyle.normal.textColor = new Color(0.3f, 1f, 0.5f, txtAlpha);
+            upStyleCache.normal.textColor = new Color(0.3f, 1f, 0.5f, txtAlpha);
             GUI.color = Color.white;
-            GUI.Label(new Rect(cx - 100, cy - 70 - t * 30f, 200, 45), "ATK UP!", upStyle);
+            GUI.Label(new Rect(cx - 100, cy - 70 - t * 30f, 200, 45), "ATK UP!", upStyleCache);
         }
 
         private void DrawDebuffVisual(float cx, float cy, float t, Color elemCol)
@@ -2504,11 +3106,9 @@ namespace InsectGame.UI
 
             // "ATK DOWN!" text
             float txtAlpha = (1f - t) * 0.9f;
-            GUIStyle downStyle = new GUIStyle(GUI.skin.label)
-            { fontSize = 34, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            downStyle.normal.textColor = new Color(1f, 0.2f, 0.2f, txtAlpha);
+            downStyleCache.normal.textColor = new Color(1f, 0.2f, 0.2f, txtAlpha);
             GUI.color = Color.white;
-            GUI.Label(new Rect(cx - 100, cy - 70 - t * 30f, 200, 45), "ATK DOWN!", downStyle);
+            GUI.Label(new Rect(cx - 100, cy - 70 - t * 30f, 200, 45), "ATK DOWN!", downStyleCache);
 
             // Red flicker
             if (Mathf.Sin(t * 25f) > 0.5f)
@@ -2540,8 +3140,8 @@ namespace InsectGame.UI
             if (string.IsNullOrEmpty(actionText)) return;
 
             float alpha = Mathf.Clamp01(actionTimer / 0.3f);
-            float cx = Screen.width / 2f;
-            float cy = Screen.height * 0.62f;
+            float cx = UIScale.VirtualScreenWidth / 2f;
+            float cy = UIScale.VirtualScreenHeight * 0.62f;
 
             GUI.color = new Color(0, 0, 0, 0.8f * alpha);
             GUI.DrawTexture(new Rect(cx - 320, cy - 8, 640, 56), Texture2D.whiteTexture);
@@ -2549,20 +3149,28 @@ namespace InsectGame.UI
             GUI.DrawTexture(new Rect(cx - 320, cy - 8, 640, 3), Texture2D.whiteTexture);
             GUI.DrawTexture(new Rect(cx - 320, cy + 45, 640, 3), Texture2D.whiteTexture);
 
-            GUIStyle style = new GUIStyle(GUI.skin.label)
-            { fontSize = 28, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            style.normal.textColor = new Color(1, 1, 1, alpha);
+            actionTextStyleCache.normal.textColor = new Color(1, 1, 1, alpha);
             GUI.color = Color.white;
-            GUI.Label(new Rect(cx - 320, cy - 2, 640, 48), actionText, style);
+            GUI.Label(new Rect(cx - 320, cy - 2, 640, 48), actionText, actionTextStyleCache);
+        }
+
+        internal static string GetCaptureResultMessage(bool attempted, bool succeeded)
+        {
+            if (!attempted)
+                return string.Empty;
+
+            return succeeded
+                ? "곤충을 포획했습니다!"
+                : "곤충을 잡지 못했습니다.";
         }
 
         private void DrawResult()
         {
             float alpha = Mathf.Clamp01(resultTimer / 0.5f);
-            float cx = Screen.width / 2f;
-            float cy = Screen.height * 0.3f;
-            float sw = Screen.width;
-            float sh = Screen.height;
+            float cx = UIScale.VirtualScreenWidth / 2f;
+            float cy = UIScale.VirtualScreenHeight * 0.3f;
+            float sw = UIScale.VirtualScreenWidth;
+            float sh = UIScale.VirtualScreenHeight;
 
             if (lastWon)
             {
@@ -2624,11 +3232,10 @@ namespace InsectGame.UI
                 // "VICTORY!" text with scale animation
                 float victoryScale = 1f + Mathf.Sin(resultTimer * 2.5f) * 0.05f;
                 int victoryFontSize = (int)(52 * victoryScale);
-                GUIStyle resultStyle = new GUIStyle(GUI.skin.label)
-                { fontSize = victoryFontSize, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-                resultStyle.normal.textColor = new Color(gold.r, gold.g, gold.b, alpha);
+                victoryStyleCache.fontSize = victoryFontSize;
+                victoryStyleCache.normal.textColor = new Color(gold.r, gold.g, gold.b, alpha);
                 GUI.color = Color.white;
-                GUI.Label(new Rect(cx - 280, cy, 560, 60), "VICTORY!", resultStyle);
+                GUI.Label(new Rect(cx - 280, cy, 560, 60), "VICTORY!", victoryStyleCache);
 
                 // Reward info with slide-in animation
                 if (battleController != null)
@@ -2639,20 +3246,27 @@ namespace InsectGame.UI
                     float rewardAlpha = Mathf.Clamp01((resultTimer - 0.5f) / 0.5f);
                     float rewardSlide = Mathf.Lerp(30f, 0f, Mathf.Clamp01((resultTimer - 0.5f) / 0.4f));
 
-                    GUIStyle rewardStyle = new GUIStyle(GUI.skin.label)
-                    { fontSize = 24, alignment = TextAnchor.MiddleCenter };
-                    rewardStyle.normal.textColor = new Color(0.9f, 0.9f, 0.9f, rewardAlpha);
-                    GUI.Label(new Rect(cx - 260, cy + 68 + rewardSlide, 520, 30), "곤충을 포획했습니다!", rewardStyle);
+                    bool captureAttempted = battleController.GetLastCaptureAttempted();
+                    bool captureSucceeded = battleController.GetLastCaptureSucceeded();
+                    string captureMessage = GetCaptureResultMessage(captureAttempted, captureSucceeded);
+                    if (!string.IsNullOrEmpty(captureMessage))
+                    {
+                        rewardStyleCache.normal.textColor = captureSucceeded
+                            ? new Color(0.9f, 0.9f, 0.9f, rewardAlpha)
+                            : new Color(1f, 0.55f, 0.35f, rewardAlpha);
+                        GUI.Label(
+                            new Rect(cx - 260, cy + 68 + rewardSlide, 520, 30),
+                            captureMessage,
+                            rewardStyleCache);
+                    }
 
                     float valAlpha = Mathf.Clamp01((resultTimer - 0.8f) / 0.4f);
                     float valSlide = Mathf.Lerp(20f, 0f, Mathf.Clamp01((resultTimer - 0.8f) / 0.3f));
 
-                    GUIStyle valStyle = new GUIStyle(GUI.skin.label)
-                    { fontSize = 24, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-                    valStyle.normal.textColor = new Color(1f, 0.5f, 0.8f, valAlpha);
-                    GUI.Label(new Rect(cx - 200, cy + 110 + valSlide, 190, 30), $"+{candy} Candy", valStyle);
-                    valStyle.normal.textColor = new Color(0.4f, 0.85f, 1f, valAlpha);
-                    GUI.Label(new Rect(cx + 10, cy + 110 + valSlide, 190, 30), $"+{exp} XP", valStyle);
+                    rewardValStyleCache.normal.textColor = new Color(1f, 0.5f, 0.8f, valAlpha);
+                    GUI.Label(new Rect(cx - 200, cy + 110 + valSlide, 190, 30), $"+{candy} Candy", rewardValStyleCache);
+                    rewardValStyleCache.normal.textColor = new Color(0.4f, 0.85f, 1f, valAlpha);
+                    GUI.Label(new Rect(cx + 10, cy + 110 + valSlide, 190, 30), $"+{exp} XP", rewardValStyleCache);
 
                     // Subtle candy/exp glow
                     if (valAlpha > 0.5f)
@@ -2689,25 +3303,19 @@ namespace InsectGame.UI
                 GUI.DrawTexture(new Rect(cx - 320, cy + 156, 640, 4), Texture2D.whiteTexture);
 
                 // "DEFEAT..." text
-                GUIStyle resultStyle = new GUIStyle(GUI.skin.label)
-                { fontSize = 50, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-                resultStyle.normal.textColor = new Color(red.r, red.g, red.b, alpha);
+                defeatStyleCache.normal.textColor = new Color(red.r, red.g, red.b, alpha);
                 GUI.color = Color.white;
-                GUI.Label(new Rect(cx - 280, cy + 4, 560, 60), "DEFEAT...", resultStyle);
+                UIHelper.LabelFit(new Rect(cx - 280, cy + 4, 560, 60), "DEFEAT...", defeatStyleCache);
 
                 // Retry guidance with fade-in
                 float guideAlpha = Mathf.Clamp01((resultTimer - 1f) / 0.5f);
-                GUIStyle guideStyle = new GUIStyle(GUI.skin.label)
-                { fontSize = 22, alignment = TextAnchor.MiddleCenter };
-                guideStyle.normal.textColor = new Color(0.7f, 0.5f, 0.5f, guideAlpha);
-                GUI.Label(new Rect(cx - 260, cy + 80, 520, 28), "곤충을 강화하고 다시 도전하세요!", guideStyle);
+                defeatGuideStyleCache.normal.textColor = new Color(0.7f, 0.5f, 0.5f, guideAlpha);
+                GUI.Label(new Rect(cx - 260, cy + 80, 520, 28), "곤충을 강화하고 다시 도전하세요!", defeatGuideStyleCache);
 
                 // Subtle pulsing hint
                 float hintPulse = 0.4f + Mathf.Sin(resultTimer * 3f) * 0.2f;
-                GUIStyle hintStyle = new GUIStyle(GUI.skin.label)
-                { fontSize = 18, alignment = TextAnchor.MiddleCenter };
-                hintStyle.normal.textColor = new Color(0.5f, 0.4f, 0.4f, hintPulse * guideAlpha);
-                GUI.Label(new Rect(cx - 200, cy + 116, 400, 24), "훈련소에서 레벨업 가능", hintStyle);
+                defeatHintStyleCache.normal.textColor = new Color(0.5f, 0.4f, 0.4f, hintPulse * guideAlpha);
+                GUI.Label(new Rect(cx - 200, cy + 116, 400, 24), "훈련소에서 레벨업 가능", defeatHintStyleCache);
             }
 
             GUI.color = Color.white;
@@ -2716,50 +3324,86 @@ namespace InsectGame.UI
         private void DrawPhaseIndicator(string text)
         {
             float panelH = 70f;
-            float panelY = Screen.height - panelH;
+            // 텍스트는 제스처바 + 세로 마진 위로, 배경 띠는 화면 바닥까지.
+            float panelY = UISafeLayout.ContentBottom - panelH;
             GUI.color = new Color(0.04f, 0.05f, 0.10f, 0.92f);
-            GUI.DrawTexture(new Rect(0, panelY, Screen.width, panelH), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(0, panelY, UIScale.VirtualScreenWidth, UIScale.VirtualScreenHeight - panelY),
+                Texture2D.whiteTexture);
             GUI.color = new Color(0.5f, 0.7f, 1f, 0.4f);
-            GUI.DrawTexture(new Rect(0, panelY, Screen.width, 3), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(0, panelY, UIScale.VirtualScreenWidth, 3), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
             float pulse = 0.6f + Mathf.Sin(Time.time * 5f) * 0.2f;
-            GUIStyle style = new GUIStyle(GUI.skin.label)
-            { fontSize = 30, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            style.normal.textColor = new Color(1f, 0.9f, 0.5f, pulse);
-            GUI.Label(new Rect(0, panelY + 14, Screen.width, 40), text, style);
+            phaseIndicatorStyleCache.normal.textColor = new Color(1f, 0.9f, 0.5f, pulse);
+            GUI.Label(new Rect(0, panelY + 14, UIScale.VirtualScreenWidth, 40), text, phaseIndicatorStyleCache);
         }
+
+        // 인터-턴 중앙 배너 — "당신의 턴"(청록)/"상대의 턴"(적색). 페이드 인·아웃 + 슬라이드. introVsStyle 재사용.
+        private void DrawTurnAnnounce()
+        {
+            float sw = UIScale.VirtualScreenWidth;
+            float cy = UIScale.VirtualScreenHeight * 0.30f;
+            float t = 1f - Mathf.Clamp01(announceTimer / TurnAnnounceDuration);   // 0→1 진행
+            float alpha = Mathf.Clamp01(Mathf.Min(t * 4f, (1f - t) * 4f)) + 0.15f; // 양끝 페이드
+            alpha = Mathf.Clamp01(alpha);
+            float slide = (1f - Mathf.Clamp01(t * 3f)) * 40f;   // 진입 시 살짝 아래→제자리
+
+            Color accent = announceIsPlayer ? new Color(0.4f, 0.9f, 1f) : new Color(1f, 0.4f, 0.35f);
+
+            // 반투명 밴드 배경
+            GUI.color = new Color(0.03f, 0.04f, 0.09f, 0.72f * alpha);
+            GUI.DrawTexture(new Rect(0, cy - 12f, sw, 92f), Texture2D.whiteTexture);
+            GUI.color = new Color(accent.r, accent.g, accent.b, 0.85f * alpha);
+            GUI.DrawTexture(new Rect(0, cy - 12f, sw, 4f), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(0, cy + 76f, sw, 4f), Texture2D.whiteTexture);
+
+            introVsStyleCache.fontSize = 58;
+            introVsStyleCache.normal.textColor = new Color(accent.r, accent.g, accent.b, alpha);
+            GUI.color = Color.white;
+            GUI.Label(new Rect(0, cy + slide, sw, 80f), announceText, introVsStyleCache);
+        }
+
+        // FindFirstObjectByType 캐싱 — 배틀 시작/종료마다 재조회 회귀 차단.
+        // ForceHidePanel은 InsectBattleUIController가 영구 객체라 1회 조회 후 재사용 안전.
+        private InsectBattleUIController cachedCanvasBattleUI;
+        private RegionManager cachedRegionMgr;
 
         private void DisableCanvasBattleUI()
         {
-            var canvasUI = FindFirstObjectByType<InsectBattleUIController>();
-            if (canvasUI != null)
+            if (cachedCanvasBattleUI == null)
+                cachedCanvasBattleUI = FindFirstObjectByType<InsectBattleUIController>();
+            if (cachedCanvasBattleUI != null)
             {
-                canvasUI.ForceHidePanel();
+                cachedCanvasBattleUI.ForceHidePanel();
             }
         }
 
         private void DrawSwapSelect()
         {
-            float panelW = Screen.width;
-            float panelH = 340f;
-            float panelY = Screen.height - panelH;
+            float panelW = UIScale.VirtualScreenWidth;
+            float panelH = UISafeLayout.ClampHeight(340f);
+            float panelY = UISafeLayout.ContentBottom - panelH;
 
             GUI.color = new Color(0.04f, 0.03f, 0.08f, 0.97f);
-            GUI.DrawTexture(new Rect(0, panelY, panelW, panelH), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(0, panelY, panelW, UIScale.VirtualScreenHeight - panelY), Texture2D.whiteTexture);
             GUI.color = new Color(0.9f, 0.35f, 0.3f);
             GUI.DrawTexture(new Rect(0, panelY, panelW, 4), Texture2D.whiteTexture);
 
             float pulse = 0.7f + Mathf.Sin(Time.time * 3f) * 0.3f;
-            GUIStyle header = new GUIStyle(GUI.skin.label)
-            { fontSize = 28, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            header.normal.textColor = new Color(1f, 0.4f, 0.3f, pulse);
+            // SwapHeader 색 static readonly + alpha만 갱신 (DrawCombo의 ComboCol 패턴과 동일)
+            Color hdr = SwapHeaderBase;
+            hdr.a = pulse;
+            swapHeaderCache.normal.textColor = hdr;
             GUI.color = Color.white;
             string faintedName = playerStats != null && playerStats.Data != null ? playerStats.Data.displayName : "곤충";
             GUI.Label(new Rect(0, panelY + 10, panelW, 38),
-                $"{faintedName}이(가) 쓰러졌다! 다음 곤충을 선택하세요 (숫자키 1~5 또는 클릭)", header);
+                UIScale.IsMobileLayout
+                    ? $"{faintedName}이(가) 쓰러졌다! 다음 곤충을 선택하세요"
+                    : $"{faintedName}이(가) 쓰러졌다! 다음 곤충을 선택하세요 (숫자키 1~5 또는 클릭)",
+                swapHeaderCache);
 
-            float btnW = 240f;
+            bool mobile = UIScale.IsMobileLayout;
+            float btnW = mobile ? (panelW - 80f) / BattleTeamManager.MaxSlots : 240f;
             float btnH = 240f;
             float btnY = panelY + 56;
             float totalW = BattleTeamManager.MaxSlots * (btnW + 14) - 14;
@@ -2778,16 +3422,17 @@ namespace InsectGame.UI
                 float bx = startX + i * (btnW + 14);
                 string slotId = teamManager.GetSlot(i);
                 bool isEmpty = string.IsNullOrEmpty(slotId);
-                bool isFainted = !isEmpty && faintedInsectIds.Contains(slotId);
-                bool isCurrent = !isEmpty && slotId == currentInsectId;
                 PlayerInsectData pid = isEmpty ? null : collection.GetByInstanceId(slotId);
+                // 전투 내 기절(faintedInsectIds) 또는 지속 기절(currentHp==0) — 둘 다 교체 불가로 표시.
+                bool isFainted = !isEmpty && (faintedInsectIds.Contains(slotId) || (pid != null && pid.IsFainted));
+                bool isCurrent = !isEmpty && slotId == currentInsectId;
                 InsectData data = pid != null ? collection.GetInsectData(pid.insectId) : null;
                 bool available = !isEmpty && !isFainted && !isCurrent && data != null;
 
                 swapBtnRects[i] = new Rect(bx, btnY, btnW, btnH);
                 swapBtnAvail[i] = available;
 
-                Vector2 mouseGui = new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y);
+                Vector2 mouseGui = UIScale.VirtualMousePosition;
                 bool hovered = available && swapBtnRects[i].Contains(mouseGui);
 
                 Color bgCol;
@@ -2813,20 +3458,18 @@ namespace InsectGame.UI
                     GUI.DrawTexture(new Rect(bx + btnW - 2, btnY, 2, btnH), Texture2D.whiteTexture);
                 }
 
-                GUIStyle keyStyle = new GUIStyle(GUI.skin.label)
-                { fontSize = 28, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-                keyStyle.normal.textColor = available ? new Color(1f, 0.85f, 0.3f) : new Color(0.3f, 0.3f, 0.3f);
-                GUI.color = available ? new Color(0.15f, 0.12f, 0.05f) : new Color(0.06f, 0.06f, 0.06f);
-                GUI.DrawTexture(new Rect(bx + 8, btnY + 8, 36, 36), Texture2D.whiteTexture);
-                GUI.color = Color.white;
-                GUI.Label(new Rect(bx + 8, btnY + 8, 36, 36), $"{i + 1}", keyStyle);
+                if (!mobile)
+                {
+                    swapKeyStyleCache.normal.textColor = available ? new Color(1f, 0.85f, 0.3f) : new Color(0.3f, 0.3f, 0.3f);
+                    GUI.color = available ? new Color(0.15f, 0.12f, 0.05f) : new Color(0.06f, 0.06f, 0.06f);
+                    GUI.DrawTexture(new Rect(bx + 8, btnY + 8, 36, 36), Texture2D.whiteTexture);
+                    GUI.color = Color.white;
+                    GUI.Label(new Rect(bx + 8, btnY + 8, 36, 36), $"{i + 1}", swapKeyStyleCache);
+                }
 
                 if (isEmpty || data == null)
                 {
-                    GUIStyle emptyStyle = new GUIStyle(GUI.skin.label)
-                    { fontSize = 22, alignment = TextAnchor.MiddleCenter };
-                    emptyStyle.normal.textColor = new Color(0.3f, 0.3f, 0.3f);
-                    GUI.Label(new Rect(bx, btnY + 90, btnW, 30), "빈 슬롯", emptyStyle);
+                    GUI.Label(new Rect(bx, btnY + 90, btnW, 30), "빈 슬롯", swapEmptyStyleCache);
                     continue;
                 }
 
@@ -2841,40 +3484,28 @@ namespace InsectGame.UI
                 GUI.color = insectCol;
                 GUI.DrawTexture(new Rect(bx + btnW / 2f - 26, btnY + 57, 52, 52), Texture2D.whiteTexture);
 
-                GUIStyle nameStyle = new GUIStyle(GUI.skin.label)
-                { fontSize = 22, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-                nameStyle.normal.textColor = available ? rarityCol : new Color(rarityCol.r * 0.4f, rarityCol.g * 0.4f, rarityCol.b * 0.4f);
+                swapNameStyleCache.normal.textColor = available ? rarityCol : new Color(rarityCol.r * 0.4f, rarityCol.g * 0.4f, rarityCol.b * 0.4f);
                 GUI.color = Color.white;
-                GUI.Label(new Rect(bx, btnY + 126, btnW, 28), data.displayName, nameStyle);
+                UIHelper.LabelFit(new Rect(bx, btnY + 126, btnW, 28), data.displayName, swapNameStyleCache);
 
-                GUIStyle infoStyle = new GUIStyle(GUI.skin.label)
-                { fontSize = 18, alignment = TextAnchor.MiddleCenter };
-                infoStyle.normal.textColor = available ? new Color(0.6f, 0.6f, 0.65f) : new Color(0.3f, 0.3f, 0.3f);
-                GUI.Label(new Rect(bx, btnY + 156, btnW, 24), $"Lv.{level}  |  CP {cp}", infoStyle);
+                swapInfoStyleCache.normal.textColor = available ? new Color(0.6f, 0.6f, 0.65f) : new Color(0.3f, 0.3f, 0.3f);
+                GUI.Label(new Rect(bx, btnY + 156, btnW, 24), $"Lv.{level}  |  CP {cp}", swapInfoStyleCache);
 
                 if (pid != null)
                 {
                     int hp = pid.GetTotalHp(data.baseHp);
                     int atk = pid.GetTotalAtk(data.baseAtk);
-                    GUIStyle statStyle = new GUIStyle(GUI.skin.label)
-                    { fontSize = 17, alignment = TextAnchor.MiddleCenter };
-                    statStyle.normal.textColor = available ? new Color(0.5f, 0.5f, 0.55f) : new Color(0.25f, 0.25f, 0.25f);
-                    GUI.Label(new Rect(bx, btnY + 182, btnW, 22), $"HP {hp}  ATK {atk}", statStyle);
+                    swapStatStyleCache.normal.textColor = available ? new Color(0.5f, 0.5f, 0.55f) : new Color(0.25f, 0.25f, 0.25f);
+                    GUI.Label(new Rect(bx, btnY + 182, btnW, 22), $"HP {hp}  ATK {atk}", swapStatStyleCache);
                 }
 
                 if (isFainted)
                 {
-                    GUIStyle faintStyle = new GUIStyle(GUI.skin.label)
-                    { fontSize = 24, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-                    faintStyle.normal.textColor = new Color(1f, 0.3f, 0.3f, 0.9f);
-                    GUI.Label(new Rect(bx, btnY + 208, btnW, 28), "쓰러짐", faintStyle);
+                    UIHelper.LabelFit(new Rect(bx, btnY + 208, btnW, 28), "쓰러짐", swapFaintStyleCache);
                 }
                 else if (isCurrent)
                 {
-                    GUIStyle curStyle = new GUIStyle(GUI.skin.label)
-                    { fontSize = 20, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-                    curStyle.normal.textColor = new Color(1f, 0.3f, 0.3f, 0.9f);
-                    GUI.Label(new Rect(bx, btnY + 208, btnW, 28), "현재 (쓰러짐)", curStyle);
+                    GUI.Label(new Rect(bx, btnY + 208, btnW, 28), "현재 (쓰러짐)", swapCurStyleCache);
                 }
 
                 if (hovered)
@@ -2888,19 +3519,128 @@ namespace InsectGame.UI
 
         private void EndBattle()
         {
-            if (BattleArenaController.Instance != null)
-                BattleArenaController.Instance.CleanupArena();
+            // try-finally: arena/AudioManager 등에서 예외가 나도 카메라/이동 복구는 반드시 실행
+            // (영구 동결 회귀 방지).
+            try
+            {
+                if (arena != null)
+                    arena.CleanupArena();
 
-            if (AudioManager.Instance != null) AudioManager.Instance.PlayBGM(BgmType.Explore);
-            phase = Phase.None;
-            playerStats = null;
-            enemyStats = null;
-            skillBtnCount = 0;
-            faintedInsectIds.Clear();
-            currentInsectId = null;
-            if (cameraFollower != null) cameraFollower.ExitBattleMode();
-            if (playerMovement != null) playerMovement.SetFrozen(false);
+                Time.timeScale = 1f; hitstopUntil = 0f; critUntil = 0f;
+                comboCount = 0;
+                comboDisplayTimer = 0f;
+
+                if (AudioManager.Instance != null)
+                {
+                    AudioManager.Instance.RestoreExploreBGM();   // 있던 리전의 곡으로 (범용 Explore 아님)
+                    AudioManager.Instance.ClearBattleIntensity();
+                }
+                phase = Phase.None;
+                playerStats = null;
+                enemyStats = null;
+                skillBtnCount = 0;
+                // 입력 표면도 함께 비운다. `skillBtnCount`만 0으로 두던 자리인데, 히트 테스트는
+                // `basicAtkRect.width > 0` / `escapeRect.width > 0`로 하므로 이 둘이 남으면 다음 전투
+                // 첫 프레임의 오탭을 지난 전투 좌표로 받는다(위 Update 말미 주석 참조).
+                basicAtkRect = new Rect(0, 0, 0, 0);
+                escapeRect = new Rect(0, 0, 0, 0);
+                for (int i = 0; i < swapBtnRects.Length; i++)
+                {
+                    swapBtnRects[i] = new Rect(0, 0, 0, 0);
+                    swapBtnAvail[i] = false;
+                }
+                wantMouseClick = false;
+                faintedInsectIds.Clear();
+                currentInsectId = null;
+            }
+            finally
+            {
+                if (Time.timeScale != 1f) Time.timeScale = 1f;
+                hitstopUntil = 0f; critUntil = 0f;
+                if (cameraFollower != null) cameraFollower.ExitBattleMode();
+                // **모달이 떠 있으면 풀지 않는다.** 프리즈는 bool 하나라 주인이 여럿이면
+                // 마지막에 쓴 쪽이 이긴다. 전투 승리로 스토리 비트가 뜨면 대화 모달이 먼저
+                // 프리즈를 걸어 두는데, 결과 화면은 그와 무관하게 4초 뒤 스스로 닫히며 여기서
+                // 프리즈를 푼다 — **대사를 읽는 동안 캐릭터가 걸어다녔다**(BattleWin 비트 12개
+                // 전부 해당). 모달 쪽이 닫힐 때 자기가 푼다(NpcDialogueUI.CloseModal).
+                // 그쪽이 끝내 안 풀어도 PlayerMovement의 AutoUnfreezeTime(20s)이 받아낸다.
+                if (playerMovement != null && !ModalUIRegistry.IsAnyOpen())
+                    playerMovement.SetFrozen(false);
+
+                // **맨 마지막이다.** 화면·카메라·프리즈를 다 걷은 뒤에 알려야, 이어서 열리는
+                // 대화 모달이 방금 푼 프리즈를 다시 걸 수 있다(순서가 뒤집히면 대사를 읽는
+                // 동안 캐릭터가 걸어다닌다 — 바로 위 주석의 그 결함이다).
+                // finally에 두는 이유: try에서 예외가 나도 이야기는 이어져야 한다.
+                if (storyDirector != null) storyDirector.NotifyBattlePresentationClosed();
+            }
         }
+
+        private void DrawScreenFlash()
+        {
+            if (screenFlashTimer <= 0f) return;
+            float alpha = Mathf.Clamp01(screenFlashTimer / 0.3f) * 0.4f;
+            GUI.color = new Color(screenFlashColor.r, screenFlashColor.g, screenFlashColor.b, alpha);
+            GUI.DrawTexture(new Rect(0, 0, UIScale.VirtualScreenWidth, UIScale.VirtualScreenHeight), Texture2D.whiteTexture);
+            GUI.color = Color.white;
+        }
+
+        private void DrawComboCounter()
+        {
+            if (comboCount < 2 || comboDisplayTimer <= 0f) return;
+
+            float alpha = Mathf.Clamp01(comboDisplayTimer / 0.5f);
+            float scale = 1f + Mathf.Max(0f, (2.5f - comboDisplayTimer) * 2f) * 0.0f;
+            // 콤보 시작 직후 큰 펄스
+            float justAppeared = Mathf.Clamp01(2.5f - comboDisplayTimer) / 0.2f;
+            float pulse = justAppeared < 1f ? Mathf.Lerp(1.4f, 1f, justAppeared) : 1f;
+
+            float sw = UIScale.VirtualScreenWidth;
+            float boxW = 180f;
+            float boxH = 70f;
+            float bx = sw - boxW - 30f;
+            float by = 100f;
+
+            // 배경
+            GUI.color = new Color(0f, 0f, 0f, 0.55f * alpha);
+            GUI.DrawTexture(new Rect(bx, by, boxW, boxH), Texture2D.whiteTexture);
+
+            // 강조 라인 — 3개 정적 색 (combo 등급별). 매 프레임 new Color 회귀 차단을 위해 static.
+            Color comboCol = comboCount >= 5 ? ComboColHot :
+                             comboCount >= 3 ? ComboColWarm :
+                                                ComboColCool;
+            // Color는 struct(value)지만 alpha만 다르면 매번 new 대신 .a 갱신
+            Color tinted = comboCol;
+            tinted.a = alpha;
+            GUI.color = tinted;
+            GUI.DrawTexture(new Rect(bx, by, boxW, 3), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(bx, by + boxH - 3, boxW, 3), Texture2D.whiteTexture);
+
+            // 숫자 (펄스) — GUIStyle 캐싱
+            if (cachedComboNumStyle == null)
+                cachedComboNumStyle = new GUIStyle(GUI.skin.label)
+                { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            cachedComboNumStyle.fontSize = Mathf.RoundToInt(40f * pulse);
+            cachedComboNumStyle.normal.textColor = tinted;
+            GUI.color = Color.white;
+            GUI.Label(new Rect(bx, by - 4, boxW, boxH * 0.7f), $"{comboCount}", cachedComboNumStyle);
+
+            // "COMBO" 라벨 — GUIStyle 캐싱
+            if (cachedComboLblStyle == null)
+                cachedComboLblStyle = new GUIStyle(GUI.skin.label)
+                { fontSize = 16, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            Color lblCol = ComboLblBase;
+            lblCol.a = alpha * 0.9f;
+            cachedComboLblStyle.normal.textColor = lblCol;
+            UIHelper.LabelFit(new Rect(bx, by + boxH - 22, boxW, 18), "COMBO", cachedComboLblStyle);
+        }
+
+        // 콤보 표시 정적 색 — 매 OnGUI new Color 회귀 차단
+        private static readonly Color ComboColHot = new Color(1f, 0.4f, 0.2f);
+        private static readonly Color ComboColWarm = new Color(1f, 0.85f, 0.3f);
+        private static readonly Color ComboColCool = new Color(0.9f, 0.95f, 1f);
+        private static readonly Color ComboLblBase = new Color(1f, 1f, 1f);
+        // DrawSwapSelect 헤더 펄스 색 — alpha만 동적, RGB는 static
+        private static readonly Color SwapHeaderBase = new Color(1f, 0.4f, 0.3f);
 
         private Color GetSkillColor(SkillEffectType type)
         {
@@ -2909,6 +3649,14 @@ namespace InsectGame.UI
                 case SkillEffectType.Damage: return new Color(0.9f, 0.35f, 0.3f);
                 case SkillEffectType.BuffAttack: return new Color(0.3f, 0.8f, 0.4f);
                 case SkillEffectType.DebuffAttack: return new Color(0.7f, 0.4f, 0.9f);
+                // 아래 4종은 d3d90cf가 SkillEffectType에 추가했는데 여기만 빠져 전부 회색으로 떨어졌다.
+                // 같은 커밋이 라벨 switch 2개(SkillTypeLabel/SkillPowerLabel)는 7종 전부 채웠고,
+                // 레이드(`RaidBattleUI.Draw.GetSkillColor`)도 7종을 갖고 있다 — 1v1 색만 3종에 멈춰 있었다.
+                // 값은 그 레이드 팔레트와 맞춘다(같은 스킬이 화면마다 다른 색이면 그게 더 나쁘다).
+                case SkillEffectType.Heal: return new Color(0.35f, 0.92f, 0.62f);
+                case SkillEffectType.DefenseBuff: return new Color(0.35f, 0.68f, 1f);
+                case SkillEffectType.Stun: return new Color(1f, 0.86f, 0.25f);
+                case SkillEffectType.PoisonDot: return new Color(0.68f, 0.35f, 0.88f);
                 default: return Color.gray;
             }
         }
@@ -2925,19 +3673,30 @@ namespace InsectGame.UI
             if (battleController == null || battleController != bc)
             {
                 battleController = bc;
-                if (battleController != null)
-                {
-                    battleController.BattleUpdated -= OnBattleUpdated;
-                    battleController.BattleEnded -= OnBattleEnded;
-                    battleController.PlayerFainted -= OnPlayerFainted;
-                    battleController.BattleUpdated += OnBattleUpdated;
-                    battleController.BattleEnded += OnBattleEnded;
-                    battleController.PlayerFainted += OnPlayerFainted;
-                }
+                SubscribeBattleController();
             }
 
             if (cameraFollower == null) cameraFollower = cam;
             if (playerMovement == null) playerMovement = pm;
+        }
+
+        /// <summary>
+        /// 배틀 컨트롤러 구독. <b>AutoWire와 OnEnable이 공유한다</b> — 해지 뒤 구독이라 중복되지 않는다.
+        ///
+        /// 옛날엔 AutoWire에서만 구독했다. 그런데 오프닝 다시보기(OpeningReplayCoordinator)가
+        /// UI 루트를 통째로 SetActive(false)했다가 되돌리므로, 한 번 다시보면 OnDisable이 해지한
+        /// 구독을 아무도 되살리지 않아 **배틀 화면이 영구히 열리지 않았다**(OnBattleUpdated가
+        /// Phase.Intro를 세우는 유일한 지점이다).
+        /// </summary>
+        private void SubscribeBattleController()
+        {
+            if (battleController == null) return;
+            battleController.BattleUpdated -= OnBattleUpdated;
+            battleController.BattleEnded -= OnBattleEnded;
+            battleController.PlayerFainted -= OnPlayerFainted;
+            battleController.BattleUpdated += OnBattleUpdated;
+            battleController.BattleEnded += OnBattleEnded;
+            battleController.PlayerFainted += OnPlayerFainted;
         }
 
         public void AutoWire(BattleTeamManager team, PlayerInsectCollection col, TrainingManager training)
@@ -2945,6 +3704,157 @@ namespace InsectGame.UI
             if (teamManager == null) teamManager = team;
             if (collection == null) collection = col;
             if (trainingManager == null) trainingManager = training;
+        }
+
+        // 전투가 끝났다고 알려 줄 곳. 없어도 전투는 그대로 돌아간다 — 스토리 쪽이 12초 뒤
+        // 스스로 쏜다(StoryDirector.BattleWinGiveUpSeconds).
+        private InsectGame.Story.StoryDirector storyDirector;
+
+        public void AutoWire(InsectGame.Story.StoryDirector director)
+        {
+            if (storyDirector == null) storyDirector = director;
+        }
+
+        public void AutoWire(BattleArenaController a)
+        {
+            if (arena == null) arena = a;
+        }
+    }
+
+    /// <summary>
+    /// IMGUI 스킬 카드에서 공유하는 순수 레이아웃/대비 계산.
+    /// GUI 상태를 읽지 않아 EditMode 회귀 테스트에서 직접 검증할 수 있다.
+    /// </summary>
+    internal readonly struct SkillCardDetailRows
+    {
+        internal readonly Rect Power;
+        internal readonly Rect Effectiveness;
+        internal readonly Rect Cooldown;
+
+        internal SkillCardDetailRows(Rect power, Rect effectiveness, Rect cooldown)
+        {
+            Power = power;
+            Effectiveness = effectiveness;
+            Cooldown = cooldown;
+        }
+    }
+
+    internal static class SkillUILayout
+    {
+        internal const float MinimumSkillNameHeight = 44f;
+
+        /// <summary>
+        /// 본문 글자가 위아래로 잘리지 않는 최소 행 높이.
+        ///
+        /// 한글 글리프는 폰트 크기의 <b>1.35배</b>쯤을 세로로 쓴다(라틴 문자보다 어센더·디센더가 크다).
+        /// 카드의 정보 행은 18~20px 글자를 담으므로 20 × 1.35 = 27이 하한이고, 위아래 여백까지
+        /// 생각해 28을 쓴다. 이 상수보다 낮은 행을 요청하면 <see cref="GetDetailRows"/>가 끌어올린다.
+        /// </summary>
+        internal const float MinimumDetailRowHeight = 28f;
+
+        internal static readonly Color DisabledTextColor = new Color(0.68f, 0.68f, 0.72f);
+        internal static readonly Color DisabledSecondaryTextColor = new Color(0.56f, 0.56f, 0.62f);
+
+        internal static Rect GetNameRect(Rect cardRect, float top, float horizontalPadding, float requestedHeight)
+        {
+            float safePadding = Mathf.Max(0f, horizontalPadding);
+            float safeTop = Mathf.Clamp(top, 0f, cardRect.height);
+            float availableHeight = Mathf.Max(0f, cardRect.height - safeTop);
+            float height = Mathf.Min(
+                Mathf.Max(MinimumSkillNameHeight, requestedHeight),
+                availableHeight);
+
+            return new Rect(
+                cardRect.x + safePadding,
+                cardRect.y + safeTop,
+                Mathf.Max(1f, cardRect.width - safePadding * 2f),
+                height);
+        }
+
+        internal static float GetTouchHeight(bool mobileLayout, float desktopHeight)
+        {
+            return GetTouchHeight(mobileLayout, desktopHeight, UIScale.MinTouchHeight);
+        }
+
+        internal static float GetTouchHeight(bool mobileLayout, float desktopHeight, float preferredMobileHeight)
+        {
+            return mobileLayout
+                ? Mathf.Max(UIScale.MinTouchHeight, preferredMobileHeight)
+                : desktopHeight;
+        }
+
+        /// <summary>
+        /// 스킬 카드 아래쪽 정보 영역. <b>2행</b>이다 — 첫 줄에 위력(좌)과 상성 배지(우)를 나란히,
+        /// 둘째 줄에 쿨다운.
+        ///
+        /// 예전엔 3행이었는데 216px 카드 안에서 행 하나가 <b>22px</b>밖에 안 됐다. 20px 글자에
+        /// 필요한 27px(<see cref="MinimumDetailRowHeight"/> 참고)에 못 미쳐 한글 위아래가 그대로
+        /// 잘렸고, 마지막 행(y 192~214)은 카드 아래 테두리(213)를 파고들어 여백이 아예 없었다.
+        /// 카드를 키우는 해법은 못 쓴다 — 스킬 패널이 커지면 전투 장면의 곤충을 더 가리고,
+        /// 그건 이미 한 번 줄여 놓은 자리다. 그래서 <b>행 수를 줄여</b> 남는 세로를 여백으로 돌렸다.
+        /// 위력과 상성은 애초에 짧아(각각 "위력: 45" / "효과적 ▲") 한 줄에 좌우로 들어간다.
+        ///
+        /// <paramref name="bottomPadding"/>은 선택 인자가 아니다 — 마지막 행이 카드 테두리에 닿지
+        /// 않도록 호출부가 반드시 남겨야 하는 값이라 기본값을 주지 않는다.
+        /// </summary>
+        internal static SkillCardDetailRows GetDetailRows(
+            Rect cardRect,
+            float top,
+            float horizontalPadding,
+            float requestedRowHeight,
+            float requestedGap,
+            float bottomPadding)
+        {
+            float safeTop = Mathf.Clamp(top, 0f, cardRect.height);
+            float safePadding = Mathf.Max(0f, horizontalPadding);
+            float safeBottom = Mathf.Clamp(bottomPadding, 0f, cardRect.height - safeTop);
+            float gap = Mathf.Max(0f, requestedGap);
+            float availableHeight = Mathf.Max(0f, cardRect.height - safeTop - safeBottom);
+            float maximumRowHeight = Mathf.Max(0f, (availableHeight - gap) * 0.5f);
+            float rowHeight = Mathf.Min(
+                Mathf.Max(MinimumDetailRowHeight, requestedRowHeight),
+                maximumRowHeight);
+            float x = cardRect.x + safePadding;
+            float width = Mathf.Max(1f, cardRect.width - safePadding * 2f);
+            float firstY = cardRect.y + safeTop;
+            float secondY = firstY + rowHeight + gap;
+
+            // 같은 줄이라 폭부터 갈라 둔다 — 위력이 길어도 상성 배지를 밟지 않는다.
+            float powerWidth = Mathf.Max(1f, width * 0.56f);
+            float effectivenessWidth = Mathf.Max(1f, width - powerWidth - gap);
+
+            return new SkillCardDetailRows(
+                new Rect(x, firstY, powerWidth, rowHeight),
+                new Rect(x + width - effectivenessWidth, firstY, effectivenessWidth, rowHeight),
+                new Rect(x, secondY, width, rowHeight));
+        }
+
+        /// <summary>
+        /// 속성색을 어두운 버튼 배경 위에서 읽히게 만든다.
+        ///
+        /// 예전엔 흰색을 <b>일률적으로 28%</b> 섞었다. 밝은 속성(Electric·Light)은 그걸로 충분했지만
+        /// 어두운 속성은 그대로 어두워서, <c>Dark</c>(0.4/0.15/0.5) 스킬의 "타입 · 동작" 줄이
+        /// 버튼 배경(0.08/0.10/0.20)과 명암비 <b>3.69</b>, 호버 시엔 <b>2.43</b>까지 떨어졌다
+        /// — 기기에서 "글씨가 배경색과 비슷해 안 보인다"고 보고된 자리다(WCAG AA 본문 기준 4.5).
+        ///
+        /// 이제 원래 밝기에 따라 섞는 양을 달리한다: 어두울수록 많이 섞고, 이미 밝으면 조금만 섞어
+        /// 속성색의 정체성을 지킨다.
+        ///
+        /// <b>기준 배경은 평시가 아니라 호버다.</b> 첫 수정은 평시 배경(0.08/0.10/0.20)에만 맞춰
+        /// 62%/28% 곡선을 잡았고 그래서 평시는 5.5+였지만 <b>호버 배경(0.18/0.22/0.38)에서 Dark 3.65 ·
+        /// Poison 3.82</b>로 도로 떨어졌다 — 마우스를 올린 카드, 즉 <b>지금 고르려는 그 카드</b>의
+        /// 글씨가 가장 안 보였다. 호버는 배경을 밝히는 연출이라 어두운 글씨와 정면으로 부딪힌다.
+        /// 82%/36%로 올려 호버에서도 전 속성 4.6+(최저 Poison 4.67), 평시는 6.9+가 된다.
+        /// </summary>
+        internal static Color GetReadableAccent(Color accent)
+        {
+            // 지각 밝기(ITU-R BT.601) — 사람 눈이 초록에 민감한 것을 반영한다.
+            float luminance = accent.r * 0.299f + accent.g * 0.587f + accent.b * 0.114f;
+            float mix = Mathf.Lerp(0.82f, 0.36f, Mathf.Clamp01(luminance / 0.5f));
+
+            Color readable = Color.Lerp(accent, Color.white, mix);
+            readable.a = accent.a;
+            return readable;
         }
     }
 }

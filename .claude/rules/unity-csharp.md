@@ -1,5 +1,5 @@
 ---
-trigger: always
+description: 네임스페이스·네이밍·필드 선언, AutoWire/이벤트/싱글턴/풀 패턴, 금지 사항
 ---
 
 # Unity C# 코딩 규칙

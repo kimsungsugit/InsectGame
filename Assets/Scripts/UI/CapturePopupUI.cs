@@ -32,6 +32,60 @@ namespace InsectGame.UI
         }
         private Star[] stars;
 
+        // OnGUI 매 프레임(popupTimer>0 동안 5초) new GUIStyle 12회 회귀 차단.
+        // 모든 textColor는 alpha/rarity 동적이라 base 캐시 + textColor 매 호출 갱신 (BattleScreenUI 패턴).
+        private GUIStyle headerStyleCache;
+        private GUIStyle nameStyleCache;
+        private GUIStyle subStyleCache;
+        private GUIStyle gradeTitleStyleCache;
+        private GUIStyle gradeLblStyleCache;
+        private GUIStyle pctLblStyleCache;
+        private GUIStyle rewardLabelStyleCache;
+        private GUIStyle rewardValStyleCache;
+        private GUIStyle failStyleCache;
+        private GUIStyle failSubStyleCache;
+        private GUIStyle ivLblStyleCache;
+        private GUIStyle ivVsStyleCache;
+        private bool popupStylesReady;
+
+        private static readonly Color SubGrayBase = new Color(0.8f, 0.8f, 0.8f);
+        private static readonly Color GradeTitleGrayBase = new Color(0.6f, 0.6f, 0.6f);
+        private static readonly Color RewardCandyBase = new Color(1f, 0.5f, 0.8f);
+        private static readonly Color RewardExpBase = new Color(0.4f, 0.8f, 1f);
+        private static readonly Color FailMsgBase = new Color(1f, 0.35f, 0.3f);
+        private static readonly Color FailSubBase = new Color(0.7f, 0.7f, 0.7f);
+        private static readonly Color IvLblBase = new Color(0.55f, 0.55f, 0.55f);
+
+        private void InitPopupStyles()
+        {
+            if (popupStylesReady) return;
+            popupStylesReady = true;
+
+            headerStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 28, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            nameStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 34, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            subStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 22, alignment = TextAnchor.MiddleCenter };
+            gradeTitleStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 19, alignment = TextAnchor.MiddleLeft };
+            gradeLblStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 48, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
+            pctLblStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 24, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
+            rewardLabelStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 20, alignment = TextAnchor.MiddleCenter };
+            rewardValStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 24, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            failStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 40, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            failSubStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 22, alignment = TextAnchor.MiddleCenter };
+            ivLblStyleCache = new GUIStyle(GUI.skin.label) { fontSize = 19 };
+            ivVsStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 19, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleRight };
+        }
+
         private void OnEnable()
         {
             if (captureController != null)
@@ -49,6 +103,17 @@ namespace InsectGame.UI
             wasSuccess = success;
             popupTimer = popupDuration;
             animTime = 0f;
+
+            // 개체 정보는 **매번 비우고 시작한다.** 등급 상자는 조회 성공 여부와 무관하게 늘
+            // 그려지는데, 예전엔 조회가 비어도 필드가 그대로 남아 **직전에 잡은 다른 곤충의
+            // 등급·개체값**이 표시됐다. `CaptureController`가 지급 뒤에 알리도록 바뀌어 성공 시엔
+            // 조회가 비지 않지만, 순서가 다시 뒤집혀도 남의 수치가 되살아나지는 않게 둔다.
+            capturedInstanceId = null;
+            capturedGrade = IVGrade.D;
+            capturedIvHp = 0;
+            capturedIvAtk = 0;
+            capturedIvDef = 0;
+            capturedIvPct = 0f;
 
             if (target != null && target.Data != null)
             {
@@ -114,6 +179,8 @@ namespace InsectGame.UI
         {
             if (popupTimer <= 0f) return;
 
+            InitPopupStyles();
+
             float alpha = popupTimer < 0.5f ? popupTimer / 0.5f : Mathf.Clamp01(animTime / 0.3f);
 
             if (wasSuccess)
@@ -127,14 +194,18 @@ namespace InsectGame.UI
             float cx = Screen.width / 2f;
             float cy = Screen.height * 0.38f;
             float panelW = 560f;
-            float panelH = 540f;
+            float panelH = UISafeLayout.Px.ClampHeight(540f);
             float px = cx - panelW / 2f;
-            float py = cy - panelH / 2f;
+            // 화면 38% 지점 중심 — 단 세이프에어리어 + 세로 마진 밖으로는 나가지 않는다.
+            float py = Mathf.Clamp(
+                cy - panelH / 2f,
+                UISafeLayout.Px.ContentTop,
+                Mathf.Max(UISafeLayout.Px.ContentTop, UISafeLayout.Px.ContentBottom - panelH));
 
             float slideIn = Mathf.Clamp01(animTime / 0.25f);
             py += (1f - slideIn) * 30f;
 
-            Color rarityCol = GetRarityColor(insectRarity);
+            Color rarityCol = UITheme.Instance.GetInsectRarityColor(insectRarity);
 
             GUI.color = new Color(0.03f, 0.05f, 0.1f, 0.94f * alpha);
             GUI.DrawTexture(new Rect(px, py, panelW, panelH), Texture2D.whiteTexture);
@@ -167,24 +238,18 @@ namespace InsectGame.UI
                 }
             }
 
-            GUIStyle headerStyle = new GUIStyle(GUI.skin.label)
-            { fontSize = 28, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            headerStyle.normal.textColor = new Color(1, 1, 1, alpha);
+            headerStyleCache.normal.textColor = new Color(1, 1, 1, alpha);
             GUI.color = Color.white;
-            GUI.Label(new Rect(px, py + 14, panelW, 36), "포획 성공!", headerStyle);
+            GUI.Label(new Rect(px, py + 14, panelW, 36), "포획 성공!", headerStyleCache);
 
             DrawTypedInsectPortrait(cx, py + 105, insectId, insectRarity, alpha);
 
-            GUIStyle nameStyle = new GUIStyle(GUI.skin.label)
-            { fontSize = 34, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            nameStyle.normal.textColor = new Color(rarityCol.r, rarityCol.g, rarityCol.b, alpha);
-            GUI.Label(new Rect(px, py + 175, panelW, 40), insectName, nameStyle);
+            nameStyleCache.normal.textColor = new Color(rarityCol.r, rarityCol.g, rarityCol.b, alpha);
+            GUI.Label(new Rect(px, py + 175, panelW, 40), insectName, nameStyleCache);
 
-            GUIStyle subStyle = new GUIStyle(GUI.skin.label)
-            { fontSize = 22, alignment = TextAnchor.MiddleCenter };
-            subStyle.normal.textColor = new Color(0.8f, 0.8f, 0.8f, alpha);
+            subStyleCache.normal.textColor = new Color(SubGrayBase.r, SubGrayBase.g, SubGrayBase.b, alpha);
             GUI.Label(new Rect(px, py + 216, panelW, 28),
-                $"Lv.{insectLevel}  |  {insectRarity}", subStyle);
+                $"Lv.{insectLevel}  |  {insectRarity}", subStyleCache);
 
             Color gc = GetGradeColor(capturedGrade);
             float gradeBoxY = py + 256;
@@ -195,20 +260,14 @@ namespace InsectGame.UI
             GUI.DrawTexture(new Rect(px + 30, gradeBoxY, 5, 120), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
-            GUIStyle gradeTitle = new GUIStyle(GUI.skin.label)
-            { fontSize = 19, alignment = TextAnchor.MiddleLeft };
-            gradeTitle.normal.textColor = new Color(0.6f, 0.6f, 0.6f, alpha);
-            GUI.Label(new Rect(px + 44, gradeBoxY + 6, 120, 22), "개체값 감정", gradeTitle);
+            gradeTitleStyleCache.normal.textColor = new Color(GradeTitleGrayBase.r, GradeTitleGrayBase.g, GradeTitleGrayBase.b, alpha);
+            UIHelper.LabelFit(new Rect(px + 44, gradeBoxY + 6, 120, 22), "개체값 감정", gradeTitleStyleCache);
 
-            GUIStyle gradeLbl = new GUIStyle(GUI.skin.label)
-            { fontSize = 48, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
-            gradeLbl.normal.textColor = new Color(gc.r, gc.g, gc.b, alpha);
-            GUI.Label(new Rect(px + 44, gradeBoxY + 26, 65, 56), GetGradeLabel(capturedGrade), gradeLbl);
+            gradeLblStyleCache.normal.textColor = new Color(gc.r, gc.g, gc.b, alpha);
+            GUI.Label(new Rect(px + 44, gradeBoxY + 26, 65, 56), GetGradeLabel(capturedGrade), gradeLblStyleCache);
 
-            GUIStyle pctLbl = new GUIStyle(GUI.skin.label)
-            { fontSize = 24, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
-            pctLbl.normal.textColor = new Color(gc.r, gc.g, gc.b, alpha * 0.8f);
-            GUI.Label(new Rect(px + 102, gradeBoxY + 38, 100, 30), $"{capturedIvPct * 100:0}%", pctLbl);
+            pctLblStyleCache.normal.textColor = new Color(gc.r, gc.g, gc.b, alpha * 0.8f);
+            GUI.Label(new Rect(px + 102, gradeBoxY + 38, 100, 30), $"{capturedIvPct * 100:0}%", pctLblStyleCache);
 
             float ivX = px + 210;
             float ivW = panelW - 260;
@@ -220,20 +279,15 @@ namespace InsectGame.UI
             GUI.color = new Color(0.15f, 0.17f, 0.25f, 0.7f * alpha);
             GUI.DrawTexture(new Rect(px + 36, rewardY, panelW - 72, 68), Texture2D.whiteTexture);
 
-            GUIStyle rewardLabel = new GUIStyle(GUI.skin.label)
-            { fontSize = 20, alignment = TextAnchor.MiddleCenter };
-            rewardLabel.normal.textColor = new Color(0.6f, 0.6f, 0.6f, alpha);
+            rewardLabelStyleCache.normal.textColor = new Color(GradeTitleGrayBase.r, GradeTitleGrayBase.g, GradeTitleGrayBase.b, alpha);
             GUI.color = Color.white;
-            GUI.Label(new Rect(px, rewardY + 4, panelW, 22), "보상", rewardLabel);
+            UIHelper.LabelFit(new Rect(px, rewardY + 4, panelW, 22), "보상", rewardLabelStyleCache);
 
-            GUIStyle rewardVal = new GUIStyle(GUI.skin.label)
-            { fontSize = 24, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            rewardValStyleCache.normal.textColor = new Color(RewardCandyBase.r, RewardCandyBase.g, RewardCandyBase.b, alpha);
+            GUI.Label(new Rect(px, rewardY + 32, panelW / 2f, 30), $"+{candyReward} 캔디", rewardValStyleCache);
 
-            rewardVal.normal.textColor = new Color(1f, 0.5f, 0.8f, alpha);
-            GUI.Label(new Rect(px, rewardY + 32, panelW / 2f, 30), $"+{candyReward} 캔디", rewardVal);
-
-            rewardVal.normal.textColor = new Color(0.4f, 0.8f, 1f, alpha);
-            GUI.Label(new Rect(px + panelW / 2f, rewardY + 32, panelW / 2f, 30), $"+{expReward} XP", rewardVal);
+            rewardValStyleCache.normal.textColor = new Color(RewardExpBase.r, RewardExpBase.g, RewardExpBase.b, alpha);
+            GUI.Label(new Rect(px + panelW / 2f, rewardY + 32, panelW / 2f, 30), $"+{expReward} XP", rewardValStyleCache);
         }
 
         private void DrawFailPopup(float alpha)
@@ -245,15 +299,11 @@ namespace InsectGame.UI
             GUI.DrawTexture(new Rect(cx - 240, cy - 20, 480, 120), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
-            GUIStyle style = new GUIStyle(GUI.skin.label)
-            { fontSize = 40, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            style.normal.textColor = new Color(1f, 0.35f, 0.3f, alpha);
-            GUI.Label(new Rect(cx - 240, cy - 10, 480, 55), "도망갔다...", style);
+            failStyleCache.normal.textColor = new Color(FailMsgBase.r, FailMsgBase.g, FailMsgBase.b, alpha);
+            GUI.Label(new Rect(cx - 240, cy - 10, 480, 55), "도망갔다...", failStyleCache);
 
-            GUIStyle sub = new GUIStyle(GUI.skin.label)
-            { fontSize = 22, alignment = TextAnchor.MiddleCenter };
-            sub.normal.textColor = new Color(0.7f, 0.7f, 0.7f, alpha);
-            GUI.Label(new Rect(cx - 240, cy + 45, 480, 32), $"{insectName}(이)가 도망쳤습니다!", sub);
+            failSubStyleCache.normal.textColor = new Color(FailSubBase.r, FailSubBase.g, FailSubBase.b, alpha);
+            GUI.Label(new Rect(cx - 240, cy + 45, 480, 32), $"{insectName}(이)가 도망쳤습니다!", failSubStyleCache);
         }
 
         public static void DrawTypedInsectPortrait(float cx, float cy, string id, InsectRarity rarity, float alpha)
@@ -263,13 +313,20 @@ namespace InsectGame.UI
             Color darkCol = new Color(col.r * 0.45f, col.g * 0.45f, col.b * 0.45f, alpha);
             Color lightCol = new Color(
                 Mathf.Min(1, col.r + 0.4f), Mathf.Min(1, col.g + 0.4f), Mathf.Min(1, col.b + 0.4f), alpha);
-            Color accentCol = new Color(GetRarityColor(rarity).r, GetRarityColor(rarity).g, GetRarityColor(rarity).b, alpha);
+            Color rarityBase = UITheme.Instance.GetInsectRarityColor(rarity);
+            Color accentCol = new Color(rarityBase.r, rarityBase.g, rarityBase.b, alpha);
             float s = 1.6f;
 
             if (string.IsNullOrEmpty(id)) { DrawInsectPortrait(cx, cy, rarity, alpha); return; }
 
-            GUI.color = new Color(accentCol.r, accentCol.g, accentCol.b, 0.06f * alpha + (int)rarity * 0.02f);
-            GUI.DrawTexture(new Rect(cx - 48, cy - 48, 96, 96), Texture2D.whiteTexture);
+            // 등급 후광 — 예전엔 각진 96×96 사각형이라 뒤에 네모난 판이 깔린 것처럼 보였다.
+            // 이제 원이라 곤충 주변으로 부드럽게 번진다(UIShapes.Part의 기본 roundness=1).
+            UIShapes.Part(new Rect(cx - 48, cy - 48, 96, 96),
+                new Color(accentCol.r, accentCol.g, accentCol.b, 0.06f * alpha + (int)rarity * 0.02f));
+
+            // 접지 그림자 — 곤충이 배경에 떠 있지 않고 놓여 있게 보이게 한다.
+            // 파트별 실루엣은 25개 함수를 전부 고쳐야 하므로, 발밑 타원 하나로 형체를 잡는다.
+            UIShapes.Ellipse(new Rect(cx - 26f, cy + 26f, 52f, 13f), new Color(0f, 0f, 0f, 0.20f * alpha));
 
             if (id.Contains("butterfly") || id.Contains("luna") || id.Contains("atlas") || id.Contains("monarch") || id.Contains("morpho") || id.Contains("alexandras") || id.Contains("swallowtail") || id.Contains("cabbage"))
                 PortraitButterfly(cx, cy, s, bodyCol, darkCol, lightCol, accentCol, alpha);
@@ -283,7 +340,10 @@ namespace InsectGame.UI
                 PortraitDragonfly(cx, cy, s, bodyCol, darkCol, lightCol, alpha);
             else if (id.Contains("dragonfly") || id.Contains("ancient"))
                 PortraitDragonfly(cx, cy, s, bodyCol, darkCol, lightCol, alpha);
-            else if (id.Contains("bee") || id.Contains("wasp") || id.Contains("hornet"))
+            // **"beetle"이 "bee"를 품는다** — 가드가 없으면 사슴벌레·장수풍뎅이·헤라클레스를 포함한
+            // 딱정벌레 31종이 전부 벌로 그려진다(포획 직후 이 팝업이 잡은 곤충을 보여주는 자리다).
+            // InsectEntity.BuildModel은 같은 가드를 갖고 있었는데 이쪽만 빠져 있었다.
+            else if ((id.Contains("bee") && !id.Contains("beetle")) || id.Contains("wasp") || id.Contains("hornet"))
                 PortraitBee(cx, cy, s, bodyCol, darkCol, lightCol, alpha);
             else if (id.Contains("firefly"))
                 PortraitFirefly(cx, cy, s, bodyCol, darkCol, lightCol, alpha);
@@ -328,20 +388,38 @@ namespace InsectGame.UI
         private static void PortraitEyes(float cx, float cy, float s, float alpha)
         {
             GUI.color = new Color(1, 1, 1, alpha);
-            GUI.DrawTexture(new Rect(cx - 6 * s, cy, 5 * s, 5 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx + 2 * s, cy, 5 * s, 5 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 6 * s, cy, 5 * s, 5 * s), GUI.color);
+            UIShapes.Part(new Rect(cx + 2 * s, cy, 5 * s, 5 * s), GUI.color);
             GUI.color = new Color(0, 0, 0, alpha);
-            GUI.DrawTexture(new Rect(cx - 4 * s, cy + 1.5f * s, 2 * s, 2 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx + 4 * s, cy + 1.5f * s, 2 * s, 2 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 4 * s, cy + 1.5f * s, 2 * s, 2 * s), GUI.color);
+            UIShapes.Part(new Rect(cx + 4 * s, cy + 1.5f * s, 2 * s, 2 * s), GUI.color);
         }
 
+        /// <summary>
+        /// 다리 — 몸통 아래에서 바깥·아래로 벌어지는 두 마디 캡슐.
+        ///
+        /// 예전엔 몸 밑에 세로 직사각형을 나란히 붙였다. 축 정렬 사각형으로는 대각선을 그릴 수
+        /// 없어 다리가 "말뚝"처럼 보였고, 곤충이 네모나 보이는 가장 큰 이유였다.
+        /// 바깥쪽 다리일수록 더 벌어지게 해서 실루엣을 잡는다.
+        /// </summary>
         private static void PortraitLegs(float cx, float cy, float s, Color dark, int pairs, float alpha)
         {
-            GUI.color = new Color(dark.r, dark.g, dark.b, alpha);
+            Color legCol = new Color(dark.r, dark.g, dark.b, alpha);
+            float thickness = 2.6f * s;
             for (int i = 0; i < pairs; i++)
             {
-                float lx = (i - (pairs - 1) * 0.5f) * 10 * s;
-                GUI.DrawTexture(new Rect(cx + lx - 3 * s, cy + 12 * s, 6 * s, 14 * s), Texture2D.whiteTexture);
+                // -1(왼쪽 끝) ~ +1(오른쪽 끝). 한 쌍이면 0(정중앙)이라 0으로 나누지 않는다.
+                float t = pairs > 1 ? (i / (float)(pairs - 1)) * 2f - 1f : 0f;
+                float hipX = cx + t * 9f * s;
+                float hipY = cy + 10f * s;
+                // 무릎에서 한 번 꺾어 두 마디로 — 직선 한 줄보다 곤충 다리처럼 보인다.
+                float kneeX = hipX + Mathf.Sign(t == 0f ? 1f : t) * (5f + Mathf.Abs(t) * 4f) * s;
+                float kneeY = hipY + 7f * s;
+                float footX = kneeX + Mathf.Sign(t == 0f ? 1f : t) * (3f + Mathf.Abs(t) * 3f) * s;
+                float footY = kneeY + 8f * s;
+
+                UIShapes.Capsule(new Vector2(hipX, hipY), new Vector2(kneeX, kneeY), thickness, legCol);
+                UIShapes.Capsule(new Vector2(kneeX, kneeY), new Vector2(footX, footY), thickness * 0.8f, legCol);
             }
         }
 
@@ -349,74 +427,74 @@ namespace InsectGame.UI
         {
             float wingFlap = Mathf.Sin(Time.time * 4f) * 3 * s;
             GUI.color = new Color(accent.r, accent.g, accent.b, 0.7f * a);
-            GUI.DrawTexture(new Rect(cx - 40 * s, cy - 24 * s + wingFlap, 30 * s, 36 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx + 10 * s, cy - 24 * s - wingFlap, 30 * s, 36 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 40 * s, cy - 24 * s + wingFlap, 30 * s, 36 * s), GUI.color);
+            UIShapes.Part(new Rect(cx + 10 * s, cy - 24 * s - wingFlap, 30 * s, 36 * s), GUI.color);
             GUI.color = new Color(light.r, light.g, light.b, 0.55f * a);
-            GUI.DrawTexture(new Rect(cx - 34 * s, cy - 16 * s + wingFlap, 18 * s, 20 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx + 16 * s, cy - 16 * s - wingFlap, 18 * s, 20 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 34 * s, cy - 16 * s + wingFlap, 18 * s, 20 * s), GUI.color);
+            UIShapes.Part(new Rect(cx + 16 * s, cy - 16 * s - wingFlap, 18 * s, 20 * s), GUI.color);
             GUI.color = new Color(body.r, body.g, body.b, 0.55f * a);
-            GUI.DrawTexture(new Rect(cx - 34 * s, cy + 6 * s + wingFlap, 22 * s, 22 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx + 12 * s, cy + 6 * s - wingFlap, 22 * s, 22 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 34 * s, cy + 6 * s + wingFlap, 22 * s, 22 * s), GUI.color);
+            UIShapes.Part(new Rect(cx + 12 * s, cy + 6 * s - wingFlap, 22 * s, 22 * s), GUI.color);
             GUI.color = dark;
-            GUI.DrawTexture(new Rect(cx - 4 * s, cy - 20 * s, 8 * s, 38 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 4 * s, cy - 20 * s, 8 * s, 38 * s), GUI.color);
             GUI.color = body;
-            GUI.DrawTexture(new Rect(cx - 3 * s, cy - 18 * s, 6 * s, 34 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 3 * s, cy - 18 * s, 6 * s, 34 * s), GUI.color);
             GUI.color = dark;
-            GUI.DrawTexture(new Rect(cx - 6 * s, cy - 28 * s, 12 * s, 12 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 6 * s, cy - 28 * s, 12 * s, 12 * s), GUI.color);
             PortraitEyes(cx, cy - 24 * s, s, a);
             GUI.color = body;
-            GUI.DrawTexture(new Rect(cx - 8 * s, cy - 44 * s, 2 * s, 18 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx + 6 * s, cy - 44 * s, 2 * s, 18 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 8 * s, cy - 44 * s, 2 * s, 18 * s), GUI.color);
+            UIShapes.Part(new Rect(cx + 6 * s, cy - 44 * s, 2 * s, 18 * s), GUI.color);
             GUI.color = light;
-            GUI.DrawTexture(new Rect(cx - 10 * s, cy - 46 * s, 4 * s, 4 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx + 7 * s, cy - 46 * s, 4 * s, 4 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 10 * s, cy - 46 * s, 4 * s, 4 * s), GUI.color);
+            UIShapes.Part(new Rect(cx + 7 * s, cy - 46 * s, 4 * s, 4 * s), GUI.color);
         }
 
         private static void PortraitMoth(float cx, float cy, float s, Color body, Color dark, Color light, float a)
         {
             Color dusty = new Color(body.r * 0.7f, body.g * 0.6f, body.b * 0.5f, 0.65f * a);
             GUI.color = dusty;
-            GUI.DrawTexture(new Rect(cx - 38 * s, cy - 16 * s, 30 * s, 28 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx + 8 * s, cy - 16 * s, 30 * s, 28 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 38 * s, cy - 16 * s, 30 * s, 28 * s), GUI.color);
+            UIShapes.Part(new Rect(cx + 8 * s, cy - 16 * s, 30 * s, 28 * s), GUI.color);
             GUI.color = new Color(light.r, light.g, light.b, 0.2f * a);
-            GUI.DrawTexture(new Rect(cx - 30 * s, cy - 8 * s, 14 * s, 12 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx + 16 * s, cy - 8 * s, 14 * s, 12 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 30 * s, cy - 8 * s, 14 * s, 12 * s), GUI.color);
+            UIShapes.Part(new Rect(cx + 16 * s, cy - 8 * s, 14 * s, 12 * s), GUI.color);
             GUI.color = dark;
-            GUI.DrawTexture(new Rect(cx - 5 * s, cy - 14 * s, 10 * s, 28 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 5 * s, cy - 14 * s, 10 * s, 28 * s), GUI.color);
             GUI.color = body;
-            GUI.DrawTexture(new Rect(cx - 4 * s, cy - 12 * s, 8 * s, 24 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 4 * s, cy - 12 * s, 8 * s, 24 * s), GUI.color);
             GUI.color = dark;
-            GUI.DrawTexture(new Rect(cx - 10 * s, cy - 24 * s, 20 * s, 14 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 10 * s, cy - 24 * s, 20 * s, 14 * s), GUI.color);
             GUI.color = light;
-            GUI.DrawTexture(new Rect(cx - 7 * s, cy - 20 * s, 14 * s, 8 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 7 * s, cy - 20 * s, 14 * s, 8 * s), GUI.color);
             PortraitEyes(cx, cy - 18 * s, s, a);
             GUI.color = body;
-            GUI.DrawTexture(new Rect(cx - 6 * s, cy - 38 * s, 2 * s, 16 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx + 4 * s, cy - 38 * s, 2 * s, 16 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 6 * s, cy - 38 * s, 2 * s, 16 * s), GUI.color);
+            UIShapes.Part(new Rect(cx + 4 * s, cy - 38 * s, 2 * s, 16 * s), GUI.color);
             PortraitLegs(cx, cy + 4 * s, s, dark, 3, a);
         }
 
         private static void PortraitMantis(float cx, float cy, float s, Color body, Color dark, Color light, float a)
         {
             GUI.color = dark;
-            GUI.DrawTexture(new Rect(cx - 8 * s, cy - 14 * s, 16 * s, 36 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 8 * s, cy - 14 * s, 16 * s, 36 * s), GUI.color);
             GUI.color = body;
-            GUI.DrawTexture(new Rect(cx - 6 * s, cy - 12 * s, 12 * s, 32 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 6 * s, cy - 12 * s, 12 * s, 32 * s), GUI.color);
             GUI.color = dark;
-            GUI.DrawTexture(new Rect(cx - 10 * s, cy - 32 * s, 20 * s, 20 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 10 * s, cy - 32 * s, 20 * s, 20 * s), GUI.color);
             GUI.color = light;
-            GUI.DrawTexture(new Rect(cx - 7 * s, cy - 28 * s, 14 * s, 12 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 7 * s, cy - 28 * s, 14 * s, 12 * s), GUI.color);
             PortraitEyes(cx, cy - 26 * s, s, a);
             float swing = Mathf.Sin(Time.time * 3f) * 4 * s;
             GUI.color = body;
-            GUI.DrawTexture(new Rect(cx - 26 * s, cy - 22 * s + swing, 18 * s, 5 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx + 8 * s, cy - 22 * s - swing, 18 * s, 5 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 26 * s, cy - 22 * s + swing, 18 * s, 5 * s), GUI.color);
+            UIShapes.Part(new Rect(cx + 8 * s, cy - 22 * s - swing, 18 * s, 5 * s), GUI.color);
             GUI.color = light;
-            GUI.DrawTexture(new Rect(cx - 30 * s, cy - 28 * s + swing, 6 * s, 14 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx + 24 * s, cy - 28 * s - swing, 6 * s, 14 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 30 * s, cy - 28 * s + swing, 6 * s, 14 * s), GUI.color);
+            UIShapes.Part(new Rect(cx + 24 * s, cy - 28 * s - swing, 6 * s, 14 * s), GUI.color);
             GUI.color = new Color(body.r, body.g, body.b, 0.25f * a);
-            GUI.DrawTexture(new Rect(cx - 18 * s, cy - 8 * s, 12 * s, 24 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx + 6 * s, cy - 8 * s, 12 * s, 24 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 18 * s, cy - 8 * s, 12 * s, 24 * s), GUI.color);
+            UIShapes.Part(new Rect(cx + 6 * s, cy - 8 * s, 12 * s, 24 * s), GUI.color);
             PortraitLegs(cx, cy + 6 * s, s, dark, 2, a);
         }
 
@@ -424,49 +502,49 @@ namespace InsectGame.UI
         {
             float wingFlap = Mathf.Sin(Time.time * 6f) * 2 * s;
             GUI.color = new Color(light.r, light.g, light.b, 0.3f * a);
-            GUI.DrawTexture(new Rect(cx - 38 * s, cy - 18 * s + wingFlap, 32 * s, 10 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx + 6 * s, cy - 18 * s - wingFlap, 32 * s, 10 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx - 34 * s, cy - 6 * s - wingFlap, 28 * s, 8 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx + 6 * s, cy - 6 * s + wingFlap, 28 * s, 8 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 38 * s, cy - 18 * s + wingFlap, 32 * s, 10 * s), GUI.color);
+            UIShapes.Part(new Rect(cx + 6 * s, cy - 18 * s - wingFlap, 32 * s, 10 * s), GUI.color);
+            UIShapes.Part(new Rect(cx - 34 * s, cy - 6 * s - wingFlap, 28 * s, 8 * s), GUI.color);
+            UIShapes.Part(new Rect(cx + 6 * s, cy - 6 * s + wingFlap, 28 * s, 8 * s), GUI.color);
             GUI.color = dark;
-            GUI.DrawTexture(new Rect(cx - 4 * s, cy - 12 * s, 8 * s, 44 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 4 * s, cy - 12 * s, 8 * s, 44 * s), GUI.color);
             GUI.color = body;
-            GUI.DrawTexture(new Rect(cx - 3 * s, cy - 10 * s, 6 * s, 40 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 3 * s, cy - 10 * s, 6 * s, 40 * s), GUI.color);
             for (int i = 0; i < 4; i++)
             {
                 GUI.color = dark;
-                GUI.DrawTexture(new Rect(cx - 3 * s, cy + 8 * s + i * 7 * s, 6 * s, 2 * s), Texture2D.whiteTexture);
+                UIShapes.Part(new Rect(cx - 3 * s, cy + 8 * s + i * 7 * s, 6 * s, 2 * s), GUI.color);
             }
             GUI.color = dark;
-            GUI.DrawTexture(new Rect(cx - 10 * s, cy - 26 * s, 20 * s, 16 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 10 * s, cy - 26 * s, 20 * s, 16 * s), GUI.color);
             GUI.color = light;
-            GUI.DrawTexture(new Rect(cx - 10 * s, cy - 24 * s, 8 * s, 8 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx + 2 * s, cy - 24 * s, 8 * s, 8 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 10 * s, cy - 24 * s, 8 * s, 8 * s), GUI.color);
+            UIShapes.Part(new Rect(cx + 2 * s, cy - 24 * s, 8 * s, 8 * s), GUI.color);
             GUI.color = new Color(0, 0, 0, a);
-            GUI.DrawTexture(new Rect(cx - 7 * s, cy - 22 * s, 3 * s, 3 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx + 4 * s, cy - 22 * s, 3 * s, 3 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 7 * s, cy - 22 * s, 3 * s, 3 * s), GUI.color);
+            UIShapes.Part(new Rect(cx + 4 * s, cy - 22 * s, 3 * s, 3 * s), GUI.color);
         }
 
         private static void PortraitBee(float cx, float cy, float s, Color body, Color dark, Color light, float a)
         {
             GUI.color = new Color(1f, 1f, 1f, 0.3f * a);
-            GUI.DrawTexture(new Rect(cx - 28 * s, cy - 24 * s, 20 * s, 14 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx + 8 * s, cy - 24 * s, 20 * s, 14 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 28 * s, cy - 24 * s, 20 * s, 14 * s), GUI.color);
+            UIShapes.Part(new Rect(cx + 8 * s, cy - 24 * s, 20 * s, 14 * s), GUI.color);
             GUI.color = body;
-            GUI.DrawTexture(new Rect(cx - 18 * s, cy - 14 * s, 36 * s, 26 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 18 * s, cy - 14 * s, 36 * s, 26 * s), GUI.color);
             GUI.color = new Color(0.1f, 0.1f, 0.05f, a);
             for (int i = 0; i < 3; i++)
-                GUI.DrawTexture(new Rect(cx - 16 * s, cy - 10 * s + i * 8 * s, 32 * s, 3 * s), Texture2D.whiteTexture);
+                UIShapes.Part(new Rect(cx - 16 * s, cy - 10 * s + i * 8 * s, 32 * s, 3 * s), GUI.color);
             GUI.color = dark;
-            GUI.DrawTexture(new Rect(cx - 8 * s, cy - 26 * s, 16 * s, 14 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 8 * s, cy - 26 * s, 16 * s, 14 * s), GUI.color);
             GUI.color = light;
-            GUI.DrawTexture(new Rect(cx - 5 * s, cy - 22 * s, 10 * s, 8 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 5 * s, cy - 22 * s, 10 * s, 8 * s), GUI.color);
             PortraitEyes(cx, cy - 22 * s, s, a);
             GUI.color = dark;
-            GUI.DrawTexture(new Rect(cx - 5 * s, cy - 36 * s, 2 * s, 12 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx + 3 * s, cy - 36 * s, 2 * s, 12 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 5 * s, cy - 36 * s, 2 * s, 12 * s), GUI.color);
+            UIShapes.Part(new Rect(cx + 3 * s, cy - 36 * s, 2 * s, 12 * s), GUI.color);
             GUI.color = new Color(0.2f, 0.15f, 0.1f, a);
-            GUI.DrawTexture(new Rect(cx - 2 * s, cy + 12 * s, 4 * s, 10 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 2 * s, cy + 12 * s, 4 * s, 10 * s), GUI.color);
             PortraitLegs(cx, cy + 2 * s, s, dark, 3, a);
         }
 
@@ -474,45 +552,45 @@ namespace InsectGame.UI
         {
             float glowPulse = 0.3f + Mathf.Sin(Time.time * 4f) * 0.2f;
             GUI.color = new Color(0.8f, 1f, 0.4f, glowPulse * a);
-            GUI.DrawTexture(new Rect(cx - 30 * s, cy - 30 * s, 60 * s, 60 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 30 * s, cy - 30 * s, 60 * s, 60 * s), GUI.color);
             GUI.color = dark;
-            GUI.DrawTexture(new Rect(cx - 14 * s, cy - 14 * s, 28 * s, 26 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 14 * s, cy - 14 * s, 28 * s, 26 * s), GUI.color);
             GUI.color = body;
-            GUI.DrawTexture(new Rect(cx - 11 * s, cy - 11 * s, 22 * s, 20 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 11 * s, cy - 11 * s, 22 * s, 20 * s), GUI.color);
             float glowIntensity = 0.6f + Mathf.Sin(Time.time * 4f) * 0.4f;
             GUI.color = new Color(0.9f, 1f, 0.3f, glowIntensity * a);
-            GUI.DrawTexture(new Rect(cx - 10 * s, cy + 6 * s, 20 * s, 12 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 10 * s, cy + 6 * s, 20 * s, 12 * s), GUI.color);
             GUI.color = dark;
-            GUI.DrawTexture(new Rect(cx - 8 * s, cy - 24 * s, 16 * s, 12 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 8 * s, cy - 24 * s, 16 * s, 12 * s), GUI.color);
             PortraitEyes(cx, cy - 20 * s, s, a);
             GUI.color = body;
-            GUI.DrawTexture(new Rect(cx - 5 * s, cy - 36 * s, 2 * s, 14 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx + 3 * s, cy - 36 * s, 2 * s, 14 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 5 * s, cy - 36 * s, 2 * s, 14 * s), GUI.color);
+            UIShapes.Part(new Rect(cx + 3 * s, cy - 36 * s, 2 * s, 14 * s), GUI.color);
             GUI.color = new Color(body.r, body.g, body.b, 0.25f * a);
-            GUI.DrawTexture(new Rect(cx - 22 * s, cy - 10 * s, 14 * s, 18 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx + 8 * s, cy - 10 * s, 14 * s, 18 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 22 * s, cy - 10 * s, 14 * s, 18 * s), GUI.color);
+            UIShapes.Part(new Rect(cx + 8 * s, cy - 10 * s, 14 * s, 18 * s), GUI.color);
             PortraitLegs(cx, cy + 4 * s, s, dark, 3, a);
         }
 
         private static void PortraitHornBeetle(float cx, float cy, float s, Color body, Color dark, Color light, float a)
         {
             GUI.color = dark;
-            GUI.DrawTexture(new Rect(cx - 26 * s, cy - 16 * s, 52 * s, 32 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 26 * s, cy - 16 * s, 52 * s, 32 * s), GUI.color);
             GUI.color = body;
-            GUI.DrawTexture(new Rect(cx - 22 * s, cy - 13 * s, 44 * s, 26 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 22 * s, cy - 13 * s, 44 * s, 26 * s), GUI.color);
             GUI.color = dark;
-            GUI.DrawTexture(new Rect(cx - 1 * s, cy - 13 * s, 2 * s, 26 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 1 * s, cy - 13 * s, 2 * s, 26 * s), GUI.color);
             GUI.color = dark;
-            GUI.DrawTexture(new Rect(cx - 12 * s, cy - 32 * s, 24 * s, 20 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 12 * s, cy - 32 * s, 24 * s, 20 * s), GUI.color);
             GUI.color = light;
-            GUI.DrawTexture(new Rect(cx - 9 * s, cy - 28 * s, 18 * s, 12 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 9 * s, cy - 28 * s, 18 * s, 12 * s), GUI.color);
             GUI.color = dark;
-            GUI.DrawTexture(new Rect(cx - 2 * s, cy - 52 * s, 4 * s, 24 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 2 * s, cy - 52 * s, 4 * s, 24 * s), GUI.color);
             GUI.color = body;
-            GUI.DrawTexture(new Rect(cx - 6 * s, cy - 54 * s, 5 * s, 5 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 6 * s, cy - 54 * s, 5 * s, 5 * s), GUI.color);
             GUI.color = dark;
-            GUI.DrawTexture(new Rect(cx - 14 * s, cy - 36 * s, 5 * s, 12 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx + 10 * s, cy - 36 * s, 5 * s, 12 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 14 * s, cy - 36 * s, 5 * s, 12 * s), GUI.color);
+            UIShapes.Part(new Rect(cx + 10 * s, cy - 36 * s, 5 * s, 12 * s), GUI.color);
             PortraitEyes(cx, cy - 24 * s, s, a);
             PortraitLegs(cx, cy, s, dark, 3, a);
         }
@@ -520,38 +598,38 @@ namespace InsectGame.UI
         private static void PortraitGenericBeetle(float cx, float cy, float s, Color body, Color dark, Color light, float a)
         {
             GUI.color = dark;
-            GUI.DrawTexture(new Rect(cx - 24 * s, cy - 18 * s, 48 * s, 30 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 24 * s, cy - 18 * s, 48 * s, 30 * s), GUI.color);
             GUI.color = body;
-            GUI.DrawTexture(new Rect(cx - 20 * s, cy - 15 * s, 40 * s, 24 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 20 * s, cy - 15 * s, 40 * s, 24 * s), GUI.color);
             GUI.color = dark;
-            GUI.DrawTexture(new Rect(cx - 1 * s, cy - 15 * s, 2 * s, 24 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 1 * s, cy - 15 * s, 2 * s, 24 * s), GUI.color);
             GUI.color = dark;
-            GUI.DrawTexture(new Rect(cx - 10 * s, cy - 30 * s, 20 * s, 16 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 10 * s, cy - 30 * s, 20 * s, 16 * s), GUI.color);
             GUI.color = light;
-            GUI.DrawTexture(new Rect(cx - 7 * s, cy - 27 * s, 14 * s, 10 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 7 * s, cy - 27 * s, 14 * s, 10 * s), GUI.color);
             PortraitEyes(cx, cy - 24 * s, s, a);
             GUI.color = body;
-            GUI.DrawTexture(new Rect(cx - 4 * s, cy - 42 * s, 2 * s, 14 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx + 2 * s, cy - 42 * s, 2 * s, 14 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 4 * s, cy - 42 * s, 2 * s, 14 * s), GUI.color);
+            UIShapes.Part(new Rect(cx + 2 * s, cy - 42 * s, 2 * s, 14 * s), GUI.color);
             GUI.color = light;
-            GUI.DrawTexture(new Rect(cx - 5 * s, cy - 44 * s, 4 * s, 4 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx + 2 * s, cy - 44 * s, 4 * s, 4 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 5 * s, cy - 44 * s, 4 * s, 4 * s), GUI.color);
+            UIShapes.Part(new Rect(cx + 2 * s, cy - 44 * s, 4 * s, 4 * s), GUI.color);
             PortraitLegs(cx, cy, s, dark, 3, a);
         }
 
         private static void PortraitCicada(float cx, float cy, float s, Color body, Color dark, Color light, float a)
         {
             GUI.color = new Color(body.r, body.g, body.b, 0.3f * a);
-            GUI.DrawTexture(new Rect(cx - 28 * s, cy - 6 * s, 22 * s, 24 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx + 6 * s, cy - 6 * s, 22 * s, 24 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 28 * s, cy - 6 * s, 22 * s, 24 * s), GUI.color);
+            UIShapes.Part(new Rect(cx + 6 * s, cy - 6 * s, 22 * s, 24 * s), GUI.color);
             GUI.color = dark;
-            GUI.DrawTexture(new Rect(cx - 18 * s, cy - 12 * s, 36 * s, 28 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 18 * s, cy - 12 * s, 36 * s, 28 * s), GUI.color);
             GUI.color = body;
-            GUI.DrawTexture(new Rect(cx - 15 * s, cy - 10 * s, 30 * s, 24 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 15 * s, cy - 10 * s, 30 * s, 24 * s), GUI.color);
             GUI.color = dark;
-            GUI.DrawTexture(new Rect(cx - 10 * s, cy - 24 * s, 20 * s, 14 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 10 * s, cy - 24 * s, 20 * s, 14 * s), GUI.color);
             GUI.color = light;
-            GUI.DrawTexture(new Rect(cx - 7 * s, cy - 20 * s, 14 * s, 8 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 7 * s, cy - 20 * s, 14 * s, 8 * s), GUI.color);
             PortraitEyes(cx, cy - 18 * s, s, a);
             PortraitLegs(cx, cy + 4 * s, s, dark, 3, a);
         }
@@ -559,101 +637,101 @@ namespace InsectGame.UI
         private static void PortraitAnt(float cx, float cy, float s, Color body, Color dark, Color light, float a)
         {
             GUI.color = dark;
-            GUI.DrawTexture(new Rect(cx - 9 * s, cy + 0 * s, 18 * s, 22 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 9 * s, cy + 0 * s, 18 * s, 22 * s), GUI.color);
             GUI.color = body;
-            GUI.DrawTexture(new Rect(cx - 7 * s, cy + 2 * s, 14 * s, 18 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 7 * s, cy + 2 * s, 14 * s, 18 * s), GUI.color);
             GUI.color = dark;
-            GUI.DrawTexture(new Rect(cx - 6 * s, cy - 8 * s, 12 * s, 12 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 6 * s, cy - 8 * s, 12 * s, 12 * s), GUI.color);
             GUI.color = body;
-            GUI.DrawTexture(new Rect(cx - 4 * s, cy - 6 * s, 8 * s, 8 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 4 * s, cy - 6 * s, 8 * s, 8 * s), GUI.color);
             GUI.color = dark;
-            GUI.DrawTexture(new Rect(cx - 10 * s, cy - 26 * s, 20 * s, 20 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 10 * s, cy - 26 * s, 20 * s, 20 * s), GUI.color);
             GUI.color = light;
-            GUI.DrawTexture(new Rect(cx - 7 * s, cy - 22 * s, 14 * s, 12 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 7 * s, cy - 22 * s, 14 * s, 12 * s), GUI.color);
             GUI.color = body;
-            GUI.DrawTexture(new Rect(cx - 2 * s, cy - 14 * s, 4 * s, 10 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 2 * s, cy - 14 * s, 4 * s, 10 * s), GUI.color);
             PortraitEyes(cx, cy - 20 * s, s, a);
             GUI.color = dark;
-            GUI.DrawTexture(new Rect(cx - 6 * s, cy - 40 * s, 2 * s, 16 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx + 4 * s, cy - 40 * s, 2 * s, 16 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 6 * s, cy - 40 * s, 2 * s, 16 * s), GUI.color);
+            UIShapes.Part(new Rect(cx + 4 * s, cy - 40 * s, 2 * s, 16 * s), GUI.color);
             PortraitLegs(cx, cy + 8 * s, s, dark, 3, a);
         }
 
         private static void PortraitCricket(float cx, float cy, float s, Color body, Color dark, Color light, float a)
         {
             GUI.color = dark;
-            GUI.DrawTexture(new Rect(cx - 14 * s, cy - 10 * s, 28 * s, 26 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 14 * s, cy - 10 * s, 28 * s, 26 * s), GUI.color);
             GUI.color = body;
-            GUI.DrawTexture(new Rect(cx - 12 * s, cy - 8 * s, 24 * s, 22 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 12 * s, cy - 8 * s, 24 * s, 22 * s), GUI.color);
             GUI.color = dark;
-            GUI.DrawTexture(new Rect(cx - 10 * s, cy - 24 * s, 20 * s, 16 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 10 * s, cy - 24 * s, 20 * s, 16 * s), GUI.color);
             GUI.color = light;
-            GUI.DrawTexture(new Rect(cx - 7 * s, cy - 20 * s, 14 * s, 10 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 7 * s, cy - 20 * s, 14 * s, 10 * s), GUI.color);
             PortraitEyes(cx, cy - 18 * s, s, a);
             GUI.color = dark;
-            GUI.DrawTexture(new Rect(cx - 26 * s, cy + 4 * s, 16 * s, 5 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx + 10 * s, cy + 4 * s, 16 * s, 5 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx - 30 * s, cy - 2 * s, 6 * s, 12 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx + 24 * s, cy - 2 * s, 6 * s, 12 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 26 * s, cy + 4 * s, 16 * s, 5 * s), GUI.color);
+            UIShapes.Part(new Rect(cx + 10 * s, cy + 4 * s, 16 * s, 5 * s), GUI.color);
+            UIShapes.Part(new Rect(cx - 30 * s, cy - 2 * s, 6 * s, 12 * s), GUI.color);
+            UIShapes.Part(new Rect(cx + 24 * s, cy - 2 * s, 6 * s, 12 * s), GUI.color);
             PortraitLegs(cx, cy + 4 * s, s, dark, 3, a);
         }
 
         private static void PortraitWaterStrider(float cx, float cy, float s, Color body, Color dark, Color light, float a)
         {
             GUI.color = dark;
-            GUI.DrawTexture(new Rect(cx - 5 * s, cy - 14 * s, 10 * s, 32 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 5 * s, cy - 14 * s, 10 * s, 32 * s), GUI.color);
             GUI.color = body;
-            GUI.DrawTexture(new Rect(cx - 4 * s, cy - 12 * s, 8 * s, 28 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 4 * s, cy - 12 * s, 8 * s, 28 * s), GUI.color);
             GUI.color = dark;
-            GUI.DrawTexture(new Rect(cx - 8 * s, cy - 22 * s, 16 * s, 12 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 8 * s, cy - 22 * s, 16 * s, 12 * s), GUI.color);
             GUI.color = light;
-            GUI.DrawTexture(new Rect(cx - 5 * s, cy - 18 * s, 10 * s, 6 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 5 * s, cy - 18 * s, 10 * s, 6 * s), GUI.color);
             PortraitEyes(cx, cy - 18 * s, s, a);
             GUI.color = dark;
-            GUI.DrawTexture(new Rect(cx - 34 * s, cy - 4 * s, 28 * s, 3 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx + 6 * s, cy - 4 * s, 28 * s, 3 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx - 30 * s, cy + 8 * s, 24 * s, 3 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx + 6 * s, cy + 8 * s, 24 * s, 3 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 34 * s, cy - 4 * s, 28 * s, 3 * s), GUI.color);
+            UIShapes.Part(new Rect(cx + 6 * s, cy - 4 * s, 28 * s, 3 * s), GUI.color);
+            UIShapes.Part(new Rect(cx - 30 * s, cy + 8 * s, 24 * s, 3 * s), GUI.color);
+            UIShapes.Part(new Rect(cx + 6 * s, cy + 8 * s, 24 * s, 3 * s), GUI.color);
             GUI.color = new Color(0.6f, 0.8f, 1f, 0.15f * a);
-            GUI.DrawTexture(new Rect(cx - 38 * s, cy + 12 * s, 76 * s, 6 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 38 * s, cy + 12 * s, 76 * s, 6 * s), GUI.color);
         }
 
         private static void PortraitDiving(float cx, float cy, float s, Color body, Color dark, Color light, float a)
         {
             GUI.color = dark;
-            GUI.DrawTexture(new Rect(cx - 20 * s, cy - 12 * s, 40 * s, 26 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 20 * s, cy - 12 * s, 40 * s, 26 * s), GUI.color);
             GUI.color = body;
-            GUI.DrawTexture(new Rect(cx - 17 * s, cy - 10 * s, 34 * s, 22 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 17 * s, cy - 10 * s, 34 * s, 22 * s), GUI.color);
             GUI.color = dark;
-            GUI.DrawTexture(new Rect(cx - 15 * s, cy - 6 * s, 30 * s, 10 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 15 * s, cy - 6 * s, 30 * s, 10 * s), GUI.color);
             GUI.color = dark;
-            GUI.DrawTexture(new Rect(cx - 10 * s, cy - 24 * s, 20 * s, 14 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 10 * s, cy - 24 * s, 20 * s, 14 * s), GUI.color);
             GUI.color = light;
-            GUI.DrawTexture(new Rect(cx - 7 * s, cy - 20 * s, 14 * s, 8 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 7 * s, cy - 20 * s, 14 * s, 8 * s), GUI.color);
             PortraitEyes(cx, cy - 18 * s, s, a);
             GUI.color = dark;
-            GUI.DrawTexture(new Rect(cx - 24 * s, cy + 6 * s, 14 * s, 8 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx + 10 * s, cy + 6 * s, 14 * s, 8 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 24 * s, cy + 6 * s, 14 * s, 8 * s), GUI.color);
+            UIShapes.Part(new Rect(cx + 10 * s, cy + 6 * s, 14 * s, 8 * s), GUI.color);
             PortraitLegs(cx, cy + 2 * s, s, dark, 3, a);
         }
 
         private static void PortraitJewel(float cx, float cy, float s, Color body, Color dark, Color light, float a)
         {
             GUI.color = dark;
-            GUI.DrawTexture(new Rect(cx - 20 * s, cy - 12 * s, 40 * s, 28 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 20 * s, cy - 12 * s, 40 * s, 28 * s), GUI.color);
             GUI.color = body;
-            GUI.DrawTexture(new Rect(cx - 17 * s, cy - 10 * s, 34 * s, 24 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 17 * s, cy - 10 * s, 34 * s, 24 * s), GUI.color);
             Color shimmer = new Color(Mathf.Min(1, body.r + 0.25f), Mathf.Min(1, body.g + 0.3f), Mathf.Min(1, body.b + 0.2f), a * 0.7f);
             float shimPulse = 0.4f + Mathf.Sin(Time.time * 3f) * 0.2f;
             GUI.color = new Color(shimmer.r, shimmer.g, shimmer.b, shimPulse * a);
-            GUI.DrawTexture(new Rect(cx - 14 * s, cy - 8 * s, 13 * s, 18 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx + 1 * s, cy - 8 * s, 13 * s, 18 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 14 * s, cy - 8 * s, 13 * s, 18 * s), GUI.color);
+            UIShapes.Part(new Rect(cx + 1 * s, cy - 8 * s, 13 * s, 18 * s), GUI.color);
             GUI.color = dark;
-            GUI.DrawTexture(new Rect(cx - 1 * s, cy - 10 * s, 2 * s, 24 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 1 * s, cy - 10 * s, 2 * s, 24 * s), GUI.color);
             GUI.color = dark;
-            GUI.DrawTexture(new Rect(cx - 10 * s, cy - 26 * s, 20 * s, 16 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 10 * s, cy - 26 * s, 20 * s, 16 * s), GUI.color);
             GUI.color = light;
-            GUI.DrawTexture(new Rect(cx - 7 * s, cy - 22 * s, 14 * s, 10 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 7 * s, cy - 22 * s, 14 * s, 10 * s), GUI.color);
             PortraitEyes(cx, cy - 20 * s, s, a);
             PortraitLegs(cx, cy + 4 * s, s, dark, 3, a);
         }
@@ -662,59 +740,59 @@ namespace InsectGame.UI
         {
             // 배 (큰 원)
             GUI.color = new Color(body.r, body.g, body.b, alpha);
-            GUI.DrawTexture(new Rect(cx - 16 * s, cy + 2 * s, 32 * s, 26 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 16 * s, cy + 2 * s, 32 * s, 26 * s), GUI.color);
             // 가슴 (작은 원)
             GUI.color = new Color(dark.r, dark.g, dark.b, alpha);
-            GUI.DrawTexture(new Rect(cx - 8 * s, cy - 10 * s, 16 * s, 14 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 8 * s, cy - 10 * s, 16 * s, 14 * s), GUI.color);
             GUI.color = new Color(light.r, light.g, light.b, alpha);
-            GUI.DrawTexture(new Rect(cx - 6 * s, cy - 8 * s, 12 * s, 10 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 6 * s, cy - 8 * s, 12 * s, 10 * s), GUI.color);
             // 8개 다리 (좌우 4쌍)
             GUI.color = new Color(dark.r, dark.g, dark.b, alpha);
             for (int i = 0; i < 4; i++)
             {
                 float ly = cy - 4 * s + i * 6 * s;
-                GUI.DrawTexture(new Rect(cx - 36 * s + i * 4 * s, ly, 20 * s, 2 * s), Texture2D.whiteTexture);
-                GUI.DrawTexture(new Rect(cx + 16 * s - i * 4 * s, ly, 20 * s, 2 * s), Texture2D.whiteTexture);
+                UIShapes.Part(new Rect(cx - 36 * s + i * 4 * s, ly, 20 * s, 2 * s), GUI.color);
+                UIShapes.Part(new Rect(cx + 16 * s - i * 4 * s, ly, 20 * s, 2 * s), GUI.color);
             }
             // 8눈 (2열)
             GUI.color = new Color(1f, 0f, 0f, 0.8f * alpha);
-            GUI.DrawTexture(new Rect(cx - 5 * s, cy - 16 * s, 3 * s, 3 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx + 2 * s, cy - 16 * s, 3 * s, 3 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx - 7 * s, cy - 12 * s, 2 * s, 2 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx - 3 * s, cy - 12 * s, 2 * s, 2 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx + 1 * s, cy - 12 * s, 2 * s, 2 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx + 5 * s, cy - 12 * s, 2 * s, 2 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 5 * s, cy - 16 * s, 3 * s, 3 * s), GUI.color);
+            UIShapes.Part(new Rect(cx + 2 * s, cy - 16 * s, 3 * s, 3 * s), GUI.color);
+            UIShapes.Part(new Rect(cx - 7 * s, cy - 12 * s, 2 * s, 2 * s), GUI.color);
+            UIShapes.Part(new Rect(cx - 3 * s, cy - 12 * s, 2 * s, 2 * s), GUI.color);
+            UIShapes.Part(new Rect(cx + 1 * s, cy - 12 * s, 2 * s, 2 * s), GUI.color);
+            UIShapes.Part(new Rect(cx + 5 * s, cy - 12 * s, 2 * s, 2 * s), GUI.color);
             // 배 무늬
             GUI.color = new Color(dark.r, dark.g, dark.b, 0.5f * alpha);
-            GUI.DrawTexture(new Rect(cx - 10 * s, cy + 10 * s, 20 * s, 3 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx - 8 * s, cy + 18 * s, 16 * s, 3 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 10 * s, cy + 10 * s, 20 * s, 3 * s), GUI.color);
+            UIShapes.Part(new Rect(cx - 8 * s, cy + 18 * s, 16 * s, 3 * s), GUI.color);
         }
 
         private static void PortraitGrasshopper(float cx, float cy, float s, Color body, Color dark, Color light, float alpha)
         {
             // 긴 몸통
             GUI.color = new Color(dark.r, dark.g, dark.b, alpha);
-            GUI.DrawTexture(new Rect(cx - 10 * s, cy - 14 * s, 20 * s, 36 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 10 * s, cy - 14 * s, 20 * s, 36 * s), GUI.color);
             GUI.color = new Color(body.r, body.g, body.b, alpha);
-            GUI.DrawTexture(new Rect(cx - 8 * s, cy - 12 * s, 16 * s, 32 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 8 * s, cy - 12 * s, 16 * s, 32 * s), GUI.color);
             // 머리
             GUI.color = new Color(dark.r, dark.g, dark.b, alpha);
-            GUI.DrawTexture(new Rect(cx - 10 * s, cy - 28 * s, 20 * s, 16 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 10 * s, cy - 28 * s, 20 * s, 16 * s), GUI.color);
             GUI.color = new Color(light.r, light.g, light.b, alpha);
-            GUI.DrawTexture(new Rect(cx - 7 * s, cy - 24 * s, 14 * s, 10 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 7 * s, cy - 24 * s, 14 * s, 10 * s), GUI.color);
             PortraitEyes(cx, cy - 22 * s, s, alpha);
             // 큰 뒷다리 (V자)
             GUI.color = new Color(body.r, body.g, body.b, alpha);
-            GUI.DrawTexture(new Rect(cx - 28 * s, cy - 4 * s, 20 * s, 5 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx + 8 * s, cy - 4 * s, 20 * s, 5 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx - 32 * s, cy + 2 * s, 6 * s, 18 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx + 26 * s, cy + 2 * s, 6 * s, 18 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 28 * s, cy - 4 * s, 20 * s, 5 * s), GUI.color);
+            UIShapes.Part(new Rect(cx + 8 * s, cy - 4 * s, 20 * s, 5 * s), GUI.color);
+            UIShapes.Part(new Rect(cx - 32 * s, cy + 2 * s, 6 * s, 18 * s), GUI.color);
+            UIShapes.Part(new Rect(cx + 26 * s, cy + 2 * s, 6 * s, 18 * s), GUI.color);
             // 앞다리
             PortraitLegs(cx, cy + 6 * s, s, dark, 2, alpha);
             // 더듬이
             GUI.color = new Color(dark.r, dark.g, dark.b, alpha);
-            GUI.DrawTexture(new Rect(cx - 6 * s, cy - 42 * s, 2 * s, 16 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx + 4 * s, cy - 42 * s, 2 * s, 16 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 6 * s, cy - 42 * s, 2 * s, 16 * s), GUI.color);
+            UIShapes.Part(new Rect(cx + 4 * s, cy - 42 * s, 2 * s, 16 * s), GUI.color);
         }
 
         private static void PortraitLadybug(float cx, float cy, float s, Color body, Color dark, Color light, float alpha)
@@ -722,20 +800,20 @@ namespace InsectGame.UI
             // 빨간 반원 몸체
             Color red = new Color(0.9f, 0.15f, 0.1f, alpha);
             GUI.color = red;
-            GUI.DrawTexture(new Rect(cx - 22 * s, cy - 10 * s, 44 * s, 28 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 22 * s, cy - 10 * s, 44 * s, 28 * s), GUI.color);
             // 중앙선
             GUI.color = new Color(dark.r, dark.g, dark.b, alpha);
-            GUI.DrawTexture(new Rect(cx - 1 * s, cy - 10 * s, 2 * s, 28 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 1 * s, cy - 10 * s, 2 * s, 28 * s), GUI.color);
             // 검은 점 5개
             GUI.color = new Color(0.05f, 0.05f, 0.05f, alpha);
-            GUI.DrawTexture(new Rect(cx - 14 * s, cy - 4 * s, 6 * s, 6 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx + 8 * s, cy - 4 * s, 6 * s, 6 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx - 16 * s, cy + 8 * s, 6 * s, 6 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx + 10 * s, cy + 8 * s, 6 * s, 6 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx - 4 * s, cy + 4 * s, 8 * s, 6 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 14 * s, cy - 4 * s, 6 * s, 6 * s), GUI.color);
+            UIShapes.Part(new Rect(cx + 8 * s, cy - 4 * s, 6 * s, 6 * s), GUI.color);
+            UIShapes.Part(new Rect(cx - 16 * s, cy + 8 * s, 6 * s, 6 * s), GUI.color);
+            UIShapes.Part(new Rect(cx + 10 * s, cy + 8 * s, 6 * s, 6 * s), GUI.color);
+            UIShapes.Part(new Rect(cx - 4 * s, cy + 4 * s, 8 * s, 6 * s), GUI.color);
             // 검은 머리
             GUI.color = new Color(dark.r, dark.g, dark.b, alpha);
-            GUI.DrawTexture(new Rect(cx - 10 * s, cy - 24 * s, 20 * s, 16 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 10 * s, cy - 24 * s, 20 * s, 16 * s), GUI.color);
             PortraitEyes(cx, cy - 20 * s, s, alpha);
             PortraitLegs(cx, cy + 6 * s, s, dark, 3, alpha);
         }
@@ -747,22 +825,22 @@ namespace InsectGame.UI
             {
                 float my = cy - 20 * s + i * 12 * s;
                 GUI.color = (i % 2 == 0) ? new Color(body.r, body.g, body.b, alpha) : new Color(dark.r, dark.g, dark.b, alpha);
-                GUI.DrawTexture(new Rect(cx - 8 * s, my, 16 * s, 10 * s), Texture2D.whiteTexture);
+                UIShapes.Part(new Rect(cx - 8 * s, my, 16 * s, 10 * s), GUI.color);
                 // 각 마디에 짧은 다리
                 GUI.color = new Color(dark.r, dark.g, dark.b, alpha);
-                GUI.DrawTexture(new Rect(cx - 18 * s, my + 2 * s, 10 * s, 3 * s), Texture2D.whiteTexture);
-                GUI.DrawTexture(new Rect(cx + 8 * s, my + 2 * s, 10 * s, 3 * s), Texture2D.whiteTexture);
+                UIShapes.Part(new Rect(cx - 18 * s, my + 2 * s, 10 * s, 3 * s), GUI.color);
+                UIShapes.Part(new Rect(cx + 8 * s, my + 2 * s, 10 * s, 3 * s), GUI.color);
             }
             // 머리 + 집게
             GUI.color = new Color(dark.r, dark.g, dark.b, alpha);
-            GUI.DrawTexture(new Rect(cx - 10 * s, cy - 34 * s, 20 * s, 16 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 10 * s, cy - 34 * s, 20 * s, 16 * s), GUI.color);
             GUI.color = new Color(light.r, light.g, light.b, alpha);
-            GUI.DrawTexture(new Rect(cx - 7 * s, cy - 30 * s, 14 * s, 10 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 7 * s, cy - 30 * s, 14 * s, 10 * s), GUI.color);
             PortraitEyes(cx, cy - 28 * s, s, alpha);
             // 집게
             GUI.color = new Color(body.r, body.g, body.b, alpha);
-            GUI.DrawTexture(new Rect(cx - 12 * s, cy - 42 * s, 4 * s, 10 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx + 8 * s, cy - 42 * s, 4 * s, 10 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 12 * s, cy - 42 * s, 4 * s, 10 * s), GUI.color);
+            UIShapes.Part(new Rect(cx + 8 * s, cy - 42 * s, 4 * s, 10 * s), GUI.color);
         }
 
         private static void PortraitCaterpillar(float cx, float cy, float s, Color body, Color dark, Color light, float alpha)
@@ -774,74 +852,74 @@ namespace InsectGame.UI
                 float size = (i == 0) ? 14 * s : 12 * s;
                 Color segCol = (i % 2 == 0) ? body : new Color(body.r * 0.8f, body.g * 1.1f, body.b * 0.8f, 1f);
                 GUI.color = new Color(segCol.r, segCol.g, segCol.b, alpha);
-                GUI.DrawTexture(new Rect(cx - size * 0.5f, my, size, size), Texture2D.whiteTexture);
+                UIShapes.Part(new Rect(cx - size * 0.5f, my, size, size), GUI.color);
                 // 짧은 다리들
                 GUI.color = new Color(dark.r, dark.g, dark.b, alpha);
-                GUI.DrawTexture(new Rect(cx - size * 0.5f - 4 * s, my + 3 * s, 4 * s, 3 * s), Texture2D.whiteTexture);
-                GUI.DrawTexture(new Rect(cx + size * 0.5f, my + 3 * s, 4 * s, 3 * s), Texture2D.whiteTexture);
+                UIShapes.Part(new Rect(cx - size * 0.5f - 4 * s, my + 3 * s, 4 * s, 3 * s), GUI.color);
+                UIShapes.Part(new Rect(cx + size * 0.5f, my + 3 * s, 4 * s, 3 * s), GUI.color);
             }
             // 큰 눈 (머리 위)
             GUI.color = new Color(dark.r, dark.g, dark.b, alpha);
-            GUI.DrawTexture(new Rect(cx - 10 * s, cy - 28 * s, 20 * s, 18 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 10 * s, cy - 28 * s, 20 * s, 18 * s), GUI.color);
             GUI.color = new Color(light.r, light.g, light.b, alpha);
-            GUI.DrawTexture(new Rect(cx - 7 * s, cy - 24 * s, 14 * s, 12 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 7 * s, cy - 24 * s, 14 * s, 12 * s), GUI.color);
             // 큰 눈
             GUI.color = new Color(1f, 1f, 1f, alpha);
-            GUI.DrawTexture(new Rect(cx - 7 * s, cy - 24 * s, 6 * s, 8 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx + 1 * s, cy - 24 * s, 6 * s, 8 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 7 * s, cy - 24 * s, 6 * s, 8 * s), GUI.color);
+            UIShapes.Part(new Rect(cx + 1 * s, cy - 24 * s, 6 * s, 8 * s), GUI.color);
             GUI.color = new Color(0f, 0f, 0f, alpha);
-            GUI.DrawTexture(new Rect(cx - 4 * s, cy - 21 * s, 3 * s, 3 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx + 3 * s, cy - 21 * s, 3 * s, 3 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 4 * s, cy - 21 * s, 3 * s, 3 * s), GUI.color);
+            UIShapes.Part(new Rect(cx + 3 * s, cy - 21 * s, 3 * s, 3 * s), GUI.color);
             // 더듬이
             GUI.color = new Color(body.r, body.g, body.b, alpha);
-            GUI.DrawTexture(new Rect(cx - 6 * s, cy - 38 * s, 2 * s, 12 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx + 4 * s, cy - 38 * s, 2 * s, 12 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 6 * s, cy - 38 * s, 2 * s, 12 * s), GUI.color);
+            UIShapes.Part(new Rect(cx + 4 * s, cy - 38 * s, 2 * s, 12 * s), GUI.color);
         }
 
         private static void PortraitStickInsect(float cx, float cy, float s, Color body, Color dark, Color light, float alpha)
         {
             // 매우 가느다란 직선 몸
             GUI.color = new Color(dark.r, dark.g, dark.b, alpha);
-            GUI.DrawTexture(new Rect(cx - 3 * s, cy - 30 * s, 6 * s, 60 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 3 * s, cy - 30 * s, 6 * s, 60 * s), GUI.color);
             GUI.color = new Color(body.r, body.g, body.b, alpha);
-            GUI.DrawTexture(new Rect(cx - 2 * s, cy - 28 * s, 4 * s, 56 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 2 * s, cy - 28 * s, 4 * s, 56 * s), GUI.color);
             // 머리
             GUI.color = new Color(dark.r, dark.g, dark.b, alpha);
-            GUI.DrawTexture(new Rect(cx - 5 * s, cy - 38 * s, 10 * s, 10 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 5 * s, cy - 38 * s, 10 * s, 10 * s), GUI.color);
             PortraitEyes(cx, cy - 36 * s, s * 0.7f, alpha);
             // 가는 다리 3쌍
             GUI.color = new Color(dark.r, dark.g, dark.b, alpha);
             for (int i = 0; i < 3; i++)
             {
                 float ly = cy - 16 * s + i * 16 * s;
-                GUI.DrawTexture(new Rect(cx - 24 * s, ly, 20 * s, 2 * s), Texture2D.whiteTexture);
-                GUI.DrawTexture(new Rect(cx + 4 * s, ly, 20 * s, 2 * s), Texture2D.whiteTexture);
+                UIShapes.Part(new Rect(cx - 24 * s, ly, 20 * s, 2 * s), GUI.color);
+                UIShapes.Part(new Rect(cx + 4 * s, ly, 20 * s, 2 * s), GUI.color);
             }
             // 더듬이
             GUI.color = new Color(body.r, body.g, body.b, alpha);
-            GUI.DrawTexture(new Rect(cx - 4 * s, cy - 50 * s, 2 * s, 14 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx + 2 * s, cy - 50 * s, 2 * s, 14 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 4 * s, cy - 50 * s, 2 * s, 14 * s), GUI.color);
+            UIShapes.Part(new Rect(cx + 2 * s, cy - 50 * s, 2 * s, 14 * s), GUI.color);
         }
 
         private static void PortraitFly(float cx, float cy, float s, Color body, Color dark, Color light, float alpha)
         {
             // 작은 몸
             GUI.color = new Color(dark.r, dark.g, dark.b, alpha);
-            GUI.DrawTexture(new Rect(cx - 8 * s, cy - 6 * s, 16 * s, 20 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 8 * s, cy - 6 * s, 16 * s, 20 * s), GUI.color);
             GUI.color = new Color(body.r, body.g, body.b, alpha);
-            GUI.DrawTexture(new Rect(cx - 6 * s, cy - 4 * s, 12 * s, 16 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 6 * s, cy - 4 * s, 12 * s, 16 * s), GUI.color);
             // 거대한 빨간 눈 (원 2개)
             GUI.color = new Color(0.8f, 0.1f, 0.05f, alpha);
-            GUI.DrawTexture(new Rect(cx - 16 * s, cy - 24 * s, 14 * s, 14 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx + 2 * s, cy - 24 * s, 14 * s, 14 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 16 * s, cy - 24 * s, 14 * s, 14 * s), GUI.color);
+            UIShapes.Part(new Rect(cx + 2 * s, cy - 24 * s, 14 * s, 14 * s), GUI.color);
             // 눈 하이라이트
             GUI.color = new Color(1f, 1f, 1f, 0.4f * alpha);
-            GUI.DrawTexture(new Rect(cx - 12 * s, cy - 22 * s, 4 * s, 4 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx + 6 * s, cy - 22 * s, 4 * s, 4 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 12 * s, cy - 22 * s, 4 * s, 4 * s), GUI.color);
+            UIShapes.Part(new Rect(cx + 6 * s, cy - 22 * s, 4 * s, 4 * s), GUI.color);
             // 투명 날개 2장
             GUI.color = new Color(light.r, light.g, light.b, 0.25f * alpha);
-            GUI.DrawTexture(new Rect(cx - 30 * s, cy - 14 * s, 22 * s, 16 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx + 8 * s, cy - 14 * s, 22 * s, 16 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 30 * s, cy - 14 * s, 22 * s, 16 * s), GUI.color);
+            UIShapes.Part(new Rect(cx + 8 * s, cy - 14 * s, 22 * s, 16 * s), GUI.color);
             PortraitLegs(cx, cy + 4 * s, s, dark, 3, alpha);
         }
 
@@ -849,138 +927,121 @@ namespace InsectGame.UI
         {
             // 둥근 몸
             GUI.color = new Color(dark.r, dark.g, dark.b, alpha);
-            GUI.DrawTexture(new Rect(cx - 20 * s, cy - 14 * s, 40 * s, 30 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 20 * s, cy - 14 * s, 40 * s, 30 * s), GUI.color);
             GUI.color = new Color(body.r, body.g, body.b, alpha);
-            GUI.DrawTexture(new Rect(cx - 17 * s, cy - 12 * s, 34 * s, 26 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 17 * s, cy - 12 * s, 34 * s, 26 * s), GUI.color);
             // 마디 줄 4개
             GUI.color = new Color(dark.r, dark.g, dark.b, 0.4f * alpha);
             for (int i = 0; i < 4; i++)
             {
                 float ly = cy - 8 * s + i * 6 * s;
-                GUI.DrawTexture(new Rect(cx - 15 * s, ly, 30 * s, 2 * s), Texture2D.whiteTexture);
+                UIShapes.Part(new Rect(cx - 15 * s, ly, 30 * s, 2 * s), GUI.color);
             }
             // 머리
             GUI.color = new Color(dark.r, dark.g, dark.b, alpha);
-            GUI.DrawTexture(new Rect(cx - 10 * s, cy - 24 * s, 20 * s, 12 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 10 * s, cy - 24 * s, 20 * s, 12 * s), GUI.color);
             PortraitEyes(cx, cy - 20 * s, s, alpha);
             // 작은 다리들
             GUI.color = new Color(dark.r, dark.g, dark.b, alpha);
             for (int i = 0; i < 5; i++)
             {
                 float lx = cx - 14 * s + i * 7 * s;
-                GUI.DrawTexture(new Rect(lx, cy + 16 * s, 4 * s, 6 * s), Texture2D.whiteTexture);
+                UIShapes.Part(new Rect(lx, cy + 16 * s, 4 * s, 6 * s), GUI.color);
             }
             // 더듬이
-            GUI.DrawTexture(new Rect(cx - 6 * s, cy - 34 * s, 2 * s, 12 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx + 4 * s, cy - 34 * s, 2 * s, 12 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 6 * s, cy - 34 * s, 2 * s, 12 * s), GUI.color);
+            UIShapes.Part(new Rect(cx + 4 * s, cy - 34 * s, 2 * s, 12 * s), GUI.color);
         }
 
         private static void PortraitLonghorn(float cx, float cy, float s, Color body, Color dark, Color light, float alpha)
         {
             // 딱정벌레 몸체
             GUI.color = new Color(dark.r, dark.g, dark.b, alpha);
-            GUI.DrawTexture(new Rect(cx - 20 * s, cy - 12 * s, 40 * s, 28 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 20 * s, cy - 12 * s, 40 * s, 28 * s), GUI.color);
             GUI.color = new Color(body.r, body.g, body.b, alpha);
-            GUI.DrawTexture(new Rect(cx - 17 * s, cy - 10 * s, 34 * s, 24 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 17 * s, cy - 10 * s, 34 * s, 24 * s), GUI.color);
             // 딱지날개 중앙선
             GUI.color = new Color(dark.r, dark.g, dark.b, alpha);
-            GUI.DrawTexture(new Rect(cx - 1 * s, cy - 10 * s, 2 * s, 24 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 1 * s, cy - 10 * s, 2 * s, 24 * s), GUI.color);
             // 머리
-            GUI.DrawTexture(new Rect(cx - 10 * s, cy - 26 * s, 20 * s, 16 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 10 * s, cy - 26 * s, 20 * s, 16 * s), GUI.color);
             GUI.color = new Color(light.r, light.g, light.b, alpha);
-            GUI.DrawTexture(new Rect(cx - 7 * s, cy - 22 * s, 14 * s, 10 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 7 * s, cy - 22 * s, 14 * s, 10 * s), GUI.color);
             PortraitEyes(cx, cy - 20 * s, s, alpha);
             // 초장 더듬이 2개 (몸보다 긴 라인)
             GUI.color = new Color(dark.r, dark.g, dark.b, alpha);
-            GUI.DrawTexture(new Rect(cx - 8 * s, cy - 58 * s, 2 * s, 34 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx + 6 * s, cy - 58 * s, 2 * s, 34 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 8 * s, cy - 58 * s, 2 * s, 34 * s), GUI.color);
+            UIShapes.Part(new Rect(cx + 6 * s, cy - 58 * s, 2 * s, 34 * s), GUI.color);
             // 더듬이 끝 구부림
-            GUI.DrawTexture(new Rect(cx - 14 * s, cy - 60 * s, 8 * s, 2 * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx + 6 * s, cy - 60 * s, 8 * s, 2 * s), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 14 * s, cy - 60 * s, 8 * s, 2 * s), GUI.color);
+            UIShapes.Part(new Rect(cx + 6 * s, cy - 60 * s, 8 * s, 2 * s), GUI.color);
             PortraitLegs(cx, cy + 4 * s, s, dark, 3, alpha);
         }
 
         private void DrawMiniIVBar(float x, float y, float w, string label, int iv, float alpha)
         {
-            GUIStyle lbl = new GUIStyle(GUI.skin.label) { fontSize = 19 };
-            lbl.normal.textColor = new Color(0.55f, 0.55f, 0.55f, alpha);
-            GUI.Label(new Rect(x, y, 50, 22), label, lbl);
+            ivLblStyleCache.normal.textColor = new Color(IvLblBase.r, IvLblBase.g, IvLblBase.b, alpha);
+            GUI.Label(new Rect(x, y, 50, 22), label, ivLblStyleCache);
 
             float barX = x + 52;
             float barW = w - 90;
             float barH = 14f;
 
             GUI.color = new Color(0.15f, 0.15f, 0.2f, alpha);
-            GUI.DrawTexture(new Rect(barX, y + 4, barW, barH), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(barX, y + 4, barW, barH), GUI.color);
 
             float ratio = iv / (float)PlayerInsectData.MaxIV;
             Color bc = GetIVBarColor(iv);
             GUI.color = new Color(bc.r, bc.g, bc.b, alpha);
-            GUI.DrawTexture(new Rect(barX, y + 4, barW * ratio, barH), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(barX, y + 4, barW * ratio, barH), GUI.color);
             GUI.color = Color.white;
 
-            GUIStyle vs = new GUIStyle(GUI.skin.label)
-            { fontSize = 19, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleRight };
-            vs.normal.textColor = new Color(bc.r, bc.g, bc.b, alpha);
-            GUI.Label(new Rect(barX + barW + 6, y, 34, 22), $"{iv}", vs);
+            ivVsStyleCache.normal.textColor = new Color(bc.r, bc.g, bc.b, alpha);
+            UIHelper.LabelFit(new Rect(barX + barW + 6, y, 34, 22), $"{iv}", ivVsStyleCache);
         }
 
         public static void DrawInsectPortrait(float cx, float cy, InsectRarity rarity, float alpha)
         {
-            Color col = GetRarityColor(rarity);
+            Color col = UITheme.Instance.GetInsectRarityColor(rarity);
             Color bodyCol = new Color(col.r, col.g, col.b, alpha);
             Color darkCol = new Color(col.r * 0.6f, col.g * 0.6f, col.b * 0.6f, alpha);
             Color lightCol = new Color(
                 Mathf.Min(1, col.r + 0.3f), Mathf.Min(1, col.g + 0.3f), Mathf.Min(1, col.b + 0.3f), alpha);
 
             GUI.color = new Color(bodyCol.r, bodyCol.g, bodyCol.b, 0.15f * alpha);
-            GUI.DrawTexture(new Rect(cx - 40, cy - 40, 80, 80), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 40, cy - 40, 80, 80), GUI.color);
 
             GUI.color = darkCol;
-            GUI.DrawTexture(new Rect(cx - 24, cy - 18, 48, 28), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 24, cy - 18, 48, 28), GUI.color);
             GUI.color = bodyCol;
-            GUI.DrawTexture(new Rect(cx - 20, cy - 15, 40, 22), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 20, cy - 15, 40, 22), GUI.color);
             GUI.color = darkCol;
-            GUI.DrawTexture(new Rect(cx - 10, cy - 30, 20, 16), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 10, cy - 30, 20, 16), GUI.color);
             GUI.color = lightCol;
-            GUI.DrawTexture(new Rect(cx - 7, cy - 27, 14, 10), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 7, cy - 27, 14, 10), GUI.color);
             GUI.color = new Color(1, 1, 1, alpha);
-            GUI.DrawTexture(new Rect(cx - 6, cy - 24, 4, 4), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx + 2, cy - 24, 4, 4), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 6, cy - 24, 4, 4), GUI.color);
+            UIShapes.Part(new Rect(cx + 2, cy - 24, 4, 4), GUI.color);
             GUI.color = bodyCol;
-            GUI.DrawTexture(new Rect(cx - 2, cy - 42, 2, 14), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx + 2, cy - 42, 2, 14), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 2, cy - 42, 2, 14), GUI.color);
+            UIShapes.Part(new Rect(cx + 2, cy - 42, 2, 14), GUI.color);
             GUI.color = lightCol;
-            GUI.DrawTexture(new Rect(cx - 4, cy - 44, 3, 3), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx + 3, cy - 44, 3, 3), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 4, cy - 44, 3, 3), GUI.color);
+            UIShapes.Part(new Rect(cx + 3, cy - 44, 3, 3), GUI.color);
             GUI.color = darkCol;
-            GUI.DrawTexture(new Rect(cx - 18, cy + 10, 8, 12), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx - 6, cy + 10, 8, 14), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx + 4, cy + 10, 8, 14), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx + 12, cy + 10, 8, 12), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 18, cy + 10, 8, 12), GUI.color);
+            UIShapes.Part(new Rect(cx - 6, cy + 10, 8, 14), GUI.color);
+            UIShapes.Part(new Rect(cx + 4, cy + 10, 8, 14), GUI.color);
+            UIShapes.Part(new Rect(cx + 12, cy + 10, 8, 12), GUI.color);
             GUI.color = new Color(col.r, col.g, col.b, 0.3f * alpha);
-            GUI.DrawTexture(new Rect(cx - 30, cy - 8, 6, 18), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(cx + 26, cy - 8, 6, 18), Texture2D.whiteTexture);
+            UIShapes.Part(new Rect(cx - 30, cy - 8, 6, 18), GUI.color);
+            UIShapes.Part(new Rect(cx + 26, cy - 8, 6, 18), GUI.color);
             GUI.color = Color.white;
-        }
-
-        [System.Obsolete("Use UITheme.Instance.GetInsectRarityColor() instead")]
-        public static Color GetRarityColor(InsectRarity rarity)
-        {
-            switch (rarity)
-            {
-                case InsectRarity.Common: return new Color(0.55f, 0.45f, 0.3f);
-                case InsectRarity.Uncommon: return new Color(0.3f, 0.8f, 0.3f);
-                case InsectRarity.Rare: return new Color(0.3f, 0.5f, 0.95f);
-                case InsectRarity.Epic: return new Color(0.75f, 0.3f, 0.95f);
-                case InsectRarity.Legendary: return new Color(1f, 0.8f, 0.2f);
-                default: return Color.gray;
-            }
         }
 
         public static Color GetInsectColor(string insectId, InsectRarity rarity)
         {
-            if (string.IsNullOrEmpty(insectId)) return GetRarityColor(rarity);
+            if (string.IsNullOrEmpty(insectId)) return UITheme.Instance.GetInsectRarityColor(rarity);
 
             uint hash = 0;
             for (int i = 0; i < insectId.Length; i++)

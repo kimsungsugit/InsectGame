@@ -1,0 +1,463 @@
+using InsectGame.Core;
+using InsectGame.Data;
+using InsectGame.Spawning;
+using UnityEngine;
+
+namespace InsectGame.NPC
+{
+    /// <summary>
+    /// 곤충 잡는 아이 NPC 상태머신.
+    /// Idle(1~3s) → Wander(속도 2.5) → 스캔(KidSpotRadius):
+    ///   Rare+ → Watch(2~4s 정지, 곤충 주시) / Common·Uncommon → 예약 성공 시 Approach(속도 3.5, 5s 타임아웃)
+    /// → 거리 1.2m → CatchSwing(0.6s) → 성공 시 SetEngaged(true)+Despawn() → Celebrate(1.5s 점프)
+    /// → 쿨다운(kidCatchCooldownSeconds) → Idle. 실패/재검증 탈락 → GiveUp(1s 두리번) → Idle.
+    /// 개별 Update 없음 — NpcManager가 TickAI(0.25s 자체 스로틀)/TickMovement를 호출.
+    /// </summary>
+    public class CatcherKidNpc : MonoBehaviour
+    {
+        private enum State { Idle, Wander, Watch, Approach, CatchSwing, Celebrate, GiveUp }
+
+        private const float AiInterval = 0.25f;
+        private const float WanderSpeed = 2.5f;
+        private const float ApproachSpeed = 3.5f;
+        private const float ApproachTimeout = 5f;
+        private const float CatchDistance = 1.2f;
+        private const float SwingDuration = 0.6f;
+        private const float CelebrateDuration = 1.5f;
+        private const float GiveUpDuration = 1f;
+        private const float ArriveDistance = 0.3f;
+        private const float TurnSpeed = 620f;
+        // 지면 스텝 클램프 — 이보다 큰 Y 급변(건물 지붕/상판)은 지면으로 인정하지 않음
+        private const float MaxGroundStep = 0.75f;
+
+        private NpcManager manager;
+        private string npcId;
+        private Vector3 anchorPosition;
+        private float wanderRadius = 8f;
+
+        private State state = State.Idle;
+        private float stateEndTime;
+        private Vector3 wanderTarget;
+        private InsectEntity targetInsect;    // Approach/CatchSwing 대상 (예약 보유)
+        private InsectEntity watchInsect;     // Watch 대상 (예약 없음 — 구경만)
+        // 직전에 구경한 개체. 재스캔에서 제외해 Watch→Idle→Watch 고착을 끊는다.
+        // Wander를 한 번 거치면 해제되므로 같은 곤충을 나중에 다시 볼 수는 있다.
+        private InsectEntity lastWatchedInsect;
+        private float cooldownUntilTime;
+        private float groundY;
+        private float baseYaw;                // GiveUp 두리번 기준 방향
+        private float lastAiTime = float.MinValue;
+        private System.Random rng;
+        private NpcWalkAnimator animator;
+
+        // ── 대결(듀얼) ──
+        // 아이가 방금 잡은 곤충이 그대로 대결 상대가 된다. 아직 아무것도 못 잡았으면
+        // NpcDuelController가 리전 풀에서 골라 채운다(SetDuelInsect).
+        private InsectData duelInsect;
+        private int duelLevel = 1;
+        private float duelCooldownUntil;
+        private string displayName = "곤충잡이 아이";
+
+        public string NpcId => npcId;
+        public string DisplayName => displayName;
+        public InsectData DuelInsect => duelInsect;
+        public int DuelLevel => duelLevel;
+
+        /// <summary>
+        /// 지금 도전을 받을 수 있는가. 곤충을 쫓는 중(Approach/CatchSwing)에는 말을 걸 수 없고,
+        /// 대결 직후에는 쿨다운이 끝나야 다시 붙을 수 있다(연속 파밍 차단).
+        /// </summary>
+        public bool CanChallenge(float time)
+        {
+            return duelInsect != null
+                && time >= duelCooldownUntil
+                && state != State.Approach
+                && state != State.CatchSwing
+                && gameObject.activeInHierarchy;
+        }
+
+        /// <summary>대결 상대 곤충 지정 — 아직 아무것도 잡지 못한 아이를 채울 때 쓴다.</summary>
+        public void SetDuelInsect(InsectData data, int level)
+        {
+            if (data == null) return;
+            duelInsect = data;
+            duelLevel = Mathf.Max(1, level);
+        }
+
+        public void SetDisplayName(string value)
+        {
+            if (!string.IsNullOrEmpty(value)) displayName = value;
+        }
+
+        /// <summary>대결이 끝났음을 알린다 — 결과와 무관하게 재도전 쿨다운을 건다.</summary>
+        public void MarkDuelFinished(float time, float cooldownSeconds)
+        {
+            duelCooldownUntil = time + Mathf.Max(0f, cooldownSeconds);
+        }
+
+        /// <summary>NpcManager가 스폰 직후 호출.</summary>
+        public void Initialize(NpcManager owner, NpcSpawnAnchor anchor, string id, int seed)
+        {
+            manager = owner;
+            npcId = id;
+            anchorPosition = anchor != null ? anchor.position : transform.position;
+            wanderRadius = anchor != null ? anchor.wanderRadius : 8f;
+            rng = new System.Random(seed);
+            animator = new NpcWalkAnimator(transform);
+            groundY = transform.position.y;
+            state = State.Idle;
+            stateEndTime = 0f;
+            cooldownUntilTime = 0f;
+        }
+
+        /// <summary>상태 결정 틱 — 0.25s 주기 자체 스로틀. NpcManager 라운드로빈이 호출.</summary>
+        public void TickAI(float time)
+        {
+            if (time - lastAiTime < AiInterval) return;
+            lastAiTime = time;
+            if (rng == null || manager == null) return;
+
+            SampleGround();
+
+            switch (state)
+            {
+                case State.Idle:
+                    if (TryScanForInsect(time)) break;
+                    if (time >= stateEndTime)
+                    {
+                        wanderTarget = PickWanderTarget();
+                        state = State.Wander;
+                        stateEndTime = time + 8f; // Wander 안전 타임아웃
+                    }
+                    break;
+
+                case State.Wander:
+                    if (TryScanForInsect(time)) break;
+                    if (time >= stateEndTime)
+                    {
+                        // 배회를 완주한 뒤에야 직전 구경 대상을 다시 볼 수 있게 푼다.
+                        // Wander 진입 시점에 풀면 이 케이스의 스캔이 곧바로 같은 곤충을
+                        // 다시 잡아 제자리 Watch로 되돌아간다(고착 재발).
+                        lastWatchedInsect = null;
+                        EnterIdle(time);
+                    }
+                    break;
+
+                case State.Watch:
+                    // 구경 중 — 대상이 사라지면 조기 복귀
+                    if (watchInsect == null || !watchInsect.gameObject.activeInHierarchy || time >= stateEndTime)
+                    {
+                        watchInsect = null;
+                        EnterIdle(time);
+                    }
+                    break;
+
+                case State.Approach:
+                    TickApproach(time);
+                    break;
+
+                case State.CatchSwing:
+                    if (time >= stateEndTime)
+                        ResolveCatch(time);
+                    break;
+
+                case State.Celebrate:
+                    if (time >= stateEndTime)
+                        EnterIdle(time);
+                    break;
+
+                case State.GiveUp:
+                    if (time >= stateEndTime)
+                        EnterIdle(time);
+                    break;
+            }
+        }
+
+        /// <summary>이동/애니 틱 — 플레이어 40m 이내에서만 매 프레임 호출.</summary>
+        public void TickMovement(float dt, float time)
+        {
+            if (animator == null) return;
+
+            bool walking = false;
+            switch (state)
+            {
+                case State.Wander:
+                    walking = MoveTowards(wanderTarget, WanderSpeed, dt);
+                    if (!walking) EnterIdle(time);
+                    break;
+
+                case State.Approach:
+                    if (targetInsect != null)
+                        walking = MoveTowards(targetInsect.transform.position, ApproachSpeed, dt);
+                    break;
+
+                case State.Watch:
+                    if (watchInsect != null) FaceTowards(watchInsect.transform.position);
+                    break;
+
+                case State.Celebrate:
+                {
+                    // 점프 모션 — 남은 시간 기반 sin 바운스
+                    float elapsed = CelebrateDuration - (stateEndTime - time);
+                    Vector3 pos = transform.position;
+                    pos.y = groundY + Mathf.Abs(Mathf.Sin(elapsed * 8f)) * 0.3f;
+                    transform.position = pos;
+                    break;
+                }
+
+                case State.GiveUp:
+                {
+                    // 두리번 — 기준 방향 좌우로 고개(몸) 회전
+                    float yaw = baseYaw + Mathf.Sin(time * 5f) * 55f;
+                    transform.rotation = Quaternion.Euler(0f, yaw, 0f);
+                    break;
+                }
+            }
+
+            animator.Tick(time, dt, walking);
+        }
+
+        // ── 스캔: 반경 내 최근접 곤충 기준 Watch(Rare+) / Approach(Common·Uncommon) 분기 ──
+        private bool TryScanForInsect(float time)
+        {
+            if (time < cooldownUntilTime) return false;
+
+            var insects = manager.ActiveInsects;
+            if (insects == null) return false;
+
+            // 잡기 후보와 구경 후보를 따로 고른다. 한 루프에서 최근접 하나만 뽑으면
+            // (a) Rare+가 최근접일 때 그 뒤의 잡을 수 있는 Common이 bestSq에 밀려 영영
+            // 가려지고, (b) Watch가 끝나 Idle로 돌아와도 같은 Rare가 여전히 최근접이라
+            // Watch→Idle→Watch로 영구 고착된다(그 곤충이 60m 밖으로 사라질 때까지).
+            InsectEntity bestCatch = null, bestWatch = null;
+            float radiusSq = NpcCatchRules.KidSpotRadius * NpcCatchRules.KidSpotRadius;
+            float bestCatchSq = radiusSq, bestWatchSq = radiusSq;
+            Vector3 myPos = transform.position;
+
+            for (int i = 0; i < insects.Count; i++)
+            {
+                InsectEntity e = insects[i];
+                if (e == null || !e.gameObject.activeInHierarchy || e.Data == null) continue;
+                // **수문장은 아이의 대상이 아니다.** 잡아가면 그 리전이 영구히 안 열린다
+                // (격파 판정은 수문장 개체를 이겼을 때만 선다). 등급 필터로는 못 막는다 —
+                // 초원 수문장 사마귀가 Uncommon이라 ShouldWatchOnly에 안 걸린다.
+                if (e.IsGuardian) continue;
+                float sq = (e.transform.position - myPos).sqrMagnitude;
+
+                if (NpcCatchRules.ShouldWatchOnly(e.Data.rarity))
+                {
+                    // 방금 구경한 개체는 건너뛴다 — 안 그러면 같은 곤충을 무한히 다시 본다.
+                    if (e == lastWatchedInsect) continue;
+                    if (sq >= bestWatchSq) continue;
+                    bestWatchSq = sq;
+                    bestWatch = e;
+                }
+                else if (NpcCatchRules.CanKidTarget(e.Data.rarity, e.CanBeEngaged,
+                    manager.DistanceFromPlayer(e.transform.position), manager.IsReserved(e)))
+                {
+                    if (sq >= bestCatchSq) continue;
+                    bestCatchSq = sq;
+                    bestCatch = e;
+                }
+            }
+
+            // 잡을 수 있는 게 있으면 그쪽이 우선 — Rare가 시야를 막지 않는다.
+            if (bestCatch == null)
+            {
+                if (bestWatch == null) return false;
+                // Rare 이상 — 정지하고 구경만 (2~4s)
+                watchInsect = bestWatch;
+                lastWatchedInsect = bestWatch;
+                state = State.Watch;
+                stateEndTime = time + RandomRange(2f, 4f);
+                return true;
+            }
+
+            InsectEntity best = bestCatch;
+            if (manager.TryReserveInsect(best))
+            {
+                targetInsect = best;
+                state = State.Approach;
+                stateEndTime = time + ApproachTimeout;
+                return true;
+            }
+            return false;
+        }
+
+        // ── Approach: 매 TickAI 재검증 (스펙: !CanBeEngaged 또는 플레이어 근접 시 포기) ──
+        private void TickApproach(float time)
+        {
+            if (targetInsect == null || !targetInsect.gameObject.activeInHierarchy
+                || !targetInsect.CanBeEngaged
+                || manager.DistanceFromPlayer(targetInsect.transform.position) < NpcCatchRules.PlayerClaimRadius
+                || time >= stateEndTime)
+            {
+                EnterGiveUp(time);
+                return;
+            }
+
+            Vector3 to = targetInsect.transform.position - transform.position;
+            to.y = 0f;
+            if (to.sqrMagnitude <= CatchDistance * CatchDistance)
+            {
+                FaceTowards(targetInsect.transform.position);
+                if (animator != null) animator.PlaySwing();
+                state = State.CatchSwing;
+                stateEndTime = time + SwingDuration;
+            }
+        }
+
+        // ── 스윙 종료: CanBeEngaged 최종 확인 → SetEngaged(true) 직후 Despawn() ──
+        private void ResolveCatch(float time)
+        {
+            InsectEntity caught = targetInsect;
+            bool success = caught != null && caught.gameObject.activeInHierarchy && caught.CanBeEngaged;
+
+            // ABA 방어: 스윙(0.6s) 중 대상이 외부 요인(서브에리어 진입/원거리 디스폰)으로 풀에
+            // 반환되고 같은 인스턴스가 '다른 곤충'으로 재초기화되면 위 두 체크를 통과한다.
+            // 재활용 개체는 새 스폰 지점으로 순간이동해 있으므로 거리 재확인이 이를 차단하고,
+            // 레어도/플레이어 근접 재확인으로 스윙 창 동안의 규칙 위반도 막는다.
+            if (success)
+            {
+                Vector3 to = caught.transform.position - transform.position;
+                to.y = 0f;
+                float maxSq = CatchDistance * 1.5f * (CatchDistance * 1.5f);
+                success = to.sqrMagnitude <= maxSq
+                    && caught.Data != null
+                    && !NpcCatchRules.ShouldWatchOnly(caught.Data.rarity)
+                    && manager.DistanceFromPlayer(caught.transform.position) >= NpcCatchRules.PlayerClaimRadius;
+            }
+
+            if (success)
+            {
+                // 방금 잡은 곤충이 이 아이의 대결 상대가 된다 — Despawn 전에 스냅샷을 뜬다
+                // (Despawn은 풀에 반환하므로 이후 caught.Data는 다른 곤충으로 바뀔 수 있다).
+                duelInsect = caught.Data;
+                duelLevel = Mathf.Max(1, caught.Level);
+
+                caught.SetEngaged(true);   // 도주 차단 상태로 고정 후
+                caught.Despawn();          // 스포너 알림 + 풀 반환 (다중 호출 가드 내장)
+                manager.ReleaseInsect(caught);
+                targetInsect = null;
+                state = State.Celebrate;
+                stateEndTime = time + CelebrateDuration;
+                cooldownUntilTime = time + manager.KidCatchCooldownSeconds;
+            }
+            else
+            {
+                EnterGiveUp(time);
+            }
+        }
+
+        private void EnterGiveUp(float time)
+        {
+            if (targetInsect != null)
+            {
+                manager.ReleaseInsect(targetInsect);
+                targetInsect = null;
+            }
+            baseYaw = transform.eulerAngles.y;
+            state = State.GiveUp;
+            stateEndTime = time + GiveUpDuration;
+        }
+
+        private void EnterIdle(float time)
+        {
+            // Celebrate 점프 잔여 Y 복귀
+            Vector3 pos = transform.position;
+            pos.y = groundY;
+            transform.position = pos;
+            watchInsect = null;
+            state = State.Idle;
+            stateEndTime = time + RandomRange(1f, 3f);
+        }
+
+        /// <summary>목표 지점으로 XZ 이동. 도착/통행 불가면 false(=걷기 종료) 반환.</summary>
+        private bool MoveTowards(Vector3 target, float speed, float dt)
+        {
+            Vector3 to = target - transform.position;
+            to.y = 0f;
+            float dist = to.magnitude;
+            if (dist <= ArriveDistance) return false;
+
+            Vector3 dir = to / dist;
+            if (IsBlockedAhead(dir, speed * dt)) return false; // 벽 관통 방지 — Wander는 Idle 복귀, Approach는 타임아웃→GiveUp
+
+            Vector3 pos = transform.position + dir * (speed * dt);
+            pos.y = groundY;
+            transform.position = pos;
+            RotateTowards(dir, dt);
+            return true;
+        }
+
+        /// <summary>진행 방향에 통행 불가 콜라이더(건물 벽 등)가 있는지 — 벽 관통 방지.</summary>
+        private bool IsBlockedAhead(Vector3 dir, float step)
+        {
+            if (!Physics.Raycast(transform.position + Vector3.up * 0.5f, dir,
+                    out RaycastHit hit, step + 0.35f, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore))
+                return false;
+            if (hit.transform.IsChildOf(transform)) return false;
+            // 곤충 엔티티는 통과 허용 (PlayerMovement.IsBlockedPosition 관례) — 접근/포획 대상이므로
+            if (hit.collider.GetComponentInParent<InsectEntity>() != null) return false;
+            return true;
+        }
+
+        private Vector3 PickWanderTarget()
+        {
+            float angle = (float)(rng.NextDouble() * Mathf.PI * 2.0);
+            float radius = (float)(rng.NextDouble()) * wanderRadius;
+            return new Vector3(
+                anchorPosition.x + Mathf.Sin(angle) * radius,
+                groundY,
+                anchorPosition.z + Mathf.Cos(angle) * radius);
+        }
+
+        private void SampleGround()
+        {
+            // 본인 콜라이더는 트리거(NpcVisualBuilder)라 Ignore로 자동 제외 — raycast 1회/tick
+            if (Physics.Raycast(transform.position + Vector3.up * 3f, Vector3.down,
+                    out RaycastHit hit, 8f, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore))
+            {
+                // 스텝 클램프: 건물 지붕/상판(급격한 Y 상승)을 지면으로 오인하면 NPC가
+                // 지붕 위로 워프한다 — 정상 지형 경사(틱당 이동량 이내)만 수용.
+                if (!hit.transform.IsChildOf(transform)
+                    && Mathf.Abs(hit.point.y - groundY) <= MaxGroundStep)
+                    groundY = hit.point.y;
+            }
+        }
+
+        private void FaceTowards(Vector3 worldPos)
+        {
+            Vector3 dir = worldPos - transform.position;
+            dir.y = 0f;
+            if (dir.sqrMagnitude > 0.0004f)
+                transform.rotation = Quaternion.LookRotation(dir.normalized, Vector3.up);
+        }
+
+        private void RotateTowards(Vector3 dir, float dt)
+        {
+            Quaternion target = Quaternion.LookRotation(dir, Vector3.up);
+            transform.rotation = Quaternion.RotateTowards(transform.rotation, target, TurnSpeed * dt);
+        }
+
+        private float RandomRange(float min, float max)
+        {
+            return min + (float)rng.NextDouble() * (max - min);
+        }
+
+        private void OnDisable()
+        {
+            // ApplyTuning 축소로 비활성화되거나 파괴될 때 예약 잔존 방지
+            if (manager != null && targetInsect != null)
+            {
+                manager.ReleaseInsect(targetInsect);
+                targetInsect = null;
+            }
+        }
+
+        private void OnDestroy()
+        {
+            NpcVisualBuilder.CleanupMaterials(transform);
+        }
+    }
+}

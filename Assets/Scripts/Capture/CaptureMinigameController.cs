@@ -1,5 +1,6 @@
 using InsectGame.Data;
 using InsectGame.Spawning;
+using InsectGame.UI;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -44,6 +45,45 @@ namespace InsectGame.Capture
         private float itemTimeMult = 1f;
         private float itemCaptureBonus;
 
+        // OnGUI 스타일 캐시 — 옛은 매 프레임 6개 new GUIStyle (라인 244/279/288/309/318/337).
+        // 콤보 별은 loop 안이라 매 프레임 최대 3개 추가 → 60 FPS × 6~9 = 360~540회/초 회귀.
+        // textColor가 동적인 스타일(title/phase/result)은 베이스만 캐시 후 textColor 매번 할당.
+        private GUIStyle titleStyleCache;
+        private GUIStyle phaseStyleCache;
+        private GUIStyle starStyleCache;
+        private GUIStyle captureBtnCache;
+        private GUIStyle cancelBtnCache;
+        private GUIStyle resultStyleCache;
+        private bool stylesInitialized;
+
+        private void InitMinigameStyles()
+        {
+            if (stylesInitialized) return;
+            stylesInitialized = true;
+
+            int titleSize = UIScale.IsMobileLayout ? 30 : 20;
+            int phaseSize = UIScale.IsMobileLayout ? 24 : 16;
+            int buttonSize = UIScale.IsMobileLayout ? 25 : 18;
+            titleStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = titleSize, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+
+            phaseStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = phaseSize, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+
+            starStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 26, alignment = TextAnchor.MiddleCenter };
+            starStyleCache.normal.textColor = Color.green;
+
+            captureBtnCache = new GUIStyle(GUI.skin.button)
+            { fontSize = buttonSize, fontStyle = FontStyle.Bold };
+
+            cancelBtnCache = new GUIStyle(GUI.skin.button)
+            { fontSize = UIScale.IsMobileLayout ? 23 : 16 };
+
+            resultStyleCache = new GUIStyle(GUI.skin.label)
+            { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+        }
+
         public void StartMinigame(InsectEntity target)
         {
             StartMinigame(target, 1f, 1f, 1f, 0f);
@@ -51,7 +91,16 @@ namespace InsectGame.Capture
 
         public void StartMinigame(InsectEntity target, float speedMult, float zoneMult, float timeMult, float captureBonus)
         {
+            // 수문장 포획 금지의 단일 출처. CaptureChoiceUI의 버튼/키 분기에만 있었는데 근접·레이캐스트·
+            // 입력 컨트롤러 세 경로는 여기로 바로 들어온다 — 수문장을 잡아 버리면 표식 개체가
+            // 사라져 격파 판정이 영영 서지 못한다.
+            if (target != null && target.IsGuardian)
+            {
+                Debug.Log("[Capture] 수문장은 포획할 수 없다 — 배틀로만 격파한다");
+                return;
+            }
             currentTarget = target;
+            if (target != null) target.SetEngaged(true); // 미니게임 중 — 곤충 도주 방지
             isActive = true;
             if (playerMovement != null) playerMovement.SetFrozen(true);
             resultTimer = 0f;
@@ -102,14 +151,11 @@ namespace InsectGame.Capture
 
             if (!isActive) return;
 
-            if (Input.GetKeyDown(KeyCode.E) || Input.GetKeyDown(KeyCode.Space)
-                || Input.GetKeyDown(KeyCode.Tab) || Input.GetKeyDown(KeyCode.Return))
-                wantConfirm = true;
-            if (Input.GetKeyDown(KeyCode.Escape))
-                wantCancel = true;
-            if (Input.GetMouseButtonDown(0))
-                wantConfirm = true;
-
+            // 입력은 OnGUI 이벤트 패스(KeyDown/MouseDown)에서만 wantConfirm/wantCancel를 세팅한다.
+            // 옛은 여기서 Input.GetKeyDown/GetMouseButtonDown 폴링으로도 세팅 → 같은 누름을 Update(폴링)+
+            // OnGUI(이벤트)가 이중 큐잉, 프레임당 1회만 소비돼 누름 1회당 ConfirmCapture가 2회 실행됨.
+            // 두 번째가 BeginPhase 직후 cursor=0에서 항상 miss→FinishCapture로 즉시 종료 → 3단계 콤보·
+            // 퍼펙트 타이밍 보너스 영구 불가였음. 단일 입력 소스(OnGUI)로 통일.
             if (wantConfirm) { wantConfirm = false; ConfirmCapture(); }
             if (wantCancel) { wantCancel = false; CancelCapture(); return; }
 
@@ -150,13 +196,12 @@ namespace InsectGame.Capture
 
         private void FinishCapture()
         {
-            float timing01 = comboHits >= 3 ? 0.5f :
-                             comboHits >= 2 ? 0.45f :
-                             comboHits >= 1 ? 0.3f : 0.1f;
+            float timing01 = CaptureMinigameProbability.GetTiming01(comboHits);
+            float extraBonus = CaptureMinigameProbability.GetExtraBonus(comboHits, itemCaptureBonus);
 
             if (captureController != null && currentTarget != null)
             {
-                captureController.AttemptCapture(currentTarget, timing01, itemCaptureBonus);
+                captureController.AttemptCapture(currentTarget, timing01, extraBonus);
 
                 if (comboHits >= 3)
                     ShowResult("PERFECT!", true);
@@ -188,9 +233,17 @@ namespace InsectGame.Capture
             isActive = false;
             phase = Phase.Done;
             hits = 0;
+            if (currentTarget != null) currentTarget.SetEngaged(false); // 미니게임 종료 — 도주 가능 상태 복귀
             currentTarget = null;
             if (panelRoot != null) panelRoot.SetActive(false);
             if (playerMovement != null) playerMovement.SetFrozen(false);
+        }
+
+        private void OnDisable()
+        {
+            // 외부에서 컴포넌트 disable되어도 isActive/playerMovement.frozen이 잔존하지 않도록 보장.
+            // 옛은 OnDisable 없음 → 씬 전환 시 player가 영구 멈춤 + 다음 활성화 시 OnGUI 미니게임 잔존.
+            if (isActive) StopMinigame();
         }
 
         private void OnGUI()
@@ -215,42 +268,58 @@ namespace InsectGame.Capture
 
                 if (evt != null && evt.type == EventType.MouseDown && evt.button == 0)
                 {
-                    wantConfirm = true;
+                    // 어디든 탭=확정(누름 기반이라 반응성 좋음). 단 취소 버튼 영역은 제외(취소만 발화).
+                    // 캡처 버튼의 MouseUp은 더 이상 확정을 세팅하지 않아(시각 전용) 단일 탭당 ConfirmCapture
+                    // 가 정확히 1회 — 옛은 MouseDown(누름)+버튼 MouseUp(뗌)이 이중확정돼 페이즈 직후 cursor≈0
+                    // 에서 MISS로 즉시 종료, 3단계 콤보·퍼펙트 보너스 영구 불가였음. (취소 rect는 가상 좌표,
+                    // evt.mousePosition은 Begin 전이라 raw → Scale로 나눠 가상좌표로 변환.)
+                    Vector2 vp = evt.mousePosition / Mathf.Max(0.3f, UIScale.Scale);
+                    if (!cancelButtonRect.Contains(vp))
+                        wantConfirm = true;
                 }
             }
 
-            if (resultTimer > 0f && resultMessage != null)
-                DrawResult();
-
-            if (!isActive) return;
-            DrawMinigame();
+            if (resultTimer <= 0f && !isActive) return;
+            UIScale.Begin();
+            if (resultTimer > 0f && resultMessage != null) DrawResult();
+            if (isActive) DrawMinigame();
+            UIScale.End();
         }
+
+        // 취소 버튼 가상 rect — 전역 MouseDown 확정에서 취소 영역을 제외하기 위해 직전 DrawMinigame에서 갱신.
+        private Rect cancelButtonRect;
 
         private void DrawMinigame()
         {
-            float panelW = 500f;
-            float panelH = 220f;
-            float x = (Screen.width - panelW) / 2f;
-            float y = Screen.height * 0.28f;
+            bool mobile = UIScale.IsMobileLayout;
+            float panelW = mobile ? Mathf.Min(900f, UIScale.ContentWidth(28f)) : 500f;
+            float panelH = UISafeLayout.ClampHeight(mobile ? 340f : 220f);
+            float x = (UIScale.VirtualScreenWidth - panelW) / 2f;
+            // 화면 상단 1/4 근처 비율 배치 — 단 안전 영역 밖으로는 나가지 않는다.
+            float y = Mathf.Clamp(
+                UIScale.VirtualScreenHeight * (mobile ? 0.24f : 0.28f),
+                UISafeLayout.ContentTop,
+                Mathf.Max(UISafeLayout.ContentTop, UISafeLayout.ContentBottom - panelH));
 
             GUI.color = new Color(0, 0, 0, 0.88f);
             GUI.DrawTexture(new Rect(x, y, panelW, panelH), Texture2D.whiteTexture);
 
-            string targetName = currentTarget != null && currentTarget.Data != null
-                ? currentTarget.Data.displayName : "???";
+            // 지워진 개체는 포획 전까지 본명을 감춘다(`CaptureChoiceUI`와 같은 이유·같은 출처).
+            string targetName = currentTarget != null
+                ? currentTarget.DisplayNameForPlayer : "???";
             string rarityName = currentTarget != null && currentTarget.Data != null
                 ? currentTarget.Data.rarity.ToString() : "";
 
-            GUIStyle titleStyle = new GUIStyle(GUI.skin.label)
-            { fontSize = 20, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            titleStyle.normal.textColor = GetRarityGUIColor();
+            InitMinigameStyles();
+            titleStyleCache.normal.textColor = GetRarityGUIColor();
             GUI.color = Color.white;
-            GUI.Label(new Rect(x, y + 8, panelW, 30), $"{targetName} [{rarityName}]", titleStyle);
+            GUI.Label(new Rect(x, y + (mobile ? 14f : 8f), panelW, mobile ? 44f : 30f),
+                $"{targetName} [{rarityName}]", titleStyleCache);
 
             float barX = x + 30;
-            float barY = y + 48;
+            float barY = y + (mobile ? 72f : 48f);
             float barW = panelW - 60;
-            float barH = 40;
+            float barH = mobile ? 64f : 40f;
 
             GUI.color = new Color(0.15f, 0.15f, 0.15f, 1f);
             GUI.DrawTexture(new Rect(barX, barY, barW, barH), Texture2D.whiteTexture);
@@ -276,24 +345,19 @@ namespace InsectGame.Capture
             GUI.DrawTexture(new Rect(cursorX, barY - 4, 6, barH + 8), Texture2D.whiteTexture);
 
             GUI.color = Color.white;
-            GUIStyle phaseStyle = new GUIStyle(GUI.skin.label)
-            { fontSize = 16, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             string phaseLabel = phase == Phase.Attempt1 ? "1st" :
                                phase == Phase.Attempt2 ? "2nd - Faster!" : "FINAL!";
-            phaseStyle.normal.textColor = phase == Phase.Attempt3 ? Color.yellow : Color.white;
-            GUI.Label(new Rect(x, barY + barH + 4, panelW, 22), phaseLabel, phaseStyle);
+            phaseStyleCache.normal.textColor = phase == Phase.Attempt3 ? Color.yellow : Color.white;
+            GUI.Label(new Rect(x, barY + barH + 4, panelW, mobile ? 34f : 22f), phaseLabel, phaseStyleCache);
 
             for (int i = 0; i < comboHits && i < 3; i++)
             {
-                GUIStyle starStyle = new GUIStyle(GUI.skin.label)
-                { fontSize = 26, alignment = TextAnchor.MiddleCenter };
-                starStyle.normal.textColor = Color.green;
                 float starX = x + panelW / 2f - 45 + i * 30;
-                GUI.Label(new Rect(starX, barY + barH + 22, 28, 28), "*", starStyle);
+                UIHelper.LabelFit(new Rect(starX, barY + barH + 22, 28, 28), "*", starStyleCache);
             }
 
             float timerRatio = Mathf.Clamp01(timer / timeLimit);
-            float timerBarY = y + panelH - 60;
+            float timerBarY = y + panelH - (mobile ? 100f : 60f);
             GUI.color = new Color(0.3f, 0.3f, 0.3f, 1f);
             GUI.DrawTexture(new Rect(barX, timerBarY, barW, 8), Texture2D.whiteTexture);
             Color timerColor = timerRatio > 0.4f ? new Color(0.2f, 0.7f, 1f) :
@@ -302,22 +366,19 @@ namespace InsectGame.Capture
             GUI.DrawTexture(new Rect(barX, timerBarY, barW * timerRatio, 8), Texture2D.whiteTexture);
 
             GUI.color = Color.white;
-            float btnY = y + panelH - 42;
-            float btnW = 140f;
-            float btnH = 34f;
+            float btnY = y + panelH - (mobile ? 80f : 42f);
+            float btnW = mobile ? (panelW - 90f) * 0.5f : 140f;
+            float btnH = mobile ? 64f : 34f;
 
-            GUIStyle captureBtn = new GUIStyle(GUI.skin.button)
-            { fontSize = 18, fontStyle = FontStyle.Bold };
             GUI.backgroundColor = new Color(0.2f, 0.8f, 0.3f);
-            if (GUI.Button(new Rect(x + panelW / 2f - btnW - 10, btnY, btnW, btnH), "포획! [Space/클릭]", captureBtn))
-            {
-                wantConfirm = true;
-            }
+            string captureText = mobile ? "지금 포획!" : "포획! [Space/클릭]";
+            // 시각 전용 — 확정은 전역 MouseDown(누름)이 처리(버튼 MouseUp 이중확정 차단).
+            GUI.Button(new Rect(x + panelW / 2f - btnW - 10, btnY, btnW, btnH), captureText, captureBtnCache);
 
             GUI.backgroundColor = new Color(0.6f, 0.2f, 0.2f);
-            GUIStyle cancelBtn = new GUIStyle(GUI.skin.button)
-            { fontSize = 16 };
-            if (GUI.Button(new Rect(x + panelW / 2f + 10, btnY, btnW, btnH), "취소 [ESC]", cancelBtn))
+            string cancelText = mobile ? "취소" : "취소 [ESC]";
+            cancelButtonRect = new Rect(x + panelW / 2f + 10, btnY, btnW, btnH);
+            if (GUI.Button(cancelButtonRect, cancelText, cancelBtnCache))
             {
                 wantCancel = true;
             }
@@ -327,27 +388,27 @@ namespace InsectGame.Capture
         private void DrawResult()
         {
             float alpha = Mathf.Clamp01(resultTimer / 0.3f);
-            float cx = Screen.width / 2f;
-            float baseY = Screen.height * 0.18f;
+            float cx = UIScale.VirtualScreenWidth / 2f;
+            float baseY = UIScale.VirtualScreenHeight * 0.18f;
 
             float progress = 1f - (resultTimer / 1.5f);
             float bounce = 1f + Mathf.Sin(progress * Mathf.PI) * 0.15f;
             int fontSize = (int)(42 * bounce);
 
-            GUIStyle style = new GUIStyle(GUI.skin.label)
-            { fontSize = fontSize, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            style.normal.textColor = resultSuccess
+            InitMinigameStyles();
+            resultStyleCache.fontSize = fontSize; // fontSize는 bounce에 따라 동적
+            resultStyleCache.normal.textColor = resultSuccess
                 ? new Color(0.3f, 1f, 0.5f, alpha)
                 : new Color(1f, 0.4f, 0.3f, alpha);
 
             float w = 400;
             GUI.color = new Color(1, 1, 1, alpha);
-            GUI.Label(new Rect(cx - w / 2f, baseY, w, 60), resultMessage, style);
+            GUI.Label(new Rect(cx - w / 2f, baseY, w, 60), resultMessage, resultStyleCache);
 
             if (resultSuccess)
             {
                 float glowSize = 120f + progress * 60f;
-                Color glowCol = style.normal.textColor;
+                Color glowCol = resultStyleCache.normal.textColor;
                 GUI.color = new Color(glowCol.r, glowCol.g, glowCol.b, 0.08f * alpha);
                 GUI.DrawTexture(new Rect(cx - glowSize / 2, baseY + 30 - glowSize / 2, glowSize, glowSize), Texture2D.whiteTexture);
             }

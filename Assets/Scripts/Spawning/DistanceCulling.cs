@@ -15,6 +15,12 @@ namespace InsectGame.Spawning
             cachedRenderers = GetComponentsInChildren<Renderer>(true);
         }
 
+        /// <summary>컬링 기준 타깃(보통 플레이어) 주입 — NpcManager 등 런타임 생성 객체가 사용.</summary>
+        public void SetTarget(Transform t)
+        {
+            target = t;
+        }
+
         private void Update()
         {
             if (target == null)

@@ -14,19 +14,28 @@ namespace InsectGame.Dex
                 return new DexSaveData();
             }
 
-            string json = File.ReadAllText(path);
-            return JsonUtility.FromJson<DexSaveData>(json) ?? new DexSaveData();
+            try
+            {
+                string json = File.ReadAllText(path);
+                return JsonUtility.FromJson<DexSaveData>(json) ?? new DexSaveData();
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning($"[DexSaveService] 손상된 세이브 — 기본값으로 시작: {e.Message}");
+                return new DexSaveData();
+            }
         }
 
         public static void Save(DexSaveData data)
         {
+            if (data == null) return; // 다른 SaveService와 일관성
             string json = JsonUtility.ToJson(data, true);
-            File.WriteAllText(GetPath(), json);
+            InsectGame.Core.AtomicFileWriter.WriteAllText(GetPath(), json);
         }
 
         private static string GetPath()
         {
-            return Path.Combine(Application.persistentDataPath, GameConstants.SaveFiles.DexSave);
+            return InsectGame.Core.SaveScope.FilePath(GameConstants.SaveFiles.DexSave);
         }
     }
 }

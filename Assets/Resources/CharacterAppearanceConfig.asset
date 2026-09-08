@@ -1,0 +1,97 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2d68740fd9e72634395390576f8c0d50, type: 3}
+  m_Name: CharacterAppearanceConfig
+  m_EditorClassIdentifier: Assembly-CSharp::InsectGame.Data.CharacterAppearanceConfig
+  skinColors:
+  - {r: 1, g: 0.87, b: 0.75, a: 1}
+  - {r: 0.9, g: 0.75, b: 0.6, a: 1}
+  - {r: 0.65, g: 0.5, b: 0.35, a: 1}
+  - {r: 0.4, g: 0.28, b: 0.18, a: 1}
+  hairColors:
+  - {r: 0.12, g: 0.08, b: 0.05, a: 1}
+  - {r: 0.35, g: 0.2, b: 0.1, a: 1}
+  - {r: 0.85, g: 0.7, b: 0.3, a: 1}
+  - {r: 0.6, g: 0.15, b: 0.1, a: 1}
+  - {r: 0.2, g: 0.15, b: 0.35, a: 1}
+  - {r: 0.15, g: 0.3, b: 0.5, a: 1}
+  presets:
+  - displayName: "\uCD08\uC6D0\uC758 \uD0D0\uD5D8\uAC00"
+    gender: 0
+    hairStyle: 0
+    hairColor: 1
+    faceType: 0
+    skinColor: 1
+    outfitItemIds:
+    - hat_cap
+    - top_shirt
+    - outer_jacket
+    - bot_pants
+    - shoe_boots
+    - bag_basic
+    - tool_net
+  - displayName: "\uC232\uC758 \uAD00\uCC30\uC790"
+    gender: 1
+    hairStyle: 2
+    hairColor: 0
+    faceType: 2
+    skinColor: 1
+    outfitItemIds:
+    - hat_none
+    - top_shirt
+    - outer_none
+    - bot_pants
+    - shoe_sneakers
+    - bag_basic
+    - tool_magnify
+  - displayName: "\uB4E4\uD310\uC758 \uC544\uC774"
+    gender: 0
+    hairStyle: 3
+    hairColor: 2
+    faceType: 1
+    skinColor: 0
+    outfitItemIds:
+    - hat_none
+    - top_polo
+    - outer_none
+    - bot_shorts
+    - shoe_sandals
+    - bag_none
+    - tool_net
+  - displayName: "\uBC24\uC758 \uCC44\uC9D1\uAC00"
+    gender: 1
+    hairStyle: 3
+    hairColor: 4
+    faceType: 3
+    skinColor: 2
+    outfitItemIds:
+    - hat_cap
+    - top_shirt
+    - outer_jacket
+    - bot_pants
+    - shoe_boots
+    - bag_basic
+    - tool_magnify
+  - displayName: "\uC9C1\uC811 \uB9CC\uB4E4\uAE30"
+    gender: 0
+    hairStyle: 0
+    hairColor: 0
+    faceType: 0
+    skinColor: 1
+    outfitItemIds:
+    - hat_cap
+    - top_shirt
+    - outer_jacket
+    - bot_pants
+    - shoe_boots
+    - bag_basic
+    - tool_net

@@ -1,15 +1,16 @@
 using System.Collections.Generic;
-using System.Linq;
 using UnityEngine;
 
 namespace InsectGame.Core
 {
-    public class CharacterOutfitManager : MonoBehaviour
+    public class CharacterOutfitManager : MonoBehaviour, ICloudReloadable
     {
         public static CharacterOutfitManager Instance { get; private set; }
 
         private OutfitItem[] allOutfits;
         private Dictionary<string, OutfitItem> outfitLookup;
+        // 슬롯별 사전 분류 — GetItemsForSlot이 OnGUI 경로라 매 패스 LINQ를 돌 수 없다.
+        private Dictionary<OutfitSlot, OutfitItem[]> slotLookup;
         private Dictionary<OutfitSlot, string> equippedItems;
         private HashSet<string> ownedItems;
 
@@ -17,8 +18,8 @@ namespace InsectGame.Core
 
         public event System.Action OutfitChanged;
 
-        private const string EquipKey = "InsectGame.Equipped";
-        private const string OwnedKey = "InsectGame.OwnedOutfits";
+        private static string EquipKey => SaveScope.PrefsKey("InsectGame.Equipped");
+        private static string OwnedKey => SaveScope.PrefsKey("InsectGame.OwnedOutfits");
 
         private void Awake()
         {
@@ -36,15 +37,77 @@ namespace InsectGame.Core
             LoadOwnership();
             LoadEquipment();
         }
+        // 파기될 때 static을 비운다. 안 그러면 `Instance != null`(UnityEngine.Object의 파괴 검사)과
+        // `Instance?.`(진짜 null 검사)가 서로 다른 답을 내고, 후자는 파기된 객체로 호출이 들어간다.
+        // `singleton_lint.py`가 이 짝을 강제한다.
+        private void OnDestroy()
+        {
+            if (ReferenceEquals(Instance, this)) Instance = null;
+        }
 
         public void AutoWire(PlayerCurrencyWallet w)
         {
             if (wallet == null) wallet = w;
         }
 
+        // 클라우드 로드 후 PlayerPrefs(소유/장착 의상)를 다시 읽어 인메모리 갱신 + 외형 재적용.
+        // OutfitChanged 발화 → PlayerVisualBuilder/PortraitRenderer가 클라우드 의상으로 재구성.
+        public void ReloadFromDisk()
+        {
+            LoadOwnership();
+            LoadEquipment();
+            OutfitChanged?.Invoke();
+        }
+
         private void Initialize()
         {
-            allOutfits = new OutfitItem[]
+            allOutfits = BuildCatalog();
+
+            outfitLookup = new Dictionary<string, OutfitItem>();
+            foreach (OutfitItem item in allOutfits)
+            {
+                outfitLookup[item.itemId] = item;
+            }
+
+            // 슬롯별 캐시 1회 구성 (GetItemsForSlot의 매 프레임 LINQ 제거).
+            Dictionary<OutfitSlot, List<OutfitItem>> bySlot = new Dictionary<OutfitSlot, List<OutfitItem>>();
+            foreach (OutfitItem item in allOutfits)
+            {
+                if (!bySlot.TryGetValue(item.slot, out List<OutfitItem> list))
+                {
+                    list = new List<OutfitItem>();
+                    bySlot[item.slot] = list;
+                }
+                list.Add(item);
+            }
+            slotLookup = new Dictionary<OutfitSlot, OutfitItem[]>(bySlot.Count);
+            foreach (KeyValuePair<OutfitSlot, List<OutfitItem>> pair in bySlot)
+            {
+                slotLookup[pair.Key] = pair.Value.ToArray();
+            }
+
+            equippedItems = new Dictionary<OutfitSlot, string>();
+            ownedItems = new HashSet<string>();
+
+            // 기본 제공 아이템 소유 처리
+            foreach (OutfitItem item in allOutfits)
+            {
+                if (item.unlockedByDefault)
+                {
+                    ownedItems.Add(item.itemId);
+                }
+            }
+        }
+
+        /// <summary>
+        /// 의상 카탈로그 95벌. MonoBehaviour 상태에 손대지 않는 순수 팩토리다 —
+        /// EditMode 테스트가 씬 없이 이걸 읽어 <see cref="OutfitShapeLibrary"/>의 레시피가
+        /// 실재하지 않는 itemId를 물고 있는지 검증한다(옛 2D 카드의 `hat_beanie`처럼
+        /// 존재하지 않는 id를 분기하던 dead code를 구조적으로 차단).
+        /// </summary>
+        internal static OutfitItem[] BuildCatalog()
+        {
+            return new OutfitItem[]
             {
                 // ── Hat (6) ──
                 MakeItem("hat_cap", "탐험가 캡", "기본 탐험용 모자", OutfitSlot.Hat,
@@ -70,7 +133,7 @@ namespace InsectGame.Core
                     Color.white, Color.white, 0, true, "",
                     new OutfitStatBonus { atkBonus = 0.01f }),
                 MakeItem("top_polo", "폴로 셔츠", "시원한 하늘색 폴로", OutfitSlot.Top,
-                    new Color(0.53f, 0.81f, 0.98f), Color.white, 180, false, "",
+                    new Color(0.53f, 0.81f, 0.98f), Color.white, 180, true, "",
                     new OutfitStatBonus { atkBonus = 0.01f, defBonus = 0.01f }),
                 MakeItem("top_vest", "탐험 조끼", "주머니가 많은 조끼", OutfitSlot.Top,
                     new Color(0.6f, 0.55f, 0.4f), Color.white, 250, false, "",
@@ -87,7 +150,7 @@ namespace InsectGame.Core
                     new Color(0.25f, 0.25f, 0.28f), Color.white, 0, true, "",
                     new OutfitStatBonus { defBonus = 0.01f }),
                 MakeItem("bot_shorts", "반바지", "활동적인 반바지", OutfitSlot.Bottom,
-                    new Color(0.87f, 0.82f, 0.7f), Color.white, 120, false, "",
+                    new Color(0.87f, 0.82f, 0.7f), Color.white, 120, true, "",
                     new OutfitStatBonus { moveSpeedBonus = 0.02f }),
                 MakeItem("bot_cargo", "카고 팬츠", "수납이 많은 카고 팬츠", OutfitSlot.Bottom,
                     new Color(0.6f, 0.55f, 0.4f), Color.white, 250, false, "",
@@ -120,10 +183,10 @@ namespace InsectGame.Core
                     new Color(0.35f, 0.22f, 0.1f), Color.white, 0, true, "",
                     new OutfitStatBonus { moveSpeedBonus = 0.03f }),
                 MakeItem("shoe_sneakers", "운동화", "가벼운 운동화", OutfitSlot.Shoes,
-                    Color.white, new Color(0.9f, 0.2f, 0.2f), 150, false, "",
+                    Color.white, new Color(0.9f, 0.2f, 0.2f), 150, true, "",
                     new OutfitStatBonus { moveSpeedBonus = 0.05f }),
                 MakeItem("shoe_sandals", "샌들", "편안한 샌들", OutfitSlot.Shoes,
-                    new Color(0.5f, 0.35f, 0.2f), Color.white, 90, false, "",
+                    new Color(0.5f, 0.35f, 0.2f), Color.white, 90, true, "",
                     new OutfitStatBonus { moveSpeedBonus = 0.03f }),
                 MakeItem("shoe_waders", "장화", "물가 탐험용 장화", OutfitSlot.Shoes,
                     new Color(0.2f, 0.6f, 0.2f), Color.white, 0, false, "region_pond",
@@ -153,7 +216,7 @@ namespace InsectGame.Core
                     new Color(1.0f, 0.84f, 0.0f), new Color(1.0f, 0.9f, 0.4f), 1000, false, "",
                     new OutfitStatBonus { captureChanceBonus = 0.02f, rareSpawnBonus = 0.01f }),
                 MakeItem("tool_magnify", "돋보기", "관찰용 돋보기", OutfitSlot.Tool,
-                    new Color(0.75f, 0.75f, 0.8f), new Color(0.6f, 0.85f, 1.0f), 300, false, "",
+                    new Color(0.75f, 0.75f, 0.8f), new Color(0.6f, 0.85f, 1.0f), 300, true, "",
                     new OutfitStatBonus { expMultiplier = 0.02f }),
                 MakeItem("tool_camera", "관찰 카메라", "곤충 촬영용 카메라", OutfitSlot.Tool,
                     new Color(0.15f, 0.15f, 0.15f), new Color(0.3f, 0.3f, 0.3f), 600, false, "",
@@ -256,25 +319,130 @@ namespace InsectGame.Core
                 MakePremiumItem("acc_halo", "천사의 후광", "머리 위에 빛나는 후광", OutfitSlot.Accessory,
                     new Color(1f, 1f, 0.7f), new Color(1f, 0.95f, 0.5f), 1200,
                     new OutfitStatBonus { expMultiplier = 0.03f, defBonus = 0.02f }),
+
+                // ══════════════════════════════════════
+                //  코스튬 세트 (프리미엄)
+                // ══════════════════════════════════════
+
+                // ── 카우보이 세트 ──
+                MakePremiumItem("hat_cowboy", "카우보이 모자", "서부의 바람이 느껴지는 가죽 모자", OutfitSlot.Hat,
+                    new Color(0.45f, 0.3f, 0.15f), new Color(0.35f, 0.22f, 0.1f), 800,
+                    new OutfitStatBonus { captureChanceBonus = 0.02f, moveSpeedBonus = 0.02f }),
+                MakePremiumItem("top_cowboy", "카우보이 조끼", "프린지 장식의 가죽 조끼", OutfitSlot.Top,
+                    new Color(0.5f, 0.35f, 0.15f), new Color(0.4f, 0.25f, 0.1f), 700,
+                    new OutfitStatBonus { atkBonus = 0.02f, defBonus = 0.01f }),
+                MakePremiumItem("bot_cowboy", "카우보이 팬츠", "가죽 챕스가 달린 청바지", OutfitSlot.Bottom,
+                    new Color(0.2f, 0.3f, 0.5f), new Color(0.45f, 0.3f, 0.15f), 600,
+                    new OutfitStatBonus { defBonus = 0.02f, moveSpeedBonus = 0.02f }),
+                MakePremiumItem("shoe_cowboy", "카우보이 부츠", "박차가 달린 가죽 부츠", OutfitSlot.Shoes,
+                    new Color(0.4f, 0.25f, 0.1f), new Color(0.7f, 0.7f, 0.7f), 600,
+                    new OutfitStatBonus { moveSpeedBonus = 0.06f }),
+                MakePremiumItem("tool_lasso", "올가미", "곤충을 잡는 카우보이 올가미", OutfitSlot.Tool,
+                    new Color(0.6f, 0.5f, 0.3f), new Color(0.5f, 0.4f, 0.2f), 900,
+                    new OutfitStatBonus { captureChanceBonus = 0.03f }),
+                MakePremiumItem("acc_bandana", "빨간 반다나", "서부 스타일 반다나", OutfitSlot.Accessory,
+                    new Color(0.85f, 0.15f, 0.1f), new Color(0.7f, 0.1f, 0.05f), 500,
+                    new OutfitStatBonus { atkBonus = 0.02f }),
+
+                // ── 히어로 세트 (스파이더맨 오마주) ──
+                MakePremiumItem("hat_hero_mask", "히어로 마스크", "정의의 거미줄 마스크", OutfitSlot.Hat,
+                    new Color(0.8f, 0.1f, 0.1f), new Color(0.15f, 0.15f, 0.4f), 1000,
+                    new OutfitStatBonus { atkBonus = 0.03f, moveSpeedBonus = 0.02f }),
+                MakePremiumItem("top_hero_suit", "히어로 슈트 상의", "거미줄 패턴의 강화 슈트", OutfitSlot.Top,
+                    new Color(0.8f, 0.1f, 0.1f), new Color(0.1f, 0.1f, 0.35f), 900,
+                    new OutfitStatBonus { atkBonus = 0.03f, defBonus = 0.02f }),
+                MakePremiumItem("bot_hero_suit", "히어로 슈트 하의", "탄력 있는 강화 타이츠", OutfitSlot.Bottom,
+                    new Color(0.1f, 0.1f, 0.35f), new Color(0.8f, 0.1f, 0.1f), 800,
+                    new OutfitStatBonus { defBonus = 0.02f, moveSpeedBonus = 0.04f }),
+                MakePremiumItem("tool_web_shooter", "거미줄 발사기", "곤충을 잡는 거미줄 발사 장치", OutfitSlot.Tool,
+                    new Color(0.15f, 0.15f, 0.15f), new Color(0.8f, 0.1f, 0.1f), 1500,
+                    new OutfitStatBonus { captureChanceBonus = 0.04f, atkBonus = 0.01f }),
+                MakePremiumItem("acc_spider_emblem", "거미 엠블럼", "가슴에 빛나는 거미 문양", OutfitSlot.Accessory,
+                    new Color(0.1f, 0.1f, 0.1f), new Color(0.9f, 0.1f, 0.1f), 700,
+                    new OutfitStatBonus { atkBonus = 0.02f, defBonus = 0.01f }),
+
+                // ── 닌자 세트 ──
+                MakePremiumItem("hat_ninja", "닌자 두건", "그림자에 녹아드는 검은 두건", OutfitSlot.Hat,
+                    new Color(0.08f, 0.08f, 0.1f), new Color(0.15f, 0.15f, 0.2f), 900,
+                    new OutfitStatBonus { moveSpeedBonus = 0.04f, captureChanceBonus = 0.01f }),
+                MakePremiumItem("top_ninja", "닌자 상의", "어둠의 닌자 도복 상의", OutfitSlot.Top,
+                    new Color(0.1f, 0.1f, 0.12f), new Color(0.2f, 0.15f, 0.25f), 800,
+                    new OutfitStatBonus { atkBonus = 0.03f, moveSpeedBonus = 0.02f }),
+                MakePremiumItem("bot_ninja", "닌자 하의", "가볍고 빠른 닌자 바지", OutfitSlot.Bottom,
+                    new Color(0.1f, 0.1f, 0.12f), new Color(0.15f, 0.15f, 0.18f), 700,
+                    new OutfitStatBonus { moveSpeedBonus = 0.05f, defBonus = 0.01f }),
+                MakePremiumItem("tool_shuriken", "수리검", "곤충을 기절시키는 닌자 수리검", OutfitSlot.Tool,
+                    new Color(0.6f, 0.6f, 0.65f), new Color(0.1f, 0.1f, 0.1f), 1200,
+                    new OutfitStatBonus { captureChanceBonus = 0.03f, atkBonus = 0.02f }),
+                MakePremiumItem("acc_ninja_scarf", "닌자 머플러", "바람에 휘날리는 보라색 머플러", OutfitSlot.Accessory,
+                    new Color(0.4f, 0.15f, 0.5f), new Color(0.3f, 0.1f, 0.4f), 600,
+                    new OutfitStatBonus { moveSpeedBonus = 0.03f }),
+
+                // ── 해적 세트 ──
+                MakePremiumItem("hat_pirate", "해적 삼각모", "해골 마크가 새겨진 삼각모", OutfitSlot.Hat,
+                    new Color(0.1f, 0.1f, 0.1f), new Color(1f, 1f, 1f), 800,
+                    new OutfitStatBonus { atkBonus = 0.02f, captureChanceBonus = 0.02f }),
+                MakePremiumItem("top_pirate", "해적 코트", "금장 단추의 해적 코트", OutfitSlot.Top,
+                    new Color(0.5f, 0.1f, 0.1f), new Color(0.85f, 0.7f, 0.15f), 900,
+                    new OutfitStatBonus { atkBonus = 0.03f, defBonus = 0.01f }),
+                MakePremiumItem("bot_pirate", "해적 바지", "줄무늬 해적 바지", OutfitSlot.Bottom,
+                    new Color(0.15f, 0.15f, 0.15f), new Color(0.3f, 0.3f, 0.3f), 600,
+                    new OutfitStatBonus { defBonus = 0.02f }),
+                MakePremiumItem("tool_cutlass", "해적 곡도", "곤충을 놀라게 하는 곡도", OutfitSlot.Tool,
+                    new Color(0.7f, 0.7f, 0.75f), new Color(0.4f, 0.25f, 0.1f), 1100,
+                    new OutfitStatBonus { atkBonus = 0.03f, captureChanceBonus = 0.01f }),
+                MakePremiumItem("acc_eyepatch", "해적 안대", "한쪽 눈을 가리는 안대", OutfitSlot.Accessory,
+                    new Color(0.1f, 0.1f, 0.1f), new Color(0.3f, 0.3f, 0.3f), 400,
+                    new OutfitStatBonus { captureChanceBonus = 0.02f }),
+
+                // ── 사이버펑크 세트 ──
+                MakePremiumItem("hat_cyber_visor", "사이버 바이저", "AR 기능이 탑재된 미래형 바이저", OutfitSlot.Hat,
+                    new Color(0.1f, 0.1f, 0.15f), new Color(0f, 0.9f, 1f), 1200,
+                    new OutfitStatBonus { rareSpawnBonus = 0.03f, expMultiplier = 0.02f }),
+                MakePremiumItem("top_cyber", "사이버 자켓", "네온 라인이 빛나는 자켓", OutfitSlot.Top,
+                    new Color(0.1f, 0.1f, 0.15f), new Color(1f, 0f, 0.8f), 1000,
+                    new OutfitStatBonus { atkBonus = 0.02f, rareSpawnBonus = 0.02f }),
+                MakePremiumItem("bot_cyber", "사이버 팬츠", "홀로그램 라인이 달린 바지", OutfitSlot.Bottom,
+                    new Color(0.1f, 0.1f, 0.12f), new Color(0f, 1f, 0.5f), 800,
+                    new OutfitStatBonus { defBonus = 0.02f, moveSpeedBonus = 0.03f }),
+                MakePremiumItem("tool_blaster", "포톤 블래스터", "곤충을 마비시키는 광선총", OutfitSlot.Tool,
+                    new Color(0.15f, 0.15f, 0.2f), new Color(0f, 0.9f, 1f), 1800,
+                    new OutfitStatBonus { captureChanceBonus = 0.04f, atkBonus = 0.02f }),
+                MakePremiumItem("acc_neon_ring", "네온 팔찌", "빛나는 네온 LED 팔찌", OutfitSlot.Accessory,
+                    new Color(0f, 1f, 0.5f), new Color(1f, 0f, 0.8f), 600,
+                    new OutfitStatBonus { rareSpawnBonus = 0.02f }),
+
+                // ── 마법사 세트 ──
+                MakePremiumItem("hat_wizard", "마법사 모자", "별이 수놓인 뾰족한 마법사 모자", OutfitSlot.Hat,
+                    new Color(0.15f, 0.1f, 0.35f), new Color(0.8f, 0.7f, 0.2f), 900,
+                    new OutfitStatBonus { rareSpawnBonus = 0.03f, captureChanceBonus = 0.01f }),
+                MakePremiumItem("outer_wizard", "마법사 로브", "신비로운 보라색 마법사 로브", OutfitSlot.Outerwear,
+                    new Color(0.2f, 0.1f, 0.4f), new Color(0.6f, 0.4f, 0.9f), 1100,
+                    new OutfitStatBonus { atkBonus = 0.02f, rareSpawnBonus = 0.02f, defBonus = 0.01f }),
+                MakePremiumItem("tool_wand", "마법 지팡이", "곤충을 매혹하는 마법 지팡이", OutfitSlot.Tool,
+                    new Color(0.4f, 0.25f, 0.12f), new Color(0.6f, 0.3f, 0.9f), 1400,
+                    new OutfitStatBonus { captureChanceBonus = 0.05f }),
+                MakePremiumItem("acc_crystal_orb", "수정구", "미래를 보여주는 수정 오브", OutfitSlot.Accessory,
+                    new Color(0.6f, 0.4f, 0.9f), new Color(0.8f, 0.7f, 1f), 800,
+                    new OutfitStatBonus { rareSpawnBonus = 0.03f, expMultiplier = 0.01f }),
+
+                // ── 군인 세트 ──
+                MakePremiumItem("hat_military", "군용 헬멧", "위장 패턴의 전투 헬멧", OutfitSlot.Hat,
+                    new Color(0.3f, 0.35f, 0.2f), new Color(0.25f, 0.3f, 0.15f), 700,
+                    new OutfitStatBonus { defBonus = 0.03f }),
+                MakePremiumItem("top_military", "군용 전투복 상의", "위장 패턴 전투복", OutfitSlot.Top,
+                    new Color(0.3f, 0.35f, 0.2f), new Color(0.2f, 0.25f, 0.15f), 800,
+                    new OutfitStatBonus { atkBonus = 0.02f, defBonus = 0.02f }),
+                MakePremiumItem("bot_military", "군용 카고 팬츠", "수납 가능한 군용 카고 팬츠", OutfitSlot.Bottom,
+                    new Color(0.3f, 0.33f, 0.2f), new Color(0.25f, 0.28f, 0.15f), 600,
+                    new OutfitStatBonus { defBonus = 0.02f, candyMultiplier = 0.02f }),
+                MakePremiumItem("tool_tranq_gun", "마취총", "곤충을 안전하게 포획하는 마취총", OutfitSlot.Tool,
+                    new Color(0.2f, 0.2f, 0.22f), new Color(0.3f, 0.35f, 0.2f), 1600,
+                    new OutfitStatBonus { captureChanceBonus = 0.05f, atkBonus = 0.01f }),
+                MakePremiumItem("acc_dog_tag", "군번줄", "전투 경험의 증표", OutfitSlot.Accessory,
+                    new Color(0.6f, 0.6f, 0.65f), new Color(0.5f, 0.5f, 0.55f), 400,
+                    new OutfitStatBonus { atkBonus = 0.02f, defBonus = 0.01f }),
             };
-
-            outfitLookup = new Dictionary<string, OutfitItem>();
-            foreach (OutfitItem item in allOutfits)
-            {
-                outfitLookup[item.itemId] = item;
-            }
-
-            equippedItems = new Dictionary<OutfitSlot, string>();
-            ownedItems = new HashSet<string>();
-
-            // 기본 제공 아이템 소유 처리
-            foreach (OutfitItem item in allOutfits)
-            {
-                if (item.unlockedByDefault)
-                {
-                    ownedItems.Add(item.itemId);
-                }
-            }
         }
 
         private static OutfitItem MakeItem(string id, string name, string desc, OutfitSlot slot,
@@ -322,9 +490,18 @@ namespace InsectGame.Core
 
         public void Equip(string itemId)
         {
-            if (!outfitLookup.ContainsKey(itemId)) return;
+            if (!outfitLookup.ContainsKey(itemId))
+            {
+                Debug.LogWarning($"[Outfit] Equip 실패 — 알 수 없는 itemId: {itemId}");
+                return;
+            }
             OutfitItem item = outfitLookup[itemId];
-            if (!ownedItems.Contains(itemId)) return;
+            if (!ownedItems.Contains(itemId))
+            {
+                // TryPurchase → ownedItems.Add → Equip 순서가 정상. 그 외 경로에서 미보유 장착 시도 시 로깅.
+                Debug.LogWarning($"[Outfit] Equip 실패 — 미보유 itemId: {itemId} (slot={item.slot})");
+                return;
+            }
             equippedItems[item.slot] = itemId;
             SaveEquipment();
             ApplyToCharacter();
@@ -337,7 +514,7 @@ namespace InsectGame.Core
             OutfitItem item = outfitLookup[itemId];
             if (ownedItems.Contains(itemId)) return false;
 
-            bool isMaster = AuthManager.Instance != null && AuthManager.Instance.IsMasterAccount;
+            bool isMaster = AuthManager.Instance != null && AuthManager.Instance.MasterPrivilegesActive;
             if (!isMaster)
             {
                 if (item.price <= 0) return false;
@@ -355,7 +532,7 @@ namespace InsectGame.Core
             OutfitItem item = outfitLookup[itemId];
             if (ownedItems.Contains(itemId)) return false;
 
-            bool isMaster = AuthManager.Instance != null && AuthManager.Instance.IsMasterAccount;
+            bool isMaster = AuthManager.Instance != null && AuthManager.Instance.MasterPrivilegesActive;
             if (!isMaster)
             {
                 if (item.gemPrice <= 0) return false;
@@ -379,9 +556,20 @@ namespace InsectGame.Core
             return null;
         }
 
+        /// <summary>
+        /// 슬롯별 의상 목록. <b>CharacterOutfitUI.OnGUI가 매 패스 부른다</b>(Layout+Repaint라
+        /// 프레임당 2회 이상). 옛 구현은 여기서 <c>allOutfits.Where(...).ToArray()</c>를 돌려
+        /// 95벌을 매번 훑고 배열을 새로 할당했다 — 의상 패널을 열어 둔 동안 계속 GC를 만든다.
+        /// 카탈로그는 <see cref="BuildCatalog"/>가 만든 뒤 런타임에 바뀌지 않으므로 Initialize에서
+        /// 한 번만 갈라 캐시한다. 반환 배열은 읽기 전용으로 다룰 것(호출부가 정렬·수정하면 캐시가 오염된다).
+        /// </summary>
         public OutfitItem[] GetItemsForSlot(OutfitSlot slot)
         {
-            return allOutfits.Where(o => o.slot == slot).ToArray();
+            if (slotLookup != null && slotLookup.TryGetValue(slot, out OutfitItem[] cached))
+            {
+                return cached;
+            }
+            return System.Array.Empty<OutfitItem>();
         }
 
         public bool IsOwned(string itemId)
@@ -407,44 +595,142 @@ namespace InsectGame.Core
 
         // ── 캐릭터 적용 ──
 
+        // GameObject.Find는 씬 전체 스캔이라 OutfitChanged마다 부르면 아깝다. 플레이어는 영구 객체다.
+        private GameObject cachedPlayer;
+
+        /// <summary>실제 플레이어에 현재 장착을 적용한다.</summary>
         public void ApplyToCharacter()
         {
-            GameObject player = GameObject.Find("Player");
+            if (cachedPlayer == null) cachedPlayer = GameObject.Find("Player");
+            ApplyToCharacter(cachedPlayer, null);
+        }
+
+        /// <summary>
+        /// 임의의 캐릭터 루트에 임의의 조합을 입힌다. <paramref name="loadout"/>이 null이면 현재 장착.
+        /// 미리보기 마네킹과 입어보기(try-on)가 이 오버로드를 쓴다.
+        ///
+        /// 색은 <c>renderer.material</c>(인스턴스)로 칠한다 — Body/ArmL/ArmR이 같은 슬롯 머티리얼을
+        /// 공유하는데 outer_none일 때만 몸통과 팔의 색이 갈리기 때문이다. sharedMaterial로 칠하면
+        /// 마지막 값이 이겨 팔이 피부색으로 안 돌아온다. 마네킹은 풀링되어 한 개만 살아있으므로
+        /// 인스턴스 머티리얼 수는 렌더러 수(~20)로 고정된다.
+        /// </summary>
+        public void ApplyToCharacter(GameObject player, OutfitLoadout loadout)
+        {
             if (player == null) return;
 
-            // 모자
-            OutfitItem hat = GetEquipped(OutfitSlot.Hat);
+            // 안전한 default 색상 (의상 미장착 시에도 캐릭터가 보이도록)
+            Color defaultJacket = new Color(0.2f, 0.4f, 0.85f);
+            Color defaultShirt = new Color(0.98f, 0.96f, 0.92f);
+            Color defaultPants = new Color(0.25f, 0.25f, 0.28f);
+            Color defaultBoot = new Color(0.35f, 0.22f, 0.1f);
+            // outer_none일 때 팔로 되돌릴 피부색. 소유자는 빌더다 — 여기 상수를 두면 생성 화면에서
+            // 어두운 피부를 골랐을 때 몸은 맞는데 팔만 밝은 살색으로 남는다. 마네킹도 자기
+            // AppearanceSpec을 들고 있어 프리뷰까지 자동으로 맞는다.
+            PlayerVisualBuilder visual = player.GetComponent<PlayerVisualBuilder>();
+            Color skinColor = visual != null ? visual.SkinTone : CharacterPalette.DefaultSkin;
+
+            // 모자 — 색을 먼저 적용해 Cap/CapBrim을 되살린 뒤, 레시피가 있으면 그때 다시 숨긴다.
+            // 순서가 뒤집히면 왕관 → 탐험가 캡으로 갈아입을 때 Cap이 숨겨진 채 남아 맨머리가 된다.
+            OutfitItem hat = Resolve(loadout, OutfitSlot.Hat);
             ApplyPartColor(player, "Cap", hat != null ? hat.primaryColor : Color.clear);
             ApplyPartColor(player, "CapBrim", hat != null ? hat.primaryColor : Color.clear);
+            ApplyShapeRecipe(player, OutfitSlot.Hat, hat);
 
             // 상의
-            OutfitItem top = GetEquipped(OutfitSlot.Top);
-            ApplyPartColor(player, "Shirt", top != null ? top.primaryColor : Color.white);
+            OutfitItem top = Resolve(loadout, OutfitSlot.Top);
+            ApplyPartColor(player, "Shirt", top != null ? top.primaryColor : defaultShirt);
 
-            // 겉옷
-            OutfitItem outer = GetEquipped(OutfitSlot.Outerwear);
-            ApplyPartColor(player, "Body", outer != null ? outer.primaryColor : Color.blue);
-            ApplyPartColor(player, "ArmL", outer != null ? outer.primaryColor : Color.blue);
-            ApplyPartColor(player, "ArmR", outer != null ? outer.primaryColor : Color.blue);
+            // 겉옷: outer_none이면 Body는 셔츠 색, 팔은 피부색으로 (몸통/팔이 사라지지 않게)
+            OutfitItem outer = Resolve(loadout, OutfitSlot.Outerwear);
+            Color bodyCol, armCol;
+            if (outer == null)
+            {
+                bodyCol = defaultJacket; armCol = defaultJacket;
+            }
+            else if (outer.primaryColor.a < 0.01f)
+            {
+                // outer_none: 외피 벗음 → Body는 셔츠 색, 팔은 피부색
+                Color shirtCol = top != null ? top.primaryColor : defaultShirt;
+                bodyCol = shirtCol; armCol = skinColor;
+            }
+            else
+            {
+                bodyCol = outer.primaryColor; armCol = outer.primaryColor;
+            }
+            ApplyPartColor(player, "Body", bodyCol);
+            ApplyPartColor(player, "ArmL", armCol);
+            ApplyPartColor(player, "ArmR", armCol);
+            ApplyShapeRecipe(player, OutfitSlot.Outerwear, outer);   // 망토·로브 자락 등 덧붙임 파츠
 
             // 하의
-            OutfitItem bot = GetEquipped(OutfitSlot.Bottom);
-            ApplyPartColor(player, "LegL", bot != null ? bot.primaryColor : Color.gray);
-            ApplyPartColor(player, "LegR", bot != null ? bot.primaryColor : Color.gray);
+            OutfitItem bot = Resolve(loadout, OutfitSlot.Bottom);
+            ApplyPartColor(player, "LegL", bot != null ? bot.primaryColor : defaultPants);
+            ApplyPartColor(player, "LegR", bot != null ? bot.primaryColor : defaultPants);
 
             // 신발
-            OutfitItem shoe = GetEquipped(OutfitSlot.Shoes);
-            ApplyPartColor(player, "BootL", shoe != null ? shoe.primaryColor : Color.black);
-            ApplyPartColor(player, "BootR", shoe != null ? shoe.primaryColor : Color.black);
+            OutfitItem shoe = Resolve(loadout, OutfitSlot.Shoes);
+            ApplyPartColor(player, "BootL", shoe != null ? shoe.primaryColor : defaultBoot);
+            ApplyPartColor(player, "BootR", shoe != null ? shoe.primaryColor : defaultBoot);
 
             // 가방
-            OutfitItem bag = GetEquipped(OutfitSlot.Backpack);
-            ApplyPartColor(player, "Backpack", bag != null ? bag.primaryColor : Color.clear);
+            OutfitItem bag = Resolve(loadout, OutfitSlot.Backpack);
+            Color bagCol = bag != null ? bag.primaryColor : Color.clear;
+            ApplyPartColor(player, "Backpack", bagCol);
+            // 어깨끈은 Backpack의 자식이라 부모가 꺼지면 같이 사라진다. 색만 따로 이어준다 —
+            // 옛 코드가 이 한 줄을 빠뜨려 배낭을 어떤 색으로 바꿔도 어깨끈은 늘 초기 갈색이었다.
+            // 알파 0(bag_none)일 때 부르지 않는 게 중요하다: 그러면 끈이 SetActive(false)로 남아
+            // 다음에 가방을 메도 끈만 사라진 채로 보인다.
+            if (bagCol.a >= 0.01f) ApplyPartColor(player, "BackpackStrap", OutfitShapeLibrary.Darken(bagCol));
+            ApplyShapeRecipe(player, OutfitSlot.Backpack, bag);
 
-            // 도구
-            OutfitItem tool = GetEquipped(OutfitSlot.Tool);
+            // 도구 (종류별 형태 변경) — 색은 ApplyPartColor가, 형태는 OutfitShapeLibrary 레시피가 맡는다.
+            OutfitItem tool = Resolve(loadout, OutfitSlot.Tool);
             ApplyPartColor(player, "NetHandle", tool != null ? tool.primaryColor : Color.clear);
             ApplyPartColor(player, "NetRing", tool != null ? tool.secondaryColor : Color.clear);
+            ApplyShapeRecipe(player, OutfitSlot.Tool, tool);
+
+            // 악세서리 — 전량 레시피다. 옛 PlayerVisualBuilder.ApplyAccessory는 미리 만든 4노드 중
+            // 하나만 켜는 방식이라 15종 중 8종(날개·오라·후광·스카프 등)이 전부 가슴팍 큐브였다.
+            ApplyShapeRecipe(player, OutfitSlot.Accessory, Resolve(loadout, OutfitSlot.Accessory));
+        }
+
+        /// <summary>
+        /// itemId로 카탈로그 항목을 찾는다. 없으면 null.
+        ///
+        /// 소유 여부와 무관하다 — 캐릭터 생성 화면의 프리뷰가 "이 프리셋은 어느 슬롯에 뭘 입히나"를
+        /// 알아내는 데 쓴다. 실제 장착은 <see cref="Equip"/>이 소유를 검사한다.
+        /// </summary>
+        public OutfitItem FindItem(string itemId)
+        {
+            if (string.IsNullOrEmpty(itemId)) return null;
+            return outfitLookup.TryGetValue(itemId, out OutfitItem item) ? item : null;
+        }
+
+        /// <summary>로드아웃이 있으면 그쪽 itemId를, 없으면 실제 장착을 쓴다.</summary>
+        private OutfitItem Resolve(OutfitLoadout loadout, OutfitSlot slot)
+        {
+            if (loadout == null) return GetEquipped(slot);
+
+            string id = loadout.Get(slot);
+            if (string.IsNullOrEmpty(id)) return null;
+            return outfitLookup.TryGetValue(id, out OutfitItem item) ? item : null;
+        }
+
+        /// <summary>
+        /// 슬롯의 형태 레시피를 적용한다. 레시피가 없으면 이 슬롯이 남긴 spawn 파츠만 정리하므로
+        /// <b>레시피 유무와 무관하게 매번 불러야 한다</b> — 안 그러면 왕관을 벗어도 뿔이 남는다.
+        /// </summary>
+        private static void ApplyShapeRecipe(GameObject player, OutfitSlot slot, OutfitItem item)
+        {
+            Color primary = item != null ? item.primaryColor : Color.clear;
+            Color secondary = item != null ? item.secondaryColor : Color.clear;
+
+            // 미장착(null)과 *_none(알파 0)은 형태도 없다 — ApplyPartColor가 이미 노드를 껐다.
+            OutfitRecipe recipe = null;
+            if (item != null && primary.a >= 0.01f)
+                OutfitShapeLibrary.TryGet(slot, item.itemId ?? "", out recipe);
+
+            OutfitShapeLibrary.Apply(player.transform, slot, recipe, primary, secondary);
         }
 
         private void ApplyPartColor(GameObject root, string partName, Color color)
@@ -530,18 +816,33 @@ namespace InsectGame.Core
 
         private void LoadOwnership()
         {
-            string saved = PlayerPrefs.GetString(OwnedKey, "");
-            if (string.IsNullOrEmpty(saved)) return;
-
-            string[] ids = saved.Split(',');
-            foreach (string id in ids)
+            // unlockedByDefault=true 아이템은 항상 ownedItems에 자동 등록
+            // (Equip은 ownedItems 가드가 있어서 누락 시 기본 장착이 silent fail됨)
+            bool addedDefault = false;
+            if (allOutfits != null)
             {
-                string trimmed = id.Trim();
-                if (trimmed.Length > 0)
+                foreach (var item in allOutfits)
                 {
-                    ownedItems.Add(trimmed);
+                    if (item != null && item.unlockedByDefault && ownedItems.Add(item.itemId))
+                        addedDefault = true;
                 }
             }
+
+            string saved = PlayerPrefs.GetString(OwnedKey, "");
+            if (!string.IsNullOrEmpty(saved))
+            {
+                string[] ids = saved.Split(',');
+                foreach (string id in ids)
+                {
+                    string trimmed = id.Trim();
+                    if (trimmed.Length > 0)
+                        ownedItems.Add(trimmed);
+                }
+            }
+
+            // 신규 유저(저장 없음) 또는 기본 아이템 신규 추가 시 PlayerPrefs와 동기화
+            if (string.IsNullOrEmpty(saved) || addedDefault)
+                SaveOwnership();
         }
     }
 }

@@ -20,6 +20,12 @@ namespace InsectGame.Data
         [Range(5, 200)] public int baseDef = 15;
         [Range(0.1f, 100f)] public float spawnWeight = 1f;
         [Range(0f, 1f)] public float captureDifficulty = 0.3f;
+        [Header("Size")]
+        // 이 종의 표준 몸길이·무게. 개체별 편차는 PlayerInsectData.sizeRoll이 곱한다
+        // (실제 값은 InsectSizeCalculator가 계산). 전투 스탯에는 영향을 주지 않는다 —
+        // 수집·주간 크기 대결 전용 축이다.
+        [Range(1f, 500f)] public float baseSizeMm = 30f;
+        [Range(0.01f, 2000f)] public float baseWeightG = 2f;
         [Header("Leveling")]
         [Range(1, 100)] public int minLevel = 1;
         [Range(1, 100)] public int maxLevel = 3;

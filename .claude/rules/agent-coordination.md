@@ -1,3 +1,7 @@
+---
+description: 공유 파일별 에이전트 수정 경계와 충돌 방지 절차
+---
+
 # 에이전트 간 조율 규칙
 
 ## 공유 파일 수정 경계
@@ -10,13 +14,19 @@
 | `BattleScreenUI.cs` | ui-dev | OnGUI 레이아웃, Rect 좌표, 색상, 화면 전환 |
 | | battle-dev | Phase 로직, 데미지 표시 계산, 턴 진행 |
 | | visual-dev | 쉐이크 효과, HP바 보간, 속성 이펙트 렌더링 |
-| `RaidBattleUI.cs` | ui-dev | OnGUI 레이아웃, 팀 선택 패널, 결과 화면 |
-| | battle-dev | 레이드 Phase 로직, 유나이트 게이지, 보스 턴 |
-| | visual-dev | AOE 연출, 유나이트 이펙트, HP바 |
+| `RaidBattleUI.cs` (상태기계 절반) | ui-dev | OnGUI 입력 디스패치, 페이즈별 그리기 분기 |
+| | battle-dev | 레이드 Phase 전이, 유나이트 게이지, 보스 턴, 컨트롤러 이벤트 핸들러 |
+| | visual-dev | **연출 타이밍 상수**(`UniteRushMinDuration`·`BossTelegraphDuration` 등) |
+| `RaidBattleUI.Draw.cs` (렌더 절반) | ui-dev | 레이아웃, Rect 좌표, 팀 선택 패널, 결과 화면, GUIStyle 캐시 |
+| | battle-dev | 데미지 표시 계산 |
+| | visual-dev | AOE 연출, 유나이트 이펙트, HP바, 속성 임팩트 |
 | `BattleTeamUI.cs` | ui-dev | 슬롯 레이아웃, 드래그 상호작용 |
 | | battle-dev | 팀 유효성 검증, 전투력 표시 로직 |
 | `CaptureChoiceUI.cs` | ui-dev | 선택지 레이아웃, 키 안내 |
 | | capture-dev | 포획/배틀/레이드 분기 조건 로직 |
+| `NpcDuelController.cs` | battle-dev | 듀얼 진입(StartDuel 호출), 승패 처리, 보상 표 |
+| | capture-dev | 아이 상태·재도전 쿨다운, 상대 곤충 배정(EnsureDuelInsect) |
+| | game-designer | 보상 아이템 종류·수량, 레벨 스프레드 |
 | `InsectEntity.cs` | capture-dev | 스폰/디스폰, 풀 관리, 월드 배치 |
 | | visual-dev | BuildModel() 프로시저럴 모델, 애니메이션, 샤이니 |
 | `BattleArenaController.cs` | battle-dev | 아레나 상태, 전투 환경 설정 |
@@ -35,9 +45,57 @@
 | | visual-dev | 색상값, 그라디언트 |
 | `RarityIconProvider.cs` | data-architect | 아이콘 매핑 데이터 |
 | | visual-dev | 아이콘 렌더링, 크기/위치 |
+| `ItemData.cs` | data-architect | 필드 정의, SO 구조, 직렬화 |
+| | game-designer | captureChanceBonus / expMultiplier / candyMultiplier 등 효과 매개변수 값 |
+| `RegionData.cs` | data-architect | SO 필드 구조, 직렬화 |
+| | game-designer | insectIds 풀, requiredLevel, guardianLevel 등 게임 디자인 수치 |
+| `RegionManager.cs` | game-designer | GetNextRegionId/GetPreviousRegionId switch, 진행 로직, 가디언 격파 |
+| | data-architect | unlockedRegions/defeatedGuardians PlayerPrefs 직렬화 |
+| `RegionTerrainBuilder.cs` | visual-dev | BuildXxxTerrain() 프로시저럴 지형/오브젝트 디자인 |
+| | game-designer | BuildAllRegions switch 분기 추가 (신규 리전 등록 트리거) |
+| `CutsceneLibrary.cs` | game-designer | 어느 비트에 붙일지, 자막 문구 |
+| | visual-dev | 카메라 좌표(camFrom/camTo/lookAt), 컷 길이·shake·dim |
+| `CutsceneDirector.cs` | game-designer | 재생 시점(StoryBeatCompleted), 전투 지연 큐, 프리즈 복귀 |
+| | visual-dev | 카메라 프레이밍 적용, 딤 강도 |
+| | ui-dev | 자막 렌더(OnGUI), IModalUI 스택, 건너뛰기 버튼 |
+| `NpcBossDuels.cs` | game-designer | 상대 곤충·레벨·보상 아이템·재도전 쿨다운 |
+| | battle-dev | `isFinal`(보스 BGM 분기), 대결 진입 연동 |
+| `PlayerVisualBuilder.cs` | visual-dev | BuildAll() 슬림 비례, BuildHair*, Accessory 노드 추가, Material/슈더 fallback |
+| | data-architect | 8슬롯 ↔ 노드 매핑(Hat/Top/Outerwear 등), RefreshOutfitColors 흐름 |
+| `SubAreaWorldBuilder.cs` | visual-dev | BuildCave/BuildDeepForest 등 프로시저럴 지형 + 조명 |
+| | capture-dev | EnterSubArea/ExitSubArea/HideMainWorld 흐름, sticky 모드 연계, 25m 이탈 트리거 |
+| `ModalUIRegistry.cs` | ui-dev | IModalUI 인터페이스, 스택 push/pop, HandleEscape 우선순위 |
+| `RegionManager.cs` SubArea 처리 | capture-dev | subAreaSticky/쿨다운/RestoreLastSubArea 등 진입·이탈 동기화 |
+| | game-designer | switch (region 진행 순서, 가디언) 분리 유지 |
+| `CashShopManager.cs` | architect | gems 이중 관리 동기화(wallet AutoWire), pendingSave/즉시 클라우드 저장 트리거 |
+| | game-designer | shopItems 가격/카테고리, 보석 패키지 구성 |
+| `OutfitShapeLibrary.cs` | visual-dev | 파츠 좌표·스케일·회전·PrimitiveType, 색 역할 매핑, 레시피 추가 |
+| | data-architect | OutfitRecipe/OutfitPart 스키마, OutfitAnchor enum 확장 |
+| `CharacterOutfitManager.cs` | data-architect | 8슬롯 enum, allOutfits 정의, LoadOwnership/SaveEquipment 직렬화 |
+| | game-designer | unlockedByDefault/price/gemPrice/statBonus 게임 디자인 수치 |
+| | visual-dev | ApplyToCharacter / ApplyPartColor / ApplyToolShape 좌표·색상 적용 |
 
 ## 충돌 방지 절차
 
 1. **단일 에이전트 원칙**: 하나의 공유 파일은 한 번에 하나의 에이전트만 수정
 2. **경계 외 수정 필요 시**: 메인 모델이 해당 파일의 주담당 에이전트에게 위임
 3. **교차 수정 감지**: 에이전트가 자신의 경계 밖 코드를 수정해야 할 때, 변경하지 말고 메인 모델에 보고하여 적절한 에이전트에 재위임
+
+## 커버리지 점검
+
+어느 에이전트도 담당하지 않는 `.cs`를 찾는다:
+
+```
+python -X utf8 .claude/scripts/verify_coverage.py
+```
+
+**이 문서와 `agents/*.md`가 매핑의 단일 출처다.** 스크립트는 둘을 파싱한다 —
+위 표에서 (에이전트, 파일) 공유 경계를, `agents/*.md` 불릿에서 전체 소유권을 읽는다.
+새 담당을 정했다면 **문서만** 고치면 된다. 스크립트에 사본은 없다.
+
+(예전엔 스크립트가 매핑을 144줄 dict로 하드코딩해 이 문서와 따로 놀았다. 표의 22개
+파일 중 8개가 어긋났고, `UIScale.cs`는 `ui-dev.md`가 담당으로 명시하는데도 "미할당"에
+거짓으로 올랐다.)
+
+파싱에 실패하면 스크립트는 exit 2로 죽는다. 빈 매핑으로 "전부 미할당"을 보고하지
+않기 위해서다 — 문서 구조를 바꿨다면 파서부터 확인할 것.

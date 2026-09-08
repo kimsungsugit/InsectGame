@@ -11,7 +11,7 @@ namespace InsectGame.Core
         public List<PlayerInsectData> insects = new List<PlayerInsectData>();
     }
 
-    public class PlayerInsectCollection : MonoBehaviour
+    public class PlayerInsectCollection : MonoBehaviour, ICloudReloadable
     {
         [SerializeField] private InsectLevelCurve defaultCurve;
         [SerializeField] private InsectDatabase database;
@@ -20,10 +20,80 @@ namespace InsectGame.Core
         private PlayerInsectCollectionSave saveData;
         private readonly Dictionary<string, PlayerInsectData> lookup = new Dictionary<string, PlayerInsectData>();
 
+        /// <summary>
+        /// <b>종족 learnset 바깥에서 배운 기술</b>을 찾기 위한 전역 색인.
+        ///
+        /// 왜 필요한가: <see cref="ResolveSkill"/>은 곤충의 <c>learnset</c>/<c>skills</c>만 뒤졌는데
+        /// 그 둘은 같은 집합이다(<c>skills = ExtractUniqueSkills(learnset)</c>). 그래서 훈련·기술
+        /// 디스크로 배운 <c>tr_*</c>는 어느 종의 learnset에도 없어 <b>항상 null</b>이 됐고,
+        /// 전투 슬롯이 빈칸이 되어 <c>CanUseSkill</c>이 false를 냈다 — <b>배운 기술이 전투에
+        /// 아예 안 나왔다.</b> 훈련 화면은 <c>TrainingManager</c>의 자체 lookup을 쓰므로 멀쩡히
+        /// 장착돼 보였고, 그래서 증상이 조용했다.
+        ///
+        /// 배선은 <c>PlaySceneBootstrap</c>이 <c>CollectAllSkills(database, trainingSkills)</c>로
+        /// 만든 <b>같은 배열</b>을 <c>TrainingManager.Initialize</c>와 이쪽에 함께 넘겨 준다.
+        /// </summary>
+        private Dictionary<string, InsectSkill> skillRegistry;
+
+        // 디스크 IO 디바운스: 가챠 10연 등 연속 변경 시 매번 File.WriteAllText 안 하고 0.5초 후 1회 저장.
+        private bool saveDirty;
+        private float saveDebounceTimer;
+        private const float SaveDebounceSeconds = 0.5f;
+
         public event Action<PlayerInsectData> InsectUpdated;
+        // 신규 포획/획득(AddInsectInternal) 전용 신호. InsectUpdated는 XP·치료·진화에서도 발화하므로
+        // "포획" 트리거로 쓰면 오발화한다(StoryDirector CaptureInsect 비트). 이건 추가 경로에서만 발화.
+        public event Action<PlayerInsectData> InsectCaptured;
+
+        private void MarkDirty()
+        {
+            saveDirty = true;
+            saveDebounceTimer = 0f;
+        }
+
+        // 즉시 저장(디바운스 우회) — 포획처럼 직후 앱 백그라운드 전환 시 CloudSave가 stale 파일을 읽어
+        // 마지막 변경이 클라우드에서 누락되면 안 되는 경우에 사용.
+        private void SaveNow()
+        {
+            saveDirty = false;
+            saveDebounceTimer = 0f;
+            if (saveData != null) Save(saveData);
+        }
+
+        private void Update()
+        {
+            if (!saveDirty) return;
+            saveDebounceTimer += Time.unscaledDeltaTime;
+            if (saveDebounceTimer >= SaveDebounceSeconds)
+            {
+                saveDebounceTimer = 0f;
+                saveDirty = false;
+                if (saveData != null) Save(saveData);
+            }
+        }
+
+        private void OnDisable()
+        {
+            // 종료 직전 강제 flush — 디바운스 대기 중 변경 손실 방지
+            if (saveDirty && saveData != null)
+            {
+                Save(saveData);
+                saveDirty = false;
+            }
+        }
+
+        private void OnApplicationQuit() { OnDisable(); }
+        private void OnApplicationPause(bool pauseStatus) { if (pauseStatus) OnDisable(); }
 
         private void Awake()
         {
+            LoadAndIndex();
+        }
+
+        // 디스크에서 보유 곤충을 읽어 lookup 재구성. Awake와 클라우드 로드 리로드가 공유.
+        private void LoadAndIndex()
+        {
+            lookup.Clear();
             saveData = Load();
             bool needsSave = false;
             foreach (PlayerInsectData data in saveData.insects)
@@ -34,11 +104,38 @@ namespace InsectGame.Core
                 }
 
                 data.EnsureInstanceId();
+
+                // 옛 세이브에서 instanceId 중복 발견 시 새 GUID 발급.
+                // 옛은 dictionary에 1개만 보존되어 BattleTeam.GetByInstanceId가 나머지 인스턴스 못 찾는 회귀.
+                if (lookup.ContainsKey(data.instanceId))
+                {
+                    data.instanceId = Guid.NewGuid().ToString("N");
+                    needsSave = true;
+                }
+
+                // 크기 롤 초기화 — 구세이브(sizeRoll -1)는 instanceId 해시로 채운다.
+                // 중복 GUID 재발급 뒤에 부른다(새 ID 기준으로 크기가 정해져야 결정적이다).
+                if (data.sizeRoll < InsectSizeCalculator.MinRoll)
+                {
+                    data.EnsureSize();
+                    needsSave = true;
+                }
+
                 InsectData insect = GetInsectData(data.insectId);
+                // 지속 HP 초기화 — 구세이브(currentHp -1)는 풀피로 확정. insect null이면 다음 로드에 미룸.
+                if (insect != null)
+                {
+                    int beforeHp = data.currentHp;
+                    data.EnsureHp(data.GetTotalHp(insect.baseHp));
+                    if (data.currentHp != beforeHp) needsSave = true;
+                }
                 if (EnsureLevelSkills(data, insect))
                 {
                     needsSave = true;
                 }
+                // 중단된 훈련의 진척은 여기 말고는 아무도 안 지운다(이미 배운 기술분). 레지스트리가
+                // 아직 없어 미상 기술은 AutoWire(InsectSkill[])에서 한 번 더 걷는다.
+                if (data.PruneTrainingProgress(null)) needsSave = true;
                 lookup[data.instanceId] = data;
             }
 
@@ -48,12 +145,36 @@ namespace InsectGame.Core
             }
         }
 
+        /// <summary>
+        /// 클라우드 로드 후 player_insects.json을 다시 읽어 보유 목록 갱신.
+        ///
+        /// <b>반드시 이벤트를 쏜다.</b> 옛 주석은 "컬렉션 UI가 매 프레임 읽어 자동 반영하므로
+        /// 발화 불필요"라고 했는데 그 전제가 낡았다 — 지금은 CollectionUI·HospitalUI·TrainingUI·
+        /// PlayerStatusHUD가 전부 보유 목록을 캐시하고 <c>InsectUpdated</c>로만 무효화한다.
+        /// 이 메서드는 saveData와 lookup을 통째로 새 객체로 바꾸므로, 알리지 않으면 열려 있던
+        /// UI가 <b>고아 PlayerInsectData</b>를 들고 남고 거기서 레벨업·치료를 하면 재화만 빠지고
+        /// 변경은 새 목록 저장에 묻혀 사라진다.
+        /// (구독 4곳이 전부 인자를 무시하므로 null 전달이 안전하다.)
+        /// </summary>
+        public void ReloadFromDisk()
+        {
+            LoadAndIndex();
+            InsectUpdated?.Invoke(null);
+        }
+
         public PlayerInsectData AddCapturedInsect(string insectId, int level)
         {
-            return AddCapturedInsect(insectId, level, false);
+            // shiny 미지정 — CreateWithIV의 자체 1% 롤을 그대로 사용(가챠/내부 폴백 등 필드 미경유 경로).
+            return AddInsectInternal(insectId, level, null);
         }
 
         public PlayerInsectData AddCapturedInsect(string insectId, int level, bool isShiny)
+        {
+            // 필드/배틀/레이드에서 실제로 본 이로치 상태를 권위값으로 전달.
+            return AddInsectInternal(insectId, level, isShiny);
+        }
+
+        private PlayerInsectData AddInsectInternal(string insectId, int level, bool? shinyOverride)
         {
             if (string.IsNullOrEmpty(insectId))
             {
@@ -63,12 +184,17 @@ namespace InsectGame.Core
             InsectData insect = GetInsectData(insectId);
             Data.InsectRarity rarity = insect != null ? insect.rarity : Data.InsectRarity.Common;
             PlayerInsectData data = PlayerInsectData.CreateWithIV(insectId, level, rarity);
-            if (isShiny) data.isShiny = true;
+            // 본 것과 보유가 일치하도록 권위값으로 덮어씀(true/false 모두). null이면 CreateWithIV 자체 롤 유지.
+            // 옛 `if (isShiny) data.isShiny = true`는 true만 강제 → 일반 개체도 포획 시 1% 이로치化(이중 롤) 버그.
+            if (shinyOverride.HasValue) data.isShiny = shinyOverride.Value;
             EnsureLevelSkills(data, insect);
             lookup[data.instanceId] = data;
             saveData.insects.Add(data);
-            Save(saveData);
+            // 포획은 디바운스 없이 즉시 저장 — 직후 앱 백그라운드 전환 시 CloudSave가 stale player_insects를
+            // 읽어 마지막 포획이 클라우드에서 누락되던 것 차단. (빈번한 XP 변경은 계속 디바운스)
+            SaveNow();
             InsectUpdated?.Invoke(data);
+            InsectCaptured?.Invoke(data); // 포획/획득 전용 — 스토리 CaptureInsect 등 포획 한정 트리거용
             return data;
         }
 
@@ -146,7 +272,9 @@ namespace InsectGame.Core
                 return;
             }
 
-            InsectLevelCurve curve = insect.levelCurve != null ? insect.levelCurve : defaultCurve;
+            // insect null 가드 — 형제 GainXp(InsectData, int) 오버로드와 대칭.
+            // 외부에서 PlayerInsectData만 가진 채 insect=null로 호출하면 옛은 NRE.
+            InsectLevelCurve curve = insect != null && insect.levelCurve != null ? insect.levelCurve : defaultCurve;
             data.currentXp += amount;
             int maxLevel = curve != null ? curve.maxLevel : 50;
             while (data.level < maxLevel && curve != null && data.currentXp >= curve.GetXpToNextLevel(data.level))
@@ -157,7 +285,65 @@ namespace InsectGame.Core
 
             EnsureLevelSkills(data, insect);
 
-            Save(saveData);
+            MarkDirty();
+            InsectUpdated?.Invoke(data);
+        }
+
+        // ── 지속 HP·상태 치료 API (GainXp 패턴: mutate → MarkDirty → InsectUpdated) ──
+
+        private int MaxHpOf(PlayerInsectData data)
+        {
+            InsectData insect = data != null ? GetInsectData(data.insectId) : null;
+            int baseHp = insect != null ? insect.baseHp : 50;
+            return data != null ? data.GetTotalHp(baseHp) : baseHp;
+        }
+
+        /// <summary>HP를 amount만큼 회복(상한 MaxHp). 기절(0)도 회복 가능(부활).</summary>
+        public void HealInsect(PlayerInsectData data, int amount)
+        {
+            if (data == null || amount <= 0) return;
+            int max = MaxHpOf(data);
+            int cur = data.currentHp < 0 ? max : data.currentHp;
+            data.currentHp = Mathf.Clamp(cur + amount, 0, max);
+            MarkDirty();
+            InsectUpdated?.Invoke(data);
+        }
+
+        /// <summary>HP 전액 + 모든 상태 해제(병원 젬 치료·종합치료제).</summary>
+        public void FullHeal(PlayerInsectData data)
+        {
+            if (data == null) return;
+            data.currentHp = MaxHpOf(data);
+            data.isPoisoned = false;
+            data.isParalyzed = false;
+            MarkDirty();
+            InsectUpdated?.Invoke(data);
+        }
+
+        public void CurePoison(PlayerInsectData data)
+        {
+            if (data == null || !data.isPoisoned) return;
+            data.isPoisoned = false;
+            MarkDirty();
+            InsectUpdated?.Invoke(data);
+        }
+
+        public void CureParalysis(PlayerInsectData data)
+        {
+            if (data == null || !data.isParalyzed) return;
+            data.isParalyzed = false;
+            MarkDirty();
+            InsectUpdated?.Invoke(data);
+        }
+
+        /// <summary>전투 종료 시 남은 HP·상태를 영구 기록(무료 전체치료 제거의 핵심).</summary>
+        public void SetAfterBattle(PlayerInsectData data, int remainingHp, bool poisoned, bool paralyzed)
+        {
+            if (data == null) return;
+            data.currentHp = Mathf.Clamp(remainingHp, 0, MaxHpOf(data));
+            data.isPoisoned = poisoned;
+            data.isParalyzed = paralyzed;
+            MarkDirty();
             InsectUpdated?.Invoke(data);
         }
 
@@ -227,7 +413,7 @@ namespace InsectGame.Core
             data.level++;
             data.currentXp = 0;
             EnsureLevelSkills(data, insect);
-            Save(saveData);
+            MarkDirty();
             InsectUpdated?.Invoke(data);
             return true;
         }
@@ -244,6 +430,35 @@ namespace InsectGame.Core
             return insect != null;
         }
 
+        // OwnedView 전용 재사용 버퍼 — 매 호출 Clear 후 다시 채운다.
+        private readonly List<PlayerInsectData> ownedViewBuffer = new List<PlayerInsectData>();
+
+        /// <summary>
+        /// 보유 목록의 <b>읽기 전용 뷰</b>. 매 프레임 도는 경로(OnGUI)에서 쓴다 —
+        /// <see cref="GetAllOwned"/>는 호출마다 List를 새로 만들어, 그걸 캐시 없이 OnGUI에서
+        /// 부르면 Layout·Repaint·입력마다 리스트가 하나씩 쌓인다.
+        ///
+        /// <b>반환값을 보관하지 말 것.</b> 다음 호출에 같은 버퍼가 덮인다. 보관해야 하면
+        /// <see cref="GetAllOwned"/>로 사본을 받고 <see cref="InsectUpdated"/>로 무효화하는
+        /// 기존 패턴(CollectionUI·TrainingUI·HospitalUI)을 따른다.
+        ///
+        /// 캐시가 아니라 버퍼인 이유: 캐시면 무효화 지점을 하나라도 빠뜨리는 순간 stale 목록이
+        /// 뜨는데, 그건 "안 보이는 곤충"이라 할당보다 훨씬 나쁜 결함이다.
+        /// </summary>
+        public IReadOnlyList<PlayerInsectData> OwnedView
+        {
+            get
+            {
+                ownedViewBuffer.Clear();
+                if (saveData == null || saveData.insects == null) return ownedViewBuffer;
+                foreach (PlayerInsectData d in saveData.insects)
+                {
+                    if (d != null) ownedViewBuffer.Add(d);
+                }
+                return ownedViewBuffer;
+            }
+        }
+
         public List<PlayerInsectData> GetAllOwned()
         {
             if (saveData == null || saveData.insects == null)
@@ -251,7 +466,13 @@ namespace InsectGame.Core
                 return new List<PlayerInsectData>();
             }
 
-            return new List<PlayerInsectData>(saveData.insects);
+            // 손상된 세이브에서 null 항목이 섞일 경우 호출자(BattleTeamUI/CollectionUI/DexScreenUI 등) NRE 방지.
+            var result = new List<PlayerInsectData>(saveData.insects.Count);
+            foreach (PlayerInsectData d in saveData.insects)
+            {
+                if (d != null) result.Add(d);
+            }
+            return result;
         }
 
         public string ResolveLegacyOrInstanceId(string id)
@@ -271,14 +492,35 @@ namespace InsectGame.Core
             return bySpecies != null ? bySpecies.instanceId : null;
         }
 
+        // insectId → InsectData 색인. database.insects의 개수가 바뀌면 다시 만든다.
+        private Dictionary<string, InsectData> insectDataIndex;
+        private int insectDataIndexSourceCount = -1;
+
+        /// <summary>
+        /// 종 데이터 조회. 예전엔 <c>database.insects.Find(람다)</c>라 <b>호출마다</b> 캡처 클로저가
+        /// 할당되고 128종을 선형 탐색했다 — 도감 보유 탭이 카드마다 이걸 부르고 OnGUI는 프레임당
+        /// 여러 패스라 60마리 보유 시 패스당 120개 할당 + 7,680회 문자열 비교였다.
+        /// (같은 함정을 <c>InsectModelPreviewRenderer</c>는 for 루프로 일부러 피하고 있다.)
+        /// </summary>
         public InsectData GetInsectData(string insectId)
         {
-            if (database == null || string.IsNullOrEmpty(insectId))
+            if (database == null || database.insects == null || string.IsNullOrEmpty(insectId))
             {
                 return null;
             }
 
-            return database.insects.Find(item => item != null && item.insectId == insectId);
+            if (insectDataIndex == null || insectDataIndexSourceCount != database.insects.Count)
+            {
+                insectDataIndex = new Dictionary<string, InsectData>(database.insects.Count);
+                for (int i = 0; i < database.insects.Count; i++)
+                {
+                    InsectData d = database.insects[i];
+                    if (d != null && !string.IsNullOrEmpty(d.insectId)) insectDataIndex[d.insectId] = d;
+                }
+                insectDataIndexSourceCount = database.insects.Count;
+            }
+
+            return insectDataIndex.TryGetValue(insectId, out InsectData found) ? found : null;
         }
 
         public InsectSkill[] GetEquippedSkills(PlayerInsectData data)
@@ -291,7 +533,9 @@ namespace InsectGame.Core
             InsectData insect = GetInsectData(data.insectId);
             if (EnsureLevelSkills(data, insect))
             {
-                Save(saveData);
+                // 여기서 처음 스타터가 붙는 개체가 있다 — "장착: c/d" 캐시는 InsectUpdated로만 비워진다.
+                MarkDirty();
+                InsectUpdated?.Invoke(data);
             }
 
             InsectSkill[] result = new InsectSkill[PlayerInsectData.MaxEquipSlots];
@@ -306,12 +550,14 @@ namespace InsectGame.Core
 
         public InsectSkill ResolveSkill(InsectData insect, string skillId)
         {
-            if (insect == null || string.IsNullOrEmpty(skillId))
+            if (string.IsNullOrEmpty(skillId))
             {
                 return null;
             }
 
-            if (insect.learnset != null)
+            // 종 데이터가 없어도(구 ID·DB 미등록) 배운 범용기는 레지스트리에서 풀린다 — insect null로
+            // 조기 반환하면 그 개체는 기본 공격만 하게 된다.
+            if (insect != null && insect.learnset != null)
             {
                 foreach (InsectLearnableSkill learnable in insect.learnset)
                 {
@@ -322,7 +568,7 @@ namespace InsectGame.Core
                 }
             }
 
-            if (insect.skills != null)
+            if (insect != null && insect.skills != null)
             {
                 foreach (InsectSkill skill in insect.skills)
                 {
@@ -331,6 +577,76 @@ namespace InsectGame.Core
                         return skill;
                     }
                 }
+            }
+
+            // 종족 목록에 없다 — 훈련·기술 디스크로 배운 범용기다. 전역 색인에서 찾는다.
+            // **순서가 중요하다**: 전용기는 종별 인스턴스라 위의 learnset/skills가 먼저 이겨야 한다.
+            if (skillRegistry != null && skillRegistry.TryGetValue(skillId, out InsectSkill registered))
+            {
+                return registered;
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// 전역 기술 색인 주입 — <c>PlaySceneBootstrap</c>이 <c>CollectAllSkills</c>의 결과를 넘긴다.
+        /// <see cref="ResolveSkill"/>의 마지막 폴백이 이 색인이다.
+        /// </summary>
+        public void AutoWire(InsectSkill[] allSkills)
+        {
+            if (allSkills == null || allSkills.Length == 0) return;
+
+            if (skillRegistry == null)
+                skillRegistry = new Dictionary<string, InsectSkill>(allSkills.Length);
+
+            foreach (InsectSkill skill in allSkills)
+            {
+                if (skill != null && !string.IsNullOrEmpty(skill.skillId))
+                    skillRegistry[skill.skillId] = skill;
+            }
+
+            // DB에서 사라진 기술의 진척을 이제야 걷을 수 있다 — 1회, 전투 진입마다가 아니라.
+            Func<string, bool> known = skillRegistry.ContainsKey;
+            bool pruned = false;
+            foreach (PlayerInsectData data in lookup.Values)
+                if (data != null && data.PruneTrainingProgress(known)) pruned = true;
+            if (pruned) MarkDirty();
+        }
+
+        /// <summary>전역 색인에서 기술을 찾는다(종족 무관). 훈련·디스크 경로가 쓴다.</summary>
+        public InsectSkill FindSkill(string skillId)
+        {
+            if (string.IsNullOrEmpty(skillId) || skillRegistry == null) return null;
+            return skillRegistry.TryGetValue(skillId, out InsectSkill skill) ? skill : null;
+        }
+
+        /// <summary>
+        /// 기술이 하나도 없는 곤충에게 줄 <b>첫 기술</b> — learnset에서 습득 레벨이 가장 낮은 것.
+        /// learnset이 없으면 <c>skills[0]</c>로 떨어진다.
+        ///
+        /// 레벨을 보지 않는다: 이 자리는 "레벨이 됐으니 준다"가 아니라 "기술이 0개면 곤란하다"는
+        /// 최소 보장이고, learnset의 최저 항목은 어차피 Lv1 기본기다(<c>BuildLevelLearnset</c>).
+        /// </summary>
+        private static string FindStarterSkillId(InsectData insect)
+        {
+            if (insect == null) return null;
+
+            if (insect.learnset != null)
+            {
+                InsectLearnableSkill best = null;
+                foreach (InsectLearnableSkill learnable in insect.learnset)
+                {
+                    if (learnable == null || string.IsNullOrEmpty(learnable.skillId)) continue;
+                    if (best == null || learnable.learnLevel < best.learnLevel) best = learnable;
+                }
+                if (best != null) return best.skillId;
+            }
+
+            if (insect.skills != null)
+            {
+                foreach (InsectSkill skill in insect.skills)
+                    if (skill != null && !string.IsNullOrEmpty(skill.skillId)) return skill.skillId;
             }
 
             return null;
@@ -362,36 +678,58 @@ namespace InsectGame.Core
                 changed = true;
             }
 
-            if (insect != null && insect.learnset != null)
+            if (data.equippedSkillIds.Count > PlayerInsectData.MaxEquipSlots)
             {
-                foreach (InsectLearnableSkill learnable in insect.learnset)
-                {
-                    if (learnable == null || string.IsNullOrEmpty(learnable.skillId) || learnable.learnLevel > data.level)
-                    {
-                        continue;
-                    }
-
-                    if (!data.learnedSkillIds.Contains(learnable.skillId) && data.learnedSkillIds.Count < PlayerInsectData.MaxLearnedSkills)
-                    {
-                        data.learnedSkillIds.Add(learnable.skillId);
-                        changed = true;
-                    }
-                }
+                data.equippedSkillIds.RemoveRange(
+                    PlayerInsectData.MaxEquipSlots,
+                    data.equippedSkillIds.Count - PlayerInsectData.MaxEquipSlots);
+                changed = true;
             }
-            else if (insect != null && insect.skills != null)
-            {
-                foreach (InsectSkill skill in insect.skills)
-                {
-                    if (skill == null || string.IsNullOrEmpty(skill.skillId))
-                    {
-                        continue;
-                    }
 
-                    if (!data.learnedSkillIds.Contains(skill.skillId) && data.learnedSkillIds.Count < PlayerInsectData.MaxLearnedSkills)
-                    {
-                        data.learnedSkillIds.Add(skill.skillId);
-                        changed = true;
-                    }
+            // 옛 세이브(최대 12개)는 장착 중인 기술을 우선 보존해 새 4개 제한으로 이관한다.
+            if (data.learnedSkillIds.Count > PlayerInsectData.MaxLearnedSkills)
+            {
+                List<string> limited = new List<string>(PlayerInsectData.MaxLearnedSkills);
+                foreach (string equipped in data.equippedSkillIds)
+                {
+                    if (!string.IsNullOrEmpty(equipped)
+                        && data.learnedSkillIds.Contains(equipped)
+                        && !limited.Contains(equipped)
+                        && limited.Count < PlayerInsectData.MaxLearnedSkills)
+                        limited.Add(equipped);
+                }
+                foreach (string learned in data.learnedSkillIds)
+                {
+                    if (!string.IsNullOrEmpty(learned)
+                        && !limited.Contains(learned)
+                        && limited.Count < PlayerInsectData.MaxLearnedSkills)
+                        limited.Add(learned);
+                }
+                data.learnedSkillIds = limited;
+                changed = true;
+            }
+
+            // ── 기술은 레벨만으로 저절로 배워지지 않는다 ────────────────────────────
+            //
+            // 예전엔 여기서 `learnLevel <= data.level`인 learnset을 **전부 자동 습득**하고
+            // 아래 루프가 빈 슬롯에 자동 장착까지 했다(자동 장착 루프는 아직 아래에 있다 — 단,
+            // 지금은 **장착이 0개일 때만** 돈다). 그래서 레벨만 올리면 종족 기술이
+            // 다 들어왔고 — **훈련소가 할 일이 없었다.** `TrainingManager.TrainSkill`은
+            // `HasLearnedSkill`이면 false를 돌려주므로, 종족 기술은 애초에 훈련 대상조차
+            // 되지 못했다(훈련 목록에 떠 있는데 눌러도 아무 일이 없었다).
+            //
+            // 지금은 **첫 기술 하나만** 보장한다. 그게 없으면 새로 잡은 곤충이 기술 0개로
+            // 전투에 들어가 기본 공격만 하게 된다. 나머지는 훈련(누적)이나 기술 디스크로 배운다.
+            //
+            // <b>기존 세이브는 건드리지 않는다</b> — 이미 `learnedSkillIds`에 들어 있는 기술은
+            // 그대로 남는다. 추가를 멈추는 것뿐이라 마이그레이션이 필요 없다.
+            if (data.learnedSkillIds.Count == 0)
+            {
+                string starter = FindStarterSkillId(insect);
+                if (!string.IsNullOrEmpty(starter))
+                {
+                    data.learnedSkillIds.Add(starter);
+                    changed = true;
                 }
             }
 
@@ -405,8 +743,13 @@ namespace InsectGame.Core
                 }
             }
 
+            // 자동 장착은 **장착이 하나도 없을 때만** — 플레이어가 훈련 화면에서 "해제"한 슬롯을
+            // 다음 GetEquippedSkills(전투 진입)가 도로 채우면 해제가 성립하지 않는다. 배운 기술
+            // 6개 > 슬롯 4개라 그 곤충은 슬롯 구성을 영영 못 바꿨다(2026-09-09).
+            bool autoEquip = data.EquippedCount() == 0;
             foreach (string skillId in data.learnedSkillIds)
             {
+                if (!autoEquip) break;
                 if (string.IsNullOrEmpty(skillId))
                 {
                     continue;
@@ -449,19 +792,47 @@ namespace InsectGame.Core
                 return new PlayerInsectCollectionSave();
             }
 
-            string json = System.IO.File.ReadAllText(path);
-            return JsonUtility.FromJson<PlayerInsectCollectionSave>(json) ?? new PlayerInsectCollectionSave();
+            try
+            {
+                string json = System.IO.File.ReadAllText(path);
+                return JsonUtility.FromJson<PlayerInsectCollectionSave>(json) ?? new PlayerInsectCollectionSave();
+            }
+            catch (System.Exception e)
+            {
+                // 빈 컬렉션으로 시작하면 다음 저장(디바운스 0.5초·OnDisable flush)이 손상 파일을 빈 목록으로
+                // 덮어써 **곤충 전멸이 확정**된다. 원본을 옆에 남겨 복구 여지를 둔다.
+                try { System.IO.File.Copy(path, path + ".corrupt", true); }
+                catch (System.Exception copyError) { Debug.LogWarning($"[PlayerInsectCollection] 손상 원본 보존 실패: {copyError.Message}"); }
+                Debug.LogWarning($"[PlayerInsectCollection] 손상된 세이브 — 기본값으로 시작(원본은 {path}.corrupt): {e.Message}");
+                return new PlayerInsectCollectionSave();
+            }
         }
 
         private void Save(PlayerInsectCollectionSave data)
         {
             string json = JsonUtility.ToJson(data, true);
-            System.IO.File.WriteAllText(GetPath(), json);
+            AtomicFileWriter.WriteAllText(GetPath(), json);
         }
 
         private string GetPath()
         {
-            return System.IO.Path.Combine(Application.persistentDataPath, GameConstants.SaveFiles.PlayerInsects);
+            return SaveScope.FilePath(GameConstants.SaveFiles.PlayerInsects);
+        }
+
+        /// <summary>
+        /// 바깥 시스템이 <see cref="PlayerInsectData"/>를 직접 고친 뒤 부르는 알림.
+        ///
+        /// <see cref="GetByInstanceId"/>가 실참조를 돌려주므로 훈련·이벤트 보상 같은 외부 코드가
+        /// 곤충을 그 자리에서 고칠 수 있는데, 그러면 <see cref="InsectUpdated"/> 구독자들
+        /// (레벨업·선택 UI, 상태 HUD의 캐시 무효화)이 변경을 모른다 — 실제로 훈련이 스킬을 갈아
+        /// 끼우고도 이걸 알리지 않아 화면이 옛 스킬셋으로 남아 있었다.
+        /// 컬렉션이 스스로 고치는 경로(레벨업·치료 등)는 이미 각자 발화하므로 여기 올 일이 없다.
+        /// </summary>
+        public void NotifyInsectChanged(PlayerInsectData data)
+        {
+            if (data == null) return;
+            MarkDirty();
+            InsectUpdated?.Invoke(data);
         }
 
         public void ForceSave()
@@ -491,7 +862,25 @@ namespace InsectGame.Core
                         continue;
                     }
 
-                    if (EnsureLevelSkills(data, GetInsectData(data.insectId)))
+                    InsectData insect = GetInsectData(data.insectId);
+
+                    // **지속 HP 센티넬 보정이 실제로 도는 자리는 여기다.**
+                    // LoadAndIndex의 EnsureHp는 부트에서 한 번도 실행되지 않는다 —
+                    // Bootstrap이 AddComponent로 이 컴포넌트를 만들어 Awake→LoadAndIndex가
+                    // AutoWire보다 먼저 돌고, 그 시점엔 database가 null이라 GetInsectData가
+                    // 전 개체에 null을 준다("insect null이면 다음 로드에 미룸" 분기로 전부 스킵).
+                    // 그 "다음 로드"도 순서가 같아 영영 오지 않는다.
+                    // 지금 증상이 없는 건 GetEffectiveHp가 음수를 풀피로 보고 IsFainted가 ==0이라
+                    // -1이 기절로 읽히지 않기 때문이지만, save-system.md는 이 보정이 동작한다고
+                    // 보증한다고 적어 뒀다. 가드 없는 소비자가 하나만 생겨도 그대로 터진다.
+                    if (insect != null)
+                    {
+                        int beforeHp = data.currentHp;
+                        data.EnsureHp(data.GetTotalHp(insect.baseHp));
+                        if (data.currentHp != beforeHp) needsSave = true;
+                    }
+
+                    if (EnsureLevelSkills(data, insect))
                     {
                         needsSave = true;
                     }

@@ -1,6 +1,6 @@
 ---
 name: visual-dev
-description: 비주얼/디자인 에이전트. 프로시저럴 모델, UI 레이아웃, 색상/스타일 담당.
+description: 3D 씬 비주얼과 연출 담당 — 프로시저럴 메시 빌더(InsectEntity.BuildModel, PlayerVisualBuilder, RegionTerrainBuilder, SubAreaWorldBuilder), Material·셰이더·색상 팔레트, 파티클과 이펙트, 애니메이션 보간(HP바, 쉐이크, AOE). 어떻게 보이는가(모양·색·움직임)가 문제일 때 PROACTIVELY 위임. 예 - 곤충 모델이 점토처럼 보인다 / 지형이 하늘에 떠 있다 / 레어도 색이 안 맞는다 / 유나이트 이펙트가 안 나온다. UI의 Rect 좌표·레이아웃·화면 전환은 ui-dev 영역이므로 손대지 않는다.
 tools:
   - Read
   - Edit
@@ -8,12 +8,14 @@ tools:
   - Glob
   - Grep
   - Bash
-  - Agent
 ---
 
 # 비주얼 에이전트
 
-프로시저럴 3D 모델 생성, OnGUI 레이아웃, 색상 팔레트, 시각 연출을 담당합니다.
+프로시저럴 3D 모델 생성, 색상 팔레트, 시각 연출(이펙트·보간·쉐이크)을 담당합니다.
+
+OnGUI의 Rect 좌표와 레이아웃은 **ui-dev 영역**입니다. 여기서는 그 위에 얹히는
+색·이펙트·애니메이션만 다룹니다 (`agent-coordination.md`의 수정 경계 표 참조).
 
 ## 담당 파일
 
@@ -22,10 +24,25 @@ tools:
 - `Assets/Scripts/Battle/BattleArenaController.cs` - 배틀 아레나 환경 구축
 - `Assets/Scripts/Core/ProceduralAudioGenerator.cs` - 프로시저럴 오디오
 - `Assets/Scripts/Core/AudioManager.cs` - 오디오 매니저 (싱글턴)
+- `Assets/Scripts/Core/UIAudioBinder.cs` - UI 버튼 자동 hover/click 사운드 부착
 - `Assets/Scripts/Data/ItemRarityPalette.cs` - 레어도별 색상 ※data-architect 공유
+- `Assets/Scripts/Dex/RarityIconProvider.cs` - 레어도 아이콘 렌더링 ※data-architect 공유
+- `Assets/Scripts/Dex/InsectModelPreviewRenderer.cs` - 도감/상세용 곤충 모델 프리뷰 렌더 ※화면 배치는 ui-dev
+
+### 환경 비주얼
+- `Assets/Scripts/Core/SubAreaEnvironment.cs` - 서브에리어 환경 전환 (조명, 안개, 앰비언트)
+- `Assets/Scripts/Core/WorldTerrainBuilder.cs` - 월드 지형 생성 (절벽, 강, 다리, 경사면)
+- `Assets/Scripts/Core/SubAreaWorldBuilder.cs` - 서브에리어 프로시저럴 던전/환경 생성
+- `Assets/Scripts/Core/RegionTerrainBuilder.cs` - 리전별 필드 지형 생성 (언덕, 길, 바위, 나무)
 
 ### 캐릭터/의상 비주얼
+- `Assets/Editor/OutfitRenderProbe.cs` - 의상을 입힌 마네킹을 3D 리그로 직접 촬영해 spawn/bind 파츠가 실제로 그려지는지 확인 ※IMGUI를 안 거치므로 배치모드로 돈다
+- `Assets/Scripts/Core/CharacterFaceAnimator.cs` - 눈 깜빡임·표정 전환 ※걷기(PlayerMovement.AnimateWalk)와 직교한 별도 컴포넌트로 유지할 것. 눈 스케일은 base에 대입(곱셈 누적 금지)
+- `Assets/Scripts/Core/ProcMeshLibrary.cs` - 캐릭터용 프로시저럴 메시 생성기(Disc/LowSphere/RoundedBox/TaperedCapsule/Diamond) + 프로세스 수명 정적 캐시 ※bind 가능 노드(Cap·NetHandle 등)에는 쓰지 말 것 — ApplyBound가 sharedMesh·localScale을 덮어쓴다
+- `Assets/Scripts/Core/CharacterPalette.cs` - 피부·머리 색 팔레트와 부위별 PBR 재질(SurfaceKind)의 단일 출처. 3D 캐릭터·마네킹·2D 초상·NPC가 전부 여기를 읽는다 ※인덱스 순서는 세이브가 가리키므로 바꾸지 말 것
 - `Assets/Scripts/Core/CharacterOutfitManager.cs` - 의상 관리
+- `Assets/Scripts/Core/OutfitShapeLibrary.cs` - 의상 파츠 레시피(itemId → OutfitPart[]) 형태의 단일 출처 ※스키마·앵커 확장은 data-architect 공유
+- `Assets/Scripts/Core/CharacterModelPreviewRenderer.cs` - 의상 미리보기용 3D 마네킹 리그·썸네일 렌더 ※화면 배치는 ui-dev
 - `Assets/Scripts/Core/OutfitBonusProvider.cs` - 의상 보너스
 - `Assets/Scripts/Core/CameraFollower.cs` - 카메라 팔로우
 
@@ -35,7 +52,15 @@ tools:
 
 ### 시각 연출 참조 (주담당: ui-dev)
 - `Assets/Scripts/UI/BattleScreenUI.cs` - 배틀 시각 연출 부분 (쉐이크, HP바, 속성 이펙트)
-- `Assets/Scripts/UI/RaidBattleUI.cs` - 레이드 시각 연출 부분
+- `Assets/Scripts/UI/RaidBattleUI.cs` - 레이드 시각 연출 부분(상태기계 절반 — 연출 타이밍 상수가 여기 있다)
+- `Assets/Scripts/UI/RaidBattleUI.Draw.cs` - 레이드 렌더 절반 partial: AOE·유나이트 이펙트·HP바·속성 임팩트 ※레이아웃은 ui-dev
+- `Assets/Scripts/NPC/NpcVisualBuilder.cs` - NPC 프로시저럴 모델 빌더
+- `Assets/Scripts/NPC/NpcWalkAnimator.cs` - NPC 걷기 애니메이션
+- `Assets/Scripts/NPC/NpcGesture.cs` - NPC 몸짓 정의 + 각도 곡선 순수부(NpcGesturePose)
+- `Assets/Scripts/Core/VillageBuilder.cs` - 마을 프로시저럴 지형/건물
+- `Assets/Scripts/Core/BlightVfx.cs` - 오염 거점 구조물·안개·지면 탈색·정화 붕괴 연출
+- `Assets/Editor/LiveSceneCapture.cs` - 배치모드 실화면 캡처(3D 변경을 눈으로 확인) ※IMGUI는 안 잡힘
+- `Assets/Editor/BlightSiteDebugMenu.cs` - 오염 거점 육안 확인용 에디터 메뉴(이동·정화·초기화)
 
 ## 현재 비주얼 시스템
 

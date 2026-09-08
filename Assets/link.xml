@@ -1,0 +1,11 @@
+<linker>
+  <!--
+    엔진 코드 스트리핑(stripEngineCode)이 '코드에서 직접 참조하지 않지만 런타임에 필요한' 엔진 클래스를
+    제거하는 문제를 방지한다.
+    GameObject.CreatePrimitive(...)는 내부에서 MeshCollider를 AddComponent하므로, 코드에 MeshCollider
+    직접 참조가 없으면 스트리퍼가 제거 → 런타임에 "Can't add component because class 'MeshCollider'
+    doesn't exist!" → 지형 콜라이더 누락 → 플레이어 바닥 관통/카메라 추락(회색 필드) 회귀가 발생한다.
+    PhysicsModule 전체를 보존해 스트리핑을 재활성화하더라도 안전하게 유지한다.
+  -->
+  <assembly fullname="UnityEngine.PhysicsModule" preserve="all"/>
+</linker>

@@ -1,6 +1,6 @@
 ---
 name: data-architect
-description: 데이터 모델, ScriptableObject, 세이브/로드, IV/스탯 시스템 전문 에이전트.
+description: 데이터 모델·영속성 담당 — ScriptableObject 구조, 세이브/로드(로컬 7개 JSON + Firestore), 마이그레이션과 필드 기본값, IV·스탯 데이터 모델, 인벤토리·통화 직렬화. 저장·로드·데이터 구조가 문제일 때 PROACTIVELY 위임. 예 - 업데이트 후 세이브가 날아간다 / 새 필드를 추가하면 기존 유저가 깨지나 / SO에 항목 추가 절차 / 클라우드와 로컬이 어긋난다. 게임 수치값 자체(가격·확률·보상 밸런스)는 game-designer 영역이며, 여기서는 그 값을 담는 구조만 다룬다.
 tools:
   - Read
   - Edit
@@ -8,7 +8,6 @@ tools:
   - Glob
   - Grep
   - Bash
-  - Agent
 ---
 
 # 데이터 아키텍트 에이전트
@@ -35,6 +34,7 @@ tools:
 ### Core 플레이어 데이터/세이브
 - `Assets/Scripts/Core/PlayerProgressSaveService.cs` - 로컬 세이브
 - `Assets/Scripts/Core/CloudSaveManager.cs` - Firestore 클라우드 (120초 자동)
+- `Assets/Scripts/Core/QuestSaveMerge.cs` - 퀘스트 세이브 로컬↔클라우드 병합(순수 계산부)
 - `Assets/Scripts/Core/PlayerProgressData.cs` - 진행도 데이터
 - `Assets/Scripts/Core/PlayerProgressController.cs` - 진행도 로직
 - `Assets/Scripts/Core/PlayerCandyInventory.cs` - 캔디
@@ -42,8 +42,23 @@ tools:
 - `Assets/Scripts/Core/PlayerItemInventory.cs` - 아이템 인벤토리
 - `Assets/Scripts/Core/PlayerInsectCollection.cs` - 보유 곤충 컬렉션
 - `Assets/Scripts/Core/PlayerInsectData.cs` - 개별 곤충 인스턴스 데이터
+- `Assets/Scripts/Core/InsectSizeCalculator.cs` - 개체 크기·무게 계산 ※기준값·배율 튜닝은 game-designer
 - `Assets/Scripts/Core/GameConstants.cs` - 전역 상수
 - `Assets/Scripts/Core/CharacterOutfitData.cs` - 의상 데이터 모델
+- `Assets/Scripts/Data/StarterInsectCatalog.cs` - 첫 파트너 곤충 선택지 + PlayerPrefs 오버라이드 ※ResolveChoice의 화이트리스트는 조작 방어다(빼면 임의 곤충을 1레벨에 받는다). 지급은 여전히 ch1_intro 비트가 한다
+- `Assets/Scripts/Data/CharacterAppearanceConfig.cs` - 캐릭터 외형 SO(색 팔레트·프리셋). 선택적 오버라이드이며 에셋이 없는 게 정상 경로 — 코드 폴백을 반드시 유지
+- `Assets/Scripts/Core/CharacterPresetLibrary.cs` - 생성 화면 프리셋의 단일 출처(코드 기본값 + SO 오버라이드) ※인덱스는 Character.OutfitPreset으로 저장되므로 순서 불변
+- `Assets/Scripts/Core/AppearanceSpec.cs` - 외형(성별·머리·얼굴·피부) 스펙 + PlayerPrefs 로드 + 프리뷰 캐시 해시 ※필드를 늘리면 Hash()도 함께. 색값 자체는 visual-dev의 CharacterPalette
+- `Assets/Scripts/Core/SaveScope.cs` - 계정 스코핑 + 세이브 마이그레이션 버전. 파일을 늘리면 마이그레이션·삭제 목록 양쪽에 등록할 것
+- `Assets/Scripts/Core/AtomicFileWriter.cs` - 세이브 원자적 쓰기(temp→replace). 중간 크래시로 반쪽 JSON이 남지 않게 한다
+- `Assets/Scripts/Core/ICloudReloadable.cs` - 클라우드 복원 후 재로드 계약
+- `Assets/Scripts/Data/InsectExpansionDefinitions.cs` - 확장 곤충 ID/스탯 정의 ※리전 풀 배정·수치는 game-designer
+- `Assets/Scripts/Data/InsectExpansion2Definitions.cs` - 2막 곤충 66종 ID/스탯 정의 ※리전 풀 배정·수치는 game-designer
+
+### Editor (데이터 애셋 생성)
+- `Assets/Editor/StarterInsectProbe.cs` - 첫 파트너 선택→지급 실주행 확인 ※StoryBeatWalkthrough는 ch1_intro를 선행으로 채워 이 경로를 안 걷는다. 보상은 대사창을 **닫을 때** 난다
+- `Assets/Editor/CharacterAppearanceConfigBuilder.cs` - `Resources/CharacterAppearanceConfig.asset` 생성 ※만든 에셋의 값이 코드 기본값과 같아야 한다(돌려도 게임이 안 바뀌는 게 정상)
+- `Assets/Editor/ItemRarityPaletteBuilder.cs` - `Resources/ItemRarityPalette.asset` 재현 가능 생성 ※색·그라디언트는 visual-dev
 
 ### Dex 모듈 (전체)
 - `Assets/Scripts/Dex/DexController.cs` - 도감 핵심 로직
@@ -56,6 +71,10 @@ tools:
 - `Assets/Scripts/Dex/DexListUIPresetController.cs` - 도감 목록 프리셋
 - `Assets/Scripts/Dex/DexListItemUI.cs` - 도감 목록 아이템
 - `Assets/Scripts/Dex/RarityIconProvider.cs` - 레어도 아이콘
+- `Assets/Scripts/NPC/NpcDialogueDatabase.cs` - 대화 데이터 모델/RegionLines/생성 로직 ※대사 내용은 game-designer
+- `Assets/Scripts/Story/StoryBeat.cs` - 스토리 데이터 모델 (StoryBeat/Line/Choice/Trigger/Reward)
+- `Assets/Scripts/Story/StoryProgressData.cs` - 스토리 진행 세이브 모델
+- `Assets/Scripts/Story/CutsceneData.cs` - 컷신 샷 데이터 모델 + 타임라인 순수부(CutsceneTimeline)
 
 ## 세이브 파일 구조
 | 파일 | 내용 | 서비스 |

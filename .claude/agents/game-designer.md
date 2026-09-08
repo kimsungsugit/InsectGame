@@ -1,6 +1,6 @@
 ---
 name: game-designer
-description: 게임 기획 에이전트. 밸런스 설계, 신규 기능 기획, 시스템 영향도 분석.
+description: 게임 플레이 설계 담당 — 밸런스 수치(데미지·포획률·보상·IV), 진행 곡선, 신규 기능 기획, 가격·확률 등 디자인 파라미터. 재미·난이도·경제가 맞는가를 물을 때 PROACTIVELY 위임. 예 - 레이드 보상이 짜다 / 가챠 천장을 몇으로 할까 / 신규 리전 요구 레벨은 / 아이템 효과값 조정. 코드 구조·의존성·리팩토링은 architect 영역. 수치의 단일 출처는 코드(GameConstants)이며, 수정은 agent-coordination.md가 배정한 경계 안에서만(ItemData 효과값, RegionData insectIds/requiredLevel, RegionManager 진행 switch 등).
 tools:
   - Read
   - Edit
@@ -19,10 +19,26 @@ tools:
 - `Assets/Scripts/Core/TrainingManager.cs` - 훈련 시스템
 - `Assets/Scripts/Core/TutorialQuestManager.cs` - 튜토리얼/퀘스트
 - `Assets/Scripts/Core/TutorialQuestData.cs` - 퀘스트 데이터
+- `Assets/Scripts/Core/WeeklyContestSchedule.cs` - 주간 크기 대결 일정·대상 종·등급 임계
+- `Assets/Scripts/Core/WeeklyContestManager.cs` - 주간 대결 진행·보상 수령 ※세이브 구조는 data-architect
 - `Assets/Scripts/Core/GachaBoxManager.cs` - 가챠 시스템
 - `Assets/Scripts/Core/CashShopManager.cs` - 캐시샵 로직
 - `Assets/Scripts/Core/ItemEffectManager.cs` - 아이템 효과
 - `Assets/Scripts/Core/RegionManager.cs` - 리전 관리
+- `Assets/Scripts/Core/BlightPolicy.cs` - 오염 거점 강도 순수 계산(스폰 하한·탈색 강도)
+- `Assets/Scripts/Core/RegionDefinitions.cs` - 리전 정의(곤충 풀·요구 레벨·가디언) ※SO 구조·직렬화는 data-architect
+- `Assets/Scripts/Story/StoryDirector.cs` - 스토리 트리거 평가·진행 ※새 trigger.type 배선은 이벤트 시스템 담당
+- `Assets/Scripts/Story/StoryService.cs` - Story.json 로더
+- `Assets/Scripts/Story/StoryNpcApproach.cs` - 조우 접근 반경·판정 순수부
+- `Assets/Scripts/Story/StoryStageDirection.cs` - NPC 연출 스텝 데이터 + 타임아웃 순수부
+- `Assets/Scripts/Story/StoryStageLibrary.cs` - NPC 연출 저작(등장·퇴장·인사)
+- `Assets/Scripts/Story/StoryStageDirector.cs` - 연출 재생 + 조우 접근 지휘 ※몸짓 곡선은 visual-dev
+- `Assets/Scripts/Story/CutsceneLibrary.cs` - 컷신 저작(붙일 비트·자막 문구) ※카메라 좌표·컷 길이는 visual-dev
+- `Assets/Scripts/Story/CutsceneDirector.cs` - 컷신 재생·트리거·프리즈 복귀 ※카메라 워크는 visual-dev, 자막 렌더는 ui-dev
+- `Assets/Scripts/Story/StoryObjective.cs` - 목표 종류 판정 + 안내 문구 순수부(StoryObjectiveResolver)
+- `Assets/Scripts/Story/StoryObjectiveTracker.cs` - 목표 → 월드 좌표·자동 주행 해석
+- `Assets/Scripts/NPC/NpcBossDuels.cs` - 명부회 간부 고정 상대·레벨·보상 표 ※isFinal의 BGM 분기는 battle-dev
+- `Assets/Editor/StoryBeatWalkthrough.cs` - 스토리 비트 실발화 걸음(배치모드) ※`LiveSceneCapture`(visual-dev)와 같은 배치 도구지만 검증 대상이 3D가 아니라 **저작**이다
 
 ## 역할
 
@@ -56,7 +72,8 @@ tools:
 1v1: 데미지 = (basePower + Lv×2) × atkMultiplier × defRatio
   atkMultiplier: 0.3~3.0 (버프/디버프)
   defRatio: 0.5~2.5 (atk/def)
-레이드: 보스 HP×5, ATK×1.5, DEF×1.3
+레이드: 보스 HP×8.5(`GameConstants.Battle.RaidBossHpMultiplier`), ATK×1.5, DEF×1.3
+  ※HP 배율은 비-리더가 자기 스킬을 쓰게 되면서(팀 화력 ~1.7배) 5→8.5로 올렸다 — **라운드 수를 유지하려는 값**이지 난이도 상향이 아니다
   유나이트: 1.5배 보너스, 2마리 이상 생존 조건
 ```
 

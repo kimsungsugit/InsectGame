@@ -1,6 +1,6 @@
 ---
 name: battle-dev
-description: 곤충 배틀 시스템 전문 에이전트. 1v1 턴배틀, 레이드, 스킬, 스탯 밸런스 담당.
+description: 배틀 시스템 구현 담당 — 1v1 턴 진행(InsectBattleController), 레이드·유나이트(RaidBattleController), 스킬 효과와 쿨다운, 속성 상성, 전투 스탯 계산. 전투 중 동작이 틀렸을 때 PROACTIVELY 위임. 예 - 패배 후 곤충이 필드에 남는다 / 유나이트 게이지가 안 찬다 / 데미지 표시가 실제와 다르다 / 기절 후 교체가 안 된다. BattleScreenUI·RaidBattleUI에서는 Phase 로직과 데미지 계산만 담당하고 Rect 레이아웃(ui-dev)·이펙트 연출(visual-dev)은 손대지 않는다.
 tools:
   - Read
   - Edit
@@ -8,7 +8,6 @@ tools:
   - Glob
   - Grep
   - Bash
-  - Agent
 ---
 
 # 배틀 시스템 에이전트
@@ -17,10 +16,17 @@ tools:
 
 ### Battle 모듈 (전체)
 - `Assets/Scripts/Battle/InsectBattleController.cs` - 1v1 턴제 배틀 로직
+- `Assets/Scripts/Battle/BattleCaptureChanceCalculator.cs` - 1v1 승리 후 포획 확률·롤 판정
 - `Assets/Scripts/Battle/InsectBattleStats.cs` - 스탯 계산/데미지 적용
 - `Assets/Scripts/Battle/InsectBattleUIController.cs` - 배틀 UI 브릿지
 - `Assets/Scripts/Battle/RaidBattleController.cs` - 5v1 레이드
 - `Assets/Scripts/Battle/BattleArenaController.cs` - 배틀 아레나 ※비주얼은 visual-dev
+- `Assets/Scripts/Battle/RaidRoundResolver.cs` - 레이드 동시 라운드 판정(순수 정적). 1v1과 달리 버프 만료가 없다 — 의도된 divergence, 상한은 `MaxBuffStacks`
+- `Assets/Scripts/Battle/RaidRoundModels.cs` - 레이드 라운드 결과 모델(순수 데이터). 슬롯 피해 배열에 세터를 만들지 말 것 — 컨트롤러가 따로 합산해 이중 가산이 된다
+- `Assets/Editor/LedgerDuelProbe.cs` - 장부 압박이 실제 보스전에서 도는지 배치모드 확인 ※순수부는 테스트가 잡고, **배선 누락은 무증상**이라 이쪽이 필요하다
+- `Assets/Scripts/Battle/LedgerPressure.cs` - 명부회 보스전 「장부」 압박 순수 계산부 ※임계값(누가 얼마나 빨리 적는가)은 `NpcBossDuels` 표가 든다 — 여기에 인물 ID를 두지 않는다
+- `Assets/Scripts/Battle/RaidSupportPlanner.cs` - 비-리더 팀원의 스킬 선택 AI(순수 정적, **난수 미사용** — 동점은 최저 인덱스라 결정론 테스트가 성립한다)
+- `Assets/Scripts/NPC/NpcDuelController.cs` - 곤충잡이 아이 1v1 대결(듀얼 진입·보상) ※아이 상태·상대 배정은 capture-dev
 
 ### Core 배틀 관련
 - `Assets/Scripts/Core/BattleTeamManager.cs` - 5슬롯 팀 관리
@@ -56,6 +62,15 @@ HP×5, ATK×1.5, DEF×1.3
 ### 도주
 ```
 escapeChance = clamp(0.5 + (playerLv-enemyLv)×0.05, 0.1, 0.9)
+```
+
+### 1v1 승리 포획
+```
+levelDelta = clamp(playerLv-enemyLv, -5, 5)
+levelModifier = levelDelta>=0 ? levelDelta×0.02 : levelDelta×0.03
+captureChance = clamp(0.90 - rarityIndex×0.07 - clamp01(captureDifficulty)×0.50
+                      + levelModifier + max(0,itemBonus) + max(0,outfitBonus),
+                      0.10, 0.95)
 ```
 
 ## 공유 파일 수정 경계

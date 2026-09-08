@@ -4,6 +4,15 @@ using UnityEngine;
 
 namespace InsectGame.UI
 {
+    /// <summary>
+    /// 화면 진입점 11개를 한 줄로 모은 바. 데스크톱은 하단 가로, 모바일은 우측 세로다.
+    ///
+    /// <b>이 컴포넌트는 모달이 아니다.</b> 예전엔 모바일에서 "메뉴 버튼 → 팝업" 2탭이라
+    /// 그 팝업이 모달이었는데, 버튼을 직접 노출하도록 바꾸면서 팝업이 사라졌다.
+    /// <c>IModalUI</c> 구현과 <c>mobileMenuOpen</c>은 그 잔재로 남아 있었다 —
+    /// <b>어디서도 <c>Register</c>하지 않아 <c>IsOpen</c>은 영원히 false였고</b>,
+    /// 그런데도 시그니처만 보면 이 바가 모달 스택에 참여하는 것처럼 읽혔다.
+    /// </summary>
     public class QuickAccessBarUI : MonoBehaviour
     {
         [SerializeField] private DexScreenUI dexScreen;
@@ -11,17 +20,45 @@ namespace InsectGame.UI
         [SerializeField] private TrainingUI trainingUI;
         [SerializeField] private CollectionUI collectionUI;
         [SerializeField] private RegionMapUI regionMapUI;
-        [SerializeField] private CharacterViewerUI characterViewer;
         [SerializeField] private CharacterOutfitUI outfitUI;
         [SerializeField] private CashShopUI cashShopUI;
         [SerializeField] private TutorialQuestUI questUI;
+        [SerializeField] private SocialPvpUI socialPvpUI;
+        [SerializeField] private StoryJournalUI storyJournalUI;
+        [SerializeField] private InventoryUI inventoryScreen;
+
+        // 전투/포획/미니게임 등 입력 차단용 신호 (CaptureInputController와 동일).
+        [SerializeField] private BattleScreenUI battleScreen;
+        [SerializeField] private RaidBattleUI raidScreen;
+        [SerializeField] private PlayerMovement playerMovement;
 
         private struct ButtonDef
         {
             public string label;
+            /// <summary>
+            /// 안내 문구이자 <b>실제 키 바인딩</b>. <see cref="Hotkeys"/>가 이 문자열을
+            /// <c>KeyCode</c>로 파싱해 쓴다 — 키 표를 따로 적어 두지 않는다.
+            /// </summary>
             public string key;
             public Color color;
+            /// <summary>미확인 완료 배지를 그리는 버튼인가(퀘스트 하나뿐이다).</summary>
+            public bool questBadge;
         }
+
+        private GUIStyle cachedBtnStyle;
+        private GUIStyle mobileGridButtonStyle;
+        private GUIStyle badgeStyleCache;
+
+        /// <summary>데스크톱 하단 바의 버튼 높이. 배치의 단일 출처다.</summary>
+        public const float BarButtonHeight = 64f;
+
+        /// <summary>
+        /// 이 바가 화면 하단에서 실제로 먹는 높이(버튼 + 배경 여백 8 + 시각적 간격 4).
+        /// <b>다른 하단 UI는 이 값만큼 띄워야 한다</b> — `PlayerHintOverlay`가 그냥
+        /// <c>BottomY(40)</c>을 쓰다가 바 안쪽에 통째로 들어가 버튼 위에 글자가 찍혔다.
+        /// 여기 값을 고치면 그쪽도 따라온다(사본을 두지 않는다).
+        /// </summary>
+        public const float BarReservedHeight = BarButtonHeight + 8f + 4f;
 
         private readonly ButtonDef[] buttons = new ButtonDef[]
         {
@@ -29,56 +66,111 @@ namespace InsectGame.UI
             new ButtonDef { label = "배틀팀", key = "T", color = new Color(1f, 0.5f, 0.2f) },
             new ButtonDef { label = "훈련", key = "G", color = new Color(0.4f, 0.85f, 0.4f) },
             new ButtonDef { label = "컬렉션", key = "C", color = new Color(0.4f, 0.6f, 1f) },
-            new ButtonDef { label = "퀘스트", key = "Q", color = new Color(0.3f, 0.9f, 0.7f) },
+            new ButtonDef { label = "퀘스트", key = "Q", color = new Color(0.3f, 0.9f, 0.7f), questBadge = true },
             new ButtonDef { label = "지도", key = "M", color = new Color(0.7f, 0.5f, 0.9f) },
-            new ButtonDef { label = "캐릭터", key = "V", color = new Color(0.9f, 0.6f, 0.8f) },
+            // '캐릭터'[V] 항목이 여기 있었다. 여는 화면(CharacterViewerUI)이 상점[F4]·의상[P]·
+            // 좌상단 PlayerStatusHUD의 완전한 중복이라 화면째 제거했다(사용자 요청).
             new ButtonDef { label = "의상", key = "P", color = new Color(0.8f, 0.7f, 1f) },
             new ButtonDef { label = "상점", key = "F4", color = new Color(1f, 0.4f, 0.4f) },
+            new ButtonDef { label = "PVP", key = "F6", color = new Color(0.25f, 0.75f, 1f) },
+            // 스토리 저널 — 60비트로 늘어난 서사의 진행 상황을 보는 유일한 창구.
+            // 인덱스가 IsActive/OnClick의 case 번호다 — 그 둘은 아직 손으로 짝을 맞춘다.
+            new ButtonDef { label = "이야기", key = "J", color = new Color(1f, 0.79f, 0.3f) },
+            // 가방 — 보유 아이템을 보고 쓰는 유일한 창구. **여기 없던 동안 아이템 시스템이
+            // 통째로 잠겨 있었다**(uGUI 인벤토리는 만들어지기만 하고 여는 코드가 없었다).
+            // 맨 뒤에 붙인 이유는 아래 IsActive/OnClick의 case 번호가 이 배열 인덱스이기 때문이다 —
+            // 중간에 끼우면 그 아래 전부가 한 칸씩 어긋난다.
+            new ButtonDef { label = "가방", key = "I", color = new Color(1f, 0.66f, 0.38f) },
         };
+
+        /// <summary>
+        /// 버튼별 키 바인딩. <b><c>buttons[].key</c>에서 파생한다</b> — 예전엔 같은 표를
+        /// <c>Update</c>와 <c>OnGUI</c>에 <b>두 벌 더</b> 적어 두었고, 그 둘은 인덱스로만
+        /// 배열과 이어져 있었다. 항목을 중간에 하나 끼우면 세 표가 통째로 한 칸씩 어긋나
+        /// <b>C가 훈련을 열고 배지가 지도에 붙는다</b> — 예외도 경고도 없다.
+        /// (실제로 '캐릭터'[V] 항목을 배열에서 뺀 적이 있다.)
+        ///
+        /// 파싱 실패는 <c>KeyCode.None</c>으로 두고 경고한다. 조용히 안 먹는 키보다 낫다.
+        /// </summary>
+        private KeyCode[] hotkeyCache;
+
+        private KeyCode[] Hotkeys()
+        {
+            if (hotkeyCache != null) return hotkeyCache;
+
+            hotkeyCache = new KeyCode[buttons.Length];
+            for (int i = 0; i < buttons.Length; i++)
+            {
+                if (System.Enum.TryParse<KeyCode>(buttons[i].key, false, out KeyCode code))
+                {
+                    hotkeyCache[i] = code;
+                    continue;
+                }
+                hotkeyCache[i] = KeyCode.None;
+                Debug.LogWarning($"[QuickBar] '{buttons[i].label}'의 키 표기 '{buttons[i].key}'를 "
+                    + "KeyCode로 읽지 못했다 — 그 버튼은 키보드로 열리지 않는다");
+            }
+            return hotkeyCache;
+        }
 
         private void Update()
         {
-            if (Input.GetKeyDown(KeyCode.N)) OnClick(0);
-            if (Input.GetKeyDown(KeyCode.T)) OnClick(1);
-            if (Input.GetKeyDown(KeyCode.G)) OnClick(2);
-            if (Input.GetKeyDown(KeyCode.C)) OnClick(3);
-            if (Input.GetKeyDown(KeyCode.Q)) OnClick(4);
-            if (Input.GetKeyDown(KeyCode.M)) OnClick(5);
-            if (Input.GetKeyDown(KeyCode.V)) OnClick(6);
-            if (Input.GetKeyDown(KeyCode.P)) OnClick(7);
-            if (Input.GetKeyDown(KeyCode.F4)) OnClick(8);
+            if (IsInputBlocked()) return;
+
+            KeyCode[] keys = Hotkeys();
+            for (int i = 0; i < keys.Length; i++)
+                if (keys[i] != KeyCode.None && Input.GetKeyDown(keys[i])) TryHotkey(i);
         }
 
         private void OnGUI()
         {
+            // 전투/포획/미니게임 중에는 핫키 처리도, 퀵바 렌더도 하지 않는다.
+            if (IsInputBlocked()) return;
+
             Event e = Event.current;
-            if (e != null && e.type == EventType.KeyDown)
+            if (e != null && e.type == EventType.KeyDown && e.keyCode != KeyCode.None)
             {
-                bool handled = false;
-                switch (e.keyCode)
+                // 소비는 TryHotkey가 통과했을 때만 한다. 모달 때문에 무시된 키를
+                // e.Use()로 삼키면 그 모달의 텍스트필드가 글자를 못 받는다.
+                KeyCode[] keys = Hotkeys();
+                for (int i = 0; i < keys.Length; i++)
                 {
-                    case KeyCode.N: OnClick(0); handled = true; break;
-                    case KeyCode.T: OnClick(1); handled = true; break;
-                    case KeyCode.G: OnClick(2); handled = true; break;
-                    case KeyCode.C: OnClick(3); handled = true; break;
-                    case KeyCode.Q: OnClick(4); handled = true; break;
-                    case KeyCode.M: OnClick(5); handled = true; break;
-                    case KeyCode.V: OnClick(6); handled = true; break;
-                    case KeyCode.P: OnClick(7); handled = true; break;
-                    case KeyCode.F4: OnClick(8); handled = true; break;
+                    if (keys[i] != e.keyCode) continue;
+                    if (TryHotkey(i)) e.Use();
+                    break;
                 }
-                if (handled) e.Use();
             }
 
-            float btnW = Mathf.Min(140f, (Screen.width - 100f) / buttons.Length);
-            float btnH = 64f;
+            UIScale.Begin();
+
+            if (UIScale.IsMobileLayout)
+            {
+                // 모달(도감/팀/배틀 등)이 열려 있지 않을 때만 — 필드 탐험 중 직접 접근용 우측 퀵바.
+                if (!ModalUIRegistry.IsAnyOpen())
+                    DrawMobileQuickBar();
+                UIScale.End();
+                return;
+            }
+
+            float btnW = Mathf.Min(140f, (UIScale.VirtualScreenWidth - 100f) / buttons.Length);
+            const float btnH = BarButtonHeight;
             float gap = 6f;
             float totalW = buttons.Length * btnW + (buttons.Length - 1) * gap;
-            float startX = (Screen.width - totalW) / 2f;
-            float y = Screen.height - btnH - 16f;
+            float startX = (UIScale.VirtualScreenWidth - totalW) / 2f;
+            // 제스처바(하단 세이프 인셋) + 세로 마진 위로.
+            float y = UISafeLayout.BottomY(btnH);
+
+            Rect barRect = new Rect(startX - 14, y - 8, totalW + 28, btnH + 16);
+
+            // **클릭-이동 억제 등록**(`CaptureInputController`의 '잡기' 버튼과 같은 이유).
+            // `PlayerMovement`는 `Input.GetMouseButtonDown(0)`을 Update에서 따로 폴링하는데,
+            // 탭한 프레임엔 아직 모달이 안 열려 `IsAnyOpen()`이 false이고 IMGUI라 `pointerOverUI`도
+            // false다. 등록이 없으면 버튼 아래 월드 지점이 클릭 목표로 잡혀, 모달을 닫는 순간
+            // 캐릭터가 거기로 걸어간다 — 메뉴를 열 때마다 매번.
+            FieldHudInput.RegisterBlockingRect(barRect);
 
             GUI.color = new Color(0, 0, 0, 0.5f);
-            GUI.DrawTexture(new Rect(startX - 14, y - 8, totalW + 28, btnH + 16), Texture2D.whiteTexture);
+            GUI.DrawTexture(barRect, Texture2D.whiteTexture);
             GUI.color = Color.white;
 
             for (int i = 0; i < buttons.Length; i++)
@@ -92,13 +184,19 @@ namespace InsectGame.UI
                     ? new Color(def.color.r * 0.6f, def.color.g * 0.6f, def.color.b * 0.6f)
                     : new Color(def.color.r * 0.2f, def.color.g * 0.2f, def.color.b * 0.2f);
 
-                GUIStyle btnStyle = new GUIStyle(GUI.skin.button)
-                { fontSize = 20, fontStyle = FontStyle.Bold };
-                btnStyle.normal.textColor = isActive ? Color.white : def.color;
-                btnStyle.hover.textColor = Color.white;
+                if (cachedBtnStyle == null)
+                    cachedBtnStyle = new GUIStyle(GUI.skin.button)
+                    { fontSize = 20, fontStyle = FontStyle.Bold, richText = true };
+                cachedBtnStyle.normal.textColor = isActive ? Color.white : def.color;
+                cachedBtnStyle.hover.textColor = Color.white;
 
-                if (GUI.Button(new Rect(bx, y, btnW, btnH), $"{def.label}\n<size=14>[{def.key}]</size>", btnStyle))
-                    OnClick(i);
+                // **`OnClick`이 아니라 `TryHotkey`다.** 데스크톱 바는 모달이 열려 있어도 계속
+                // 그려지므로(위 렌더 경로 주석 참조), 클릭이 가드를 안 거치면 도감을 켜 둔 채
+                // 상점을 눌러 두 모달이 동시에 등록·렌더된다 — 뒤에 깔린 쪽이 "안 보이는데 입력만
+                // 먹고" ESC도 그쪽부터 닫힌다. `TryHotkey`는 열려 있는 화면 자신의 버튼(=IsActive)만
+                // 통과시키므로 토글로 닫는 동작은 그대로 산다.
+                if (GUI.Button(new Rect(bx, y, btnW, btnH), $"{def.label}\n<size=14>[{def.key}]</size>", cachedBtnStyle))
+                    TryHotkey(i);
 
                 if (isActive)
                 {
@@ -106,9 +204,109 @@ namespace InsectGame.UI
                     GUI.DrawTexture(new Rect(bx, y, btnW, 4), Texture2D.whiteTexture);
                     GUI.color = Color.white;
                 }
+
+                if (def.questBadge) DrawQuestBadge(new Rect(bx, y, btnW, btnH));
             }
 
             GUI.backgroundColor = Color.white;
+            UIScale.End();
+        }
+
+        // 모바일: 우측 가장자리에 전 기능을 '직접' 노출하는 세로 퀵바.
+        // (기존엔 메뉴 버튼→팝업 2탭이라 번거로웠음. 메뉴 단계 제거.)
+        private void DrawMobileQuickBar()
+        {
+            EnsureMobileStyles();
+            int n = buttons.Length;
+            float safeR = UIScale.VirtualSafeRight;
+            float gap = 8f;
+            float colW = 152f;
+            // 우측 상단 정렬 — 우하단의 원형 '잡기' 버튼 + '계정' 버튼 공간을 비운다.
+            // 상단 ~60% 영역에 배치(셀 높이 적응, 터치 최소 48).
+            float regionH = UISafeLayout.ContentHeight * 0.6f;
+            float cellH = Mathf.Clamp((regionH - 12f - (n - 1) * gap) / n, 48f, 88f);
+            float totalH = n * cellH + (n - 1) * gap;
+            float colX = UIScale.VirtualScreenWidth - safeR - colW - 14f;
+            float colY = UISafeLayout.ContentTop;
+
+            Rect colRect = new Rect(colX - 8f, colY - 8f, colW + 16f, totalH + 16f);
+
+            // 데스크톱 바와 같은 이유의 클릭-이동 억제 등록.
+            // **모바일이 더 나쁘다** — 키보드가 없어 `PlayerMovement`의 키 입력 기반 자동 해제도
+            // 안 걸리므로, 한 번 잡힌 목표가 그대로 남아 모달을 닫자마자 걸어간다.
+            FieldHudInput.RegisterBlockingRect(colRect);
+
+            // 컬럼 배경(가독성, 필드 가림 최소화를 위해 옅게)
+            GUI.color = new Color(0f, 0f, 0f, 0.3f);
+            GUI.DrawTexture(colRect, Texture2D.whiteTexture);
+            GUI.color = Color.white;
+
+            for (int i = 0; i < n; i++)
+            {
+                float by = colY + i * (cellH + gap);
+                ButtonDef def = buttons[i];
+                bool active = IsActive(i);
+
+                GUI.backgroundColor = active
+                    ? new Color(def.color.r * 0.62f, def.color.g * 0.62f, def.color.b * 0.62f, 1f)
+                    : new Color(def.color.r * 0.26f, def.color.g * 0.26f, def.color.b * 0.26f, 0.92f);
+                mobileGridButtonStyle.normal.textColor = active ? Color.white : def.color;
+                if (GUI.Button(new Rect(colX, by, colW, cellH), def.label, mobileGridButtonStyle))
+                    TryHotkey(i);   // 데스크톱과 같은 이유 — 모달 중첩 차단
+
+                if (active)
+                {
+                    GUI.color = def.color;
+                    GUI.DrawTexture(new Rect(colX, by, colW, 4f), Texture2D.whiteTexture);
+                    GUI.color = Color.white;
+                }
+
+                if (def.questBadge) DrawQuestBadge(new Rect(colX, by, colW, cellH));
+            }
+            GUI.backgroundColor = Color.white;
+        }
+
+        // 퀘스트 버튼 우상단에 '미확인 완료' 개수 배지(빨간 사각 + 흰 숫자). 0이면 안 그린다.
+        // UIScale.Begin 매트릭스 안에서 호출되므로 좌표는 가상 캔버스 기준.
+        private void DrawQuestBadge(Rect btnRect)
+        {
+            int count = TutorialQuestManager.Instance != null
+                ? TutorialQuestManager.Instance.UnseenCompletedCount : 0;
+            if (count <= 0) return;
+
+            if (badgeStyleCache == null)
+            {
+                badgeStyleCache = new GUIStyle(GUI.skin.label)
+                {
+                    fontSize = 18,
+                    fontStyle = FontStyle.Bold,
+                    alignment = TextAnchor.MiddleCenter
+                };
+                badgeStyleCache.normal.textColor = Color.white;
+            }
+
+            float d = Mathf.Clamp(btnRect.height * 0.45f, 24f, 32f);
+            Rect badge = new Rect(btnRect.xMax - d - 4f, btnRect.y + 4f, d, d);
+
+            Color prev = GUI.color;
+            GUI.color = new Color(0.9f, 0.18f, 0.18f, 1f);
+            GUI.DrawTexture(badge, Texture2D.whiteTexture);
+            GUI.color = prev;
+
+            GUI.Label(badge, count > 9 ? "9+" : count.ToString(), badgeStyleCache);
+        }
+
+        private void EnsureMobileStyles()
+        {
+            if (mobileGridButtonStyle != null) return;
+            mobileGridButtonStyle = new GUIStyle(GUI.skin.button)
+            {
+                fontSize = 24,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleCenter
+            };
+            mobileGridButtonStyle.normal.textColor = Color.white;
+            mobileGridButtonStyle.hover.textColor = Color.white;
         }
 
         private bool IsActive(int index)
@@ -121,17 +319,52 @@ namespace InsectGame.UI
                 case 3: return collectionUI != null && collectionUI.IsOpen;
                 case 4: return questUI != null && questUI.IsOpen;
                 case 5: return regionMapUI != null && regionMapUI.IsOpen;
-                case 6: return characterViewer != null && characterViewer.IsOpen;
-                case 7: return outfitUI != null && outfitUI.IsOpen;
-                case 8: return cashShopUI != null && cashShopUI.IsOpen;
+                case 6: return outfitUI != null && outfitUI.IsOpen;
+                case 7: return cashShopUI != null && cashShopUI.IsOpen;
+                case 8: return socialPvpUI != null && socialPvpUI.IsOpen;
+                case 9: return storyJournalUI != null && storyJournalUI.IsOpen;
+                case 10: return inventoryScreen != null && inventoryScreen.IsOpen;
                 default: return false;
             }
         }
 
         private int lastToggleFrame = -1;
 
+        // 전투(1v1/레이드)·포획·미니게임 중에는 메뉴 토글을 막는다.
+        // 배틀/레이드 진입 시 playerMovement.SetFrozen(true)가 호출되므로 frozen 하나로도 커버되나,
+        // CaptureInputController와 동일하게 명시적 신호도 함께 검사한다.
+        private bool IsInputBlocked()
+        {
+            if (battleScreen != null && battleScreen.IsBattleActive) return true;
+            if (raidScreen != null && raidScreen.IsRaidActive) return true;
+            if (playerMovement != null && playerMovement.IsFrozen) return true;
+            return false;
+        }
+
+        /// <summary>
+        /// 핫키로 index를 토글한다. 다른 화면이 열려 있으면 무시하고 false를 반환한다 —
+        /// 호출부가 이벤트를 소비하지 않아야 그 화면의 텍스트필드가 글자를 받는다.
+        /// 지금 열려 있는 화면 자신의 키는 통과시켜 같은 키로 닫는 토글을 유지한다.
+        /// </summary>
+        /// <remarks>
+        /// IsInputBlocked는 battle/raid/frozen만 본다. "모든 모달이 SetFrozen을 거니
+        /// frozen 하나로 커버된다"는 전제가 깨져 있었다 — SocialPvpUI와
+        /// WorldFieldMultiplayerUI는 모달로 등록하면서 SetFrozen을 부르지 않는다.
+        /// 그래서 친구코드·채팅 입력에 N/T/G/C/Q/M/P를 치면 글자마다 화면이 토글되고,
+        /// OnGUI의 e.Use()가 그 글자를 삼켜 입력조차 되지 않았다.
+        /// (렌더 경로는 이 가드를 쓰면 안 된다 — 데스크톱 바가 통째로 사라지고
+        ///  active 하이라이트 설계가 죽는다.)
+        /// </remarks>
+        private bool TryHotkey(int index)
+        {
+            if (ModalUIRegistry.IsAnyOpen() && !IsActive(index)) return false;
+            OnClick(index);
+            return true;
+        }
+
         private void OnClick(int index)
         {
+            if (IsInputBlocked()) return;
             if (Time.frameCount == lastToggleFrame) return;
             lastToggleFrame = Time.frameCount;
 
@@ -143,9 +376,18 @@ namespace InsectGame.UI
                 case 3: if (collectionUI != null) collectionUI.Toggle(); break;
                 case 4: if (questUI != null) questUI.Toggle(); break;
                 case 5: if (regionMapUI != null) regionMapUI.Toggle(); break;
-                case 6: if (characterViewer != null) characterViewer.Toggle(); break;
-                case 7: if (outfitUI != null) outfitUI.Toggle(); break;
-                case 8: if (cashShopUI != null) cashShopUI.Toggle(); break;
+                case 6: if (outfitUI != null) outfitUI.Toggle(); break;
+                case 7: if (cashShopUI != null) cashShopUI.Toggle(); break;
+                case 8: if (socialPvpUI != null) socialPvpUI.Toggle(); break;
+                case 9: if (storyJournalUI != null) storyJournalUI.Toggle(); break;
+                case 10: if (inventoryScreen != null) inventoryScreen.Toggle(); break;
+                // 배열에 버튼만 늘리고 여기(와 IsActive)를 안 늘리면 그 버튼은 **아무 일도
+                // 하지 않는다** — 눌러도 조용해서 배포까지 살아남는다. 누를 때만 찍히므로
+                // 매 프레임 스팸이 되지 않는다.
+                default:
+                    Debug.LogWarning($"[QuickBar] '{buttons[index].label}'(index {index})에 화면 "
+                        + "배선이 없다 — buttons[]를 늘렸으면 IsActive/OnClick switch도 함께 늘린다");
+                    break;
             }
         }
 
@@ -159,9 +401,8 @@ namespace InsectGame.UI
             if (regionMapUI == null) regionMapUI = map;
         }
 
-        public void AutoWire(CharacterViewerUI viewer, CharacterOutfitUI outfit, CashShopUI cashShop)
+        public void AutoWire(CharacterOutfitUI outfit, CashShopUI cashShop)
         {
-            if (characterViewer == null) characterViewer = viewer;
             if (outfitUI == null) outfitUI = outfit;
             if (cashShopUI == null) cashShopUI = cashShop;
         }
@@ -169,6 +410,29 @@ namespace InsectGame.UI
         public void AutoWire(TutorialQuestUI quest)
         {
             if (questUI == null) questUI = quest;
+        }
+
+        public void AutoWire(StoryJournalUI journal)
+        {
+            if (storyJournalUI == null) storyJournalUI = journal;
+        }
+
+        public void AutoWire(SocialPvpUI social)
+        {
+            if (socialPvpUI == null) socialPvpUI = social;
+        }
+
+        public void AutoWire(InventoryUI inventory)
+        {
+            if (inventoryScreen == null) inventoryScreen = inventory;
+        }
+
+        // 전투/포획/미니게임 중 입력 가드용 신호 주입.
+        public void AutoWire(BattleScreenUI battle, RaidBattleUI raid, PlayerMovement movement)
+        {
+            if (battleScreen == null) battleScreen = battle;
+            if (raidScreen == null) raidScreen = raid;
+            if (playerMovement == null) playerMovement = movement;
         }
     }
 }

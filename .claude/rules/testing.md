@@ -6,7 +6,47 @@ description: 테스트 프레임워크, 컨벤션, 필수 기준
 
 ## 프레임워크
 - NUnit (`using NUnit.Framework`)
-- EditMode 테스트 위치: `Assets/Tests/EditMode/`
+- 테스트 파일 위치: `Assets/Tests/EditMode/`
+
+## 러너는 PlayMode다 (폴더 이름에 속지 말 것)
+
+폴더 이름은 `EditMode`지만 **EditMode 러너로는 0건이 잡힌다.** 이 프로젝트엔
+`.asmdef`가 하나도 없어서 테스트가 별도 에디터 테스트 어셈블리가 아니라
+런타임 어셈블리(`Assembly-CSharp`)로 컴파일되고, EditMode 러너는 그걸 보지 못한다.
+
+```
+-testPlatform PlayMode -testFilter InsectGame.Tests
+```
+
+`-testPlatform EditMode`를 쓰면 **0건을 실행하고 "성공"이라 보고한다.** 실행 개수를
+반드시 확인할 것 — 2026-08-23 기준 `[Test]` 메서드 **592개**, 러너가 실제 실행하는 케이스 **704개**다
+(`[TestCase]` 파라미터화가 여러 케이스로 펼쳐진다). 단일 출처는 코드다 —
+`grep -c "\[Test\]" Assets/Tests/EditMode/*.cs`의 합과 TestResults.xml의 `total`.
+문서에 박아둔 숫자는 늘 낡는다(실제로 62로 적혀 있다가 147까지 벌어져 있었고, 547/628도 곧 낡았다).
+0건 보고는 통과가 아니라 실패다.
+
+**`-runTests`에 `-quit`를 같이 붙이지 말 것.** 붙이면 Unity가 테스트를 시작하기 전에 종료하는데
+**exit 0에 `Exiting batchmode successfully now!`까지 찍어** 성공처럼 보이고, `TestResults.xml`은
+아예 쓰이지 않는다. 이전 실행의 파일이 남아 있으면 그 낡은 `total`을 이번 결과로 착각하기 딱 좋다
+(2026-08-03에 실제로 그렇게 254/254를 잘못 읽었다). 테스트 러너가 스스로 종료하므로 `-quit`은 불필요하다.
+
+그래서 결과는 **두 가지를 함께** 봐야 한다 — `total`뿐 아니라 `TestResults.xml`의 **mtime이
+이번 실행 시각인지**. 확실히 하려면 실행 전에 기존 파일을 치워 없는 상태에서 시작한다.
+
+EditMode 러너를 되살리려면 `Assets/Scripts`·`Assets/Editor`·`Assets/Tests`에 asmdef를
+도입해야 한다(asmdef는 `Assembly-CSharp`를 참조할 수 없어 게임 코드 쪽도 함께 필요).
+출시 후 별건.
+
+## 테스트 파일은 반드시 `#if UNITY_EDITOR`로 감쌀 것 (안 그러면 APK/AAB 빌드가 깨진다)
+
+`.asmdef`가 없어 테스트가 `Assembly-CSharp`(런타임 어셈블리)로 컴파일되므로, 가드 없이 두면
+테스트의 `nunit.framework` 참조가 IL2CPP 플레이어(APK/AAB) 빌드로 **새어 나가 링크가 실패한다**
+(`Mono.Cecil.AssemblyResolutionException: Failed to resolve assembly: 'nunit.framework'`).
+
+그래서 모든 EditMode 테스트 `.cs`는 **첫 줄 `#if UNITY_EDITOR`, 마지막 줄 `#endif`로 파일
+전체를 감싼다.** 에디터 PlayMode 러너에선 `UNITY_EDITOR`가 정의돼 전부 그대로 돌고, 기기 빌드에선
+통째로 제외된다. 기존 파일엔 이미 이 가드가 있으니 **새 테스트 추가 시 빠뜨리지 말 것** —
+2026-07 실제로 새 테스트 4개가 가드 누락으로 APK 빌드 링크를 멈췄다(그 4개만으로 전체 빌드 실패).
 
 ## 컨벤션
 - 클래스: `[TestFixture]` 어트리뷰트
@@ -28,6 +68,92 @@ description: 테스트 프레임워크, 컨벤션, 필수 기준
 - **새 시스템 추가**: 핵심 로직에 대한 단위 테스트 (UI 제외)
 
 ## 테스트 제외 대상
-- OnGUI 렌더링 코드 (IMGUI는 EditMode 테스트 불가)
-- MonoBehaviour 생명주기 의존 로직 (PlayMode 테스트 필요)
+- OnGUI 렌더링 코드 (IMGUI는 렌더 루프 없이 검증 불가)
+- MonoBehaviour 생명주기 의존 로직 (`[UnityTest]` + `yield`가 필요. 현재 테스트는 전부
+  씬 없이 도는 순수 로직 `[Test]`다)
 - 외부 서비스 호출 (Firebase, Firestore)
+
+## 3D 화면은 눈으로 확인한다 — `LiveSceneCapture`
+
+위 제외 대상 중 **월드에 보이는 것**(모델·애니메이션·지형·배치·연출)은 테스트 대신
+실제 화면을 찍어서 본다. `Assets/Editor/LiveSceneCapture.cs`가 배치모드로 PlayScene을
+띄우고 카메라를 렌더해 PNG로 남긴다.
+
+```
+"$UNITY_EDITOR_PATH" -batchmode -projectPath "C:/Project/곤충게임" \
+  -logFile .claude/cache/capture.log \
+  -executeMethod InsectGame.EditorTools.LiveSceneCapture.Run \
+  -captureOut .claude/cache/capture -captureTimes 2.0,4.0 \
+  -captureSize 900x700 -captureOffset 0,1.2,-2.6 -captureLook 0,0.85,0
+```
+
+인자는 전부 선택이다(`-captureTarget`은 따라갈 오브젝트 이름, 기본 `Player`,
+`none`이면 게임 카메라 구도 그대로). 결과는 로그의 `[CAPTURE]` 줄로 확인하고,
+종료 코드는 요청한 장수를 다 찍었을 때만 0이다.
+
+**정지 화면으로는 애니메이션을 못 본다** — 여러 시각을 찍어 픽셀 차분을 낸다.
+플레이어 idle 호흡을 이 방법으로 확인했다(2초 간격 3장, 차이가 플레이어 영역에만 몰림).
+
+### 대사가 실제로 뜨는지는 `StoryBeatWalkthrough`로 본다
+
+캡처 도구의 첫 번째 한계(IMGUI 미포착)가 정확히 스토리 대사를 덮는다 — 비트가 발화하면
+`NpcDialogueUI`가 `OnGUI`로 그리므로 **화면으로는 확인할 방법이 없다.** 그런데
+`story_lint`도 못 본다: 그쪽은 Story.json을 **정적으로** 읽어 게이트·참조 무결성만 본다.
+발화는 트리거 이벤트·prereq 열람·리전 게이트·우선순위 비교·`pendingBeatId` 잠금·
+미뤄 둔 트리거 큐가 **런타임에** 맞물린 결과라, 하나만 어긋나도 **대사가 그냥 안 뜬다**
+(예외도 경고도 없다).
+
+그래서 대사창 대신 **발화 자체**를 본다. `Assets/Editor/StoryBeatWalkthrough.cs`가
+`StoryBeatTriggered`를 구독한 채 게임의 실제 진입점(`OnNpcTalked`·`AddCapturedInsect`·
+`BattleEnded`·`CleanseByBoss`)을 순서대로 두드리고, 뜬 대사는 `NpcDialogueUI.CloseModal`로
+닫는다(닫지 않으면 `DrainPendingTriggers`가 모달 가드에 막혀 **다음 비트가 영영 안 온다**).
+
+```
+"$UNITY_EDITOR_PATH" -batchmode -projectPath "C:/Project/곤충게임" \
+  -logFile .claude/cache/story-walk.log \
+  -executeMethod InsectGame.EditorTools.StoryBeatWalkthrough.Run \
+  -walkOut .claude/cache/story-walk.md [-walkRegion mountain] [-walkMode campaign] [-walkChoice last]
+```
+
+거점 목록을 박아두지 않는다 — `RegionData.HasBlightSite`를 런타임에 훑으므로 거점을
+늘리면 걸음도 저절로 는다. 종료 코드는 모든 걸음이 통과했을 때만 0이고, 보고서에
+**실제 발화 순서**가 남는다. 선행 비트만 `CompleteBeat`로 채우고(검증 대상이 아니다)
+무엇을 채웠는지 보고서에 적는다.
+
+**모드가 둘이다 — 기본값만 돌리면 본편은 한 걸음도 안 걷는다.**
+
+| `-walkMode` | 걷는 것 | 두드리는 트리거 |
+|---|---|---|
+| `blight` (기본) | 오염 거점 아크 `bl_*` | `NpcTalk` · `CaptureInsect` · `BattleWin` · `RegionCleansed` |
+| `campaign` | 1막 본편 + 꽃밭 | 위 + **`SubAreaEnter`** · **`GuardianDefeat`** |
+
+**선택지가 뜨면 도구가 고른다** — 기본은 첫 항목, `-walkChoice last`면 마지막 항목. 선택 결과는
+`Immediate` leaf라 고르는 순간 큐 맨 앞에서 뜬다(`StoryBible.md` 6장 「선택지 규칙」). 최종장
+`fin_unnamed`의 거절·수락 양쪽이 실제로 뜨는지는 `campaign`을 **두 번** 돌려야 본다.
+
+`SubAreaEnter`와 `GuardianDefeat`는 **본편에서 가장 많이 쓰는 두 트리거인데 오래 사각지대였다** —
+거점 아크가 둘 다 안 쓰는 탓에 구동부 자체가 없었다. 2026-08-26에 붙였다.
+
+- **서브에리어는 세 걸음이다** — 근접 → `[E]` 진입 → 이탈. `RequestEnterSubArea`는
+  `nearbySubArea`가 차 있어야 하고 그건 `RegionManager.Update`가 **위치로만** 채운다.
+  **이탈을 빠뜨리면 그 뒤가 전부 죽는다**: 진입이 sticky를 켜고 플레이어를 (2000,0,2000)으로
+  옮기는데, sticky 동안 `Update`가 위치 판정을 건너뛰어 다음 리전 이동이 영영 성립하지 않는다.
+- **`GuardianDefeat`는 리전당 일생 1회다**(`DefeatGuardian`의 idempotent 가드). 두 번째
+  실행에서 `gd_*`가 "발화 없음"으로 잡히면 결함이 아니라 격파 기록이 남아서다 —
+  그래서 `ResetProgress`가 `InsectGame.DefeatedGuardians`도 함께 지운다.
+- **걷는 순서가 곧 여운 체인 순서다.** 여운은 같은 NPC의 직전 여운을 prereq로 물기 때문에
+  연못(ch2) → 숲(ch3) → 습지(ch4) → 산(ch5) → 유적(ch6) 차례로 걸어야 하나씩 열린다.
+
+읽을 때 헷갈리는 것: **한 걸음에 시도가 2회로 찍히는 게 정상일 수 있다.** 같은 트리거에
+본편 비트가 함께 자격을 가지면 챕터 우선순위가 이겨 그쪽이 먼저 나간다(산에서 포획하면
+`ch5_thesis`가 `bl_mountain_sign`보다 먼저, 유적에서 이기면 `ch6_approach`가 먼저다).
+플레이어도 실제로 두 번 해야 한다 — 결함이 아니라 저작 순서다.
+
+### 한계 셋 (전부 실측)
+
+- **IMGUI는 안 잡힌다.** `OnGUI`는 카메라를 거치지 않는다 — 상점·대화창·배틀 UI·HUD는
+  이 도구로 검증할 수 없다. 필요하면 스탠드얼론 빌드에서 `ScreenCapture`를 써야 한다.
+- **`ScreenCapture.CaptureScreenshot`은 배치모드에서 조용히 실패한다**(게임뷰가 없다).
+  그래서 이 도구는 카메라 → `RenderTexture` → `ReadPixels` 경로를 쓴다.
+- **Unity 에디터를 열어두면 이 도구가 못 돈다.** 프로젝트가 `Temp/UnityLockfile`로 잠겨
+  두 번째 인스턴스가 뜨지 않는다. 배치모드 검증 중에는 에디터를 닫아 둔다.
