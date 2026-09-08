@@ -93,7 +93,7 @@ namespace InsectGame.UI
         {
             float x = 20f;
             float lineH = 62f;
-            int rowCount = 7;
+            int rowCount = 8;   // WASD·E·T·G·I·N·C·M — 행을 늘리면 여기도 함께(안 맞으면 패널 밖으로 넘친다)
             bool inMinigame = minigame != null && minigame.IsActive;
             if (inMinigame) rowCount++;
             if (battleActive) rowCount++;

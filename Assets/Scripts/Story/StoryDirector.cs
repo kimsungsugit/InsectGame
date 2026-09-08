@@ -361,6 +361,18 @@ namespace InsectGame.Story
 
         private const int MaxDrainRetries = 3;
 
+        /// <summary>이 트리거(type+param 정확 일치)를 기다리는 미열람 비트가 하나라도 있는가.</summary>
+        private bool HasUnseenBeatFor(string type, string param)
+        {
+            foreach (StoryBeat beat in StoryService.AllBeats())
+            {
+                if (beat == null || beat.trigger == null || beat.trigger.type != type) continue;
+                if (beat.trigger.param != param) continue;
+                if (!IsSeen(beat.beatId)) return true;
+            }
+            return false;
+        }
+
         private readonly List<PendingTrigger> pendingTriggers = new List<PendingTrigger>();
         private float pendingSeconds;
         // 전투 화면이 닫혔다는 통지를 받았다 — 그 뒤로는 모달만 기다리면 되고 시간은 안 센다.
@@ -481,6 +493,8 @@ namespace InsectGame.Story
                 pendingTriggers.RemoveAt(0);
                 bool fired = EvaluateTriggers(t.type, t.param);
                 if (fired || !IsOneShotTrigger(t.type, t.param)) continue;
+                // 퀘스트 대부분은 기다리는 비트가 없다 — 그걸 3회 되돌리고 경고까지 내면 소음뿐이다.
+                if (!HasUnseenBeatFor(t.type, t.param)) continue;
 
                 // 1회성인데 못 쐈다 — 큐를 들고 있는 사이 플레이어가 리전을 옮긴 경우가 대표다.
                 // 뒤로 돌려 다음 드레인(리전 복귀 등)에서 다시 본다. 같은 패스 안에서 무한히 돌지

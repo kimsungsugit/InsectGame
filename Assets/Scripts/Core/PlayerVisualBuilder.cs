@@ -63,6 +63,9 @@ namespace InsectGame.Core
 
         private bool subscribedToOutfit;
         private bool builtOnce;
+        // BuildAll이 루트 바로 아래 만든 노드. 재빌드는 **이것만** 파괴한다 — 플레이어 밑에는
+        // CaptureProximityTrigger처럼 남이 붙인 자식도 있다(전체 파괴는 포획을 죽였다, 2026-09-09).
+        private readonly List<GameObject> builtRoots = new List<GameObject>();
         private bool previewMode;
         private AppearanceSpec look;
 
@@ -82,8 +85,21 @@ namespace InsectGame.Core
             // 그때 뒤늦게 발화하는 Awake가 두 번째 몸을 짓지 않게 막는다.
             if (builtOnce) return;
             look = AppearanceSpec.FromPlayerPrefs();
-            BuildAll();
+            BuildTracked();
             builtOnce = true;
+        }
+
+        /// <summary>BuildAll을 돌리고 그때 새로 생긴 직계 자식을 <see cref="builtRoots"/>에 적는다.</summary>
+        private void BuildTracked()
+        {
+            HashSet<Transform> before = new HashSet<Transform>();
+            for (int i = 0; i < transform.childCount; i++) before.Add(transform.GetChild(i));
+            BuildAll();
+            for (int i = 0; i < transform.childCount; i++)
+            {
+                Transform c = transform.GetChild(i);
+                if (!before.Contains(c)) builtRoots.Add(c.gameObject);
+            }
         }
 
         /// <summary>
@@ -102,7 +118,7 @@ namespace InsectGame.Core
             if (builtOnce) return;
             previewMode = true;
             look = spec;
-            BuildAll();
+            BuildTracked();
             builtOnce = true;
         }
 
@@ -119,22 +135,26 @@ namespace InsectGame.Core
         {
             if (previewMode) return;
 
-            for (int i = transform.childCount - 1; i >= 0; i--)
-            {
-                Transform child = transform.GetChild(i);
-                MeshRenderer[] rs = child.GetComponentsInChildren<MeshRenderer>(true);
-                for (int k = 0; k < rs.Length; k++)
-                    if (rs[k] != null && rs[k].sharedMaterial != null) Destroy(rs[k].sharedMaterial);
-                child.gameObject.SetActive(false);   // Destroy는 프레임 끝 — 그동안 원점에 나타나지 않게
-                child.SetParent(null, false);        // 같은 프레임 transform.Find가 옛 노드를 잡지 않게
-                Destroy(child.gameObject);
-            }
+            HashSet<Material> doomed = new HashSet<Material>();
             for (int i = 0; i < runtimeMaterials.Count; i++)
-                if (runtimeMaterials[i] != null) Destroy(runtimeMaterials[i]);
+                if (runtimeMaterials[i] != null) doomed.Add(runtimeMaterials[i]);
+            for (int i = builtRoots.Count - 1; i >= 0; i--)
+            {
+                GameObject root = builtRoots[i];
+                if (root == null) continue;
+                MeshRenderer[] rs = root.GetComponentsInChildren<MeshRenderer>(true);
+                for (int k = 0; k < rs.Length; k++)
+                    if (rs[k] != null && rs[k].sharedMaterial != null) doomed.Add(rs[k].sharedMaterial);
+                root.SetActive(false);                       // Destroy는 프레임 끝 — 그동안 원점에 나타나지 않게
+                root.transform.SetParent(null, false);       // 같은 프레임 transform.Find가 옛 노드를 잡지 않게
+                Destroy(root);
+            }
+            builtRoots.Clear();
+            foreach (Material m in doomed) Destroy(m);      // 같은 머티리얼을 두 번 지우지 않는다
             runtimeMaterials.Clear();
 
             look = AppearanceSpec.FromPlayerPrefs();
-            BuildAll();
+            BuildTracked();
             builtOnce = true;
             RefreshOutfitColors();
 
