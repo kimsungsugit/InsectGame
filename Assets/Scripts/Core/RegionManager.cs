@@ -217,7 +217,13 @@ namespace InsectGame.Core
         public bool TryDefeatGuardian(string regionId, string via)
         {
             if (string.IsNullOrEmpty(regionId)) return false;   // 수문장이 아니라 야생이었다
-            if (IsGuardianDefeated(regionId)) return false;      // 이미 깬 수문장
+            if (IsGuardianDefeated(regionId))
+            {
+                // 이미 깬 수문장인데 필드에 서 있었다(클라우드 로드 전 선전투 등). 격파 처리는 다시 안 하지만
+                // 봉인은 걷어야 한다 — 수문장의 Despawn은 no-op이라 그냥 두면 무한히 다시 싸울 수 있다.
+                GuardianDefeated?.Invoke(regionId);
+                return false;
+            }
             DefeatGuardian(regionId);
             RegionData region = GetRegionById(regionId);
             Debug.Log($"[Guardian] {(region != null ? region.displayName : regionId)} 수문장 격파({via})! 다음 지역 해금됨");

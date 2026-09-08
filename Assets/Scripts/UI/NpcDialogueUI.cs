@@ -185,6 +185,11 @@ namespace InsectGame.UI
         public void CloseModal()
         {
             if (!isOpen) return;
+            // 선택지가 떠 있는데 고르지 않고 닫히면(ESC) 선택 비트는 seen이 되고 결과 둘은 영영 미열람이다 —
+            // 저널은 미열람 선택 결과를 숨기고 다시보기엔 버튼이 없어 **결과를 볼 길이 0**이 된다.
+            // 그래서 선택 중엔 닫기를 삼킨다. OnDisable(UI 루트 토글)은 ForceClose로 지나간다.
+            if (HasChoices && !choiceResolved) return;
+            choiceResolved = false;
             isOpen = false;
             // 페이드 상태를 되돌린다 — OnGUI가 `!isOpen`에서 곧바로 return하므로 닫힘 전이가
             // AnimatePanelOpen에 전달되지 않는다. 그대로 두면 wasOpen이 true로 굳어
@@ -211,8 +216,11 @@ namespace InsectGame.UI
             }
         }
 
+        private bool choiceResolved;
+
         private void OnDisable()
         {
+            choiceResolved = true;   // 루트가 꺼지는 건 플레이어의 닫기가 아니다 — 선택 가드를 지나간다
             // Unregister만 하면 isOpen이 true로 남아 다시 켰을 때 "열린 것으로 아는데
             // 레지스트리엔 없는" 상태가 된다. 그러면 (a) HandleEscape가 이 모달을 무시해
             // ESC가 frozen만 풀고 Update가 즉시 재프리즈 → ESC 영구 무력화, (b)
@@ -400,6 +408,7 @@ namespace InsectGame.UI
         {
             if (!HasChoices) return;
             index = Mathf.Clamp(index, 0, currentBeat.choices.Count - 1);
+            choiceResolved = true;
             InsectGame.Story.StoryChoice choice = currentBeat.choices[index];
             if (storyDirector != null && choice != null) storyDirector.QueueChoice(choice.nextBeatId);
             else if (storyDirector == null) Debug.LogWarning("[Dialogue] StoryDirector 미배선 — 선택 결과가 유실된다");

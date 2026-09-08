@@ -271,7 +271,9 @@ namespace InsectGame.Story
 
             if (best == null) { ResolveFreeform(); return; }
 
-            SetLabel($"{best.DisplayName}에게 말 걸기");
+            SetLabel(objective.TriggerType == StoryDirector.TriggerDuelWin
+                ? $"{best.DisplayName}에게 대결 신청"
+                : $"{best.DisplayName}에게 말 걸기");
             targetPosition = best.transform.position;
             targetRegionId = best.RegionId ?? string.Empty;
             targetNpc = best;
@@ -314,7 +316,7 @@ namespace InsectGame.Story
             int hops = regionManager.Regions != null ? regionManager.Regions.Length : 16;
             while (gate != null && !regionManager.IsRegionAccessible(gate) && hops-- > 0)
                 gate = regionManager.GetGatekeeperRegion(gate.regionId);
-            if (gate == null) return false;
+            if (gate == null || !regionManager.IsRegionAccessible(gate)) return false;   // 순환·상한 소진 — 잠긴 곳을 가리키지 않는다
 
             SetLabel(StoryObjectiveResolver.DescribeRegionObjective(
                 region.displayName, false, 0, gate.displayName, gate.guardianLevel));

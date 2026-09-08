@@ -49,6 +49,14 @@ namespace InsectGame.NPC
 
         /// <summary>직전 대결 결과 문구 — <see cref="TryConsumeResult"/>로 꺼내 간다.</summary>
         public string LastResultText { get; private set; } = string.Empty;
+
+        /// <summary>
+        /// 명부회 간부 대결에서 **이겼다**(storyNpcId). 첫 승리든 오염 재도전이든 이길 때마다 울린다.
+        /// <c>StoryDirector</c>가 이걸 <c>DuelWin</c> 트리거로 흘린다 — 옛은 대결 승리 비트를
+        /// <c>BattleWin &lt;간부 종&gt;</c>으로 걸어 두어 **같은 종의 야생 레이드를 이겨도** 관장 패배
+        /// 대사와 Lv.62 보상이 나왔다(간부 종 셋이 전부 자기 리전 야생 풀에 있다, 2026-09-09).
+        /// </summary>
+        public event System.Action<string> BossDuelWon;
         private bool hasPendingResult;
 
         public void AutoWire(InsectBattleController battle, BattleTeamManager team,
@@ -290,6 +298,7 @@ namespace InsectGame.NPC
             }
 
             EnsureBossState();
+            BossDuelWon?.Invoke(bossId);
             // **첫 승리인지를 기억해 둔다.** 오염 거점 재도전으로 다시 이길 수 있게 되었으므로
             // 이 값으로 보상을 가르지 않으면 같은 아이템을 두 번 준다.
             bool firstWin = defeatedBosses.Add(bossId);

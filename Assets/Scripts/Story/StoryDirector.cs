@@ -25,6 +25,8 @@ namespace InsectGame.Story
         private RegionBlightManager blight;
         // BattleWin 트리거의 **두 번째** 소스. 레이드도 전투이므로 이기면 같은 트리거를 쏜다.
         private RaidBattleController raidController;
+        // DuelWin 트리거 소스 — 간부 대결은 BattleWin과 별개다(종이 아니라 "누구에게 이겼나").
+        private InsectGame.NPC.NpcDuelController duelController;
         // 보상 지급 의존성 — 트리거 소스와 분리해 별도 AutoWire(keyGuide/quickBar 다중 AutoWire 관례).
         private PlayerCandyInventory candyInventory;
         private PlayerItemInventory itemInventory;
@@ -76,6 +78,8 @@ namespace InsectGame.Story
         // 부류라 이 트리거를 쓰는 비트는 **leaf 전용**이다. 어떤 비트의 prerequisiteBeatId도
         // 되어선 안 된다. 스파인에 걸면 그 순간 prereq가 미충족인 세이브는 캠페인이 영구 정지한다.
         internal const string TriggerGuardianDefeat = "GuardianDefeat";
+        /// <summary>명부회 간부 대결 승리. param = 간부의 storyNpcId. 소스는 <c>NpcDuelController.BossDuelWon</c>.</summary>
+        internal const string TriggerDuelWin = "DuelWin";
         // 도감에 이름을 새긴 종 수가 임계에 닿으면 발화. param=정수 임계값.
         // LevelReach와 같은 누적형이라 **재발화 트리거다** — 임계를 넘긴 뒤 도감이 갱신될 때마다
         // 다시 평가되므로 스파인에 걸어도 안전하다(GuardianDefeat와 다르다).
@@ -148,6 +152,12 @@ namespace InsectGame.Story
         /// (<c>ch12_clash</c>의 prereq · <c>fin_epilogue</c>의 게이트) 캠페인이 엔딩 직전에서
         /// 영구 정지한다. 예외도 경고도 안 난다.
         /// </summary>
+        /// <summary>DuelWin 트리거 소스. Start 전에 주입해야 구독이 걸린다.</summary>
+        public void AutoWire(InsectGame.NPC.NpcDuelController duel)
+        {
+            if (duelController == null) duelController = duel;
+        }
+
         public void AutoWire(RaidBattleController raid)
         {
             if (raidController == null) raidController = raid;
@@ -178,6 +188,7 @@ namespace InsectGame.Story
         private void ResweepCompletedQuests()
         {
             if (questManager == null) return;
+            if (!HasUnseenBeatOfType(TriggerQuestComplete)) return;   // 기다리는 비트가 없으면 돌 이유가 없다
             // 스냅샷 — 발화 체인이 어떤 경로로든 CompleteQuest에 닿으면 열거 중 변경 예외가 된다.
             string[] completed = System.Linq.Enumerable.ToArray(questManager.CompletedQuestIds);
             for (int i = 0; i < completed.Length; i++)
@@ -206,6 +217,8 @@ namespace InsectGame.Story
                 battleController.BattleEnded += OnBattleEnded;
             if (raidController != null)
                 raidController.RaidEnded += OnRaidEnded;
+            if (duelController != null)
+                duelController.BossDuelWon += OnBossDuelWon;
             if (questManager != null)
                 questManager.QuestCompleted += OnQuestCompleted;
             // LevelReach / CaptureInsect 소스 — 닫힌 enum의 나머지 두 타입도 배선(누락 시 영구 미발화).
@@ -234,6 +247,8 @@ namespace InsectGame.Story
                 battleController.BattleEnded -= OnBattleEnded;
             if (raidController != null)
                 raidController.RaidEnded -= OnRaidEnded;
+            if (duelController != null)
+                duelController.BossDuelWon -= OnBossDuelWon;
             if (questManager != null)
                 questManager.QuestCompleted -= OnQuestCompleted;
             if (progressController != null)
@@ -343,6 +358,12 @@ namespace InsectGame.Story
             if (!string.IsNullOrEmpty(regionId)) DeferTrigger(TriggerGuardianDefeat, regionId);
         }
 
+        // 간부 대결 승리 — 결과 화면 뒤로 미룬다(BattleWin과 같은 이유). 재발화형이다: 오염 재도전으로 다시 이길 수 있다.
+        private void OnBossDuelWon(string storyNpcId)
+        {
+            if (!string.IsNullOrEmpty(storyNpcId)) DeferTrigger(TriggerDuelWin, storyNpcId);
+        }
+
         // ── 전투 화면 뒤로 미뤄 둔 트리거 ──────────────────────────────────────
         private struct PendingTrigger
         {
@@ -360,6 +381,15 @@ namespace InsectGame.Story
             || (type == TriggerImmediate && !string.IsNullOrEmpty(param));   // 선택지 결과
 
         private const int MaxDrainRetries = 3;
+
+        private bool HasUnseenBeatOfType(string type)
+        {
+            foreach (StoryBeat beat in StoryService.AllBeats())
+                if (beat != null && beat.trigger != null && beat.trigger.type == type && !IsSeen(beat.beatId)) return true;
+            return false;
+        }
+
+        private readonly HashSet<string> warnedDrops = new HashSet<string>();
 
         /// <summary>이 트리거(type+param 정확 일치)를 기다리는 미열람 비트가 하나라도 있는가.</summary>
         private bool HasUnseenBeatFor(string type, string param)
@@ -505,7 +535,7 @@ namespace InsectGame.Story
                     pendingTriggers.Add(t);
                     if (--passBudget <= 0) return;
                 }
-                else
+                else if (warnedDrops.Add(t.type + "/" + t.param))
                 {
                     Debug.LogWarning($"[Story] 1회성 트리거를 {MaxDrainRetries}회 되돌렸지만 게이트가 계속 막혀 버린다: {t.type}/{t.param}");
                 }
@@ -666,6 +696,7 @@ namespace InsectGame.Story
                     case TriggerNpcTalk:
                     case TriggerGuardianDefeat:
                     case TriggerRegionCleansed:
+                    case TriggerDuelWin:
                         // param 완전 일치(리전/퀘스트/서브에리어 ID / 스토리 NPC ID / 수문장 리전 ID
                         // / 정화된 리전 ID).
                         matches = !string.IsNullOrEmpty(beat.trigger.param)

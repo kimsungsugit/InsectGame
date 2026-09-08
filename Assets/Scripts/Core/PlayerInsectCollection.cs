@@ -133,6 +133,9 @@ namespace InsectGame.Core
                 {
                     needsSave = true;
                 }
+                // 중단된 훈련의 진척은 여기 말고는 아무도 안 지운다(이미 배운 기술분). 레지스트리가
+                // 아직 없어 미상 기술은 AutoWire(InsectSkill[])에서 한 번 더 걷는다.
+                if (data.PruneTrainingProgress(null)) needsSave = true;
                 lookup[data.instanceId] = data;
             }
 
@@ -602,6 +605,13 @@ namespace InsectGame.Core
                 if (skill != null && !string.IsNullOrEmpty(skill.skillId))
                     skillRegistry[skill.skillId] = skill;
             }
+
+            // DB에서 사라진 기술의 진척을 이제야 걷을 수 있다 — 1회, 전투 진입마다가 아니라.
+            Func<string, bool> known = skillRegistry.ContainsKey;
+            bool pruned = false;
+            foreach (PlayerInsectData data in lookup.Values)
+                if (data != null && data.PruneTrainingProgress(known)) pruned = true;
+            if (pruned) MarkDirty();
         }
 
         /// <summary>전역 색인에서 기술을 찾는다(종족 무관). 훈련·디스크 경로가 쓴다.</summary>
@@ -770,11 +780,6 @@ namespace InsectGame.Core
                     }
                 }
             }
-
-            // 중단된 훈련·사라진 기술의 진척은 여기 말고는 아무도 안 지운다. 레지스트리가 아직
-            // 안 붙은 부트 로드에서는 "이미 배운 것"만 걷고, 붙은 뒤 호출에서 미상 기술까지 걷는다.
-            Func<string, bool> known = skillRegistry != null ? (Func<string, bool>)skillRegistry.ContainsKey : null;
-            if (data.PruneTrainingProgress(known)) changed = true;
 
             return changed;
         }

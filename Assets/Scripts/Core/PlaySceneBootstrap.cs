@@ -687,6 +687,7 @@ namespace InsectGame.Core
                 // 다른 기기의 격파가 반영된다(RegionManager 해금 상태와 같은 이유).
                 cloudSave.RegisterReloadable(npcDuel);
                 worldInteract.AutoWire(npcDuel);
+                storyDirector.AutoWire(npcDuel);   // DuelWin 트리거 소스 — Start 전(같은 프레임)이라 구독이 걸린다
 
                 // 오염 거점 비주얼 — 구조물·안개·지면 탈색, 정화 시 붕괴.
                 // NpcManager가 필요해 여기(NPC 생성 뒤)에 둔다: 거점 좌표를 하수 실물에서

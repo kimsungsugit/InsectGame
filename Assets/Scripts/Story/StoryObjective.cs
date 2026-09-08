@@ -177,7 +177,9 @@ namespace InsectGame.Story
         /// </summary>
         public static StoryObjectiveKind KindOf(string triggerType, string requiredRegionId = null)
         {
-            if (triggerType == StoryDirector.TriggerNpcTalk) return StoryObjectiveKind.TalkToNpc;
+            // 대결 승리도 "그 간부에게 가는 것"이 할 일이다 — param이 storyNpcId라 같은 경로로 안내한다.
+            if (triggerType == StoryDirector.TriggerNpcTalk
+                || triggerType == StoryDirector.TriggerDuelWin) return StoryObjectiveKind.TalkToNpc;
             if (triggerType == StoryDirector.TriggerRegionEnter) return StoryObjectiveKind.EnterRegion;
             if (triggerType == StoryDirector.TriggerSubAreaEnter) return StoryObjectiveKind.EnterSubArea;
             if (triggerType == StoryDirector.TriggerGuardianDefeat) return StoryObjectiveKind.DefeatGuardian;

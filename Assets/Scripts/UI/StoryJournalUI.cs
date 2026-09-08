@@ -441,6 +441,7 @@ namespace InsectGame.UI
                     return string.IsNullOrEmpty(param) ? "레벨이 오르면" : $"Lv.{param}에 닿으면";
                 case StoryDirector.TriggerImmediate: return "여행을 시작하면";
                 case StoryDirector.TriggerGuardianDefeat: return "그 지역의 수문장을 넘으면";
+                case StoryDirector.TriggerDuelWin: return "명부회 간부와의 대결에서 이기면";
                 case StoryDirector.TriggerDexProgress:
                     return string.IsNullOrEmpty(param) ? "도감이 채워지면" : $"도감에 {param}종을 새기면";
                 default: return "조건 미상";

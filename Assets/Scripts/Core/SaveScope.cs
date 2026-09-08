@@ -166,7 +166,12 @@ namespace InsectGame.Core
         {
             foreach (string file in ScopedFiles)
             {
-                try { if (File.Exists(FilePath(file))) File.Delete(FilePath(file)); }
+                try
+                {
+                    if (File.Exists(FilePath(file))) File.Delete(FilePath(file));
+                    // 손상 세이브 보존본(PlayerInsectCollection.Load)도 계정과 함께 지운다.
+                    if (File.Exists(FilePath(file) + ".corrupt")) File.Delete(FilePath(file) + ".corrupt");
+                }
                 catch (System.Exception e) { Debug.LogWarning("[SaveScope] 파일 삭제 실패(" + file + "): " + e.Message); }
             }
             foreach (string baseKey in ScopedStringPrefsKeys)

@@ -157,10 +157,12 @@ namespace InsectGame.Core
 
         public bool CanTrain(TrainingMethod method, PlayerInsectData insect, string skillId)
         {
-            if (method == null || insect == null || candyInventory == null) return false;
+            if (method == null || insect == null) return false;
             if (insect.level < method.requiredLevel) return false;
             if (!IsSkillAllowed(method, insect, skillId)) return false;
-            return candyInventory.Candies >= GetTrainingCost(method, insect, skillId);
+            int cost = GetTrainingCost(method, insect, skillId);
+            if (cost <= 0) return true;                 // 비용 0(디스크)은 캔디 인벤토리 배선과 무관하다
+            return candyInventory != null && candyInventory.Candies >= cost;
         }
 
         /// <summary>
@@ -395,8 +397,9 @@ namespace InsectGame.Core
         {
             if (string.IsNullOrEmpty(skillId) || itemDatabase == null || itemDatabase.items == null) return null;
             // 훈련 화면이 스킬 카드마다 매 프레임 부른다 — 선형 탐색이면 프레임당 스킬 수 × 아이템 수.
-            if (discByskill == null || discByskillSource != itemDatabase.items.Count)
+            if (discByskill == null || discByskillSource != itemDatabase.items.Count || !ReferenceEquals(discByskillDb, itemDatabase))
             {
+                discByskillDb = itemDatabase;
                 discByskill = new Dictionary<string, ItemData>();
                 foreach (ItemData item in itemDatabase.items)
                     if (item != null && !string.IsNullOrEmpty(item.teachSkillId) && !discByskill.ContainsKey(item.teachSkillId))
@@ -409,6 +412,7 @@ namespace InsectGame.Core
 
         private Dictionary<string, ItemData> discByskill;
         private int discByskillSource = -1;   // 캐시를 만든 시점의 items.Count — DB가 바뀌면 다시 만든다
+        private ItemDatabase discByskillDb;    // 같은 개수의 다른 DB로 교체돼도 낡지 않게 인스턴스도 본다
 
         private static bool IsCompatibleWithInsect(InsectSkill skill, InsectData insect)
         {

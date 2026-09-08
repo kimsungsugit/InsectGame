@@ -594,7 +594,10 @@ namespace InsectGame.UI
                     GUI.backgroundColor = canAfford ? (needsReplace ? LearnBtnFullCol : LearnBtnOkCol) : LearnBtnOffCol;
                     GUI.enabled = canAfford;
                     float learnButtonH = UIScale.IsMobileLayout ? 64f : 52f;
-                    if (GUI.Button(new Rect(r.x + r.width - 160, r.y + r.height / 2f - learnButtonH * 0.5f, 140, learnButtonH), btnLabel, learnBtnStyle))
+                    learnBtnStyle.fontSize = isDisc ? 22 : 32;   // "디스크 사용 ×n"은 32pt로 140px를 넘는다 — 1회 캐시 스타일이라 매 프레임 지정
+                    bool learnPressed = GUI.Button(new Rect(r.x + r.width - 160, r.y + r.height / 2f - learnButtonH * 0.5f, 140, learnButtonH), btnLabel, learnBtnStyle);
+                    learnBtnStyle.fontSize = 32;
+                    if (learnPressed)
                     {
                         if (needsReplace)
                         {

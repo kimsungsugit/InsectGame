@@ -1312,7 +1312,7 @@
       "beatId": "ch9_clash",
       "chapterId": "ch9",
       "order": 34,
-      "prerequisiteBeatId": "ch9_arrive",
+      "prerequisiteBeatId": "ch9_confront",
       "trigger": {
         "type": "BattleWin",
         "param": ""
@@ -4451,7 +4451,7 @@
         },
         {
           "speaker": "세라",
-          "text": "당신이 먼저 말해 줬어요. 저는 이제야 입이 떨어져요. …고마워요."
+          "text": "당신이 먼저 말해 줬어요. 저는… 아직 제 입으로는 못 하겠어요. 다음엔 제가 말할게요."
         }
       ],
       "choices": [],
@@ -4568,8 +4568,8 @@
       "order": 83,
       "prerequisiteBeatId": "",
       "trigger": {
-        "type": "BattleWin",
-        "param": "centipede_sand"
+        "type": "DuelWin",
+        "param": "ledger_grip"
       },
       "requiredBeatId": "talk_grip",
       "requiredRegionId": "dunes",
@@ -4610,8 +4610,8 @@
       "order": 84,
       "prerequisiteBeatId": "",
       "trigger": {
-        "type": "BattleWin",
-        "param": "mantis_icicle"
+        "type": "DuelWin",
+        "param": "ledger_scale"
       },
       "requiredBeatId": "talk_scale",
       "requiredRegionId": "frostline",
@@ -4652,8 +4652,8 @@
       "order": 85,
       "prerequisiteBeatId": "",
       "trigger": {
-        "type": "BattleWin",
-        "param": "moth_effaced"
+        "type": "DuelWin",
+        "param": "ledger_chief"
       },
       "requiredBeatId": "talk_chief",
       "requiredRegionId": "nameless",
@@ -4723,7 +4723,8 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      }
+      },
+      "requiredRegionId": "hollow"
     },
     {
       "beatId": "ch8_echo_scholar",
@@ -4760,7 +4761,8 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      }
+      },
+      "requiredRegionId": "dunes"
     },
     {
       "beatId": "ch9_echo_rival",
@@ -4797,7 +4799,8 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      }
+      },
+      "requiredRegionId": "frostline"
     },
     {
       "beatId": "ch11_echo_ink",

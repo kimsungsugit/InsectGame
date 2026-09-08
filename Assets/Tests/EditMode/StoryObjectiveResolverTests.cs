@@ -77,6 +77,7 @@ namespace InsectGame.Tests
         [TestCase("RegionEnter", StoryObjectiveKind.EnterRegion)]
         [TestCase("SubAreaEnter", StoryObjectiveKind.EnterSubArea)]
         [TestCase("GuardianDefeat", StoryObjectiveKind.DefeatGuardian)]
+        [TestCase("DuelWin", StoryObjectiveKind.TalkToNpc)]   // param이 간부 storyNpcId — 그 사람에게 가면 된다
         [TestCase("BattleWin", StoryObjectiveKind.Freeform)]
         [TestCase("CaptureInsect", StoryObjectiveKind.Freeform)]
         [TestCase("LevelReach", StoryObjectiveKind.Freeform)]

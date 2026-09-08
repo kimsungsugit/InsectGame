@@ -258,6 +258,10 @@ ch8·ch10엔 세라 여운이, ch7·ch9·ch11엔 라온 여운이 없었다. 라
 (`NpcDialogueUI.DrawChoices`), 고른 결과를 `StoryDirector.QueueChoice`가 `Immediate <beatId>`로
 **큐 맨 앞**에 건다. 닫힘→`CompleteBeat`→큐 배출이라 결과가 곧바로 이어 뜬다.
 
+**선택이 떠 있는 동안은 ESC로 못 닫는다.** 고르지 않고 닫히면 선택 비트는 seen이 되고 결과 둘은
+영영 미열람인데, 저널은 미열람 선택 결과를 숨기고 다시보기엔 버튼이 없어 결과를 볼 길이 0이 된다
+(교차 리뷰 2026-09-09). `NpcDialogueUI.CloseModal`이 선택 중엔 닫기를 삼키고, UI 루트 토글(`OnDisable`)만 지나간다.
+
 선택점 셋: `ch5_blocked`(검은 옷의 여자 "우리는 지키는 쪽이야") · `ch9_confront`(저울 "무엇이 달라졌지?" —
 세라 대신 플레이어가 답한다) · `fin_unnamed`(그것이 이름을 달라고 한다).
 
@@ -682,6 +686,7 @@ Lv.50~64에서 이미 잡은 종이 절반 가까이 나왔다. 리전당 4종�
 | `NpcTalk` | `세라에게 말 걸기` | 그 NPC(현재 리전 개체 우선 → 최근접) |
 | `RegionEnter` / `SubAreaEnter` | `서릿길(으)로` | 중심 좌표 |
 | `GuardianDefeat` | `유적 수문장 격파` | 진입로 |
+| `DuelWin` | `집게에게 대결 신청` | 그 간부(NpcTalk와 같은 경로) |
 | `CaptureInsect` + 리전 | `연못에서 왕잠자리 포획` / (도착 후) `왕잠자리 포획하기` | 리전 중심 |
 | `BattleWin` + 리전 | `습지에서 전투 승리` / (도착 후) `야생 곤충과 전투 승리` | 리전 중심 |
 | `LevelReach` | `트레이너 Lv.3 달성 · 현재 Lv.2` | — |
@@ -944,7 +949,7 @@ Lv.50~64에서 이미 잡은 종이 절반 가까이 나왔다. 리전당 4종�
 
 | 묶음 | 비트 | 무엇이 비어 있었나 |
 |---|---|---|
-| 간부 대결 승리 | `duel_grip_win` · `duel_scale_win` · `duel_chief_win` | `talk_grip/scale/chief`가 "준비되면 오라"고 도전을 부추기는데 이겨도 **아무 말이 없었다.** 대결 승리는 `BattleWin <보스 종>`으로 흐른다(`InsectBattleController.EnemyInsectId`). `requiredBeatId`가 그 도전 대사라 필드 레이드로 같은 종을 이겨도 도전 전엔 안 뜬다. 하월은 `moth_effaced`를 "이름을 돌려받은 나방"으로 준다(첫 장의 종) |
+| 간부 대결 승리 | `duel_grip_win` · `duel_scale_win` · `duel_chief_win` | `talk_grip/scale/chief`가 "준비되면 오라"고 도전을 부추기는데 이겨도 **아무 말이 없었다.** 트리거는 **`DuelWin <간부 storyNpcId>`**다 — 소스는 `NpcDuelController.BossDuelWon`. 처음엔 `BattleWin <보스 종>`으로 걸었는데, 간부 종 셋이 전부 자기 리전 야생 풀에 있어 **같은 종의 야생 레이드를 이겨도** 관장 패배 대사와 Lv.62 보상이 나왔다(교차 리뷰에서 잡힘). 하월은 `moth_effaced`를 "이름을 돌려받은 나방"으로 준다(첫 장의 종) |
 | 서브에리어 10곳 | `ch1_pond_edge`·`ch2_deep`·`ch3_deep`·`ch4_cave`·`ch5_cave` / `ch7_burrow`·`ch8_pit`·`ch9_ridge`·`ch10_vent`·`ch11_bough` | 26곳 중 10곳이 스토리 0건 — **2막 둘째 서브에리어는 전부 빈 스폰 창고**였다. 2막 종은 표시명이 영문이라 대사는 종명 대신 특징(찢어진 거미줄·개미귀신 구덩이·재 속의 매미)으로 부른다. `ch10_vent`는 라온 부재 구간이라 먹이 말한다 |
 | 1막 도감 | `dex_20`(어르신) · `dex_40`(라온) | "기록이 곧 봉인"이 1막 주제인데 도감 수를 세는 비트가 `ch7_arrive` 뒤(`dex_60`)에야 있었다 |
 | 엔딩 뒤 | `dex_160`(세라) · `post_rival_rematch`(라온 → `s_npc_duel`) | `fin_epilogue`가 "계속 만나요"로 문을 열고 그 뒤가 비었다. 도감 임계는 **풀에 실재하는 종수 172**(`game_facts.region_pools`)에서 잡았다 — 180은 영영 못 닿는다 |

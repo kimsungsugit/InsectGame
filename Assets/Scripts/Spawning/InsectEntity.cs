@@ -1938,7 +1938,6 @@ namespace InsectGame.Spawning
             // 제거는 PlaySceneBootstrap.RemoveGuardianSeal이 한다. 여기서는 교전만 풀어 준다.
             if (IsGuardian)
             {
-                StopAllCoroutines();
                 engaged = false;
                 return;
             }
