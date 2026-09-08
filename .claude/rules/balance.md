@@ -69,6 +69,9 @@ floor를 같이 도입했기 때문에 **단순 복원은 되돌리기가 아니
 - 레이드: ×3
 - 가챠 천장: 같은 상자 `GachaBoxManager.PityLegendaryPulls`(80)연째 Legendary 확정. 상자별 카운터는
   계정 스코프 PlayerPrefs + 클라우드(기기 간 **max** 병합). 없을 땐 브론즈 100연 전설 0개가 60%였다.
+- 가챠 샤이니 `GachaBoxManager.ShinyChance`(2%) — 필드 1%보다 높아야 상자만의 매력이 선다. 골드 보너스
+  캔디 45~80은 Lv30 레벨업비의 절반 이상이어야 한다(gacha_sim 신호 5). **OpenBox의 `case "box_X":`
+  세 개를 접지 말 것** — 추출기가 그 뒤의 Random.Range를 읽는다.
 
 ## 성장 기준점
 - 곤충 캔디 곡선: `InsectLevelCurve.GetCandyCost` = base 4 × 1.125^(L-1). **판정은 `progression_sim`**

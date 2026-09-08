@@ -1069,6 +1069,10 @@ namespace InsectGame.UI
                 {
                     GUILayout.Label("<size=23><b>* 상자 전용 곤충!</b></size>", gachaExclusiveStyle);
                 }
+                if (gachaResult.isShiny)
+                {
+                    GUILayout.Label("<size=23><b>★ 색다른 곤충!</b></size>", gachaExclusiveStyle);
+                }
 
                 GUILayout.Space(14);
                 GUILayout.Label($"<size=21>보너스: 캔디 {gachaResult.bonusCandy}개</size>", gachaCandyBonusStyle);

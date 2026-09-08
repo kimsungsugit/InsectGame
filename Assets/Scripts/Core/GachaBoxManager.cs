@@ -12,6 +12,7 @@ namespace InsectGame.Core
         public string displayName;
         public InsectRarity rarity;
         public bool isExclusive;
+        public bool isShiny;
         public int bonusCandy;
     }
 
@@ -31,6 +32,12 @@ namespace InsectGame.Core
         /// 카운터는 상자별·계정 스코프 PlayerPrefs이고 클라우드에도 올라간다(charSkin과 같은 4점).
         /// </summary>
         public const int PityLegendaryPulls = 80;
+
+        /// <summary>
+        /// 가챠 샤이니 확률. 필드(<c>InsectEntity</c> 1%)보다 높다 — 상자만의 매력이 있어야 한다.
+        /// 옛은 지정이 없어 <c>CreateWithIV</c>의 필드와 같은 1% 롤을 그대로 썼고, 시뮬은 "미구현"으로 읽었다.
+        /// </summary>
+        public const float ShinyChance = 0.02f;
 
         private static string PityKey(string boxId) => SaveScope.PrefsKey(PityKeyBase(boxId));
         /// <summary>SaveScope.ScopedIntPrefsKeys와 CloudSaveManager가 같은 문자열을 쓴다.</summary>
@@ -166,11 +173,16 @@ namespace InsectGame.Core
                 if (thresholds == null) return;
                 int bonusCandy;
 
+                // 세 case를 **명시적으로** 둔다 — game_facts.gacha_candy_bonus가 `case "box_X":` 뒤의
+                // Random.Range를 읽는다. 골드를 default:로 접었더니 추출기가 GetGachaLevel의 (1, 6)을
+                // 물어 시뮬이 "골드 보너스 평균 3"을 찍었다(2026-09-09).
                 switch (boxId)
                 {
                     case "box_bronze": bonusCandy = UnityEngine.Random.Range(5, 16); break;
                     case "box_silver": bonusCandy = UnityEngine.Random.Range(10, 31); break;
-                    default:           bonusCandy = UnityEngine.Random.Range(20, 51); break;
+                    // 골드는 Lv30 레벨업비(≈122캔디)의 절반은 돼야 "보너스"로 읽힌다(gacha_sim 신호 5).
+                    case "box_gold":   bonusCandy = UnityEngine.Random.Range(45, 81); break;
+                    default: return;
                 }
 
                 int pity = GetPityCount(boxId);
@@ -186,10 +198,11 @@ namespace InsectGame.Core
 
                 // 각 보상을 독립 try-catch로 감싸 한 단계 실패가 나머지를 막지 않게 함
                 // (곤충 지급 예외로 캔디/도감 미실행되는 회귀 방지).
+                bool isShiny = UnityEngine.Random.value < ShinyChance;
                 try
                 {
                     if (insectCollection != null)
-                        insectCollection.AddCapturedInsect(insectId, GetGachaLevel(resultRarity));
+                        insectCollection.AddCapturedInsect(insectId, GetGachaLevel(resultRarity), isShiny);
                 }
                 catch (System.Exception e) { Debug.LogError($"[Gacha] 곤충 지급 실패: {e.Message}"); }
 
@@ -220,6 +233,7 @@ namespace InsectGame.Core
                     displayName = GetInsectDisplayName(insectId),
                     rarity = resultRarity,
                     isExclusive = isExclusive,
+                    isShiny = isShiny,
                     bonusCandy = bonusCandy
                 };
 
