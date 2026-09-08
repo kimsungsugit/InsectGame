@@ -289,6 +289,15 @@ def evaluate_signals() -> list:
         "FAIL" if backward else "PASS",
     ))
 
+    # 11. questId 구분자 금지 — 세이브 병합 포맷(QuestSaveMerge)이 ","와 ":"를 구분자로 쓴다.
+    #     그 문자가 든 ID는 병합에서 조용히 버려지고, ApplyQuestField의 write-back이 그 손실을
+    #     PlayerPrefs에 영구 반영한다(예외도 경고도 없다). 공백도 Trim에 먹혀 ID가 달라진다.
+    sep_bad = [q["questId"] for q in quests
+               if any(ch in q["questId"] for ch in ",:") or q["questId"] != q["questId"].strip()]
+    signals.append(("questId 구분자 금지 (, : 공백 — 세이브 병합 포맷)", "0건",
+                    f"{len(sep_bad)}건 ({sep_bad})" if sep_bad else f"0건 ({len(ids)}개)",
+                    "FAIL" if sep_bad else "PASS"))
+
     return signals
 
 

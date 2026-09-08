@@ -337,33 +337,40 @@ namespace InsectGame.UI
                 EnterResult();
         }
 
+        /// <summary>
+        /// 이 승리가 수문장 격파인가 — <b>싸운 개체가 그 수문장이었는지</b>로만 답한다.
+        ///
+        /// <b>종·레벨로는 판정할 수 없다.</b> 리전 13곳 중 9곳은 수문장 종이 <b>자기 리전
+        /// 야생 풀에도</b> 들어 있고(pond·garden·ruins·hollow·dunes·frostline·emberfall·
+        /// canopy·nameless), 그중 8곳은 야생 스폰 상한(<c>requiredLevel + GetRegionLevelRange</c>)이
+        /// 옛 격파 임계(<c>guardianLevel - 2</c>)를 넘는다. 그래서 <b>필드에서 마주친 야생을 이기는
+        /// 것만으로 리전이 열렸다</b> — 유적에서 야생 파라오풍뎅이 Lv40+를 이기면 2막 6리전이 도미노로.
+        ///
+        /// <b>좌표로도 판정할 수 없다.</b> 그 다음 시도가 "수문장 자리 15m 안에서 싸웠나"였는데,
+        /// 그 반경엔 야생이 그대로 들어온다: <c>InsectSpawner.RelocateSpawnPoints</c>가 현재 리전
+        /// 스폰포인트를 <b>플레이어로부터 10~43m</b> 나선 위로 끌어오고 거기서 다시
+        /// <c>SpawnPoint.radius</c>(5m)만큼 흩어지므로 <b>최근접 스폰이 플레이어에서 5m</b>다.
+        /// 수문장과 싸우려면 그 앞에 서야 하니 야생이 반경에 들어오는 건 우연이 아니라 구조이고,
+        /// 위 9개 리전에서는 종·레벨 조건까지 동시에 맞는다. 반경을 좁혀도 스폰 링이 플레이어를
+        /// 따라오는 한 같은 결함이 남는다.
+        ///
+        /// 그래서 <b>"바로 그 개체였나"</b>만 묻는다. 수문장은
+        /// <c>PlaySceneBootstrap.SpawnGuardianInsect</c>가 <c>new GameObject</c>로 세우는 단
+        /// 하나의 표식된 개체다(풀에서 오지 않는다). 값은
+        /// <c>InsectBattleController.EnemyGuardianRegionId</c> — 시작 시점 스냅샷이라
+        /// 승리 후 <c>Despawn</c>이 먼저 돌아도 안전하다.
+        /// </summary>
         private void CheckGuardianDefeat()
         {
             if (battleController == null) return;
-            InsectEntity enemy = battleController.GetEnemyEntity();
-            if (enemy == null || enemy.Data == null) return;
 
+            // 스냅샷으로 판정한다 — 라이브 엔티티는 이미 디스폰됐을 수 있다.
             if (cachedRegionMgr == null) cachedRegionMgr = FindFirstObjectByType<RegionManager>();
-            RegionManager regionMgr = cachedRegionMgr;
-            if (regionMgr == null || regionMgr.Regions == null) return;
+            if (cachedRegionMgr == null) return;
+            if (!cachedRegionMgr.TryDefeatGuardian(battleController.EnemyGuardianRegionId, "1v1")) return;
 
-            string enemyId = enemy.Data.insectId;
-            foreach (var region in regionMgr.Regions)
-            {
-                if (string.IsNullOrEmpty(region.guardianInsectId)) continue;
-                if (region.guardianInsectId != enemyId) continue;
-                if (regionMgr.IsGuardianDefeated(region.regionId)) continue;
-
-                // 수문장과 레벨도 확인 (수문장 레벨 이상의 적이어야)
-                if (enemy.Level >= region.guardianLevel - 2)
-                {
-                    regionMgr.DefeatGuardian(region.regionId);
-                    Debug.Log($"[Guardian] {region.displayName} 수문장 격파! 다음 지역 해금됨");
-
-                    if (TutorialQuestManager.Instance != null)
-                        TutorialQuestManager.Instance.NotifyGuardianDefeated();
-                }
-            }
+            if (TutorialQuestManager.Instance != null)
+                TutorialQuestManager.Instance.NotifyGuardianDefeated();
         }
 
         // 공격 페이즈 종료 판정 — 아레나(3D)면 연출 코루틴 완료 + 최소 바닥(0.3s), 상한 2s 안전망.
@@ -448,7 +455,10 @@ namespace InsectGame.UI
             if (actionTimer > 0) actionTimer -= Time.deltaTime;
             if (playerShake > 0) playerShake -= Time.deltaTime;
             if (enemyShake > 0) enemyShake -= Time.deltaTime;
-            if (resultShown) resultTimer += Time.deltaTime;
+            // **unscaled다.** 443행의 timeScale 복원은 `> 0.001f`라 정확히 0은 구제하지 못하는데,
+            // 그 상태로 남으면 결과 화면이 4초 조건에 영영 도달하지 못해 전투가 안 끝난다.
+            // 결과 화면 중에는 timeScale이 1이라 연출 타이밍은 그대로다.
+            if (resultShown) resultTimer += Time.unscaledDeltaTime;
 
             // 아레나(3D) 없으면 즉시 리빌(기존 2D 동작 보존). 아레나 있으면 연출 임팩트 onImpact에서 리빌.
             // 단 턴 배너 중엔 2D도 리빌 보류 — 배너가 "상대의 턴"인데 HP가 미리 깎여 보이는 것 방지.

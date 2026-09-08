@@ -99,6 +99,29 @@ namespace InsectGame.Story
         }
 
         /// <summary>
+        /// 선택지 결과 집합(어떤 비트의 <c>choices[].nextBeatId</c>로 지목된 비트).
+        ///
+        /// 이 비트들은 <b>플레이어가 고른 순간에만</b> 발화한다 — 목표로 안내하지도, 시작 시
+        /// <c>Immediate</c> 일괄 평가에 걸리지도 않는다. 안 고른 쪽은 영영 미열람으로 남는데,
+        /// 그걸 목표 후보에 두면 그 챕터가 끝난 뒤에도 HUD가 "모험을 이어가세요"에 굳는다.
+        /// </summary>
+        public static HashSet<string> CollectChoiceTargetIds(IEnumerable<StoryBeat> beats)
+        {
+            var targets = new HashSet<string>();
+            if (beats == null) return targets;
+            foreach (StoryBeat beat in beats)
+            {
+                if (beat == null || beat.choices == null) continue;
+                foreach (StoryChoice choice in beat.choices)
+                {
+                    if (choice != null && !string.IsNullOrEmpty(choice.nextBeatId))
+                        targets.Add(choice.nextBeatId);
+                }
+            }
+            return targets;
+        }
+
+        /// <summary>
         /// 챕터 진행 순위. <c>chapterId</c>는 "ch1".."ch12" / "fin" / "side" / "npc" 규약이고,
         /// <b>문자열 정렬로는 ch10이 ch2보다 앞에 온다</b> — 숫자를 뽑아 비교한다.
         /// 본편이 아닌 챕터(fin/side/npc)는 뒤로 민다.
@@ -260,6 +283,34 @@ namespace InsectGame.Story
         }
 
         /// <summary>
+        /// 리전 목표의 한 줄 문구. <b>순수 함수다</b> — 해금·격파 판정은 호출부가 한다.
+        ///
+        /// 2막 도착 비트의 prereq는 전부 <b>앞 챕터 대치</b>라 수문장을 건너뛴다. 그래서
+        /// <c>ch7_opening</c> 직후 목표가 "텅 빈 들(으)로"였는데 <c>hollow</c>는 유적 수문장을
+        /// 넘기 전엔 잠겨 있다 — 들어가지도 못하는 곳을 가리켰다(hollow→nameless 6링크 전부).
+        /// <c>gd_*</c>는 leaf라 목표로 안 뽑히니 이 문구가 유일한 안내다.
+        /// </summary>
+        /// <param name="gateRegionName">
+        /// 목적지가 잠겨 있을 때 그 열쇠를 쥔 리전(<c>RegionManager.GetGatekeeperRegion</c>).
+        /// 비면 잠기지 않은 것으로 본다.
+        /// </param>
+        /// <param name="gateGuardianLevel">그 리전 수문장 레벨. 0 이하면 권장 레벨을 뺀다.</param>
+        public static string DescribeRegionObjective(
+            string regionName, bool guardian, int guardianLevel,
+            string gateRegionName = null, int gateGuardianLevel = 0)
+        {
+            string lvl = gateGuardianLevel > 0 ? $" · 권장 Lv.{gateGuardianLevel}" : string.Empty;
+            if (!string.IsNullOrEmpty(gateRegionName))
+                return $"{regionName}(으)로 가려면 {gateRegionName} 수문장 격파{lvl}";
+
+            if (guardian)
+                return guardianLevel > 0
+                    ? $"{regionName} 수문장 격파 · 권장 Lv.{guardianLevel}"
+                    : $"{regionName} 수문장 격파";
+            return $"{regionName}(으)로";
+        }
+
+        /// <summary>
         /// 지금 기다리고 있는 비트 하나를 <b>결정적으로</b> 고른다.
         ///
         /// <see cref="StoryService.AllBeats"/>는 <c>Dictionary.Values</c>라 순서가 비결정적이다 —
@@ -280,7 +331,8 @@ namespace InsectGame.Story
             IEnumerable<StoryBeat> beats,
             System.Func<string, bool> isSeen,
             HashSet<string> spineBeatIds,
-            System.Func<string, bool> isQuestDone = null)
+            System.Func<string, bool> isQuestDone = null,
+            HashSet<string> choiceTargetIds = null)
         {
             if (beats == null || isSeen == null) return null;
 
@@ -290,6 +342,8 @@ namespace InsectGame.Story
             {
                 if (beat == null || string.IsNullOrEmpty(beat.beatId)) continue;
                 if (isSeen(beat.beatId)) continue;
+                // 선택지 결과는 고르는 순간 뜨는 것이지 찾아가는 목표가 아니다.
+                if (choiceTargetIds != null && choiceTargetIds.Contains(beat.beatId)) continue;
                 // prereq 미충족 = 아직 차례가 아니다.
                 if (!string.IsNullOrEmpty(beat.prerequisiteBeatId) && !isSeen(beat.prerequisiteBeatId))
                     continue;

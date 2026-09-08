@@ -74,6 +74,12 @@ namespace InsectGame.UI
             if (dialogueUI == null) dialogueUI = dialogue;
         }
 
+        // 인덱스는 선택지 열람 여부에 따라 달라진다(안 고른 결과는 숨긴다). 세션당 1회 만들면
+        // 저널을 먼저 연 뒤 고른 결과가 세션 내내 안 뜨고 진행률 분모도 어긋난다. 이벤트 구독 대신
+        // **SeenCount 스냅샷**을 키로 쓴다 — 클라우드 반영(StoryDirector.ReloadFromDisk)은 이벤트 없이
+        // seen 집합을 통째로 바꾸므로 구독으로는 못 잡는다. 탭 캐시(EnsureTabCache)와 같은 방식이다.
+        private int indexSeenCount = -1;
+
         public bool IsOpen => isOpen;
 
         public void Toggle()
@@ -110,13 +116,21 @@ namespace InsectGame.UI
 
         private void EnsureIndex()
         {
-            if (beatsByChapter != null) return;
+            int seenNow = storyDirector != null ? storyDirector.SeenCount : 0;
+            if (beatsByChapter != null && indexSeenCount == seenNow) return;
+            indexSeenCount = seenNow;
 
             beatsByChapter = new Dictionary<string, List<StoryBeat>>();
+            rowMetaCache.Clear();
+            headerCache = null;
             totalBeats = 0;
             foreach (StoryBeat beat in StoryService.AllBeats())
             {
                 if (beat == null || string.IsNullOrEmpty(beat.beatId)) continue;
+                // 선택지 결과 중 안 고른 쪽은 영영 미열람이다 — 목록에 "조건 미상"으로 남기지 않는다.
+                // 고른 쪽은 열람됐으니 그대로 올라와 다시 읽을 수 있다.
+                if (storyDirector != null && storyDirector.IsChoiceTarget(beat.beatId)
+                    && !storyDirector.HasSeen(beat.beatId)) continue;
                 string chapter = string.IsNullOrEmpty(beat.chapterId) ? "etc" : beat.chapterId;
                 if (!beatsByChapter.TryGetValue(chapter, out List<StoryBeat> list))
                 {
@@ -209,9 +223,13 @@ namespace InsectGame.UI
             GUI.color = Color.white;
 
             int seen = storyDirector != null ? storyDirector.SeenCount : 0;
+            if (headerCache == null || headerSeen != seen)
+            {
+                headerSeen = seen;
+                headerCache = seen + " / " + totalBeats + " 장면을 지나왔다";
+            }
             GUI.Label(new Rect(px + 26f, py + 14f, pw - 220f, 50f), "여행의 기록", titleStyle);
-            GUI.Label(new Rect(px + 26f, py + 58f, pw - 220f, 28f),
-                $"{seen} / {totalBeats} 장면을 지나왔다", hintStyle);
+            GUI.Label(new Rect(px + 26f, py + 58f, pw - 220f, 28f), headerCache, hintStyle);
             if (GUI.Button(new Rect(px + pw - 74f, py + 14f, 58f, 58f), "X", closeStyle)) { CloseModal(); return; }
 
             float bodyY = py + 96f;
@@ -336,7 +354,9 @@ namespace InsectGame.UI
                 seen ? UITheme.Instance.accentMint : new Color(0.3f, 0.31f, 0.36f));
 
             float textX = rect.x + 22f;
-            float textW = rect.width - 200f;
+            // 버튼(150) + 여백과 연동한다 — 패널이 ClampSize로 좁아지면 고정 감산은 폭을 음수로 만든다.
+            const float btnZone = 150f + 36f;
+            float textW = Mathf.Max(120f, rect.width - btnZone);
 
             if (seen)
             {
@@ -344,8 +364,7 @@ namespace InsectGame.UI
                 string head = FirstLine(beat);
                 rowTitleStyle.normal.textColor = Color.white;
                 UIHelper.LabelFit(new Rect(textX, rect.y + 14f, textW, 34f), head, rowTitleStyle);
-                UIHelper.LabelFit(new Rect(textX, rect.y + 50f, textW, 26f),
-                    $"{SpeakerOf(beat)} · {beat.lines.Count}줄", rowMetaStyle);
+                UIHelper.LabelFit(new Rect(textX, rect.y + 50f, textW, 26f), RowMeta(beat), rowMetaStyle);
 
                 float bw = 150f;
                 float bh = Mathf.Max(UIScale.MinTouchHeight, 46f);
@@ -362,6 +381,21 @@ namespace InsectGame.UI
                 UIHelper.LabelFit(new Rect(textX, rect.y + 14f, textW, 34f), "아직 지나지 않은 장면", lockStyle);
                 UIHelper.LabelFit(new Rect(textX, rect.y + 50f, textW, 26f), HintFor(beat), rowMetaStyle);
             }
+        }
+
+        // 행마다 OnGUI 패스마다 문자열을 만들면 스크롤뷰가 클립만 하고 루프는 전 행을 돌아 할당이 쌓인다.
+        private readonly Dictionary<string, string> rowMetaCache = new Dictionary<string, string>();
+        private string headerCache;
+        private int headerSeen = -1;
+
+        private string RowMeta(StoryBeat beat)
+        {
+            if (!rowMetaCache.TryGetValue(beat.beatId, out string meta))
+            {
+                meta = SpeakerOf(beat) + " · " + beat.lines.Count + "줄";
+                rowMetaCache[beat.beatId] = meta;
+            }
+            return meta;
         }
 
         private static string FirstLine(StoryBeat beat)

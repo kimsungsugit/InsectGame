@@ -194,10 +194,18 @@ ID·리전만 갈면 된다.
 
 ```
 village_elder   : talk_elder   → ch11_echo
-catcher_rival   : talk_rival   → ch2_echo → ch4_echo → ch8_echo → ch12_echo
-ruins_scholar   : talk_scholar → ch3_echo → ch5_echo → ch6_echo → ch7_echo → ch9_echo → fin_epilogue
-ledger_ink      : ch10_echo
+catcher_rival   : talk_rival   → ch2_echo → ch4_echo → ch7_echo_rival → ch8_echo → ch9_echo_rival → ch12_echo → post_rival_rematch
+ruins_scholar   : talk_scholar → ch3_echo → ch5_echo → ch6_echo → ch7_echo → ch8_echo_scholar → ch9_echo → fin_epilogue
+ledger_ink      : ch10_echo → ch11_echo_ink
 ```
+
+**2026-09-09에 2막 여운을 넷 끼워 넣었다**(`ch7_echo_rival`·`ch8_echo_scholar`·`ch9_echo_rival`·`ch11_echo_ink`).
+그 전까지 2막 화자는 세라 61 / 라온 22 / 어르신 13으로 **ch9·ch11이 통째로 세라 독백**이었고,
+ch8·ch10엔 세라 여운이, ch7·ch9·ch11엔 라온 여운이 없었다. 라온의 부상 이탈 구간(ch10 후반~ch12
+복귀 전)은 그대로 비워 둔다 — 대신 먹이 잿불 골짜기에서 라온 소식을 전한다(`ch11_echo_ink`,
+우듬지에 다녀온 뒤 되돌아와야 듣는다). 끼워 넣으며 앵커를 셋 늘렸다 — 라온 `hollow`·`frostline`,
+세라 `dunes`(6-1장 표와 같은 방식으로 서브에리어 진입 반경 +8m·NPC 12m 이상을 계산해 둔 값).
+`ch8_echo`·`ch9_echo`·`ch12_echo`는 prereq만 앞 칸으로 바꿨고 대사는 그대로다.
 
 **1막 다섯 칸은 2026-08-26에 끼워 넣었다**(6-1장). 그때 기존 `ch7_echo`·`ch8_echo`의
 `prerequisiteBeatId`만 앞 칸으로 바꿨고 **대사는 한 줄도 안 고쳤다.** 이미 그 비트를 본
@@ -241,6 +249,37 @@ ledger_ink      : ch10_echo
 `story_lint` 검사 16이 막고, 검사 17(챕터 도달 순서)이 위 7건 같은 조기 발화를 통째로 잡는다.
 
 ---
+
+### 선택지 규칙 — 표현이지 분기가 아니다 (2026-09-09)
+
+`StoryChoice{text, nextBeatId}`는 처음부터 모델에 있었지만 **117비트 전부 `choices: []`였고 읽는 코드도 0이었다.**
+최종장의 승리 조건 "이름을 주지 않는다"가 대사로만 처리됐다 — 이 이야기의 주제를 플레이어가 한 번도
+**고르지** 않았다. 지금은 대사창이 마지막 줄에서 [닫기] 대신 선택 버튼을 그리고
+(`NpcDialogueUI.DrawChoices`), 고른 결과를 `StoryDirector.QueueChoice`가 `Immediate <beatId>`로
+**큐 맨 앞**에 건다. 닫힘→`CompleteBeat`→큐 배출이라 결과가 곧바로 이어 뜬다.
+
+선택점 셋: `ch5_blocked`(검은 옷의 여자 "우리는 지키는 쪽이야") · `ch9_confront`(저울 "무엇이 달라졌지?" —
+세라 대신 플레이어가 답한다) · `fin_unnamed`(그것이 이름을 달라고 한다).
+
+**규칙 — `story_lint` 검사 24가 강제한다.**
+
+| 규칙 | 왜 |
+|---|---|
+| 결과 비트는 `Immediate` | 그 param 경로로만 뜬다. 시작 시 일괄 평가(`param` 빈 값)는 선택 결과를 **건너뛴다** — 안 그러면 `fin_unnamed` 뒤 재부팅에서 거절·수락이 둘 다 자격을 얻는다 |
+| 결과 비트는 **leaf** — 어떤 prereq/`requiredBeatId`도 아님 | 안 고른 쪽은 영영 미열람이다. 스파인이면 그 세이브의 캠페인이 거기서 정지한다 |
+| 결과 비트의 prereq = 선택지를 단 비트 | 다른 경로로 새어 나가지 않게 |
+| 보상 0 | 어느 쪽을 고르느냐로 경제가 갈리면 표현이 아니라 분기다 |
+| 선택지를 단 비트는 `lines` ≥ 1 | 대사 없는 비트는 즉시 완료라 버튼이 안 뜬다 |
+
+안 고른 결과는 **목표 후보에서도 저널에서도 뺀다**(`StoryObjectiveResolver.CollectChoiceTargetIds`) —
+안 그러면 그 챕터가 끝난 뒤에도 HUD가 "모험을 이어가세요"에 굳고 저널에 "조건 미상" 행이 남는다.
+고른 쪽은 열람됐으니 저널에서 다시 읽을 수 있다.
+
+**「무명」에는 어느 쪽을 골라도 이름이 붙지 않는다.** "이름을 준다"를 골라도 세라가 막는다
+("아직 입 밖에 안 냈어요. 삼키세요") — 부르지 않은 이름은 이름이 아니다. 8장 "넘지 말 것" 그대로다.
+
+걸음 도구는 기본으로 첫 항목을 고르고 `-walkChoice last`면 마지막 항목을 고른다 — 양쪽 결과 leaf가
+실제로 뜨는지 두 번 돈다.
 
 ## 6-1. 1막의 지형 연관성 보강 — 2026-08-26
 
@@ -396,7 +435,7 @@ meadow―swamp(101m)이고 사슬인 `pond→forest`는 280m라, 지도를 훑�
 | `ch9_arrive` | `RegionEnter frostline` | `ch8_confront` | 세라 | 얼음 속에 고대의 기록이 그대로 남아 있다. 여긴 시간이 멈춰 빈칸이 안 생긴 땅 | 캔디45 / XP110 |
 | `ch9_sign` | `CaptureInsect ""` (req `frostline`) | `ch9_arrive` | 세라 | 얼음이 붙든 것과 도감이 붙든 것은 무엇이 다를까요 | 캔디40 / XP90 |
 | `ch9_confront` | `SubAreaEnter frostline_archive` | `ch9_arrive` | **저울** | 얼음 서고. 저울이 세라를 알아본다 — 옛 동문. "너도 한때는 우리 방식이 옳다고 했잖아" | 캔디60 / XP160 |
-| `ch9_clash` | `BattleWin ""` (req `frostline`) | `ch9_arrive` | 세라 | 부정하지 않아요. 저도 그때는 빨리 채우는 게 옳다고 믿었어요 | 캔디40 / XP90 |
+| `ch9_clash` | `BattleWin ""` (req `frostline`) | `ch9_arrive` | 세라 | 아까 저울 선배 물음에 대답을 못 했어요. 달라진 건 속도가 아니라 방향이에요 | 캔디40 / XP90 |
 | `ch9_echo` | `NpcTalk ruins_scholar` | `ch7_echo` | 세라 | 스승님은 제자를 잦아듦으로 잃었어요. 그래서 기다리는 걸 못 견디시는 거예요 | 캔디30 / XP60 |
 
 ### ch10 — 잿불 골짜기 (`emberfall`)
@@ -407,7 +446,7 @@ meadow―swamp(101m)이고 사슬인 `pond→forest`는 280m라, 지도를 훑�
 | `ch10_sign` | `CaptureInsect ""` (req `emberfall`) | `ch10_arrive` | **먹** | 장부를 쓰는 손으로 묻는다. 내가 적은 이름 중에 아직 살아 있는 게 몇이나 될까 | 캔디45 / XP100 |
 | `ch10_confront` | `SubAreaEnter emberfall_kiln` | `ch10_arrive` | **먹** | 라온이 무너지는 갱도에서 곤충들을 빼내다 다친다. 먹이 그를 끌어낸다 — 그리고 장부를 덮는다 | 캔디70 / XP180 |
 | `ch10_clash` | `BattleWin ""` (req `emberfall`) | `ch10_arrive` | 세라 | 라온은 괜찮을 거예요. 대신 여기서부턴… 우리 둘이에요 | 캔디45 / XP100 |
-| `ch10_echo` | `NpcTalk ledger_ink` | (없음) | **먹** | 나는 이름을 적는 사람이지 가두는 사람이 아니었다. 이제야 그 차이를 안다 | 캔디35 / XP70 |
+| `ch10_echo` | `NpcTalk ledger_ink` | (없음) | **먹** | 장부는 두고 왔다, 태우진 않았다. 관장님은 30년째 같은 날에 서 계신다 — 나는 다음 날로 가고 싶다 ("적는 사람이지 가두는 사람이 아니었다"는 `ch10_confront`의 대사다) | 캔디35 / XP70 |
 
 ### ch11 — 우듬지 (`canopy`)
 
@@ -648,6 +687,16 @@ Lv.50~64에서 이미 잡은 종이 절반 가까이 나왔다. 리전당 4종�
 | `LevelReach` | `트레이너 Lv.3 달성 · 현재 Lv.2` | — |
 | `DexProgress` | `도감 60종 기록 · 현재 42종` | — |
 | `QuestComplete` | `'첫 수문장' 완료하기` | — |
+| **잠긴 리전**(위 셋 중 목적지가 미해금) | `텅 빈 들(으)로 가려면 고대 유적 수문장 격파 · 권장 Lv.42` | **앞 리전 수문장 진입로** |
+
+**잠긴 리전으로 안내하던 자리 — 2026-09-09.** 스토리 코드는 리전 해금을 전혀 보지 않았다.
+2막 도착 비트의 prereq가 전부 **앞 챕터 대치**라 수문장을 건너뛰므로, `ch7_opening` 직후 목표가
+"텅 빈 들(으)로"였는데 `hollow`는 유적 수문장(Lv.42) 전엔 잠겨 있다. `gd_*`는 leaf라 목표로 안
+뽑히니 아무도 수문장을 말하지 않았다 — hollow→nameless 6링크가 전부 그 형태였다.
+`StoryObjectiveTracker.TryRedirectLockedRegion`이 `RegionManager.IsRegionAccessible`/`GetGatekeeperRegion`을
+**읽어**(판정은 그쪽이 단일 출처) 라벨·좌표·리전을 앞 리전 수문장으로 바꿔 친다. 리전 도착·서브에리어·
+리전 내 행위 세 경로 모두. 수문장 목표엔 `guardianLevel`을 권장 레벨로 병기한다
+(`StoryObjectiveResolver.DescribeRegionObjective`, `StoryObjectiveResolverTests`).
 
 ### 앰비언트 `talk_*`도 개막 뒤로 민다
 
@@ -887,3 +936,25 @@ Lv.50~64에서 이미 잡은 종이 절반 가까이 나왔다. 리전당 4종�
   (예전엔 "이번 대화에서 비트가 안 떴다"만 봐서, 소개가 서브에리어 대치 비트에 걸린
   집게·저울·관장은 리전 도착 후 본진에서 말만 걸면 이름도 모르는 채 보스전이 시작됐다.)
 - **「무명」에 이름을 붙이지 않는다.** 이 이야기의 규칙이자 최종장의 승리 조건이다.
+
+## 9. 2026-09-09 보강 — 비어 있던 자리 27비트
+
+117비트를 전수 읽고 검사기가 못 보는 **저작 공백**을 채웠다. 새 비트는 전부 leaf라 스파인·기존 대사는
+불변이다(선택지는 6장 「선택지 규칙」, 여운 넷은 6장 체인 표, 잠긴 리전 안내는 7-3장).
+
+| 묶음 | 비트 | 무엇이 비어 있었나 |
+|---|---|---|
+| 간부 대결 승리 | `duel_grip_win` · `duel_scale_win` · `duel_chief_win` | `talk_grip/scale/chief`가 "준비되면 오라"고 도전을 부추기는데 이겨도 **아무 말이 없었다.** 대결 승리는 `BattleWin <보스 종>`으로 흐른다(`InsectBattleController.EnemyInsectId`). `requiredBeatId`가 그 도전 대사라 필드 레이드로 같은 종을 이겨도 도전 전엔 안 뜬다. 하월은 `moth_effaced`를 "이름을 돌려받은 나방"으로 준다(첫 장의 종) |
+| 서브에리어 10곳 | `ch1_pond_edge`·`ch2_deep`·`ch3_deep`·`ch4_cave`·`ch5_cave` / `ch7_burrow`·`ch8_pit`·`ch9_ridge`·`ch10_vent`·`ch11_bough` | 26곳 중 10곳이 스토리 0건 — **2막 둘째 서브에리어는 전부 빈 스폰 창고**였다. 2막 종은 표시명이 영문이라 대사는 종명 대신 특징(찢어진 거미줄·개미귀신 구덩이·재 속의 매미)으로 부른다. `ch10_vent`는 라온 부재 구간이라 먹이 말한다 |
+| 1막 도감 | `dex_20`(어르신) · `dex_40`(라온) | "기록이 곧 봉인"이 1막 주제인데 도감 수를 세는 비트가 `ch7_arrive` 뒤(`dex_60`)에야 있었다 |
+| 엔딩 뒤 | `dex_160`(세라) · `post_rival_rematch`(라온 → `s_npc_duel`) | `fin_epilogue`가 "계속 만나요"로 문을 열고 그 뒤가 비었다. 도감 임계는 **풀에 실재하는 종수 172**(`game_facts.region_pools`)에서 잡았다 — 180은 영영 못 닿는다 |
+
+### 알려진 불일치 — 고치지 않는 것
+
+- 어르신이 `ch6_reach_ruins`·`ch6_approach`·`ch6_relic`에서 유적 화자인데 앵커는 초원뿐이고(몸 없는 목소리),
+  `ch11_echo`는 "초원만 지켰구나"라 한다. 셋 다 열람됐을 수 있는 비트라 **대사를 고치지 않는다**(8장).
+  읽는 법: ch6의 어르신은 "여기까지 왔구나"를 멀리서 전하는 목소리이고, ch11의 "네가 없는 동안"은 2막을 가리킨다.
+- 2막 6리전에 튜토리얼 퀘스트가 0건이다(`q_complete`에서 끝, 이후 `q_blight_*`뿐). 스토리 HUD가 안내를 맡고 있어
+  진행은 안 막히지만 퀘스트 칩·보상 경로는 비어 있다 — **별건**(`/add-quest`).
+- `ch11_echo`(어르신 여운)는 Lv.58 구간에 초원 복귀를 요구한다. leaf이고 챕터 순위상 ch12 스파인이 늘 앞서므로
+  HUD가 초원을 가리키는 건 `fin_seal` 뒤뿐이다 — 실측 후 그대로 둔다.

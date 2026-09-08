@@ -189,6 +189,14 @@ namespace InsectGame.Core
             ItemData data = itemDatabase.FindById(itemId);
             if (data == null) return;
 
+            // 기술 디스크 — 여기서는 쓰지 않는다. 어느 곤충에게 가르칠지 고르고 교체까지 해야 하는데
+            // 그 흐름은 훈련소(TrainingUI)가 이미 갖고 있다. 소비도 그쪽이 한다.
+            if (!string.IsNullOrEmpty(data.teachSkillId))
+            {
+                Debug.Log($"[Item] {data.displayName}은 훈련소에서 사용합니다.");
+                return;
+            }
+
             // 대상지정 치료 아이템 — 병원 선택기를 열어 곤충 지정(소비는 선택 시). 여기선 소비하지 않는다.
             if (data.isTargetedUse)
             {

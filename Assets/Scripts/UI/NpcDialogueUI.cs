@@ -23,6 +23,7 @@ namespace InsectGame.UI
         private GUIStyle nameStyle;
         private GUIStyle lineStyle;
         private GUIStyle buttonStyle;
+        private GUIStyle choiceStyle;
         private bool stylesInited;
 
         // 패널 페이드 상태(UIHelper.AnimatePanelOpen이 소유). CharacterOutfitUI와 같은 관례.
@@ -364,17 +365,82 @@ namespace InsectGame.UI
             float btnY = py + panelH - btnH - (storyMode ? 24f : 14f);
             bool isLast = lineIndex >= lines.Length - 1;
 
-            if (!isLast)
+            if (isLast && HasChoices)
             {
-                if (GUI.Button(new Rect(px + panelW - btnW * 2f - 40f, btnY, btnW, btnH), "다음", buttonStyle))
-                    lineIndex++;
+                // 마지막 줄에 선택지가 있으면 [닫기] 대신 선택 버튼이 대사창을 닫는다 —
+                // 고르지 않고는 못 나간다(ESC는 IModalUI 경로라 여전히 닫히지만 그땐 아무 결과도 안 뜬다).
+                DrawChoices(textX, btnY, px + panelW - 28f - textX, btnH);
             }
-            if (GUI.Button(new Rect(px + panelW - btnW - 24f, btnY, btnW, btnH), "닫기", buttonStyle))
-                CloseModal();
+            else
+            {
+                if (!isLast)
+                {
+                    if (GUI.Button(new Rect(px + panelW - btnW * 2f - 40f, btnY, btnW, btnH), "다음", buttonStyle))
+                        lineIndex++;
+                }
+                if (GUI.Button(new Rect(px + panelW - btnW - 24f, btnY, btnW, btnH), "닫기", buttonStyle))
+                    CloseModal();
+            }
 
             // 페이드 알파를 남기지 않는다 — GUI.color는 전역이라 다음 컴포넌트의 OnGUI까지 물든다.
             GUI.color = Color.white;
             UIScale.End();
+        }
+
+        /// <summary>지금 떠 있는 스토리 비트의 마지막 줄에 선택지가 붙어 있는가(다시보기는 제외).</summary>
+        public bool HasChoices =>
+            isOpen && storyMode && !storyReplay && currentBeat != null
+            && currentBeat.choices != null && currentBeat.choices.Count > 0;
+
+        /// <summary>
+        /// 선택지를 고른다 — 결과 비트를 큐 맨 앞에 걸고 대사창을 닫는다. 닫힘이 <c>CompleteBeat</c>를
+        /// 부르고 그것이 큐를 흘리므로 결과가 곧바로 이어 뜬다. 배치 걸음 도구도 이 경로를 쓴다.
+        /// </summary>
+        public void SelectChoice(int index)
+        {
+            if (!HasChoices) return;
+            index = Mathf.Clamp(index, 0, currentBeat.choices.Count - 1);
+            InsectGame.Story.StoryChoice choice = currentBeat.choices[index];
+            if (storyDirector != null && choice != null) storyDirector.QueueChoice(choice.nextBeatId);
+            else if (storyDirector == null) Debug.LogWarning("[Dialogue] StoryDirector 미배선 — 선택 결과가 유실된다");
+            CloseModal();
+        }
+
+        /// <summary>한 줄에 놓는 선택 버튼 상한 — 세로 화면(선택 영역 ≈660px)에서 4개부터 패널을 뚫는다.</summary>
+        private const int MaxChoicesPerRow = 3;
+
+        // 선택 버튼을 가로로 나란히 — 2~3개. 문구 길이는 저작이 정한다(짧게, 14자 안팎)만,
+        // 세로 화면에서는 그것도 잘리므로 LabelFit으로 글자를 줄여 맞춘다.
+        private void DrawChoices(float x, float y, float width, float height)
+        {
+            int count = Mathf.Min(currentBeat.choices.Count, MaxChoicesPerRow);
+            const float gap = 16f;
+            float w = Mathf.Max(120f, (width - gap * (count - 1)) / count);
+            choiceStyle.fontSize = storyMode ? 28 : 24;   // 스토리 버튼(72px)에 맞춘 기준 — LabelFit이 넘칠 때만 줄인다
+            for (int i = 0; i < count; i++)
+            {
+                InsectGame.Story.StoryChoice choice = currentBeat.choices[i];
+                string text = choice != null && !string.IsNullOrEmpty(choice.text) ? choice.text : "…";
+                Rect r = new Rect(x + (w + gap) * i, y, w, height);
+                if (DrawChoiceButton(r, text))
+                {
+                    SelectChoice(i);
+                    return;   // CloseModal이 상태를 비웠다 — 같은 프레임에 더 그리지 않는다
+                }
+            }
+        }
+
+        // UISurface.Button과 같은 표면(그림자·둥근 몸통·호버)이되 라벨만 LabelFit으로 — 그쪽은 GUI.Label 고정이라
+        // 폰트 축소가 없어 세로 화면에서 14자 문구가 잘린다.
+        private bool DrawChoiceButton(Rect r, string text)
+        {
+            UITheme t = UITheme.Instance;
+            Color body = t.surfaceRaised;
+            if (r.Contains(UIScale.VirtualMousePosition)) body = Color.Lerp(body, Color.white, 0.16f);
+            UISurface.Rounded(new Rect(r.x + 2f, r.y + 3f, r.width, r.height), t.surfaceShadow);
+            UISurface.Rounded(r, body);
+            UIHelper.LabelFit(new Rect(r.x + 10f, r.y, r.width - 20f, r.height), text, choiceStyle);
+            return GUI.Button(r, string.Empty, GUIStyle.none);
         }
 
         // 스토리 화자(어르신/라온/세라) 좌측 포트레이트 — CharacterPortraitRenderer 재사용.
@@ -482,6 +548,15 @@ namespace InsectGame.UI
                 fontStyle = FontStyle.Bold,
                 alignment = TextAnchor.MiddleCenter
             };
+            // 선택 버튼은 UISurface.Button 위에 그린다 — 그쪽은 GUI.Label로 라벨만 찍으므로 **label 파생**이어야
+            // 한다. button 파생을 넘기면 유니티 기본 회색 상자가 둥근 서피스 위에 겹친다(TutorialQuestUI가 겪은 그것).
+            choiceStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 24,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleCenter
+            };
+            choiceStyle.normal.textColor = Color.white;
 
             stylesInited = true;
         }

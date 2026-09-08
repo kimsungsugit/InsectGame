@@ -380,28 +380,16 @@ namespace InsectGame.UI
         //  [B] 1v1을 숨기고 [R] 레이드만 제공하므로 4개 수문장이 레이드 전용 → 격파 등록 누락 = 진행 차단.)
         private void CheckRaidGuardianDefeat()
         {
-            if (raidController == null || raidController.BossStats == null
-                || raidController.BossStats.Data == null) return;
-            if (cachedRegionMgr == null) cachedRegionMgr = FindFirstObjectByType<RegionManager>();
-            RegionManager regionMgr = cachedRegionMgr;
-            if (regionMgr == null || regionMgr.Regions == null) return;
+            if (raidController == null) return;
 
-            // 보스 종/레벨은 시작 스냅샷(BossStats) — 디스폰/풀 재사용된 라이브 BossEntity 회피.
-            string bossId = raidController.BossStats.Data.insectId;
-            int bossLevel = raidController.BossStats.Level;
-            foreach (var region in regionMgr.Regions)
-            {
-                if (string.IsNullOrEmpty(region.guardianInsectId)) continue;
-                if (region.guardianInsectId != bossId) continue;
-                if (regionMgr.IsGuardianDefeated(region.regionId)) continue;
-                if (bossLevel >= region.guardianLevel - 2)
-                {
-                    regionMgr.DefeatGuardian(region.regionId);
-                    Debug.Log($"[Guardian] {region.displayName} 수문장 격파(레이드)! 다음 지역 해금됨");
-                    if (TutorialQuestManager.Instance != null)
-                        TutorialQuestManager.Instance.NotifyGuardianDefeated();
-                }
-            }
+            // **판정 근거는 1v1과 같다**(BattleScreenUI.CheckGuardianDefeat 주석에 전문):
+            // 종·레벨은 야생과 겹치고, 좌표 반경도 야생 스폰 링이 그대로 들어오므로,
+            // "싸운 개체가 표식된 수문장이었나"만 묻는다. 시작 스냅샷이라 디스폰/풀 재사용에 안전.
+            if (cachedRegionMgr == null) cachedRegionMgr = FindFirstObjectByType<RegionManager>();
+            if (cachedRegionMgr == null) return;
+            if (!cachedRegionMgr.TryDefeatGuardian(raidController.BossGuardianRegionId, "레이드")) return;
+            if (TutorialQuestManager.Instance != null)
+                TutorialQuestManager.Instance.NotifyGuardianDefeated();
         }
 
         private void Update()

@@ -59,6 +59,15 @@ namespace InsectGame.Core
             blinkAt = Time.time + NextBlinkDelay(Random.value);
         }
 
+        /// <summary>몸이 다시 지어졌다(<see cref="PlayerVisualBuilder.RebuildFromPrefs"/>) — 눈·눈썹·입 캐시를 버린다.</summary>
+        public void InvalidateNodes()
+        {
+            nodesResolved = false;
+            eyeNodes = null;
+            baseEyeScaleY = null;
+            ResolveNodes();
+        }
+
         private void ResolveNodes()
         {
             if (nodesResolved) return;

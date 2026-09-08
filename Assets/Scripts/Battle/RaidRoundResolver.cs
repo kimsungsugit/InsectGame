@@ -315,7 +315,8 @@ namespace InsectGame.Battle
             // 화면엔 속성이 뜨는데 수식은 무속성이라 표시와 결과가 어긋나 있었다.
             int basePower = Mathf.Max(
                 1,
-                Mathf.RoundToInt((15 + attacker.Level * 2) * UniteContributionMultiplier));
+                Mathf.RoundToInt((15 + attacker.Level * GameConstants.Battle.LevelDamageScale)
+                    * UniteContributionMultiplier));
             int damage = CalculateTeamDamage(attacker, boss, element, basePower);
             result.Damage = ApplyDamageAndMeasure(
                 boss, damage, attacker.Attack, boss.Defense);
@@ -348,7 +349,7 @@ namespace InsectGame.Battle
             if (intent == null || boss == null || team == null)
                 return result;
 
-            int bossBaseDamage = 10 + boss.Level * 2;
+            int bossBaseDamage = 10 + boss.Level * GameConstants.Battle.LevelDamageScale;
             float bossMultiplier = Mathf.Clamp(1f + boss.AttackBonus, 0.3f, 3f);
             int bossDamage = Mathf.Max(
                 1, Mathf.RoundToInt(bossBaseDamage * bossMultiplier));
@@ -402,7 +403,7 @@ namespace InsectGame.Battle
                 singleTargetDamage = Mathf.Max(
                     1,
                     Mathf.RoundToInt(
-                        (intent.Skill.power + boss.Level * 2)
+                        (intent.Skill.power + boss.Level * GameConstants.Battle.LevelDamageScale)
                         * bossMultiplier * effectiveness * sameTypeBonus * rage));
             }
 
@@ -518,7 +519,8 @@ namespace InsectGame.Battle
         {
             int basePower = Mathf.Max(
                 1,
-                Mathf.RoundToInt((skill.power + attacker.Level * 2) * powerMultiplier));
+                Mathf.RoundToInt((skill.power + attacker.Level * GameConstants.Battle.LevelDamageScale)
+                    * powerMultiplier));
             return CalculateTeamDamage(attacker, boss, skill.element, basePower);
         }
     }

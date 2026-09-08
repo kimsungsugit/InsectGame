@@ -120,6 +120,7 @@ namespace InsectGame.UI
 
             DrawKeyRow(x, ref y, lineH, "T", "배틀 팀", keyStyle, descStyle);
             DrawKeyRow(x, ref y, lineH, "G", "훈련", keyStyle, descStyle);
+            DrawKeyRow(x, ref y, lineH, "I", "가방", keyStyle, descStyle);
             DrawKeyRow(x, ref y, lineH, "N", "도감", keyStyle, descStyle);
             // 컬렉션 실제 바인딩은 C다(`QuickAccessBarUI.buttons[]`의 key가 단일 출처다 —
             // 예전 주석이 적어 둔 줄 번호는 이미 어긋나 있었다). TAB은 이 게임에서

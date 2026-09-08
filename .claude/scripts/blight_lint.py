@@ -175,7 +175,9 @@ def main():
     # 9. 재진입 재발화 경로.
     #    정화 순간에 그 비트가 자격 미달이면(대치 비트 미열람) 트리거가 소비돼 사라진다.
     #    리전에 다시 들어올 때 다시 쏘는 것이 유일한 회복 경로다.
-    refire = re.search(r"IsCleansed\(.{0,60}?EvaluateTriggers\(TriggerRegionCleansed",
+    #    RouteTrigger도 인정한다 — 대화·전투 화면 중이면 큐로 보내고 끝나면 흘리는 관문이라
+    #    "다시 쏜다"는 성질이 같다(직접 EvaluateTriggers는 검사 8이 따로 막는다).
+    refire = re.search(r"IsCleansed\(.{0,60}?(?:Route|Evaluate)Trigger[s]?\(TriggerRegionCleansed",
                        director, re.S) is not None
     add("정화 리전 재진입 시 재발화", "존재",
         "있음" if refire else "**없음 — 놓친 세이브가 정화 비트를 영영 못 본다**", refire)

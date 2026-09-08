@@ -83,6 +83,8 @@ namespace InsectGame.EditorTools
         /// 읽을 뿐이고 IMGUI는 캡처가 안 된다) 본편 비트 상당수가 거기 걸려 있다.
         /// </summary>
         private static string walkMode;
+        // `-walkChoice last` — 선택지가 뜨면 마지막 항목을 고른다(기본은 첫 항목).
+        private static bool walkChoiceLast;
 
         private static float startTime;
         private static float bootDeadline;
@@ -122,14 +124,16 @@ namespace InsectGame.EditorTools
             outPath = ReadArg("-walkOut", DefaultOut);
             onlyRegion = ReadArg("-walkRegion", "");
             walkMode = ReadArg("-walkMode", "blight");
+            walkChoiceLast = ReadArg("-walkChoice", "first") == "last";
 
             UnityEditor.SceneManagement.EditorSceneManager.OpenScene(
                 DefaultScene, UnityEditor.SceneManagement.OpenSceneMode.Single);
 
-            SessionState.SetString(StageKey, outPath + "|" + onlyRegion + "|" + walkMode);
+            SessionState.SetString(StageKey, outPath + "|" + onlyRegion + "|" + walkMode
+                + "|" + (walkChoiceLast ? "last" : "first"));
             Log("scene=" + DefaultScene + " out=" + outPath
                 + " region=" + (onlyRegion == "" ? "(전부)" : onlyRegion)
-                + " mode=" + walkMode);
+                + " mode=" + walkMode + " choice=" + (walkChoiceLast ? "last" : "first"));
             EditorApplication.EnterPlaymode();
         }
 
@@ -144,6 +148,7 @@ namespace InsectGame.EditorTools
             outPath = parts.Length > 0 ? parts[0] : DefaultOut;
             onlyRegion = parts.Length > 1 ? parts[1] : "";
             walkMode = parts.Length > 2 && parts[2] != "" ? parts[2] : "blight";
+            walkChoiceLast = parts.Length > 3 && parts[3] == "last";
 
             startTime = Time.realtimeSinceStartup;
             bootDeadline = startTime + BootSeconds;
@@ -204,7 +209,18 @@ namespace InsectGame.EditorTools
             var ui = UnityEngine.Object.FindFirstObjectByType<InsectGame.UI.NpcDialogueUI>();
             if (ui != null && ui.IsOpen)
             {
-                ui.CloseModal();          // 플레이어가 닫는 경로 — 보상·열람 기록이 여기서 난다
+                if (ui.HasChoices)
+                {
+                    // 선택지가 붙은 비트는 고르는 것이 곧 닫는 것이다. 기본은 첫 항목,
+                    // `-walkChoice last`면 마지막 항목 — 양쪽 결과 leaf가 실제로 뜨는지 두 번 돈다.
+                    int idx = walkChoiceLast ? int.MaxValue : 0;
+                    ui.SelectChoice(idx);
+                    Log("선택 — " + closingId + " → " + (walkChoiceLast ? "마지막 항목" : "첫 항목"));
+                }
+                else
+                {
+                    ui.CloseModal();          // 플레이어가 닫는 경로 — 보상·열람 기록이 여기서 난다
+                }
                 closingId = null;
                 return;
             }
@@ -434,6 +450,10 @@ namespace InsectGame.EditorTools
             // 이름 없는 사마귀를 이겨야 난다. 그 순서 그대로 걷는다.
             SubAreaBeat(fin, "nameless_ledger", "ch12_confront", "장부의 방(관장 대면)");
             SubAreaBeat(fin, "nameless_core", "fin_unnamed", "빈칸(무명 대면·컷신)");
+            // 무명 대면의 선택지 — 고르는 것이 대사창을 닫고, 결과 leaf가 큐 맨 앞에서 곧바로 뜬다.
+            // 첫 항목(거절)이 기본, `-walkChoice last`면 수락 쪽(세라가 막는다). 둘 다 leaf라 진행은 같다.
+            steps.Add(BeatStep(fin, walkChoiceLast ? "선택 결과(이름을 준다 → 세라가 막는다)" : "선택 결과(이름을 주지 않는다)",
+                walkChoiceLast ? "fin_named" : "fin_refuse", () => { }, 2));
             steps.Add(new Step
             {
                 site = fin,

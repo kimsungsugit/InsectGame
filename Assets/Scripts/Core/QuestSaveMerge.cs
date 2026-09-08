@@ -92,7 +92,8 @@ namespace InsectGame.Core
         /// </summary>
         public static string PreferCloudActive(string local, string cloud)
         {
-            return string.IsNullOrEmpty(cloud) ? (local ?? "") : cloud;
+            // 공백만 있는 값은 "없음"으로 — 그대로 두면 GetQuest가 null을 내고 재선정까지 한 번 헛돈다.
+            return string.IsNullOrWhiteSpace(cloud) ? (local ?? "").Trim() : cloud.Trim();
         }
     }
 }

@@ -61,9 +61,28 @@ namespace InsectGame.Tests
         [Test]
         public void DefaultId_MatchesTheBeatReward()
         {
-            Assert.AreEqual("rhinoceros_beetle", StarterInsectCatalog.DefaultId);
+            Assert.AreEqual("longhorn_beetle", StarterInsectCatalog.DefaultId);
             Assert.AreEqual(StarterInsectCatalog.DefaultId, StarterInsectCatalog.Get(0).InsectId,
                 "기본값이 첫 카드가 아니면 화면과 지급이 어긋나 보인다");
+        }
+
+        /// <summary>
+        /// <c>DefaultId</c>와 Story.json <c>ch1_intro.rewardInsectId</c>의 일치를 **실제 파일로** 확인한다.
+        /// 리터럴 비교만 있던 시절엔 어긋나도 아무 검사도 안 잡혔다 — 미선택 플레이어는 JSON 종을,
+        /// 1번 카드 선택자는 DefaultId 종을 받는데 화면상 같은 카드다.
+        /// </summary>
+        [Test]
+        public void DefaultId_MatchesStoryJsonBeatReward()
+        {
+            TextAsset json = Resources.Load<TextAsset>("Story");
+            Assert.IsNotNull(json, "Resources/Story.json");
+            int at = json.text.IndexOf("\"beatId\": \"" + StarterInsectCatalog.StarterBeatId + "\"", System.StringComparison.Ordinal);
+            Assert.GreaterOrEqual(at, 0, "ch1_intro 비트가 없다");
+            int key = json.text.IndexOf("\"rewardInsectId\": \"", at, System.StringComparison.Ordinal);
+            Assert.GreaterOrEqual(key, 0);
+            int start = key + "\"rewardInsectId\": \"".Length;
+            int end = json.text.IndexOf('"', start);
+            Assert.AreEqual(StarterInsectCatalog.DefaultId, json.text.Substring(start, end - start));
         }
 
         [Test]
@@ -88,7 +107,7 @@ namespace InsectGame.Tests
         {
             PlayerPrefs.DeleteKey(SaveScope.PrefsKey(StarterInsectCatalog.PrefsKeyBase));
 
-            Assert.AreEqual("rhinoceros_beetle", StarterInsectCatalog.ResolveChoice("rhinoceros_beetle"),
+            Assert.AreEqual("longhorn_beetle", StarterInsectCatalog.ResolveChoice("longhorn_beetle"),
                 "선택이 없으면 비트의 원래 보상 그대로여야 한다 — 기존 세이브가 오늘과 같이 동작한다");
         }
 
@@ -101,7 +120,7 @@ namespace InsectGame.Tests
         {
             PlayerPrefs.SetString(SaveScope.PrefsKey(StarterInsectCatalog.PrefsKeyBase), "atlas_moth_legendary");
 
-            Assert.AreEqual("rhinoceros_beetle", StarterInsectCatalog.ResolveChoice("rhinoceros_beetle"),
+            Assert.AreEqual("longhorn_beetle", StarterInsectCatalog.ResolveChoice("longhorn_beetle"),
                 "화이트리스트에 없는 값이 통과하면 임의의 곤충을 시작부터 받을 수 있다");
 
             PlayerPrefs.DeleteKey(SaveScope.PrefsKey(StarterInsectCatalog.PrefsKeyBase));
@@ -113,7 +132,7 @@ namespace InsectGame.Tests
             string picked = StarterInsectCatalog.Get(1).InsectId;
             PlayerPrefs.SetString(SaveScope.PrefsKey(StarterInsectCatalog.PrefsKeyBase), picked);
 
-            Assert.AreEqual(picked, StarterInsectCatalog.ResolveChoice("rhinoceros_beetle"));
+            Assert.AreEqual(picked, StarterInsectCatalog.ResolveChoice("longhorn_beetle"));
 
             PlayerPrefs.DeleteKey(SaveScope.PrefsKey(StarterInsectCatalog.PrefsKeyBase));
         }

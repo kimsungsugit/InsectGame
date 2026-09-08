@@ -78,6 +78,30 @@ namespace InsectGame.Tests
             Assert.AreEqual(3, raid.ActiveSlot, "첫 행동자는 생존 슬롯이어야 한다");
         }
 
+        /// <summary>
+        /// 수문장 격파 판정은 <c>BossGuardianRegionId</c> 스냅샷 하나로 선다. <c>StartRaid</c>에서 대입
+        /// 한 줄이 빠지면 "수문장을 이겨도 리전이 안 열리는" 진행 차단이 무테스트로 통과한다.
+        /// </summary>
+        [Test]
+        public void StartRaid_SnapshotsBossGuardianRegionId()
+        {
+            RaidBattleController raid = CreateController();
+            InsectEntity boss = CreateBossEntity();
+            boss.MarkAsGuardian("ruins");
+
+            Assert.IsTrue(raid.StartRaid(boss, CreateTeam(5), Levels(5), CreatePids(5, aliveSlot: 0), Skills(5)));
+            Assert.AreEqual("ruins", raid.BossGuardianRegionId);
+        }
+
+        [Test]
+        public void StartRaid_WildBoss_HasEmptyGuardianRegionId()
+        {
+            RaidBattleController raid = CreateController();
+
+            Assert.IsTrue(raid.StartRaid(CreateBossEntity(), CreateTeam(5), Levels(5), CreatePids(5, aliveSlot: 0), Skills(5)));
+            Assert.IsTrue(string.IsNullOrEmpty(raid.BossGuardianRegionId), "야생 보스는 빈 문자열이어야 격파 판정이 안 선다");
+        }
+
         [Test]
         public void StartRaid_NoPersistedHp_StartsAtFullHp()
         {

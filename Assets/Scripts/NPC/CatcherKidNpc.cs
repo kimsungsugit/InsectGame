@@ -238,6 +238,10 @@ namespace InsectGame.NPC
             {
                 InsectEntity e = insects[i];
                 if (e == null || !e.gameObject.activeInHierarchy || e.Data == null) continue;
+                // **수문장은 아이의 대상이 아니다.** 잡아가면 그 리전이 영구히 안 열린다
+                // (격파 판정은 수문장 개체를 이겼을 때만 선다). 등급 필터로는 못 막는다 —
+                // 초원 수문장 사마귀가 Uncommon이라 ShouldWatchOnly에 안 걸린다.
+                if (e.IsGuardian) continue;
                 float sq = (e.transform.position - myPos).sqrMagnitude;
 
                 if (NpcCatchRules.ShouldWatchOnly(e.Data.rarity))

@@ -97,9 +97,11 @@ namespace InsectGame.UI
             else
             {
                 bool isRaid = IsRaidTarget();
+                bool isGuardian = targetInsect != null && targetInsect.IsGuardian;
                 if (!isRaid && (key == KeyCode.E || key == KeyCode.Alpha1))
                 {
-                    if (HasAnyCaptureItem())
+                    // 버튼과 같은 조건 — 수문장 포획은 키로도 우회할 수 없다(잡히면 리전 영구 잠김).
+                    if (HasAnyCaptureItem() && !isGuardian)
                         showItemSelect = true;
                 }
                 if (!isRaid && (key == KeyCode.B || key == KeyCode.Alpha2))
@@ -272,9 +274,13 @@ namespace InsectGame.UI
                 float gap = 24f;
                 float leftX = px + panelW / 2f - btnW - gap / 2f;
 
+                // **수문장은 포획 대상이 아니다.** 잡아 버리면 개체가 사라지는데 격파 판정은
+                // 그 개체를 이겼을 때만 서므로, 그 리전이 영구히 안 열린다(진행 정지).
+                bool isGuardian = targetInsect.IsGuardian;
                 bool hasAnyNet = HasAnyCaptureItem();
-                GUI.backgroundColor = hasAnyNet ? new Color(0.2f, 0.5f, 0.3f) : new Color(0.3f, 0.3f, 0.3f);
-                GUI.enabled = hasAnyNet;
+                bool canCapture = hasAnyNet && !isGuardian;
+                GUI.backgroundColor = canCapture ? new Color(0.2f, 0.5f, 0.3f) : new Color(0.3f, 0.3f, 0.3f);
+                GUI.enabled = canCapture;
                 string minigameText = UIScale.IsMobileLayout ? "미니게임 포획" : "미니게임 [E]";
                 if (GUI.Button(new Rect(leftX, btnY, btnW, btnH), minigameText, btnStyle))
                 {
@@ -282,13 +288,14 @@ namespace InsectGame.UI
                 }
                 GUI.enabled = true;
 
-                if (!hasAnyNet)
+                if (!canCapture)
                 {
                     GUIStyle noNet = new GUIStyle(GUI.skin.label)
                     { fontSize = 24, alignment = TextAnchor.MiddleCenter };
                     noNet.normal.textColor = new Color(1f, 0.4f, 0.3f);
-                    GUI.Label(new Rect(leftX, btnY + btnH + 6, btnW, 30),
-                        "포획 아이템 없음!", noNet);
+                    // 고정 상자에 리터럴을 그리므로 LabelFit — 수문장 문구가 더 길어 잘릴 수 있다.
+                    UIHelper.LabelFit(new Rect(leftX, btnY + btnH + 6, btnW, 30),
+                        isGuardian ? "수문장은 쓰러뜨려야 한다" : "포획 아이템 없음!", noNet);
                 }
 
                 bool hasTeam = teamManager != null && teamManager.HasAnyInsect();

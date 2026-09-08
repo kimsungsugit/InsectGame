@@ -127,10 +127,40 @@ namespace InsectGame.Tests
                 "스킬 폴백(기본 지원 공격)보다는 세야 스킬을 쓰는 보람이 있다");
         }
 
+        /// <summary>
+        /// 보스 HP 배율은 <b>팀 화력에서 파생된 값</b>이지 독립 난이도 손잡이가 아니다.
+        /// 전투 길이 3종(<c>LevelDamageScale</c>·<c>MaxAtkDefRatio</c>·<c>HpPerLevel</c>)을
+        /// 바꾸면 이 값도 함께 다시 계산해야 한다 — 그 사실을 여기 고정한다.
+        /// 8.5는 옛 수식(레벨항 ×2 · 공방비 2.5 · HP +3)의 값이었고, 지금 수식에서
+        /// 그대로 두면 레이드가 두 배로 길어진다(6/5/4턴 → 10/9/8턴).
+        /// </summary>
         [Test]
-        public void Battle_RaidBossHpMultiplier_RaisedWithTeamFirepower()
+        public void Battle_RaidBossHpMultiplier_MatchesCurrentDamageMath()
         {
-            Assert.AreEqual(8.5f, GameConstants.Battle.RaidBossHpMultiplier);
+            Assert.AreEqual(4.5f, GameConstants.Battle.RaidBossHpMultiplier);
+        }
+
+        // ── 전투 길이 3종 ──
+        //
+        // 세 값은 서로를 상쇄하므로 **함께** 고정한다. 하나만 되돌리면 다른 쪽이 곧바로
+        // 지배해 "양쪽이 한두 턴에 서로를 지우는" 옛 상태로 돌아간다.
+
+        [Test]
+        public void Battle_LevelDamageScale_IsBelowHpPerLevel()
+        {
+            Assert.Less(GameConstants.Battle.LevelDamageScale, GameConstants.Battle.HpPerLevel,
+                "레벨당 데미지 증가가 HP 증가를 따라잡으면 레벨이 오를수록 전투가 짧아진다");
+            Assert.GreaterOrEqual(GameConstants.Battle.LevelDamageScale, 1,
+                "0이면 레벨을 올려도 기술 위력이 그대로라 성장이 안 느껴진다");
+        }
+
+        [Test]
+        public void Battle_AtkDefRatio_BracketsOne()
+        {
+            Assert.Less(GameConstants.Battle.MinAtkDefRatio, 1f);
+            Assert.Greater(GameConstants.Battle.MaxAtkDefRatio, 1f);
+            Assert.LessOrEqual(GameConstants.Battle.MaxAtkDefRatio, 2f,
+                "상한이 넓으면 스킬 위력을 아무리 낮춰도 스탯 차이만으로 한 방에 끝난다(옛 2.5)");
         }
 
         [Test]

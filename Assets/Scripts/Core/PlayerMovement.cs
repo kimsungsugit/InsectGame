@@ -75,6 +75,7 @@ namespace InsectGame.Core
         private Vector3 netHandleBasePos, netRingBasePos;
         private Quaternion netHandleBaseRot, netRingBaseRot;
         private bool toolBaseCached;
+        private bool toolLookupDone;
         private float footstepTimer;
         private float bodyBaseY = float.NaN;
         // 잡기 액션 — 탭 시 오른팔/도구를 한 방향으로 크게 휘둘렀다 복귀(sin 아크).
@@ -131,6 +132,19 @@ namespace InsectGame.Core
         private void Start()
         {
             TrySubscribeOutfit();
+        }
+
+        /// <summary>
+        /// 몸이 다시 지어졌다(<see cref="PlayerVisualBuilder.RebuildFromPrefs"/>) — 위 lazy 캐시가
+        /// 파괴된 노드를 가리키므로 비운다. 다음 프레임 <c>transform.Find</c>가 새 노드를 잡는다.
+        /// </summary>
+        public void InvalidateVisualCache()
+        {
+            cachedArmL = cachedArmR = cachedLegPivotL = cachedLegPivotR = cachedBody = cachedHeadPivot = null;
+            cachedNetHandle = cachedNetRing = null;
+            toolBaseCached = false;
+            toolLookupDone = false;
+            bodyBaseY = float.NaN;
         }
 
         private void OnDisable()
@@ -517,8 +531,13 @@ namespace InsectGame.Core
             // 도구 변경 후에도 멈춤 1프레임에 자동 재동기.
             // 이 두 노드를 캐싱하기 때문에 도구 레시피는 반드시 bind 모드여야 한다 —
             // 파괴·재생성하면 캐시가 파괴된 Transform을 가리켜 스윙이 죽는다.
-            if (cachedNetHandle == null) cachedNetHandle = transform.Find("NetHandle");
-            if (cachedNetRing == null) cachedNetRing = transform.Find("NetRing");
+            // 도구가 없는 외형이면 둘 다 영영 null이라 매 프레임 Find 2회가 고착된다 — 조회는 1회만.
+            if (!toolLookupDone)
+            {
+                toolLookupDone = true;
+                cachedNetHandle = transform.Find("NetHandle");
+                cachedNetRing = transform.Find("NetRing");
+            }
             // 잡기 스윙 중엔 base 재캐싱 금지 — 안 그러면 스윙된 회전이 base로 누적돼 도구가 드리프트.
             if (!walking && catchSwingTimer <= 0f && cachedNetHandle != null && cachedNetRing != null)
             {

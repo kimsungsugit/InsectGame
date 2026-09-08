@@ -333,6 +333,14 @@ namespace InsectGame.Core
                     kind = NpcKind.StoryNpc, regionId = "hollow",
                     storyNpcId = "ruins_scholar", wanderRadius = 0f
                 });
+                // 라온 — ch7_echo_rival(NpcTalk)의 몸. 240°/0.28R: 침묵의 자리 +18.0m ·
+                // 마른 굴 +12.5m(진입 반경 밖) · 세라와 36.8m.
+                result.npcAnchors.Add(new NpcSpawnAnchor
+                {
+                    position = Polar(storyHollow.centerPosition, 240f, storyHollow.radius * 0.28f),
+                    kind = NpcKind.StoryNpc, regionId = "hollow",
+                    storyNpcId = "catcher_rival", wanderRadius = 0f
+                });
             }
             Data.RegionData storyDunes = FindRegion(regions, "dunes");
             if (storyDunes != null)
@@ -342,6 +350,14 @@ namespace InsectGame.Core
                     position = Polar(storyDunes.centerPosition, 250f, storyDunes.radius * 0.26f),
                     kind = NpcKind.StoryNpc, regionId = "dunes",
                     storyNpcId = "catcher_rival", wanderRadius = 0f
+                });
+                // 세라 — ch8_echo_scholar(NpcTalk)의 몸. 200°/0.30R: 창고 +9.0m · 구덩이 +29.5m ·
+                // 라온과 17.2m · 집게와 35.2m. 상자 앞에서 스승의 양식을 알아보는 자리라 창고 쪽에 둔다.
+                result.npcAnchors.Add(new NpcSpawnAnchor
+                {
+                    position = Polar(storyDunes.centerPosition, 200f, storyDunes.radius * 0.30f),
+                    kind = NpcKind.StoryNpc, regionId = "dunes",
+                    storyNpcId = "ruins_scholar", wanderRadius = 0f
                 });
                 // 집게 — 보스 대결 상대(NpcBossDuels). 라온 반대편에 세워 둘이 겹치지 않게 한다.
                 result.npcAnchors.Add(new NpcSpawnAnchor
@@ -367,6 +383,14 @@ namespace InsectGame.Core
                     position = Polar(storyFrostline.centerPosition, 200f, storyFrostline.radius * 0.26f),
                     kind = NpcKind.StoryNpc, regionId = "frostline",
                     storyNpcId = "ledger_scale", wanderRadius = 0f
+                });
+                // 라온 — ch9_echo_rival(NpcTalk)의 몸. 240°/0.28R: 서고 +13.9m · 능선 +14.0m ·
+                // 저울과 12.5m · 세라와 36.8m. "뒤를 본다"는 대사대로 저울 쪽 뒤에 선다.
+                result.npcAnchors.Add(new NpcSpawnAnchor
+                {
+                    position = Polar(storyFrostline.centerPosition, 240f, storyFrostline.radius * 0.28f),
+                    kind = NpcKind.StoryNpc, regionId = "frostline",
+                    storyNpcId = "catcher_rival", wanderRadius = 0f
                 });
             }
             Data.RegionData storyEmberfall = FindRegion(regions, "emberfall");

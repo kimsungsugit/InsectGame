@@ -135,6 +135,31 @@ namespace InsectGame.Tests
         {
             Assert.AreEqual("", QuestSaveMerge.PreferCloudActive(null, null));
         }
+
+        [Test]
+        public void PreferCloudActive_CloudWhitespace_KeepsLocalTrimmed()
+        {
+            Assert.AreEqual("q_capture", QuestSaveMerge.PreferCloudActive(" q_capture ", "   "));
+        }
+
+        [Test]
+        public void MaxIntDict_DuplicateKeyInOneSide_TakesHigher()
+        {
+            Assert.AreEqual("q:5", QuestSaveMerge.MaxIntDict("q:1,q:5", ""));
+            Assert.AreEqual("q:5", QuestSaveMerge.MaxIntDict("q:5,q:1", ""));
+        }
+
+        [Test]
+        public void MaxIntDict_NegativeValue_LosesToNonNegative()
+        {
+            Assert.AreEqual("q:0", QuestSaveMerge.MaxIntDict("q:-3", "q:0"));
+        }
+
+        [Test]
+        public void MaxIntDict_BothNull_ReturnsEmpty()
+        {
+            Assert.AreEqual("", QuestSaveMerge.MaxIntDict(null, null));
+        }
     }
 }
 #endif

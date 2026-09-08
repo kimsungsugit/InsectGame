@@ -379,20 +379,22 @@
 - [x] StarterInsectProbe — 첫 파트너 지급 경로 검증 공백 (P0:0, P1:0, 2026-08-29) — 기존 수단 어느 것도 안 닿던 경로에 배치 프로브 신설. 4케이스 전부 정상 확인
 
 - [x] OutfitRenderProbe — 의상 spawn/bind 파츠 렌더 검증 공백 (P0:0, P1:0, 2026-08-29) — 마네킹 3D 리그를 직접 촬영해 11종이 실제로 형태를 그리는 것 확인
+- [x] InventoryUI (P0:0, P1:0, 2026-09-09) — clean. P2 3건 처리(스프라이트 textureRect 그리기 · 행 문자열 빌드 시 1회 캐시 · 서로게이트 첫 글자)
+- [x] QuestSaveMerge (P0:0, P1:0, 2026-09-09) — clean. P2 3건 처리(quest_lint 검사 11 questId 구분자 금지 · 테스트 +4 · 공백 activeQuest 가드)
+- [x] TrainingManager 재감사 (P0:0, P1:2, 2026-09-09) — 디스크 소모가 무표시였다(TrainingUI 버튼 "디스크 사용 ×n"+피드백, TrainingManager.GetDiscCount) · TrainSkill 왕복 테스트 0건 → TrainingRoundTripTests 5건(레벨 게이트 직접 호출·회차별 차감·교체 실패 환불·디스크 1장 소모·디스크 없음 거부). P2 2건 처리(비용 0이면 차감 생략 · PruneTrainingProgress 로드 시 죽은 진척 정리)
+- [x] TrainingUI 재감사 (P0:0, P1:2, 2026-09-09) — 진행바가 쿨다운 라벨을 관통(itemH↑·트랙 y 재배치) · 회차 표시 중복 제거. P2 3건 처리(FindDiscFor O(1) 캐시 · 닫기 시 pendingNewSkillId 정리 · 디스크 교체 헤더)
+- [x] RaidBattleUI 재감사 (P0:0, P1:0, 2026-09-09) — clean. P2 3건 처리(미사용 BossSpawnPosition 제거 · StartRaid 스냅샷 테스트 2건 · 격파 판정을 RegionManager.TryDefeatGuardian으로 단일화)
+- [x] PlayerInsectCollection 재감사 (P0:0, P1:3, 2026-09-09) — 자동 장착 루프가 "해제"를 되살렸다(장착 0개일 때만으로 축소) · 주석 정정 · GetEquippedSkills가 InsectUpdated 미발화. P2 3건 처리(ResolveSkill insect null 폴백 · 손상 세이브 .corrupt 보존 · 테스트)
+- [x] BattleScreenUI 재감사 + InsectEntity 재감사 (P0:2, P1:1, 2026-09-09) — **수문장에게 한 번 지거나 도주하면 영구 재도전 불가**(Despawn 래치 + SetEngaged 미복구, 두 Explore가 독립 발견) → 수문장 Despawn no-op·ReleaseEnemyAfterBattle · 수문장 포획 백스톱을 StartMinigame으로 단일화 · 미사용 스냅샷 3종 제거 · GuardianLocationTests +2
+- [x] PlaySceneBootstrap 재감사 (P0:1, P1:2, 2026-09-09) — **생성 화면에서 고른 외형이 필드 캐릭터에 안 나왔다**(PlayerVisualBuilder.RebuildFromPrefs + PlayerMovement 캐시 무효화) · 하위 디스크 3종의 입수 경로가 화면에 없는 uGUI 상점뿐(CashShopManager에 추가) · HospitalUI 배선이 village try 안(밖으로). P2 3건 처리([I] 키 안내 · 디스크 캔디 0 · 단가 출처 주석)
+- [x] StoryDirector 재감사 (P0:0, P1:3, 2026-09-09) — 드레인이 1회성 트리거(QuestComplete·GuardianDefeat·선택 결과)를 게이트 실패 시 버림(되돌리기 3회) · QuestComplete 큐 적재 중 종료 시 영구 유실(완료 퀘스트 재스윕) · QueueChoice가 Immediate 아닌 대상을 조용히 소비(경고). P2 처리(저널 인덱스 무효화 · 카메라 경로 60초 절대 상한)
+- [x] NpcDialogueUI 재감사 (P0:0, P1:2, 2026-09-09) — 선택 버튼에 button 파생 스타일(회색 상자 겹침) → label 파생 choiceStyle · LabelFit 미적용으로 세로 화면 잘림 → DrawChoiceButton. P2 처리(한 줄 3개 캡 · 스토리 폰트 28 · storyDirector null 경고)
+- [x] StarterInsectCatalog 재감사 (P0:0, P1:2, 2026-09-09) — DefaultId↔Story.json 실제 파싱 테스트 · 오타 시 종 데이터 없는 개체가 그대로 들어오던 폴백 보강. P2 처리(클라우드 복원 sanitize · 표시명 "첫 파트너"로 일반화)
+- [x] StoryJournalUI 재감사 (P0:0, P1:1, 2026-09-09) — 인덱스 무효화가 StoryBeatCompleted 구독뿐이라 클라우드 반영(ReloadFromDisk)을 못 봄 → SeenCount 스냅샷 키로 교체(구독 제거). P2 처리(행 메타·헤더 문자열 캐시 · textW 하한)
+- [x] PlayerMovement 재감사 (P0:0, P1:1, 2026-09-09) — 외형 재빌드가 CharacterFaceAnimator 노드 캐시를 안 비워 생성 직후부터 눈 깜빡임 정지 → InvalidateNodes. P2 처리(옛 파츠 한 프레임 원점 노출 차단 · 도구 없는 외형의 매 프레임 Find 고착)
+- [x] TutorialQuestManager 재감사 (P0:0, P1:2, 2026-09-09) — 완료 퀘스트 재스윕이 Start·리전 이동에만 있어 로그인/계정 전환 뒤 리전을 옮기기 전까지 비트 미발화 → StoryDirector.ReloadFromDisk에서도 재스윕. P2 처리(IReadOnlyCollection + ToArray 스냅샷). 테스트 공백(재스윕 중복 억제)은 걸음 도구가 덮는 경로라 보류
 
 ## Uncovered (우선순위순)
-
-> **2026-08-29 기준 비어 있다 — 소진.** 이날 캐릭터 리워크로 12파일이 후보에 올랐고
-> (신규 6 + 재감사 6) 한 라운드로 전부 처리했다. 그 수정까지 반영해 다시 돌린
-> `audit_candidates.py`가 **후보 0건**을 냈다(미검토 `.cs` 없음 · 감사 이후 40줄 이상 바뀐 `.cs` 없음).
->
-> 다음 audit은 코드가 더 움직인 뒤에 의미가 생긴다:
-> `python -X utf8 .claude/scripts/audit_candidates.py --write`
->
-> ⚠️ **`--write`는 후보 0건일 때 기존 줄을 지우지 않는다** — 처리 완료 후 이 절을 손으로
-> 비워야 다음 라운드가 같은 항목을 다시 집지 않는다(2026-08-29에 실제로 그랬다).
->
-> (`- [ ]`가 0이면 `audit_flow_inject`·`audit_reminder` 훅이 함께 침묵한다.)
 
 ## Round Log
 
@@ -401,13 +403,12 @@
 
 > 이 로그는 **쓰기 전용**이다 — audit 스킬 Step 4가 추가하지만 어느 단계도 읽지 않는다.
 > 그런데 Step 1이 이 파일을 통째로 Read하므로 쌓아두면 매 라운드 컨텍스트를 먹는다.
-- 2026-08-27: BattleScreenUI · RegionManager 재감사 — **둘 다 clean(P0:0 P1:0).** BattleScreenUI는 큐 최고점(score 372)이었지만 실제로는 방어가 촘촘했다: `OnGUI` 매프레임 할당 0, `FindFirstObjectByType`는 null 캐싱, 과거 P0 둘(`OnEnable` 재구독 · `OnDisable` 슬로우모션 복구)도 그대로다. 그리기 시점에 공유 `GUIStyle`을 변형하는 곳은 장부 게이지 하나뿐이고 색을 정확히 되돌린다. **스킬 문서가 적은 그대로였다 — 채점은 '열어볼 순서'이지 '무엇이 문제인지'가 아니다.** `GUI.DrawTexture(whiteTexture)` 617곳(BattleScreenUI 327 · RaidBattleUI.Draw 290)은 `ui-layout.md`의 `UISurface` 규칙과 어긋나지만 전투 화면 2종의 렌더 방식 자체이고 IMGUI는 배치 캡처가 안 돼 검증 수단이 없다 — 감사 자동수정 대상이 아니다(P2). RegionManager는 리전 원 겹침 2쌍(meadow―swamp 41.9m · swamp―mountain 0.15m)이 나왔으나 `SecondActRegions_DoNotOverlapAnyRegion`이 **주석으로 명시 제외**한 기존 배치다. swamp 중심이 meadow 밖 25.6m라 `RegionEnter swamp`가 도달 가능해 진행 정지도 없다 — 발견되지 않은 결함이 아니라 문서화된 수용 부채다. 클라우드 재로드 등록·조회 캐싱도 정상. 검증: ci_check 통과, PlayMode 734/734.
-- 2026-08-27: StoryDirector 재감사 — **P0:0 P1:0 · P2:1 보고.** 이번 세션 제 변경 67줄이 대상이었다. 미뤄 둔 트리거 체계는 견고했다: 중복 제거((type,param) 동일 시 skip) · 12초 안전망(`Time.unscaledDeltaTime`) · 모달/컷신 대기 · `RaidEnded` 구독↔해제 짝. **종 param이 붙으며 중복 제거가 덜 뭉치게 된 것**은 회귀가 아니다 — 승리 둘이 각각 평가되고 `IsSeen`이 이중 발화를 막는다. P2: `OnInsectCaptured`만 **즉시** 발화한다(BattleWin·GuardianDefeat·RegionCleansed는 전부 미룬다). 전투 중 포획과 레이드 승리 포획은 결과 화면 직전에 일어나고 `BattleScreenUI`는 자기 그리기를 모달로 억제하지 않으므로, 대사창이 **획득 EXP·캔디 패널 위로 열린다** — 미루기를 도입한 그 이유 그대로다. 고치려면 '결과 화면이 **열렸다**'를 알리는 짝 API가 필요한데(지금은 닫힘 통지만 있다) UI 2파일과 StoryDirector에 걸치는 설계 변경이고, IMGUI라 배치 캡처로 결과를 눈으로 못 본다 — 자동 수정 대상이 아니다. 검증: ci_check 통과, story_lint 23 PASS, PlayMode 734/734.
-- 2026-08-29: 캐릭터 리워크 11파일 일괄 — **P0:1 + P1:5 처리.** 같은 세션이 만든 변경 1,068줄이 대상이라 큐 12건이 전부 이번 작업물이었다. **P0는 내가 넣은 테스트가 통과시킨 결함이다** — `ProcMeshLibrary.Disc`의 삼각형 순서가 자기 정점 노멀(+Z)과 반대여서 눈·동공·하이라이트·홍조가 정면에서 백페이스 컬링됐다. 와인딩 검사를 4개 생성기에 걸면서 **평면인 Disc만 뺐기 때문**이다(bounds.center가 면 위에 놓여 '바깥' 기준이 성립하지 않는다). 더 나쁜 건 그 증상을 내가 이미 봤다는 것이다 — Phase 2 캡처에서 얼굴에 눈이 없는 걸 보고 **'각도 탓'으로 결론냈다.** 어느 각도에서도 안 보이는 상태였다. 평면에도 성립하는 기준(면 노멀 ↔ 정점 노멀 일치)으로 검사를 다시 짜 5개 생성기 전부에 걸었고, 축퇴 삼각형·극점 노멀 검사도 함께 넣었다. 나머지 P1 넷: `TaperedCapsule` 반구 노멀에 수평 성분(sin)이 빠져 극점이 45°로 눕던 것, 같은 함수의 극 링 축퇴 삼각형 20개, `PlayerVisualBuilder.OnDestroy`의 `SafeDestroyMat`이 **사실상 항상 스킵**하던 것(색을 안 칠하는 노드 10~12개가 끝까지 sharedMaterial이고, '플레이어는 영구 객체'라는 전제도 DontDestroyOnLoad가 없어 틀렸다 — b9a9771과 같은 유형), `LoginUI.OnAuthFailed`가 생성 화면을 떠나며 프리뷰 override를 안 풀어 이후 의상 화면의 썸네일 24장까지 '버려진 얼굴'로 굽던 것(OnDisable은 안전망이 아니다 — LoginUI를 SetActive(false)하는 코드가 저장소에 없다). 드래그 상태가 창 밖 MouseUp에서 굳는 것과 2D 폴백 색 배열이 프리셋 5개에 3개뿐인 것도 함께. 검증: 컴파일 error CS 0, PlayMode 808/808, ci_check 통과, **캡처로 눈이 실제로 나타난 것을 확인**.
-- 2026-08-29: StarterInsectProbe — **P0:0 P1:0 · 검증 공백 하나를 메웠다.** audit 큐는 소진 상태였지만 그 판정 기준(미검토 파일·변경 줄 수)으로는 안 잡히는 게 남아 있었다 — **첫 파트너 선택→지급 경로에 검증 수단이 하나도 없었다.** `StarterInsectTests`는 `ResolveChoice` 순수부만 보고, `StoryBeatWalkthrough`는 `ch1_intro`를 **선행 비트로 미리 채워** 그 경로를 안 걷고, `story_lint`는 Story.json을 정적으로만 읽는다. 선택이 통째로 무시돼도 장수풍뎅이가 조용히 들어올 뿐이라 화면으로는 '고른 대로 됐다'와 구분되지 않는다. 그래서 `StarterInsectProbe`를 신설했다 — `OnNpcTalked` → 대사창 대기 → `CloseModal`이라는 **플레이어가 실제로 지나는 경로**를 두드리고 보유·도감을 확인한다(보상은 발화가 아니라 **닫을 때** 난다). **프로브 자체가 두 번 틀렸고 그게 교훈이다.** ① `EnterPlaymode()`의 도메인 리로드로 static과 `EditorApplication.update` 구독이 날아가 영원히 대기만 했다(`LiveSceneCapture`가 `SessionState` + `InitializeOnLoadMethod`를 쓰는 이유). ② 고친 뒤엔 수동 `MoveNext()`가 중첩 코루틴을 펼치지 않아 **검증을 한 건도 안 하고 PASS를 냈다** — `testing.md`의 '0건 보고는 통과가 아니라 실패다'가 그대로 재현됐다. 코루틴 스택으로 펼치고 `probedCases == 0`이면 FAIL로 떨어뜨리는 가드를 넣었다. 결과: 연속 실행에서 2건이 '비트완료=False'로 실패했으나 같은 종을 `-probeOnly`로 **단독 실행하니 PASS**였다 — `ResetAll`이 `StoryDirector` 인메모리 상태까지 되돌리지 못한 프로브의 인공물이고, 실제 플레이어는 `ch1_intro`를 일생 한 번만 겪으므로 게임 결함이 아니다. 그 한계를 클래스 문서와 보고서 양쪽에 못 박았다. **4케이스(3종 + 선택없음) 전부 정상 지급 확인.** 검증: error CS 0, ci_check 통과, verify_coverage 0.
-- 2026-08-29: OutfitRenderProbe — **P0:0 P1:0 · 두 번째 검증 공백을 메웠다.** 의상 형태는 `OutfitShapeLibraryTests`·`OutfitShapeParityTests`가 좌표와 스키마를 고정하지만 **'그 좌표에 실제로 메시가 그려지는가'는 아무도 안 봤다** — 이번 라운드 `ProcMeshLibrary.Disc`가 정확히 그 종류(면이 뒤집혀 예외 없이 사라짐)였다. 앞서 나는 이걸 'IMGUI라 스탠드얼론 빌드가 필요하다'고 판단했는데 **틀렸다**: 의상 화면이 보여주는 마네킹은 3D 리그이므로(전용 레이어·카메라·RenderTexture) 같은 방식으로 직접 세워 찍으면 IMGUI를 통째로 우회한다. `OutfitRenderProbe`가 그렇게 한다 — 아무것도 안 입은 기준 컷과 픽셀을 비교해 **레시피가 있으면 형태 변화가 있어야 한다**를 판정한다. 결과 11종 전부 PASS: spawn+hideNodes(hat_crown이 캡을 숨기고 왕관을 세움), spawn(acc_wings·acc_halo·outer_wizard·bag_dragon), bind(tool_net·tool_magnify), 얼굴 파츠(acc_glasses·acc_eyepatch). **대조군이 제 역할을 했다** — 레시피가 없는 `top_polo`는 변화 16px(색만 바뀜)로 정확히 갈렸다. 회전을 안 걸면 기본 0°가 뒤통수라 얼굴 파츠가 안 보인다는 것도 이때 드러나 `FrontYaw`를 걸었고, 그 덕에 **Disc 수정이 마네킹에서도 적용됨을 눈으로 확인**했다(눈·동공·눈썹·코·입 정상). 안경은 변화 229px이라 축소 화면에서 안 보여 결함을 의심했으나 확대해 보니 테가 정상 렌더 중이었다 — 성급한 육안 판단이었고 프로브 판정이 옳았다. 검증: error CS 0, ci_check 통과, verify_coverage 0.
+- 2026-09-09: InventoryUI — P0:0, P1:0 처리(clean). P2 3건 보고·보류. 자체 발견 회귀 0건
+- 2026-09-09: QuestSaveMerge — P0:0, P1:0 처리(clean). P2 3건 보고·보류. InventoryUI P2 3건은 이 라운드에서 처리(컴파일 0 에러). 자체 발견 회귀 0건
+- 2026-09-09: TrainingManager 재감사 — P0:0, P1:2 처리. 08-08 이후 디스크 방식·requiredLevel 게이트·누적 훈련이 들어왔는데 ①디스크가 습득 회차에 소모되는 사실을 UI가 어디에도 안 적었고(`FindDiscFor` 호출부 0) ②새 테스트 2파일이 `TrainSkill`을 한 번도 실행하지 않아 실제 방어선 `IsSkillAllowed`·환불·소모가 전부 공백이었다. 인벤토리 두 종을 실제로 붙이고 세이브를 백업/복원하는 왕복 테스트 5건 추가(878/878). QuestSaveMerge P2 3건도 이 라운드에서 처리. 자체 발견 회귀 0건
+- 2026-09-09: 잔여 9건 일괄 재감사 — P0:3, P1:15 처리. **수문장 패배 후 영구 재도전 불가**와 **생성 외형 미반영**은 각각 두 Explore가 독립적으로 짚었다(정체성 판정 도입·캐릭터 리워크의 반대편 결함). 신규 테스트 12건, 887/887(2차 실행). 자체 발견 회귀 1건(ResolveSkill 두 번째 null 참조 — 첫 실행 1 실패 → 수정)
+- 2026-09-09: 2차 후보 3건(StoryJournalUI·PlayerMovement·TutorialQuestManager) — P0:0, P1:4 처리. 오늘 내가 넣은 코드의 반대편 결함이 셋(저널 무효화 경로 누락 · 얼굴 애니메이터 캐시 · 재스윕 시점). 자체 발견 회귀 0건
 > 영역별 처리 이력은 위 Covered 인덱스가 이미 갖고 있다.
 >
 > 개수를 두 곳에 적었다가 실제로 어긋났다 — 상단은 "최근 10건", 여기는 "최근 3건만 둔다"라고
 > 서로 다른 말을 하는 동안 23건이 쌓여 47KB가 됐다(2026-08-03 정리).
-

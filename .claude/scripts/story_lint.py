@@ -795,6 +795,55 @@ def evaluate_signals() -> list:
         "FAIL" if raid_wiring else "PASS",
     ))
 
+    # 24. 선택지 무결 — 선택은 **표현이지 분기가 아니다**(StoryBible 6장 「선택지 규칙」).
+    #     결과 비트(choices[].nextBeatId)는 플레이어가 고른 순간 `QueueChoice`가
+    #     `Immediate <beatId>`로 큐 맨 앞에 거는 방식이라, 아래 넷 중 하나라도 어긋나면 무증상으로 죽는다:
+    #     ① 트리거가 Immediate가 아니면 그 param 경로로 영영 안 뜬다.
+    #     ② 어떤 비트의 prereq/requiredBeatId면 안 고른 세이브의 캠페인이 거기서 영구 정지한다(leaf 강제).
+    #     ③ prereq가 선택지를 단 비트가 아니면 시작 시 일괄 Immediate 평가에서 새어 나갈 수 있다.
+    #     ④ 보상이 붙으면 어느 쪽을 고르느냐로 경제가 갈린다(표현이므로 보상 0).
+    #     선택지를 단 비트 자신은 lines ≥ 1이어야 한다(대사 없는 비트는 즉시 완료라 버튼이 안 뜬다).
+    by_id = {b["beatId"]: b for b in beats}
+    prereq_targets = {b.get("prerequisiteBeatId") for b in beats if b.get("prerequisiteBeatId")}
+    gate_targets = {b.get("requiredBeatId") for b in beats if b.get("requiredBeatId")}
+    choice_bad = []
+    choice_points = 0
+    choice_results = 0
+    for b in beats:
+        choices = b.get("choices") or []
+        if not choices:
+            continue
+        choice_points += 1
+        if not (b.get("lines") or []):
+            choice_bad.append(f"{b['beatId']}: 선택지가 있는데 lines가 비어 있다(버튼이 안 뜬다)")
+        if len(choices) < 2:
+            choice_bad.append(f"{b['beatId']}: 선택지가 1개다(고를 것이 없다)")
+        for c in choices:
+            nxt = c.get("nextBeatId") or ""
+            if not (c.get("text") or "").strip():
+                choice_bad.append(f"{b['beatId']}: 선택지 문구가 비어 있다")
+            r = by_id.get(nxt)
+            if r is None:
+                continue   # 존재는 검사 4가 잡는다
+            choice_results += 1
+            trig = (r.get("trigger") or {}).get("type")
+            if trig != "Immediate":
+                choice_bad.append(f"{nxt}: 선택 결과인데 trigger.type={trig} (Immediate여야 한다)")
+            if nxt in prereq_targets or nxt in gate_targets:
+                choice_bad.append(f"{nxt}: 선택 결과가 스파인/게이트 대상이다(안 고른 세이브가 영구 정지)")
+            if r.get("prerequisiteBeatId") != b["beatId"]:
+                choice_bad.append(f"{nxt}: prereq가 선택지를 단 비트({b['beatId']})가 아니다")
+            rw = r.get("onComplete") or {}
+            if any(rw.get(k) for k in ("rewardCandy", "rewardExp", "rewardItemId", "rewardInsectId")):
+                choice_bad.append(f"{nxt}: 선택 결과에 보상이 붙어 있다(표현이지 분기가 아니다 — 0이어야)")
+    signals.append((
+        "선택지 무결 (결과=Immediate leaf · prereq=선택 비트 · 보상 0)",
+        "0건",
+        f"{len(choice_bad)}건 ({choice_bad})" if choice_bad
+        else f"0건 (선택점 {choice_points} · 결과 {choice_results})",
+        "FAIL" if choice_bad else "PASS",
+    ))
+
     return signals
 
 

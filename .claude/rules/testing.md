@@ -112,7 +112,7 @@ EditMode 러너를 되살리려면 `Assets/Scripts`·`Assets/Editor`·`Assets/Te
 "$UNITY_EDITOR_PATH" -batchmode -projectPath "C:/Project/곤충게임" \
   -logFile .claude/cache/story-walk.log \
   -executeMethod InsectGame.EditorTools.StoryBeatWalkthrough.Run \
-  -walkOut .claude/cache/story-walk.md [-walkRegion mountain] [-walkMode campaign]
+  -walkOut .claude/cache/story-walk.md [-walkRegion mountain] [-walkMode campaign] [-walkChoice last]
 ```
 
 거점 목록을 박아두지 않는다 — `RegionData.HasBlightSite`를 런타임에 훑으므로 거점을
@@ -126,6 +126,10 @@ EditMode 러너를 되살리려면 `Assets/Scripts`·`Assets/Editor`·`Assets/Te
 |---|---|---|
 | `blight` (기본) | 오염 거점 아크 `bl_*` | `NpcTalk` · `CaptureInsect` · `BattleWin` · `RegionCleansed` |
 | `campaign` | 1막 본편 + 꽃밭 | 위 + **`SubAreaEnter`** · **`GuardianDefeat`** |
+
+**선택지가 뜨면 도구가 고른다** — 기본은 첫 항목, `-walkChoice last`면 마지막 항목. 선택 결과는
+`Immediate` leaf라 고르는 순간 큐 맨 앞에서 뜬다(`StoryBible.md` 6장 「선택지 규칙」). 최종장
+`fin_unnamed`의 거절·수락 양쪽이 실제로 뜨는지는 `campaign`을 **두 번** 돌려야 본다.
 
 `SubAreaEnter`와 `GuardianDefeat`는 **본편에서 가장 많이 쓰는 두 트리거인데 오래 사각지대였다** —
 거점 아크가 둘 다 안 쓰는 탓에 구동부 자체가 없었다. 2026-08-26에 붙였다.

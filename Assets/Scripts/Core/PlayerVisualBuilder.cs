@@ -106,6 +106,44 @@ namespace InsectGame.Core
             builtOnce = true;
         }
 
+        /// <summary>
+        /// PlayerPrefs의 외형으로 몸을 <b>다시</b> 짓는다. 캐릭터 생성 화면이 저장을 마친 직후 부른다.
+        ///
+        /// 왜 필요한가: 이 컴포넌트는 부트스트랩 초반 <c>Awake</c>에서 **생성 전 기본값**으로 몸을 짓고
+        /// <c>builtOnce</c>로 잠근다. 08-29 리워크가 붙인 것은 생성 화면 프리뷰뿐이라, 고른 성별·피부·머리가
+        /// 필드 캐릭터에는 첫 세션 내내 반영되지 않았다(2026-09-09 재감사). 옛 자식은 먼저 떼어 낸다 —
+        /// <c>Destroy</c>는 프레임 끝에 지워지므로 같은 이름의 새 노드와 한 프레임 공존하고,
+        /// <c>PlayerMovement</c>의 <c>transform.Find</c> 캐시가 죽어 가는 쪽을 잡을 수 있다.
+        /// </summary>
+        public void RebuildFromPrefs()
+        {
+            if (previewMode) return;
+
+            for (int i = transform.childCount - 1; i >= 0; i--)
+            {
+                Transform child = transform.GetChild(i);
+                MeshRenderer[] rs = child.GetComponentsInChildren<MeshRenderer>(true);
+                for (int k = 0; k < rs.Length; k++)
+                    if (rs[k] != null && rs[k].sharedMaterial != null) Destroy(rs[k].sharedMaterial);
+                child.gameObject.SetActive(false);   // Destroy는 프레임 끝 — 그동안 원점에 나타나지 않게
+                child.SetParent(null, false);        // 같은 프레임 transform.Find가 옛 노드를 잡지 않게
+                Destroy(child.gameObject);
+            }
+            for (int i = 0; i < runtimeMaterials.Count; i++)
+                if (runtimeMaterials[i] != null) Destroy(runtimeMaterials[i]);
+            runtimeMaterials.Clear();
+
+            look = AppearanceSpec.FromPlayerPrefs();
+            BuildAll();
+            builtOnce = true;
+            RefreshOutfitColors();
+
+            PlayerMovement movement = GetComponent<PlayerMovement>();
+            if (movement != null) movement.InvalidateVisualCache();
+            CharacterFaceAnimator face = GetComponent<CharacterFaceAnimator>();
+            if (face != null) face.InvalidateNodes();   // 안 하면 생성 직후부터 눈을 안 깜빡인다
+        }
+
         private void OnEnable()
         {
             // 마네킹은 OutfitChanged를 구독하면 안 된다 — 그 핸들러가 mgr.ApplyToCharacter()를 부르고,

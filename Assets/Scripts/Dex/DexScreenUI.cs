@@ -15,6 +15,8 @@ namespace InsectGame.Dex
         private bool previewShiny;         // 이로치(색다른 모습) 프리뷰 토글
         [SerializeField] private PlayerInsectCollection insectCollection;
         [SerializeField] private PlayerItemInventory itemInventory;
+        // 아이템 표시명·설명 폴백(LookupItem) — 아래 switch에 없는 아이템을 생 ID로 뿌리지 않게.
+        [SerializeField] private ItemDatabase itemDatabase;
 
         private bool isOpen;
         // 탭별 스크롤을 분리한다. 탭을 오가거나 상세를 열어도 다른 목록 위치가 유지된다.
@@ -1482,6 +1484,19 @@ namespace InsectGame.Dex
             GUI.color = Color.white;
         }
 
+        /// <summary>
+        /// 아이템 표시 정보의 폴백 출처. 아래 switch 셋은 <b>도감용 짧은 문구</b>를 손으로 고른
+        /// 것이라 남겨 두지만, 여기에 없는 아이템은 <c>ItemDatabase</c>에서 이름을 빌린다.
+        ///
+        /// 없으면 <c>default</c>가 <b>생 ID를 그대로 화면에 뿌린다</b> — 아이템을 늘릴 때마다
+        /// 이 파일을 함께 고쳐야 한다는 규칙이 어디에도 안 적혀 있어서, 실제로 기술 디스크 8종이
+        /// "disc_doom_sting"으로 뜰 뻔했다. 예외도 경고도 없는 종류의 결함이다.
+        /// </summary>
+        private ItemData LookupItem(string itemId)
+        {
+            return itemDatabase != null ? itemDatabase.FindById(itemId) : null;
+        }
+
         private string GetItemDisplayName(string itemId)
         {
             switch (itemId)
@@ -1504,7 +1519,12 @@ namespace InsectGame.Dex
                 case "mat_leaf": return "나뭇잎";
                 case "mat_berry": return "열매";
                 case "mat_honey": return "꿀";
-                default: return itemId;
+                default:
+                {
+                    ItemData data = LookupItem(itemId);
+                    return data != null && !string.IsNullOrEmpty(data.displayName)
+                        ? data.displayName : itemId;
+                }
             }
         }
 
@@ -1530,7 +1550,12 @@ namespace InsectGame.Dex
                 case "mat_leaf": return "훈련에 사용되는 재료";
                 case "mat_berry": return "곤충에게 줄 수 있는 열매";
                 case "mat_honey": return "귀한 재료 - 높은 효과";
-                default: return "아이템";
+                default:
+                {
+                    ItemData data = LookupItem(itemId);
+                    return data != null && !string.IsNullOrEmpty(data.description)
+                        ? data.description : "아이템";
+                }
             }
         }
 
@@ -1583,6 +1608,11 @@ namespace InsectGame.Dex
             ownsShinyCacheId = insectId;
             ownsShinyCacheValue = found;
             return found;
+        }
+
+        public void AutoWire(ItemDatabase catalog)
+        {
+            if (itemDatabase == null) itemDatabase = catalog;
         }
 
         public void AutoWire(InsectDatabase db, DexController dex)

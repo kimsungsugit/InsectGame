@@ -91,6 +91,14 @@ namespace InsectGame.Capture
 
         public void StartMinigame(InsectEntity target, float speedMult, float zoneMult, float timeMult, float captureBonus)
         {
+            // 수문장 포획 금지의 단일 출처. CaptureChoiceUI의 버튼/키 분기에만 있었는데 근접·레이캐스트·
+            // 입력 컨트롤러 세 경로는 여기로 바로 들어온다 — 수문장을 잡아 버리면 표식 개체가
+            // 사라져 격파 판정이 영영 서지 못한다.
+            if (target != null && target.IsGuardian)
+            {
+                Debug.Log("[Capture] 수문장은 포획할 수 없다 — 배틀로만 격파한다");
+                return;
+            }
             currentTarget = target;
             if (target != null) target.SetEngaged(true); // 미니게임 중 — 곤충 도주 방지
             isActive = true;

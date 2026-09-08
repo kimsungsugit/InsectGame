@@ -213,13 +213,19 @@ namespace InsectGame.Capture
                 return;
             }
 
-            float distance = Vector3.Distance(proximityTrigger.transform.position, target.transform.position);
-            float chance = CalculateApproachChance(target, distance);
-            if (Random.value > chance)
+            // **수문장은 접근 굴림을 건너뛴다.** 이 굴림은 야생이 눈치채기 전에 다가가는 판정인데
+            // (성공률에 등급 페널티가 붙는다), 수문장은 길목에 서서 기다리는 상대라 숨어들 게 없다.
+            // 그대로 두면 Legendary 수문장이 하한 8%까지 떨어져 말 거는 데만 수십 번 두드려야 한다.
+            if (!target.IsGuardian)
             {
-                // 연타로 다시 시도할 수 있게 도망가지 않고 근접 유지(막 누르기). 실제 난이도는 미니게임에서.
-                ShowFeedback("미스! 다시 시도하세요.", true);
-                return;
+                float distance = Vector3.Distance(proximityTrigger.transform.position, target.transform.position);
+                float chance = CalculateApproachChance(target, distance);
+                if (Random.value > chance)
+                {
+                    // 연타로 다시 시도할 수 있게 도망가지 않고 근접 유지(막 누르기). 실제 난이도는 미니게임에서.
+                    ShowFeedback("미스! 다시 시도하세요.", true);
+                    return;
+                }
             }
 
             if (choiceUi != null)

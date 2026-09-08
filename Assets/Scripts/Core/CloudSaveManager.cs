@@ -537,7 +537,7 @@ namespace InsectGame.Core
             if (!string.IsNullOrEmpty(data.charName)) PlayerPrefs.SetString(SaveScope.PrefsKey("InsectGame.Character.Name"), data.charName);
             // 빈 값이면 로컬 유지 — 이 필드가 없던 시절의 문서를 복원해도 선택이 안 지워진다.
             if (!string.IsNullOrEmpty(data.charStarter))
-                PlayerPrefs.SetString(SaveScope.PrefsKey(InsectGame.Data.StarterInsectCatalog.PrefsKeyBase), data.charStarter);
+                InsectGame.Data.StarterInsectCatalog.SaveChoice(data.charStarter);   // 화이트리스트 경유 — 조작값이 세이브에 눌러앉지 않게
             if (data.charSkin >= 0) PlayerPrefs.SetInt(SaveScope.PrefsKey("InsectGame.Character.SkinColor"), data.charSkin);
             if (data.charHair >= 0) PlayerPrefs.SetInt(SaveScope.PrefsKey("InsectGame.Character.HairStyle"), data.charHair);
             if (data.charGender >= 0) PlayerPrefs.SetInt(SaveScope.PrefsKey("InsectGame.Character.Gender"), data.charGender);

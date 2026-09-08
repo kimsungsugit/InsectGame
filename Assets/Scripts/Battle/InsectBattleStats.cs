@@ -64,7 +64,7 @@ namespace InsectGame.Battle
             }
             else if (data != null)
             {
-                MaxHp = Mathf.Max(10, data.baseHp + Level * 3);
+                MaxHp = Mathf.Max(10, data.baseHp + Level * GameConstants.Battle.HpPerLevel);
                 Attack = Mathf.Max(1, data.baseAtk + Level * 2);
                 Defense = Mathf.Max(1, data.baseDef + Level);
             }
@@ -101,7 +101,8 @@ namespace InsectGame.Battle
                 // 방어 보너스(의상/아이템) 반영 — 유효 방어 상승 → 피해 감소.
                 float effDef = defenderDef * (1f + DefenseBonus);
                 float ratio = attackerAtk / Mathf.Max(1f, effDef);
-                finalDamage = Mathf.RoundToInt(amount * Mathf.Clamp(ratio, 0.5f, 2.5f));
+                finalDamage = Mathf.RoundToInt(amount * Mathf.Clamp(ratio,
+                    GameConstants.Battle.MinAtkDefRatio, GameConstants.Battle.MaxAtkDefRatio));
             }
             CurrentHp = Mathf.Max(0, CurrentHp - Mathf.Max(1, finalDamage));
         }

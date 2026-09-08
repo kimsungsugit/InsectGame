@@ -39,6 +39,13 @@ namespace InsectGame.Battle
         public int[][] TeamCooldowns { get; private set; }
         public InsectEntity BossEntity { get; private set; }
 
+
+        /// <summary>
+        /// 보스가 <b>어느 리전의 수문장이었나</b>(수문장이 아니면 빈 문자열). 1v1과 같은 스냅샷이다 —
+        /// 근거는 <c>InsectEntity.GuardianRegionId</c> 주석 참조.
+        /// </summary>
+        public string BossGuardianRegionId { get; private set; }
+
         public int TurnNumber { get; private set; }
         /// <summary>
         /// <b>지금 행동할 차례인 팀 슬롯.</b> 라운드가 시작되면 앞 슬롯부터 하나씩 옮겨가고,
@@ -205,6 +212,7 @@ namespace InsectGame.Battle
 
             BossEntity = bossEntity;
             bossShinyAtStart = bossEntity.IsShiny;
+            BossGuardianRegionId = bossEntity.GuardianRegionId;  // 같은 이유의 스냅샷
             // 레이드 동안 보스(야생 엔티티)가 도주→Despawn→풀 재사용되어 종료 시 무관 곤충이
             // 등록/Despawn되는 보상 무결성 손상 차단. (1v1 StartBattle과 동일)
             bossEntity.SetEngaged(true);

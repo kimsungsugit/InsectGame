@@ -92,6 +92,31 @@ namespace InsectGame.Core
             /// </summary>
             public const int MaxBuffStacks = 3;
 
+            // ── 전투 길이 ────────────────────────────────────────────────────────
+            //
+            // 옛 값(레벨항 ×2 · 공방비 0.5~2.5 · HP +3/Lv)은 **양쪽이 서로를 한두 턴에
+            // 지우는** 구간을 만들었다. 데미지가 (power + Lv×2) × 최대 2.5인데 HP는
+            // base + Lv×3뿐이라 레벨이 오를수록 데미지가 HP를 앞질렀다.
+            // 실측(Uncommon 플레이어 vs 동레벨 Epic): Lv22·Lv28·Lv42 전부 **내가 2턴에
+            // 잡고 1턴에 죽는** 결과였고, 수문장전도 같았다.
+            //
+            // 세 값은 **함께 움직여야 한다** — 하나만 바꾸면 다른 쪽이 곧바로 지배한다.
+            // 조정 후 같은 구간이 킬 3턴 / 생존 2~3턴이 된다.
+
+            /// <summary>데미지의 레벨 가산분(스킬 위력에 <c>Level × 이 값</c>을 더한다).</summary>
+            public const int LevelDamageScale = 1;
+
+            /// <summary>레벨당 최대 HP 증가분. 데미지의 레벨항보다 커야 전투가 길어진다.</summary>
+            public const int HpPerLevel = 4;
+
+            /// <summary>
+            /// 공격력/유효방어력 비의 하한·상한. 상한이 곧 "스탯 차이로 낼 수 있는 최대 배율"이라
+            /// 여기가 넓으면 위력을 아무리 낮춰도 한 방에 끝난다(옛 2.5가 그랬다).
+            /// </summary>
+            public const float MinAtkDefRatio = 0.7f;
+
+            public const float MaxAtkDefRatio = 1.5f;
+
             /// <summary>
             /// 레이드에서 <b>리더가 아닌</b> 팀원이 자기 스킬을 쓸 때의 위력 배율.
             /// 피해와 회복량에만 곱한다 — 버프·디버프·기절은 스택/불리언이라 배율이 의미가 없고,
@@ -124,8 +149,16 @@ namespace InsectGame.Core
             /// 값을 그대로 둔 것은 의도적이다 — 사용자가 "레이드가 너무 세다"고 해서 AOE를 껐고,
             /// 여기서 HP를 올리면 그 요청을 되돌리는 셈이 된다. 난이도를 다시 조일 때는 이 숫자가
             /// 아니라 <b>서포트/리더 배율 구분</b>부터 재설계할 것(전 슬롯 1.0이 근본 원인이다).
+            ///
+            /// <b>8.5 → 4.5로 재산출했다(전투 길이 조정과 짝).</b> <see cref="LevelDamageScale"/>·
+            /// <see cref="MaxAtkDefRatio"/>·<see cref="HpPerLevel"/>을 함께 바꾸면서 팀 화력이
+            /// 절반 아래로 내려갔고, 보스 HP도 <c>HpPerLevel</c>만큼 함께 올랐다. 8.5를 그대로 두면
+            /// 같은 구간이 <b>6/5/4턴 → 10/9/8턴</b>이 된다(리더 1.0 + 서포트 0.6×4 기준 실측).
+            /// 4.5는 그 길이를 <b>6/5/5턴</b>으로 되돌리는 값이다 — 위 문단과 같은 취지로
+            /// <b>난이도를 올리지도 내리지도 않으려는</b> 값이지 새 밸런스가 아니다.
+            /// 위 세 상수 중 하나라도 건드리면 이 값을 다시 계산할 것.
             /// </summary>
-            public const float RaidBossHpMultiplier = 8.5f;
+            public const float RaidBossHpMultiplier = 4.5f;
 
             /// <summary>보스 HP가 이 비율 이하로 떨어지면 격노(1회 래치, 회복해도 풀리지 않는다).</summary>
             public const float RaidBossEnrageHpRatio = 0.5f;

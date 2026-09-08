@@ -948,6 +948,7 @@ namespace InsectGame.UI
             {
                 SaveCharacterCreation();
                 ApplyCharacterOutfitPreset();
+                RebuildFieldCharacter();
                 InsectGame.Data.StarterInsectCatalog.SaveChoice(
                     InsectGame.Data.StarterInsectCatalog.Get(selectedStarter).InsectId);
                 PlayerPrefs.Save();
@@ -1237,6 +1238,20 @@ namespace InsectGame.UI
             PlayerPrefs.Save();
             // CharacterPortraitRenderer 캐시는 OutfitChanged만 구독하므로 외형 변경 시 명시적 무효화
             CharacterPortraitRenderer.InvalidateCache();
+        }
+
+        /// <summary>
+        /// 필드 캐릭터를 방금 저장한 외형으로 다시 짓는다. 플레이어는 부트스트랩 초반에 이미
+        /// 기본 외형으로 지어져 있어(<c>PlayerVisualBuilder.Awake</c>), 이걸 안 부르면 고른 성별·피부·
+        /// 머리가 첫 세션 내내 안 보인다. 프리뷰 마네킹(previewMode)은 자기 스스로 무시한다.
+        /// </summary>
+        private static void RebuildFieldCharacter()
+        {
+            GameObject player = GameObject.Find("Player");
+            InsectGame.Core.PlayerVisualBuilder visual =
+                player != null ? player.GetComponent<InsectGame.Core.PlayerVisualBuilder>() : null;
+            if (visual != null) visual.RebuildFromPrefs();
+            else Debug.LogWarning("[Login] 플레이어 외형 빌더를 찾지 못해 생성한 외형이 필드에 반영되지 않는다");
         }
 
         // ── 의상 프리셋 적용 ──

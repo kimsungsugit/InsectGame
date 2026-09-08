@@ -36,6 +36,13 @@ namespace InsectGame.Data
         [Header("Duration")]
         [Range(30f, 3600f)] public float durationSeconds = 600f;
 
+        [Header("Skill Disc (기술 디스크)")]
+        // 비어 있지 않으면 이 아이템은 **기술 디스크**다 — 훈련소에서 곤충에게 써서 기술을
+        // 즉시(1회) 가르친다. 누적 훈련과 대비되는 게 디스크의 값어치다.
+        // 레벨 요구(InsectSkill.requiredLevel)와 속성 호환은 훈련과 똑같이 지킨다 —
+        // 디스크가 그 둘을 우회하면 3-1의 레벨 게이트가 통째로 무의미해진다.
+        public string teachSkillId;
+
         [Header("Treatment (대상지정 치료 아이템)")]
         // isTargetedUse=true면 부스터가 아니라 곤충을 지정해 즉시 사용(병원 선택기 경유). HP 회복·상태 해제.
         public bool isTargetedUse = false;

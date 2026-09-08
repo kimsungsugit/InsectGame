@@ -99,6 +99,18 @@ namespace InsectGame.Core
                 new CashShopItem { itemId = "shop_wound_salve",  displayName = "상처약 묶음",   description = "곤충 HP 40 회복 ×5",          category = CashItemCategory.MinigameItem, priceKRW = 0, gemPrice = 30, rewardItemId = "wound_salve",  rewardCount = 5 },
                 new CashShopItem { itemId = "shop_full_restore", displayName = "종합 치료제",   description = "HP 전액 + 모든 상태 치료 ×3", category = CashItemCategory.MinigameItem, priceKRW = 0, gemPrice = 60, rewardItemId = "full_restore", rewardCount = 3 },
 
+                // -- 기술 디스크 (보석으로 구매 — 상위 3종은 여기와 후반 보상에서만 나온다) --
+                // 코인 상점엔 하위 3종만 있다. 상위 디스크까지 코인으로 풀면 캔디 누적 훈련이
+                // 통째로 의미를 잃는다(누적 훈련이 이 게임의 기본 습득 경로다).
+                // 하위 디스크 3종 — 코인 카탈로그(ShopUIController)는 화면에 안 나오는 uGUI라 이쪽이
+                // 유일하게 **보이는** 입수 경로다. 값은 상위 3종보다 훨씬 싸게.
+                new CashShopItem { itemId = "shop_disc_charge",      displayName = "기술 디스크: 돌격",           description = "곤충에게 즉시 습득 ×1", category = CashItemCategory.MinigameItem, priceKRW = 0, gemPrice = 40,  rewardItemId = "disc_charge",      rewardCount = 1 },
+                new CashShopItem { itemId = "shop_disc_sting",       displayName = "기술 디스크: 독침 찌르기",     description = "곤충에게 즉시 습득 ×1", category = CashItemCategory.MinigameItem, priceKRW = 0, gemPrice = 60,  rewardItemId = "disc_sting",       rewardCount = 1 },
+                new CashShopItem { itemId = "shop_disc_power_up",    displayName = "기술 디스크: 파워 업",         description = "곤충에게 즉시 습득 ×1", category = CashItemCategory.MinigameItem, priceKRW = 0, gemPrice = 50,  rewardItemId = "disc_power_up",    rewardCount = 1 },
+                new CashShopItem { itemId = "shop_disc_mega_strike", displayName = "기술 디스크: 메가 스트라이크", description = "곤충에게 즉시 습득 ×1", category = CashItemCategory.MinigameItem, priceKRW = 0, gemPrice = 150, rewardItemId = "disc_mega_strike", rewardCount = 1 },
+                new CashShopItem { itemId = "shop_disc_eclipse",     displayName = "기술 디스크: 이클립스",       description = "곤충에게 즉시 습득 ×1", category = CashItemCategory.MinigameItem, priceKRW = 0, gemPrice = 220, rewardItemId = "disc_eclipse",     rewardCount = 1 },
+                new CashShopItem { itemId = "shop_disc_doom_sting",  displayName = "기술 디스크: 파멸의 독침",     description = "곤충에게 즉시 습득 ×1", category = CashItemCategory.MinigameItem, priceKRW = 0, gemPrice = 320, rewardItemId = "disc_doom_sting",  rewardCount = 1 },
+
                 // -- 랜덤 상자 (보석으로 구매) --
                 new CashShopItem { itemId = "box_bronze", displayName = "브론즈 상자", description = "기본 곤충 + 소량 희귀 확률", category = CashItemCategory.GachaBox, priceKRW = 0, gemPrice = 500, rewardCount = 1 },
                 new CashShopItem { itemId = "box_silver", displayName = "실버 상자",   description = "희귀 곤충 확률 UP!",        category = CashItemCategory.GachaBox, priceKRW = 0, gemPrice = 600, rewardCount = 1 },

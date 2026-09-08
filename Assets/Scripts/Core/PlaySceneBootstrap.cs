@@ -253,8 +253,15 @@ namespace InsectGame.Core
             cloudSave.RegisterReloadable(itemInventory); // 아이템도 클라우드 적용 후 인메모리 갱신
             ShopUIController shopUi = EnsureComponent<ShopUIController>("UI/ShopUI");
             shopUi.ConfigureCatalog(
-                new[] { "net_silver", "net_gold", "exp_boost", "wound_salve", "wound_salve_great", "antidote", "paralysis_heal", "full_restore" },
-                new[] { 200, 400, 300, 20, 55, 30, 30, 90 });   // 치료 아이템은 코인 저렴(전투 재화로 상비)
+                new[] { "net_silver", "net_gold", "exp_boost", "wound_salve", "wound_salve_great", "antidote", "paralysis_heal", "full_restore",
+                        // 기술 디스크 — 코인으로 살 수 있는 하위 3종. 상위 디스크(메가/이클립스/파멸)는
+                        // 코인으로 팔지 않는다: 그건 캐시샵·후반 보상 몫이라 코인 인플레로 뚫리면 안 된다.
+                        "disc_charge", "disc_sting", "disc_power_up" },
+                new[] { 200, 400, 300, 20, 55, 30, 30, 90,
+                        600, 900, 750 });   // 치료 아이템은 코인 저렴(전투 재화로 상비), 디스크는 비싸다
+            // ⚠ 이 uGUI 상점은 ShopPanel.SetActive(false)로 **화면에 나오지 않는다**(버튼도 3개뿐).
+            //    플레이어가 실제로 보는 상점은 CashShopUI(IMGUI)이고, 하위 디스크 3종은 그쪽
+            //    CashShopManager.shopItems에도 올려 두었다 — 여기만 늘리면 입수 경로가 없다(2026-09-09).
             DexUIController dexSummary = EnsureComponent<DexUIController>("UI/DexSummary");
             dexSummary.AutoWire(dex);
 
@@ -266,6 +273,8 @@ namespace InsectGame.Core
             DexScreenUI dexScreen = EnsureComponent<DexScreenUI>("UI/DexScreen");
             dexScreen.AutoWire(database, dex);
             dexScreen.AutoWire(insectCollection, itemInventory);
+            // 아이템 표시명·설명 폴백 — 없으면 도감이 모르는 아이템을 생 ID로 뿌린다.
+            dexScreen.AutoWire(itemDatabase);
             // 곤충 3D 모델을 도감에 RenderTexture로 표시(옛 단색 박스/약식 2D 대체)
             InsectModelPreviewRenderer insectPreview = EnsureComponent<InsectModelPreviewRenderer>("UI/InsectModelPreview");
             dexScreen.AutoWire(insectPreview);
@@ -353,8 +362,15 @@ namespace InsectGame.Core
 
             TrainingManager trainingMgr = EnsureComponent<TrainingManager>("Training/TrainingManager");
             trainingMgr.AutoWire(insectCollection, candyInventory);
+            // 기술 디스크 경로 — 없으면 "기술 디스크" 방식이 늘 빈 목록으로 보인다.
+            trainingMgr.AutoWire(itemInventory, itemDatabase);
             InsectSkill[] allTrainingSkills = CreateTrainingSkills();
-            trainingMgr.Initialize(CreateTrainingMethods(), CollectAllSkills(database, allTrainingSkills));
+            InsectSkill[] allSkills = CollectAllSkills(database, allTrainingSkills);
+            trainingMgr.Initialize(CreateTrainingMethods(), allSkills);
+            // **같은 배열을 컬렉션에도 준다.** 없으면 PlayerInsectCollection.ResolveSkill이 종족
+            // learnset만 뒤져 훈련·디스크로 배운 tr_* 기술이 전투에서 통째로 null이 된다
+            // (장착돼 보이는데 슬롯이 빈칸 — 예외도 경고도 없다).
+            insectCollection.AutoWire(allSkills);
 
             battleScreen.AutoWire(battleTeam, insectCollection, trainingMgr);
 
@@ -590,6 +606,9 @@ namespace InsectGame.Core
             // BattleWin의 **두 번째** 소스. Epic·Legendary는 CaptureChoiceUI가 1v1을 막고
             // 레이드만 열어서, 이걸 빠뜨리면 그 등급을 이겨도 스토리가 모른다(fin_seal이 그랬다).
             storyDirector.AutoWire(raidController);
+            // **전투 화면이 떠 있는지**를 알려 주는 유일한 신호. 이게 없으면 전투 승리와 같은
+            // 프레임에 갱신되는 LevelReach·DexProgress·QuestComplete가 결과 화면 위로 대사를 띄운다.
+            storyDirector.AutoWire(camFollower);
             cloudSave.RegisterReloadable(storyDirector);
             // 전투 결과 화면이 닫힌 뒤에 BattleWin·GuardianDefeat 비트를 띄우기 위한 통지 경로.
             battleScreen.AutoWire(storyDirector);
@@ -620,6 +639,16 @@ namespace InsectGame.Core
             // 상호작용은 cashShopUI/trainingUi 생성 이후여야 하므로 이 위치(오디오 앞)에 등록.
             // try 격리: 프로시저럴 빌더 예외가 이후의 튜닝/E키 양보 배선과 AudioManager 생성까지
             // 연쇄 스킵시키지 않도록 (EnsureGround의 GroundStep 단계 격리와 같은 취지).
+            // 병원 치료 UI — 지속 HP/상태 치료(P1의 짝). **try 밖·buildWorld 밖**에 둔다: 프로시저럴
+            // 마을 빌더가 예외를 던지면 그 뒤의 배선이 통째로 스킵되는데, 가방·팀 화면의 치료제 경로는
+            // 월드와 무관하게 살아 있어야 한다(2026-09-09 — 가방에서 치료제를 눌러도 선택기가 안 떴다).
+            InsectGame.UI.HospitalUI hospitalUi =
+                EnsureComponent<InsectGame.UI.HospitalUI>("UI/Hospital");
+            hospitalUi.AutoWire(insectCollection, database, wallet, candyInventory);
+            inventoryUi.AutoWire(hospitalUi);   // 대상지정 치료 아이템 → 병원 선택기 (uGUI 잔존 경로)
+            inventoryScreen.AutoWire(hospitalUi);   // 가방에서 치료제 사용 → 병원 곤충 선택기
+            battleTeamUi.AutoWire(hospitalUi);  // 팀에 부상이 있으면 헤더 버튼으로 병원 이동
+
             if (buildWorld)
             {
                 try
@@ -631,15 +660,7 @@ namespace InsectGame.Core
                     EnsureComponent<InsectGame.UI.WorldInteractionController>("UI/WorldInteraction");
                 worldInteract.AutoWire(cashShopUI, trainingUi, playerMov);
                 worldInteract.AutoWire(spawner);
-
-                // 병원 치료 UI — 지속 HP/상태 치료(P1의 짝). worldInteract가 Hospital 상호작용에 Toggle.
-                InsectGame.UI.HospitalUI hospitalUi =
-                    EnsureComponent<InsectGame.UI.HospitalUI>("UI/Hospital");
-                hospitalUi.AutoWire(insectCollection, database, wallet, candyInventory);
-                worldInteract.AutoWire(hospitalUi);
-                inventoryUi.AutoWire(hospitalUi);   // 대상지정 치료 아이템 → 병원 선택기 (uGUI 잔존 경로)
-                inventoryScreen.AutoWire(hospitalUi);   // 가방에서 치료제 사용 → 병원 곤충 선택기
-                battleTeamUi.AutoWire(hospitalUi);  // 팀에 부상이 있으면 헤더 버튼으로 병원 이동
+                worldInteract.AutoWire(hospitalUi);   // Hospital 상호작용 → Toggle
                 if (villageResult != null)
                 {
                     worldInteract.RegisterPoints(villageResult.interactions);
@@ -2859,43 +2880,91 @@ namespace InsectGame.Core
                     candyCost = 20,
                     requiredLevel = 6,
                     skillPool = new[] { "tr_mega_strike", "tr_berserk", "tr_eclipse", "tr_doom_sting" }
+                },
+                // 기술 디스크 — **skillPool이 비어 있는 유일한 방식.** 목록은 플레이어가 지금
+                // 들고 있는 디스크 아이템에서 나온다(TrainingManager.OwnedDiscSkillIds).
+                // 캔디는 거의 안 든다 — 값은 이미 디스크를 사거나 얻는 데서 치렀다.
+                new TrainingMethod
+                {
+                    methodId = TrainingManager.DiscMethodId,
+                    displayName = "기술 디스크",
+                    description = "보유한 기술 디스크를 사용해 단번에 기술을 가르친다",
+                    themeColor = new Color(0.35f, 0.7f, 0.95f),
+                    // 0 — 값은 디스크를 사거나 얻는 데서 이미 치렀다. 1이면 캔디가 한 개도 없는
+                    // 플레이어가 산 디스크를 못 쓴다. (TrainSkill은 비용 0이면 차감을 건너뛴다.)
+                    candyCost = 0,
+                    requiredLevel = 1,
+                    skillPool = new string[0]
                 }
             };
+        }
+
+        /// <summary>
+        /// 범용 훈련기 하나를 만들어 목록에 넣는다. <c>CreateSkill</c>과 다른 점은
+        /// <b>요구 레벨</b>을 함께 받는다는 것뿐이다 — 그 값이 없으면 훈련 방식의 레벨만 남아
+        /// Lv6에 최상위 기술이 열리는 옛 배치로 돌아간다.
+        /// </summary>
+        private void AddTraining(List<InsectSkill> list, string skillId, string displayName,
+            SkillEffectType type, int power, int cooldown, int requiredLevel,
+            float effectVal = 0.2f, int effectDur = 2)
+        {
+            InsectSkill skill = CreateSkill(skillId, displayName, type, power, cooldown, effectVal, effectDur);
+            skill.requiredLevel = Mathf.Max(1, requiredLevel);
+            list.Add(skill);
         }
 
         private InsectSkill[] CreateTrainingSkills()
         {
             List<InsectSkill> skills = new List<InsectSkill>();
 
-            skills.Add(CreateSkill("tr_tackle", "돌진", SkillEffectType.Damage, 12, 0));
-            skills.Add(CreateSkill("tr_headbutt", "박치기", SkillEffectType.Damage, 18, 1));
-            skills.Add(CreateSkill("tr_bodyslam", "몸통 박치기", SkillEffectType.Damage, 25, 2));
-            skills.Add(CreateSkill("tr_charge", "돌격", SkillEffectType.Damage, 30, 3));
+            // ── 범용 훈련기 위력·요구 레벨 ─────────────────────────────────────────
+            //
+            // **범용기 위력 상한은 종족 storm(42) 아래로 둔다.** 전용기(60~78)와 최상위
+            // 종족기의 자리를 아무 곤충이나 배우는 범용기가 빼앗으면 성장 곡선이 무너진다.
+            //
+            // 옛 값은 극한 훈련이 **곤충 Lv6에 위력 55·65·75를 한꺼번에** 열었다. Lv6 야생
+            // Common의 MaxHp가 62~73인데 `tr_doom_sting` 한 방이 (75 + 6×2) = **87**이라
+            // 상성·자속·공방비를 곱하기도 전에 이미 즉사였다 — 전투가 통째로 1턴이었다.
+            //
+            // 요구 레벨은 "그 위력이 동레벨 야생 HP의 절반을 넘지 않는" 지점에 잡았다
+            // (야생 HP ≈ baseHp 44~55 + Lv×3). 방식(TrainingMethod)의 requiredLevel은
+            // '어느 훈련소를 열 수 있나'만 정하고, 실제 게이트는 이 requiredLevel이 맡는다.
+            AddTraining(skills, "tr_tackle", "돌진", SkillEffectType.Damage, 10, 0, 1);
+            AddTraining(skills, "tr_headbutt", "박치기", SkillEffectType.Damage, 13, 1, 2);
+            AddTraining(skills, "tr_bodyslam", "몸통 박치기", SkillEffectType.Damage, 16, 2, 4);
+            AddTraining(skills, "tr_charge", "돌격", SkillEffectType.Damage, 20, 3, 7);
 
-            skills.Add(CreateSkill("tr_slash", "베기", SkillEffectType.Damage, 22, 1));
-            skills.Add(CreateSkill("tr_bite", "물기", SkillEffectType.Damage, 28, 2));
-            skills.Add(CreateSkill("tr_sting", "독침 찌르기", SkillEffectType.Damage, 35, 2));
-            skills.Add(CreateSkill("tr_frenzy", "광란 공격", SkillEffectType.Damage, 45, 3));
+            AddTraining(skills, "tr_slash", "베기", SkillEffectType.Damage, 15, 1, 3);
+            AddTraining(skills, "tr_bite", "물기", SkillEffectType.Damage, 18, 2, 5);
+            AddTraining(skills, "tr_sting", "독침 찌르기", SkillEffectType.Damage, 22, 2, 10);
+            AddTraining(skills, "tr_frenzy", "광란 공격", SkillEffectType.Damage, 28, 3, 16);
 
-            skills.Add(CreateSkill("tr_weaken", "약화시키기", SkillEffectType.DebuffAttack, 1, 2, 0.25f, 3));
-            skills.Add(CreateSkill("tr_intimidate", "위협", SkillEffectType.DebuffAttack, 1, 3, 0.35f, 2));
-            skills.Add(CreateSkill("tr_shell_guard", "껍질 방어", SkillEffectType.BuffAttack, 1, 3, 0.2f, 4));
-            skills.Add(CreateSkill("tr_acid_spray", "산성 분무", SkillEffectType.DebuffAttack, 1, 2, 0.3f, 3));
+            // 버프·디버프는 위력이 아니라 effectValue가 세기라 그 값에 맞춰 레벨을 나눈다
+            // (MaxBuffStacks 3이 총량을 가두므로 위력기만큼 급하지는 않다).
+            AddTraining(skills, "tr_weaken", "약화시키기", SkillEffectType.DebuffAttack, 1, 2, 3, 0.25f, 3);
+            AddTraining(skills, "tr_intimidate", "위협", SkillEffectType.DebuffAttack, 1, 3, 9, 0.35f, 2);
+            AddTraining(skills, "tr_shell_guard", "껍질 방어", SkillEffectType.BuffAttack, 1, 3, 3, 0.2f, 4);
+            AddTraining(skills, "tr_acid_spray", "산성 분무", SkillEffectType.DebuffAttack, 1, 2, 6, 0.3f, 3);
 
-            skills.Add(CreateSkill("tr_power_up", "파워 업", SkillEffectType.BuffAttack, 1, 3, 0.4f, 3));
-            skills.Add(CreateSkill("tr_harden", "단단해지기", SkillEffectType.BuffAttack, 1, 2, 0.3f, 4));
-            skills.Add(CreateSkill("tr_nature_force", "자연의 힘", SkillEffectType.Damage, 40, 3));
-            skills.Add(CreateSkill("tr_pheromone", "페로몬", SkillEffectType.BuffAttack, 1, 4, 0.5f, 3));
+            AddTraining(skills, "tr_power_up", "파워 업", SkillEffectType.BuffAttack, 1, 3, 12, 0.4f, 3);
+            AddTraining(skills, "tr_harden", "단단해지기", SkillEffectType.BuffAttack, 1, 2, 8, 0.3f, 4);
+            AddTraining(skills, "tr_nature_force", "자연의 힘", SkillEffectType.Damage, 26, 3, 14);
+            AddTraining(skills, "tr_pheromone", "페로몬", SkillEffectType.BuffAttack, 1, 4, 20, 0.5f, 3);
 
-            skills.Add(CreateSkill("tr_mega_strike", "메가 스트라이크", SkillEffectType.Damage, 55, 4));
-            skills.Add(CreateSkill("tr_berserk", "광폭화", SkillEffectType.BuffAttack, 1, 4, 0.6f, 2));
-            skills.Add(CreateSkill("tr_eclipse", "이클립스", SkillEffectType.Damage, 65, 5));
-            skills.Add(CreateSkill("tr_doom_sting", "파멸의 독침", SkillEffectType.Damage, 75, 5));
+            AddTraining(skills, "tr_mega_strike", "메가 스트라이크", SkillEffectType.Damage, 32, 4, 22);
+            AddTraining(skills, "tr_berserk", "광폭화", SkillEffectType.BuffAttack, 1, 4, 26, 0.6f, 2);
+            AddTraining(skills, "tr_eclipse", "이클립스", SkillEffectType.Damage, 36, 5, 28);
+            AddTraining(skills, "tr_doom_sting", "파멸의 독침", SkillEffectType.Damage, 40, 5, 34);
 
             foreach (InsectSkill skill in skills)
             {
                 if (skill == null) continue;
-                skill.trainingCost = Mathf.Max(5, skill.power / 2);
+                // **요구 레벨을 비용에 태운다.** 옛 `power / 2`만 쓰면 위력을 낮춘 이번 재배치에서
+                // 비용까지 함께 싸져(파멸의 독침 37 → 20) 상위기가 오히려 접근하기 쉬워진다.
+                // 누적 훈련이 회차마다 이 값을 받으므로 총비용은 여기에 필요 횟수를 곱한 만큼이다.
+                // 기술 디스크 방식은 이 값을 **읽지 않는다** — GetTrainingCost가 method.candyCost만 돌려준다.
+                // 스킬 단가(여기)와 방식 단가(디스크) 두 출처가 공존하는 건 의도다.
+                skill.trainingCost = Mathf.Max(5, skill.power / 2 + skill.requiredLevel);
                 skill.description = "훈련을 통해 익힐 수 있는 범용 기술";
 
                 switch (skill.skillId)
@@ -4871,7 +4940,8 @@ namespace InsectGame.Core
             if (!guardianSeals.TryGetValue(regionId, out GuardianSeal seal)) return;
             guardianSeals.Remove(regionId);
 
-            // 전투가 곤충 쪽을 이미 치웠을 수 있다 — Unity의 가짜 null이라 그대로 비교한다.
+            // 수문장의 Despawn은 no-op(비풀링·교전만 해제)이라 실제 제거는 여기뿐이다. 다만 씬
+            // 재로드 등으로 이미 파괴됐을 수 있으니 Unity의 가짜 null을 그대로 비교한다.
             if (seal.aura != null) Object.Destroy(seal.aura);
             if (seal.insect != null) Object.Destroy(seal.insect);
         }
@@ -4949,6 +5019,10 @@ namespace InsectGame.Core
 
             Spawning.InsectEntity entity = guardianObj.AddComponent<Spawning.InsectEntity>();
             entity.BuildForBattle(guardianData, region.guardianLevel, false);
+
+            // **격파 판정의 단일 출처.** 이 표식이 있는 개체를 이겼을 때만 리전이 열린다.
+            // BuildForBattle이 표식을 지우므로 반드시 그 뒤에 붙인다.
+            entity.MarkAsGuardian(region.regionId);
 
             // 수문장 크기 크게 — 배율의 단일 출처. 아래 라벨이 이 값으로 자기 스케일을 되돌린다.
             const float GuardianScale = 1.8f;

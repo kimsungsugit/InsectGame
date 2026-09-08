@@ -396,15 +396,19 @@ def all_insect_ids() -> set:
 def item_ids() -> set:
     """게임에 존재하는 모든 아이템 ID. 보상 아이템(rewardItemId) 검증용 레지스트리.
 
-    ItemDatabase.CreateRuntimeDefault()의 CreateItem/CreateTreatment("id", ...)가 런타임 아이템
+    ItemDatabase.CreateRuntimeDefault()의 CreateXxx("id", ...) 팩토리들이 런타임 아이템
     레지스트리다 (PlayerItemInventory.AddItem이 이 ID로 해석). 채집망은 capture item, exp_boost처럼
     상점 보상으로만 지급되는 아이템·치료 아이템(CreateTreatment)도 여기 등록돼 있으나 capture item
     목록엔 없다 — 그래서 lint는 이 집합을 capture item·shop reward와 합집합해 어느 소스든 인정한다.
+
+    **팩토리 이름을 열거하지 않는다.** 예전엔 `Create(?:Item|Treatment)`로 두 개를 박아 뒀는데,
+    기술 디스크가 `CreateSkillDisc`로 들어오자 그 8종이 통째로 "존재하지 않는 아이템"이 됐다
+    (캐시샵 보상 3건이 WARN으로 떴다). 팩토리는 앞으로도 늘어날 수 있으므로 `Create*` 전부를
+    본다 — 이 메서드들은 전부 `ItemData`를 만들어 같은 리스트에 넣는 같은 성질의 것이다.
     """
-    # CreateItem / CreateTreatment 두 팩토리 모두 아이템 레지스트리에 등록 → 둘 다 매칭.
-    ids = set(re.findall(r'Create(?:Item|Treatment)\(\s*"(\w+)"', _read("item_db")))
+    ids = set(re.findall(r'Create[A-Za-z]*\(\s*"(\w+)"', _read("item_db")))
     if not ids:
-        raise ExtractorBroken('아이템 ID를 하나도 못 읽었다 (ItemDatabase.CreateItem/CreateTreatment) — 구조가 바뀌었는가?')
+        raise ExtractorBroken('아이템 ID를 하나도 못 읽었다 (ItemDatabase의 Create* 팩토리) — 구조가 바뀌었는가?')
     return ids
 
 
@@ -560,8 +564,13 @@ def story_trigger_wiring() -> dict:
     스토리 등가물 — 새 trigger.type을 JSON에 넣고 switch/구독을 빠뜨리면 비트 영구 미발화.
 
     - in_switch: `case TriggerX:` 또는 상수 정의가 switch 문맥에 존재
-    - has_event_source: 그 트리거를 EvaluateTriggers(TriggerX, ...)로 호출하는 지점이 있음
-      (Immediate는 Start에서, 나머지는 OnXxx 이벤트 핸들러에서)
+    - has_event_source: 그 트리거를 EvaluateTriggers/RouteTrigger(TriggerX, ...)로 호출하는
+      지점이 있음 (Immediate는 Start에서, 나머지는 OnXxx 이벤트 핸들러에서)
+
+    **RouteTrigger도 발화 지점이다.** 대화 중 끼어들기·전투 결과 화면 덮기를 막으려고
+    모든 즉시 발화가 이 관문을 지나게 바뀌었다 — 지금 띄워도 되면 EvaluateTriggers로,
+    아니면 DeferTrigger로 간다. 즉 **지연 발화와 같은 성질**이라 아래 배출부 확인을
+    똑같이 요구한다(큐에 넣기만 하고 아무도 안 빼면 그 비트는 영영 안 뜬다).
 
     **지연 발화도 배선으로 친다.** BattleWin/GuardianDefeat는 전투 결과 화면과 겹치지 않게
     `DeferTrigger(TriggerX, ...)`로 큐에 넣었다가 화면이 닫힐 때 흘린다 — 이벤트 핸들러가
@@ -587,7 +596,10 @@ def story_trigger_wiring() -> dict:
         r"(?:private|public|internal|protected)[^\n]*EvaluateTriggers\s*\([^)]*\)", "", src)
     drains = bool(re.search(r"EvaluateTriggers\(\s*(?!Trigger\w)[A-Za-z_]", calls_only))
     if drains:
+        # DeferTrigger(큐 직행)와 RouteTrigger(관문 — 조건에 따라 즉시 또는 큐) 둘 다
+        # 배출부가 살아 있을 때만 배선으로 센다.
         fired |= set(re.findall(r"DeferTrigger\(\s*(Trigger\w+)", src))
+        fired |= set(re.findall(r"RouteTrigger\(\s*(Trigger\w+)", src))
 
     out = {}
     for const, ttype in consts.items():

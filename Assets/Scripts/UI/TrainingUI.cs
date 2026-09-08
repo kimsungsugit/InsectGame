@@ -291,6 +291,7 @@ namespace InsectGame.UI
             else
             {
                 directScroll.Reset();
+                pendingNewSkillId = null;   // 교체 화면에서 닫으면 낡은 ID가 남지 않게
             }
             if (isOpen) ModalUIRegistry.Register(this);
             else ModalUIRegistry.Unregister(this);
@@ -298,6 +299,7 @@ namespace InsectGame.UI
         public void CloseModal()
         {
             isOpen = false;
+            pendingNewSkillId = null;
             directScroll.Reset();
             ModalUIRegistry.Unregister(this);
         }
@@ -546,7 +548,8 @@ namespace InsectGame.UI
 
             float listY = py + 128;
             float listH = ph - 138;
-            float itemH = UIScale.IsMobileLayout ? 176f : 164f;
+            // 진행바(DrawTrainingProgressBar)가 쿨다운 라벨(y 120~154) 아래 들어갈 자리까지 포함한 높이.
+            float itemH = UIScale.IsMobileLayout ? 192f : 180f;
             Rect area = new Rect(px + 10, listY, pw - 20, listH);
             float contentHeight = skills.Length * itemH;
             Rect view = new Rect(0, 0, area.width, contentHeight);
@@ -566,26 +569,45 @@ namespace InsectGame.UI
                 bool learned = pid.HasLearnedSkill(skill.skillId);
 
                 DrawSkillCard(r, skill, learned, method.themeColor);
+                if (!learned) DrawTrainingProgressBar(r, skill, pid, method, method.themeColor);
 
                 if (!learned)
                 {
                     int trainingCost = trainingManager.GetTrainingCost(method, pid, skill.skillId);
                     bool canAfford = trainingManager.CanTrain(method, pid, skill.skillId);
-                    bool isFull = pid.IsSkillsFull();
-                    string btnLabel = isFull ? $"교체 {trainingCost}" : $"습득 {trainingCost}";
-                    GUI.backgroundColor = canAfford ? (isFull ? LearnBtnFullCol : LearnBtnOkCol) : LearnBtnOffCol;
+
+                    // **교체는 마지막 회차에만 묻는다.** 누적 훈련은 여러 번 눌러야 습득되는데
+                    // 슬롯이 찼다고 매 회차 교체 화면으로 보내면, 아직 배우지도 않은 기술 때문에
+                    // 멀쩡한 기술을 몇 번이고 버리라고 묻는 꼴이 된다.
+                    int required = trainingManager.GetRequiredSessions(method, skill);
+                    int progress = pid.GetTrainingProgress(skill.skillId);
+                    bool isFinalSession = progress + 1 >= required;
+                    bool needsReplace = isFinalSession && pid.IsSkillsFull();
+
+                    // 디스크 방식은 습득 회차에 디스크 1장이 **소모**된다 — 버튼에 그 사실과 보유 장수를
+                    // 적는다. 옛은 캔디 1만 보여 줘서 Legendary 디스크가 아무 표시 없이 사라졌다.
+                    bool isDisc = method.methodId == TrainingManager.DiscMethodId;
+                    string btnLabel = isDisc ? (needsReplace ? "교체" : "디스크 사용") + $" ×{trainingManager.GetDiscCount(skill.skillId)}"
+                        : needsReplace ? $"교체 {trainingCost}"
+                        : required > 1 ? $"훈련 {trainingCost}"        // 회차는 진행바 라벨 하나로만 보여 준다
+                        : $"습득 {trainingCost}";
+                    GUI.backgroundColor = canAfford ? (needsReplace ? LearnBtnFullCol : LearnBtnOkCol) : LearnBtnOffCol;
                     GUI.enabled = canAfford;
                     float learnButtonH = UIScale.IsMobileLayout ? 64f : 52f;
                     if (GUI.Button(new Rect(r.x + r.width - 160, r.y + r.height / 2f - learnButtonH * 0.5f, 140, learnButtonH), btnLabel, learnBtnStyle))
                     {
-                        if (isFull)
+                        if (needsReplace)
                         {
                             pendingNewSkillId = skill.skillId;
                             ChangePage(Page.SkillReplace);
                         }
                         else if (trainingManager.TrainSkill(method, pid, skill.skillId))
                         {
-                            feedbackMsg = $"{skill.displayName} 습득 완료!";
+                            // 습득 회차인지 중간 회차인지 말해 준다 — 안 그러면 캔디만 나가고
+                            // 아무 일도 안 일어난 것처럼 보인다(누적 훈련의 가장 큰 함정).
+                            feedbackMsg = trainingManager.LastTrainingLearned
+                                ? (isDisc ? $"{skill.displayName} 습득 완료! (디스크 1장 소모)" : $"{skill.displayName} 습득 완료!")
+                                : $"{skill.displayName} 훈련 {trainingManager.LastTrainingProgress}/{trainingManager.LastTrainingRequired}";
                             feedbackTimer = 2f;
                         }
                     }
@@ -763,8 +785,11 @@ namespace InsectGame.UI
             TrainingMethod method = selectedMethodIndex >= 0 ? trainingManager.Methods[selectedMethodIndex] : null;
             int replaceCost = trainingManager.GetTrainingCost(method, pid, pendingNewSkillId);
 
+            bool isDiscReplace = method != null && method.methodId == TrainingManager.DiscMethodId;
             GUI.Label(new Rect(px, py + 80, pw, 44),
-                $"기술이 가득 찼습니다 ({PlayerInsectData.MaxLearnedSkills}/{PlayerInsectData.MaxLearnedSkills}) · 교체 비용 {replaceCost} 캔디",
+                isDiscReplace
+                    ? $"기술이 가득 찼습니다 ({PlayerInsectData.MaxLearnedSkills}/{PlayerInsectData.MaxLearnedSkills}) · 잊으면 디스크 1장 소모"
+                    : $"기술이 가득 찼습니다 ({PlayerInsectData.MaxLearnedSkills}/{PlayerInsectData.MaxLearnedSkills}) · 교체 비용 {replaceCost} 캔디",
                 replaceHeaderStyle);
 
             Color nc = GetSkillColor(newSkill.effectType);
@@ -850,6 +875,34 @@ namespace InsectGame.UI
         internal static float GetSkillReplacementContentHeight(int learnedSkillCount)
         {
             return Mathf.Max(0, learnedSkillCount) * 144f;
+        }
+
+        /// <summary>
+        /// 누적 훈련 진행 바. <b>얇은 것은 각지게</b> 그린다(<c>UISurface.Flat</c>) —
+        /// 둥근 배경은 9-slice라 짧은 변이 반경+4보다 작으면 슬라이스가 겹쳐 뭉개진다
+        /// (<c>rules/ui-layout.md</c>).
+        /// </summary>
+        private void DrawTrainingProgressBar(Rect r, InsectSkill skill, PlayerInsectData pid, TrainingMethod method, Color accent)
+        {
+            if (skill == null || pid == null || trainingManager == null) return;
+
+            int required = trainingManager.GetRequiredSessions(method, skill);
+            if (required <= 1) return;   // 한 번에 배우는 기술엔 바를 그리지 않는다
+
+            int progress = Mathf.Clamp(pid.GetTrainingProgress(skill.skillId), 0, required);
+            UITheme t = UITheme.Instance;
+
+            float barW = r.width - 220f;
+            if (barW < 40f) return;
+            // 쿨다운 라벨이 r.y+120~154를 쓴다 — 그 아래(158+)에 놓아야 글자를 관통하지 않는다.
+            Rect track = new Rect(r.x + 18f, Mathf.Max(r.y + 160f, r.y + r.height - 18f), barW, 7f);
+            UISurface.Flat(track, t.surfaceBorder);
+            if (progress > 0)
+                UISurface.Flat(new Rect(track.x, track.y, track.width * progress / required, track.height), accent);
+
+            cardCdStyle.normal.textColor = t.textMuted;
+            UIHelper.LabelFit(new Rect(track.xMax + 10f, track.y - 12f, 90f, 30f),
+                $"{progress}/{required}", cardCdStyle);
         }
 
         private void DrawSkillCard(Rect r, InsectSkill skill, bool learned, Color accent)

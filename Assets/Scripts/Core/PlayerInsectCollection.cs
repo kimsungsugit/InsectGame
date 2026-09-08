@@ -20,6 +20,21 @@ namespace InsectGame.Core
         private PlayerInsectCollectionSave saveData;
         private readonly Dictionary<string, PlayerInsectData> lookup = new Dictionary<string, PlayerInsectData>();
 
+        /// <summary>
+        /// <b>종족 learnset 바깥에서 배운 기술</b>을 찾기 위한 전역 색인.
+        ///
+        /// 왜 필요한가: <see cref="ResolveSkill"/>은 곤충의 <c>learnset</c>/<c>skills</c>만 뒤졌는데
+        /// 그 둘은 같은 집합이다(<c>skills = ExtractUniqueSkills(learnset)</c>). 그래서 훈련·기술
+        /// 디스크로 배운 <c>tr_*</c>는 어느 종의 learnset에도 없어 <b>항상 null</b>이 됐고,
+        /// 전투 슬롯이 빈칸이 되어 <c>CanUseSkill</c>이 false를 냈다 — <b>배운 기술이 전투에
+        /// 아예 안 나왔다.</b> 훈련 화면은 <c>TrainingManager</c>의 자체 lookup을 쓰므로 멀쩡히
+        /// 장착돼 보였고, 그래서 증상이 조용했다.
+        ///
+        /// 배선은 <c>PlaySceneBootstrap</c>이 <c>CollectAllSkills(database, trainingSkills)</c>로
+        /// 만든 <b>같은 배열</b>을 <c>TrainingManager.Initialize</c>와 이쪽에 함께 넘겨 준다.
+        /// </summary>
+        private Dictionary<string, InsectSkill> skillRegistry;
+
         // 디스크 IO 디바운스: 가챠 10연 등 연속 변경 시 매번 File.WriteAllText 안 하고 0.5초 후 1회 저장.
         private bool saveDirty;
         private float saveDebounceTimer;
@@ -515,7 +530,9 @@ namespace InsectGame.Core
             InsectData insect = GetInsectData(data.insectId);
             if (EnsureLevelSkills(data, insect))
             {
+                // 여기서 처음 스타터가 붙는 개체가 있다 — "장착: c/d" 캐시는 InsectUpdated로만 비워진다.
                 MarkDirty();
+                InsectUpdated?.Invoke(data);
             }
 
             InsectSkill[] result = new InsectSkill[PlayerInsectData.MaxEquipSlots];
@@ -530,12 +547,14 @@ namespace InsectGame.Core
 
         public InsectSkill ResolveSkill(InsectData insect, string skillId)
         {
-            if (insect == null || string.IsNullOrEmpty(skillId))
+            if (string.IsNullOrEmpty(skillId))
             {
                 return null;
             }
 
-            if (insect.learnset != null)
+            // 종 데이터가 없어도(구 ID·DB 미등록) 배운 범용기는 레지스트리에서 풀린다 — insect null로
+            // 조기 반환하면 그 개체는 기본 공격만 하게 된다.
+            if (insect != null && insect.learnset != null)
             {
                 foreach (InsectLearnableSkill learnable in insect.learnset)
                 {
@@ -546,7 +565,7 @@ namespace InsectGame.Core
                 }
             }
 
-            if (insect.skills != null)
+            if (insect != null && insect.skills != null)
             {
                 foreach (InsectSkill skill in insect.skills)
                 {
@@ -555,6 +574,69 @@ namespace InsectGame.Core
                         return skill;
                     }
                 }
+            }
+
+            // 종족 목록에 없다 — 훈련·기술 디스크로 배운 범용기다. 전역 색인에서 찾는다.
+            // **순서가 중요하다**: 전용기는 종별 인스턴스라 위의 learnset/skills가 먼저 이겨야 한다.
+            if (skillRegistry != null && skillRegistry.TryGetValue(skillId, out InsectSkill registered))
+            {
+                return registered;
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// 전역 기술 색인 주입 — <c>PlaySceneBootstrap</c>이 <c>CollectAllSkills</c>의 결과를 넘긴다.
+        /// <see cref="ResolveSkill"/>의 마지막 폴백이 이 색인이다.
+        /// </summary>
+        public void AutoWire(InsectSkill[] allSkills)
+        {
+            if (allSkills == null || allSkills.Length == 0) return;
+
+            if (skillRegistry == null)
+                skillRegistry = new Dictionary<string, InsectSkill>(allSkills.Length);
+
+            foreach (InsectSkill skill in allSkills)
+            {
+                if (skill != null && !string.IsNullOrEmpty(skill.skillId))
+                    skillRegistry[skill.skillId] = skill;
+            }
+        }
+
+        /// <summary>전역 색인에서 기술을 찾는다(종족 무관). 훈련·디스크 경로가 쓴다.</summary>
+        public InsectSkill FindSkill(string skillId)
+        {
+            if (string.IsNullOrEmpty(skillId) || skillRegistry == null) return null;
+            return skillRegistry.TryGetValue(skillId, out InsectSkill skill) ? skill : null;
+        }
+
+        /// <summary>
+        /// 기술이 하나도 없는 곤충에게 줄 <b>첫 기술</b> — learnset에서 습득 레벨이 가장 낮은 것.
+        /// learnset이 없으면 <c>skills[0]</c>로 떨어진다.
+        ///
+        /// 레벨을 보지 않는다: 이 자리는 "레벨이 됐으니 준다"가 아니라 "기술이 0개면 곤란하다"는
+        /// 최소 보장이고, learnset의 최저 항목은 어차피 Lv1 기본기다(<c>BuildLevelLearnset</c>).
+        /// </summary>
+        private static string FindStarterSkillId(InsectData insect)
+        {
+            if (insect == null) return null;
+
+            if (insect.learnset != null)
+            {
+                InsectLearnableSkill best = null;
+                foreach (InsectLearnableSkill learnable in insect.learnset)
+                {
+                    if (learnable == null || string.IsNullOrEmpty(learnable.skillId)) continue;
+                    if (best == null || learnable.learnLevel < best.learnLevel) best = learnable;
+                }
+                if (best != null) return best.skillId;
+            }
+
+            if (insect.skills != null)
+            {
+                foreach (InsectSkill skill in insect.skills)
+                    if (skill != null && !string.IsNullOrEmpty(skill.skillId)) return skill.skillId;
             }
 
             return null;
@@ -617,36 +699,27 @@ namespace InsectGame.Core
                 changed = true;
             }
 
-            if (insect != null && insect.learnset != null)
+            // ── 기술은 레벨만으로 저절로 배워지지 않는다 ────────────────────────────
+            //
+            // 예전엔 여기서 `learnLevel <= data.level`인 learnset을 **전부 자동 습득**하고
+            // 아래 루프가 빈 슬롯에 자동 장착까지 했다(자동 장착 루프는 아직 아래에 있다 — 단,
+            // 지금은 **장착이 0개일 때만** 돈다). 그래서 레벨만 올리면 종족 기술이
+            // 다 들어왔고 — **훈련소가 할 일이 없었다.** `TrainingManager.TrainSkill`은
+            // `HasLearnedSkill`이면 false를 돌려주므로, 종족 기술은 애초에 훈련 대상조차
+            // 되지 못했다(훈련 목록에 떠 있는데 눌러도 아무 일이 없었다).
+            //
+            // 지금은 **첫 기술 하나만** 보장한다. 그게 없으면 새로 잡은 곤충이 기술 0개로
+            // 전투에 들어가 기본 공격만 하게 된다. 나머지는 훈련(누적)이나 기술 디스크로 배운다.
+            //
+            // <b>기존 세이브는 건드리지 않는다</b> — 이미 `learnedSkillIds`에 들어 있는 기술은
+            // 그대로 남는다. 추가를 멈추는 것뿐이라 마이그레이션이 필요 없다.
+            if (data.learnedSkillIds.Count == 0)
             {
-                foreach (InsectLearnableSkill learnable in insect.learnset)
+                string starter = FindStarterSkillId(insect);
+                if (!string.IsNullOrEmpty(starter))
                 {
-                    if (learnable == null || string.IsNullOrEmpty(learnable.skillId) || learnable.learnLevel > data.level)
-                    {
-                        continue;
-                    }
-
-                    if (!data.learnedSkillIds.Contains(learnable.skillId) && data.learnedSkillIds.Count < PlayerInsectData.MaxLearnedSkills)
-                    {
-                        data.learnedSkillIds.Add(learnable.skillId);
-                        changed = true;
-                    }
-                }
-            }
-            else if (insect != null && insect.skills != null)
-            {
-                foreach (InsectSkill skill in insect.skills)
-                {
-                    if (skill == null || string.IsNullOrEmpty(skill.skillId))
-                    {
-                        continue;
-                    }
-
-                    if (!data.learnedSkillIds.Contains(skill.skillId) && data.learnedSkillIds.Count < PlayerInsectData.MaxLearnedSkills)
-                    {
-                        data.learnedSkillIds.Add(skill.skillId);
-                        changed = true;
-                    }
+                    data.learnedSkillIds.Add(starter);
+                    changed = true;
                 }
             }
 
@@ -660,8 +733,13 @@ namespace InsectGame.Core
                 }
             }
 
+            // 자동 장착은 **장착이 하나도 없을 때만** — 플레이어가 훈련 화면에서 "해제"한 슬롯을
+            // 다음 GetEquippedSkills(전투 진입)가 도로 채우면 해제가 성립하지 않는다. 배운 기술
+            // 6개 > 슬롯 4개라 그 곤충은 슬롯 구성을 영영 못 바꿨다(2026-09-09).
+            bool autoEquip = data.EquippedCount() == 0;
             foreach (string skillId in data.learnedSkillIds)
             {
+                if (!autoEquip) break;
                 if (string.IsNullOrEmpty(skillId))
                 {
                     continue;
@@ -693,6 +771,11 @@ namespace InsectGame.Core
                 }
             }
 
+            // 중단된 훈련·사라진 기술의 진척은 여기 말고는 아무도 안 지운다. 레지스트리가 아직
+            // 안 붙은 부트 로드에서는 "이미 배운 것"만 걷고, 붙은 뒤 호출에서 미상 기술까지 걷는다.
+            Func<string, bool> known = skillRegistry != null ? (Func<string, bool>)skillRegistry.ContainsKey : null;
+            if (data.PruneTrainingProgress(known)) changed = true;
+
             return changed;
         }
 
@@ -711,7 +794,11 @@ namespace InsectGame.Core
             }
             catch (System.Exception e)
             {
-                Debug.LogWarning($"[PlayerInsectCollection] 손상된 세이브 — 기본값으로 시작: {e.Message}");
+                // 빈 컬렉션으로 시작하면 다음 저장(디바운스 0.5초·OnDisable flush)이 손상 파일을 빈 목록으로
+                // 덮어써 **곤충 전멸이 확정**된다. 원본을 옆에 남겨 복구 여지를 둔다.
+                try { System.IO.File.Copy(path, path + ".corrupt", true); }
+                catch (System.Exception copyError) { Debug.LogWarning($"[PlayerInsectCollection] 손상 원본 보존 실패: {copyError.Message}"); }
+                Debug.LogWarning($"[PlayerInsectCollection] 손상된 세이브 — 기본값으로 시작(원본은 {path}.corrupt): {e.Message}");
                 return new PlayerInsectCollectionSave();
             }
         }

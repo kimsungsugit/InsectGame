@@ -209,6 +209,21 @@ namespace InsectGame.Core
             return defeatedGuardians.Contains(regionId);
         }
 
+        /// <summary>
+        /// 전투 승리 뒤 격파 확정 — 1v1(<c>BattleScreenUI</c>)과 레이드(<c>RaidBattleUI</c>)가
+        /// 같은 한 줄을 부른다. 빈 ID(야생)·이미 깬 수문장이면 false. 두 UI에 복제돼 있던 로직을
+        /// 여기로 모았다(한쪽만 고치면 어긋난다).
+        /// </summary>
+        public bool TryDefeatGuardian(string regionId, string via)
+        {
+            if (string.IsNullOrEmpty(regionId)) return false;   // 수문장이 아니라 야생이었다
+            if (IsGuardianDefeated(regionId)) return false;      // 이미 깬 수문장
+            DefeatGuardian(regionId);
+            RegionData region = GetRegionById(regionId);
+            Debug.Log($"[Guardian] {(region != null ? region.displayName : regionId)} 수문장 격파({via})! 다음 지역 해금됨");
+            return true;
+        }
+
         public void DefeatGuardian(string regionId)
         {
             // 중복 격파 가드 — BattleScreenUI.CheckGuardianDefeat가 IsGuardianDefeated 가드 후 호출하지만
@@ -237,20 +252,11 @@ namespace InsectGame.Core
             GuardianDefeated?.Invoke(regionId);
         }
 
-        public RegionData GetRegionWithGuardianNear(Vector3 position, float searchRadius = 15f)
-        {
-            if (regions == null) return null;
-            foreach (var r in regions)
-            {
-                if (string.IsNullOrEmpty(r.guardianInsectId)) continue;
-                if (IsGuardianDefeated(r.regionId)) continue;
-
-                Vector3 guardianPos = GetGuardianPosition(r);
-                if (Vector3.Distance(position, guardianPos) <= searchRadius)
-                    return r;
-            }
-            return null;
-        }
+        // GetRegionWithGuardianNear(위치, 반경)는 제거했다 — **좌표로는 수문장을 판별할 수 없다.**
+        // 야생 스폰 링이 플레이어를 따라오므로(InsectSpawner.RelocateSpawnPoints: 10~43m 나선 +
+        // SpawnPoint.radius 5m) 수문장 앞에 선 순간 야생이 반경 5m까지 들어온다. 어떤 반경을 골라도
+        // 야생 조우가 격파로 잡히는 구조라, 격파 판정은 개체 표식(InsectEntity.GuardianRegionId)으로
+        // 옮겼다. 이름이 그럴듯해 다시 불려 나가지 않도록 함수째 지운다.
 
         /// <summary>
         /// 수문장이 서는 자리 — 이전 리전에서 오는 <b>길목</b>, 리전 경계 안쪽이다.

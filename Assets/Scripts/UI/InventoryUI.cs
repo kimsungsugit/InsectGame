@@ -59,6 +59,12 @@ namespace InsectGame.UI
             public ItemRarity rarity;
             public ItemData data;        // null이면 포획 전용(가방에서 사용 불가)
             public bool targeted;        // 대상지정 치료 — 병원 선택기 경유
+            public bool isDisc;          // 기술 디스크 — 훈련소 경유(가방에서는 안내만)
+            /// <summary>그리기 경로가 읽기만 하도록 빌드 시 1회 만든 문자열들 — OnGUI는 이벤트 패스마다 돌아
+            /// 행마다 문자열을 만들면 힙 할당이 쌓인다.</summary>
+            public string initial;       // 아이콘 폴백 첫 글자(서로게이트 페어면 2문자)
+            public string countLabel;    // "x{count}"
+            public string descText;      // 설명 + 필드 병용 안내
             /// <summary>
             /// 포획 아이템 표에도 있는 ID(<c>net_silver</c>·<c>net_gold</c>). 여기서 쓰면
             /// <b>시간제 부스터로 타 없어지고 미니게임 재고가 준다</b> — 같은 아이템이 두 시스템에서
@@ -144,6 +150,34 @@ namespace InsectGame.UI
             if (feedbackTimer > 0f) feedbackTimer -= Time.deltaTime;
         }
 
+        /// <summary><c>ScaleMode.ScaleToFit</c>과 같은 배치 — 비율을 지키며 상자 안에 가운데 맞춘다.</summary>
+        private static Rect FitRect(Rect box, float srcW, float srcH)
+        {
+            if (srcW <= 0f || srcH <= 0f) return box;
+            float scale = Mathf.Min(box.width / srcW, box.height / srcH);
+            float w = srcW * scale, h = srcH * scale;
+            return new Rect(box.x + (box.width - w) * 0.5f, box.y + (box.height - h) * 0.5f, w, h);
+        }
+
+        /// <summary>이름 첫 글자 — 이모지 등 서로게이트 페어면 반쪽이 아니라 두 char를 취한다.</summary>
+        private static string FirstGrapheme(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return "?";
+            return name.Length >= 2 && char.IsHighSurrogate(name[0]) && char.IsLowSurrogate(name[1])
+                ? name.Substring(0, 2) : name.Substring(0, 1);
+        }
+
+        private static Entry WithLabels(Entry e)
+        {
+            e.initial = FirstGrapheme(e.displayName);
+            e.countLabel = "x" + e.count;
+            string desc = string.IsNullOrEmpty(e.description) ? "—" : e.description;
+            if (e.alsoFieldItem && e.data != null)
+                desc += "  (야생 곤충 앞에서 쓰면 대신 미니게임이 쉬워집니다)";
+            e.descText = desc;
+            return e;
+        }
+
         private List<Entry> Entries()
         {
             // entries.Count를 조건에 넣지 않는다 — 보유가 0일 때 매 OnGUI마다 재계산되고
@@ -163,7 +197,7 @@ namespace InsectGame.UI
                 ItemData data = itemDatabase != null ? itemDatabase.FindById(record.itemId) : null;
                 if (data != null)
                 {
-                    entries.Add(new Entry
+                    entries.Add(WithLabels(new Entry
                     {
                         itemId = record.itemId,
                         displayName = string.IsNullOrEmpty(data.displayName) ? record.itemId : data.displayName,
@@ -172,15 +206,16 @@ namespace InsectGame.UI
                         rarity = data.rarity,
                         data = data,
                         targeted = data.isTargetedUse,
+                        isDisc = !string.IsNullOrEmpty(data.teachSkillId),
                         alsoFieldItem = FindCaptureItem(record.itemId) != null
-                    });
+                    }));
                     continue;
                 }
 
                 // DB에 없는 것 — 포획 전용 표에서 이름·설명을 빌린다. 그것도 없으면 ID를 그대로
                 // 보여준다(조용히 감추면 "산 아이템이 사라졌다"로 읽힌다).
                 CaptureItemData capture = FindCaptureItem(record.itemId);
-                entries.Add(new Entry
+                entries.Add(WithLabels(new Entry
                 {
                     itemId = record.itemId,
                     displayName = capture != null && !string.IsNullOrEmpty(capture.displayName)
@@ -191,7 +226,7 @@ namespace InsectGame.UI
                     data = null,
                     targeted = false,
                     alsoFieldItem = capture != null
-                });
+                }));
             }
 
             // 지금 쓸 수 있는 것을 위로 — 부스터 → 치료 → 필드 전용. 같은 묶음 안에서는 등급 내림차순.
@@ -206,9 +241,12 @@ namespace InsectGame.UI
             return entries;
         }
 
+        // 지금 이 화면에서 바로 쓸 수 있는 것을 위로: 부스터(0) → 치료(1) → 디스크(2) → 필드 전용(3).
+        // 디스크와 필드 전용은 여기서 못 쓰는 것들이라 아래로 내린다.
         private static int GroupOf(Entry e)
         {
-            if (e.data == null) return 2;
+            if (e.data == null) return 3;
+            if (e.isDisc) return 2;
             return e.targeted ? 1 : 0;
         }
 
@@ -328,14 +366,20 @@ namespace InsectGame.UI
             Rect icon = new Rect(rect.x + 20f, rect.y + (rect.height - 76f) * 0.5f, 76f, 76f);
             if (entry.data != null && entry.data.icon != null && entry.data.icon.texture != null)
             {
-                GUI.DrawTexture(icon, entry.data.icon.texture, ScaleMode.ScaleToFit);
+                // 스프라이트 시트에서 잘라낸 아이콘이면 texture 전체가 아니라 그 조각만 — textureRect를
+                // 0~1로 정규화해 넘긴다(단일 텍스처 스프라이트는 rect가 전체라 결과가 같다).
+                Sprite sprite = entry.data.icon;
+                Texture2D tex = sprite.texture;
+                Rect tr = sprite.textureRect;
+                Rect uv = new Rect(tr.x / tex.width, tr.y / tex.height, tr.width / tex.width, tr.height / tex.height);
+                GUI.DrawTextureWithTexCoords(FitRect(icon, tr.width, tr.height), tex, uv);
             }
             else
             {
                 UISurface.Rounded(icon, new Color(rarityCol.r * 0.35f, rarityCol.g * 0.35f, rarityCol.b * 0.35f, 0.95f),
                     UITheme.Radius.Chip);
                 iconStyle.normal.textColor = rarityCol;
-                GUI.Label(icon, string.IsNullOrEmpty(entry.displayName) ? "?" : entry.displayName.Substring(0, 1), iconStyle);
+                GUI.Label(icon, entry.initial, iconStyle);
             }
 
             float btnW = 186f;
@@ -346,13 +390,10 @@ namespace InsectGame.UI
             UIHelper.LabelFit(new Rect(textX, rect.y + 12f, textW - 96f, 36f), entry.displayName, nameStyle);
 
             countStyle.normal.textColor = t.accentAmber;
-            GUI.Label(new Rect(textX + textW - 96f, rect.y + 12f, 92f, 36f), $"x{entry.count}", countStyle);
+            GUI.Label(new Rect(textX + textW - 96f, rect.y + 12f, 92f, 36f), entry.countLabel, countStyle);
 
             descStyle.normal.textColor = t.textSecondary;
-            string desc = string.IsNullOrEmpty(entry.description) ? "—" : entry.description;
-            if (entry.alsoFieldItem && entry.data != null)
-                desc += "  (야생 곤충 앞에서 쓰면 대신 미니게임이 쉬워집니다)";
-            UIHelper.LabelFit(new Rect(textX, rect.y + 52f, textW, 40f), desc, descStyle);
+            UIHelper.LabelFit(new Rect(textX, rect.y + 52f, textW, 40f), entry.descText, descStyle);
 
             UISurface.Chip(new Rect(textX, rect.y + rect.height - 38f, 96f, 28f),
                 entry.data != null ? RarityLabel(entry.rarity) : "필드 전용",
@@ -363,6 +404,7 @@ namespace InsectGame.UI
             Rect btn = new Rect(rect.xMax - btnW - 16f, rect.y + (rect.height - actionH) * 0.5f, btnW, actionH);
             bool usable = entry.data != null;
             string label = entry.data == null ? "필드에서 사용"
+                : entry.isDisc ? "훈련소에서 사용"
                 : entry.targeted ? "곤충에게 사용"
                 : entry.alsoFieldItem ? "부스터로 사용"
                 : "사용";
@@ -389,6 +431,14 @@ namespace InsectGame.UI
         private void TryUse(Entry entry)
         {
             if (inventory == null || entry.data == null) return;
+
+            // 기술 디스크 — 여기서는 못 쓴다. 어느 곤충에게 가르칠지 고르고 기술 교체까지 해야 하는데
+            // 그 4단계 흐름은 훈련소(TrainingUI)가 이미 갖고 있다. 소비도 그쪽이 한다.
+            if (entry.isDisc)
+            {
+                Feedback($"{entry.data.displayName} — 훈련소에서 곤충에게 사용하세요");
+                return;
+            }
 
             // 대상지정 치료 — 병원 선택기가 곤충을 고를 때 소비한다. 여기서 차감하면 이중 소모다.
             if (entry.targeted)

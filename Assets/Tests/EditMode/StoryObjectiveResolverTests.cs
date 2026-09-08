@@ -558,6 +558,74 @@ namespace InsectGame.Tests
             Assert.IsFalse(StoryObjectiveResolver.HasMetNpc(null, Seen("talk_grip"), "ledger_grip"));
         }
 
+        // ── 선택지 결과는 목표가 아니다 ──
+
+        [Test]
+        public void CollectChoiceTargetIds_ReadsNextBeatIds()
+        {
+            var a = Beat("fin_unnamed", "fin", 51, triggerType: "SubAreaEnter", param: "nameless_core");
+            a.choices.Add(new StoryChoice { text = "주지 않는다", nextBeatId = "fin_refuse" });
+            a.choices.Add(new StoryChoice { text = "준다", nextBeatId = "fin_named" });
+            var beats = new[] { a, Beat("fin_refuse", "fin", 52, prereq: "fin_unnamed", triggerType: "Immediate", param: "") };
+
+            HashSet<string> targets = StoryObjectiveResolver.CollectChoiceTargetIds(beats);
+
+            Assert.IsTrue(targets.Contains("fin_refuse"));
+            Assert.IsTrue(targets.Contains("fin_named"));
+            Assert.IsFalse(targets.Contains("fin_unnamed"));
+        }
+
+        [Test]
+        public void SelectObjectiveBeat_SkipsChoiceTargets_EvenWhenPrereqSatisfied()
+        {
+            // fin_unnamed를 봤고 '준다'를 안 골랐다 — fin_named는 영영 미열람이지만 목표가 아니다.
+            var beats = new[]
+            {
+                Beat("fin_named", "fin", 52, prereq: "fin_unnamed", triggerType: "Immediate", param: ""),
+                Beat("fin_seal", "fin", 53, prereq: "fin_unnamed", triggerType: "BattleWin", param: "mantis_unnamed"),
+            };
+            var choiceTargets = new HashSet<string> { "fin_named" };
+
+            StoryBeat picked = StoryObjectiveResolver.SelectObjectiveBeat(
+                beats, Seen("fin_unnamed"), new HashSet<string>(), null, choiceTargets);
+
+            Assert.AreEqual("fin_seal", picked.beatId);
+        }
+
+        // ── 리전 목표 문구 — 잠긴 리전은 열쇠(앞 리전 수문장)로 ──
+
+        [Test]
+        public void DescribeRegionObjective_LockedRegion_PointsAtGatekeeperGuardian()
+        {
+            // ch7_opening 직후: hollow는 유적 수문장 전엔 잠겨 있다.
+            Assert.AreEqual("텅 빈 들(으)로 가려면 고대 유적 수문장 격파 · 권장 Lv.42",
+                StoryObjectiveResolver.DescribeRegionObjective("텅 빈 들", false, 0, "고대 유적", 42));
+        }
+
+        [Test]
+        public void DescribeRegionObjective_UnlockedRegion_PlainDestination()
+        {
+            Assert.AreEqual("텅 빈 들(으)로",
+                StoryObjectiveResolver.DescribeRegionObjective("텅 빈 들", false, 48));
+        }
+
+        [Test]
+        public void DescribeRegionObjective_Guardian_CarriesRecommendedLevel()
+        {
+            Assert.AreEqual("고대 유적 수문장 격파 · 권장 Lv.42",
+                StoryObjectiveResolver.DescribeRegionObjective("고대 유적", true, 42));
+            // 레벨을 모르면(0) 문구에서 뺀다 — "권장 Lv.0"을 띄우지 않는다.
+            Assert.AreEqual("고대 유적 수문장 격파",
+                StoryObjectiveResolver.DescribeRegionObjective("고대 유적", true, 0));
+        }
+
+        [Test]
+        public void DescribeRegionObjective_GateWithoutLevel_OmitsLevel()
+        {
+            Assert.AreEqual("꽃밭(으)로 가려면 초원 수문장 격파",
+                StoryObjectiveResolver.DescribeRegionObjective("꽃밭", false, 0, "초원", 0));
+        }
+
         [Test]
         public void DescribeActionObjective_UnknownTrigger_FallsBackWithoutCrashing()
         {

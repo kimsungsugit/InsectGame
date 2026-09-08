@@ -48,9 +48,29 @@ namespace InsectGame.Battle
         public string EnemyInsectId =>
             enemyStats != null && enemyStats.Data != null ? enemyStats.Data.insectId : null;
 
+        /// <summary>
+        /// 패배·도주 종료 — 적을 필드에서 치운다. 야생은 풀로 돌아가고(Initialize가 engaged를
+        /// 되돌린다), 수문장은 <c>Despawn</c>이 no-op이므로 <b>여기서 교전을 풀어야</b> 재도전이 된다.
+        /// <c>StartBattle</c>이 건 <c>SetEngaged(true)</c>를 되돌리는 유일한 지점이다
+        /// (레이드는 <c>RaidBattleController</c>가 같은 일을 한다).
+        /// </summary>
+        private void ReleaseEnemyAfterBattle()
+        {
+            if (enemyEntity == null) return;
+            enemyEntity.SetEngaged(false);
+            enemyEntity.Despawn();
+        }
+
         private InsectBattleStats playerStats;
         private InsectBattleStats enemyStats;
         private InsectEntity enemyEntity;
+
+        /// <summary>
+        /// 적이 <b>어느 리전의 수문장이었나</b>(수문장이 아니면 빈 문자열). 시작 시점 스냅샷이다 —
+        /// 승리하면 <c>Despawn</c>이 <c>BattleEnded</c>보다 먼저 돌아 라이브 개체를 물을 수 없다.
+        /// 판정 근거는 <c>InsectEntity.GuardianRegionId</c> 주석 참조.
+        /// </summary>
+        public string EnemyGuardianRegionId { get; private set; }
         private bool enemyShinyAtStart; // 시작 시점 스냅샷 — 도주/풀 재사용된 라이브 참조로 보상 오등록 방지
         private bool duelMode;          // NPC 대결 — 포획 롤·야생 아이템 드랍 없음(StartDuel 참조)
 
@@ -110,6 +130,7 @@ namespace InsectGame.Battle
             BeginBattleCommon(playerInsect, playerLevel, enemy.Data, enemy.Level, equippedSkills, playerPid);
             enemyEntity = enemy;
             enemyShinyAtStart = enemy.IsShiny;
+            EnemyGuardianRegionId = enemy.GuardianRegionId;  // 같은 이유의 스냅샷
             duelMode = false;
             onStarted?.Invoke(playerStats, enemyStats);
             BattleUpdated?.Invoke(playerStats, enemyStats);
@@ -130,6 +151,7 @@ namespace InsectGame.Battle
             BeginBattleCommon(playerInsect, playerLevel, enemyInsect, enemyLevel, equippedSkills, playerPid);
             enemyEntity = null;          // 디스폰할 월드 개체가 없다
             enemyShinyAtStart = false;
+            EnemyGuardianRegionId = string.Empty;  // NPC 대결은 수문장이 아니다
             duelMode = true;
             onStarted?.Invoke(playerStats, enemyStats);
             BattleUpdated?.Invoke(playerStats, enemyStats);
@@ -316,7 +338,7 @@ namespace InsectGame.Battle
             {
                 // 도주 성공 시에도 enemyEntity Despawn — 사용자 의도("전투 끝나면 사라져야").
                 // 옛은 도주 후 곤충이 필드에 잔존했고 같은 적이 그대로 다시 만남 가능.
-                if (enemyEntity != null) enemyEntity.Despawn();
+                ReleaseEnemyAfterBattle();
                 PersistActivePlayer();   // 도주 시에도 남은 HP·감염 저장
                 battleEnded = true;
                 BattleEnded?.Invoke(false);
@@ -510,7 +532,8 @@ namespace InsectGame.Battle
                 multiplier *= LedgerPressure.ReadDamageMultiplier;
                 ledgerSpentThisTurn = true;
             }
-            int damage = Mathf.RoundToInt((baseDamage + attacker.Level * 2) * multiplier);
+            int damage = Mathf.RoundToInt(
+                (baseDamage + attacker.Level * GameConstants.Battle.LevelDamageScale) * multiplier);
             return Mathf.Max(1, damage);
         }
 
@@ -880,7 +903,7 @@ namespace InsectGame.Battle
                 {
                     // (기절 0 HP는 위에서 이미 persist — 여기선 종료 처리만)
                     battleEnded = true;
-                    if (enemyEntity != null) enemyEntity.Despawn();
+                    ReleaseEnemyAfterBattle();
                     BattleEnded?.Invoke(false);
                     if (duelMode) DuelEnded?.Invoke(false);
                 }
@@ -912,7 +935,7 @@ namespace InsectGame.Battle
 
             battleEnded = true;
             lastPlayerWon = false;
-            if (enemyEntity != null) enemyEntity.Despawn();
+            ReleaseEnemyAfterBattle();
             BattleEnded?.Invoke(false);
             if (duelMode) DuelEnded?.Invoke(false);
         }

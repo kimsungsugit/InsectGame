@@ -23,6 +23,9 @@ namespace InsectGame.Core
         private TutorialQuest[] allQuests;
         private Dictionary<string, int> questProgress = new Dictionary<string, int>();
         private HashSet<string> completedQuests = new HashSet<string>();
+
+        /// <summary>완료된 questId 열거 — <c>StoryDirector</c>가 세션 시작 시 QuestComplete를 다시 흘리는 데 쓴다.</summary>
+        public IReadOnlyCollection<string> CompletedQuestIds => completedQuests;
         // 완료됐지만 아직 퀘스트 창(DrawDetailPanel)에서 확인 안 한 퀘스트 — 퀵바 배지 카운터 소스.
         private HashSet<string> unseenCompleted = new HashSet<string>();
         private string activeQuestId;

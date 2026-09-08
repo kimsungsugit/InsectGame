@@ -52,6 +52,8 @@ namespace InsectGame.Spawning
         // InsectEntity는 풀링 객체라 AutoWire/provider 참조가 없어 static 훅으로 주입.
         public static System.Func<float> FleePreventChanceProvider;
         private bool despawnedThisCycle; // Despawn 다중 호출 가드 (Battle/Capture 동시 호출 시 풀 중복 반환 차단)
+        // 수문장 표식 — 기본은 빈 문자열(야생). 풀 재사용마다 반드시 지운다(GuardianRegionId 주석 참조).
+        private string guardianRegionId = string.Empty;
 
         // Camera.main은 매 호출마다 FindGameObjectWithTag — 최대 20마리×매 프레임 핫패스 회피.
         private static Camera cachedMainCam;
@@ -79,9 +81,52 @@ namespace InsectGame.Spawning
         /// </summary>
         public string DisplayNameForPlayer =>
             (erased || Data == null) ? "???" : Data.displayName;
-        public bool CanBeEngaged => !forBattle && !engaged && alertState != 2 && !despawnedThisCycle;
+        /// <summary>이 개체가 수문장인가. <see cref="GuardianRegionId"/>가 곧 답이다.</summary>
+        public bool IsGuardian => !string.IsNullOrEmpty(guardianRegionId);
+
+        /// <summary>
+        /// 플레이어가 다가가 걸 수 있는가.
+        ///
+        /// <b><c>forBattle</c>에 수문장 예외가 필요하다.</b> 그 플래그는 두 가지를 겸하는데
+        /// ①배회·도주하지 않는 정적 개체 ②아레나 전시용이라 상호작용 금지 —
+        /// 수문장은 ①만 필요하고 ②는 아니다. 예외 없이 두면 <b>수문장에게 말을 걸 수 없다</b>:
+        /// 접근 판정 3곳(<c>CaptureInputController</c>·<c>WorldInteractionController</c>·
+        /// <c>CatcherKidNpc</c>)이 전부 이 프로퍼티로 거른다.
+        ///
+        /// 실제로 그 상태였다. 수문장의 <c>BuildForBattle</c>은 최초 커밋부터 있었고
+        /// <c>!forBattle</c> 조건이 <b>나중에</b> 들어오면서 수문장이 조용히 장식물이 됐다 —
+        /// 예외도 경고도 없고, 격파 판정이 종·레벨만 봐서 <b>야생 동종을 이기면 리전이 열렸기 때문에
+        /// 아무도 눈치채지 못했다</b>. 그 우회로를 막으려면(정체성 판정) 이 예외가 함께 있어야 한다.
+        /// 없으면 진행이 영구 정지한다.
+        /// </summary>
+        public bool CanBeEngaged =>
+            (!forBattle || IsGuardian) && !engaged && alertState != 2 && !despawnedThisCycle;
         public SpawnPoint OwnerPoint => ownerPoint;
         public string RegionId => ownerPoint != null ? ownerPoint.regionId : string.Empty;
+
+        /// <summary>
+        /// 이 개체가 <b>어느 리전의 수문장인가</b>. 수문장이 아니면 빈 문자열이다.
+        ///
+        /// <b>왜 좌표가 아니라 정체성인가.</b> 예전엔 격파 판정이 "수문장 자리에서 15m 안이었나"를
+        /// 봤는데, 그 반경은 야생 스폰이 그대로 들어온다 — <c>InsectSpawner.RelocateSpawnPoints</c>가
+        /// 현재 리전 포인트를 <b>플레이어로부터 10~43m</b> 나선 위로 끌어오고, 거기서 다시
+        /// <c>SpawnPoint.radius</c>(5m)만큼 흩어진다. 최근접 스폰이 플레이어에서 5m다.
+        /// 수문장과 싸우려면 그 앞에 서야 하니 <b>야생이 반경 안에 들어오는 건 우연이 아니라 구조</b>고,
+        /// 13곳 중 9곳은 수문장 종이 자기 리전 야생 풀에도 있어 종·레벨 조건까지 함께 맞는다.
+        ///
+        /// 그래서 "그 자리였나"가 아니라 <b>"바로 그 개체였나"</b>를 묻는다. 수문장은
+        /// <c>PlaySceneBootstrap.SpawnGuardianInsect</c>가 <c>new GameObject</c>로 따로 세우는
+        /// 단 하나의 개체라(풀에서 오지 않는다) 이 값이 곧 확정 답이다.
+        /// </summary>
+        public string GuardianRegionId => guardianRegionId;
+
+        /// <summary>
+        /// 수문장으로 표식한다. <c>BuildForBattle</c> <b>뒤에</b> 부를 것 — 그쪽이 표식을 지운다.
+        /// </summary>
+        public void MarkAsGuardian(string regionId)
+        {
+            guardianRegionId = string.IsNullOrEmpty(regionId) ? string.Empty : regionId;
+        }
 
         public void Initialize(InsectData insectData, int insectLevel, SpawnPoint point,
             Action<InsectEntity> despawnCallback, float erasedChance = 0f)
@@ -111,6 +156,7 @@ namespace InsectGame.Spawning
             fleeTimer = 0f;
             engaged = false;
             despawnedThisCycle = false;
+            guardianRegionId = string.Empty;   // 풀에서 왔다면 직전 개체의 표식을 물려받지 않는다
 
             ClearChildren();
             BuildModel();
@@ -147,6 +193,7 @@ namespace InsectGame.Spawning
             fleeTimer = 0f;
             engaged = false;
             despawnedThisCycle = false;
+            guardianRegionId = string.Empty;   // 풀에서 왔다면 직전 개체의 표식을 물려받지 않는다
 
             ClearChildren();
             BuildModel();
@@ -1885,6 +1932,17 @@ namespace InsectGame.Spawning
 
         public void Despawn()
         {
+            // 수문장은 풀 객체가 아니다(onDespawn·ownerPoint 둘 다 없음) — 아래 래치를 걸면 아무것도
+            // 반환·파괴되지 않은 채 CanBeEngaged만 영구 false가 돼, **한 번 지거나 도주하면 눈앞에
+            // 서 있는 수문장에게 다시 말을 걸 수 없고 리전이 영영 잠긴다**(2026-09-09). 격파 시 실제
+            // 제거는 PlaySceneBootstrap.RemoveGuardianSeal이 한다. 여기서는 교전만 풀어 준다.
+            if (IsGuardian)
+            {
+                StopAllCoroutines();
+                engaged = false;
+                return;
+            }
+
             // 다중 호출 가드 — Battle/Capture가 동시에 Despawn 호출 시 풀 중복 반환 차단.
             // 옛은 onDespawn 두 번 발화 → 풀이 같은 객체 두 번 Return → 다음 Get에서 같은 인스턴스 2번 회귀.
             if (despawnedThisCycle) return;

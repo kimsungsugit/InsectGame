@@ -284,11 +284,44 @@ namespace InsectGame.Story
             RegionData region = regionManager != null ? regionManager.GetRegionById(objective.TargetId) : null;
             if (region == null) { ResolveFreeform(); return; }
 
+            if (TryRedirectLockedRegion(region)) return;
+
             bool guardian = objective.Kind == StoryObjectiveKind.DefeatGuardian;
-            SetLabel(guardian ? $"{region.displayName} 수문장 격파" : $"{region.displayName}(으)로");
+            SetLabel(StoryObjectiveResolver.DescribeRegionObjective(
+                region.displayName, guardian, region.guardianLevel));
             targetPosition = guardian ? regionManager.GetGuardianPosition(region) : region.centerPosition;
             targetRegionId = region.regionId;
             hasWorldTarget = true;
+        }
+
+        /// <summary>
+        /// 목적지 리전이 <b>잠겨 있으면</b> 그 열쇠(앞 리전 수문장)로 안내를 바꿔 친다.
+        /// 라벨·좌표·리전을 모두 앞 리전 쪽으로 두므로 HUD 문구·미니맵 쐐기·원터치 이동이
+        /// 함께 옮겨 간다. 바꿔 쳤으면 true.
+        ///
+        /// 스토리는 해금을 <b>읽기만</b> 한다 — 판정(<c>IsRegionAccessible</c>)과 열쇠
+        /// (<c>GetGatekeeperRegion</c>)는 <c>RegionManager</c>가 단일 출처다. 앞 리전도 잠겨
+        /// 있으면(두 챕터 뒤를 가리키는 세이브) 열려 있는 곳이 나올 때까지 거슬러 간다.
+        /// 사슬 밖(열쇠가 없는 곳)이면 손대지 않는다.
+        /// </summary>
+        private bool TryRedirectLockedRegion(RegionData region)
+        {
+            if (region == null || regionManager == null) return false;
+            if (regionManager.IsRegionAccessible(region)) return false;
+
+            RegionData gate = regionManager.GetGatekeeperRegion(region.regionId);
+            // 최대 리전 수만큼만 거슬러 간다 — 체인은 유한하지만 데이터 오류로 순환하면 여기서 멈춘다.
+            int hops = regionManager.Regions != null ? regionManager.Regions.Length : 16;
+            while (gate != null && !regionManager.IsRegionAccessible(gate) && hops-- > 0)
+                gate = regionManager.GetGatekeeperRegion(gate.regionId);
+            if (gate == null) return false;
+
+            SetLabel(StoryObjectiveResolver.DescribeRegionObjective(
+                region.displayName, false, 0, gate.displayName, gate.guardianLevel));
+            targetPosition = regionManager.GetGuardianPosition(gate);
+            targetRegionId = gate.regionId;
+            hasWorldTarget = true;
+            return true;
         }
 
         private void ResolveSubAreaTarget()
@@ -302,6 +335,8 @@ namespace InsectGame.Story
                 foreach (SubAreaData sub in region.subAreas)
                 {
                     if (sub == null || sub.subAreaId != objective.TargetId) continue;
+                    // 잠긴 리전의 서브에리어도 열쇠부터 — 2막 대치 비트(SubAreaEnter)가 그 자리다.
+                    if (TryRedirectLockedRegion(region)) return;
                     SetLabel($"{sub.displayName}(으)로");
                     targetPosition = sub.centerPosition;
                     targetRegionId = region.regionId;
@@ -325,6 +360,7 @@ namespace InsectGame.Story
             RegionData region = regionManager != null
                 ? regionManager.GetRegionById(objective.RequiredRegionId) : null;
             if (region == null) { ResolveFreeform(); return; }
+            if (TryRedirectLockedRegion(region)) return;
 
             bool inside = InTargetRegion(region.regionId);
             SetLabel(StoryObjectiveResolver.DescribeActionObjective(

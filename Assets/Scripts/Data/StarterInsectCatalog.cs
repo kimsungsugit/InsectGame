@@ -21,7 +21,7 @@ namespace InsectGame.Data
         public const string StarterBeatId = "ch1_intro";
 
         /// <summary>선택하지 않았거나 값이 이상할 때 주는 종 — Story.json의 원래 보상과 같아야 한다.</summary>
-        public const string DefaultId = "rhinoceros_beetle";
+        public const string DefaultId = "longhorn_beetle";
 
         /// <summary>계정 스코프 PlayerPrefs 키(문자열).</summary>
         public const string PrefsKeyBase = "InsectGame.Character.StarterInsect";
@@ -42,30 +42,40 @@ namespace InsectGame.Data
         }
 
         /// <summary>
-        /// 후보 3종. 등급을 <b>Rare로 맞춰</b> 어느 것을 골라도 초반 난이도가 같게 했다 —
-        /// 등급이 갈리면 <c>basePower = 8 + rarity*5</c> 때문에 시작 전투력이 달라진다.
+        /// 후보 3종. 등급을 <b>Uncommon으로 맞춰</b> 어느 것을 골라도 초반 난이도가 같게 했다 —
+        /// 등급이 갈리면 <c>basePower = 10 + rarity*8</c>·<c>baseHp = 44 + rarity*18</c> 때문에
+        /// 시작 전투력이 달라진다.
         ///
-        /// 속성은 <c>PlaySceneBootstrap.InferPrimaryType</c>이 id 문자열로, 매치가 없으면
-        /// 서식지로 정한다: <c>rhinoceros_beetle</c>→"beetle"→Metal,
-        /// <c>cicada_evening</c>→(id 매치 없음)→서식지 "Pond"→Water,
-        /// <c>butterfly_swallowtail</c>→"butterfly"→Wind.
-        /// 상성은 <b>Water &gt; Metal &gt; Wind</b>의 2변 사슬이다 — 완전 삼각은 기본 종의
-        /// 속성 조합만으로는 성립하지 않는다(Poison/Electric 종이 확장 DB에만 있다).
+        /// <b>왜 Rare에서 내렸나.</b> 옛 3종은 전부 Rare였고, 그건 <c>CreateStableInsect</c> 기준
+        /// baseHp 80~91 · baseAtk 34~40이다. 같은 레벨 야생 Common(44~55 / 16~22)의
+        /// <b>HP 1.7배 · ATK 1.8배</b>라 초반 전투가 사실상 성립하지 않았다.
+        /// Uncommon(62~73 / 25~31)은 야생보다 여전히 우위지만 무쌍은 못 한다.
         ///
-        /// <b>등급을 확인하고 골랐다.</b> 처음엔 잠자리(<c>dragonfly_lake</c>)를 넣었는데
-        /// 활성 DB(<c>EnsureExpandedDatabase</c> → <c>CreateStableInsect</c>)에서 그 종은
-        /// <b>Uncommon</b>이었다 — 옛 <c>CreateInsect</c> 목록에만 Rare로 적혀 있어서
-        /// 같은 id의 등급이 두 곳에서 갈린다. <c>basePower = 8 + rarity*5</c>라 시작 전투력이
-        /// 5 낮아졌을 것이다. <c>data_lint</c>가 이 등급 일치를 강제한다.
+        /// <b>등급 숫자를 낮추지 않고 종을 바꿨다.</b> 옛 3종은 야생 풀·가챠 Rare 풀
+        /// (<c>GachaBoxManager</c>)에도 쓰이고, 무엇보다 <c>butterfly_swallowtail</c>은
+        /// <b>꽃밭 수문장(Lv33)</b>이다 — 등급을 건드리면 그 셋이 함께 흔들린다.
+        /// 종을 바꾸니 "첫 파트너가 곧 수문장"이라는 이상한 겹침도 함께 사라졌다.
+        ///
+        /// 속성은 <c>PlaySceneBootstrap.InferPrimaryType</c>이 id 문자열로 정한다:
+        /// <c>longhorn_beetle</c>→"beetle"→Metal(2차 Bug),
+        /// <c>dragonfly_lake</c>→"lake"→Water(2차 Wind),
+        /// <c>butterfly_monarch</c>→"butterfly"→Wind(2차 Light).
+        /// 상성은 옛 구성과 같은 <b>Water &gt; Metal &gt; Wind</b> 2변 사슬이다 — 완전 삼각은
+        /// 기본 종의 속성 조합만으로는 성립하지 않는다(Poison/Electric 종이 확장 DB에만 있다).
+        ///
+        /// <b>등급은 활성 DB에서 확인했다.</b> 판정 기준은 <c>EnsureExpandedDatabase</c> →
+        /// <c>CreateStableInsect</c>의 값이지 옛 <c>CreateInsect</c> 목록이 아니다 — 같은 id의
+        /// 등급이 두 곳에서 갈릴 수 있다(<c>dragonfly_lake</c>가 실제로 그랬고, 그때는 그게
+        /// 탈락 사유였는데 이번엔 채택 사유가 됐다). <c>data_lint</c>가 이 등급 일치를 강제한다.
         /// </summary>
         private static readonly Choice[] Choices =
         {
-            new Choice(DefaultId, "장수풍뎅이",
-                "단단한 뿔로 밀어붙이는 힘. 맞고도 버티는 든든한 첫 친구."),
-            new Choice("cicada_evening", "저녁매미",
-                "물가에서 우는 여름의 목소리. 흐름을 읽고 먼저 움직인다."),
-            new Choice("butterfly_swallowtail", "호랑나비",
-                "바람을 타는 날개. 가볍게 피하며 틈을 노린다."),
+            new Choice(DefaultId, "하늘소",
+                "긴 더듬이로 바람을 읽는다. 단단한 등껍질로 버티며 밀어붙인다."),
+            new Choice("dragonfly_lake", "호수잠자리",
+                "물 위를 스치듯 나는 사냥꾼. 흐름을 읽고 먼저 움직인다."),
+            new Choice("butterfly_monarch", "제왕나비",
+                "먼 길을 나는 날개. 가볍게 피하며 틈을 노린다."),
         };
 
         public static int Count => Choices.Length;

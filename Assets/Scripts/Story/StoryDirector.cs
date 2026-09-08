@@ -28,6 +28,10 @@ namespace InsectGame.Story
         // 보상 지급 의존성 — 트리거 소스와 분리해 별도 AutoWire(keyGuide/quickBar 다중 AutoWire 관례).
         private PlayerCandyInventory candyInventory;
         private PlayerItemInventory itemInventory;
+        // "전투 화면이 아직 떠 있는가"의 유일한 신뢰 신호. BattleScreenUI는 IModalUI가 아니라
+        // ModalUIRegistry로는 알 수 없고, 컨트롤러의 상태 플래그는 둘 다 못 답한다
+        // (아래 LateUpdate 주석의 그 이유). CutsceneDirector가 같은 문제에 같은 신호를 골랐다.
+        private CameraFollower cameraFollower;
 
         private StoryProgressData progress;
         // 발화됐으나 아직 완료(모달 닫힘)되지 않은 비트 — 같은 이벤트 반복 시 중복 발화 차단.
@@ -122,6 +126,15 @@ namespace InsectGame.Story
         }
 
         /// <summary>
+        /// 전투 화면이 떠 있는지를 판단할 카메라. <see cref="ShouldDeferNow"/>가 쓴다.
+        /// 없으면 모달 판정만으로 떨어져 전투 결과 화면 위에 대사가 겹칠 수 있다(옛 동작).
+        /// </summary>
+        public void AutoWire(CameraFollower follower)
+        {
+            if (cameraFollower == null) cameraFollower = follower;
+        }
+
+        /// <summary>
         /// <c>BattleWin</c>의 두 번째 소스. <c>DexController</c>와 같은 이유로 <b>Start보다 먼저</b>
         /// 불려야 한다.
         ///
@@ -151,7 +164,24 @@ namespace InsectGame.Story
         {
             SubscribeEvents();
             // Immediate 트리거는 이벤트가 없으므로 시작 시 1회 평가.
-            EvaluateTriggers(TriggerImmediate, null);
+            RouteTrigger(TriggerImmediate, null);
+            ResweepCompletedQuests();
+        }
+
+        /// <summary>
+        /// 이미 완료된 퀘스트의 <c>QuestComplete</c>를 다시 흘린다. 08-27부터 이 트리거가 큐를 거치는데
+        /// 큐는 메모리에만 있다 — 퀘스트 완료는 전투 종료 프레임에 몰리므로 큐에 실린 채 앱을 끄면
+        /// 일생 1회인 이벤트가 영영 다시 오지 않았다. 열람된 비트는 <c>seenBeatIds</c>가 거르고
+        /// 큐는 type+param으로 중복을 막으므로 몇 번 불러도 무해하다(RegionCleansed 재발화와 같은 형태).
+        /// 퀘스트 매니저는 로그인 뒤에야 저장분을 읽으므로 Start뿐 아니라 리전 진입에서도 한 번 더 본다.
+        /// </summary>
+        private void ResweepCompletedQuests()
+        {
+            if (questManager == null) return;
+            // 스냅샷 — 발화 체인이 어떤 경로로든 CompleteQuest에 닿으면 열거 중 변경 예외가 된다.
+            string[] completed = System.Linq.Enumerable.ToArray(questManager.CompletedQuestIds);
+            for (int i = 0; i < completed.Length; i++)
+                RouteTrigger(TriggerQuestComplete, completed[i]);
         }
 
         private void OnDestroy()
@@ -220,15 +250,16 @@ namespace InsectGame.Story
 
         private void OnRegionChanged(RegionData region)
         {
+            ResweepCompletedQuests();   // 퀘스트 저장분은 로그인 뒤에 읽힌다 — Start에선 비어 있을 수 있다
             if (region == null) return;
-            EvaluateTriggers(TriggerRegionEnter, region.regionId);
+            RouteTrigger(TriggerRegionEnter, region.regionId);
 
             // 이미 정화한 리전에 다시 들어왔다 — 정화 트리거를 재발화한다.
             // 정화 순간에 그 비트가 자격 미달이었거나(대치 비트를 아직 못 봄) 다른 비트가
             // 먼저 나가 버려졌을 수 있다. 재발화가 그 유일한 회복 경로다.
             // 이미 열람한 비트는 어차피 다시 안 뜨므로 중복 발화 걱정은 없다.
             if (blight != null && blight.IsCleansed(region.regionId))
-                EvaluateTriggers(TriggerRegionCleansed, region.regionId);
+                RouteTrigger(TriggerRegionCleansed, region.regionId);
         }
 
         /// <summary>
@@ -246,7 +277,7 @@ namespace InsectGame.Story
 
         private void OnSubAreaChanged(SubAreaData subArea)
         {
-            if (subArea != null) EvaluateTriggers(TriggerSubAreaEnter, subArea.subAreaId);
+            if (subArea != null) RouteTrigger(TriggerSubAreaEnter, subArea.subAreaId);
         }
 
         /// <summary>
@@ -317,7 +348,18 @@ namespace InsectGame.Story
         {
             public string type;
             public string param;
+            public int retries;   // 1회성 트리거가 드레인에서 게이트에 막혔을 때 되돌린 횟수
         }
+
+        /// <summary>
+        /// 다시 오지 않는 트리거 — 큐에서 소비됐는데 그 순간 게이트(리전·선행 비트)가 안 맞으면
+        /// 재발화형과 달리 회복 경로가 없다. 드레인이 이들만 되돌린다(상한 <see cref="MaxDrainRetries"/>).
+        /// </summary>
+        private static bool IsOneShotTrigger(string type, string param) =>
+            type == TriggerQuestComplete || type == TriggerGuardianDefeat
+            || (type == TriggerImmediate && !string.IsNullOrEmpty(param));   // 선택지 결과
+
+        private const int MaxDrainRetries = 3;
 
         private readonly List<PendingTrigger> pendingTriggers = new List<PendingTrigger>();
         private float pendingSeconds;
@@ -332,6 +374,49 @@ namespace InsectGame.Story
         /// 쪽이 진행이 멈추는 것보다 훨씬 낫다.
         /// </summary>
         private const float PendingGiveUpSeconds = 12f;
+        /// <summary>카메라가 배선돼 있어도 넘기지 않는 절대 상한(초).</summary>
+        private const float PendingAbsoluteGiveUpSeconds = 60f;
+
+        /// <summary>
+        /// <b>지금 대사를 띄워도 되는가.</b> 안 되면 큐가 들고 있다가 전투·대화가 끝난 뒤 흘린다.
+        ///
+        /// 두 가지를 막는다:
+        /// <list type="number">
+        /// <item><b>대화 중 끼어들기.</b> <c>NpcDialogueUI.ShowStory</c>는 열린 모달을
+        /// <c>CloseModal</c>로 밀어내는데, 마을 사람과 이야기하던 중 레벨업·퀘스트 완료가
+        /// 일어나면 <b>읽던 대화가 통째로 사라지고</b> 스토리가 시작됐다.</item>
+        /// <item><b>전투 결과 화면 덮기.</b> 전투 승리는 같은 프레임에 XP·도감·퀘스트를 함께
+        /// 갱신하므로 <c>LevelReach</c>/<c>DexProgress</c>/<c>QuestComplete</c>가 즉시 발화해
+        /// 보상 패널 위로 대사창이 열렸다. <c>BattleWin</c>만 미루고 있었던 탓이다.</item>
+        /// </list>
+        ///
+        /// 전투 화면 판정에 카메라를 쓰는 이유: <c>BattleScreenUI</c>는 <c>IModalUI</c>가 아니라
+        /// 레지스트리로 알 수 없고, <c>InsectBattleController.IsBattleInProgress()</c>는 첫 전투
+        /// 이후 늘 true, <c>RaidBattleController.IsActive</c>는 너무 일찍 false가 된다
+        /// (<see cref="LateUpdate"/> 주석 참조). <c>CutsceneDirector</c>도 같은 이유로 이 신호를 쓴다.
+        /// </summary>
+        private bool ShouldDeferNow()
+        {
+            if (InsectGame.UI.ModalUIRegistry.IsAnyOpen()) return true;   // 대화·컷신·상점·도감
+            return cameraFollower != null && cameraFollower.InBattleMode; // 전투 화면(결과 포함)
+        }
+
+        /// <summary>
+        /// 모든 트리거가 지나는 관문. 지금 띄워도 되면 그 자리에서 평가하고, 아니면 큐에 넣는다.
+        ///
+        /// <b>예외는 <c>NpcTalk</c> 하나다</b> — 그건 대화창이 열리기 <b>전에</b> 불리고
+        /// (<c>WorldInteractionController</c>), 반환값으로 앰비언트 대사 폴백을 정하므로
+        /// 미루면 스토리와 잡담이 둘 다 뜬다. 그래서 그 자리만 <c>EvaluateTriggers</c>를 직접 쓴다.
+        /// </summary>
+        private bool RouteTrigger(string type, string param)
+        {
+            if (ShouldDeferNow())
+            {
+                DeferTrigger(type, param);
+                return false;
+            }
+            return EvaluateTriggers(type, param);
+        }
 
         private void DeferTrigger(string type, string param)
         {
@@ -385,15 +470,31 @@ namespace InsectGame.Story
         /// </summary>
         private void DrainPendingTriggers()
         {
+            int passBudget = pendingTriggers.Count;
             while (pendingTriggers.Count > 0)
             {
-                // 한 편이 떠 있거나(pendingBeatId) 컷신이 도는 중(레지스트리)이면 기다린다.
+                // 한 편이 떠 있거나(pendingBeatId) 대화·컷신·전투 화면이 살아 있으면 기다린다.
                 if (!string.IsNullOrEmpty(pendingBeatId)) return;
-                if (InsectGame.UI.ModalUIRegistry.IsAnyOpen()) return;
+                if (ShouldDeferNow()) return;
 
                 PendingTrigger t = pendingTriggers[0];
                 pendingTriggers.RemoveAt(0);
-                EvaluateTriggers(t.type, t.param);
+                bool fired = EvaluateTriggers(t.type, t.param);
+                if (fired || !IsOneShotTrigger(t.type, t.param)) continue;
+
+                // 1회성인데 못 쐈다 — 큐를 들고 있는 사이 플레이어가 리전을 옮긴 경우가 대표다.
+                // 뒤로 돌려 다음 드레인(리전 복귀 등)에서 다시 본다. 같은 패스 안에서 무한히 돌지
+                // 않도록 되돌린 항목은 이번 while에서 다시 집지 않는다(passBudget).
+                if (t.retries < MaxDrainRetries)
+                {
+                    t.retries++;
+                    pendingTriggers.Add(t);
+                    if (--passBudget <= 0) return;
+                }
+                else
+                {
+                    Debug.LogWarning($"[Story] 1회성 트리거를 {MaxDrainRetries}회 되돌렸지만 게이트가 계속 막혀 버린다: {t.type}/{t.param}");
+                }
             }
 
             // 다 흘렸다 — 다음 전투를 위해 되돌린다.
@@ -408,18 +509,28 @@ namespace InsectGame.Story
             // timeScale에 끌려다니면 안 된다 — 히트스톱·슬로모션이 결과 화면 직전까지 걸린다.
             pendingSeconds += Time.unscaledDeltaTime;
 
-            // 대사·컷신이 떠 있는 동안은 시간이 지나도 밀어 넣지 않는다(위 주석의 그 손실).
+            // 대사·컷신·전투 화면이 떠 있는 동안은 시간이 지나도 밀어 넣지 않는다(위 주석의 그 손실).
+            // 12초 포기 타이머가 있어도 여기서 막히므로, 대화가 길어도 대사가 겹치지 않는다.
             if (!string.IsNullOrEmpty(pendingBeatId)) return;
-            if (InsectGame.UI.ModalUIRegistry.IsAnyOpen()) return;
+            if (ShouldDeferNow()) return;
 
-            // 전투 화면은 IModalUI가 아니라 레지스트리로 알 수 없다 — 통지가 정상 경로다.
-            // 통지를 이미 받았다면 모달만 걷히면 바로 흘린다(여기서 또 기다리면, 결과 화면
-            // 위에 다른 창을 잠깐 열었다 닫은 것만으로 대사가 최대 12초 늦게 뜬다).
-            if (!presentationClosed)
+            // **카메라가 배선돼 있으면 여기서 더 기다릴 것이 없다.** `ShouldDeferNow`가 이미
+            // 모달과 전투 화면을 둘 다 보고 false를 냈으므로, 화면에 남은 것이 없다는 뜻이다.
+            // 아래 12초 타이머는 원래 "전투 화면이 떠 있는지 알 방법이 없어서" 둔 안전망인데,
+            // 그대로 두면 **대화 때문에 미뤄 둔 트리거가 대화를 닫고도 12초를 더 기다린다.**
+            //
+            // 카메라가 없을 때(미배선)만 옛 경로로 떨어진다 — 통지 아니면 12초.
+            if (cameraFollower == null && !presentationClosed)
             {
                 if (pendingSeconds < PendingGiveUpSeconds) return;
                 // 그게 끝내 안 오면 겹치더라도 쏜다 — 진행을 잃는 것보다 낫다.
                 Debug.LogWarning("[Story] 전투 화면 종료 통지가 없어 미뤄 둔 트리거를 그대로 발화한다");
+            }
+            else if (cameraFollower != null && pendingSeconds >= PendingAbsoluteGiveUpSeconds)
+            {
+                // 카메라 경로에는 상한이 없었다 — InBattleMode가 어떤 이유로든 true로 굳으면(컷신 복원
+                // 누락 등) 큐가 무기한 멈춘다. 훨씬 긴 절대 상한 하나를 남긴다.
+                Debug.LogWarning($"[Story] {PendingAbsoluteGiveUpSeconds:0}초 넘게 화면이 안 닫혀 미뤄 둔 트리거를 그대로 발화한다");
             }
 
             DrainPendingTriggers();
@@ -429,18 +540,18 @@ namespace InsectGame.Story
         {
             // 발견이 아니라 **포획해 이름을 새긴 종 수**다 — 2막의 "빈칸이 메워진다"가 곧 이 값이다.
             int count = dexController != null ? dexController.CapturedSpeciesCount : 0;
-            EvaluateTriggers(TriggerDexProgress, count.ToString());
+            RouteTrigger(TriggerDexProgress, count.ToString());
         }
 
         private void OnQuestCompleted(TutorialQuest quest)
         {
-            if (quest != null) EvaluateTriggers(TriggerQuestComplete, quest.questId);
+            if (quest != null) RouteTrigger(TriggerQuestComplete, quest.questId);
         }
 
         private void OnProgressChanged(PlayerProgressData data)
         {
             int level = progressController != null ? progressController.Level : 0;
-            EvaluateTriggers(TriggerLevelReach, level.ToString());
+            RouteTrigger(TriggerLevelReach, level.ToString());
         }
 
         /// <summary>
@@ -493,7 +604,7 @@ namespace InsectGame.Story
                 // 포획이 전투 종료보다 **먼저** 일어났으므로 큐에서도 앞에 세운다 —
                 // 미루기를 붙이면서 발화 순서가 뒤집히지 않게 한다.
                 if (battlePending) DeferTriggerFirst(TriggerCaptureInsect, frameCaptures[i]);
-                else EvaluateTriggers(TriggerCaptureInsect, frameCaptures[i]);
+                else RouteTrigger(TriggerCaptureInsect, frameCaptures[i]);
             }
             frameCaptures.Clear();
         }
@@ -573,7 +684,12 @@ namespace InsectGame.Story
                             && cur >= need;
                         break;
                     case TriggerImmediate:
-                        matches = true;
+                        // param이 비면(시작 시 일괄 평가) 선택지 결과가 **아닌** Immediate만,
+                        // 채우면 그 beatId 하나만 — 선택지 결과는 플레이어가 고른 순간에만 뜬다.
+                        // 안 그러면 fin_unnamed 뒤 재부팅 시 두 결과(거절·수락)가 같이 자격을 얻는다.
+                        matches = string.IsNullOrEmpty(eventParam)
+                            ? !ChoiceTargetIds().Contains(beat.beatId)
+                            : beat.beatId == eventParam;
                         break;
                     default:
                         // 미지원 타입 — JSON 오타 방어(무시).
@@ -609,6 +725,47 @@ namespace InsectGame.Story
             if (spineBeatIdsCache == null)
                 spineBeatIdsCache = StoryObjectiveResolver.CollectSpineBeatIds(StoryService.AllBeats());
             return spineBeatIdsCache;
+        }
+
+        /// <summary>선택지 결과 집합 — Story.json에서만 나오므로 1회 계산.</summary>
+        private HashSet<string> ChoiceTargetIds()
+        {
+            if (choiceTargetIdsCache == null)
+                choiceTargetIdsCache = StoryObjectiveResolver.CollectChoiceTargetIds(StoryService.AllBeats());
+            return choiceTargetIdsCache;
+        }
+
+        /// <summary>이 비트가 어떤 선택지의 결과인가(저널이 미열람 결과를 숨기는 데 쓴다).</summary>
+        public bool IsChoiceTarget(string beatId)
+        {
+            return !string.IsNullOrEmpty(beatId) && ChoiceTargetIds().Contains(beatId);
+        }
+
+        /// <summary>
+        /// 플레이어가 고른 선택지의 결과 비트를 <b>큐 맨 앞</b>에 건다. 대사창이 부른다 —
+        /// 그 직후 <c>CloseModal</c>→<c>CompleteBeat</c>가 큐를 흘리므로, 고른 결과가 다른
+        /// 미뤄 둔 트리거(같은 서브에리어 진입에 걸린 것 등)보다 먼저 뜬다.
+        ///
+        /// 선택은 <b>표현이지 분기가 아니다</b> — 어느 쪽을 골라도 진행은 같은 스파인을 탄다.
+        /// 결과 비트는 전부 leaf·<c>Immediate</c>·보상 0이어야 한다(<c>story_lint</c> 검사 24).
+        /// </summary>
+        public void QueueChoice(string nextBeatId)
+        {
+            if (string.IsNullOrEmpty(nextBeatId)) return;
+            if (!StoryService.TryGetBeat(nextBeatId, out StoryBeat next))
+            {
+                Debug.LogWarning($"[Story] 선택지 결과 비트가 없다: {nextBeatId}");
+                return;
+            }
+            // Immediate가 아니면 큐 항목이 아무것과도 매칭되지 않고 조용히 소비된다. 그 비트는
+            // 선택 대상이라 시작 스윕·목표 선정에서도 빠지므로 **경고 없이 영구 도달 불가**가 된다.
+            // story_lint 검사 24가 정적으로 막지만 런타임에서도 한 번 더 말한다.
+            if (next.trigger == null || next.trigger.type != TriggerImmediate)
+            {
+                Debug.LogWarning($"[Story] 선택지 결과 비트 {nextBeatId}의 트리거가 Immediate가 아니다: {next.trigger?.type}");
+                return;
+            }
+            DeferTriggerFirst(TriggerImmediate, nextBeatId);
         }
 
         // requiredRegionId가 채워진 비트는 현재 리전이 일치할 때만 발화(비면 무제약).
@@ -742,6 +899,7 @@ namespace InsectGame.Story
 
         // 스파인 집합은 Story.json에서만 나온다(진행과 무관) — StoryService 캐시가 정적이라 1회면 족하다.
         private HashSet<string> spineBeatIdsCache;
+        private HashSet<string> choiceTargetIdsCache;
         // 목표는 HUD가 매 프레임 묻는다. 72비트를 프레임마다 훑지 않도록 캐시하고
         // 진행이 바뀔 때(MarkSeen/클라우드 재적재)만 무효화한다.
         private bool objectiveDirty = true;
@@ -768,7 +926,8 @@ namespace InsectGame.Story
             // 안내해 놓고 정작 가서 말을 걸면 아무 일도 안 일어난다.
             StoryBeat beat = StoryObjectiveResolver.SelectObjectiveBeat(
                 StoryService.AllBeats(), IsSeen, SpineBeatIds(),
-                questManager != null ? questManager.IsQuestCompleted : (System.Func<string, bool>)null);
+                questManager != null ? questManager.IsQuestCompleted : (System.Func<string, bool>)null,
+                ChoiceTargetIds());
 
             if (beat == null || beat.trigger == null)
             {
@@ -854,13 +1013,20 @@ namespace InsectGame.Story
                 // 첫 파트너만 플레이어가 고른 종으로 바꾼다. **beatId로 게이트한다** —
                 // 값 비교(rewardInsectId == "rhinoceros_beetle")로 하면 나중에 장수풍뎅이를 주는
                 // 비트를 하나 더 저작했을 때 그것까지 조용히 하이재킹된다.
-                // (지금 rewardInsectId가 채워진 비트는 ch1_intro·ch6_secret·fin_seal 셋이다.)
+                // (지금 rewardInsectId가 채워진 비트는 ch1_intro·ch6_secret·fin_seal·duel_chief_win 넷이다.)
                 string insectId = beatId == StarterInsectCatalog.StarterBeatId
                     ? StarterInsectCatalog.ResolveChoice(reward.rewardInsectId)
                     : reward.rewardInsectId;
 
                 if (insectCollection != null)
                 {
+                    // 카탈로그 id에 오타가 나면 "LogWarning만 뜨고 안 들어온다"가 **아니다** — 종 데이터 없는
+                    // 개체가 Common·기술 0개로 그대로 추가된다. 그러면 비트 원래 보상으로 되돌린다.
+                    if (insectId != reward.rewardInsectId && insectCollection.GetInsectData(insectId) == null)
+                    {
+                        Debug.LogWarning($"[Story] 첫 파트너 '{insectId}'가 DB에 없어 비트 보상 '{reward.rewardInsectId}'로 대체한다");
+                        insectId = reward.rewardInsectId;
+                    }
                     insectCollection.AddCapturedInsect(insectId, Mathf.Max(1, reward.rewardInsectLevel));
 
                     // 도감 등록은 지급과 한 쌍이다(`TutorialQuestManager`와 같은 형태). 빠뜨리면
@@ -921,6 +1087,9 @@ namespace InsectGame.Story
             progress = Load();
             // 클라우드에서 다른 기기의 진행이 내려오면 목표도 달라진다 — 캐시를 버린다.
             objectiveDirty = true;
+            // 계정 전환·클라우드 로드로 완료 퀘스트 집합이 채워지는 시점이 여기다 — 리전을 옮기기 전까지
+            // 재스윕이 없으면 완료 퀘스트 비트가 이번 세션 내내 안 뜬다.
+            ResweepCompletedQuests();
         }
     }
 }

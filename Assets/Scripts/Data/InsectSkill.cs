@@ -32,5 +32,18 @@ namespace InsectGame.Data
         [Range(0f, 1f)] public float accuracy = 1f;   // 명중률(1=항상 명중). 저명중 스킬은 빗나갈 수 있음.
         [Range(0, 999)] public int trainingCost;
         public bool isSignatureSkill;
+
+        /// <summary>
+        /// 이 기술을 배울 수 있는 최소 <b>곤충 레벨</b>. 훈련·기술 디스크 양쪽에 걸린다.
+        ///
+        /// 예전엔 요구 레벨이 <c>TrainingMethod</c> 단위뿐이었다. 그래서 "극한 훈련"이
+        /// <b>곤충 Lv6에 위력 55·65·75를 한꺼번에</b> 열었고, Lv6 야생 HP가 62~73인데
+        /// 데미지가 87이라 전투가 <b>한 방에 끝났다</b>. 방식은 "무엇을 배우는 곳인가"만 정하고
+        /// 실제 게이트는 여기가 맡는다.
+        ///
+        /// 종족 기술(learnset)은 <c>InsectLearnableSkill.learnLevel</c>이 이미 같은 일을 하므로
+        /// 그쪽 경로에서는 보지 않는다 — 두 값이 갈리면 어느 쪽이 옳은지 알 수 없어진다.
+        /// </summary>
+        [Range(1, 100)] public int requiredLevel = 1;
     }
 }

@@ -73,7 +73,7 @@ namespace InsectGame.Battle
             {
                 case SkillEffectType.Damage:
                 {
-                    float raw = (skill.power + attacker.Level * 2)
+                    float raw = (skill.power + attacker.Level * GameConstants.Battle.LevelDamageScale)
                         * Effectiveness(skill.element, boss)
                         * SameTypeBonus(skill.element, attacker);
                     return raw * support * accuracy * Weight(stance, SkillRole.Offense);

@@ -15,6 +15,12 @@ namespace InsectGame.Core
         public List<string> learnedSkillIds = new List<string>();
         public List<string> equippedSkillIds = new List<string>();
 
+        // 훈련 진척 — "skillId:count" 형식의 문자열 목록.
+        // **왜 Dictionary가 아닌가**: JsonUtility는 Dictionary를 직렬화하지 않는다(조용히 빈 값이 된다).
+        // 구세이브엔 이 필드가 없고 JsonUtility는 없는 필드를 건드리지 않으므로 빈 리스트가 그대로
+        // 남는다 — 마이그레이션이 무해하다(currentHp의 -1 센티넬과 달리 기본값이 곧 정답이다).
+        public List<string> trainingProgress = new List<string>();
+
         public int ivHp;
         public int ivAtk;
         public int ivDef;
@@ -57,7 +63,7 @@ namespace InsectGame.Core
 
         public int GetTotalHp(int baseHp)
         {
-            return baseHp + ivHp * 2 + level * 3;
+            return baseHp + ivHp * 2 + level * GameConstants.Battle.HpPerLevel;
         }
 
         /// <summary>전투 시작 시 시드할 현재 HP. currentHp 미초기화(-1)면 풀피(maxHp).</summary>
@@ -145,6 +151,125 @@ namespace InsectGame.Core
             roll = UnityEngine.Mathf.Pow(roll, power); // 높은 power → 낮은 IV에 편중
             // Random.value는 1.0 포함 가능 → roll*16=16으로 IV=16(0~15 불변식 위반). MaxIV로 클램프.
             return UnityEngine.Mathf.Min(MaxIV, (int)(roll * (MaxIV + 1)));
+        }
+
+        // ── 훈련 진척 ────────────────────────────────────────────────────────────
+        //
+        // 한 번의 훈련으로 기술을 얻지 않는다. 같은 기술을 필요 횟수만큼 훈련해야 습득된다
+        // (필요 횟수는 TrainingManager.GetRequiredSessions가 위력에서 정한다).
+
+        /// <summary>
+        /// "skillId:count" 항목이 이 기술의 것인지 <b>문자열을 만들지 않고</b> 판정하고 값을 읽는다.
+        ///
+        /// 무할당인 이유: 훈련 화면(<c>TrainingUI.DrawSkillLearn</c>)이 <b>매 OnGUI 패스마다
+        /// 스킬 하나당 두 번</b> 진척을 읽는다(버튼 라벨 + 진행 바). 여기서 <c>skillId + ":"</c>를
+        /// 만들면 그 횟수만큼 문자열이 쌓인다 — <c>GetAvailableSkillCount</c>가 따로 있는 이유와 같다.
+        /// </summary>
+        private static bool TryReadEntry(string entry, string skillId, out int value)
+        {
+            value = 0;
+            if (entry == null || skillId == null) return false;
+
+            int n = skillId.Length;
+            if (entry.Length <= n + 1) return false;      // 최소 "id:1"
+            if (entry[n] != ':') return false;
+            if (string.CompareOrdinal(entry, 0, skillId, 0, n) != 0) return false;
+
+            // int.Parse(Substring)은 또 할당한다 — 자릿수를 직접 센다(진척은 한 자리~두 자리다).
+            int v = 0;
+            for (int i = n + 1; i < entry.Length; i++)
+            {
+                char c = entry[i];
+                if (c < '0' || c > '9') return false;
+                v = v * 10 + (c - '0');
+            }
+            value = v;
+            return true;
+        }
+
+        /// <summary>이 기술을 지금까지 몇 번 훈련했는가. <b>무할당</b>(매 프레임 경로).</summary>
+        public int GetTrainingProgress(string skillId)
+        {
+            if (string.IsNullOrEmpty(skillId) || trainingProgress == null) return 0;
+            for (int i = 0; i < trainingProgress.Count; i++)
+            {
+                if (TryReadEntry(trainingProgress[i], skillId, out int v)) return v;
+            }
+            return 0;
+        }
+
+        /// <summary>훈련 1회분을 적립하고 누적 횟수를 돌려준다.</summary>
+        public int AddTrainingProgress(string skillId)
+        {
+            if (string.IsNullOrEmpty(skillId)) return 0;
+            if (trainingProgress == null) trainingProgress = new List<string>();
+
+            for (int i = 0; i < trainingProgress.Count; i++)
+            {
+                if (!TryReadEntry(trainingProgress[i], skillId, out int cur)) continue;
+                int next = cur + 1;
+                trainingProgress[i] = skillId + ":" + next;
+                return next;
+            }
+
+            trainingProgress.Add(skillId + ":1");
+            return 1;
+        }
+
+        /// <summary>
+        /// 훈련 1회분을 <b>무른다</b>(교체 실패 등으로 회차를 되돌릴 때). 0 아래로는 안 내려간다.
+        ///
+        /// <see cref="AddTrainingProgress"/>의 역이 필요한 이유: 그쪽은 기존 항목이 있으면
+        /// 제자리에서 갱신하고 없을 때만 뒤에 붙이므로, <b>"마지막 항목이 방금 올린 그것"이라는
+        /// 가정이 성립하지 않는다.</b> 그 가정으로 되돌리면 엉뚱한 기술의 진척을 깎는다.
+        /// </summary>
+        public void RemoveTrainingProgress(string skillId)
+        {
+            if (string.IsNullOrEmpty(skillId) || trainingProgress == null) return;
+            for (int i = 0; i < trainingProgress.Count; i++)
+            {
+                if (!TryReadEntry(trainingProgress[i], skillId, out int cur)) continue;
+
+                int next = cur - 1;
+                if (next <= 0) trainingProgress.RemoveAt(i);
+                else trainingProgress[i] = skillId + ":" + next;
+                return;
+            }
+        }
+
+        /// <summary>습득이 끝난 기술의 진척 기록을 지운다(세이브가 무한히 자라지 않게).</summary>
+        /// <summary>
+        /// 죽은 진척 항목을 걷어낸다 — 이미 배운 기술의 진척, 그리고 <paramref name="isKnownSkill"/>이
+        /// 주어졌을 때 DB에서 사라진 기술의 진척. 항목은 습득 회차에만 지워지므로 4/5에서 그만두거나
+        /// 기술이 빠지면 세이브에 영구히 남았다. 로드 시 한 번 부른다. 바뀐 게 있으면 true.
+        /// </summary>
+        public bool PruneTrainingProgress(Func<string, bool> isKnownSkill)
+        {
+            if (trainingProgress == null || trainingProgress.Count == 0) return false;
+            bool changed = false;
+            for (int i = trainingProgress.Count - 1; i >= 0; i--)
+            {
+                string entry = trainingProgress[i];
+                int sep = entry != null ? entry.LastIndexOf(':') : -1;
+                string skillId = sep > 0 ? entry.Substring(0, sep) : null;
+                bool dead = string.IsNullOrEmpty(skillId)
+                    || HasLearnedSkill(skillId)
+                    || (isKnownSkill != null && !isKnownSkill(skillId));
+                if (!dead) continue;
+                trainingProgress.RemoveAt(i);
+                changed = true;
+            }
+            return changed;
+        }
+
+        public void ClearTrainingProgress(string skillId)
+        {
+            if (string.IsNullOrEmpty(skillId) || trainingProgress == null) return;
+            for (int i = trainingProgress.Count - 1; i >= 0; i--)
+            {
+                if (TryReadEntry(trainingProgress[i], skillId, out _))
+                    trainingProgress.RemoveAt(i);
+            }
         }
 
         public bool HasLearnedSkill(string skillId)
