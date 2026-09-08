@@ -59,6 +59,10 @@ namespace InsectGame.Core
             "InsectGame.Character.HairColor",
             "InsectGame.Character.FaceType",
             "InsectGame.Character.OutfitPreset",
+            // 가챠 천장 카운터(상자별). GachaBoxManager.PityKeyBase와 같은 문자열.
+            "InsectGame.GachaPity.box_bronze",
+            "InsectGame.GachaPity.box_silver",
+            "InsectGame.GachaPity.box_gold",
         };
 
         // 마이그레이션 버전 — 스코핑 대상 키를 늘리거나 복사 로직을 고칠 때마다 +1. 기존 소유자도 1회 재이전.
@@ -67,7 +71,8 @@ namespace InsectGame.Core
         // 5: 스코핑 키 5개 추가(QuestSideProgress/QuestSideRepeat/QuestUnseen/TutorialHidden/
         //    WeeklyContestClaimed). 올려야 기존 기기의 전역 키가 계정 스코프로 이전된다.
         // 6: BlightCleansed(신규) + DefeatedLedgerBosses(누락분) 추가.
-        private const int MigrationVersion = 7;
+        // 8: 가챠 천장 카운터 3키(int) 추가.
+        private const int MigrationVersion = 8;
 
         private static readonly string[] ScopedFiles =
         {

@@ -55,7 +55,7 @@ def _load_facts():
             game_facts.gacha_exclusive_pool_sizes(),
             game_facts.rarity_multipliers(),
             game_facts.field_shiny_pct(),
-            0.0 if not game_facts.gacha_has_shiny() else float("nan"),
+            game_facts.gacha_shiny_pct(),
         )
     except game_facts.ExtractorBroken as e:
         print(f"추출기 고장: {e}\n", file=sys.stderr)
@@ -68,7 +68,9 @@ def _load_facts():
 BOX_DEFS, EXCLUSIVE_POOL_SIZE, RARITY_MULT, FIELD_SHINY_PCT, GACHA_SHINY_PCT = _load_facts()
 
 # Lv30 캔디 비용 (progression_sim과 일치)
-LV30_CANDY_COST = int(4 * (1.14 ** 29))
+# 코드가 단일 출처다 — 예전엔 `int(4 * (1.14 ** 29))`를 여기 박아 두어 곡선이 12.5%로 바뀐 뒤에도 178을 썼다.
+_CURVE = game_facts.insect_candy_curve()
+LV30_CANDY_COST = int(_CURVE["base"] * (_CURVE["growth"] ** 29))
 
 
 def draw_rarity(box: str, rng: random.Random) -> str:
@@ -164,7 +166,10 @@ def epic_exclusive_duplicates(box: str, pulls: int, trials: int, seed: int) -> f
 
 
 def prob_zero_legendary_analytic(box: str, pulls: int) -> float:
-    """해석적 P(Legendary 0개 in N연차) = (1-p)^N."""
+    """해석적 P(Legendary 0개 in N연차) = (1-p)^N — 단, 천장(pity)이 N 안에 있으면 0."""
+    pity = game_facts.gacha_pity_pulls()
+    if pity <= pulls:
+        return 0.0
     p = BOX_DEFS[box]["rarity_pcts"]["Legendary"] / 100.0
     return (1 - p) ** pulls
 
@@ -269,7 +274,7 @@ def evaluate_signals(args) -> list:
     judge = "WARN" if GACHA_SHINY_PCT < FIELD_SHINY_PCT else "PASS"
     signals.append(("가챠 샤이니 적용",
                     f"{FIELD_SHINY_PCT}%",
-                    f"{GACHA_SHINY_PCT}% (코드 미구현)", judge))
+                    f"{GACHA_SHINY_PCT}%" + (" (코드 미구현)" if GACHA_SHINY_PCT == 0 else ""), judge))
 
     return signals
 
@@ -336,7 +341,7 @@ def main():
     print()
 
     print("## 가정 / 한계")
-    print("- 천장(pity) 미구현 가정 — 실제 코드와 일치")
+    print(f"- 천장(pity) {game_facts.gacha_pity_pulls()}연 — GachaBoxManager.PityLegendaryPulls에서 읽음")
     print("- 곤충 풀 균등 무작위 가정 (가중치 데이터 미확인)")
     print("- IV 미적용 — 곤충별 스탯 편차 무시")
     print(f"- random.seed={args.seed} (--seed로 변경 가능)")

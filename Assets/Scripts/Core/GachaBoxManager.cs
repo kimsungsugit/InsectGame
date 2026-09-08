@@ -12,6 +12,7 @@ namespace InsectGame.Core
         public string displayName;
         public InsectRarity rarity;
         public bool isExclusive;
+        public bool isShiny;
         public int bonusCandy;
     }
 
@@ -24,6 +25,36 @@ namespace InsectGame.Core
 
         public GachaResult LastResult { get; private set; }
         public event Action<GachaResult> BoxOpened;
+
+        /// <summary>
+        /// 천장 — 같은 상자를 이 횟수째 열면 Legendary가 확정된다(그 사이 Legendary가 나오면 리셋).
+        /// 없을 때 브론즈 100연에 Legendary 0개일 확률이 60%였다(gacha_sim FAIL, 산업 관행 50~100연).
+        /// 카운터는 상자별·계정 스코프 PlayerPrefs이고 클라우드에도 올라간다(charSkin과 같은 4점).
+        /// </summary>
+        public const int PityLegendaryPulls = 80;
+
+        /// <summary>
+        /// 가챠 샤이니 확률. 필드(<c>InsectEntity</c> 1%)보다 높다 — 상자만의 매력이 있어야 한다.
+        /// 옛은 지정이 없어 <c>CreateWithIV</c>의 필드와 같은 1% 롤을 그대로 썼고, 시뮬은 "미구현"으로 읽었다.
+        /// </summary>
+        public const float ShinyChance = 0.02f;
+
+        private static string PityKey(string boxId) => SaveScope.PrefsKey(PityKeyBase(boxId));
+        /// <summary>SaveScope.ScopedIntPrefsKeys와 CloudSaveManager가 같은 문자열을 쓴다.</summary>
+        public static string PityKeyBase(string boxId) => "InsectGame.GachaPity." + boxId;
+
+        /// <summary>이 상자를 Legendary 없이 연 횟수. UI가 "천장까지 N회"를 그린다.</summary>
+        public int GetPityCount(string boxId) => PlayerPrefs.GetInt(PityKey(boxId), 0);
+
+        /// <summary>
+        /// 순수 판정 — 이번이 <paramref name="pullsSinceLegendary"/>+1번째 뽑기일 때 등급.
+        /// 천장에 닿았으면 roll과 무관하게 Legendary.
+        /// </summary>
+        public static InsectRarity RollRarity(float[] thresholds, float roll, int pullsSinceLegendary)
+        {
+            if (pullsSinceLegendary + 1 >= PityLegendaryPulls) return InsectRarity.Legendary;
+            return GetRarityByThresholds(roll, thresholds);
+        }
 
         // -- 가챠 전용 곤충 풀 --
         private static readonly Dictionary<InsectRarity, string[]> gachaExclusives = new Dictionary<InsectRarity, string[]>
@@ -138,26 +169,26 @@ namespace InsectGame.Core
             try
             {
                 float roll = UnityEngine.Random.value * 100f;
-                InsectRarity rarity;
+                float[] thresholds = GetThresholds(boxId);
+                if (thresholds == null) return;
                 int bonusCandy;
 
+                // 세 case를 **명시적으로** 둔다 — game_facts.gacha_candy_bonus가 `case "box_X":` 뒤의
+                // Random.Range를 읽는다. 골드를 default:로 접었더니 추출기가 GetGachaLevel의 (1, 6)을
+                // 물어 시뮬이 "골드 보너스 평균 3"을 찍었다(2026-09-09).
                 switch (boxId)
                 {
-                    case "box_bronze":
-                        rarity = GetBronzeRarity(roll);
-                        bonusCandy = UnityEngine.Random.Range(5, 16);
-                        break;
-                    case "box_silver":
-                        rarity = GetSilverRarity(roll);
-                        bonusCandy = UnityEngine.Random.Range(10, 31);
-                        break;
-                    case "box_gold":
-                        rarity = GetGoldRarity(roll);
-                        bonusCandy = UnityEngine.Random.Range(20, 51);
-                        break;
-                    default:
-                        return;
+                    case "box_bronze": bonusCandy = UnityEngine.Random.Range(5, 16); break;
+                    case "box_silver": bonusCandy = UnityEngine.Random.Range(10, 31); break;
+                    // 골드는 Lv30 레벨업비(≈122캔디)의 절반은 돼야 "보너스"로 읽힌다(gacha_sim 신호 5).
+                    case "box_gold":   bonusCandy = UnityEngine.Random.Range(45, 81); break;
+                    default: return;
                 }
+
+                int pity = GetPityCount(boxId);
+                InsectRarity rarity = RollRarity(thresholds, roll, pity);
+                // 카운터는 **굴린 등급** 기준이다 — DB 보정(resultRarity)이 상위로 올려 줬다고 천장을 닫지 않는다.
+                PlayerPrefs.SetInt(PityKey(boxId), rarity == InsectRarity.Legendary ? 0 : pity + 1);
 
                 string insectId = ValidateInsectId(PickRandomInsect(rarity, boxId));
                 bool isExclusive = insectId.StartsWith("gacha_");
@@ -167,10 +198,11 @@ namespace InsectGame.Core
 
                 // 각 보상을 독립 try-catch로 감싸 한 단계 실패가 나머지를 막지 않게 함
                 // (곤충 지급 예외로 캔디/도감 미실행되는 회귀 방지).
+                bool isShiny = UnityEngine.Random.value < ShinyChance;
                 try
                 {
                     if (insectCollection != null)
-                        insectCollection.AddCapturedInsect(insectId, GetGachaLevel(resultRarity));
+                        insectCollection.AddCapturedInsect(insectId, GetGachaLevel(resultRarity), isShiny);
                 }
                 catch (System.Exception e) { Debug.LogError($"[Gacha] 곤충 지급 실패: {e.Message}"); }
 
@@ -201,6 +233,7 @@ namespace InsectGame.Core
                     displayName = GetInsectDisplayName(insectId),
                     rarity = resultRarity,
                     isExclusive = isExclusive,
+                    isShiny = isShiny,
                     bonusCandy = bonusCandy
                 };
 
@@ -290,12 +323,6 @@ namespace InsectGame.Core
                 ? Mathf.RoundToInt(p).ToString()
                 : p.ToString("0.#");
         }
-
-        private InsectRarity GetBronzeRarity(float roll) => GetRarityByThresholds(roll, BronzeThresholds);
-
-        private InsectRarity GetSilverRarity(float roll) => GetRarityByThresholds(roll, SilverThresholds);
-
-        private InsectRarity GetGoldRarity(float roll) => GetRarityByThresholds(roll, GoldThresholds);
 
         // -- 곤충 선택 --
 

@@ -108,6 +108,12 @@ def gacha_thresholds() -> dict:
     return out
 
 
+def gacha_pity_pulls() -> int:
+    """천장 — 이 횟수째 뽑기에 Legendary 확정. 출처: GachaBoxManager.PityLegendaryPulls."""
+    src = _read("gacha")
+    return int(_need(re.search(r"PityLegendaryPulls\s*=\s*(\d+)", src), "PityLegendaryPulls", "gacha").group(1))
+
+
 def gacha_rarity_pcts() -> dict:
     """{"bronze": {"Common": 55.0, ..., "Legendary": 0.5}, ...} 등급별 확률(%).
 
@@ -155,9 +161,11 @@ def gacha_candy_bonus() -> dict:
     src = _read("gacha")
     out = {}
     for box in BOXES:
+        # 같은 case 블록 안에서만 찾는다 — 다음 `case "` 전에 Random.Range가 없으면 실패해야지,
+        # 파일 뒤쪽의 무관한 Random.Range(GetGachaLevel의 (1, 6))를 물고 조용히 틀린 값을 내면 안 된다.
         m = _need(
             re.search(
-                rf'case\s+"box_{box}":.*?Random\.Range\((\d+),\s*(\d+)\)', src, re.DOTALL
+                rf'case\s+"box_{box}":(?:(?!case\s+")(?!default\s*:).)*?Random\.Range\((\d+),\s*(\d+)\)', src, re.DOTALL
             ),
             f'case "box_{box}"의 보너스 캔디 Random.Range', "gacha",
         )
@@ -987,6 +995,12 @@ def field_shiny_pct() -> float:
 def gacha_has_shiny() -> bool:
     """가챠에 샤이니 로직이 있는가. 없으면 필드와의 격차가 위험 신호."""
     return bool(re.search(r"[Ss]hiny", _read("gacha")))
+
+
+def gacha_shiny_pct() -> float:
+    """가챠 샤이니 확률(%). 출처: GachaBoxManager.ShinyChance. 상수가 없으면 0(미구현)."""
+    m = re.search(r"ShinyChance\s*=\s*([\d.]+)f", _read("gacha"))
+    return float(m.group(1)) * 100.0 if m else 0.0
 
 
 if __name__ == "__main__":

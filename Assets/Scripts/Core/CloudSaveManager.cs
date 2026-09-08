@@ -433,6 +433,9 @@ namespace InsectGame.Core
                 charHairColor = PlayerPrefs.GetInt(SaveScope.PrefsKey("InsectGame.Character.HairColor"), 0),
                 charFace = PlayerPrefs.GetInt(SaveScope.PrefsKey("InsectGame.Character.FaceType"), 0),
                 charOutfit = PlayerPrefs.GetInt(SaveScope.PrefsKey("InsectGame.Character.OutfitPreset"), 0),
+                gachaPityBronze = PlayerPrefs.GetInt(SaveScope.PrefsKey(GachaBoxManager.PityKeyBase("box_bronze")), 0),
+                gachaPitySilver = PlayerPrefs.GetInt(SaveScope.PrefsKey(GachaBoxManager.PityKeyBase("box_silver")), 0),
+                gachaPityGold = PlayerPrefs.GetInt(SaveScope.PrefsKey(GachaBoxManager.PityKeyBase("box_gold")), 0),
                 lastSaveTimestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
             };
         }
@@ -544,6 +547,11 @@ namespace InsectGame.Core
             if (data.charHairColor >= 0) PlayerPrefs.SetInt(SaveScope.PrefsKey("InsectGame.Character.HairColor"), data.charHairColor);
             if (data.charFace >= 0) PlayerPrefs.SetInt(SaveScope.PrefsKey("InsectGame.Character.FaceType"), data.charFace);
             if (data.charOutfit >= 0) PlayerPrefs.SetInt(SaveScope.PrefsKey("InsectGame.Character.OutfitPreset"), data.charOutfit);
+            // 가챠 천장 — 옛 문서(-1)면 로컬 유지. 기기 간엔 **큰 쪽**을 취한다: 천장은 단조 증가하다 리셋되는
+            // 값이라 작은 쪽을 덮으면 다른 기기에서 쌓은 진척이 사라진다(퀘스트 병합의 max와 같은 이유).
+            if (data.gachaPityBronze >= 0) PlayerPrefs.SetInt(SaveScope.PrefsKey(GachaBoxManager.PityKeyBase("box_bronze")), Math.Max(data.gachaPityBronze, PlayerPrefs.GetInt(SaveScope.PrefsKey(GachaBoxManager.PityKeyBase("box_bronze")), 0)));
+            if (data.gachaPitySilver >= 0) PlayerPrefs.SetInt(SaveScope.PrefsKey(GachaBoxManager.PityKeyBase("box_silver")), Math.Max(data.gachaPitySilver, PlayerPrefs.GetInt(SaveScope.PrefsKey(GachaBoxManager.PityKeyBase("box_silver")), 0)));
+            if (data.gachaPityGold >= 0) PlayerPrefs.SetInt(SaveScope.PrefsKey(GachaBoxManager.PityKeyBase("box_gold")), Math.Max(data.gachaPityGold, PlayerPrefs.GetInt(SaveScope.PrefsKey(GachaBoxManager.PityKeyBase("box_gold")), 0)));
             PlayerPrefs.Save();
 
             // 실제 진행도 시스템(파일 기반)에 반영 — PlayerPrefs 미러만으로는 게임플레이에 안 잡힘.
@@ -688,6 +696,9 @@ namespace InsectGame.Core
             sb.Append(","); AppendIntField(sb, "charHairColor", data.charHairColor);
             sb.Append(","); AppendIntField(sb, "charFace", data.charFace);
             sb.Append(","); AppendIntField(sb, "charOutfit", data.charOutfit);
+            sb.Append(","); AppendIntField(sb, "gachaPityBronze", data.gachaPityBronze);
+            sb.Append(","); AppendIntField(sb, "gachaPitySilver", data.gachaPitySilver);
+            sb.Append(","); AppendIntField(sb, "gachaPityGold", data.gachaPityGold);
             sb.Append(","); AppendIntField(sb, "lastSaveTimestamp",
                 (int)data.lastSaveTimestamp);
             sb.Append("}}");
@@ -736,6 +747,9 @@ namespace InsectGame.Core
             data.charHairColor = ExtractIntValueOrDefault(json, "charHairColor", -1);
             data.charFace = ExtractIntValueOrDefault(json, "charFace", -1);
             data.charOutfit = ExtractIntValueOrDefault(json, "charOutfit", -1);
+            data.gachaPityBronze = ExtractIntValueOrDefault(json, "gachaPityBronze", -1);
+            data.gachaPitySilver = ExtractIntValueOrDefault(json, "gachaPitySilver", -1);
+            data.gachaPityGold = ExtractIntValueOrDefault(json, "gachaPityGold", -1);
             data.lastSaveTimestamp = ExtractIntValue(json, "lastSaveTimestamp");
 
             return data;
@@ -932,6 +946,10 @@ namespace InsectGame.Core
         public int charHairColor = -1;
         public int charFace = -1;
         public int charOutfit = -1;
+        // 가챠 천장 카운터(상자별). -1 = 옛 문서(필드 없음) → 로컬 유지.
+        public int gachaPityBronze = -1;
+        public int gachaPitySilver = -1;
+        public int gachaPityGold = -1;
         public long lastSaveTimestamp;
     }
 

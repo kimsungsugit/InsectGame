@@ -815,6 +815,17 @@ namespace InsectGame.UI
 
         // 확률 표기는 GachaBoxManager(실제 드랍 임계값)에서 파생 — 하드코딩 금지(공시 위반 방지).
         // OnGUI 매 프레임 재계산 피하려 boxId별 1회 캐싱. Instance 미준비 시 빈 문자열(다음 프레임 재시도).
+        private readonly Dictionary<string, (int count, string text)> pityTextCache = new Dictionary<string, (int, string)>();
+
+        private string GetPityText(string boxId, int count)
+        {
+            if (pityTextCache.TryGetValue(boxId, out var cached) && cached.count == count) return cached.text;
+            int left = Mathf.Max(1, GachaBoxManager.PityLegendaryPulls - count);
+            string text = left == 1 ? "★ 다음 상자에 전설 확정" : $"전설 확정까지 {left}회";
+            pityTextCache[boxId] = (count, text);
+            return text;
+        }
+
         private string GetGachaRateText(string boxId)
         {
             if (gachaRateTextCache.TryGetValue(boxId, out string cached))
@@ -877,6 +888,10 @@ namespace InsectGame.UI
 
             // 확률표
             GUILayout.Label(rateText, boxRateStyle);
+            // 천장 — 카운터는 PlayerPrefs 1회 조회라 프레임마다 읽어도 싸다. 문자열은 값이 바뀔 때만 만든다.
+            var gacha = GachaBoxManager.Instance;
+            if (gacha != null)
+                GUILayout.Label(GetPityText(boxId, gacha.GetPityCount(boxId)), boxRateStyle);
 
             GUILayout.FlexibleSpace();
 
@@ -1053,6 +1068,10 @@ namespace InsectGame.UI
                 if (gachaResult.isExclusive)
                 {
                     GUILayout.Label("<size=23><b>* 상자 전용 곤충!</b></size>", gachaExclusiveStyle);
+                }
+                if (gachaResult.isShiny)
+                {
+                    GUILayout.Label("<size=23><b>★ 색다른 곤충!</b></size>", gachaExclusiveStyle);
                 }
 
                 GUILayout.Space(14);
