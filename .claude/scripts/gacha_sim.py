@@ -164,7 +164,10 @@ def epic_exclusive_duplicates(box: str, pulls: int, trials: int, seed: int) -> f
 
 
 def prob_zero_legendary_analytic(box: str, pulls: int) -> float:
-    """해석적 P(Legendary 0개 in N연차) = (1-p)^N."""
+    """해석적 P(Legendary 0개 in N연차) = (1-p)^N — 단, 천장(pity)이 N 안에 있으면 0."""
+    pity = game_facts.gacha_pity_pulls()
+    if pity <= pulls:
+        return 0.0
     p = BOX_DEFS[box]["rarity_pcts"]["Legendary"] / 100.0
     return (1 - p) ** pulls
 
@@ -336,7 +339,7 @@ def main():
     print()
 
     print("## 가정 / 한계")
-    print("- 천장(pity) 미구현 가정 — 실제 코드와 일치")
+    print(f"- 천장(pity) {game_facts.gacha_pity_pulls()}연 — GachaBoxManager.PityLegendaryPulls에서 읽음")
     print("- 곤충 풀 균등 무작위 가정 (가중치 데이터 미확인)")
     print("- IV 미적용 — 곤충별 스탯 편차 무시")
     print(f"- random.seed={args.seed} (--seed로 변경 가능)")

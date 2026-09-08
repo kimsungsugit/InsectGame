@@ -21,9 +21,13 @@ namespace InsectGame.Data
 
         public int GetCandyCost(int level)
         {
-            // 지수 곡선: base × 1.14^(level-1) — 레벨당 14% 복리 증가
+            // 지수 곡선: base × 1.125^(level-1) — 레벨당 12.5% 복리 증가.
+            // 14%였을 때 Lv50까지 현실 진행(리전 동기화 income ≈3캔디/전투)으로 **5,759전투**
+            // (≈48시간 그라인딩)가 들어 progression_sim 임계 4,000을 넘었다. 12.5%면 총 캔디
+            // 17,500 → 10,200으로 줄어 ≈3,400전투. 13%는 4,028로 경계에 걸린다. 지수 자체는 설계다
+            // (후반이 비싸야 리전 진행과 맞물린다) — 기울기만 낮췄다(2026-09-09).
             // Lv1: 4 → Lv10: 13 → Lv20: 49 → Lv30: 181 → Lv40: 669 → Lv50: 2475
-            int cost = Mathf.RoundToInt(baseCandyCost * Mathf.Pow(1.14f, level - 1));
+            int cost = Mathf.RoundToInt(baseCandyCost * Mathf.Pow(1.125f, level - 1));
             return Mathf.Max(1, cost);
         }
     }

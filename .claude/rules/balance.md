@@ -67,6 +67,13 @@ floor를 같이 도입했기 때문에 **단순 복원은 되돌리기가 아니
 ## 보상 기준점
 - 배율: C1.0/U1.2/R1.5/E2.0/L2.8
 - 레이드: ×3
+- 가챠 천장: 같은 상자 `GachaBoxManager.PityLegendaryPulls`(80)연째 Legendary 확정. 상자별 카운터는
+  계정 스코프 PlayerPrefs + 클라우드(기기 간 **max** 병합). 없을 땐 브론즈 100연 전설 0개가 60%였다.
+
+## 성장 기준점
+- 곤충 캔디 곡선: `InsectLevelCurve.GetCandyCost` = base 4 × 1.125^(L-1). **판정은 `progression_sim`**
+  (Lv50까지 현실 진행 4,000전투 미만). 14%였을 때 5,759전투로 FAIL, 12.5%로 3,339. 13%는 4,028로
+  경계다 — 기울기를 올릴 땐 시뮬을 먼저 돌린다.
 
 ## 변경 시 체크리스트
 1. GameConstants 상수 변경 → 전체 시스템 영향, `/impact-analysis` 실행

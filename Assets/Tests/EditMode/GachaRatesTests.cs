@@ -29,6 +29,24 @@ namespace InsectGame.Tests
             mgr = go.AddComponent<GachaBoxManager>();
         }
 
+        [Test]
+        public void RollRarity_AtPity_ForcesLegendaryRegardlessOfRoll()
+        {
+            float[] t = { 55f, 85f, 97f, 99.5f };   // 브론즈 — roll 0은 Common
+            Assert.AreEqual(InsectRarity.Common, GachaBoxManager.RollRarity(t, 0f, 0));
+            Assert.AreEqual(InsectRarity.Common, GachaBoxManager.RollRarity(t, 0f, GachaBoxManager.PityLegendaryPulls - 2),
+                "천장 직전까지는 확률대로다");
+            Assert.AreEqual(InsectRarity.Legendary, GachaBoxManager.RollRarity(t, 0f, GachaBoxManager.PityLegendaryPulls - 1),
+                "천장째 뽑기는 roll과 무관하게 Legendary");
+        }
+
+        [Test]
+        public void PityLegendaryPulls_IsWithinIndustryRange()
+        {
+            // gacha_sim 임계(100연 Legendary 0개 < 50%)를 만족하려면 100 이하여야 하고, 50 아래면 전설이 흔해진다.
+            Assert.That(GachaBoxManager.PityLegendaryPulls, Is.InRange(50, 100));
+        }
+
         [TearDown]
         public void TearDown()
         {

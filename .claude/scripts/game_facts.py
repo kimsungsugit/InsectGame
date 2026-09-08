@@ -108,6 +108,12 @@ def gacha_thresholds() -> dict:
     return out
 
 
+def gacha_pity_pulls() -> int:
+    """천장 — 이 횟수째 뽑기에 Legendary 확정. 출처: GachaBoxManager.PityLegendaryPulls."""
+    src = _read("gacha")
+    return int(_need(re.search(r"PityLegendaryPulls\s*=\s*(\d+)", src), "PityLegendaryPulls", "gacha").group(1))
+
+
 def gacha_rarity_pcts() -> dict:
     """{"bronze": {"Common": 55.0, ..., "Legendary": 0.5}, ...} 등급별 확률(%).
 
