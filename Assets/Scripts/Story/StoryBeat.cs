@@ -55,6 +55,10 @@ namespace InsectGame.Story
         // 실재성을 고정한다(오타는 런타임에 LogWarning만 찍고 조용히 안 나온다).
         // JsonUtility는 JSON에 없는 필드를 건드리지 않으므로 기존 비트 전부 null로 남아 호환된다.
         public string cutsceneId;
+        // 대사가 끝난 뒤 재생할 **영상 파일**(옵션). StoryVideoLibrary의 ID여야 한다 — story_lint 검사 25가
+        // 실재성·switch 배선·파일 배치를 본다. **cutsceneId·stageExitId와 같은 비트에 두지 않는다**(검사 13) —
+        // 셋 다 StoryBeatCompleted를 구독해 조작·모달을 뺏으므로 서로의 복구를 덮어쓴다.
+        public string videoId;
         // 대사 **앞**에 재생할 NPC 연출(옵션) — 등장·다가옴. StoryStageLibrary의 ID여야 한다.
         // 대사가 없는 비트에는 무의미하다(모달 자체가 안 뜨므로 게이트가 걸리지 않는다).
         public string stageEnterId;

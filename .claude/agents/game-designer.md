@@ -35,6 +35,9 @@ tools:
 - `Assets/Scripts/Story/StoryStageDirector.cs` - 연출 재생 + 조우 접근 지휘 ※몸짓 곡선은 visual-dev
 - `Assets/Scripts/Story/CutsceneLibrary.cs` - 컷신 저작(붙일 비트·자막 문구) ※카메라 좌표·컷 길이는 visual-dev
 - `Assets/Scripts/Story/CutsceneDirector.cs` - 컷신 재생·트리거·프리즈 복귀 ※카메라 워크는 visual-dev, 자막 렌더는 ui-dev
+- `Assets/Scripts/Story/StoryVideoData.cs` - 영상 정의·자막 큐 데이터 + 타임라인 순수부
+- `Assets/Scripts/Story/StoryVideoLibrary.cs` - 스토리 영상(mp4) 저작(붙일 비트·자막 문구·큐 타이밍) ※샷·프롬프트는 Docs/StoryVideos.md
+- `Assets/Scripts/Story/StoryVideoDirector.cs` - 영상 재생·트리거·프리즈 복귀 ※화면 그리기·건너뛰기는 ui-dev
 - `Assets/Scripts/Story/StoryObjective.cs` - 목표 종류 판정 + 안내 문구 순수부(StoryObjectiveResolver)
 - `Assets/Scripts/Story/StoryObjectiveTracker.cs` - 목표 → 월드 좌표·자동 주행 해석
 - `Assets/Scripts/NPC/NpcBossDuels.cs` - 명부회 간부 고정 상대·레벨·보상 표 ※isFinal의 BGM 분기는 battle-dev

@@ -516,7 +516,7 @@ namespace InsectGame.Opening
                 return;
             }
 
-            Rect uv = CalculateCoverUv(target, texture.width, texture.height);
+            Rect uv = InsectGame.UI.UIHelper.CalculateCoverUv(target, texture.width, texture.height);
             uv = ApplyKenBurns(uv, imageIndex, sequence != null ? sequence.Elapsed : 0f);
             Color previous = GUI.color;
             GUI.color = new Color(previous.r, previous.g, previous.b, previous.a * alpha);
@@ -779,23 +779,6 @@ namespace InsectGame.Opening
                 fontSize = 20,
                 fontStyle = FontStyle.Bold
             };
-        }
-
-        private static Rect CalculateCoverUv(Rect target, int textureWidth, int textureHeight)
-        {
-            if (target.width <= 0f || target.height <= 0f || textureWidth <= 0 || textureHeight <= 0)
-                return new Rect(0f, 0f, 1f, 1f);
-
-            float targetAspect = target.width / target.height;
-            float textureAspect = textureWidth / (float)textureHeight;
-            if (textureAspect > targetAspect)
-            {
-                float visibleWidth = targetAspect / textureAspect;
-                return new Rect((1f - visibleWidth) * 0.5f, 0f, visibleWidth, 1f);
-            }
-
-            float visibleHeight = textureAspect / targetAspect;
-            return new Rect(0f, (1f - visibleHeight) * 0.5f, 1f, visibleHeight);
         }
 
         private static Rect ApplyKenBurns(Rect coverUv, int imageIndex, float elapsed)

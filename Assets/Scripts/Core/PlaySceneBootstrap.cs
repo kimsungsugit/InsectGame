@@ -728,6 +728,12 @@ namespace InsectGame.Core
                     EnsureComponent<InsectGame.Story.CutsceneDirector>("World/CutsceneDirector");
                 cutscene.AutoWire(storyDirector, camFollower, playerMov, player.transform);
 
+                // 스토리 영상(mp4) — 컷신과 같은 시점(StoryBeatCompleted)에 화면을 통째로 덮는다.
+                // **World/ 아래여야 한다** — UI 루트 자식이면 오프닝 다시보기가 루트를 끌 때 함께 죽어 복구가 안 된다.
+                InsectGame.Story.StoryVideoDirector storyVideo =
+                    EnsureComponent<InsectGame.Story.StoryVideoDirector>("World/StoryVideoDirector");
+                storyVideo.AutoWire(storyDirector, camFollower, playerMov);
+
                 // NPC 연출 지휘 — 조우 접근(규칙)과 등장/퇴장(저작)을 한 컴포넌트가 맡는다.
                 // 둘 다 같은 VillagerNpc의 Scripted 상태를 쓰므로 나누면 명령이 서로 덮인다.
                 // objectiveTracker 뒤에 와야 한다 — 목표 NPC를 저기서 읽는다.

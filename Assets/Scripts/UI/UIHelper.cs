@@ -10,6 +10,29 @@ namespace InsectGame.UI
         private static readonly Dictionary<string, GUIStyle> styleCache = new Dictionary<string, GUIStyle>();
         private const int MaxCacheSize = 256;
 
+        // ── 텍스처 채우기 ──
+
+        /// <summary>
+        /// 텍스처를 상자에 <b>가운데 잘라 채우는</b>(cover) UV. 16:9 마스터 하나로 세로 화면까지
+        /// 덮을 때 쓴다 — 오프닝 스틸과 스토리 영상이 공유한다.
+        /// </summary>
+        public static Rect CalculateCoverUv(Rect target, int textureWidth, int textureHeight)
+        {
+            if (target.width <= 0f || target.height <= 0f || textureWidth <= 0 || textureHeight <= 0)
+                return new Rect(0f, 0f, 1f, 1f);
+
+            float targetAspect = target.width / target.height;
+            float textureAspect = textureWidth / (float)textureHeight;
+            if (textureAspect > targetAspect)
+            {
+                float visibleWidth = targetAspect / textureAspect;
+                return new Rect((1f - visibleWidth) * 0.5f, 0f, visibleWidth, 1f);
+            }
+
+            float visibleHeight = textureAspect / targetAspect;
+            return new Rect(0f, (1f - visibleHeight) * 0.5f, 1f, visibleHeight);
+        }
+
         // ── 텍스처 ──
 
         /// <summary>

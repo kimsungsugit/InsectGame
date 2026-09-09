@@ -447,11 +447,12 @@ def evaluate_signals() -> list:
     #     조작(SetFrozen)과 모달 스택을 뺏는다. 함께 걸면 서로의 복구를 덮어써서
     #     조작이 안 돌아오거나 카메라가 컷신 마지막 구도로 굳는다.
     #     런타임에도 StoryStageDirector가 컷신에 양보하지만, 저작 단계에서 막는 편이 낫다.
+    #     videoId(StoryVideoDirector)도 같은 시점을 구독한다 — 셋 중 둘 이상이면 FAIL.
     both_slots = sorted(
         b["beatId"] for b in beats
-        if b.get("stageExitId") and b.get("cutsceneId"))
+        if sum(1 for k in ("stageExitId", "cutsceneId", "videoId") if b.get(k)) >= 2)
     signals.append((
-        "stageExitId ↔ cutsceneId 배타",
+        "stageExitId ↔ cutsceneId ↔ videoId 배타",
         "0건 동시 사용",
         f"{len(both_slots)}건 ({both_slots})" if both_slots else "0건",
         "FAIL" if both_slots else "PASS",
@@ -844,6 +845,66 @@ def evaluate_signals() -> list:
         "FAIL" if choice_bad else "PASS",
     ))
 
+    # 25. videoId 실재성 — 검사 9(cutsceneId)·12(stageId)와 같은 무증상 결함 계열이다.
+    #     오타면 런타임에 LogWarning만 찍고 영상이 그냥 안 나온다. 셋을 본다:
+    #     ① JSON videoId → StoryVideoLibrary 상수 실재  ② 상수 선언됐는데 TryGet case 없음
+    #     ③ fileName이 Assets/StreamingAssets/Video/ 에 실제로 있는가.
+    #     ③은 **WARN**이다 — 영상은 외부(AI 생성)에서 만들어 들어오므로 코드가 먼저 준비되는 것이
+    #     정상 순서고, 없으면 런타임이 경고 1줄 찍고 건너뛰어 진행은 산다(StoryVideoDirector.Play).
+    #     단 배포 전에는 0건이어야 한다 — 릴리스 체크리스트가 이 줄을 본다.
+    video_lib_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "Assets", "Scripts", "Story", "StoryVideoLibrary.cs")
+    try:
+        with open(video_lib_path, encoding="utf-8") as fh:
+            video_src = fh.read()
+    except OSError as exc:
+        raise ExtractorBroken(f"StoryVideoLibrary.cs를 읽지 못했다: {exc}")
+
+    video_declared = dict(re.findall(
+        r'public const string (\w+)\s*=\s*"([a-z_0-9]+)"', video_src))
+    if not video_declared:
+        raise ExtractorBroken(
+            "StoryVideoLibrary.cs에서 영상 ID 상수를 하나도 찾지 못했다 — 추출기가 낡았다")
+    known_videos = set(video_declared.values())
+    video_dispatched = set(re.findall(r'case (\w+):\s*def\s*=', video_src))
+    video_undispatched = sorted(v for k, v in video_declared.items() if k not in video_dispatched)
+
+    # 파일명은 빌더의 `new StoryVideoDefinition(상수, "파일.mp4", ...)`에서 읽는다.
+    video_files = dict(re.findall(
+        r'new StoryVideoDefinition\((\w+),\s*"([^"]+\.mp4)"', video_src))
+    if len(video_files) != len(video_declared):
+        raise ExtractorBroken(
+            f"StoryVideoLibrary.cs 파일명 추출 {len(video_files)}건 ≠ 상수 {len(video_declared)}건 — 추출기가 낡았다")
+
+    missing_video = sorted(
+        f"{b['beatId']}→{b['videoId']}"
+        for b in beats
+        if b.get("videoId") and b["videoId"] not in known_videos)
+    video_problems = missing_video + [f"{v}(switch 미배선)" for v in video_undispatched]
+    video_used = sum(1 for b in beats if b.get("videoId"))
+    signals.append((
+        "videoId 실재성 (JSON↔StoryVideoLibrary)",
+        "0건 미존재",
+        f"{len(video_problems)}건 ({video_problems})" if video_problems
+        else f"0건 (사용 {video_used}건 / 정의 {len(known_videos)}종)",
+        "FAIL" if video_problems else "PASS",
+    ))
+
+    video_dir = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "Assets", "StreamingAssets", "Video")
+    absent_files = sorted(
+        f"{video_declared[k]}→{fn}" for k, fn in video_files.items()
+        if not os.path.isfile(os.path.join(video_dir, fn)))
+    signals.append((
+        "영상 파일 배치 (StreamingAssets/Video)",
+        "0건 미배치 (배포 전)",
+        f"{len(absent_files)}건 미배치 ({absent_files})" if absent_files
+        else f"0건 ({len(video_files)}편 배치)",
+        "WARN" if absent_files else "PASS",
+    ))
+
     return signals
 
 
@@ -901,6 +962,8 @@ def main():
     print("  누락이 무증상이다 — village_elder만 그 default 가지라서 면제한다.")
     print("- 검사 19는 NpcBossDuels.cs의 storyNpcId를 정규식으로 읽어 Story.json의")
     print("  speakerNpcId ∪ NpcTalk param과 대조한다(소개 없는 보스 = 영구 도전 불가).")
+    print("- 검사 25는 StoryVideoLibrary.cs의 상수·case·파일명을 읽어 Story.json의 videoId와 대조한다.")
+    print("  파일 미배치는 WARN — 영상은 외부(AI 생성)에서 들어오고, 없으면 런타임이 건너뛰어 진행은 산다.")
     fail = sum(1 for s in signals if s[3] == "FAIL")
     return 1 if fail else 0
 

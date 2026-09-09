@@ -149,6 +149,13 @@ EditMode 러너를 되살리려면 `Assets/Scripts`·`Assets/Editor`·`Assets/Te
 `ch5_thesis`가 `bl_mountain_sign`보다 먼저, 유적에서 이기면 `ch6_approach`가 먼저다).
 플레이어도 실제로 두 번 해야 한다 — 결함이 아니라 저작 순서다.
 
+### 스토리 영상(mp4)은 기기로만 본다
+
+`StoryVideoDirector`의 재생은 `VideoPlayer` 디코더에 달려 있어 **배치모드·PlayMode 러너로는
+검증할 수 없다**(디코더가 없거나 렌더 대상이 없다). 테스트(`StoryVideoLibraryTests`)는 저작(길이
+상한·자막 큐·금칙)만 고정하고, `story_lint` 검사 25가 ID·switch·파일 배치를 본다. 실제 재생·
+건너뛰기·조작 복구는 Android 기기에서 확인한다 — 절차는 `Docs/StoryVideos.md`.
+
 ### 한계 셋 (전부 실측)
 
 - **IMGUI는 안 잡힌다.** `OnGUI`는 카메라를 거치지 않는다 — 상점·대화창·배틀 UI·HUD는

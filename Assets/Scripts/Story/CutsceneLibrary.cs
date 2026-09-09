@@ -3,8 +3,8 @@ using UnityEngine;
 namespace InsectGame.Story
 {
     /// <summary>
-    /// 컷신 저작. 에셋 0개로 만든다 — 이 게임에는 영상도 컷신용 스틸도 없고,
-    /// 카메라 워크 + 기존 월드 + 조명 + 자막만으로 장면을 만든다.
+    /// 프로시저럴 컷신 저작. 에셋 0개로 만든다 — 카메라 워크 + 기존 월드 + 조명 + 자막만으로
+    /// 장면을 만든다. 실제 영상 파일은 <see cref="StoryVideoLibrary"/>가 따로 맡는다.
     ///
     /// 좌표는 전부 <b>플레이어 기준 상대</b>이므로 어느 리전·서브에리어에서 발화해도 동작한다.
     /// y가 큰 값은 위에서 내려다보는 각, z 음수는 플레이어 뒤쪽이다.
@@ -13,7 +13,11 @@ namespace InsectGame.Story
     /// </summary>
     public static class CutsceneLibrary
     {
-        /// <summary>1막 개막 — 마을 어르신에게 이야기를 듣기 직전, 초원을 둘러본다.</summary>
+        /// <summary>
+        /// 1막 개막 — 초원을 둘러본다. <b>지금은 쓰이지 않는다</b>: <c>ch1_intro</c>는 영상
+        /// <c>vid_ch1_prologue</c>(<see cref="StoryVideoLibrary"/>)로 대체됐다. 상수·case·테스트는
+        /// 영상 파일이 없는 환경의 폴백 후보로 남긴다.
+        /// </summary>
         public const string StoryPrologue = "cs_story_prologue";
         /// <summary>2막 개막 — 유적 지하에서 봉인이 열리는 장면.</summary>
         public const string SealOpening = "cs_seal_opening";

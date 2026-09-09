@@ -40,8 +40,9 @@
         "rewardInsectLevel": 6,
         "unlockQuestId": ""
       },
-      "cutsceneId": "cs_story_prologue",
-      "stageEnterId": "st_ch1_elder_greet"
+      "cutsceneId": "",
+      "stageEnterId": "st_ch1_elder_greet",
+      "videoId": "vid_ch1_prologue"
     },
     {
       "beatId": "ch1_first_capture",
@@ -396,7 +397,8 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      }
+      },
+      "videoId": "vid_ch3_scholar"
     },
     {
       "beatId": "ch3_forest_carving",
@@ -635,7 +637,8 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      }
+      },
+      "videoId": "vid_ch5_summit"
     },
     {
       "beatId": "ch5_thesis",
@@ -1113,7 +1116,8 @@
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
       },
-      "stageEnterId": "st_ch8_grip_enter"
+      "stageEnterId": "st_ch8_grip_enter",
+      "videoId": "vid_ch8_vault"
     },
     {
       "beatId": "ch8_clash",
@@ -1306,7 +1310,8 @@
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
       },
-      "stageEnterId": "st_ch9_scale_enter"
+      "stageEnterId": "st_ch9_scale_enter",
+      "videoId": "vid_ch9_archive"
     },
     {
       "beatId": "ch9_clash",
@@ -1502,7 +1507,8 @@
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
       },
-      "stageEnterId": "st_ch10_ink_enter"
+      "stageEnterId": "st_ch10_ink_enter",
+      "videoId": "vid_ch10_kiln"
     },
     {
       "beatId": "ch10_clash",
@@ -1682,7 +1688,8 @@
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
       },
-      "stageEnterId": "st_ch11_scholar_lead"
+      "stageEnterId": "st_ch11_scholar_lead",
+      "videoId": "vid_ch11_crown"
     },
     {
       "beatId": "ch11_clash",
@@ -1878,7 +1885,8 @@
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
       },
-      "stageEnterId": "st_ch12_chief_enter"
+      "stageEnterId": "st_ch12_chief_enter",
+      "videoId": "vid_ch12_ledger"
     },
     {
       "beatId": "ch12_clash",
@@ -2097,7 +2105,8 @@
         "rewardInsectDisplayName": "",
         "rewardInsectLevel": 0,
         "unlockQuestId": ""
-      }
+      },
+      "videoId": "vid_fin_epilogue"
     },
     {
       "beatId": "gd_ruins",
@@ -2672,7 +2681,8 @@
         "unlockQuestId": ""
       },
       "stageEnterId": "st_ch2_cord_turn",
-      "cutsceneId": ""
+      "cutsceneId": "",
+      "videoId": "vid_ch2_watchers"
     },
     {
       "beatId": "ch2_emperor",
@@ -2838,7 +2848,8 @@
         "unlockQuestId": ""
       },
       "stageEnterId": "st_ch4_cord_haul",
-      "cutsceneId": ""
+      "cutsceneId": "",
+      "videoId": "vid_ch4_crates"
     },
     {
       "beatId": "ch4_firefly",

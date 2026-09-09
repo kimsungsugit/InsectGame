@@ -8,4 +8,10 @@
     PhysicsModule 전체를 보존해 스트리핑을 재활성화하더라도 안전하게 유지한다.
   -->
   <assembly fullname="UnityEngine.PhysicsModule" preserve="all"/>
+  <!--
+    스토리 영상(StoryVideoDirector)이 VideoPlayer를 AddComponent로 붙인다. 지금은 stripEngineCode:0이라
+    무해하지만, 스트리핑을 다시 켜면 위 MeshCollider와 같은 계열로 "Can't add component 'VideoPlayer'"가
+    난다 — 선제 보존(비용 0).
+  -->
+  <assembly fullname="UnityEngine.VideoModule" preserve="all"/>
 </linker>
