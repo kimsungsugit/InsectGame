@@ -28,6 +28,8 @@ namespace InsectGame.Story
         private const float OverrunGraceSeconds = 3f;
         /// <summary>전투 화면 때문에 미룬 영상을 포기하는 시각(초). <see cref="CutsceneDirector"/>와 같다.</summary>
         private const float PendingGiveUpSeconds = 12f;
+        /// <summary>재생 중 월드 BGM·환경음 배율.</summary>
+        private const float BgmDuckFactor = 0.2f;
 
         private StoryDirector storyDirector;
         private CameraFollower cameraFollower;
@@ -74,13 +76,15 @@ namespace InsectGame.Story
             if (audioSource == null) audioSource = gameObject.AddComponent<AudioSource>();
 
             audioSource.playOnAwake = false;
-            audioSource.ignoreListenerPause = true;   // 오프닝과 같은 이유 — 리스너 일시정지 중에도 들려야 한다
+            // 오프닝과 달리 리스너 일시정지를 뚫지 않는다 — PlayScene에서 리스너를 멈추는 주체는 오프닝
+            // 다시보기뿐이고, 그동안 이 영상이 들려서는 안 된다.
+            audioSource.ignoreListenerPause = false;
 
             videoPlayer.playOnAwake = false;
             videoPlayer.isLooping = false;
             videoPlayer.source = VideoSource.Url;
+            // RenderTexture 모드에선 aspectRatio가 무시된다 — 화면 맞춤은 OnGUI의 CalculateCoverUv가 한다.
             videoPlayer.renderMode = VideoRenderMode.RenderTexture;
-            videoPlayer.aspectRatio = VideoAspectRatio.FitInside;
             videoPlayer.audioOutputMode = VideoAudioOutputMode.AudioSource;
             videoPlayer.skipOnDrop = true;
             videoPlayer.waitForFirstFrame = true;
@@ -151,7 +155,8 @@ namespace InsectGame.Story
         {
             if (pending == null) return;
 
-            if (cameraFollower == null || !cameraFollower.InBattleMode)
+            // 전투 화면이 닫혔고 다른 모달(대사·컷신)도 없을 때만 튼다 — 모달 위로 시작하면 서로의 복구를 덮는다.
+            if ((cameraFollower == null || !cameraFollower.InBattleMode) && !ModalUIRegistry.IsAnyOpen())
             {
                 StoryVideoDefinition queued = pending;
                 pending = null;
@@ -187,6 +192,8 @@ namespace InsectGame.Story
                 playerMovement.SetFrozen(true);
             }
             ModalUIRegistry.Register(this);
+            // 월드 BGM·환경음을 낮춘다 — 영상 음성과 12~15초 내내 겹치지 않게. Stop()이 원복한다.
+            if (AudioManager.Instance != null) AudioManager.Instance.SetBgmDuck(BgmDuckFactor);
 
             // 재생 중엔 설정 UI가 닫혀 있으니 시작 때 한 번만 읽는다(OpeningSceneController와 같다).
             audioSource.volume = Mathf.Clamp01(PlayerPrefs.GetFloat(
@@ -229,9 +236,10 @@ namespace InsectGame.Story
             prepared = false;
             current = null;
 
-            if (videoPlayer != null && (videoPlayer.isPlaying || videoPlayer.isPrepared))
-                videoPlayer.Stop();
+            // 준비 중이어도 부른다 — 진행 중인 Prepare를 취소해 디코더를 닫는다(idle이면 no-op).
+            if (videoPlayer != null) videoPlayer.Stop();
 
+            if (AudioManager.Instance != null) AudioManager.Instance.SetBgmDuck(1f);
             if (playerMovement != null && !restoreFrozen) playerMovement.SetFrozen(false);
             ModalUIRegistry.Unregister(this);
         }
@@ -243,6 +251,10 @@ namespace InsectGame.Story
             source.targetTexture = renderTexture;
             prepared = true;
             elapsed = 0f;
+            // 프리즈 타이머를 **실제 재생 시작** 기준으로 다시 감는다. Play()의 SetFrozen은 Prepare 시작
+            // 시각이라, 준비 5초 + 영상 15초 + 여유 3초 = 23초가 AutoUnfreezeTime(20)을 넘어 검은 화면
+            // 뒤에서 조작이 살아날 수 있었다. 재장전하면 최악 15 + 3 = 18초다.
+            if (playerMovement != null) playerMovement.SetFrozen(true);
             source.Play();
         }
 

@@ -110,11 +110,15 @@ namespace InsectGame.Tests
         public void Library_Definitions_FinishBeforeAutoUnfreeze(string videoId)
         {
             // **가장 중요한 검사.** PlayerMovement는 frozen이 걸린 뒤 AutoUnfreezeTime이 지나면
-            // 스스로 푼다. 영상이 그보다 길면 재생 도중 조작이 살아나 화면은 영상인데 캐릭터가 걷는다.
-            const float safetyMargin = 4f;
+            // 스스로 푼다. 프리즈 타이머는 실제 재생 시작(OnPrepared)에 다시 감기므로, 최악 프리즈는
+            // 영상 길이 + 종료 이벤트가 안 올 때의 오버런 여유(StoryVideoDirector.OverrunGraceSeconds=3)다.
+            // 그 합이 상한보다 작아야 검은 화면 뒤에서 캐릭터가 걷는 일이 없다.
+            const float overrunGrace = 3f;
+            const float safetyMargin = 1f;
             Assert.IsTrue(StoryVideoLibrary.TryGet(videoId, out StoryVideoDefinition def));
             Assert.Greater(def.expectedDuration, 3f, $"{videoId}가 너무 짧아 연출로 읽히지 않는다");
-            Assert.LessOrEqual(def.expectedDuration, GameConstants.Player.AutoUnfreezeTime - safetyMargin - 1f,
+            Assert.LessOrEqual(def.expectedDuration + overrunGrace,
+                GameConstants.Player.AutoUnfreezeTime - safetyMargin,
                 $"{videoId}가 {def.expectedDuration:F1}s로 자동 프리즈 해제({GameConstants.Player.AutoUnfreezeTime}s)에 너무 가깝다");
         }
 

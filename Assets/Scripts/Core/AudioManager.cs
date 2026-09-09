@@ -83,6 +83,8 @@ namespace InsectGame.Core
 
         private float masterVolume;
         private float bgmVolume;
+        // 스토리 영상 같은 전면 연출이 BGM을 잠깐 낮추는 배율(1 = 원음). 볼륨 계산 전부에 곱한다.
+        private float bgmDuck = 1f;
         private float sfxVolume;
 
         private BgmType? currentBgmType;
@@ -242,6 +244,16 @@ namespace InsectGame.Core
             ApplyVolumes();
         }
 
+        /// <summary>
+        /// BGM·환경음을 잠깐 낮춘다(전면 영상 재생 등). <paramref name="factor"/> 1이면 원복.
+        /// 크로스페이드 중이면 그 코루틴이 자기 목표값(더킹 반영)으로 끝내므로 여기서 억지로 잡지 않는다.
+        /// </summary>
+        public void SetBgmDuck(float factor)
+        {
+            bgmDuck = Mathf.Clamp01(factor);
+            if (crossfadeCoroutine == null) ApplyVolumes();
+        }
+
         // ── SFX ──
 
         public void PlaySFX(SfxType type)
@@ -284,7 +296,7 @@ namespace InsectGame.Core
             AudioSource oldSrc = useSecondaryAmbient ? ambientSource2 : ambientSource;
             useSecondaryAmbient = !useSecondaryAmbient;
 
-            float targetVol = masterVolume * bgmVolume * 0.4f;
+            float targetVol = masterVolume * bgmVolume * bgmDuck * 0.4f;
             newSrc.clip = clip;
             newSrc.volume = 0f;
             newSrc.Play();
@@ -397,13 +409,13 @@ namespace InsectGame.Core
         private void ApplyVolumes()
         {
             if (bgmSource != null)
-                bgmSource.volume = masterVolume * bgmVolume;
+                bgmSource.volume = masterVolume * bgmVolume * bgmDuck;
             if (sfxSource != null)
                 sfxSource.volume = masterVolume * sfxVolume;
             if (ambientSource != null)
-                ambientSource.volume = masterVolume * bgmVolume * 0.4f;
+                ambientSource.volume = masterVolume * bgmVolume * bgmDuck * 0.4f;
             if (ambientSource2 != null)
-                ambientSource2.volume = masterVolume * bgmVolume * 0.4f;
+                ambientSource2.volume = masterVolume * bgmVolume * bgmDuck * 0.4f;
         }
 
         private IEnumerator CrossfadeBGM(AudioClip newClip, float duration)
@@ -425,7 +437,7 @@ namespace InsectGame.Core
             bgmSource.Play();
 
             // 페이드 인
-            float targetVolume = masterVolume * bgmVolume;
+            float targetVolume = masterVolume * bgmVolume * bgmDuck;
             elapsed = 0f;
             while (elapsed < duration * 0.5f)
             {

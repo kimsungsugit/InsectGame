@@ -894,15 +894,21 @@ def evaluate_signals() -> list:
     video_dir = os.path.join(
         os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
         "Assets", "StreamingAssets", "Video")
+    # os.path.isfile은 Windows에서 대소문자를 무시한다 — Android(jar)는 구분하므로 실제 디렉터리
+    # 목록과 **정확히** 대조한다. 어긋나면 에디터·테스트는 통과하고 기기에서만 5초 검은 화면이 난다.
+    present_files = set(os.listdir(video_dir)) if os.path.isdir(video_dir) else set()
     absent_files = sorted(
         f"{video_declared[k]}→{fn}" for k, fn in video_files.items()
-        if not os.path.isfile(os.path.join(video_dir, fn)))
+        if fn not in present_files)
+    used_video_ids = {b["videoId"] for b in beats if b.get("videoId")}
+    unused_videos = sorted(v for v in known_videos if v not in used_video_ids)
+    file_notes = ([f"{len(absent_files)}건 미배치 ({absent_files})"] if absent_files else []) \
+        + ([f"미사용 {len(unused_videos)}건 ({unused_videos})"] if unused_videos else [])
     signals.append((
-        "영상 파일 배치 (StreamingAssets/Video)",
-        "0건 미배치 (배포 전)",
-        f"{len(absent_files)}건 미배치 ({absent_files})" if absent_files
-        else f"0건 ({len(video_files)}편 배치)",
-        "WARN" if absent_files else "PASS",
+        "영상 파일 배치 (StreamingAssets/Video · 대소문자 정확)",
+        "0건 미배치 (배포 전) · 미사용 0건",
+        " / ".join(file_notes) if file_notes else f"0건 ({len(video_files)}편 배치·전부 사용)",
+        "WARN" if file_notes else "PASS",
     ))
 
     return signals

@@ -393,6 +393,7 @@
 - [x] StoryJournalUI 재감사 (P0:0, P1:1, 2026-09-09) — 인덱스 무효화가 StoryBeatCompleted 구독뿐이라 클라우드 반영(ReloadFromDisk)을 못 봄 → SeenCount 스냅샷 키로 교체(구독 제거). P2 처리(행 메타·헤더 문자열 캐시 · textW 하한)
 - [x] PlayerMovement 재감사 (P0:0, P1:1, 2026-09-09) — 외형 재빌드가 CharacterFaceAnimator 노드 캐시를 안 비워 생성 직후부터 눈 깜빡임 정지 → InvalidateNodes. P2 처리(옛 파츠 한 프레임 원점 노출 차단 · 도구 없는 외형의 매 프레임 Find 고착)
 - [x] TutorialQuestManager 재감사 (P0:0, P1:2, 2026-09-09) — 완료 퀘스트 재스윕이 Start·리전 이동에만 있어 로그인/계정 전환 뒤 리전을 옮기기 전까지 비트 미발화 → StoryDirector.ReloadFromDisk에서도 재스윕. P2 처리(IReadOnlyCollection + ToArray 스냅샷). 테스트 공백(재스윕 중복 억제)은 걸음 도구가 덮는 경로라 보류
+- [x] StoryVideoDirector (P0:0, P1:1, 2026-09-10) — 프리즈 타이머가 Prepare 시각 기준이라 준비 5s+영상 15s+여유 3s=23s > AutoUnfreezeTime(20s) → OnPrepared에서 재장전. P2 6건 중 5건 처리(Stop 무조건·큐 모달 가드·죽은 aspectRatio·ignoreListenerPause·BGM 더킹·lint 대소문자/미사용)
 
 ## Uncovered (우선순위순)
 
@@ -407,6 +408,7 @@
 - 2026-09-09: QuestSaveMerge — P0:0, P1:0 처리(clean). P2 3건 보고·보류. InventoryUI P2 3건은 이 라운드에서 처리(컴파일 0 에러). 자체 발견 회귀 0건
 - 2026-09-09: TrainingManager 재감사 — P0:0, P1:2 처리. 08-08 이후 디스크 방식·requiredLevel 게이트·누적 훈련이 들어왔는데 ①디스크가 습득 회차에 소모되는 사실을 UI가 어디에도 안 적었고(`FindDiscFor` 호출부 0) ②새 테스트 2파일이 `TrainSkill`을 한 번도 실행하지 않아 실제 방어선 `IsSkillAllowed`·환불·소모가 전부 공백이었다. 인벤토리 두 종을 실제로 붙이고 세이브를 백업/복원하는 왕복 테스트 5건 추가(878/878). QuestSaveMerge P2 3건도 이 라운드에서 처리. 자체 발견 회귀 0건
 - 2026-09-09: 잔여 9건 일괄 재감사 — P0:3, P1:15 처리. **수문장 패배 후 영구 재도전 불가**와 **생성 외형 미반영**은 각각 두 Explore가 독립적으로 짚었다(정체성 판정 도입·캐릭터 리워크의 반대편 결함). 신규 테스트 12건, 887/887(2차 실행). 자체 발견 회귀 1건(ResolveSkill 두 번째 null 참조 — 첫 실행 1 실패 → 수정)
+- 2026-09-10: StoryVideoDirector(신규 영상 경로) — P0:0, P1:1 처리. P2 6건 중 5건 즉시 처리(AudioManager.SetBgmDuck 신설 포함). 자체 발견 회귀 0건
 - 2026-09-09: 2차 후보 3건(StoryJournalUI·PlayerMovement·TutorialQuestManager) — P0:0, P1:4 처리. 오늘 내가 넣은 코드의 반대편 결함이 셋(저널 무효화 경로 누락 · 얼굴 애니메이터 캐시 · 재스윕 시점). 자체 발견 회귀 0건
 > 영역별 처리 이력은 위 Covered 인덱스가 이미 갖고 있다.
 >
