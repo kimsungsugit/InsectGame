@@ -66,6 +66,12 @@ namespace InsectGame.Opening
                     return false;
                 if (battleScreen.IsBattleActive || raidScreen.IsRaidActive || captureMinigame.IsActive)
                     return false;
+                // 컷신·스토리 영상·대화 같은 다른 모달이 도는 중엔 시작하지 않는다 — 다시보기가 UI 루트를 끄고
+                // timeScale을 0으로 잡는 동안 그쪽 복구(프리즈·카메라)가 뒤엉킨다. 설정 화면 자신은 제외한다
+                // (버튼이 그 안에 있다). 지금은 설정 UI가 모달 중엔 열리지 않아 도달하지 않지만, 그 가드는
+                // 저쪽 파일의 사정이라 여기서도 스스로 지킨다.
+                if (ModalUIRegistry.IsAnyOpenExcept(typeof(AccountSettingsUI)))
+                    return false;
                 return true;
             }
         }

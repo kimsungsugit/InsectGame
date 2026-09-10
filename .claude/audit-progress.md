@@ -408,7 +408,7 @@
 - 2026-09-09: QuestSaveMerge — P0:0, P1:0 처리(clean). P2 3건 보고·보류. InventoryUI P2 3건은 이 라운드에서 처리(컴파일 0 에러). 자체 발견 회귀 0건
 - 2026-09-09: TrainingManager 재감사 — P0:0, P1:2 처리. 08-08 이후 디스크 방식·requiredLevel 게이트·누적 훈련이 들어왔는데 ①디스크가 습득 회차에 소모되는 사실을 UI가 어디에도 안 적었고(`FindDiscFor` 호출부 0) ②새 테스트 2파일이 `TrainSkill`을 한 번도 실행하지 않아 실제 방어선 `IsSkillAllowed`·환불·소모가 전부 공백이었다. 인벤토리 두 종을 실제로 붙이고 세이브를 백업/복원하는 왕복 테스트 5건 추가(878/878). QuestSaveMerge P2 3건도 이 라운드에서 처리. 자체 발견 회귀 0건
 - 2026-09-09: 잔여 9건 일괄 재감사 — P0:3, P1:15 처리. **수문장 패배 후 영구 재도전 불가**와 **생성 외형 미반영**은 각각 두 Explore가 독립적으로 짚었다(정체성 판정 도입·캐릭터 리워크의 반대편 결함). 신규 테스트 12건, 887/887(2차 실행). 자체 발견 회귀 1건(ResolveSkill 두 번째 null 참조 — 첫 실행 1 실패 → 수정)
-- 2026-09-10: StoryVideoDirector(신규 영상 경로) — P0:0, P1:1 처리. P2 6건 중 5건 즉시 처리(AudioManager.SetBgmDuck 신설 포함). 자체 발견 회귀 0건
+- 2026-09-10: StoryVideoDirector(신규 영상 경로) — P0:0, P1:1 처리. P2 6건 중 5건 즉시 처리(AudioManager.SetBgmDuck 신설 포함). 자체 발견 회귀 0건 보류 P2 1건도 처리 — OpeningReplayCoordinator.CanReplay가 다른 모달(컷신·영상·대화) 중엔 false(ModalUIRegistry.IsAnyOpenExcept 신설, 테스트 4건)
 - 2026-09-09: 2차 후보 3건(StoryJournalUI·PlayerMovement·TutorialQuestManager) — P0:0, P1:4 처리. 오늘 내가 넣은 코드의 반대편 결함이 셋(저널 무효화 경로 누락 · 얼굴 애니메이터 캐시 · 재스윕 시점). 자체 발견 회귀 0건
 > 영역별 처리 이력은 위 Covered 인덱스가 이미 갖고 있다.
 >
