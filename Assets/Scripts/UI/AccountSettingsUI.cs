@@ -26,6 +26,15 @@ namespace InsectGame.UI
             openingReplayService = replayService;
         }
 
+        public void OpenSettings()
+        {
+            if (ModalUIRegistry.IsAnyOpenExcept(typeof(AccountSettingsUI))) return;
+            confirmDelete = false;
+            confirmLogout = false;
+            processing = false;
+            message = "";
+            SetOpen(true);
+        }
         public bool IsOpen => open;
         public void CloseModal()
         {
@@ -62,7 +71,7 @@ namespace InsectGame.UI
         {
             if (AuthManager.Instance != null)
                 AuthManager.Instance.AccountDeleted -= OnAccountDeleted;
-            ModalUIRegistry.Unregister(this);
+            CloseModal();
         }
 
         private void Update()
@@ -134,7 +143,8 @@ namespace InsectGame.UI
         {
             // 우측 하단 앵커 — 제스처바 + 세로 마진 위로.
             Rect btn = UISafeLayout.BottomPanel(116f, 46f, UISafeLayout.HAlign.Right);
-            if (GUI.Button(btn, "계정", openBtnStyle))
+            FieldHudInput.RegisterBlockingRect(btn);
+            if (GUI.Button(btn, "설정", openBtnStyle))
             {
                 confirmDelete = false;
                 confirmLogout = false;
@@ -155,14 +165,14 @@ namespace InsectGame.UI
             GUI.DrawTexture(new Rect(0, 0, screenWidth, screenHeight), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
-            Rect panel = UISafeLayout.CenteredPanel(660f, (confirmDelete || confirmLogout) ? 440f : 448f);
+            Rect panel = UISafeLayout.CenteredPanel(660f, (confirmDelete || confirmLogout) ? 440f : 676f);
             float pw = panel.width;
             float ph = panel.height;
             float px = panel.x;
             float py = panel.y;
-            GUI.Box(new Rect(px, py, pw, ph), "", panelStyle);
+            UISurface.Card(panel);
 
-            GUI.Label(new Rect(px, py + 24f, pw, 46f), "계정", titleStyle);
+            GUI.Label(new Rect(px, py + 24f, pw, 46f), "설정 · 계정", titleStyle);
             GUI.Label(new Rect(px + 40f, py + 80f, pw - 80f, 64f), AccountLabel(), infoStyle);
 
             float cx = px + 40f;
@@ -171,6 +181,15 @@ namespace InsectGame.UI
 
             if (!confirmDelete && !confirmLogout)
             {
+                if (UISurface.Button(new Rect(cx, y, cw, 56f), $"전투 속도  {BattlePresentation.Speed:0}배", UITheme.Instance.surfaceRaised, btnGrayStyle))
+                    BattlePresentation.Speed = BattlePresentation.Speed < 1.5f ? 2f : 1f;
+                y += 68f;
+                if (UISurface.Button(new Rect(cx, y, cw, 56f), "화면 흔들림 줄이기  " + (BattlePresentation.ReducedMotion ? "켜짐" : "꺼짐"), UITheme.Instance.surfaceRaised, btnGrayStyle))
+                    BattlePresentation.ReducedMotion = !BattlePresentation.ReducedMotion;
+                y += 68f;
+                if (UISurface.Button(new Rect(cx, y, cw, 56f), "섬광 줄이기  " + (BattlePresentation.ReducedFlashes ? "켜짐" : "꺼짐"), UITheme.Instance.surfaceRaised, btnGrayStyle))
+                    BattlePresentation.ReducedFlashes = !BattlePresentation.ReducedFlashes;
+                y += 68f;
                 bool wasEnabled = GUI.enabled;
                 GUI.enabled = wasEnabled && openingReplayService != null && openingReplayService.CanReplay;
                 if (GUI.Button(new Rect(cx, y, cw, 56f), "오프닝 다시 보기", btnGrayStyle))

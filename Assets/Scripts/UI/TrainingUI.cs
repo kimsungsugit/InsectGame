@@ -31,10 +31,10 @@ namespace InsectGame.UI
         private GUIStyle insectSelectInfoStyle;
         private GUIStyle insectSelectBtnStyle;
 
-        private static readonly Color TrainSubGrayCol = new Color(0.6f, 0.6f, 0.6f);
-        private static readonly Color TrainItemBgCol = new Color(0.1f, 0.12f, 0.18f, 0.85f);
-        private static readonly Color TrainInfoGrayCol = new Color(0.55f, 0.55f, 0.55f);
-        private static readonly Color TrainBtnGreenCol = new Color(0.3f, 0.45f, 0.25f);
+        private static Color TrainSubGrayCol => UITheme.Instance.textSecondary;
+        private static Color TrainItemBgCol => UITheme.Instance.surfaceCard;
+        private static Color TrainInfoGrayCol => UITheme.Instance.textMuted;
+        private static Color TrainBtnGreenCol => UITheme.Instance.accentMint;
 
         // 잔여 영역(Panel/Back/Method/SkillLearn/SkillEquip/SkillReplace/SkillCard/Feedback) 캐시.
         private bool trainDetailStylesReady;
@@ -74,45 +74,45 @@ namespace InsectGame.UI
         private GUIStyle cardCdStyle;
         private GUIStyle feedbackStyle;            // textColor 동적 (alpha)
 
-        private static readonly Color PanelBgCol = new Color(0.04f, 0.06f, 0.1f, 0.96f);
-        private static readonly Color PanelHeaderCol = new Color(0.15f, 0.2f, 0.3f);
-        private static readonly Color PanelAccentOrangeCol = new Color(0.9f, 0.6f, 0.2f);
-        private static readonly Color PanelTitleYellowCol = new Color(1f, 0.85f, 0.4f);
-        private static readonly Color MethodEquipBtnCol = new Color(0.2f, 0.35f, 0.55f);
-        private static readonly Color MethodCardDarkCol = new Color(0.3f, 0.3f, 0.3f);
-        private static readonly Color MethodNameDimCol = new Color(0.4f, 0.4f, 0.4f);
-        private static readonly Color MethodDescGrayCol = new Color(0.55f, 0.55f, 0.55f);
-        private static readonly Color MethodCostOkCol = new Color(1f, 0.5f, 0.8f);
-        private static readonly Color MethodCostBadCol = new Color(0.5f, 0.3f, 0.3f);
-        private static readonly Color MethodLockRedCol = new Color(1f, 0.4f, 0.3f);
-        private static readonly Color MethodCountGrayCol = new Color(0.5f, 0.5f, 0.5f);
-        private static readonly Color MethodTrainOkBgCol = new Color(0.3f, 0.5f, 0.25f);
-        private static readonly Color MethodTrainOffBgCol = new Color(0.2f, 0.2f, 0.2f);
-        private static readonly Color LearnBtnFullCol = new Color(0.5f, 0.35f, 0.2f);
-        private static readonly Color LearnBtnOkCol = new Color(0.25f, 0.5f, 0.3f);
-        private static readonly Color LearnBtnOffCol = new Color(0.2f, 0.2f, 0.2f);
-        private static readonly Color LearnedTagGreenCol = new Color(0.3f, 0.9f, 0.5f);
-        private static readonly Color EquipSlotBgCol = new Color(0.1f, 0.12f, 0.18f, 0.85f);
-        private static readonly Color EquipSlotNumGrayCol = new Color(0.58f, 0.62f, 0.76f);
-        private static readonly Color EquipInfoGrayCol = new Color(0.72f, 0.72f, 0.76f);
-        private static readonly Color EquipRemBgCol = new Color(0.4f, 0.2f, 0.2f);
-        private static readonly Color EquipEmptyGrayCol = new Color(0.66f, 0.66f, 0.72f);
-        private static readonly Color EquipLearnedHeaderBlueCol = new Color(0.7f, 0.75f, 1f);
-        private static readonly Color EquipLearnedBgCol = new Color(0.08f, 0.1f, 0.15f, 0.8f);
-        private static readonly Color EquipNameDimCol = new Color(0.66f, 0.66f, 0.7f);
-        private static readonly Color EquipLearnedInfoCol = new Color(0.68f, 0.68f, 0.72f);
-        private static readonly Color EquipEqBgCol = new Color(0.2f, 0.4f, 0.3f);
-        private static readonly Color EquipEqTagGreenCol = new Color(0.4f, 0.7f, 0.4f);
-        private static readonly Color ReplaceHeaderGrayCol = new Color(0.7f, 0.7f, 0.7f);
-        private static readonly Color ReplaceOldBgCol = new Color(0.1f, 0.12f, 0.18f, 0.85f);
-        private static readonly Color ReplaceOldInfoCol = new Color(0.55f, 0.55f, 0.55f);
-        private static readonly Color ReplaceForgetBgCol = new Color(0.55f, 0.2f, 0.2f);
-        private static readonly Color ReplaceCancelBgCol = new Color(0.3f, 0.3f, 0.35f);
-        private static readonly Color CardLearnedBgCol = new Color(0.08f, 0.1f, 0.14f, 0.7f);
-        private static readonly Color CardActiveBgCol = new Color(0.1f, 0.12f, 0.18f, 0.85f);
-        private static readonly Color CardLearnedNameCol = new Color(0.68f, 0.68f, 0.72f);
-        private static readonly Color CardDescGrayCol = new Color(0.72f, 0.72f, 0.76f);
-        private static readonly Color CardCdGrayCol = new Color(0.66f, 0.66f, 0.72f);
+        private static Color PanelBgCol => UITheme.Instance.surfaceBase;
+        private static Color PanelHeaderCol => UITheme.Instance.surfaceRaised;
+        private static Color PanelAccentOrangeCol => UITheme.Instance.accentCoral;
+        private static Color PanelTitleYellowCol => UITheme.Instance.textPrimary;
+        private static Color MethodEquipBtnCol => UITheme.Instance.surfaceRaised;
+        private static Color MethodCardDarkCol => UITheme.Instance.surfaceCard;
+        private static Color MethodNameDimCol => UITheme.Instance.textMuted;
+        private static Color MethodDescGrayCol => UITheme.Instance.textSecondary;
+        private static Color MethodCostOkCol => UITheme.Instance.accentAmber;
+        private static Color MethodCostBadCol => UITheme.Instance.accentCoral;
+        private static Color MethodLockRedCol => UITheme.Instance.accentCoral;
+        private static Color MethodCountGrayCol => UITheme.Instance.textMuted;
+        private static Color MethodTrainOkBgCol => UITheme.Instance.accentMint;
+        private static Color MethodTrainOffBgCol => UITheme.Instance.surfaceBorder;
+        private static Color LearnBtnFullCol => UITheme.Instance.accentAmber;
+        private static Color LearnBtnOkCol => UITheme.Instance.accentMint;
+        private static Color LearnBtnOffCol => UITheme.Instance.surfaceBorder;
+        private static Color LearnedTagGreenCol => UITheme.Instance.accentMint;
+        private static Color EquipSlotBgCol => UITheme.Instance.surfaceCard;
+        private static Color EquipSlotNumGrayCol => UITheme.Instance.textMuted;
+        private static Color EquipInfoGrayCol => UITheme.Instance.textSecondary;
+        private static Color EquipRemBgCol => UITheme.Instance.accentCoral;
+        private static Color EquipEmptyGrayCol => UITheme.Instance.textMuted;
+        private static Color EquipLearnedHeaderBlueCol => UITheme.Instance.textPrimary;
+        private static Color EquipLearnedBgCol => UITheme.Instance.surfaceBase;
+        private static Color EquipNameDimCol => UITheme.Instance.textMuted;
+        private static Color EquipLearnedInfoCol => UITheme.Instance.textSecondary;
+        private static Color EquipEqBgCol => UITheme.Instance.surfaceRaised;
+        private static Color EquipEqTagGreenCol => UITheme.Instance.accentMint;
+        private static Color ReplaceHeaderGrayCol => UITheme.Instance.textSecondary;
+        private static Color ReplaceOldBgCol => UITheme.Instance.surfaceCard;
+        private static Color ReplaceOldInfoCol => UITheme.Instance.textSecondary;
+        private static Color ReplaceForgetBgCol => UITheme.Instance.accentCoral;
+        private static Color ReplaceCancelBgCol => UITheme.Instance.surfaceRaised;
+        private static Color CardLearnedBgCol => UITheme.Instance.surfaceBase;
+        private static Color CardActiveBgCol => UITheme.Instance.surfaceCard;
+        private static Color CardLearnedNameCol => UITheme.Instance.textSecondary;
+        private static Color CardDescGrayCol => UITheme.Instance.textSecondary;
+        private static Color CardCdGrayCol => UITheme.Instance.textMuted;
 
         private void InitTrainDetailStyles()
         {

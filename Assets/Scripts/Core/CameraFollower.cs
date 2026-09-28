@@ -91,6 +91,8 @@ namespace InsectGame.Core
         public void EnterBattleModeFramed(Vector3 camPos, Vector3 lookTarget)
         {
             battleMode = true;
+            // A framed arena can be kilometres from the field. Never interpolate through the world.
+            battleTransition = 1f;
             focusTimer = 0f;   // 진행 중 시네마틱 포커스 취소(배틀 카메라 우선)
             focusReleasing = false;
             normalPos = transform.position;
@@ -152,6 +154,7 @@ namespace InsectGame.Core
         /// </summary>
         public void Shake(float intensity, float duration)
         {
+            if (BattlePresentation.ReducedMotion) return;
             ResolveShake(shakeIntensity, shakeDuration, shakeTimer, intensity, duration,
                 out shakeIntensity, out shakeDuration, out shakeTimer);
         }

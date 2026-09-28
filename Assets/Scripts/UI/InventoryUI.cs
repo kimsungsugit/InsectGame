@@ -332,12 +332,12 @@ namespace InsectGame.UI
 
             float remaining = effectManager.RemainingSeconds;
             float total = Mathf.Max(1f, active.durationSeconds);
-            UISurface.Card(rect, new Color(0.12f, 0.18f, 0.16f, 0.95f), UITheme.Instance.accentMint);
+            UISurface.Card(rect, UITheme.Instance.surfaceRaised, UITheme.Instance.accentMint);
             // 남은 시간 게이지 — 6px 얇은 바라 Flat(각짐)이고, 긴 축을 카드 반경만큼 물린다.
             float barY = rect.yMax - 9f;
             float barX = rect.x + UITheme.Radius.Card;
             float barW = rect.width - UITheme.Radius.Card * 2f;
-            UISurface.Flat(new Rect(barX, barY, barW, 6f), new Color(0.16f, 0.2f, 0.24f));
+            UISurface.Flat(new Rect(barX, barY, barW, 6f), UITheme.Instance.surfaceBase);
             UISurface.Flat(new Rect(barX, barY, barW * Mathf.Clamp01(remaining / total), 6f),
                 UITheme.Instance.accentMint);
             GUI.color = Color.white;
@@ -354,7 +354,7 @@ namespace InsectGame.UI
             UITheme t = UITheme.Instance;
             Color rarityCol = entry.data != null ? t.GetItemRarityColor(entry.rarity) : t.textMuted;
 
-            UISurface.Card(rect, new Color(0.10f, 0.12f, 0.18f, 0.9f), t.surfaceBorder);
+            UISurface.Card(rect, t.surfaceCard, t.surfaceBorder);
             // 등급 레일 — 5px라 각진 채로, 세로를 카드 반경만큼 물려 둥근 모서리 안쪽에 둔다.
             UISurface.Flat(
                 new Rect(rect.x + 3f, rect.y + 3f + UITheme.Radius.Card, 5f,

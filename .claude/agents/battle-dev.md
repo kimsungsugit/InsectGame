@@ -83,8 +83,12 @@ captureChance = clamp(0.90 - rarityIndex×0.07 - clamp01(captureDifficulty)×0.5
 경계 밖 수정이 필요하면 변경하지 말고 메인 모델에 보고하여 적절한 에이전트에 재위임.
 
 ## 설계 원칙
+- `Assets/Scripts/Battle/BattleRandomSource.cs` — 연출과 분리된 전투 난수
 - 이벤트 기반: BattleUpdated, BattleEnded, PlayerFainted
 - UI는 이벤트 구독으로만 갱신 (직접 참조 X)
 - 스탯은 InsectBattleStats에 집중, UI 모놀리스에서 읽기만
 - GameConstants.Battle 상수 활용
 - 스킬 쿨다운은 턴 단위, 버프/디버프는 duration 턴 후 해제
+
+### 전투 지속시간 회귀 테스트
+- `Assets/Tests/EditMode/BattlePacingTests.cs` - 일반전 라운드 분포 및 보스 계수 분리

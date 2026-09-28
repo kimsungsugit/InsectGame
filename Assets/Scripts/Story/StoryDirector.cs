@@ -176,6 +176,8 @@ namespace InsectGame.Story
             // Immediate 트리거는 이벤트가 없으므로 시작 시 1회 평가.
             RouteTrigger(TriggerImmediate, null);
             ResweepCompletedQuests();
+            ResweepPersistentConditions();
+            DrainPendingTriggers();
         }
 
         /// <summary>
@@ -192,8 +194,34 @@ namespace InsectGame.Story
             // 스냅샷 — 발화 체인이 어떤 경로로든 CompleteQuest에 닿으면 열거 중 변경 예외가 된다.
             string[] completed = System.Linq.Enumerable.ToArray(questManager.CompletedQuestIds);
             for (int i = 0; i < completed.Length; i++)
-                RouteTrigger(TriggerQuestComplete, completed[i]);
+                DeferTrigger(TriggerQuestComplete, completed[i]);
         }
+
+        // 누적 조건은 선행 대화보다 먼저 달성할 수 있다. 다음 레벨업/포획/재대결을
+        // 요구하지 않고 현재 저장 상태로 재평가한다. 이동·포획·승리 이벤트는 재현하지 않는다.
+        private void ResweepPersistentConditions()
+        {
+            if (progressController != null && HasUnseenBeatOfType(TriggerLevelReach))
+                DeferTrigger(TriggerLevelReach, progressController.Level.ToString());
+            if (dexController != null && HasUnseenBeatOfType(TriggerDexProgress))
+                DeferTrigger(TriggerDexProgress, dexController.CapturedSpeciesCount.ToString());
+
+            foreach (StoryBeat beat in StoryService.AllBeats())
+            {
+                if (beat == null || beat.trigger == null || IsSeen(beat.beatId)) continue;
+                string type = beat.trigger.type;
+                string param = beat.trigger.param;
+                if ((type == TriggerDuelWin && HasDefeatedStoryNpc(param))
+                    || (type == TriggerRegionCleansed && IsRegionCleansed(param)))
+                    DeferTrigger(type, param);
+            }
+        }
+
+        public bool HasDefeatedStoryNpc(string npcId) =>
+            !string.IsNullOrEmpty(npcId) && duelController != null && duelController.IsBossDefeated(npcId);
+
+        public bool IsRegionCleansed(string regionId) =>
+            !string.IsNullOrEmpty(regionId) && blight != null && blight.IsCleansed(regionId);
 
         private void OnDestroy()
         {
@@ -275,6 +303,7 @@ namespace InsectGame.Story
             // 이미 열람한 비트는 어차피 다시 안 뜨므로 중복 발화 걱정은 없다.
             if (blight != null && blight.IsCleansed(region.regionId))
                 RouteTrigger(TriggerRegionCleansed, region.regionId);
+            ResweepPersistentConditions();
         }
 
         /// <summary>
@@ -452,7 +481,7 @@ namespace InsectGame.Story
         /// </summary>
         private bool RouteTrigger(string type, string param)
         {
-            if (ShouldDeferNow())
+            if (!string.IsNullOrEmpty(pendingBeatId) || ShouldDeferNow())
             {
                 DeferTrigger(type, param);
                 return false;
@@ -498,8 +527,17 @@ namespace InsectGame.Story
         public void NotifyBattlePresentationClosed()
         {
             presentationClosed = true;
+            BattlePresentationClosed?.Invoke();
             DrainPendingTriggers();
         }
+
+        /// <summary>
+        /// 전투 화면이 닫혔다 — 미뤄 둔 대사를 흘리기 <b>직전에</b> 울린다. 수문장 배지 연출(<c>BadgeCeremonyUI</c>)이
+        /// 여기서 모달을 먼저 열어 <c>gd_*</c> 대사보다 배지가 먼저 보이게 한다. 드레인은 모달 가드에 막혔다가
+        /// 연출이 닫히면 <see cref="Update"/>가 이어 흘린다. 폴링으로는 이 순서를 못 만든다 — 드레인이 같은 호출
+        /// 안에서 동기로 대사를 열어 버린다.
+        /// </summary>
+        public event System.Action BattlePresentationClosed;
 
         /// <summary>
         /// 미뤄 둔 트리거를 <b>하나씩</b> 흘린다. 한 편이 화면에 뜨면 거기서 멈추고, 그 비트가
@@ -677,6 +715,7 @@ namespace InsectGame.Story
         private bool EvaluateTriggers(string triggerType, string eventParam)
         {
             if (string.IsNullOrEmpty(triggerType)) return false;
+            if (!string.IsNullOrEmpty(pendingBeatId)) return false;
 
             StoryBeat chosen = null;
 
@@ -923,6 +962,9 @@ namespace InsectGame.Story
 
             StoryBeatCompleted?.Invoke(beat);   // 모달 닫힘 → 조우 카메라 포커스 조기 릴리즈
 
+            ResweepCompletedQuests();
+            ResweepPersistentConditions();
+
             // 한 편이 끝났으니 미뤄 둔 다음 편을 이어 붙인다. 컷신이 방금 시작됐다면
             // (StoryBeatCompleted 구독자) 레지스트리 가드에 걸려 여기서는 넘어가고,
             // 컷신이 끝난 뒤 Update가 집는다.
@@ -1135,6 +1177,7 @@ namespace InsectGame.Story
             // 계정 전환·클라우드 로드로 완료 퀘스트 집합이 채워지는 시점이 여기다 — 리전을 옮기기 전까지
             // 재스윕이 없으면 완료 퀘스트 비트가 이번 세션 내내 안 뜬다.
             ResweepCompletedQuests();
+            ResweepPersistentConditions();
         }
     }
 }

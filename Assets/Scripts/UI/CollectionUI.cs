@@ -12,6 +12,14 @@ namespace InsectGame.UI
         [SerializeField] private PlayerCandyInventory candyInventory;
         [SerializeField] private PlayerProgressController progressController;
 
+        private BattleTeamUI teamScreen;
+        private TrainingUI trainingScreen;
+        public void AutoWire(BattleTeamUI team, TrainingUI training)
+        {
+            teamScreen = team;
+            trainingScreen = training;
+        }
+
         private bool isOpen;
         private Vector2 scrollPos;
         private readonly UIDirectScroll directScroll = new UIDirectScroll();
@@ -31,12 +39,12 @@ namespace InsectGame.UI
         private GUIStyle itemStatMiniStyle;
         private GUIStyle itemViewStyle;
 
-        private static readonly Color ItemBgCol = new Color(0.12f, 0.14f, 0.2f, 0.92f);
-        private static readonly Color ItemInfoGrayCol = new Color(0.65f, 0.65f, 0.65f);
-        private static readonly Color ItemStatGrayCol = new Color(0.55f, 0.55f, 0.55f);
-        private static readonly Color ItemViewBlueCol = new Color(0.25f, 0.35f, 0.55f);
-        private static readonly Color EmptyDataCol = new Color(0.5f, 0.5f, 0.5f);
-        private static readonly Color NoInsectCol = new Color(0.6f, 0.6f, 0.6f);
+        private static Color ItemBgCol => UITheme.Instance.surfaceCard;
+        private static Color ItemInfoGrayCol => UITheme.Instance.textSecondary;
+        private static Color ItemStatGrayCol => UITheme.Instance.textMuted;
+        private static Color ItemViewBlueCol => UITheme.Instance.surfaceRaised;
+        private static Color EmptyDataCol => UITheme.Instance.textMuted;
+        private static Color NoInsectCol => UITheme.Instance.textSecondary;
 
         // 잔여 영역(Panel/Detail/Stats/LevelUp/StatBar) 캐시 — 매 프레임 ~30 new GUIStyle 회피.
         private bool detailStylesReady;
@@ -72,33 +80,33 @@ namespace InsectGame.UI
         private GUIStyle barIvLabelStyle;
         private GUIStyle centeredLabelStyle;     // textColor 동적
 
-        private static readonly Color PanelBgCol = new Color(0.05f, 0.07f, 0.12f, 0.95f);
-        private static readonly Color PanelHeaderCol = new Color(0.15f, 0.18f, 0.25f, 1f);
-        private static readonly Color TabActiveBgCol = new Color(0.3f, 0.5f, 0.9f);
-        private static readonly Color TabInactiveBgCol = new Color(0.2f, 0.2f, 0.3f);
-        private static readonly Color StatBlockBgCol = new Color(0.1f, 0.12f, 0.18f, 0.8f);
-        private static readonly Color DescGrayCol = new Color(0.72f, 0.72f, 0.72f);
-        private static readonly Color HintGreenCol = new Color(0.5f, 0.65f, 0.5f);
-        private static readonly Color StatsLabelCol = new Color(0.85f, 0.85f, 0.85f);
-        private static readonly Color StatsDividerCol = new Color(0.3f, 0.3f, 0.4f);
-        private static readonly Color CandyValCol = new Color(1f, 0.5f, 0.8f);
-        private static readonly Color LuBgCol = new Color(0.08f, 0.10f, 0.16f, 0.9f);
-        private static readonly Color LuAccentBlueCol = new Color(0.3f, 0.7f, 1f);
-        private static readonly Color LuLabelBlueCol = new Color(0.5f, 0.65f, 0.9f);
-        private static readonly Color LuXpLabelCol = new Color(0.55f, 0.65f, 0.8f);
-        private static readonly Color LuBarBgCol = new Color(0.06f, 0.06f, 0.1f);
-        private static readonly Color LuBarFillDarkCol = new Color(0.2f, 0.5f, 0.9f);
-        private static readonly Color LuBarFillLightCol = new Color(0.35f, 0.65f, 1f);
-        private static readonly Color LuXpValCol = new Color(0.85f, 0.9f, 1f);
-        private static readonly Color LuMaxLvCol = new Color(0.45f, 0.5f, 0.6f);
-        private static readonly Color LuBtnGreenCol = new Color(0.2f, 0.5f, 0.3f);
-        private static readonly Color LuBtnDisabledCol = new Color(0.15f, 0.15f, 0.18f);
-        private static readonly Color LuCandyOkCol = new Color(1f, 0.7f, 0.85f);
-        private static readonly Color LuCandyLowCol = new Color(0.4f, 0.35f, 0.4f);
-        private static readonly Color BarBgCol = new Color(0.15f, 0.15f, 0.2f);
-        private static readonly Color BarLabelGrayCol = new Color(0.75f, 0.75f, 0.75f);
-        private static readonly Color BarTotalLightCol = new Color(0.85f, 0.85f, 0.85f);
-        private static readonly Color BarIvLabelGrayCol = new Color(0.5f, 0.5f, 0.5f);
+        private static Color PanelBgCol => UITheme.Instance.surfaceBase;
+        private static Color PanelHeaderCol => UITheme.Instance.surfaceRaised;
+        private static Color TabActiveBgCol => UITheme.Instance.accentCoral;
+        private static Color TabInactiveBgCol => UITheme.Instance.surfaceCard;
+        private static Color StatBlockBgCol => UITheme.Instance.surfaceCard;
+        private static Color DescGrayCol => UITheme.Instance.textSecondary;
+        private static Color HintGreenCol => UITheme.Instance.accentMint;
+        private static Color StatsLabelCol => UITheme.Instance.textPrimary;
+        private static Color StatsDividerCol => UITheme.Instance.surfaceBorder;
+        private static Color CandyValCol => UITheme.Instance.accentAmber;
+        private static Color LuBgCol => UITheme.Instance.surfaceCard;
+        private static Color LuAccentBlueCol => UITheme.Instance.accentMint;
+        private static Color LuLabelBlueCol => UITheme.Instance.textSecondary;
+        private static Color LuXpLabelCol => UITheme.Instance.textSecondary;
+        private static Color LuBarBgCol => UITheme.Instance.surfaceBase;
+        private static Color LuBarFillDarkCol => UITheme.Instance.accentMint;
+        private static Color LuBarFillLightCol => UITheme.Instance.accentMint;
+        private static Color LuXpValCol => UITheme.Instance.textPrimary;
+        private static Color LuMaxLvCol => UITheme.Instance.textMuted;
+        private static Color LuBtnGreenCol => UITheme.Instance.accentMint;
+        private static Color LuBtnDisabledCol => UITheme.Instance.surfaceRaised;
+        private static Color LuCandyOkCol => UITheme.Instance.accentAmber;
+        private static Color LuCandyLowCol => UITheme.Instance.textMuted;
+        private static Color BarBgCol => UITheme.Instance.surfaceBase;
+        private static Color BarLabelGrayCol => UITheme.Instance.textSecondary;
+        private static Color BarTotalLightCol => UITheme.Instance.textPrimary;
+        private static Color BarIvLabelGrayCol => UITheme.Instance.textMuted;
 
         private void InitDetailStyles()
         {
@@ -302,6 +310,24 @@ namespace InsectGame.UI
         }
 
         public bool IsOpen => isOpen;
+
+        /// <summary>도감의 보유 카드 등에서 특정 개체의 정보로 바로 이동한다.</summary>
+        public bool OpenDetailForInstance(string instanceId)
+        {
+            if (insectCollection == null || string.IsNullOrEmpty(instanceId)
+                || insectCollection.GetByInstanceId(instanceId) == null)
+                return false;
+
+            if (!isOpen)
+                Toggle();
+            selectedTab = 0;
+            selectedInstanceId = instanceId;
+            detailScrollPos = Vector2.zero;
+            detailDirectScroll.Reset();
+            ModalUIRegistry.Register(this);
+            return true;
+        }
+
         public void Toggle()
         {
             isOpen = !isOpen;
@@ -375,13 +401,21 @@ namespace InsectGame.UI
             UISurface.Rounded(new Rect(panelX + 3f, panelY + 3f, panelW - 6f, 88f), PanelHeaderCol);
 
             GUI.color = Color.white;
-            UIHelper.LabelFit(new Rect(panelX, panelY + 16, panelW - 84, 58), "컬렉션", panelTitleStyle);
+            UIHelper.LabelFit(new Rect(panelX + 24f, panelY + 16, panelW - 448f, 58), "보유 곤충", panelTitleStyle);
 
             if (GUI.Button(new Rect(panelX + panelW - 72, panelY + 16, 56, 56), "X", panelCloseStyle))
             {
                 CloseModal();
             }
 
+            bool previousEnabled = GUI.enabled;
+            GUI.enabled = previousEnabled && teamScreen != null;
+            if (UISurface.Button(new Rect(panelX + panelW - 412f, panelY + 20f, 150f, 52f), "배틀팀 [T]", UITheme.Instance.surfaceRaised, panelTabInactiveStyle))
+            { CloseModal(); teamScreen.Toggle(); return; }
+            GUI.enabled = previousEnabled && trainingScreen != null;
+            if (UISurface.Button(new Rect(panelX + panelW - 250f, panelY + 20f, 150f, 52f), "훈련 [G]", UITheme.Instance.surfaceRaised, panelTabInactiveStyle))
+            { CloseModal(); trainingScreen.Toggle(); return; }
+            GUI.enabled = previousEnabled;
             float tabY = panelY + 98;
             for (int i = 0; i < tabNames.Length; i++)
             {
@@ -550,6 +584,11 @@ namespace InsectGame.UI
                 clicked = true;
             GUI.backgroundColor = Color.white;
 
+            // 카드 본문도 개체 정보로 이어진다. 상세 버튼을 먼저 등록해야 그 클릭을
+            // 투명 카드 히트 영역이 가로채지 않는다.
+            if (GUI.Button(rect, string.Empty, GUIStyle.none) && !directScroll.IsDragging)
+                clicked = true;
+
             return clicked;
         }
 
@@ -587,11 +626,13 @@ namespace InsectGame.UI
                 selectedInstanceId = null;
                 detailScrollPos = Vector2.zero;
                 detailDirectScroll.Reset();
+                return;
             }
 
             if (GUI.Button(new Rect(panelX + panelW - 72, panelY + 16, 56, 56), "X", panelCloseStyle))
             {
                 CloseModal();
+                return;
             }
 
             float portraitCx = panelX + panelW / 2f;

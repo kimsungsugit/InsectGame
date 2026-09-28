@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using UnityEngine;
 
 namespace InsectGame.Core
@@ -363,6 +363,15 @@ namespace InsectGame.Core
             return mat;
         }
 
+        // Shared anatomical anchors; node names remain stable for outfit binding.
+        public static readonly Vector3 HeadAnchor = new Vector3(0f, 1.22f, 0.03f);
+        public static readonly Vector3 CapSize = new Vector3(0.76f, 0.34f, 0.73f);
+        public static readonly Vector3 CapBrimSize = new Vector3(0.68f, 0.045f, 0.43f);
+        public static Vector3 RotateAttachment(Vector3 restPosition, Vector3 pivot, float angle)
+        {
+            return pivot + Quaternion.Euler(angle, 0f, 0f) * (restPosition - pivot);
+        }
+
         private void BuildAll()
         {
             // ── 기본 색상 (의상 미장착 시) ──
@@ -407,8 +416,10 @@ namespace InsectGame.Core
             // 몸통 앞면(z 0.19)보다 0.06 앞으로 튀어나오고 폭도 몸통의 71%라, 흰 판이 앞을 통째로
             // 덮고 자켓은 양옆에만 남았다 — 측면에서 보면 판때기를 붙인 것처럼 보였다.
             // 좁히고 몸통 안으로 넣어 자켓이 앞을 덮게 한다.
-            shirtRoot = BoxPart("Shirt", t, topMat, new Vector3(0f, 0.83f, 0.10f),
-                new Vector3(0.24f, 0.36f, 0.20f), 0.05f, 2);
+            // Keep the inset panel ahead of the jacket surface: intersecting rounded
+            // volumes produced a jagged white patch and depth fighting in the gallery.
+            shirtRoot = BoxPart("Shirt", t, topMat, new Vector3(0f, 0.82f, bodyScaleZ * 0.5f + 0.006f),
+                new Vector3(0.16f, 0.29f, 0.026f), 0.012f, 3);
 
             // ── 목 ──
             GameObject neck = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
@@ -422,7 +433,7 @@ namespace InsectGame.Core
             // ── 머리 ──
             GameObject headPivot = new GameObject("HeadPivot");
             headPivot.transform.SetParent(t, false);
-            headPivot.transform.localPosition = new Vector3(0f, 1.22f, 0.03f);
+            headPivot.transform.localPosition = HeadAnchor;
             headPivot.transform.localScale = Vector3.one * headPivotScale;
 
             // 치비 둥근 머리: 옛 (−0.10, +0.12, −0.04) 달걀형(세로로 긺) → X/Y를 거의 균등하게.
@@ -436,19 +447,19 @@ namespace InsectGame.Core
             hatRoot.transform.SetParent(headPivot.transform, false);
             hatRoot.transform.localPosition = Vector3.zero;
 
-            GameObject cap = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+            GameObject cap = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             cap.name = "Cap";
             cap.transform.SetParent(hatRoot.transform, false);
-            cap.transform.localPosition = new Vector3(0f, 0.3f, -0.02f);
-            cap.transform.localScale = new Vector3(0.30f, 0.12f, 0.30f);
+            cap.transform.localPosition = new Vector3(0f, 0.24f, -0.02f);
+            cap.transform.localScale = CapSize;
             cap.GetComponent<MeshRenderer>().material = hatMat;
             Object.Destroy(cap.GetComponent<Collider>());
 
-            GameObject brim = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            GameObject brim = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             brim.name = "CapBrim";
             brim.transform.SetParent(hatRoot.transform, false);
-            brim.transform.localPosition = new Vector3(0f, 0.14f, 0.28f);
-            brim.transform.localScale = new Vector3(0.28f, 0.03f, 0.14f);
+            brim.transform.localPosition = new Vector3(0f, 0.16f, 0.29f);
+            brim.transform.localScale = CapBrimSize;
             brim.GetComponent<MeshRenderer>().material = hatMat;
             Object.Destroy(brim.GetComponent<Collider>());
 
@@ -512,13 +523,13 @@ namespace InsectGame.Core
                 new Vector3(0f, -0.36f, 0.07f), bootSize, bootRadius, 2);
 
             // ── 배낭 (Backpack) ──
-            backpackRoot = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            backpackRoot = Part("Backpack", t, ProcMeshLibrary.RoundedBox(Vector3.one, 0.16f, 2), backpackMat, Vector3.zero, Vector3.one);
             backpackRoot.name = "Backpack";
             backpackRoot.transform.SetParent(t, false);
             backpackRoot.transform.localPosition = new Vector3(0f, 0.80f, -0.22f);
             backpackRoot.transform.localScale = new Vector3(0.30f, 0.34f, 0.16f);
             backpackRoot.GetComponent<MeshRenderer>().material = backpackMat;
-            Object.Destroy(backpackRoot.GetComponent<Collider>());
+
 
             backpackStrap = GameObject.CreatePrimitive(PrimitiveType.Cube);
             backpackStrap.name = "BackpackStrap";
@@ -536,16 +547,16 @@ namespace InsectGame.Core
             toolHandle = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
             toolHandle.name = "NetHandle";
             toolHandle.transform.SetParent(t, false);
-            toolHandle.transform.localPosition = new Vector3(0.29f, 0.74f, 0.02f);
+            toolHandle.transform.localPosition = new Vector3(0.29f, 0.74f, 0f);
             toolHandle.transform.localScale = new Vector3(0.04f, 0.40f, 0.04f);
-            toolHandle.transform.localRotation = Quaternion.Euler(20f, 0f, -15f);
+            toolHandle.transform.localRotation = Quaternion.identity;
             toolHandle.GetComponent<MeshRenderer>().material = toolMat;
             Object.Destroy(toolHandle.GetComponent<Collider>());
 
             toolRing = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
             toolRing.name = "NetRing";
             toolRing.transform.SetParent(t, false);
-            toolRing.transform.localPosition = new Vector3(0.34f, 1.14f, 0.06f);
+            toolRing.transform.localPosition = new Vector3(0.29f, 1.14f, 0f);
             toolRing.transform.localScale = new Vector3(0.20f, 0.02f, 0.20f);
             toolRing.transform.localRotation = Quaternion.Euler(-20f, 0f, 0f);
             toolRing.GetComponent<MeshRenderer>().material = toolRingMat;

@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using UnityEngine;
 
 namespace InsectGame.Core
@@ -598,8 +598,8 @@ namespace InsectGame.Core
                 anchor = OutfitAnchor.Root,
                 parts = new[]
                 {
-                    B("NetHandle", PrimitiveType.Cylinder, V(0.29f, 0.74f, 0.02f), V(0.04f, 0.40f, 0.04f), V(20f, 0f, -15f), PartColorRole.Primary),
-                    B("NetRing",   PrimitiveType.Cylinder, V(0.34f, 1.14f, 0.06f), V(0.20f, 0.02f, 0.20f), V(-20f, 0f, 0f),  PartColorRole.Secondary),
+                    B("NetHandle", PrimitiveType.Cylinder, V(0.29f, 0.74f, 0f), V(0.04f, 0.40f, 0.04f), Vector3.zero, PartColorRole.Primary),
+                    B("NetRing",   PrimitiveType.Cylinder, V(0.29f, 1.14f, 0f), V(0.20f, 0.02f, 0.20f), V(-20f, 0f, 0f),  PartColorRole.Secondary),
                 },
             }},
         };

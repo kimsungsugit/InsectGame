@@ -1,4 +1,4 @@
----
+﻿---
 name: ui-dev
 description: 2D IMGUI(OnGUI) 화면 담당 — 화면 흐름과 전환, Rect 좌표와 레이아웃, GUIStyle 캐싱, 키 안내, 이벤트 구독 바인딩, IModalUI 스택. 무엇을 어디에 그리는가가 문제일 때 PROACTIVELY 위임. 예 - 배틀 화면 버튼이 겹친다 / OnGUI에서 매 프레임 new GUIStyle이 생긴다 / ESC로 패널이 안 닫힌다 / 슬롯 배치가 틀어졌다. 3D 메시·머티리얼·파티클·색상값은 visual-dev 영역이므로 손대지 않는다.
 tools:
@@ -17,6 +17,10 @@ tools:
 ### UI 모듈 (전체)
 - `Assets/Scripts/UI/MainMenuManager.cs` - 메인 메뉴 (Start/Settings/Exit)
 - `Assets/Scripts/UI/BattleScreenUI.cs` - 1v1 배틀 화면 (모놀리스, Phase 상태머신) ※배틀 로직은 battle-dev, 시각연출은 visual-dev
+- `Assets/Scripts/UI/BattleScreenUI.Duel.cs` - 위의 연출 partial: 간부·수문장 컷인, 전투 중 말풍선, 결과 한마디 (레이아웃·그리기) ※대사 문구는 game-designer(`DuelBanter`)
+- `Assets/Scripts/UI/BadgeCeremonyUI.cs` - 수문장 배지 획득 연출(전투 화면이 닫히는 순간 스토리 대사보다 먼저 뜨는 모달) ※배지 표·보상은 game-designer(`GuardianBadges`)
+- `Assets/Scripts/UI/BadgeCaseUI.cs` - 배지 케이스(진열판·상세·이정표 [받기]) — 퀵메뉴 [배지](K)
+- `Assets/Scripts/UI/BadgeArt.cs` - 배지 PNG 캐시·잠김 틴트·배율 안전 회전 그리기(연출·케이스 공용)
 - `Assets/Scripts/UI/RaidBattleUI.cs` - 레이드 화면 상태기계 (Phase 전이·입력·컨트롤러 이벤트) ※배틀 로직은 battle-dev, 시각연출은 visual-dev
 - `Assets/Scripts/UI/RaidBattleUI.Draw.cs` - 위의 렌더 절반 partial (GUIStyle 캐시 + Draw* 전부) ※AOE·유나이트 이펙트는 visual-dev
 - `Assets/Scripts/UI/CaptureChoiceUI.cs` - 포획/배틀 선택 허브 (11개 의존성) ※포획 로직은 capture-dev
@@ -26,6 +30,7 @@ tools:
 - `Assets/Scripts/UI/KeyGuideHUD.cs` - 키 안내 HUD
 - `Assets/Scripts/UI/TrainingUI.cs` - 훈련 UI
 - `Assets/Scripts/UI/CollectionUI.cs` - 보유 곤충 UI
+- `Assets/Scripts/UI/InsectDetailVisualCapture.cs` - 도감·보유 개체 상세와 퀵바 실제 IMGUI 검수용 저장 비접촉 fixture
 - `Assets/Scripts/UI/BattleTeamUI.cs` - 팀 편성 UI ※배틀 로직은 battle-dev
 - `Assets/Scripts/UI/HospitalUI.cs` - 병원 치료·아이템 대상 선택 UI
 - `Assets/Scripts/UI/InventoryUI.cs` - 가방(보유 아이템 목록·사용) UI
@@ -79,10 +84,18 @@ tools:
 - `Assets/Scripts/Core/ItemInventoryGridItem.cs` - 그리드 아이템 위젯
 - `Assets/Scripts/Core/ShopUIController.cs` - 샵 UI 컨트롤러
 - `Assets/Scripts/UI/NpcDialogueUI.cs` - NPC 대화 모달 (레이아웃/렌더) ※대사 내용은 game-designer
+- `Assets/Scripts/UI/StoryDialogueStaging.cs` - 스토리 대사 무대 규칙(좌우 배치·타자 속도·줄 연출 fx) 순수 계산 ※어느 줄에 어떤 fx를 붙일지는 game-designer
 - `Assets/Scripts/Core/QuestRewardFormatter.cs` - 퀘스트 보상 표시 문자열 조립 (배너·목록 공용) ※보상 수치 자체는 game-designer
 
 ### Editor
 - `Assets/Editor/PlayUIPrefabGenerator.cs` - UI 프리팹 자동 생성
+
+### Tests
+- `Assets/Tests/EditMode/MapNavigationTests.cs` - 서브월드 지도위치, 출구복원 이동순서, 미니맵 좌표 회귀
+- `Assets/Tests/EditMode/InsectDetailNavigationTests.cs` - 도감에서 보유 개체 상세로 이동할 때 고유 ID와 모달 상태 회귀
+- `Assets/Tests/EditMode/NpcDialogueContinuityTests.cs` - 줄별 화자, 전투 후 재대화, 모달 재진입 회귀
+- `Assets/Tests/EditMode/DuelHudLayoutTests.cs` - 전투 진영 배치, 버튼 중첩, 기술 대상 표시
+- `Assets/Tests/EditMode/ExplorationNavigationTests.cs` - 메뉴 경로, 단축키 보존, 모달 전환 회귀
 
 ## 화면 흐름
 ```

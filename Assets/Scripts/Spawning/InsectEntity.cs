@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using InsectGame.Data;
 using UnityEngine;
 
@@ -247,13 +247,9 @@ namespace InsectGame.Spawning
         private void UpdateMovement()
         {
             float t = Time.time;
-            if (forBattle)
-            {
-                // 배틀: 전투 포즈 유지 — 가벼운 상하만(회전·드리프트·경계 없음)
-                float bs = 1.6f + (bobPhase % 1.5f);
-                transform.position = basePosition + new Vector3(0f, Mathf.Sin(t * bs + bobPhase) * 0.25f, 0f);
-                return;
-            }
+            // The arena owns battle root translation and rotation (lunge, recoil,
+            // grounded idle). Wing animation still runs separately in Update.
+            if (forBattle) return;
 
             EnsureMoveStyle();
             UpdatePlayerTracking();
@@ -672,6 +668,8 @@ namespace InsectGame.Spawning
                 BuildClickBeetle(col, dark);
             else
                 BuildGenericBeetle(col, dark);
+
+            BindWingSurfaces();
         }
 
         private void BuildGenericBeetle(Color body, Color dark)
@@ -685,10 +683,6 @@ namespace InsectGame.Spawning
             MakePart("Prothorax", PrimitiveType.Sphere, new Vector3(0f, 0.12f, 0.32f), new Vector3(0.5f, 0.34f, 0.32f), dark);
             MakePart("Head", PrimitiveType.Sphere, new Vector3(0f, 0.05f, 0.56f), new Vector3(0.46f, 0.42f, 0.42f), dark);
             MakeEyes(0.68f, 0.13f);
-            MakePart("FrontLegL", PrimitiveType.Capsule, new Vector3(-0.28f, -0.15f, 0.3f), new Vector3(0.06f, 0.22f, 0.06f),
-                dark, Quaternion.Euler(0f, 0f, 25f));
-            MakePart("FrontLegR", PrimitiveType.Capsule, new Vector3(0.28f, -0.15f, 0.3f), new Vector3(0.06f, 0.22f, 0.06f),
-                dark, Quaternion.Euler(0f, 0f, -25f));
             MakeLegs(dark, 3, 0f);
             MakeAntennae(dark, 0.45f);
         }
@@ -718,49 +712,39 @@ namespace InsectGame.Spawning
             Color jaw = new Color(dark.r * 0.85f + 0.04f, dark.g * 0.72f + 0.03f, dark.b * 0.6f + 0.03f);
             MakePart("Body", PrimitiveType.Sphere, Vector3.zero, new Vector3(0.78f, 0.46f, 1.0f), body);
             MakeTopGloss(Vector3.zero, new Vector3(0.78f, 0.46f, 1.0f), 0.12f);
-            MakePart("Shell", PrimitiveType.Sphere, new Vector3(0f, 0.18f, -0.08f), new Vector3(0.72f, 0.3f, 0.86f), dark);
-            MakePart("ShellLineL", PrimitiveType.Cylinder, new Vector3(-0.14f, 0.26f, -0.08f), new Vector3(0.015f, 0.01f, 0.7f), body);
-            MakePart("ShellLineR", PrimitiveType.Cylinder, new Vector3(0.14f, 0.26f, -0.08f), new Vector3(0.015f, 0.01f, 0.7f), body);
+            MakeSculpture("ShellL", InsectSculptureMeshes.Shape.ElytronLeft, body);
+            MakeSculpture("ShellR", InsectSculptureMeshes.Shape.ElytronRight, body);
             // 각진 전흉(pronotum) — 사슴벌레 특유의 넓적한 가슴판
             MakePart("Pronotum", PrimitiveType.Sphere, new Vector3(0f, 0.14f, 0.42f), new Vector3(0.62f, 0.3f, 0.4f), dark);
             MakePart("Head", PrimitiveType.Sphere, new Vector3(0f, 0.1f, 0.68f), new Vector3(0.42f, 0.32f, 0.4f), dark);
-            // === 큰 집게턱 (좌우 대칭, 3분절 곡선) ===
-            MakePart("MandBaseL", PrimitiveType.Capsule, new Vector3(-0.17f, 0.12f, 0.86f), new Vector3(0.06f, 0.17f, 0.06f),
-                jaw, Quaternion.Euler(72f, 0f, 26f));
-            MakePart("MandBaseR", PrimitiveType.Capsule, new Vector3(0.17f, 0.12f, 0.86f), new Vector3(0.06f, 0.17f, 0.06f),
-                jaw, Quaternion.Euler(72f, 0f, -26f));
-            MakePart("MandMidL", PrimitiveType.Capsule, new Vector3(-0.29f, 0.13f, 1.06f), new Vector3(0.05f, 0.15f, 0.05f),
-                jaw, Quaternion.Euler(82f, 0f, 44f));
-            MakePart("MandMidR", PrimitiveType.Capsule, new Vector3(0.29f, 0.13f, 1.06f), new Vector3(0.05f, 0.15f, 0.05f),
-                jaw, Quaternion.Euler(82f, 0f, -44f));
-            // 안쪽 돌기(이빨) — 사슴벌레 턱 안쪽의 톱니
-            MakePart("MandToothL", PrimitiveType.Capsule, new Vector3(-0.2f, 0.13f, 1.12f), new Vector3(0.03f, 0.08f, 0.03f),
-                jaw, Quaternion.Euler(90f, 0f, -54f));
-            MakePart("MandToothR", PrimitiveType.Capsule, new Vector3(0.2f, 0.13f, 1.12f), new Vector3(0.03f, 0.08f, 0.03f),
-                jaw, Quaternion.Euler(90f, 0f, 54f));
-            // 끝 — 안쪽으로 굽어 마주봄
-            MakePart("MandTipL", PrimitiveType.Capsule, new Vector3(-0.16f, 0.14f, 1.26f), new Vector3(0.04f, 0.13f, 0.04f),
-                jaw, Quaternion.Euler(96f, 0f, 72f));
-            MakePart("MandTipR", PrimitiveType.Capsule, new Vector3(0.16f, 0.14f, 1.26f), new Vector3(0.04f, 0.13f, 0.04f),
-                jaw, Quaternion.Euler(96f, 0f, -72f));
-            MakePart("MandPointL", PrimitiveType.Sphere, new Vector3(-0.07f, 0.14f, 1.34f), Vector3.one * 0.04f, jaw);
-            MakePart("MandPointR", PrimitiveType.Sphere, new Vector3(0.07f, 0.14f, 1.34f), Vector3.one * 0.04f, jaw);
-            MakePart("ClawL", PrimitiveType.Cube, new Vector3(-0.28f, -0.24f, 0.28f), new Vector3(0.05f, 0.08f, 0.11f), dark);
-            MakePart("ClawR", PrimitiveType.Cube, new Vector3(0.28f, -0.24f, 0.28f), new Vector3(0.05f, 0.08f, 0.11f), dark);
+            MakeSculpture("MandBaseL", InsectSculptureMeshes.Shape.StagJawLeft, jaw);
+            MakeSculpture("MandBaseR", InsectSculptureMeshes.Shape.StagJawRight, jaw);
+            foreach (int sign in new[] { -1, 1 })
+                MakeSegment("MandTooth" + (sign < 0 ? "L" : "R"), new Vector3(sign * .29f, .13f, 1.03f),
+                    new Vector3(sign * .16f, .13f, 1.08f), .042f, jaw);
+            // The short front tarsal claws begin at the front feet. The old
+            // cubes floated beneath the face in the gallery's front view.
+            MakeSegment("ClawL", new Vector3(-.46f, -.39f, .344f), new Vector3(-.48f, -.42f, .40f), .018f, dark);
+            MakeSegment("ClawR", new Vector3(.46f, -.39f, .344f), new Vector3(.48f, -.42f, .40f), .018f, dark);
             MakeEyes(0.78f, 0.11f, 0.18f);
             MakeLegs(dark, 3, 0f);
         }
 
         private void BuildButterfly(Color body, Color dark)
         {
+            string id = data != null ? data.insectId ?? "" : "";
             MakePart("Body", PrimitiveType.Capsule, Vector3.zero, new Vector3(0.18f, 0.34f, 0.18f), dark,
                 Quaternion.Euler(90f, 0f, 0f));
+            MakePart("Thorax", PrimitiveType.Sphere, new Vector3(0f, .025f, .19f), new Vector3(.20f, .21f, .26f), dark);
             MakePart("Head", PrimitiveType.Sphere, new Vector3(0f, 0.05f, 0.45f), new Vector3(0.3f, 0.3f, 0.28f), dark);
-            Color wingCol = new Color(body.r, body.g, body.b, 0.85f);
+            float wingAlpha = id.Contains("glasswing") || id.Contains("snowveil") ? .38f : .90f;
+            Color wingCol = new Color(body.r, body.g, body.b, wingAlpha);
             Color wingSpot = new Color(Mathf.Min(1, body.r + 0.3f), Mathf.Min(1, body.g + 0.3f), body.b * 0.5f);
             Color wingEdge = new Color(dark.r, dark.g, dark.b, 0.7f);
-            MakeWing("WingL", new Vector3(-0.5f, 0.1f, 0f), new Vector3(0.7f, 0.02f, 0.6f), wingCol);
-            MakeWing("WingR", new Vector3(0.5f, 0.1f, 0f), new Vector3(0.7f, 0.02f, 0.6f), wingCol);
+            MakeSculpture("WingL", InsectSculptureMeshes.Shape.ButterflyForewing, wingCol,
+                new Vector3(-.49f, .10f, .04f), new Vector3(.90f, 1f, .72f));
+            MakeSculpture("WingR", InsectSculptureMeshes.Shape.ButterflyForewing, wingCol,
+                new Vector3(.49f, .10f, .04f), new Vector3(.90f, 1f, .72f));
             MakePart("SpotL1", PrimitiveType.Sphere, new Vector3(-0.45f, 0.12f, 0.1f), new Vector3(0.15f, 0.02f, 0.15f), wingSpot);
             MakePart("SpotR1", PrimitiveType.Sphere, new Vector3(0.45f, 0.12f, 0.1f), new Vector3(0.15f, 0.02f, 0.15f), wingSpot);
             MakePart("SpotL2", PrimitiveType.Sphere, new Vector3(-0.55f, 0.12f, 0f), new Vector3(0.12f, 0.02f, 0.12f), wingSpot);
@@ -769,8 +753,16 @@ namespace InsectGame.Spawning
             MakePart("SpotR3", PrimitiveType.Sphere, new Vector3(0.4f, 0.12f, -0.1f), new Vector3(0.1f, 0.02f, 0.1f), wingSpot);
             MakePart("WingTipL", PrimitiveType.Sphere, new Vector3(-0.88f, 0.1f, 0.05f), new Vector3(0.18f, 0.025f, 0.24f), wingEdge);
             MakePart("WingTipR", PrimitiveType.Sphere, new Vector3(0.88f, 0.1f, 0.05f), new Vector3(0.18f, 0.025f, 0.24f), wingEdge);
-            MakePart("WingLB", PrimitiveType.Sphere, new Vector3(-0.35f, 0.08f, -0.25f), new Vector3(0.45f, 0.02f, 0.4f), wingCol);
-            MakePart("WingRB", PrimitiveType.Sphere, new Vector3(0.35f, 0.08f, -0.25f), new Vector3(0.45f, 0.02f, 0.4f), wingCol);
+            MakeSculpture("WingLB", InsectSculptureMeshes.Shape.ButterflyHindwing, wingCol,
+                new Vector3(-.37f, .08f, -.18f), new Vector3(.65f, 1f, .55f));
+            MakeSculpture("WingRB", InsectSculptureMeshes.Shape.ButterflyHindwing, wingCol,
+                new Vector3(.37f, .08f, -.18f), new Vector3(.65f, 1f, .55f));
+            MakeFlightLegs(dark);
+            if (id.Contains("swallowtail") || id.Contains("birdwing"))
+            {
+                MakeSegment("HindTailL", new Vector3(-.58f, .07f, -.38f), new Vector3(-.68f, .05f, -.66f), .018f, wingEdge);
+                MakeSegment("HindTailR", new Vector3(.58f, .07f, -.38f), new Vector3(.68f, .05f, -.66f), .018f, wingEdge);
+            }
             MakeAntennae(dark, 0.35f);
             MakePart("AntBallL", PrimitiveType.Sphere, new Vector3(-0.15f, 0.42f, 0.57f), Vector3.one * 0.06f, dark);
             MakePart("AntBallR", PrimitiveType.Sphere, new Vector3(0.15f, 0.42f, 0.57f), Vector3.one * 0.06f, dark);
@@ -787,8 +779,15 @@ namespace InsectGame.Spawning
             MakePart("Head", PrimitiveType.Sphere, new Vector3(0f, 0.05f, 0.4f), new Vector3(0.3f, 0.28f, 0.28f), dark);
             Color wingCol = new Color(body.r * 0.8f, body.g * 0.7f, body.b * 0.6f);
             Color eyeSpotCol = new Color(Mathf.Min(1, body.r + 0.1f), body.g * 0.4f, body.b * 0.3f);
-            MakeWing("WingL", new Vector3(-0.55f, 0.05f, 0.05f), new Vector3(0.8f, 0.02f, 0.7f), wingCol);
-            MakeWing("WingR", new Vector3(0.55f, 0.05f, 0.05f), new Vector3(0.8f, 0.02f, 0.7f), wingCol);
+            MakeSculpture("WingL", InsectSculptureMeshes.Shape.ButterflyForewing, wingCol,
+                new Vector3(-.53f, .06f, .06f), new Vector3(.98f, 1f, .65f));
+            MakeSculpture("WingR", InsectSculptureMeshes.Shape.ButterflyForewing, wingCol,
+                new Vector3(.53f, .06f, .06f), new Vector3(.98f, 1f, .65f));
+            MakeSculpture("WingLB", InsectSculptureMeshes.Shape.ButterflyHindwing, wingCol,
+                new Vector3(-.38f, .04f, -.19f), new Vector3(.69f, 1f, .51f));
+            MakeSculpture("WingRB", InsectSculptureMeshes.Shape.ButterflyHindwing, wingCol,
+                new Vector3(.38f, .04f, -.19f), new Vector3(.69f, 1f, .51f));
+            MakeFlightLegs(dark);
             MakePart("EyeSpotL", PrimitiveType.Sphere, new Vector3(-0.5f, 0.07f, 0.05f), new Vector3(0.18f, 0.02f, 0.18f), eyeSpotCol);
             MakePart("EyeSpotR", PrimitiveType.Sphere, new Vector3(0.5f, 0.07f, 0.05f), new Vector3(0.18f, 0.02f, 0.18f), eyeSpotCol);
             MakePart("EyeSpotCoreL", PrimitiveType.Sphere, new Vector3(-0.5f, 0.08f, 0.05f), new Vector3(0.08f, 0.02f, 0.08f), Color.black);
@@ -825,27 +824,27 @@ namespace InsectGame.Spawning
 
         private void BuildMantis(Color body, Color dark)
         {
-            MakePart("Body", PrimitiveType.Capsule, new Vector3(0f, 0f, -0.15f), new Vector3(0.2f, 0.5f, 0.2f), body,
-                Quaternion.Euler(80f, 0f, 0f));
-            MakePart("Thorax", PrimitiveType.Sphere, new Vector3(0f, 0.15f, 0.15f), new Vector3(0.25f, 0.2f, 0.25f), body);
-            MakePart("Head", PrimitiveType.Sphere, new Vector3(0f, 0.3f, 0.25f), new Vector3(0.38f, 0.28f, 0.25f), dark);
-            MakePart("HeadCrest", PrimitiveType.Cube, new Vector3(0f, 0.38f, 0.22f), new Vector3(0.12f, 0.06f, 0.12f), dark);
-            MakePart("ArmUpperL", PrimitiveType.Capsule, new Vector3(-0.22f, 0.15f, 0.3f), new Vector3(0.08f, 0.2f, 0.08f),
-                body, Quaternion.Euler(-10f, 0f, 20f));
-            MakePart("ArmUpperR", PrimitiveType.Capsule, new Vector3(0.22f, 0.15f, 0.3f), new Vector3(0.08f, 0.2f, 0.08f),
-                body, Quaternion.Euler(-10f, 0f, -20f));
-            MakePart("ArmLowerL", PrimitiveType.Capsule, new Vector3(-0.28f, 0.28f, 0.42f), new Vector3(0.06f, 0.18f, 0.06f),
-                body, Quaternion.Euler(-40f, 0f, 15f));
-            MakePart("ArmLowerR", PrimitiveType.Capsule, new Vector3(0.28f, 0.28f, 0.42f), new Vector3(0.06f, 0.18f, 0.06f),
-                body, Quaternion.Euler(-40f, 0f, -15f));
-            MakePart("ClawL", PrimitiveType.Cube, new Vector3(-0.3f, 0.38f, 0.55f), new Vector3(0.05f, 0.18f, 0.04f), dark);
-            MakePart("ClawR", PrimitiveType.Cube, new Vector3(0.3f, 0.38f, 0.55f), new Vector3(0.05f, 0.18f, 0.04f), dark);
-            Color wingFold = new Color(body.r * 0.7f, body.g * 0.8f, body.b * 0.6f, 0.5f);
-            MakePart("WingFoldL", PrimitiveType.Cube, new Vector3(-0.08f, 0.12f, -0.2f), new Vector3(0.15f, 0.01f, 0.4f), wingFold);
-            MakePart("WingFoldR", PrimitiveType.Cube, new Vector3(0.08f, 0.12f, -0.2f), new Vector3(0.15f, 0.01f, 0.4f), wingFold);
-            MakeLegs(dark, 2, -0.15f);
-            MakeAntennae(dark, 0.3f);
-            MakeEyes(0.3f, 0.22f);
+            Color leaf = Color.Lerp(body, new Color(.32f, .49f, .16f), .72f);
+            Color vein = Color.Lerp(leaf, new Color(.14f, .24f, .07f), .50f);
+            MakePart("Body", PrimitiveType.Sphere, new Vector3(0f, -.035f, -.30f), new Vector3(.24f, .15f, .68f), vein);
+            MakeSculpture("Thorax", InsectSculptureMeshes.Shape.MantisThorax, leaf);
+            MakeSculpture("Head", InsectSculptureMeshes.Shape.MantisHead, leaf);
+            foreach (int sign in new[] { -1, 1 })
+            {
+                string side = sign < 0 ? "L" : "R";
+                MakeSculpture("ArmUpper" + side, sign < 0 ? InsectSculptureMeshes.Shape.MantisFemurLeft : InsectSculptureMeshes.Shape.MantisFemurRight, leaf);
+                MakeSculpture("Claw" + side, sign < 0 ? InsectSculptureMeshes.Shape.MantisBladeLeft : InsectSculptureMeshes.Shape.MantisBladeRight, vein);
+                // Eyes sit on the corners of the triangular head, not below it.
+                MakePart("Eye" + side, PrimitiveType.Sphere, new Vector3(sign * .18f, .38f, .33f), new Vector3(.13f, .12f, .12f), new Color(.51f, .64f, .24f));
+                MakePart("EyeGlint" + side, PrimitiveType.Sphere, new Vector3(sign * .17f, .405f, .38f), Vector3.one * .023f, new Color(.94f, .96f, .80f));
+                MakeSegment("Antenna" + side, new Vector3(sign * .09f, .38f, .28f), new Vector3(sign * .16f, .66f, .37f), .015f, vein);
+            }
+            // Folded opaque tegmina read as two tapered leaves; no transparent boards.
+            MakeSculpture("WingFoldL", InsectSculptureMeshes.Shape.Wing, leaf,
+                new Vector3(-.062f, .035f, -.25f), new Vector3(.55f, .040f, .18f), Quaternion.Euler(0f, 90f, 0f));
+            MakeSculpture("WingFoldR", InsectSculptureMeshes.Shape.Wing, leaf,
+                new Vector3(.062f, .035f, -.25f), new Vector3(.55f, .040f, .18f), Quaternion.Euler(0f, 90f, 0f));
+            MakeLegs(vein, 2, -.15f);
         }
 
         private void BuildDragonfly(Color body, Color dark)
@@ -859,20 +858,21 @@ namespace InsectGame.Spawning
             MakePart("Head", PrimitiveType.Sphere, new Vector3(0f, 0.08f, 0.35f), new Vector3(0.35f, 0.25f, 0.3f), dark);
             Color wingCol = new Color(0.8f, 0.9f, 1f, 0.4f);
             Color veinCol = new Color(0.3f, 0.3f, 0.3f, 0.5f);
-            MakeWing("WingL", new Vector3(-0.45f, 0.1f, 0.15f), new Vector3(0.7f, 0.01f, 0.15f), wingCol);
-            MakeWing("WingR", new Vector3(0.45f, 0.1f, 0.15f), new Vector3(0.7f, 0.01f, 0.15f), wingCol);
-            MakePart("VeinFL", PrimitiveType.Cylinder, new Vector3(-0.45f, 0.11f, 0.15f), new Vector3(0.01f, 0.01f, 0.13f), veinCol,
-                Quaternion.Euler(0f, 0f, 85f));
-            MakePart("VeinFR", PrimitiveType.Cylinder, new Vector3(0.45f, 0.11f, 0.15f), new Vector3(0.01f, 0.01f, 0.13f), veinCol,
-                Quaternion.Euler(0f, 0f, -85f));
-            MakePart("WingLB", PrimitiveType.Cube, new Vector3(-0.4f, 0.08f, -0.05f), new Vector3(0.6f, 0.01f, 0.13f), wingCol);
-            MakePart("WingRB", PrimitiveType.Cube, new Vector3(0.4f, 0.08f, -0.05f), new Vector3(0.6f, 0.01f, 0.13f), wingCol);
-            MakePart("VeinBL", PrimitiveType.Cylinder, new Vector3(-0.4f, 0.09f, -0.05f), new Vector3(0.01f, 0.01f, 0.11f), veinCol,
-                Quaternion.Euler(0f, 0f, 85f));
-            MakePart("VeinBR", PrimitiveType.Cylinder, new Vector3(0.4f, 0.09f, -0.05f), new Vector3(0.01f, 0.01f, 0.11f), veinCol,
-                Quaternion.Euler(0f, 0f, -85f));
+            MakeSculpture("WingL", InsectSculptureMeshes.Shape.DragonflyWing, wingCol,
+                new Vector3(-.43f, .12f, .25f), new Vector3(.76f, 1f, .85f));
+            MakeSculpture("WingR", InsectSculptureMeshes.Shape.DragonflyWing, wingCol,
+                new Vector3(.43f, .12f, .25f), new Vector3(.76f, 1f, .85f));
+            MakeSegment("VeinFL", new Vector3(-.09f, .134f, .25f), new Vector3(-.77f, .134f, .25f), .008f, veinCol);
+            MakeSegment("VeinFR", new Vector3(.09f, .134f, .25f), new Vector3(.77f, .134f, .25f), .008f, veinCol);
+            MakeSculpture("WingLB", InsectSculptureMeshes.Shape.DragonflyWing, wingCol,
+                new Vector3(-.40f, .10f, .08f), new Vector3(.72f, 1f, .92f));
+            MakeSculpture("WingRB", InsectSculptureMeshes.Shape.DragonflyWing, wingCol,
+                new Vector3(.40f, .10f, .08f), new Vector3(.72f, 1f, .92f));
+            MakeSegment("VeinBL", new Vector3(-.09f, .114f, .08f), new Vector3(-.73f, .114f, .08f), .008f, veinCol);
+            MakeSegment("VeinBR", new Vector3(.09f, .114f, .08f), new Vector3(.73f, .114f, .08f), .008f, veinCol);
             MakePart("EyeL", PrimitiveType.Sphere, new Vector3(-0.15f, 0.15f, 0.4f), Vector3.one * 0.16f, new Color(0.2f, 0.8f, 0.3f));
             MakePart("EyeR", PrimitiveType.Sphere, new Vector3(0.15f, 0.15f, 0.4f), Vector3.one * 0.16f, new Color(0.2f, 0.8f, 0.3f));
+            MakeLegs(dark, 3, 0.18f);
         }
 
         private void BuildBee(Color body, Color dark)
@@ -976,17 +976,27 @@ namespace InsectGame.Spawning
             MakePart("Neck", PrimitiveType.Capsule, new Vector3(0f, 0.03f, 0.18f), new Vector3(0.06f, 0.06f, 0.06f), dark,
                 Quaternion.Euler(90f, 0f, 0f));
             MakePart("Head", PrimitiveType.Sphere, new Vector3(0f, 0.05f, 0.3f), new Vector3(0.3f, 0.28f, 0.28f), dark);
-            MakePart("MandibleL", PrimitiveType.Cube, new Vector3(-0.08f, 0f, 0.45f), new Vector3(0.06f, 0.04f, 0.1f), body);
-            MakePart("MandibleR", PrimitiveType.Cube, new Vector3(0.08f, 0f, 0.45f), new Vector3(0.06f, 0.04f, 0.1f), body);
+            // Paired hooked mandibles emerge from the head and curve inward.
+            // Keep the MandibleL/R node contract used by model inspections.
+            foreach (int sign in new[] { -1, 1 })
+            {
+                string side = sign < 0 ? "L" : "R";
+                Vector3 root = new Vector3(sign * .08f, -.025f, .40f);
+                Vector3 bend = new Vector3(sign * .15f, -.07f, .51f);
+                Vector3 tip = new Vector3(sign * .05f, -.065f, .56f);
+                MakeSegment("Mandible" + side, root, bend, .027f, body);
+                MakeSegment("MandibleTip" + side, bend, tip, .017f, body);
+            }
             MakeLegs(dark, 3, -0.05f);
-            MakePart("ElbowAntL", PrimitiveType.Capsule, new Vector3(-0.1f, 0.2f, 0.45f), new Vector3(0.03f, 0.15f, 0.03f),
-                dark, Quaternion.Euler(-50f, 0f, 15f));
-            MakePart("ElbowAntR", PrimitiveType.Capsule, new Vector3(0.1f, 0.2f, 0.45f), new Vector3(0.03f, 0.15f, 0.03f),
-                dark, Quaternion.Euler(-50f, 0f, -15f));
-            MakePart("ElbowAntL2", PrimitiveType.Capsule, new Vector3(-0.14f, 0.35f, 0.52f), new Vector3(0.025f, 0.12f, 0.025f),
-                dark, Quaternion.Euler(-10f, 0f, 5f));
-            MakePart("ElbowAntR2", PrimitiveType.Capsule, new Vector3(0.14f, 0.35f, 0.52f), new Vector3(0.025f, 0.12f, 0.025f),
-                dark, Quaternion.Euler(-10f, 0f, -5f));
+            foreach (int sign in new[] { -1, 1 })
+            {
+                string side = sign < 0 ? "L" : "R";
+                Vector3 basePoint = new Vector3(sign * 0.09f, 0.13f, 0.38f);
+                Vector3 elbow = new Vector3(sign * 0.18f, 0.29f, 0.51f);
+                MakeSegment("ElbowAnt" + side, basePoint, elbow, 0.027f, dark);
+                MakeSegment("ElbowAnt" + side + "2", elbow,
+                    new Vector3(sign * 0.29f, 0.30f, 0.67f), 0.021f, dark);
+            }
             MakeEyes(0.3f, 0.1f);
         }
 
@@ -1057,31 +1067,31 @@ namespace InsectGame.Spawning
 
         private void BuildRhinocerosBeetle(Color body, Color dark)
         {
-            Color gloss = new Color(Mathf.Min(1, body.r + 0.15f), Mathf.Min(1, body.g + 0.1f), body.b * 0.8f);
-            MakePart("Body", PrimitiveType.Sphere, Vector3.zero, new Vector3(0.9f, 0.55f, 1.1f), body);
-            MakePart("Shell", PrimitiveType.Sphere, new Vector3(0f, 0.2f, -0.05f), new Vector3(0.82f, 0.3f, 0.95f), dark);
-            MakePart("ShellGloss", PrimitiveType.Sphere, new Vector3(0f, 0.25f, -0.05f), new Vector3(0.7f, 0.12f, 0.8f),
-                new Color(1f, 1f, 1f, 0.12f));
-            MakePart("Head", PrimitiveType.Sphere, new Vector3(0f, 0.12f, 0.6f), new Vector3(0.55f, 0.45f, 0.5f), dark);
-            MakePart("HornMain", PrimitiveType.Cylinder, new Vector3(0f, 0.45f, 0.7f), new Vector3(0.1f, 0.35f, 0.1f), body,
-                Quaternion.Euler(25f, 0f, 0f));
-            // 3분절 곡선으로 뿔이 부드럽게 휨(옛 직선 실린더 2개 = 뚝뚝 끊김)
-            MakePart("HornCurve", PrimitiveType.Cylinder, new Vector3(0f, 0.6f, 0.82f), new Vector3(0.08f, 0.18f, 0.08f), body,
-                Quaternion.Euler(40f, 0f, 0f));
-            MakePart("HornMid", PrimitiveType.Sphere, new Vector3(0f, 0.62f, 0.88f), Vector3.one * 0.09f, body);
-            MakePart("HornTip", PrimitiveType.Cylinder, new Vector3(0f, 0.72f, 0.96f), new Vector3(0.06f, 0.13f, 0.06f), gloss,
-                Quaternion.Euler(52f, 0f, 0f));
-            // 끝 분기(Y자 뿔) — 장수풍뎅이 시그니처 실루엣
-            MakePart("HornForkL", PrimitiveType.Cylinder, new Vector3(-0.05f, 0.78f, 1.0f), new Vector3(0.04f, 0.1f, 0.04f), gloss,
-                Quaternion.Euler(50f, 0f, 12f));
-            MakePart("HornForkR", PrimitiveType.Cylinder, new Vector3(0.05f, 0.78f, 1.0f), new Vector3(0.04f, 0.1f, 0.04f), gloss,
-                Quaternion.Euler(50f, 0f, -12f));
-            MakePart("HornSmall", PrimitiveType.Cylinder, new Vector3(0f, 0.3f, 0.55f), new Vector3(0.07f, 0.15f, 0.07f), dark,
-                Quaternion.Euler(15f, 0f, 0f));
-            MakePart("ClawL", PrimitiveType.Cube, new Vector3(-0.3f, -0.25f, 0.3f), new Vector3(0.06f, 0.08f, 0.12f), dark);
-            MakePart("ClawR", PrimitiveType.Cube, new Vector3(0.3f, -0.25f, 0.3f), new Vector3(0.06f, 0.08f, 0.12f), dark);
-            MakeEyes(0.78f, 0.14f, 0.22f);
-            MakeLegs(dark, 3, 0f);
+            Color chitin = Color.Lerp(body, new Color(.24f, .13f, .075f), .72f);
+            Color underside = Color.Lerp(chitin, Color.black, .42f);
+            MakePart("Body", PrimitiveType.Sphere, new Vector3(0f, -.045f, -.08f), new Vector3(.90f, .36f, .95f), underside);
+            MakeSculpture("ShellL", InsectSculptureMeshes.Shape.ElytronLeft, chitin);
+            MakeSculpture("ShellR", InsectSculptureMeshes.Shape.ElytronRight, chitin);
+            Color forebody = Color.Lerp(chitin, underside, .22f);
+            MakeSculpture("Pronotum", InsectSculptureMeshes.Shape.RhinoPronotum, forebody);
+            MakePart("Head", PrimitiveType.Sphere, new Vector3(0f, .10f, .61f), new Vector3(.48f, .31f, .38f), forebody);
+            MakeSculpture("HornMain", InsectSculptureMeshes.Shape.RhinoHorn, chitin);
+            MakeSculpture("HornForkL", InsectSculptureMeshes.Shape.RhinoForkLeft, chitin);
+            MakeSculpture("HornForkR", InsectSculptureMeshes.Shape.RhinoForkRight, chitin);
+            MakeSculpture("HornSmall", InsectSculptureMeshes.Shape.ThoraxHorn, underside);
+            MakeEyes(.73f, .09f, .19f);
+            MakeLegs(underside, 3, 0f);
+            // Keep the short clubbed antennae ahead of the head. The old tall
+            // antenna roots crossed the horn and looked like a dark cut at its base.
+            foreach (int sign in new[] { -1, 1 })
+            {
+                string side = sign < 0 ? "L" : "R";
+                Vector3 elbow = new Vector3(sign * .28f, .11f, .79f);
+                Vector3 tip = new Vector3(sign * .28f, .18f, .85f);
+                MakeSegment("AntBase" + side, new Vector3(sign * .18f, .08f, .68f), elbow, .025f, underside);
+                MakeSegment("AntMid" + side, elbow, tip, .02f, underside);
+                MakePart("AntTip" + side, PrimitiveType.Sphere, tip, new Vector3(.055f, .03f, .045f), underside);
+            }
         }
 
         private void BuildOrchidMantis(Color body, Color dark)
@@ -1358,8 +1368,8 @@ namespace InsectGame.Spawning
             Color wingCol = new Color(0.85f, 0.92f, 1f, 0.35f);
             MakeWing("WingL", new Vector3(-0.3f, 0.08f, 0.05f), new Vector3(0.5f, 0.01f, 0.1f), wingCol);
             MakeWing("WingR", new Vector3(0.3f, 0.08f, 0.05f), new Vector3(0.5f, 0.01f, 0.1f), wingCol);
-            MakePart("WingLB", PrimitiveType.Cube, new Vector3(-0.28f, 0.06f, -0.08f), new Vector3(0.45f, 0.01f, 0.08f), wingCol);
-            MakePart("WingRB", PrimitiveType.Cube, new Vector3(0.28f, 0.06f, -0.08f), new Vector3(0.45f, 0.01f, 0.08f), wingCol);
+            MakePart("WingLB", PrimitiveType.Sphere, new Vector3(-0.28f, 0.06f, -0.08f), new Vector3(0.45f, 0.01f, 0.08f), wingCol);
+            MakePart("WingRB", PrimitiveType.Sphere, new Vector3(0.28f, 0.06f, -0.08f), new Vector3(0.45f, 0.01f, 0.08f), wingCol);
             MakePart("EyeL", PrimitiveType.Sphere, new Vector3(-0.1f, 0.12f, 0.35f), Vector3.one * 0.12f, new Color(0.3f, 0.7f, 0.9f));
             MakePart("EyeR", PrimitiveType.Sphere, new Vector3(0.1f, 0.12f, 0.35f), Vector3.one * 0.12f, new Color(0.3f, 0.7f, 0.9f));
             MakeLegs(dark, 3, 0.1f);
@@ -1511,79 +1521,137 @@ namespace InsectGame.Spawning
             return part;
         }
 
+        private GameObject MakeSculpture(string name, InsectSculptureMeshes.Shape shape, Color color,
+            Vector3? position = null, Vector3? scale = null, Quaternion? rotation = null)
+        {
+            var part = new GameObject(name);
+            part.transform.SetParent(transform, false);
+            part.transform.localPosition = position ?? Vector3.zero;
+            part.transform.localScale = scale ?? Vector3.one;
+            part.transform.localRotation = rotation ?? Quaternion.identity;
+            part.AddComponent<MeshFilter>().sharedMesh = InsectSculptureMeshes.Get(shape);
+            part.AddComponent<MeshRenderer>();
+            ApplyColor(part, color);
+            return part;
+        }
+
         private void MakeWing(string name, Vector3 pos, Vector3 scale, Color color)
         {
-            GameObject wing = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            wing.name = name;
-            wing.transform.SetParent(transform, false);
-            wing.transform.localPosition = pos;
-            wing.transform.localScale = scale;
-            Collider col = wing.GetComponent<Collider>();
-            if (col != null) UnityEngine.Object.Destroy(col);
-            ApplyColor(wing, color);
+            // An ellipsoid gives a tapered membrane rather than a rectangular plank.
+            scale.x = Mathf.Max(scale.x, 2f * (Mathf.Abs(pos.x) - 0.06f));
+            MakeSculpture(name, InsectSculptureMeshes.Shape.Wing, color, pos, scale);
+        }
+
+        private void BindWingSurfaces()
+        {
+            // Keep WingL/R as the animation contract, but rotate at the thorax.
+            // Spots, veins and hindwings must follow the same hinge.
+            foreach (string side in new[] { "L", "R" })
+            {
+                Transform surface = transform.Find("Wing" + side);
+                if (surface == null) continue;
+                Vector3 center = surface.localPosition;
+                surface.name = "WingSurface" + side;
+                Transform hinge = new GameObject("Wing" + side).transform;
+                hinge.SetParent(transform, false);
+                hinge.localPosition = new Vector3(side == "L" ? -0.07f : 0.07f, center.y, center.z);
+                var attached = new System.Collections.Generic.List<Transform> { surface };
+                for (int i = 0; i < transform.childCount; i++)
+                {
+                    Transform child = transform.GetChild(i);
+                    string n = child.name;
+                    if (child == surface || child == hinge) continue;
+                    bool decoration = n.StartsWith("Spot") || n.StartsWith("EyeSpot") || n.StartsWith("Vein")
+                        || n.StartsWith("Wing") || n.StartsWith("HindTail") || n.StartsWith("TailCurl");
+                    if (decoration && (side == "L" ? child.localPosition.x < 0f : child.localPosition.x > 0f))
+                        attached.Add(child);
+                }
+                foreach (Transform child in attached) child.SetParent(hinge, true);
+            }
+        }
+
+        private GameObject MakeSegment(string name, Vector3 from, Vector3 to, float width, Color color)
+        {
+            Vector3 delta = to - from;
+            return MakePart(name, PrimitiveType.Capsule, (from + to) * 0.5f,
+                new Vector3(width, delta.magnitude * 0.5f, width), color,
+                Quaternion.FromToRotation(Vector3.up, delta.normalized));
         }
 
         private void MakeLegs(Color color, int pairs, float zOffset)
         {
-            Color joint = new Color(color.r * 0.7f + 0.03f, color.g * 0.7f + 0.03f, color.b * 0.7f + 0.03f);
+            Color joint = Color.Lerp(color, Color.black, 0.22f);
+            // Attach to the narrow thorax on slender species, the shell on beetles.
+            Transform thorax = transform.Find("Thorax");
+            MeshFilter thoraxMesh = thorax != null ? thorax.GetComponent<MeshFilter>() : null;
+            float thoraxWidth = thoraxMesh != null && thoraxMesh.sharedMesh != null
+                ? thoraxMesh.sharedMesh.bounds.size.x * thorax.localScale.x : .55f;
+            float hipX = Mathf.Clamp(thoraxWidth * .4f, .07f, .22f);
             for (int i = 0; i < pairs; i++)
             {
                 float z = zOffset + (i - (pairs - 1) * 0.5f) * 0.2f;
-                // 앞·중·뒷다리 각도 변주(기계적 동일각 해소) + z 부채꼴 펼침
-                float zSpread = (i - (pairs - 1) * 0.5f) * 0.04f;
-                float upAng = 26f + i * 4f;
-                float loAng = 8f + i * 3f;
-                // 대퇴 (상단)
-                MakePart($"LegUL{i}", PrimitiveType.Capsule, new Vector3(-0.22f, -0.1f, z + zSpread),
-                    new Vector3(0.055f, 0.12f, 0.055f), color, Quaternion.Euler(0f, 0f, upAng));
-                MakePart($"LegUR{i}", PrimitiveType.Capsule, new Vector3(0.22f, -0.1f, z + zSpread),
-                    new Vector3(0.055f, 0.12f, 0.055f), color, Quaternion.Euler(0f, 0f, -upAng));
-                // 관절
-                MakePart($"KneeL{i}", PrimitiveType.Sphere, new Vector3(-0.3f, -0.2f, z + zSpread),
-                    Vector3.one * 0.05f, joint);
-                MakePart($"KneeR{i}", PrimitiveType.Sphere, new Vector3(0.3f, -0.2f, z + zSpread),
-                    Vector3.one * 0.05f, joint);
-                // 경절 (하단)
-                MakePart($"LegLL{i}", PrimitiveType.Capsule, new Vector3(-0.32f, -0.3f, z + zSpread),
-                    new Vector3(0.038f, 0.12f, 0.038f), color, Quaternion.Euler(0f, 0f, loAng));
-                MakePart($"LegLR{i}", PrimitiveType.Capsule, new Vector3(0.32f, -0.3f, z + zSpread),
-                    new Vector3(0.038f, 0.12f, 0.038f), color, Quaternion.Euler(0f, 0f, -loAng));
-                // 발끝(tarsus) — 접지감(옛엔 발끝 없어 공중에 뜬 느낌)
-                MakePart($"FootL{i}", PrimitiveType.Sphere, new Vector3(-0.345f, -0.4f, z + zSpread),
-                    Vector3.one * 0.03f, joint);
-                MakePart($"FootR{i}", PrimitiveType.Sphere, new Vector3(0.345f, -0.4f, z + zSpread),
-                    Vector3.one * 0.03f, joint);
+                float fan = (i - (pairs - 1) * 0.5f) * 0.09f;
+                foreach (int sign in new[] { -1, 1 })
+                {
+                    string side = sign < 0 ? "L" : "R";
+                    Vector3 hip = new Vector3(sign * hipX, -0.055f, z);
+                    Vector3 knee = new Vector3(sign * (hipX + 0.18f), -0.16f, z + fan);
+                    Vector3 foot = new Vector3(sign * (hipX + 0.24f), -0.39f, z + fan * 1.6f);
+                    MakeSegment($"LegU{side}{i}", hip, knee, 0.055f, color);
+                    MakePart($"Knee{side}{i}", PrimitiveType.Sphere, knee, Vector3.one * 0.056f, joint);
+                    MakeSegment($"LegL{side}{i}", knee, foot, 0.035f, color);
+                    MakePart($"Foot{side}{i}", PrimitiveType.Sphere, foot,
+                        new Vector3(0.06f, 0.028f, 0.065f), joint);
+                }
             }
         }
 
         private void MakeAntennae(Color color, float zBase, bool feathered = false)
         {
-            // 2분절 굴절로 부드러운 S곡선(옛 직선 캡슐 1개 = 막대기 느낌 해소).
-            MakePart("AntBaseL", PrimitiveType.Capsule, new Vector3(-0.1f, 0.18f, zBase + 0.13f),
-                new Vector3(0.03f, 0.14f, 0.03f), color, Quaternion.Euler(-38f, 0f, 16f));
-            MakePart("AntBaseR", PrimitiveType.Capsule, new Vector3(0.1f, 0.18f, zBase + 0.13f),
-                new Vector3(0.03f, 0.14f, 0.03f), color, Quaternion.Euler(-38f, 0f, -16f));
-            MakePart("AntMidL", PrimitiveType.Capsule, new Vector3(-0.15f, 0.36f, zBase + 0.2f),
-                new Vector3(0.025f, 0.12f, 0.025f), color, Quaternion.Euler(-10f, 0f, 8f));
-            MakePart("AntMidR", PrimitiveType.Capsule, new Vector3(0.15f, 0.36f, zBase + 0.2f),
-                new Vector3(0.025f, 0.12f, 0.025f), color, Quaternion.Euler(-10f, 0f, -8f));
-            float tipScale = feathered ? 0.08f : 0.055f;
-            MakePart("AntTipL", PrimitiveType.Sphere, new Vector3(-0.17f, 0.46f, zBase + 0.23f), Vector3.one * tipScale, color);
-            MakePart("AntTipR", PrimitiveType.Sphere, new Vector3(0.17f, 0.46f, zBase + 0.23f), Vector3.one * tipScale, color);
-            if (feathered)
+            // Explicit shared endpoints avoid the gaps made by independently
+            // rotated capsules (most visible on the butterfly side portrait).
+            for (int sign = -1; sign <= 1; sign += 2)
             {
-                // 나방/모기 깃털 더듬이 — 끝에 양옆 작은 깃
-                MakePart("AntFeatherL", PrimitiveType.Cube, new Vector3(-0.16f, 0.40f, zBase + 0.22f),
-                    new Vector3(0.07f, 0.012f, 0.03f), color, Quaternion.Euler(0f, 0f, 20f));
-                MakePart("AntFeatherR", PrimitiveType.Cube, new Vector3(0.16f, 0.40f, zBase + 0.22f),
-                    new Vector3(0.07f, 0.012f, 0.03f), color, Quaternion.Euler(0f, 0f, -20f));
+                string side = sign < 0 ? "L" : "R";
+                Vector3 root = new Vector3(sign * .085f, .145f, zBase + .08f);
+                Vector3 elbow = new Vector3(sign * .145f, .30f, zBase + .17f);
+                Vector3 tip = new Vector3(sign * .205f, .43f, zBase + .25f);
+                MakeSegment("AntBase" + side, root, elbow, .022f, color);
+                MakeSegment("AntMid" + side, elbow, tip, .016f, color);
+                MakePart("AntTip" + side, PrimitiveType.Sphere, tip,
+                    Vector3.one * (feathered ? .066f : .046f), color);
+                if (feathered)
+                    MakeSegment("AntFeather" + side, elbow + new Vector3(0f, .035f, 0f),
+                        elbow + new Vector3(sign * .10f, .015f, .015f), .012f, color);
+            }
+        }
+
+        private void MakeFlightLegs(Color color)
+        {
+            // Six narrow hanging legs on moths and butterflies. They remain
+            // tucked beneath the thorax so wing portraits keep the focal shape.
+            for (int i = 0; i < 3; i++)
+            {
+                float z = .17f - i * .12f;
+                for (int sign = -1; sign <= 1; sign += 2)
+                {
+                    string side = sign < 0 ? "L" : "R";
+                    Vector3 hip = new Vector3(sign * .075f, -.065f, z);
+                    Vector3 knee = new Vector3(sign * .16f, -.17f, z - .025f);
+                    Vector3 foot = new Vector3(sign * .20f, -.26f, z + .01f);
+                    MakeSegment("LegU" + side + i, hip, knee, .017f, color);
+                    MakeSegment("LegL" + side + i, knee, foot, .012f, color);
+                }
             }
         }
 
         private void MakeEyes(float zPos, float size, float xSpread = 0.12f)
         {
-            MakePart("EyeL", PrimitiveType.Sphere, new Vector3(-xSpread, 0.15f, zPos), Vector3.one * size, Color.white);
-            MakePart("EyeR", PrimitiveType.Sphere, new Vector3(xSpread, 0.15f, zPos), Vector3.one * size, Color.white);
+            string id = data != null ? data.insectId ?? "" : "";
+            bool armored = id.Contains("beetle") || id.Contains("stag") || id.StartsWith("ant") || id.Contains("_ant");
+            Color eyeColor = armored ? new Color(0.055f, 0.075f, 0.09f) : new Color(0.76f, 0.87f, 0.67f);
+            MakePart("EyeL", PrimitiveType.Sphere, new Vector3(-xSpread, 0.15f, zPos), Vector3.one * size, eyeColor);
+            MakePart("EyeR", PrimitiveType.Sphere, new Vector3(xSpread, 0.15f, zPos), Vector3.one * size, eyeColor);
             // 큰 동공 (치비 톤: 64%)
             float pupilSize = size * 0.64f;
             MakePart("PupilL", PrimitiveType.Sphere, new Vector3(-xSpread, 0.15f, zPos + 0.04f), Vector3.one * pupilSize, new Color(0.05f, 0.05f, 0.08f));
@@ -1598,13 +1666,16 @@ namespace InsectGame.Spawning
             MakePart("GlintR", PrimitiveType.Sphere, new Vector3(xSpread - 0.025f, 0.115f, zPos + 0.05f), Vector3.one * glintSize, new Color(1f, 1f, 1f, 0.8f));
         }
 
-        // 곤충 등껍질 상단 흰색 반투명 글로스 — 입체 광택(딱정벌레/풍뎅이류 1줄 호출).
+        // Use the actual shell surface for gloss; no floating transparent white blob.
         private void MakeTopGloss(Vector3 bodyCenter, Vector3 bodyScale, float intensity = 0.14f)
         {
-            MakePart("TopGloss", PrimitiveType.Sphere,
-                bodyCenter + new Vector3(0f, bodyScale.y * 0.35f, bodyScale.z * 0.05f),
-                new Vector3(bodyScale.x * 0.7f, bodyScale.y * 0.18f, bodyScale.z * 0.75f),
-                new Color(1f, 1f, 1f, intensity));
+            Transform body = transform.Find("Body");
+            Renderer renderer = body != null ? body.GetComponent<Renderer>() : null;
+            Material mat = renderer != null ? renderer.sharedMaterial : null;
+            if (mat == null) return;
+            float smoothness = Mathf.Clamp01(0.48f + intensity);
+            if (mat.HasProperty("_Glossiness")) mat.SetFloat("_Glossiness", smoothness);
+            if (mat.HasProperty("_Smoothness")) mat.SetFloat("_Smoothness", smoothness);
         }
 
         // 모델 파츠 색칠 — shiny면 종별 색변환을 거쳐 전 파츠(하드코딩 색 포함)가 이로치 팔레트로 바뀜.
@@ -1645,12 +1716,19 @@ namespace InsectGame.Spawning
             if (shader == null) return;
             Material mat = new Material(shader);
             mat.color = color;
+            if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", color);
             // PBR 광택: 옛 ApplyColor는 색만 칠해 전 곤충이 무광 점토처럼 보였음(품질 저하 핵심).
             // Standard/URP Lit에서만 _Glossiness/_Metallic 설정(Unlit/Sprites fallback은 프로퍼티 없어 가드).
             bool pbr = shader.name == "Standard" || shader.name.Contains("Lit");
             if (color.a < 1f)
             {
-                mat.SetFloat("_Mode", 3);
+                if (mat.HasProperty("_Mode")) mat.SetFloat("_Mode", 3);
+                if (mat.HasProperty("_Surface"))
+                {
+                    mat.SetFloat("_Surface", 1f);
+                    mat.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+                }
+                mat.SetOverrideTag("RenderType", "Transparent");
                 mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
                 mat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
                 mat.SetInt("_ZWrite", 0);
@@ -1659,14 +1737,23 @@ namespace InsectGame.Spawning
                 mat.DisableKeyword("_ALPHAPREMULTIPLY_ON");
                 mat.renderQueue = 3000;
                 // 날개/반투명: 막·천 느낌(번들거림 억제)
-                if (pbr) { mat.SetFloat("_Glossiness", 0.2f); mat.SetFloat("_Smoothness", 0.2f); mat.SetFloat("_Metallic", 0f); }
+                if (pbr)
+                {
+                    if (mat.HasProperty("_Glossiness")) mat.SetFloat("_Glossiness", .18f);
+                    if (mat.HasProperty("_Smoothness")) mat.SetFloat("_Smoothness", .18f);
+                    if (mat.HasProperty("_Metallic")) mat.SetFloat("_Metallic", 0f);
+                }
             }
             else if (pbr)
             {
                 // 외골격 키틴 광택 + 미세 금속감 — 전 34종 동시 개선
-                mat.SetFloat("_Glossiness", 0.55f);
-                mat.SetFloat("_Smoothness", 0.55f);
-                mat.SetFloat("_Metallic", 0.15f);
+                bool eye = go.name.Contains("Eye") || go.name.Contains("Pupil");
+                bool membrane = go.name.StartsWith("Wing") || go.name.StartsWith("Fur");
+                bool chitin = go.name.StartsWith("Shell") || go.name.StartsWith("Horn") || go.name.StartsWith("Mand");
+                float smoothness = eye ? .78f : membrane ? .18f : chitin ? .52f : .32f;
+                if (mat.HasProperty("_Glossiness")) mat.SetFloat("_Glossiness", smoothness);
+                if (mat.HasProperty("_Smoothness")) mat.SetFloat("_Smoothness", smoothness);
+                if (mat.HasProperty("_Metallic")) mat.SetFloat("_Metallic", chitin ? .025f : 0f);
             }
             r.material = mat;
         }

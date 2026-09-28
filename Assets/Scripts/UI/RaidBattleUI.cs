@@ -131,8 +131,6 @@ namespace InsectGame.UI
                 raidController.RaidBossResponseResolved -= OnRaidBossResponseResolved;
                 raidController.RaidRoundCompleted -= OnRaidRoundCompleted;
             }
-            // timeScale 안전 복구 (다른 시스템이 변경한 채 종료된 경우 대비)
-            if (Time.timeScale < 0.99f) Time.timeScale = 1f;
         }
 
         private void OnRaidUpdated()
@@ -284,7 +282,7 @@ namespace InsectGame.UI
             arena.PlayUniteAttackAnimation(() =>
             {
                 teamAnimationComplete = true;
-                if (cameraFollower != null) cameraFollower.Shake(0.5f, 0.6f);
+                if (cameraFollower != null && !BattlePresentation.ReducedMotion) cameraFollower.Shake(0.5f, 0.6f);
             });
         }
 
@@ -396,17 +394,17 @@ namespace InsectGame.UI
         {
             if (phase == Phase.None) return;
 
-            phaseTimer += Time.deltaTime;
-            introTimer += Time.deltaTime;
-            if (actionTimer > 0) actionTimer -= Time.deltaTime;
-            if (bossShake > 0) bossShake -= Time.deltaTime;
-            if (resultShown) resultTimer += Time.deltaTime;
+            phaseTimer += BattlePresentation.DeltaTime;
+            introTimer += BattlePresentation.DeltaTime;
+            if (actionTimer > 0) actionTimer -= BattlePresentation.DeltaTime;
+            if (bossShake > 0) bossShake -= BattlePresentation.DeltaTime;
+            if (resultShown) resultTimer += BattlePresentation.DeltaTime;
 
             if (teamShake != null)
                 for (int i = 0; i < teamShake.Length; i++)
-                    if (teamShake[i] > 0) teamShake[i] -= Time.deltaTime;
+                    if (teamShake[i] > 0) teamShake[i] -= BattlePresentation.DeltaTime;
 
-            float hpSpeed = 80f * Time.deltaTime;
+            float hpSpeed = 80f * BattlePresentation.DeltaTime;
             if (raidController.BossStats != null)
                 displayBossHp = Mathf.MoveTowards(displayBossHp, raidController.BossStats.CurrentHp, hpSpeed);
             if (raidController.TeamStats != null && displayTeamHp != null)
@@ -458,7 +456,7 @@ namespace InsectGame.UI
                     wantUnite = false;
                 }
 
-                if (wantMouseClick || Input.GetMouseButtonDown(0))
+                if ((wantMouseClick || Input.GetMouseButtonDown(0)) && !IsSpeedControlPointerHit)
                 {
                     Vector2 mp = wantMouseClick ? guiMousePos :
                         UIScale.VirtualMousePosition;
@@ -497,11 +495,11 @@ namespace InsectGame.UI
             if (phase == Phase.UniteAttack || phase == Phase.PlayerAttack)
             {
                 if (phase == Phase.UniteAttack)
-                    uniteAnimTimer += Time.deltaTime;
+                    uniteAnimTimer += BattlePresentation.DeltaTime;
                 float minDuration = phase == Phase.UniteAttack
                     ? UniteRushMinDuration
                     : TeamRushMinDuration;
-                bool animationReady = teamAnimationComplete || phaseTimer > 2.4f;
+                bool animationReady = teamAnimationComplete || arena == null || !arena.IsActive;
                 if (animationReady && phaseTimer >= minDuration)
                 {
                     // 순서가 중요하다: **남은 팀원이 먼저다.** 아직 행동하지 않은 곤충이 있으면
@@ -544,14 +542,14 @@ namespace InsectGame.UI
 
             if (phase == Phase.BossAttack)
             {
-                bool animationReady = bossAnimationComplete || phaseTimer > 2.4f;
+                bool animationReady = bossAnimationComplete || arena == null || !arena.IsActive;
                 if (animationReady && phaseTimer >= BossImpactMinDuration)
                     TryCompleteRoundPresentation();
             }
 
             if (phase == Phase.TeamTurnAnnounce)
             {
-                announceTimer -= Time.deltaTime;
+                announceTimer -= BattlePresentation.DeltaTime;
                 if (wantMouseClick) announceTimer = 0f;   // 탭으로 즉시 스킵(소거는 아래 말미가 담당)
                 if (announceTimer <= 0f)
                 {
@@ -656,6 +654,21 @@ namespace InsectGame.UI
         // 기능 손실은 없다 — 새 경로 `OnRaidBossResponseResolved`가 `arena.PlayRaidBossAttack(..., lastHitSlot, ...)`로
         // 피격 슬롯을 인자로 직접 넘긴다. 즉 대상 지정이 필드에서 매개변수로 옮겨간 것뿐이다.
 
+        private GUIStyle speedControlStyle;
+        private bool ShowSpeedControl => phase != Phase.None && phase != Phase.Intro && !resultShown;
+        private Rect SpeedControlRect => UISafeLayout.TopPanel(132f, 56f, UISafeLayout.HAlign.Right);
+        private bool IsSpeedControlPointerHit => ShowSpeedControl && SpeedControlRect.Contains(UIScale.VirtualMousePosition);
+
+        private void DrawSpeedControl()
+        {
+            if (!ShowSpeedControl) return;
+            if (speedControlStyle == null)
+                speedControlStyle = new GUIStyle(GUI.skin.label) { fontSize = 24, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            speedControlStyle.normal.textColor = UITheme.Instance.textPrimary;
+            if (UISurface.Button(SpeedControlRect, $"속도 {BattlePresentation.Speed:0}×", UITheme.Instance.surfaceRaised, speedControlStyle))
+                BattlePresentation.Speed = BattlePresentation.Speed < 1.5f ? 2f : 1f;
+        }
+
         private void OnGUI()
         {
             if (phase == Phase.None) return;
@@ -692,7 +705,7 @@ namespace InsectGame.UI
                 }
             }
 
-            if (evt != null && evt.type == EventType.MouseDown && evt.button == 0)
+            if (evt != null && evt.type == EventType.MouseDown && evt.button == 0 && !IsSpeedControlPointerHit)
             {
                 wantMouseClick = true;
                 guiMousePos = evt.mousePosition;
@@ -728,6 +741,8 @@ namespace InsectGame.UI
 
             // 전투 문구는 1v1과 같은 오버레이를 쓴다 — 아레나가 픽셀 좌표로 그리던 자리.
             BattleEffectTextOverlay.Draw(arena);
+
+            DrawSpeedControl();
 
             UIScale.End();
         }

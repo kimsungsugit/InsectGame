@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 
 namespace InsectGame.NPC
 {
@@ -9,6 +9,38 @@ namespace InsectGame.NPC
     /// </summary>
     public static class NpcDialogueDatabase
     {
+        /// <summary>월드 이름과 대화의 ID 표기를 같은 이름으로 해석한다.</summary>
+        public static string StorySpeakerName(string storyId)
+        {
+            switch (storyId)
+            {
+                case "catcher_rival": return "라온";
+                case "ruins_scholar": return "세라";
+                // 명부회(2막) — 관장만 진명, 간부는 코드네임으로 부른다.
+                case "ledger_chief": return "관장 하월";
+                case "ledger_grip": return "집게";
+                case "ledger_scale": return "저울";
+                case "ledger_ink": return "먹";
+                // 1막 하수 — 정체가 밝혀지기 전이라 **이름이 아니라 인상으로 부른다**.
+                // 2막에서 명부회 간부를 만나고 나서야 이들이 무엇이었는지 알게 된다.
+                case "ledger_thug_cord": return "검은 옷의 사내";
+                case "ledger_thug_rule": return "검은 옷의 여자";
+                case "ledger_thug_pin": return "검은 옷의 청년";
+                case "village_elder": return "마을 어르신";
+                default: return string.IsNullOrEmpty(storyId) ? "이야기" : storyId;
+            }
+        }
+
+        /// <summary>명시된 줄 화자를 우선한다. 내레이션/미등록 화자는 다른 인물 얼굴을 빌리지 않는다.</summary>
+        public static string StoryPortraitId(string lineSpeaker, string fallbackId)
+        {
+            if (string.IsNullOrEmpty(lineSpeaker)) return fallbackId;
+            if (lineSpeaker == "하월") return "ledger_chief";
+            foreach (string id in StoryNpcLines.Keys)
+                if (lineSpeaker == id || lineSpeaker == StorySpeakerName(id)) return id;
+            return null;
+        }
+
         // ── 주민 한글 이름 풀 (15개+) ──
         private static readonly string[] Names =
         {
@@ -212,6 +244,19 @@ namespace InsectGame.NPC
             lines = null;
             return !string.IsNullOrEmpty(storyNpcId)
                 && StoryNpcLines.TryGetValue(storyNpcId, out lines);
+        }
+
+        /// <summary>실제 전투 결과를 읽되 새 줄거리나 보상을 만들지 않는 재대화.</summary>
+        public static bool TryGetStoryNpcLines(string storyNpcId, bool defeated, bool cleansed, out string[] lines)
+        {
+            if (!TryGetStoryNpcLines(storyNpcId, out lines)) return false;
+            if (defeated && storyNpcId.StartsWith("ledger_", System.StringComparison.Ordinal))
+            {
+                lines = new[] { "…이번 대결은 네가 이겼다.", cleansed
+                    ? "이곳을 붙잡고 있을 명분도 사라졌군. 더 막지는 않겠다."
+                    : "지금은 더 겨룰 생각 없다. 네 갈 길을 가라." };
+            }
+            return true;
         }
 
         /// <summary>

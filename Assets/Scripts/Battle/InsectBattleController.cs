@@ -31,6 +31,67 @@ namespace InsectGame.Battle
         public event Action PlayerFainted;
 
         // 적이 직전 턴에 사용한 스킬(null=기본공격/쿨다운) — UI가 EnemyAttack 페이즈 연출에 사용.
+        private IRaidRandomSource randomSource = new BattleRandomSource();
+
+        public void SetRandomSource(IRaidRandomSource source)
+        {
+            randomSource = source ?? new BattleRandomSource();
+        }
+
+        /// <summary>Set before starting a deterministic fixture; never reads Unity's visual RNG.</summary>
+        public void SetRandomSeed(int seed)
+        {
+            randomSource = new BattleRandomSource(seed);
+        }
+
+        public bool DeferPresentation { get; set; }
+        public bool PlayerActedThisRound { get; private set; }
+        public int PlayerHpAfterEnemyAction { get; private set; }
+        public int EnemyHpAfterEnemyAction { get; private set; }
+        public bool EnemyActedThisRound { get; private set; }
+        public int PlayerHpAfterPlayerAction { get; private set; }
+        public int EnemyHpAfterPlayerAction { get; private set; }
+        private bool resolvingEnemyAction;
+        private readonly List<(bool enemy, string text, Color color)> presentationTexts = new List<(bool, string, Color)>();
+
+        private void BeginResolvedRound()
+        {
+            PlayerActedThisRound = false;
+            EnemyActedThisRound = false;
+            LastEnemySkill = null;
+            resolvingEnemyAction = false;
+            presentationTexts.Clear();
+            SnapshotPlayerAction();
+            SnapshotEnemyAction();
+        }
+
+        private void SnapshotPlayerAction()
+        {
+            PlayerHpAfterPlayerAction = playerStats.CurrentHp;
+            EnemyHpAfterPlayerAction = enemyStats.CurrentHp;
+        }
+
+        private void SnapshotEnemyAction()
+        {
+            PlayerHpAfterEnemyAction = playerStats.CurrentHp;
+            EnemyHpAfterEnemyAction = enemyStats.CurrentHp;
+        }
+
+        public void PresentResolvedAction(bool playerAction)
+        {
+            if (Arena == null) return;
+            for (int i = 0; i < presentationTexts.Count;)
+            {
+                var message = presentationTexts[i];
+                if (message.enemy != playerAction)
+                {
+                    presentationTexts.RemoveAt(i);
+                    Arena.PlayEffectText(message.text, message.color);
+                }
+                else i++;
+            }
+        }
+
         public InsectSkill LastEnemySkill { get; private set; }
 
         /// <summary>
@@ -71,6 +132,12 @@ namespace InsectGame.Battle
         /// 판정 근거는 <c>InsectEntity.GuardianRegionId</c> 주석 참조.
         /// </summary>
         public string EnemyGuardianRegionId { get; private set; }
+
+        /// <summary>
+        /// 대결 상대 ID(<c>NPC.DuelBanter</c>의 키) — 야생 전투·아이 대결이면 빈 문자열.
+        /// 연출(컷인·전투 중 한마디·결과 한마디)만 읽는다. 승패 처리는 대결을 건 쪽이 따로 든다.
+        /// </summary>
+        public string DuelOpponentId { get; private set; } = string.Empty;
         private bool enemyShinyAtStart; // 시작 시점 스냅샷 — 도주/풀 재사용된 라이브 참조로 보상 오등록 방지
         private bool duelMode;          // NPC 대결 — 포획 롤·야생 아이템 드랍 없음(StartDuel 참조)
 
@@ -101,6 +168,9 @@ namespace InsectGame.Battle
         private int lastExpReward;
         // 종료 가드 — 승리/패배 처리(보상 지급·BattleEnded)를 1회로 제한.
         // 없으면 종료 후 액션이 한 번 더 들어올 때(rapid tap/입력 큐) 보상 이중 지급.
+        /// <summary>True only for a successful escape; available before BattleEnded is raised.</summary>
+        public bool DidEscape { get; private set; }
+
         private bool battleEnded;
         private string lastItemId;
         private int lastItemCount;
@@ -187,6 +257,7 @@ namespace InsectGame.Battle
             ledgerArmedThisTurn = false;
             ledgerSpentThisTurn = false;
             ledgerReadCount = 0;
+            DuelOpponentId = string.Empty;   // 장부와 같은 이유 — 다음 야생 전투가 간부 컷인을 물려받지 않게
             lastCandyReward = 0;
             lastExpReward = 0;
             lastItemId = string.Empty;
@@ -196,6 +267,8 @@ namespace InsectGame.Battle
             lastCaptureSucceeded = false;
             lastCaptureChance = 0f;
             battleEnded = false;
+            DidEscape = false;
+            BeginResolvedRound();
             // onStarted/BattleUpdated는 호출부가 야생/듀얼 고유 필드(enemyEntity 등)를 채운 뒤에 울린다 —
             // BattleScreenUI.OnBattleUpdated가 GetEnemyEntity()를 읽어 아레나 위치를 잡기 때문이다.
         }
@@ -213,6 +286,15 @@ namespace InsectGame.Battle
             ledgerArmedThisTurn = false;
             ledgerSpentThisTurn = false;
             ledgerReadCount = 0;
+        }
+
+        /// <summary>
+        /// 이 대결의 상대를 알린다 — <see cref="ArmLedger"/>와 같은 이유로 <c>StartDuel</c> 직후에 부른다
+        /// (아이 대결이 같은 시작 함수를 쓴다). 야생 전투에는 걸리지 않는다.
+        /// </summary>
+        public void SetDuelOpponent(string duelId)
+        {
+            DuelOpponentId = duelMode && !string.IsNullOrEmpty(duelId) ? duelId : string.Empty;
         }
 
         /// <summary>현재 장부 값 — UI 게이지가 읽는다.</summary>
@@ -253,6 +335,8 @@ namespace InsectGame.Battle
                 return;
             }
 
+            BeginResolvedRound();
+
             // 기절 상태면 이번 행동 스킵(스킬 소모 없음) — 적은 그대로 반격.
             if (playerStunTurns > 0)
             {
@@ -261,6 +345,7 @@ namespace InsectGame.Battle
             }
             else
             {
+                PlayerActedThisRound = true;
                 InsectSkill[] skills = GetPlayerSkills();
                 InsectSkill skill = skills != null && skillIndex < skills.Length ? skills[skillIndex] : GetSkill(playerStats.Data, skillIndex);
                 ApplySkill(playerStats, enemyStats, skill, true);
@@ -276,11 +361,13 @@ namespace InsectGame.Battle
                 NoteLedgerAction(skillIndex);
             }
 
+            SnapshotPlayerAction();
             if (enemyStats.CurrentHp > 0)
             {
                 UseEnemyTurn();
             }
 
+            SnapshotEnemyAction();
             TickEffects();
             TickCooldowns();
             BattleUpdated?.Invoke(playerStats, enemyStats);
@@ -294,6 +381,7 @@ namespace InsectGame.Battle
                 return;
             }
             if (battleEnded) return; // 종료 후 액션 차단
+            BeginResolvedRound();
 
             if (playerStunTurns > 0)
             {
@@ -302,8 +390,9 @@ namespace InsectGame.Battle
             }
             else
             {
+                PlayerActedThisRound = true;
                 int damage = Mathf.Max(1, Mathf.RoundToInt(playerStats.Attack * 0.7f));
-                enemyStats.ApplyDamage(damage, playerStats.Attack, enemyStats.Defense);
+                ApplyDirectDamage(enemyStats, playerStats, damage);
                 TryPlayHitFlash(false);
 
                 // 쿨다운 없는 기본공격 연타가 이 압박이 겨냥하는 바로 그 패턴이다.
@@ -311,11 +400,13 @@ namespace InsectGame.Battle
                 NoteLedgerAction(LedgerPressure.BasicAttackKey);
             }
 
+            SnapshotPlayerAction();
             if (enemyStats.CurrentHp > 0)
             {
                 UseEnemyTurn();
             }
 
+            SnapshotEnemyAction();
             TickEffects();
             TickCooldowns();
             BattleUpdated?.Invoke(playerStats, enemyStats);
@@ -330,9 +421,10 @@ namespace InsectGame.Battle
             }
             if (battleEnded) return false; // 종료 후 액션 차단
 
+            BeginResolvedRound();
             int levelDiff = playerStats.Level - enemyStats.Level;
             float escapeChance = Mathf.Clamp(0.5f + levelDiff * 0.05f, 0.1f, 0.9f);
-            bool escaped = UnityEngine.Random.value < escapeChance;
+            bool escaped = randomSource.Next01() < escapeChance;
 
             if (escaped)
             {
@@ -341,6 +433,7 @@ namespace InsectGame.Battle
                 ReleaseEnemyAfterBattle();
                 PersistActivePlayer();   // 도주 시에도 남은 HP·감염 저장
                 battleEnded = true;
+                DidEscape = true;
                 BattleEnded?.Invoke(false);
                 // 도주도 대결의 한 결과다 — 여기서 안 알리면 NpcDuelController가
                 // MarkDuelFinished를 못 걸어 90초 쿨다운이 통째로 우회된다("결과와 무관하게"가
@@ -351,6 +444,7 @@ namespace InsectGame.Battle
 
             NoteLedgerAction(LedgerPressure.EscapeKey);
             UseEnemyTurn();
+            SnapshotEnemyAction();
             TickEffects();
             TickCooldowns();
             BattleUpdated?.Invoke(playerStats, enemyStats);
@@ -443,7 +537,7 @@ namespace InsectGame.Battle
             if (skill == null)
             {
                 int damage = GetDamage(attacker, 10);
-                defender.ApplyDamage(damage, attacker.Attack, defender.Defense);
+                ApplyDirectDamage(defender, attacker, damage);
                 TryPlayHitFlash(defenderIsPlayer);
                 return;
             }
@@ -507,7 +601,7 @@ namespace InsectGame.Battle
                         ? InsectTypeChart.GetSameTypeBonus(skill.element, attacker.Data.primaryType, attacker.Data.secondaryType)
                         : 1f;
                     int damage = Mathf.Max(1, Mathf.RoundToInt(GetDamage(attacker, baseDamage) * effectiveness * sameTypeBonus));
-                    defender.ApplyDamage(damage, attacker.Attack, defender.Defense);
+                    ApplyDirectDamage(defender, attacker, damage);
                     TryPlayHitFlash(defenderIsPlayer);
                     if (effectiveness > 1.05f)
                         TryPlayEffectText("효과가 굉장했다!", new Color(1f, 0.55f, 0.2f));
@@ -515,6 +609,14 @@ namespace InsectGame.Battle
                         TryPlayEffectText("효과가 별로인 듯하다...", new Color(0.55f, 0.65f, 0.8f));
                     break;
             }
+        }
+
+        // Ordinary wild encounters only. Stored stats, duel, guardian and raid balance stay intact.
+        private void ApplyDirectDamage(InsectBattleStats defender, InsectBattleStats attacker, int amount)
+        {
+            float pacing = !duelMode && string.IsNullOrEmpty(EnemyGuardianRegionId)
+                ? GameConstants.Battle.WildDamageMultiplier : 1f;
+            defender.ApplyDamage(Mathf.Max(1, Mathf.RoundToInt(amount * pacing)), attacker.Attack, defender.Defense);
         }
 
         private int GetDamage(InsectBattleStats attacker, int baseDamage)
@@ -549,7 +651,7 @@ namespace InsectGame.Battle
         {
             float acc = skill != null ? skill.accuracy : 1f;
             if (acc >= 0.999f) return true;   // 완전명중 스킬은 롤 없이 통과
-            return RollHit(acc, 0f, UnityEngine.Random.value);
+            return RollHit(acc, 0f, randomSource.Next01());
         }
 
         private void UseEnemyTurn()
@@ -563,6 +665,8 @@ namespace InsectGame.Battle
                 return;
             }
 
+            resolvingEnemyAction = true;
+            EnemyActedThisRound = true;
             InsectSkill enemySkill = GetPrimarySkill(enemyStats.Data);
             if (enemyCooldown > 0)
             {
@@ -823,7 +927,7 @@ namespace InsectGame.Battle
                     equippedOutfitBonus);
                 bool captureRollSucceeded = BattleCaptureChanceCalculator.IsSuccessful(
                     lastCaptureChance,
-                    UnityEngine.Random.value);
+                    randomSource.Next01());
 
                 if (dexController != null)
                 {
@@ -944,7 +1048,7 @@ namespace InsectGame.Battle
 
         private void TryPlayHitFlash(bool isPlayerSide)
         {
-            if (Arena == null) return;
+            if (DeferPresentation || Arena == null) return;
             GameObject model = isPlayerSide ? Arena.PlayerModel : Arena.EnemyModel;
             if (model != null && model.activeInHierarchy)
             {
@@ -954,7 +1058,7 @@ namespace InsectGame.Battle
 
         private void TryPlayFaint(bool isPlayerSide)
         {
-            if (Arena == null) return;
+            if (DeferPresentation || Arena == null) return;
             GameObject model = isPlayerSide ? Arena.PlayerModel : Arena.EnemyModel;
             if (model != null && model.activeInHierarchy)
             {
@@ -964,7 +1068,13 @@ namespace InsectGame.Battle
 
         private void TryPlayEffectText(string text, Color color)
         {
-            if (Arena == null || string.IsNullOrEmpty(text)) return;
+            if (string.IsNullOrEmpty(text)) return;
+            if (DeferPresentation)
+            {
+                presentationTexts.Add((resolvingEnemyAction, text, color));
+                return;
+            }
+            if (Arena == null) return;
             Arena.PlayEffectText(text, color);
         }
 
@@ -1027,6 +1137,7 @@ namespace InsectGame.Battle
             PersistActivePlayer();   // 교체 전 이전 곤충의 남은 HP·감염 저장(기절이면 0 그대로)
 
             playerStats = new InsectBattleStats(newInsect, newLevel, playerPid);
+            BeginResolvedRound();
             playerOverrideSkills = ResolvePlayerSkills(newInsect, equippedSkills, playerPid);
             int skillCount = playerOverrideSkills != null ? playerOverrideSkills.Length : (newInsect.skills != null ? newInsect.skills.Length : 0);
             playerCooldowns = new int[skillCount];

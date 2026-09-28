@@ -33,6 +33,7 @@ namespace InsectGame.Core
             GameConstants.PrefsKeys.TutorialHidden,
             GameConstants.PrefsKeys.WeeklyContestClaimed,
             GameConstants.PrefsKeys.BlightCleansed,
+            GameConstants.PrefsKeys.BadgeMilestonesClaimed,
             "InsectGame.UnlockedRegions",
             "InsectGame.DefeatedGuardians",
             // 위 5개와 정확히 같은 결함이었다 — `SaveScope.PrefsKey`를 거치면서도 이 목록에
@@ -72,7 +73,8 @@ namespace InsectGame.Core
         //    WeeklyContestClaimed). 올려야 기존 기기의 전역 키가 계정 스코프로 이전된다.
         // 6: BlightCleansed(신규) + DefeatedLedgerBosses(누락분) 추가.
         // 8: 가챠 천장 카운터 3키(int) 추가.
-        private const int MigrationVersion = 8;
+        // 9: 배지 이정표 보상 수령 상태(BadgeMilestonesClaimed) 추가.
+        private const int MigrationVersion = 9;
 
         private static readonly string[] ScopedFiles =
         {

@@ -1,4 +1,4 @@
-using InsectGame.Spawning;
+﻿using InsectGame.Spawning;
 using UnityEngine;
 using UnityEngine.EventSystems;
 
@@ -72,6 +72,9 @@ namespace InsectGame.Core
         private Transform cachedArmL, cachedArmR, cachedLegPivotL, cachedLegPivotR, cachedBody, cachedHeadPivot;
         // 도구(NetHandle/NetRing)는 오른팔과 동기 회전 — 손과 분리되어 공중에 떠 있는 인상 차단.
         private Transform cachedNetHandle, cachedNetRing;
+        private Transform cachedHandL, cachedHandR;
+        private Vector3 lastHandlePos, lastRingPos;
+        private Quaternion lastHandleRot, lastRingRot;
         private Vector3 netHandleBasePos, netRingBasePos;
         private Quaternion netHandleBaseRot, netRingBaseRot;
         private bool toolBaseCached;
@@ -141,7 +144,7 @@ namespace InsectGame.Core
         public void InvalidateVisualCache()
         {
             cachedArmL = cachedArmR = cachedLegPivotL = cachedLegPivotR = cachedBody = cachedHeadPivot = null;
-            cachedNetHandle = cachedNetRing = null;
+            cachedNetHandle = cachedNetRing = cachedHandL = cachedHandR = null;
             toolBaseCached = false;
             toolLookupDone = false;
             bodyBaseY = float.NaN;
@@ -236,6 +239,24 @@ namespace InsectGame.Core
                 {
                     return; // 모달 닫음 — 이번 프레임 이동 처리 스킵
                 }
+            }
+
+            // A modal blocks every movement source, including a destination selected before it opened.
+            if (InsectGame.UI.ModalUIRegistry.IsAnyOpen())
+            {
+                movingToClick = false;
+                EndAutoRun();
+                joystickActive = false;
+                joystickInput = Vector2.zero;
+                guiClickRequest = false;
+                guiKeyW = guiKeyA = guiKeyS = guiKeyD = false;
+                guiKeyUp = guiKeyDown = guiKeyLeft = guiKeyRight = false;
+                walkAnimTimer = footstepTimer = 0f;
+                isWalking = false;
+                if (catchSwingTimer > 0f) catchSwingTimer -= Time.unscaledDeltaTime;
+                if (blockedMsgTimer > 0f) blockedMsgTimer -= Time.unscaledDeltaTime;
+                AnimateWalk(false);
+                return;
             }
 
             // OnGUI KeyDown 래치(guiKey*)는 KeyUp 이벤트를 놓치면 켜진 채 stuck된다 — 에디터 Game뷰가
@@ -538,21 +559,43 @@ namespace InsectGame.Core
                 cachedNetHandle = transform.Find("NetHandle");
                 cachedNetRing = transform.Find("NetRing");
             }
-            // 잡기 스윙 중엔 base 재캐싱 금지 — 안 그러면 스윙된 회전이 base로 누적돼 도구가 드리프트.
-            if (!walking && catchSwingTimer <= 0f && cachedNetHandle != null && cachedNetRing != null)
+            if (cachedHandL == null) cachedHandL = transform.Find("HandL");
+            if (cachedHandR == null) cachedHandR = transform.Find("HandR");
+            if (cachedHandL != null && cachedArmL != null)
             {
-                netHandleBaseRot = cachedNetHandle.localRotation;
-                netRingBaseRot = cachedNetRing.localRotation;
-                toolBaseCached = true;
+                cachedHandL.localPosition = PlayerVisualBuilder.RotateAttachment(
+                    new Vector3(-0.29f, 0.52f, 0f), cachedArmL.localPosition, swingDeg + idleArm);
+                cachedHandL.localRotation = cachedArmL.localRotation;
             }
-            if (toolBaseCached)
+            if (cachedHandR != null && cachedArmR != null)
             {
-                // idle 호흡이 빠진 toolDeg를 쓴다 — 위 재캐싱이 매 idle 프레임 도므로,
-                // 여기에 idleArm을 섞으면 그 회전이 base로 누적돼 도구가 드리프트한다.
-                if (cachedNetHandle != null)
-                    cachedNetHandle.localRotation = Quaternion.Euler(toolDeg, 0f, 0f) * netHandleBaseRot;
-                if (cachedNetRing != null)
-                    cachedNetRing.localRotation = Quaternion.Euler(toolDeg, 0f, 0f) * netRingBaseRot;
+                cachedHandR.localPosition = PlayerVisualBuilder.RotateAttachment(
+                    new Vector3(0.29f, 0.52f, 0f), cachedArmR.localPosition, rightArmDeg);
+                cachedHandR.localRotation = cachedArmR.localRotation;
+            }
+            if (cachedNetHandle != null && cachedNetRing != null && cachedArmR != null)
+            {
+                // Recipe writes are detected against the last displayed pose, never
+                // by recaching an animated idle pose (which accumulated drift).
+                if (!toolBaseCached || cachedNetHandle.localPosition != lastHandlePos
+                    || cachedNetHandle.localRotation != lastHandleRot
+                    || cachedNetRing.localPosition != lastRingPos || cachedNetRing.localRotation != lastRingRot)
+                {
+                    netHandleBasePos = cachedNetHandle.localPosition;
+                    netRingBasePos = cachedNetRing.localPosition;
+                    netHandleBaseRot = cachedNetHandle.localRotation;
+                    netRingBaseRot = cachedNetRing.localRotation;
+                    toolBaseCached = true;
+                }
+                Quaternion attachmentRotation = Quaternion.Euler(rightArmDeg, 0f, 0f);
+                cachedNetHandle.localPosition = PlayerVisualBuilder.RotateAttachment(netHandleBasePos, cachedArmR.localPosition, rightArmDeg);
+                cachedNetRing.localPosition = PlayerVisualBuilder.RotateAttachment(netRingBasePos, cachedArmR.localPosition, rightArmDeg);
+                cachedNetHandle.localRotation = attachmentRotation * netHandleBaseRot;
+                cachedNetRing.localRotation = attachmentRotation * netRingBaseRot;
+                lastHandlePos = cachedNetHandle.localPosition;
+                lastRingPos = cachedNetRing.localPosition;
+                lastHandleRot = cachedNetHandle.localRotation;
+                lastRingRot = cachedNetRing.localRotation;
             }
 
             // 다리 흔들기 (팔과 반대) — LegPivot 회전 시 Leg+Boot 모두 함께 전파.
@@ -747,6 +790,16 @@ namespace InsectGame.Core
         {
             if (!autoRunning) return;
             movingToClick = false;
+            EndAutoRun();
+        }
+
+        /// <summary>월드 이동 시 일반 클릭 목적지까지 폐기한다. 도착 이벤트는 발생시키지 않는다.</summary>
+        public void StopNavigation()
+        {
+            movingToClick = false;
+            clickTarget = transform.position;
+            joystickInput = Vector2.zero;
+            joystickActive = false;
             EndAutoRun();
         }
 

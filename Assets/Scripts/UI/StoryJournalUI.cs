@@ -407,10 +407,16 @@ namespace InsectGame.UI
 
         private static string SpeakerOf(StoryBeat beat)
         {
-            if (beat.lines != null && beat.lines.Count > 0
-                && beat.lines[0] != null && !string.IsNullOrEmpty(beat.lines[0].speaker))
+            // 첫 **인물** 화자 — 지문으로 여는 장면이 목록에 "지문"이라는 사람으로 뜨지 않게 건너뛴다.
+            if (beat.lines != null)
             {
-                return beat.lines[0].speaker;
+                for (int i = 0; i < beat.lines.Count; i++)
+                {
+                    StoryLine line = beat.lines[i];
+                    if (line != null && !string.IsNullOrEmpty(line.speaker)
+                        && !StoryDialogueStaging.IsNarration(line.speaker))
+                        return line.speaker;
+                }
             }
             return string.IsNullOrEmpty(beat.speakerNpcId) ? "???" : beat.speakerNpcId;
         }

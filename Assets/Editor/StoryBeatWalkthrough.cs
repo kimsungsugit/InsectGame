@@ -197,6 +197,16 @@ namespace InsectGame.EditorTools
         /// </summary>
         private static void TickJanitor(float now)
         {
+            // 수문장 배지 연출 — 수문장 걸음마다 gd_* 대사보다 먼저 뜬다. 모달이라 닫지 않으면 대사가 영영 안 온다.
+            // 플레이어가 화면을 누르는 것처럼 닫고, 떴다는 사실을 보고서에 남긴다(순서 검증).
+            var ceremony = UnityEngine.Object.FindFirstObjectByType<InsectGame.UI.BadgeCeremonyUI>();
+            if (ceremony != null && ceremony.IsOpen)
+            {
+                Log("배지 연출 — " + ceremony.CurrentRegionId);
+                ceremony.CloseModal();
+                return;
+            }
+
             if (closingId == null)
             {
                 if (toClose.Count == 0) return;
@@ -468,7 +478,9 @@ namespace InsectGame.EditorTools
             // 1v1로 걸으면 게임에 없는 경로를 통과시키는 셈이 되고, 그게 이 결함을 놓친 이유다.
             Beat(fin, "이름 없는 사마귀 레이드 격파(엔딩)", "fin_seal",
                 () => WinRaidAgainst("mantis_unnamed"), 3);
-            Beat(fin, "전투 승리(관장 마지막 말)", "ch12_clash", WinBattle, 3);
+            // 관장의 마지막 말은 **추가 전투 없이 말을 걸어** 듣는다(StoryBible 0장 2026-09-19 연결성 보정 —
+            // 트리거가 BattleWin → NpcTalk ledger_chief). 걸음이 옛 트리거로 두드리면 3회 시도 뒤 FAIL이 난다.
+            Beat(fin, "말 걸기(관장 마지막 말)", "ch12_clash", () => Talk("ledger_chief"), 6);
         }
 
         private static void Region(string site, string regionId)
@@ -826,6 +838,8 @@ namespace InsectGame.EditorTools
             // 키 문자열은 RegionManager.GuardianKey가 private이라 여기 한 번 더 적는다 —
             // 어긋나면 초기화가 조용히 아무것도 안 지운다.
             PlayerPrefs.DeleteKey(SaveScope.PrefsKey("InsectGame.DefeatedGuardians"));
+            // 배지 이정표 수령 — 격파 기록을 지웠으니 함께 지워야 이정표 지급(4·8)이 다시 걸린다.
+            PlayerPrefs.DeleteKey(SaveScope.PrefsKey(GameConstants.PrefsKeys.BadgeMilestonesClaimed));
             PlayerPrefs.Save();
 
             if (director != null)
@@ -837,6 +851,8 @@ namespace InsectGame.EditorTools
             if (blight != null) blight.ReloadFromDisk();
             var regions = UnityEngine.Object.FindFirstObjectByType<RegionManager>();
             if (regions != null) regions.ReloadFromDisk();
+            var badgeService = UnityEngine.Object.FindFirstObjectByType<GuardianBadgeService>();
+            if (badgeService != null) badgeService.ReloadFromDisk();
             Log("진행 기록 초기화 완료");
         }
 

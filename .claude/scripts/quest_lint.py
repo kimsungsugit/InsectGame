@@ -54,6 +54,29 @@ def extract_boss_duel_rewards():
     if not out:
         raise ExtractorBroken(
             "NpcBossDuels에서 대결을 하나도 못 읽었다 — 표 구조가 바뀌었는지 확인할 것")
+    return out + extract_rival_duel_rewards()
+
+
+def extract_rival_duel_rewards():
+    """`NpcRivalDuels`(라온 라이벌 단계)의 (stageId, rewardItemId) 목록.
+
+    간부 표와 같은 함정이다 — 첫 승리 보상이 오타면 조용히 사라진다. 파일이 있는데 0건이면
+    표 구조가 바뀐 것이므로 `ExtractorBroken`(빈 목록을 "위반 0건"으로 읽지 않는다).
+    """
+    path = os.path.join("Assets", "Scripts", "NPC", "NpcRivalDuels.cs")
+    if not os.path.exists(path):
+        return []
+    with io.open(path, encoding="utf-8", errors="replace") as f:
+        src = f.read()
+    out = []
+    for block in re.findall(r"new\s+Stage\s*\{(.*?)\}", src, re.S):
+        stage = re.search(r'stageId\s*=\s*"([^"]+)"', block)
+        item = re.search(r'rewardItemId\s*=\s*"([^"]+)"', block)
+        if stage and item:
+            out.append((stage.group(1), item.group(1)))
+    if not out:
+        raise ExtractorBroken(
+            "NpcRivalDuels에서 단계를 하나도 못 읽었다 — 표 구조가 바뀌었는지 확인할 것")
     return out
 
 
@@ -147,7 +170,7 @@ def evaluate_signals() -> list:
     # (여러 소스의 합집합이라 C# 쪽에서 다시 모으면 사본이 생긴다) 검사도 여기 둔다.
     boss_rewards = extract_boss_duel_rewards()
     bad_boss = [f"{npc}:{item}" for npc, item in boss_rewards if item not in item_ids]
-    signals.append(("보스 대결 보상 아이템 ID 존재", "0건 미존재",
+    signals.append(("보스·라이벌 대결 보상 아이템 ID 존재", "0건 미존재",
                     f"{len(bad_boss)}건 ({bad_boss})" if bad_boss
                     else f"0건 (대결 {len(boss_rewards)}건 대조)",
                     "FAIL" if bad_boss else "PASS"))

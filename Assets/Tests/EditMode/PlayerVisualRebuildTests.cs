@@ -1,4 +1,4 @@
-#if UNITY_EDITOR
+﻿#if UNITY_EDITOR
 using InsectGame.Core;
 using NUnit.Framework;
 using UnityEngine;
@@ -28,6 +28,33 @@ namespace InsectGame.Tests
         public void TearDown()
         {
             if (player != null) Object.DestroyImmediate(player);
+        }
+
+        [TestCase(-72f)]
+        [TestCase(0f)]
+        [TestCase(72f)]
+        public void RotateAttachment_HandAndNet_PreserveGripDistance(float angle)
+        {
+            Vector3 pivot = new Vector3(0.29f, 0.78f, 0f);
+            Vector3 hand = new Vector3(0.29f, 0.52f, 0f);
+            Vector3 handle = new Vector3(0.29f, 0.74f, 0f);
+            Vector3 movedHand = PlayerVisualBuilder.RotateAttachment(hand, pivot, angle);
+            Vector3 movedHandle = PlayerVisualBuilder.RotateAttachment(handle, pivot, angle);
+            Assert.AreEqual(Vector3.Distance(hand, handle), Vector3.Distance(movedHand, movedHandle), 0.0001f);
+            Vector3 restored = PlayerVisualBuilder.RotateAttachment(movedHand, pivot, -angle);
+            Assert.Less(Vector3.Distance(hand, restored), 0.0001f);
+        }
+
+        [Test]
+        public void DefaultNet_HandlePassesThroughHand_AndRingMeetsTip()
+        {
+            Transform hand = player.transform.Find("HandR");
+            Transform handle = player.transform.Find("NetHandle");
+            Transform ring = player.transform.Find("NetRing");
+            Vector3 tip = handle.localPosition + handle.localRotation * Vector3.up * handle.localScale.y;
+            Assert.Less(Vector3.Distance(tip, ring.localPosition), 0.001f);
+            Assert.AreEqual(hand.localPosition.x, handle.localPosition.x, 0.001f);
+            Assert.AreEqual(hand.localPosition.z, handle.localPosition.z, 0.001f);
         }
 
         [Test]

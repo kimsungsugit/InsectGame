@@ -5,7 +5,8 @@ namespace InsectGame.Story
     /// 프로시저럴 컷신(<see cref="CutsceneLibrary"/>)과 의도적으로 같은 모양이다 — 저쪽은
     /// 카메라 워크를, 여기는 파일명과 자막 큐를 정의한다.
     ///
-    /// 영상은 AI 생성(외부 도구)이고 <c>Assets/StreamingAssets/Video/</c>에 둔다.
+    /// 영상은 <c>Tools/Video/story_silhouettes.py</c>가 그린 실루엣 삽화이고 <c>Assets/StreamingAssets/Video/</c>에
+    /// 둔다. 나중에 AI 영상으로 바꾸면 같은 파일명으로 덮어쓴다 — 여기는 안 바뀐다.
     /// 샷 리스트·프롬프트·자막 원문의 단일 출처는 <c>Docs/StoryVideos.md</c>다 — 여기 자막을
     /// 고치면 그쪽도 함께 고친다.
     ///

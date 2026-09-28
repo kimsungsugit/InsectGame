@@ -676,11 +676,11 @@ def _switch_case_ids(key: str, func: str) -> set:
 
 
 def story_npc_display_ids() -> set:
-    """표시명 switch에 등록된 스토리 NPC(NpcManager.StoryNpcDisplayName).
+    """표시명 switch에 등록된 스토리 NPC(NpcDialogueDatabase.StorySpeakerName).
 
-    **빠뜨리면 default로 떨어져 그 인물이 "마을 어르신"으로 뜬다.** 조용하다.
+    **빠뜨리면 내부 NPC ID가 이름으로 표시된다.** 월드와 대화가 같은 표를 쓴다.
     """
-    return _switch_case_ids("npc_manager", "StoryNpcDisplayName")
+    return _switch_case_ids("npc_dialogue", "StorySpeakerName")
 
 
 def story_npc_appearance_ids() -> set:

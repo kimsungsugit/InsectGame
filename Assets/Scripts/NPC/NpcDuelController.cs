@@ -45,6 +45,13 @@ namespace InsectGame.NPC
             new System.Collections.Generic.Dictionary<string, float>();
         private bool bossStateLoaded;
 
+        // 라온 라이벌 대결(NpcRivalDuels) — 진행 중인 단계 ID. 비어 있지 않으면 지금 대결이 라이벌전이다.
+        // 격파 기록·재도전 대기는 간부와 같은 집합을 단계 ID로 쓴다(단계 ID는 rival_로 시작해 인물 ID와 안 겹친다).
+        private string activeRivalStageId = string.Empty;
+        // 스토리 진행 조회 — 단계가 열렸는지/닫혔는지. StoryDirector가 이미 이 컨트롤러를 참조하므로
+        // 거꾸로 참조하면 순환이 된다 — 부트스트랩이 조회 함수만 넘겨 준다.
+        private System.Func<string, bool> storyBeatSeen;
+
         private static string DefeatedBossKey => SaveScope.PrefsKey("InsectGame.DefeatedLedgerBosses");
 
         /// <summary>직전 대결 결과 문구 — <see cref="TryConsumeResult"/>로 꺼내 간다.</summary>
@@ -87,6 +94,12 @@ namespace InsectGame.NPC
         public void AutoWire(RegionBlightManager blightManager)
         {
             if (blight == null) blight = blightManager;
+        }
+
+        /// <summary>라이벌 단계의 열림·닫힘 판정에 쓰는 스토리 열람 조회(<c>StoryDirector.HasSeen</c>).</summary>
+        public void AutoWireStoryGate(System.Func<string, bool> beatSeen)
+        {
+            if (storyBeatSeen == null) storyBeatSeen = beatSeen;
         }
 
         private void OnDestroy()
@@ -188,8 +201,11 @@ namespace InsectGame.NPC
 
             // 장부를 건다 — 이 압박은 명부회 보스전에만 붙는다(아이 대결·야생 전투엔 없다).
             battleController.ArmLedger(duel.ledgerThreshold);
+            // 연출이 상대를 알아보게 한다 — 컷인·전투 중 한마디·결과 한마디(BattleScreenUI.Duel).
+            battleController.SetDuelOpponent(storyNpcId);
 
             activeKid = null;
+            activeRivalStageId = string.Empty;
             activeBossId = storyNpcId;
             activeRarity = enemyData.rarity;
 
@@ -201,6 +217,87 @@ namespace InsectGame.NPC
                     duel.isFinal ? Core.BgmType.BossFinal : Core.BgmType.BossLedger);
             }
             return true;
+        }
+
+        // ── 라온 라이벌 대결 ──
+
+        /// <summary>지금 이 인물과 걸 수 있는 라이벌 단계(없으면 false). 대화창이 [대결] 버튼 표시에 쓴다.</summary>
+        public bool TryGetRivalStage(string storyNpcId, out NpcRivalDuels.Stage stage)
+        {
+            stage = default;
+            if (storyBeatSeen == null) return false;
+            string here = regionManager != null && regionManager.CurrentRegion != null
+                ? regionManager.CurrentRegion.regionId : string.Empty;
+            return NpcRivalDuels.TrySelect(storyNpcId, here, storyBeatSeen, IsBossDefeated, out stage);
+        }
+
+        public bool CanRivalDuel(string storyNpcId, float time)
+        {
+            if (battleController == null || database == null) return false;
+            if (!TryGetRivalStage(storyNpcId, out NpcRivalDuels.Stage stage)) return false;
+            if (bossRetryAt.TryGetValue(stage.stageId, out float readyAt) && time < readyAt) return false;
+            if (database.GetById(stage.insectId) == null) return false;
+            return FindPlayerLeader() != null;
+        }
+
+        /// <summary>라이벌 대결 시작 — 간부처럼 고정 레벨이다(단계가 곧 라온의 성장이다). 장부는 없다.</summary>
+        public bool TryStartRivalDuel(string storyNpcId, float time)
+        {
+            if (!CanRivalDuel(storyNpcId, time)) return false;
+            TryGetRivalStage(storyNpcId, out NpcRivalDuels.Stage stage);
+
+            PlayerInsectData leader = FindPlayerLeader();
+            InsectData leaderData = leader != null ? database.GetById(leader.insectId) : null;
+            InsectData enemyData = database.GetById(stage.insectId);
+            if (leaderData == null || enemyData == null) return false;
+
+            InsectSkill[] equipped = collection != null ? collection.GetEquippedSkills(leader) : null;
+            if (!battleController.StartDuel(
+                    leaderData, leader.level, enemyData, stage.level,
+                    equippedSkills: equipped, playerPid: leader))
+            {
+                return false;
+            }
+            battleController.SetDuelOpponent(stage.stageId);
+
+            activeKid = null;
+            activeBossId = string.Empty;
+            activeRivalStageId = stage.stageId;
+            activeRarity = enemyData.rarity;
+            return true;
+        }
+
+        private void OnRivalDuelEnded(bool playerWon)
+        {
+            string stageId = activeRivalStageId;
+            activeRivalStageId = string.Empty;
+            if (!NpcRivalDuels.TryGetStage(stageId, out NpcRivalDuels.Stage stage)) return;
+            string rival = NpcDialogueDatabase.StorySpeakerName(stage.storyNpcId);
+
+            if (!playerWon)
+            {
+                bossRetryAt[stageId] = Time.time + NpcRivalDuels.RetryCooldownSeconds;
+                SetResult($"{rival}에게 졌다… 다시 도전해 보자");
+                return;
+            }
+
+            EnsureBossState();
+            bool firstWin = defeatedBosses.Add(stageId);
+            if (firstWin) SaveBossState();
+            bossRetryAt.Remove(stageId);
+            if (firstWin && !string.IsNullOrEmpty(stage.rewardItemId) && stage.rewardCount > 0
+                && itemInventory != null)
+                itemInventory.AddItem(stage.rewardItemId, stage.rewardCount);
+
+            // 아이·간부 대결과 같은 1v1 듀얼이다 — '동네 최강자' 서브 퀘스트에 센다
+            // (post_rival_rematch가 바로 그 퀘스트를 연다: "도전은 네 쪽에서 해").
+            TutorialQuestManager.Instance?.NotifyNpcDuelWon();
+
+            string itemName = ResolveItemName(stage.rewardItemId);
+            string gained = firstWin && !string.IsNullOrEmpty(itemName)
+                ? $" {itemName} ×{stage.rewardCount} 획득"
+                : string.Empty;
+            SetResult($"{rival}을(를) 이겼다!{gained}");
         }
 
         /// <summary>
@@ -242,6 +339,7 @@ namespace InsectGame.NPC
             // 위쪽 `ConcludeDefeatWithoutSwap`이 상태 누출 자체를 막지만, 방어선을 한 겹 더 둔다 —
             // `DuelEnded`가 어떤 이유로든 빠지면 그 값이 그대로 다음 대결로 흘러가는 구조라서다.
             activeBossId = string.Empty;
+            activeRivalStageId = string.Empty;
             activeRarity = kid.DuelInsect.rarity;
             return true;
         }
@@ -252,6 +350,11 @@ namespace InsectGame.NPC
             if (!string.IsNullOrEmpty(activeBossId))
             {
                 OnBossDuelEnded(playerWon);
+                return;
+            }
+            if (!string.IsNullOrEmpty(activeRivalStageId))
+            {
+                OnRivalDuelEnded(playerWon);
                 return;
             }
 

@@ -162,20 +162,20 @@ namespace InsectGame.UI
         // 목록이 매 프레임 그려지므로 캐시하지 않으면 행마다 문자열 할당이 쌓인다.
         private readonly Dictionary<string, string> rewardTextCache = new Dictionary<string, string>();
 
-        private static readonly Color DoneTextCol = new Color(0.9f, 0.75f, 0.2f);
-        private static readonly Color QuestTitleCol = new Color(0.9f, 0.75f, 0.2f);
-        private static readonly Color QuestHintBaseCol = new Color(0.65f, 0.65f, 0.65f);
-        private static readonly Color CompHeaderBaseCol = new Color(0.2f, 1f, 0.4f);
-        private static readonly Color CompTitleBaseCol = new Color(1f, 0.95f, 0.8f);
-        private static readonly Color RewardBaseCol = new Color(1f, 0.85f, 0.5f);
-        private static readonly Color NewQuestBaseCol = new Color(0.7f, 0.85f, 1f);
-        private static readonly Color NewQuestDescCol = new Color(0.85f, 0.92f, 1f);
-        private static readonly Color NewQuestPromptCol = new Color(0.5f, 0.9f, 0.6f);
-        private static readonly Color RowCompletedCol = new Color(0.5f, 0.8f, 0.5f);
-        private static readonly Color RowLockedCol = new Color(0.45f, 0.45f, 0.5f);
-        private static readonly Color RowPendingCol = new Color(0.7f, 0.7f, 0.7f);
-        private static readonly Color StatusCompletedCol = new Color(0.4f, 0.75f, 0.4f);
-        private static readonly Color StatusActiveCol = new Color(0.9f, 0.85f, 0.3f);
+        private static Color DoneTextCol => UITheme.Instance.accentMint;
+        private static Color QuestTitleCol => UITheme.Instance.accentAmber;
+        private static Color QuestHintBaseCol => UITheme.Instance.textSecondary;
+        private static Color CompHeaderBaseCol => UITheme.Instance.accentMint;
+        private static Color CompTitleBaseCol => UITheme.Instance.textPrimary;
+        private static Color RewardBaseCol => UITheme.Instance.accentAmber;
+        private static Color NewQuestBaseCol => UITheme.Instance.accentCoral;
+        private static Color NewQuestDescCol => UITheme.Instance.textSecondary;
+        private static Color NewQuestPromptCol => UITheme.Instance.accentMint;
+        private static Color RowCompletedCol => UITheme.Instance.accentMint;
+        private static Color RowLockedCol => UITheme.Instance.textMuted;
+        private static Color RowPendingCol => UITheme.Instance.textSecondary;
+        private static Color StatusCompletedCol => UITheme.Instance.accentMint;
+        private static Color StatusActiveCol => UITheme.Instance.accentAmber;
 
         private void InitQuestPanelStyles()
         {

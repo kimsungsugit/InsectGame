@@ -1,11 +1,43 @@
 # 스토리 영상 — 제작·삽입 단일 출처
 
-스토리 시작·중간·끝에 넣는 **실제 영상 파일(mp4)** 11편의 샷 리스트·AI 프롬프트·자막 큐·인코딩·검증 절차.
+스토리 시작·중간·끝에 넣는 **실제 영상 파일(mp4)** 11편의 샷 리스트·자막 큐·렌더(§4-1 실루엣 삽화)·
+AI 프롬프트(§5, 나중에 바꿀 때)·인코딩·검증 절차.
 자막 문구를 고치면 `Assets/Scripts/Story/StoryVideoLibrary.cs`도 함께 고친다(그쪽이 런타임 출처).
 
 - 재생: `StoryVideoDirector` — 비트의 대사가 끝난 뒤(`StoryBeatCompleted`) 화면을 통째로 덮는다.
 - 파일: `Assets/StreamingAssets/Video/<videoId에서 vid_ 제거>.mp4` — `VideoPlayer.url` 스트리밍(임포터를 안 탄다).
 - 검증: `story_lint` 검사 25(ID·switch·파일 배치), `StoryVideoLibraryTests`(길이 상한·큐·금칙).
+
+## 0. 오프닝 프롤로그 — 게임을 켜면 처음 보는 20초 (스토리 비트와 별개)
+
+스토리 비트에 붙는 영상이 아니다. `OpeningSceneController`가 첫 실행(cold start)과 설정의 「오프닝 다시보기」에서
+틀고, 내레이션 네 줄·타이틀·건너뛰기는 IMGUI로 얹는다. **원화는 기존 오프닝 일러스트 3장**
+(`Resources/UI/Opening/opening_0{1,2,3}_{landscape,portrait}.jpg`)이다 — 새 그림 없이 움직임만 입혔다.
+
+| 파일 | 만드는 스크립트 | 규격 |
+|---|---|---|
+| `StreamingAssets/Video/opening_prologue_landscape.mp4` | `python -X utf8 Tools/Video/opening_prologue.py landscape` | 1280×720 · 20s · 무음 |
+| `StreamingAssets/Video/opening_prologue_portrait.mp4` | `python -X utf8 Tools/Video/opening_prologue.py portrait` | 720×1280 · 20s · 무음 |
+| `Resources/Audio/Opening/opening_prologue.wav` | `python -X utf8 Tools/Video/opening_audio.py` | 44.1kHz 스테레오 · 20s |
+
+세로 원화는 가로를 잘라 만든 그림이 아니라 **따로 구도를 잡은 그림**이라 영상도 방향별 두 편이다.
+재생 중 방향이 바뀌면 갈아타지 않고 지금 영상을 가운데 잘라(cover) 계속 튼다.
+
+| 시각 | 그림 | 내용 | 내레이션 |
+|---|---|---|---|
+| 0.0~9.6 | ① 밤숲 길 | 빛이 하나씩 꺼지고 숲이 가라앉는다. 4.3초부터 길 끝에 그물을 든 검은 코트가 서고, 남은 빛이 그물로 빨려 들어가 차갑게 번쩍이며 사라진다. 8.3~9.4 암전 | 곤충이 사라지고 있다. / 그리고 그것을 남김없이 거두려는 자들이 있다. |
+| 9.8~15.0 | ② 파트너 | 어둠에서 떠오르고, 꺼졌던 그림 속 빛이 하나둘 돌아온다 | 사라지는 이름을 기록하는 일. |
+| 14.0~15.0 | ②→③ | **맞춤 컷** — 두 그림의 눈 중점·간격을 재서 겹치는 순간 같은 자리·크기에 온다 | |
+| 15.0~20.0 | ③ 빛나는 잎 | 16.0 곡의 강세에 빛이 번지고 타이틀. 19.2~20.0 페이드아웃 | 거기서부터 시작된다. |
+
+- **소리**: 테마곡(10초, D음 드론, 6초에 강세)을 10.0초에 놓고, 앞 10초는 같은 D조 패드·바람·빛의 반짝임을
+  합성했다. 빛이 꺼지는 만큼 반짝임이 잦아들고, 빛이 그물에 닿을 때마다 핑, 암전(9.36)에 낮은 붐.
+  사건 시각은 `opening_audio.py`가 영상 스크립트를 모듈로 읽어 공유한다(같은 난수 스케줄).
+- **시각의 단일 출처는 `OpeningSequenceState`다.** 두 스크립트의 상수가 거기와 같고, `OpeningSequenceTests`가
+  내레이션이 암전·타이틀과 겹치지 않는지 고정한다. 한쪽을 바꾸면 셋을 함께 고친다.
+- **영상을 못 틀어도 오프닝은 선다.** 파일 없음·디코더 오류·준비 3초 초과·재생 중 1.2초 멈춤이면 같은 시계로
+  정지 그림 3장을 넘긴다. 다시보기가 거는 `timeScale = 0`·`AudioListener.pause`에 멈추지 않도록 영상 시계는
+  `UnscaledGameTime`이다.
 
 ## 1. 제약 (전부 코드가 강제한다)
 
@@ -294,18 +326,43 @@ Shot 5: dawn meadow, a bare hand reaching out without a net, a small insect appr
 | 8.0 | 2.8 | 빈칸은 사라지지 않았다. 종이 사라지면 자리는 또 생긴다. |
 | 11.2 | 2.6 | 그러니까 계속 만나요. 한 마리씩, 계속. |
 
-## 4-1. 지금 들어 있는 것은 자리표시다
+## 4-1. 지금 들어 있는 것 — 실루엣 삽화 영상 (2026-09-28)
 
-`Assets/StreamingAssets/Video/`의 11편은 **AI 생성 전의 자리표시 애니매틱**이다 —
-`.claude/scripts/story_video_placeholders.py`가 §4의 샷 길이와 챕터 팔레트로 만든 무자막 색면 영상
-(회화풍 노이즈가 느리게 흐른다). 규격(720p/H.264 Main/≤2 Mbps/총 길이)은 최종본과 같아 재생 경로·
-자막 타이밍·기기 확인을 먼저 할 수 있다. AI 영상이 나오면 **같은 파일명으로 덮어쓴다** — 코드는 안 바뀐다.
+`Assets/StreamingAssets/Video/`의 11편은 **Python으로 그린 실루엣 삽화 영상**이다. §4의 샷 리스트·길이·
+팔레트를 그대로 따르고, 자막 큐도 그 시각에 맞춰져 있다(총 길이 = 샷 합, 디졸브 0.6초는 뒤 샷을 앞당겨 겹친다).
+옛 색면 자리표시(`.claude/scripts/story_video_placeholders.py`)를 대체했다.
 
 ```
-python -X utf8 .claude/scripts/story_video_placeholders.py <ffmpeg.exe> Assets/StreamingAssets/Video
+python -X utf8 Tools/Video/story_silhouettes.py                      # 11편 전부(약 30분)
+python -X utf8 Tools/Video/story_silhouettes.py ch9_archive          # 한 편
+python -X utf8 Tools/Video/story_silhouettes.py ch9_archive --preview 1.5,8.0   # 프레임만 PNG로(Artifacts/story-silhouettes-preview/)
 ```
 
-## 5. 제작 절차 (편당)
+| 파일 | 맡는 것 |
+|---|---|
+| `Tools/Video/silhouette_kit.py` | 부품 — 2배 슈퍼샘플 마스크, 하늘·안개·빛살·입자, 능선·봉우리·숲띠, 인물(뒷모습·옆모습, 채집망·가방·챙 모자), 옆모습 손·주먹, 곤충, 상자·장부·긁적임·새김 문양, 물 반영 |
+| `Tools/Video/sil_act1.py` | ch1~ch5 샷 |
+| `Tools/Video/sil_act2.py` | ch8~ch12·종장 샷 |
+| `Tools/Video/story_silhouettes.py` | 편성(파일명·샷 길이·색조)·디졸브·페이드·인코딩 |
+
+**화풍**: 겹겹의 실루엣(먼 것일수록 옅고 하늘색에 섞인다) + 역광 테두리 + 빛 번짐·빛살·안개·떠다니는 입자.
+인물은 뒷모습·옆모습 실루엣뿐이라 얼굴이 없고, 글씨는 판독 불가 긁적임뿐이다(§2 스타일 가이드와 같은 규칙).
+인게임 로우폴리와 일부러 다른 삽화 톤이다 — 회상·삽화로 읽힌다.
+
+**§4 샷 리스트와 다르게 푼 자리**(그림으로 읽히게 하려고 바꾼 것 — 자막·길이는 그대로):
+- 인물 표지 — 주인공은 어깨에 채집망, 세라는 긴 머리와 가방, 명부회는 챙 넓은 모자. 실루엣만으로 누군지 알게 한다.
+- ch2 잠자리는 수면이 아니라 **밝은 수평선 앞**을 스친다 — 어두운 물 위에서는 막대처럼 보였다.
+- ch9 "마주 선 옆모습"은 코끝·턱을 붙여 옆모습으로 읽히게 했다. 저울은 명부회 모자를 쓴다.
+- ch3·ch11의 새김 문양은 **같은 씨앗**(`GLYPH_SEED`)으로 그린다 — "유적과 같은 문양"이 실제로 같은 모양이다.
+- 종장 둘째 샷의 두 실루엣은 팔을 감싼 라온과 검은 코트(먹)다.
+
+**고르며 버린 것**(실측 — 시안 프레임을 보고 고쳤다): 사인파 능선은 물결로 읽혀 중점 변위 봉우리로,
+대칭 신전은 은행 아이콘처럼 읽혀 한쪽이 무너진 유적으로, 막대 팔·사다리꼴 몸통은 로봇처럼 읽혀 곡선 어깨·
+굽은 팔꿈치로, 손등이 보이는 네모 손은 장갑처럼 읽혀 옆모습 손으로 바꿨다.
+
+나중에 AI 영상(§5)이 나오면 **같은 파일명으로 덮어쓴다** — 코드는 안 바뀐다.
+
+## 5. AI 영상으로 바꿀 때 — 제작 절차 (편당)
 
 1. §4의 프롬프트로 **샷 단위** 생성(도구: Veo / Sora / Runway 등). 샷당 2~3안 뽑아 고른다.
    고를 때 볼 것: 글자가 찍히지 않았는가 / 얼굴이 정면으로 나오지 않았는가 / 피사체가 중앙 56% 안에 있는가.
@@ -319,7 +376,7 @@ python -X utf8 .claude/scripts/story_video_placeholders.py <ffmpeg.exe> Assets/S
    ```
    앰비언트를 넣으면 `-an` 대신 `-c:a aac -b:a 96k`. `offset` = 앞 샷 길이 − 디졸브 길이.
    **디졸브는 총 길이를 그만큼 깎는다** — 샷을 디졸브 길이만큼 길게 뽑아 합이 `expectedDuration`과 같게
-   맞춘다(자리표시 스크립트가 그렇게 한다). 짧아지면 마지막 자막 큐가 영상 밖으로 나간다.
+   맞춘다(실루엣 렌더러가 그렇게 한다). 짧아지면 마지막 자막 큐가 영상 밖으로 나간다.
 3. 길이·크기 확인 → `expectedDuration`과 자막 큐가 실제 길이 안인지 맞춘다:
    ```
    ffprobe -v error -show_entries format=duration:stream=codec_name,profile,width,height -of default=nw=1 ch2_watchers.mp4

@@ -1,4 +1,4 @@
-using InsectGame.Spawning;
+﻿using InsectGame.Spawning;
 using UnityEngine;
 
 namespace InsectGame.UI
@@ -40,6 +40,17 @@ namespace InsectGame.UI
         private static PlayerStatusHUD statusHud;
 
         [SerializeField] private float worldRadius = 45f; // 미니맵이 커버하는 월드 반경(m)
+
+        private InsectGame.Core.RegionManager regionManager;
+        private InsectGame.NPC.NpcManager npcManager;
+        public void AutoWire(InsectGame.Core.RegionManager manager)
+        {
+            if (regionManager == null) regionManager = manager;
+        }
+        public void AutoWire(InsectGame.NPC.NpcManager manager)
+        {
+            if (npcManager == null) npcManager = manager;
+        }
 
         private Transform player;
         private InsectEntity[] insects;
@@ -127,7 +138,7 @@ namespace InsectGame.UI
             UISurface.HudCard(rect);
 
             GUI.color = Color.white;
-            GUI.Label(new Rect(x, y + 6f, size, 24f), "미니맵", labelStyle);
+            UIHelper.LabelFit(new Rect(x, y + 6f, size, 24f), "주변 탐색", labelStyle);
 
             // 곤충 점 (월드 +Z = 미니맵 위쪽)
             Vector3 pp = player.position;
@@ -147,7 +158,16 @@ namespace InsectGame.UI
             }
 
             // 메인퀘스트 목표 쐐기 — 곤충 점 위, 플레이어 아래에 그려 셋이 겹쳐도 읽힌다.
-            DrawObjectiveWedge(cx, cy, mapRadius);
+            DrawWorldLandmarks(cx, cy, mapRadius);
+            if (regionManager == null || regionManager.CurrentSubArea == null)
+            {
+                DrawObjectiveWedge(cx, cy, mapRadius);
+                UIHelper.LabelFit(new Rect(x + 8f, y + size - 30f, size - 16f, 24f),
+                    "노랑 주민 · 민트 입구", labelStyle);
+            }
+            else
+                UIHelper.LabelFit(new Rect(x + 8f, y + size - 30f, size - 16f, 24f),
+                    "출구로 돌아가기", labelStyle);
 
             // 플레이어(중심) + 진행방향 점
             GUI.color = new Color(0.4f, 0.85f, 1f, 1f);
@@ -169,6 +189,36 @@ namespace InsectGame.UI
         /// 목표 방향 쐐기. 미니맵 반경(worldRadius) 안이면 실제 위치에, 밖이면 <b>테두리에 붙여</b>
         /// 방향만 알려 준다 — 밖에 있다고 안 그리면 "목표가 멀 때는 아무 안내도 없는" 상태가 된다.
         /// </summary>
+        private void DrawWorldLandmarks(float cx, float cy, float mapRadius)
+        {
+            if (regionManager != null && regionManager.CurrentSubArea != null) return;
+            if (npcManager != null)
+            {
+                foreach (var npc in npcManager.Villagers)
+                    if (npc != null && npc.gameObject.activeInHierarchy)
+                        DrawLandmark(npc.transform.position, cx, cy, mapRadius, UITheme.Instance.accentAmber);
+                foreach (var npc in npcManager.StoryNpcs)
+                    if (npc != null && npc.gameObject.activeInHierarchy)
+                        DrawLandmark(npc.transform.position, cx, cy, mapRadius, UITheme.Instance.accentAmber);
+            }
+            if (regionManager == null || regionManager.Regions == null) return;
+            foreach (var region in regionManager.Regions)
+            {
+                if (region == null || region.subAreas == null || !regionManager.IsRegionAccessible(region)) continue;
+                foreach (var sub in region.subAreas)
+                    if (sub != null)
+                        DrawLandmark(sub.centerPosition, cx, cy, mapRadius, UITheme.Instance.accentMint);
+            }
+        }
+
+        private void DrawLandmark(Vector3 position, float cx, float cy, float mapRadius, Color color)
+        {
+            if (!MapMarkerProjection.TryRadarOffset(player.position, position, worldRadius, mapRadius, out Vector2 offset)) return;
+            GUI.color = color;
+            GUI.DrawTexture(new Rect(cx + offset.x - 5f, cy + offset.y - 5f, 10f, 10f), Texture2D.whiteTexture);
+            GUI.color = Color.white;
+        }
+
         private void DrawObjectiveWedge(float cx, float cy, float mapRadius)
         {
             if (objectiveTracker == null || !objectiveTracker.HasObjective
@@ -186,8 +236,8 @@ namespace InsectGame.UI
             // 위를 향한 "▲"를 목표 쪽으로 돌린다. GUI 회전은 시계방향이 양수라 atan2(x, z)가 그대로 각도.
             float angle = Mathf.Atan2(dir.x, dir.z) * Mathf.Rad2Deg;
             Matrix4x4 saved = GUI.matrix;
-            GUIUtility.RotateAroundPivot(angle, new Vector2(wx, wy));
-            GUI.Label(new Rect(wx - 14f, wy - 14f, 28f, 28f), "▲", wedgeStyle);
+            GUI.matrix = MapMarkerProjection.PivotMatrix(saved, new Vector2(wx, wy), angle);
+            GUI.Label(new Rect(-14f, -14f, 28f, 28f), "▲", wedgeStyle);
             GUI.matrix = saved;
         }
     }

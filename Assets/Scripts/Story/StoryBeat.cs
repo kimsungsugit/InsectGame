@@ -71,8 +71,15 @@ namespace InsectGame.Story
     [System.Serializable]
     public class StoryLine
     {
+        // 화자 표시명("라온"·"세라"·"검은 옷의 사내"…). NpcDialogueDatabase.StoryPortraitId가 초상으로 푼다.
+        // **"지문"은 인물이 아니라 해설이다** — 초상·이름표 없이 가운데 기울임으로 그린다
+        // (StoryDialogueStaging.NarrationSpeaker). 오타는 조용히 초상만 사라지므로 story_lint 검사 27이 본다.
         public string speaker;
         public string text;
+        // 줄 연출(옵션) — 쉼표로 여럿: shake·flash·pause·shout·whisper·slow·dark.
+        // 해석은 StoryDialogueStaging.ParseFx 한 곳이고, 모르는 토큰은 story_lint 검사 28이 FAIL로 잡는다.
+        // JsonUtility는 JSON에 없는 필드를 건드리지 않으므로 기존 줄은 전부 null(연출 없음)로 호환된다.
+        public string fx;
     }
 
     [System.Serializable]

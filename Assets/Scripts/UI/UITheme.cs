@@ -100,6 +100,25 @@ namespace InsectGame.UI
         public Color gradeC = new Color(0.3f, 0.8f, 0.3f);
         public Color gradeD = new Color(0.6f, 0.6f, 0.6f);
 
+        private void OnEnable() => SynchronizeLegacyTokens();
+        private void OnValidate() => SynchronizeLegacyTokens();
+        private void SynchronizeLegacyTokens()
+        {
+            panelBg = surfaceBase;
+            panelHeaderBg = surfaceRaised;
+            tabNormal = surfaceCard;
+            tabSelected = accentCoral;
+            btnPrimary = accentMint;
+            btnSecondary = surfaceRaised;
+            btnDanger = accentCoral;
+            btnDisabled = surfaceBorder;
+            titleColor = textPrimary;
+            labelColor = textPrimary;
+            coinColor = accentAmber;
+            accentColor = accentCoral;
+            bonusColor = accentMint;
+        }
+
         public Color GetInsectRarityColor(InsectRarity rarity)
         {
             switch (rarity)

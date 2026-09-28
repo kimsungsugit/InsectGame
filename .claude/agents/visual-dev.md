@@ -1,4 +1,4 @@
----
+﻿---
 name: visual-dev
 description: 3D 씬 비주얼과 연출 담당 — 프로시저럴 메시 빌더(InsectEntity.BuildModel, PlayerVisualBuilder, RegionTerrainBuilder, SubAreaWorldBuilder), Material·셰이더·색상 팔레트, 파티클과 이펙트, 애니메이션 보간(HP바, 쉐이크, AOE). 어떻게 보이는가(모양·색·움직임)가 문제일 때 PROACTIVELY 위임. 예 - 곤충 모델이 점토처럼 보인다 / 지형이 하늘에 떠 있다 / 레어도 색이 안 맞는다 / 유나이트 이펙트가 안 나온다. UI의 Rect 좌표·레이아웃·화면 전환은 ui-dev 영역이므로 손대지 않는다.
 tools:
@@ -21,7 +21,14 @@ OnGUI의 Rect 좌표와 레이아웃은 **ui-dev 영역**입니다. 여기서는
 
 ### 프로시저럴 비주얼/오디오
 - `Assets/Scripts/Spawning/InsectEntity.cs` - 프로시저럴 곤충 모델 (30+ 종) ※스폰 로직은 capture-dev
+- `Assets/Scripts/Spawning/InsectSculptureMeshes.cs` - 캐시된 곤충 뿔·턱·외골격·날개 커스텀 메시
+- `Assets/Tests/EditMode/InsectSculptureMeshTests.cs` - 곤충 메시 폐곡면·와인딩·유한 좌표·캐시 검증
 - `Assets/Scripts/Battle/BattleArenaController.cs` - 배틀 아레나 환경 구축
+- `Assets/Scripts/Battle/ForestBattleSet.cs` - 머티리얼별 병합 숲 공터 아레나 메시
+- `Assets/Scripts/Battle/BattleMotion.cs` - 종별 전투 준비·타격·복귀 포즈 곡선
+- `Assets/Scripts/Battle/BattleFraming.cs` - 모델 경계·안전 영역 기반 전투 카메라 프레이밍
+- `Assets/Scripts/Core/BattlePresentation.cs` - 전투 표시 배속·움직임·섬광 설정
+- `Assets/Tests/EditMode/BattleFramingTests.cs` - 화면 비율·모델 크기별 프레이밍 검증
 - `Assets/Scripts/Core/ProceduralAudioGenerator.cs` - 프로시저럴 오디오
 - `Assets/Scripts/Core/AudioManager.cs` - 오디오 매니저 (싱글턴)
 - `Assets/Scripts/Core/UIAudioBinder.cs` - UI 버튼 자동 hover/click 사운드 부착
@@ -60,6 +67,12 @@ OnGUI의 Rect 좌표와 레이아웃은 **ui-dev 영역**입니다. 여기서는
 - `Assets/Scripts/Core/VillageBuilder.cs` - 마을 프로시저럴 지형/건물
 - `Assets/Scripts/Core/BlightVfx.cs` - 오염 거점 구조물·안개·지면 탈색·정화 붕괴 연출
 - `Assets/Editor/LiveSceneCapture.cs` - 배치모드 실화면 캡처(3D 변경을 눈으로 확인) ※IMGUI는 안 잡힘
+- `Assets/Editor/ModelDesignCapture.cs` - 대표 곤충·플레이어·성인·아동 NPC의 표준 조명 3면 비교 캡처 ※IMGUI 제외
+- `Assets/Editor/VillageDesignCapture.cs` - 저장과 분리된 마을 건물 고정 구도 전후 캡처
+- `Assets/Editor/WorldMapDesignCapture.cs` - 실제 지형·소품·마을을 함께 생성한 전체 지역 격리 캡처
+- `Assets/Scripts/UI/WorldMapVisualCapture.cs` - 저장과 분리된 실제 지도/미니맵 IMGUI 촬영 fixture
+- `Assets/Scripts/Story/StoryDialogueCapture.cs` - 저장과 분리된 실제 대화 IMGUI 촬영 fixture
+- `Assets/Scripts/UI/BadgeVisualCapture.cs` - 저장과 분리된 실제 배지 획득 연출·배지 케이스 IMGUI 촬영 fixture(`-battleScenario badge`)
 - `Assets/Editor/BlightSiteDebugMenu.cs` - 오염 거점 육안 확인용 에디터 메뉴(이동·정화·초기화)
 
 ## 현재 비주얼 시스템
@@ -102,7 +115,13 @@ Legendary: 금색/주황
 경계 밖 수정이 필요하면 변경하지 말고 메인 모델에 보고하여 적절한 에이전트에 재위임.
 
 ## 설계 원칙
+- `Assets/Scripts/Battle/BattleVisualCapture.cs` — 저장 없는 독립 전투 화면 QA
+- `Assets/Scripts/Battle/RaidVisualCapture.cs` — 실제 레이드 화면 QA
+- `Assets/Editor/BattleVisualCaptureBuilder.cs` — Windows 실제 IMGUI 검수 빌드
 - 프리팹 없이 코드로 시각물 생성 (프로시저럴 우선)
 - CreatePrimitive 기반이지만 성능 주의 (배틀아레나: 24개 돌 구체)
 - GUI 색상 변경 후 반드시 원래값 복원
 - Screen 비율 기반 반응형 레이아웃
+
+- `Assets/Scripts/Core/WorldRouteLayout.cs` - 필드 길·단일 입구 공유 경로 정책
+- `Assets/Tests/EditMode/WorldRouteLayoutTests.cs` - 지역 입구와 필드 경로 통행 회귀 검사

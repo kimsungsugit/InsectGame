@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using InsectGame.Core;
 using UnityEngine;
 
@@ -229,10 +229,13 @@ namespace InsectGame.NPC
             MakeBoxPart("Shirt", root, new Vector3(0f, 0.83f, 0.10f),
                 new Vector3(0.24f, 0.36f, 0.20f), 0.05f, 2, shirtMat);
 
+            MakePart(PrimitiveType.Cylinder, "Neck", root,
+                new Vector3(0f, 1f, 0.02f), new Vector3(0.14f, 0.05f, 0.12f), skinMat);
+
             // ── 머리 (HeadPivot 컨테이너 + Head 구) ──
             GameObject headPivot = new GameObject("HeadPivot");
             headPivot.transform.SetParent(root, false);
-            headPivot.transform.localPosition = new Vector3(0f, 1.22f, 0.03f);
+            headPivot.transform.localPosition = PlayerVisualBuilder.HeadAnchor;
             headPivot.transform.localScale = Vector3.one * 0.60f;
 
             MakeMeshPart("Head", headPivot.transform, UnitSphere(10, 14),
@@ -259,10 +262,10 @@ namespace InsectGame.NPC
             if (a.hasHat)
             {
                 Material hatMat = MakeMaterial(a.hat, SurfaceKind.Cloth);
-                MakePart(PrimitiveType.Cylinder, "Cap", headPivot.transform,
-                    new Vector3(0f, 0.3f, -0.02f), new Vector3(0.30f, 0.12f, 0.30f), hatMat);
-                MakePart(PrimitiveType.Cube, "CapBrim", headPivot.transform,
-                    new Vector3(0f, 0.14f, 0.28f), new Vector3(0.28f, 0.03f, 0.14f), hatMat);
+                MakePart(PrimitiveType.Sphere, "Cap", headPivot.transform,
+                    new Vector3(0f, 0.24f, -0.02f), PlayerVisualBuilder.CapSize, hatMat);
+                MakePart(PrimitiveType.Sphere, "CapBrim", headPivot.transform,
+                    new Vector3(0f, 0.16f, 0.29f), PlayerVisualBuilder.CapBrimSize, hatMat);
             }
 
             // ── 팔 ──
@@ -289,10 +292,10 @@ namespace InsectGame.NPC
                 Material netHandleMat = MakeMaterial(new Color(0.6f, 0.4f, 0.2f), SurfaceKind.Leather);
                 Material netRingMat = MakeMaterial(new Color(0.95f, 0.92f, 0.88f), SurfaceKind.Metal);
                 GameObject handle = MakePart(PrimitiveType.Cylinder, "NetHandle", root,
-                    new Vector3(0.29f, 0.74f, 0.02f), new Vector3(0.04f, 0.40f, 0.04f), netHandleMat);
-                handle.transform.localRotation = Quaternion.Euler(20f, 0f, -15f);
+                    new Vector3(0.29f, 0.74f, 0f), new Vector3(0.04f, 0.40f, 0.04f), netHandleMat);
+                handle.transform.localRotation = Quaternion.identity;
                 GameObject ring = MakePart(PrimitiveType.Cylinder, "NetRing", root,
-                    new Vector3(0.34f, 1.14f, 0.06f), new Vector3(0.20f, 0.02f, 0.20f), netRingMat);
+                    new Vector3(0.29f, 1.14f, 0f), new Vector3(0.20f, 0.02f, 0.20f), netRingMat);
                 ring.transform.localRotation = Quaternion.Euler(-20f, 0f, 0f);
             }
 

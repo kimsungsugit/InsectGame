@@ -125,9 +125,9 @@ namespace InsectGame.UI
             return t;
         }
 
-        private static readonly Color GachaPriceAffordCol = new Color(0.4f, 0.7f, 1f);
-        private static readonly Color GachaRateGrayCol = new Color(0.85f, 0.85f, 0.85f);
-        private static readonly Color GachaCandyPinkCol = new Color(1f, 0.6f, 0.8f);
+        private static Color GachaPriceAffordCol => UITheme.Instance.accentMint;
+        private static Color GachaRateGrayCol => UITheme.Instance.textSecondary;
+        private static Color GachaCandyPinkCol => UITheme.Instance.accentAmber;
 
         // OnGUI 본문 + Tab 0/Tab 1 캐시 (Tab 2와 같은 처리 패턴).
         private bool mainStylesReady;
@@ -149,15 +149,15 @@ namespace InsectGame.UI
         private GUIStyle itemPriceStyle; // textColor 동적
 
         // OnGUI 매 프레임 new Color 회귀 제거용 (alpha/구성 고정).
-        private static readonly Color BackdropDimCol = new Color(0f, 0f, 0f, 0.6f);
-        private static readonly Color PanelBgCol = new Color(0.12f, 0.12f, 0.18f, 0.95f);
-        private static readonly Color CharAreaBgCol = new Color(0.04f, 0.06f, 0.12f, 0.7f);
-        private static readonly Color ResTitleSoftCol = new Color(0.85f, 0.9f, 1f);
-        private static readonly Color CoinGoldCol = new Color(1f, 0.85f, 0.3f);
-        private static readonly Color BonusGreenBoldCol = new Color(0.4f, 0.9f, 0.4f);
-        private static readonly Color BonusGreenLightCol = new Color(0.7f, 0.95f, 0.7f);
-        private static readonly Color GemLabelLightCol = new Color(0.9f, 0.95f, 1f);
-        private static readonly Color BuyButtonGreenCol = new Color(0.2f, 0.8f, 0.3f);
+        private static Color BackdropDimCol => UITheme.Instance.dimOverlay;
+        private static Color PanelBgCol => UITheme.Instance.surfaceBase;
+        private static Color CharAreaBgCol => UITheme.Instance.surfaceCard;
+        private static Color ResTitleSoftCol => UITheme.Instance.textPrimary;
+        private static Color CoinGoldCol => UITheme.Instance.accentAmber;
+        private static Color BonusGreenBoldCol => UITheme.Instance.accentMint;
+        private static Color BonusGreenLightCol => UITheme.Instance.accentMint;
+        private static Color GemLabelLightCol => UITheme.Instance.textPrimary;
+        private static Color BuyButtonGreenCol => UITheme.Instance.accentMint;
         private static readonly Color GemGlowCol = new Color(0.2f, 0.4f, 0.9f, 0.3f);
         private static readonly Color GemBorderCol = new Color(0.4f, 0.6f, 1f, 0.9f);
         private static readonly Color GemGradTopCol = new Color(0.5f, 0.7f, 1f, 0.9f);
@@ -712,7 +712,7 @@ namespace InsectGame.UI
             GUILayout.EndVertical();
         }
 
-        private static readonly Color ItemBuyBlueCol = new Color(0.2f, 0.7f, 0.9f);
+        private static Color ItemBuyBlueCol => UITheme.Instance.accentMint;
 
         // 박스 테마 색상 (매 프레임 new Color 제거).
         private static readonly Color BoxBronzeCol = new Color(0.6f, 0.4f, 0.2f);

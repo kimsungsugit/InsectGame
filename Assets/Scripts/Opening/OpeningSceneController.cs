@@ -3,6 +3,7 @@ using InsectGame.Core;
 using InsectGame.UI;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using UnityEngine.Video;
 
 namespace InsectGame.Opening
 {
@@ -24,7 +25,27 @@ namespace InsectGame.Opening
         private const string HorizonPath = "UI/Opening/opening_02_";
         private const string GatheringPath = "UI/Opening/opening_03_";
         private const string FallbackIconPath = "UI/insect-game-icon";
-        private const string ThemePath = "Audio/Opening/opening_theme";
+        /// <summary>
+        /// 20초 음원 — 앞 10초는 테마곡과 같은 D조로 합성한 전주, 뒤 10초가 원래 테마곡이다
+        /// (<c>Tools/Video/opening_audio.py</c>). 곡의 강세가 <see cref="OpeningSequenceState.TitleStart"/>에 떨어진다.
+        /// </summary>
+        private const string ThemePath = "Audio/Opening/opening_prologue";
+        /// <summary>전주 음원이 없을 때의 대체 — 10초라 뒤 절반은 무음이 되지만 오프닝은 선다.</summary>
+        private const string LegacyThemePath = "Audio/Opening/opening_theme";
+
+        /// <summary>
+        /// 프롤로그 영상 — <c>StreamingAssets/Video/opening_prologue_{landscape|portrait}.mp4</c>.
+        /// 세로 원화는 따로 구도를 잡은 그림이라 영상도 방향별로 한 편씩이다.
+        /// <see cref="InsectGame.Story.StoryVideoDirector"/>처럼 URL로 스트리밍한다(임포터를 안 탄다).
+        /// </summary>
+        private const string VideoFolder = "Video";
+        private const string VideoFilePrefix = "opening_prologue_";
+        /// <summary>디코더 준비를 이만큼 기다린다. 넘기면 정지 그림으로 대신한다 — 첫 실행이 검은 화면에 묶이지 않게.</summary>
+        private const float VideoPrepareTimeoutSeconds = 3f;
+        /// <summary>영상 시각이 오프닝 시계와 이만큼 벌어지면 되감는다(음악·자막은 시계를 따른다).</summary>
+        private const float VideoResyncThresholdSeconds = 0.35f;
+        /// <summary>영상 시각이 이만큼 멈춰 있으면 디코더가 죽은 것으로 보고 정지 그림으로 넘긴다.</summary>
+        private const float VideoStallSeconds = 1.2f;
         private const string EnglishTitleText = "INSECT EXPLORATION";
         private const string KoreanTitleText = "곤충탐험";
         private const string SubtitleText = "발견하고, 성장시키고, 함께 모험하세요";
@@ -33,7 +54,8 @@ namespace InsectGame.Opening
         /// 오프닝 내레이션 — <b>이 게임이 무슨 이야기인지</b>를 처음 켠 사람에게 알린다.
         /// 예전엔 부제 한 줄("발견하고, 성장시키고")뿐이라 서사가 전혀 전달되지 않았다.
         ///
-        /// 세 줄로 1막의 전제를 세운다: 사라짐 → 그것을 노리는 자들 → 플레이어가 할 일.
+        /// 네 줄로 1막의 전제를 세운다: 사라짐 → 그것을 노리는 자들 → 플레이어가 할 일 → 시작.
+        /// 줄마다 영상의 한 장면이 받친다(빛이 꺼지는 숲 / 길 끝의 그물 / 파트너 / 타이틀).
         /// 답을 주지 않고 질문만 남긴다 — 답은 마을 어르신이 한다.
         /// 순서·시각은 <see cref="OpeningSequenceState"/>의 Narration* 상수가 정한다.
         /// </summary>
@@ -41,8 +63,12 @@ namespace InsectGame.Opening
         {
             "곤충이 사라지고 있다.",
             "그리고 그것을 남김없이 거두려는 자들이 있다.",
-            "사라지는 이름을 기록하는 일 — 거기서부터 시작된다.",
+            "사라지는 이름을 기록하는 일.",
+            "거기서부터 시작된다.",
         };
+
+        /// <summary>문장 수 — <see cref="OpeningSequenceState.NarrationCount"/>와 같아야 한다(테스트가 본다).</summary>
+        internal static int NarrationLineCount => NarrationLines.Length;
 
         private static readonly string[] ImagePaths =
         {
@@ -61,7 +87,22 @@ namespace InsectGame.Opening
         private readonly OpeningPlaybackClock playbackClock = new OpeningPlaybackClock();
         private readonly OpeningSkipInputGate skipInputGate = new OpeningSkipInputGate();
 
+        private enum VideoMode
+        {
+            /// <summary>영상 없이 정지 그림 3장 — 파일 없음·디코더 실패·준비 시간 초과의 대체 경로.</summary>
+            Stills,
+            /// <summary>디코더 준비 중 — 오프닝 시계를 세우지 않고 검은 화면으로 기다린다.</summary>
+            Preparing,
+            Playing
+        }
+
         private OpeningSequenceState sequence;
+        private VideoPlayer videoPlayer;
+        private RenderTexture videoTexture;
+        private VideoMode videoMode = VideoMode.Stills;
+        private float videoPrepareSeconds;
+        private double lastVideoTime;
+        private float videoStalledSeconds;
         private AudioSource openingAudioSource;
         private AudioClip openingTheme;
         private Texture2D fallbackIcon;
@@ -99,6 +140,23 @@ namespace InsectGame.Opening
             openingAudioSource.loop = false;
             openingAudioSource.spatialBlend = 0f;
             openingAudioSource.ignoreListenerPause = true;
+
+            // 영상은 무음이다 — 소리는 위 AudioSource가 오프닝 시계에 맞춰 튼다(되감기·건너뛰기·일시정지가
+            // 이미 그 시계 하나로 돌아가므로 영상 쪽 오디오 트랙을 두면 두 소리가 어긋난다).
+            videoPlayer = gameObject.AddComponent<VideoPlayer>();
+            videoPlayer.playOnAwake = false;
+            videoPlayer.isLooping = false;
+            videoPlayer.source = VideoSource.Url;
+            videoPlayer.renderMode = VideoRenderMode.RenderTexture;
+            videoPlayer.audioOutputMode = VideoAudioOutputMode.None;
+            videoPlayer.skipOnDrop = true;
+            videoPlayer.waitForFirstFrame = true;
+            // 다시보기는 뒤의 월드를 세우려고 timeScale = 0, AudioListener.pause = true를 건다
+            // (OpeningReplayCoordinator). 게임 시간이나 DSP 시계를 따르면 그동안 영상이 멈춘다 — 오프닝
+            // 시계(realtimeSinceStartup)와 같은 비스케일 실시간을 쓴다.
+            videoPlayer.timeUpdateMode = VideoTimeUpdateMode.UnscaledGameTime;
+            videoPlayer.prepareCompleted += OnVideoPrepared;
+            videoPlayer.errorReceived += OnVideoError;
         }
 
         private void Start()
@@ -115,13 +173,28 @@ namespace InsectGame.Opening
             if (sequence == null || sequence.IsCompleted || applicationPaused)
                 return;
 
-            bool portrait = Screen.height > Screen.width;
-            if (!orientationLoaded || portrait != loadedPortrait)
-                ReloadOrientationResourcesDuringPlayback(portrait);
+            if (videoMode == VideoMode.Preparing)
+            {
+                // 준비 동안은 시계를 세운다 — 첫 프레임이 늦게 나와도 자막·음악이 앞서 가지 않는다.
+                videoPrepareSeconds += Mathf.Min(Time.unscaledDeltaTime, OpeningPlaybackClock.MaxFrameDelta);
+                if (videoPrepareSeconds > VideoPrepareTimeoutSeconds)
+                    FallBackToStills("준비 시간 초과");
+                return;
+            }
+
+            // 정지 그림만 방향별로 다시 싣는다. 영상은 방향이 바뀌어도 가운데를 잘라 계속 튼다
+            // (다른 방향 영상으로 갈아타면 준비 동안 화면이 끊긴다).
+            if (videoMode == VideoMode.Stills)
+            {
+                bool portrait = Screen.height > Screen.width;
+                if (!orientationLoaded || portrait != loadedPortrait)
+                    ReloadOrientationResourcesDuringPlayback(portrait);
+            }
 
             float playbackDelta = playbackClock.Consume(Time.realtimeSinceStartupAsDouble);
             sequence.Advance(playbackDelta);
             SynchronizeOpeningAudio();
+            SynchronizeVideo(playbackDelta);
             UpdateAudioVolume();
 
             if (sequence.IsCompleted)
@@ -142,6 +215,12 @@ namespace InsectGame.Opening
             applicationPaused = pauseStatus;
             playbackClock.Reset(Time.realtimeSinceStartupAsDouble);
             skipInputGate.Reset();
+            if (videoMode == VideoMode.Playing && videoPlayer != null)
+            {
+                if (pauseStatus) videoPlayer.Pause();
+                else if (sequence != null && !sequence.IsCompleted) videoPlayer.Play();
+                videoStalledSeconds = 0f;
+            }
             if (openingAudioSource == null)
                 return;
 
@@ -165,6 +244,13 @@ namespace InsectGame.Opening
             // 클립을 언로드하기 전에 재생을 멈춘다. replay가 중단(Destroyed)되면
             // OnSequenceCompleted가 돌지 않아 AudioSource가 아직 openingTheme을 물고 있다.
             StopOpeningAudio();
+            StopVideo();
+            if (videoPlayer != null)
+            {
+                videoPlayer.prepareCompleted -= OnVideoPrepared;
+                videoPlayer.errorReceived -= OnVideoError;
+            }
+            ReleaseVideoTexture();
             UnloadOrientationResources();
             // fallback icon은 다른 UI도 쓰는 공유 Resources 자산이라 강제 unload하지 않는다.
             fallbackIcon = null;
@@ -215,13 +301,14 @@ namespace InsectGame.Opening
                 loadError = null;
                 sequence = new OpeningSequenceState();
                 sequence.Completed += OnSequenceCompleted;
-                LoadOrientationResources(Screen.height > Screen.width);
                 RefreshMasterVolume();
-                StartOpeningAudio();
-                // Resources.Load에 걸린 시간은 시네마틱 타임라인에 포함하지 않는다.
-                playbackClock.Reset(Time.realtimeSinceStartupAsDouble);
-                skipInputGate.Reset();
-                Debug.Log("[OpeningSceneController] 10초 오프닝 재생을 시작합니다.");
+
+                // 영상이 있으면 준비가 끝날 때까지 시계를 세워 둔다(OnVideoPrepared가 시작한다).
+                // 없으면 곧바로 정지 그림으로 시작한다.
+                if (TryPrepareVideo(Screen.height > Screen.width))
+                    return true;
+
+                FallBackToStills(null);
                 return true;
             }
             catch (Exception e)
@@ -230,6 +317,7 @@ namespace InsectGame.Opening
                 if (sequence != null) sequence.Completed -= OnSequenceCompleted;
                 sequence = null;
                 StopOpeningAudio();
+                StopVideo();
                 if (manualReplay) ReportReplayResult(OpeningPlaybackResult.Error);
                 return false;
             }
@@ -238,6 +326,7 @@ namespace InsectGame.Opening
         private void OnSequenceCompleted()
         {
             StopOpeningAudio();
+            StopVideo();
             if (manualReplay)
             {
                 OpeningPlaybackResult result = sequence.WasSkipped
@@ -268,6 +357,11 @@ namespace InsectGame.Opening
                 return;
 
             openingTheme = Resources.Load<AudioClip>(ThemePath);
+            if (openingTheme == null)
+            {
+                Debug.LogWarning($"[OpeningSceneController] 프롤로그 음원 누락, 옛 테마로 대신: Resources/{ThemePath}");
+                openingTheme = Resources.Load<AudioClip>(LegacyThemePath);
+            }
             if (openingTheme == null)
                 return;
 
@@ -369,6 +463,156 @@ namespace InsectGame.Opening
             }
 
             return result;
+        }
+
+        // ───────────────────────── 프롤로그 영상 ─────────────────────────
+
+        private bool TryPrepareVideo(bool portrait)
+        {
+            if (videoPlayer == null)
+                return false;
+
+            // Path.Combine은 Windows에서 역슬래시를 넣는데 Android jar 경로는 '/'만 받는다(StoryVideoDirector와 같다).
+            string url = Application.streamingAssetsPath + "/" + VideoFolder + "/" + VideoFilePrefix
+                + (portrait ? "portrait" : "landscape") + ".mp4";
+#if UNITY_EDITOR || UNITY_STANDALONE
+            // 에디터·데스크톱은 파일 유무를 미리 안다. Android는 StreamingAssets가 jar 안이라 File.Exists가
+            // 늘 false여서 보지 않는다 — 없으면 errorReceived가 대체 경로로 보낸다.
+            if (!System.IO.File.Exists(url))
+            {
+                Debug.LogWarning($"[OpeningSceneController] 프롤로그 영상 없음, 정지 그림으로: {url}");
+                return false;
+            }
+#endif
+            videoMode = VideoMode.Preparing;
+            videoPrepareSeconds = 0f;
+            videoResyncCooldown = 0f;
+            videoPlayer.url = url;
+            videoPlayer.Prepare();
+            return true;
+        }
+
+        private void OnVideoPrepared(VideoPlayer source)
+        {
+            // 준비가 늦게 끝났으면(이미 정지 그림으로 넘어갔거나 건너뛰었으면) 틀지 않는다.
+            if (videoMode != VideoMode.Preparing || sequence == null || sequence.IsCompleted)
+            {
+                source.Stop();
+                return;
+            }
+
+            EnsureVideoTexture((int)source.width, (int)source.height);
+            source.targetTexture = videoTexture;
+            videoMode = VideoMode.Playing;
+            lastVideoTime = 0d;
+            videoStalledSeconds = 0f;
+            // 음원을 먼저 싣고(동기 Resources.Load) 시계를 세운 **뒤** 영상을 튼다 — 거꾸로면 로드하는 동안
+            // 영상만 앞서 가 첫 프레임부터 되감기가 걸린다.
+            StartTimeline();
+            source.Play();
+        }
+
+        private void OnVideoError(VideoPlayer source, string message)
+        {
+            if (videoMode == VideoMode.Stills)
+                return;
+            FallBackToStills(message);
+        }
+
+        /// <summary>
+        /// 영상을 못 틀 때 — 같은 시계로 정지 그림 3장을 넘긴다. 이미 흐르던 타임라인이면 그 자리에서
+        /// 이어 간다(자막·음악은 시계를 따르므로 끊기지 않는다).
+        /// </summary>
+        private void FallBackToStills(string reason)
+        {
+            bool timelineRunning = videoMode == VideoMode.Playing;
+            if (!string.IsNullOrEmpty(reason))
+                Debug.LogWarning($"[OpeningSceneController] 프롤로그 영상 실패({reason}) — 정지 그림으로 대신한다");
+            StopVideo();
+            videoMode = VideoMode.Stills;
+            LoadOrientationResources(Screen.height > Screen.width);
+            if (timelineRunning)
+                playbackClock.Reset(Time.realtimeSinceStartupAsDouble);   // 그림을 싣는 데 걸린 시간은 빼고 이어 간다
+            else
+                StartTimeline();
+        }
+
+        private void StartTimeline()
+        {
+            StartOpeningAudio();
+            // Resources.Load·디코더 준비에 걸린 시간은 시네마틱 타임라인에 포함하지 않는다.
+            playbackClock.Reset(Time.realtimeSinceStartupAsDouble);
+            skipInputGate.Reset();
+            Debug.Log($"[OpeningSceneController] {OpeningSequenceState.Duration:0}초 오프닝 재생을 시작합니다({videoMode}).");
+        }
+
+        private float videoResyncCooldown;
+
+        private void SynchronizeVideo(float playbackDelta)
+        {
+            if (videoMode != VideoMode.Playing || videoPlayer == null || sequence == null || sequence.IsSkipping)
+                return;
+            // 끝자락(페이드아웃)에선 영상이 끝나 멈춰 있는 게 정상이다 — 되감지도, 죽었다고 보지도 않는다.
+            if (sequence.Elapsed >= OpeningSequenceState.FinalFadeStart)
+                return;
+
+            videoResyncCooldown = Mathf.Max(0f, videoResyncCooldown - playbackDelta);
+            double videoTime = videoPlayer.time;
+
+            // 멈춤 감지 — 시계는 가는데 영상 시각이 안 움직이면 디코더가 죽은 것이다.
+            if (playbackDelta > 0f && Math.Abs(videoTime - lastVideoTime) < 1e-4)
+            {
+                videoStalledSeconds += playbackDelta;
+                if (videoStalledSeconds > VideoStallSeconds)
+                {
+                    FallBackToStills("영상 시각이 멈췄다");
+                    return;
+                }
+            }
+            else
+            {
+                videoStalledSeconds = 0f;
+            }
+            lastVideoTime = videoTime;
+
+            // 렌더·로딩 stall로 벌어지면 영상을 시계에 되감는다. 느린 기기에서 되감기가 되감기를 부르지 않게
+            // 2초에 한 번만 — 그 사이 벌어짐은 skipOnDrop이 프레임을 버려 스스로 줄인다.
+            float drift = (float)(videoTime - sequence.Elapsed);
+            if (Mathf.Abs(drift) > VideoResyncThresholdSeconds && videoResyncCooldown <= 0f)
+            {
+                videoPlayer.time = sequence.Elapsed;
+                videoResyncCooldown = 2f;
+                videoStalledSeconds = 0f;
+            }
+        }
+
+        private void StopVideo()
+        {
+            // 준비 중이어도 부른다 — 진행 중인 Prepare를 취소해 디코더를 닫는다(idle이면 no-op).
+            if (videoPlayer != null)
+                videoPlayer.Stop();
+        }
+
+        private void EnsureVideoTexture(int width, int height)
+        {
+            if (width <= 0 || height <= 0) { width = 1280; height = 720; }
+            if (videoTexture != null && videoTexture.width == width && videoTexture.height == height)
+                return;
+            ReleaseVideoTexture();
+            videoTexture = new RenderTexture(width, height, 0, RenderTextureFormat.ARGB32);
+            videoTexture.name = "OpeningPrologueRT";
+            videoTexture.Create();
+        }
+
+        private void ReleaseVideoTexture()
+        {
+            if (videoTexture == null)
+                return;
+            if (videoPlayer != null)
+                videoPlayer.targetTexture = null;
+            videoTexture.Release();
+            Destroy(videoTexture);
+            videoTexture = null;
         }
 
         private void ReloadOrientationResourcesDuringPlayback(bool portrait)
@@ -477,19 +721,40 @@ namespace InsectGame.Opening
 
         private void DrawSequence(Rect screenRect)
         {
-            int current = sequence.CurrentImageIndex;
-            DrawImageOrFallback(screenRect, openingImages[current], current, 1f);
+            // 디코더 준비 중 — 시계가 서 있으니 자막도 버튼도 없다. 첫 프레임이 나오면 곧바로 시작한다.
+            if (videoMode == VideoMode.Preparing)
+            {
+                DrawSolid(screenRect, Color.black);
+                return;
+            }
 
-            int next = sequence.NextImageIndex;
-            float blend = sequence.ImageBlend;
-            if (next >= 0 && blend > 0f)
-                DrawImageOrFallback(screenRect, openingImages[next], next, blend);
+            bool videoVisible = videoMode == VideoMode.Playing && videoTexture != null;
+            if (videoVisible)
+            {
+                // 방향별 영상이어도 기기 비율은 제각각이다 — 가운데를 잘라 채운다(cover).
+                Rect uv = InsectGame.UI.UIHelper.CalculateCoverUv(screenRect, videoTexture.width, videoTexture.height);
+                GUI.DrawTextureWithTexCoords(screenRect, videoTexture, uv, false);
+            }
+            else
+            {
+                int current = sequence.CurrentImageIndex;
+                DrawImageOrFallback(screenRect, openingImages[current], current, 1f);
+
+                int next = sequence.NextImageIndex;
+                float blend = sequence.ImageBlend;
+                if (next >= 0 && blend > 0f)
+                    DrawImageOrFallback(screenRect, openingImages[next], next, blend);
+            }
 
             // 비네트 → 곤충 → 빛 순서. 곤충은 배경 앞을 지나는 그림자라 빛보다 뒤에 있어야
-            // 빛이 곤충 위로 떠오르는 것처럼 보인다.
+            // 빛이 곤충 위로 떠오르는 것처럼 보인다. 영상은 빛·곤충을 이미 그리므로 정지 그림일 때만 얹는다
+            // (겹치면 반딧불이 두 벌이 되고, 빛이 꺼지는 장면에서 IMGUI 빛만 계속 떠다닌다).
             DrawVignette(screenRect, 1f - sequence.FadeAlpha);
-            DrawDriftingInsects(screenRect, sequence.Elapsed, 1f - sequence.FadeAlpha);
-            DrawFloatingLights(screenRect, sequence.Elapsed, 1f - sequence.FadeAlpha);
+            if (!videoVisible)
+            {
+                DrawDriftingInsects(screenRect, sequence.Elapsed, 1f - sequence.FadeAlpha);
+                DrawFloatingLights(screenRect, sequence.Elapsed, 1f - sequence.FadeAlpha);
+            }
 
             float titleAlpha = sequence.TitleAlpha * (1f - sequence.FadeAlpha);
             Rect safeRect = GetGuiSafeArea(screenRect);
@@ -559,7 +824,7 @@ namespace InsectGame.Opening
             float availableWidth = Mathf.Max(1f, safeRect.width - 32f);
 
             // CalcSize는 텍스트를 실제로 측정한다. 화면 크기가 그대로면 결과도 같으므로
-            // 타이틀 구간(6.2~10초) 내내 OnGUI 패스마다 3회씩 반복 측정하지 않는다.
+            // 타이틀 구간(TitleStart~Duration) 내내 OnGUI 패스마다 3회씩 반복 측정하지 않는다.
             if (minSide != titleFitMinSide || availableWidth != titleFitAvailableWidth)
             {
                 titleFitMinSide = minSide;

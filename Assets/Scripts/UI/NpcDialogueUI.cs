@@ -1,4 +1,4 @@
-using InsectGame.Core;
+﻿using InsectGame.Core;
 using InsectGame.NPC;
 using UnityEngine;
 
@@ -32,6 +32,12 @@ namespace InsectGame.UI
 
         // 스토리 비트 렌더 — StoryDirector.StoryBeatTriggered 구독. 기존 대화 모달 렌더 재사용.
         private InsectGame.Story.StoryDirector storyDirector;
+        private InsectGame.Story.StoryObjectiveTracker objectiveTracker;
+        public void AutoWire(InsectGame.Story.StoryObjectiveTracker tracker)
+        {
+            if (objectiveTracker == null) objectiveTracker = tracker;
+        }
+
         private InsectGame.Story.StoryBeat currentBeat;
         private InsectGame.Story.StoryLine[] storyLines;
         private bool storyMode;
@@ -45,7 +51,30 @@ namespace InsectGame.UI
         private int progressCacheIndex = -1;
         private int progressCacheTotal = -1;
 
+        // ── 스토리 무대(비트를 열 때 한 번 계산) ── 줄마다 누가 어디 서고 누가 말하는지, 어떤 연출인지.
+        // 규칙은 StoryDialogueStaging(순수 계산)이 정하고 여기선 그리기만 한다.
+        private StoryDialogueStaging.Stage[] storyStages;
+        private StoryDialogueStaging.LineFx[] storyFx;
+        private string[] storyActiveIds;
+        private float lineShownAt;
+        private float speakerChangedAt;
+        private bool lineRevealAll;
+        private GUIStyle namePlateStyle;
+        private GUIStyle progressStyle;
+        private readonly GUIContent namePlateContent = new GUIContent();
+
         public bool IsOpen => isOpen;
+
+        // 라이벌 대결 — 평소 대화에 [대결] 버튼을 붙인다(라온). 누르면 대화를 닫고 다음 Update에서 건다:
+        // OnGUI 안에서 전투를 시작하면 이 모달이 닫히는 프레임과 전투 화면이 열리는 프레임이 엉킨다.
+        private InsectGame.NPC.NpcDuelController duelController;
+        private bool rivalDuelOffered;
+        private string pendingRivalNpcId;
+
+        public void AutoWire(InsectGame.NPC.NpcDuelController duel)
+        {
+            if (duelController == null) duelController = duel;
+        }
 
         public void AutoWire(PlayerMovement player)
         {
@@ -124,7 +153,8 @@ namespace InsectGame.UI
             lines = new string[storyLines.Length];
             for (int i = 0; i < storyLines.Length; i++)
                 lines[i] = storyLines[i] != null ? storyLines[i].text : "";
-            lineIndex = 0;
+            PrepareStage(beat);
+            BeginStoryLine(0);
             isOpen = true;
             openedFrame = Time.frameCount;
             ModalUIRegistry.Register(this);
@@ -158,16 +188,25 @@ namespace InsectGame.UI
         /// <summary>대화 시작 — WorldInteractionController가 호출.</summary>
         public void Show(VillagerNpc npc)
         {
-            if (npc == null) return;
+            if (npc == null || isOpen) return;
+            // 진행 중인 스토리/주민 대화를 교체하면 화자와 완료 콜백이 어긋난다.
+            storyMode = false;
+            storyReplay = false;
+            currentBeat = null;
+            storyLines = null;
             currentNpc = npc;
             // 스토리 인물은 전용 잡담이 있으면 그걸 쓴다 — 마을 주민 풀로 떨어지면
             // 명부회 간부가 날씨 이야기를 한다(비트를 아직 못 봤거나 전부 본 뒤의 경로).
             if (!npc.IsStoryNpc
-                || !NpcDialogueDatabase.TryGetStoryNpcLines(npc.StoryNpcId, out lines))
+                || !NpcDialogueDatabase.TryGetStoryNpcLines(npc.StoryNpcId,
+                    storyDirector != null && storyDirector.HasDefeatedStoryNpc(npc.StoryNpcId),
+                    storyDirector != null && storyDirector.IsRegionCleansed(npc.RegionId), out lines))
             {
                 lines = NpcDialogueDatabase.GetLines(npc.NpcId, npc.RegionId);
             }
             lineIndex = 0;
+            rivalDuelOffered = npc.IsStoryNpc && duelController != null
+                && duelController.CanRivalDuel(npc.StoryNpcId, Time.time);
             isOpen = true;
             openedFrame = Time.frameCount;
             ModalUIRegistry.Register(this);
@@ -236,6 +275,12 @@ namespace InsectGame.UI
 
         private void Update()
         {
+            if (!string.IsNullOrEmpty(pendingRivalNpcId) && !isOpen)
+            {
+                string rivalId = pendingRivalNpcId;
+                pendingRivalNpcId = null;
+                if (duelController != null) duelController.TryStartRivalDuel(rivalId, Time.time);
+            }
             if (!isOpen) return;
             // 대화 상대가 사라짐(ApplyTuning 비활성화 등) — 안전 종료. 스토리 모드는 NPC가 없으므로 스킵.
             if (!storyMode && (currentNpc == null || !currentNpc.gameObject.activeInHierarchy))
@@ -265,12 +310,7 @@ namespace InsectGame.UI
             }
 
             EnsureStyles();
-            // 스토리는 글씨도 크다 — 스타일은 1회 캐시라 크기만 매 프레임 지정한다
-            // (LabelFit이 넘칠 때 줄였다가 원복하므로 여기서 기준값을 다시 세워야 한다).
-            nameStyle.fontSize = storyMode ? 38 : 26;
-            lineStyle.fontSize = storyMode ? 34 : 24;
             UIScale.Begin();
-
             // 패널 페이드 — 대사창이 툭 튀어나오면 NPC가 다가와 인사하는 흐름이 거기서 끊긴다.
             // **열릴 때만** 페이드한다: 닫을 때는 CloseModal이 lines/storyLines/currentBeat을
             // 그 자리에서 비우고 보상까지 지급하므로(CompleteBeat), 사라지는 동안 그릴 내용이
@@ -279,120 +319,366 @@ namespace InsectGame.UI
             float panelAlpha = UIHelper.AnimatePanelOpen(ref openFade, isOpen, ref wasOpen);
             GUI.color = new Color(1f, 1f, 1f, panelAlpha);
 
-            // **스토리는 화면 가운데 크게, 일반 대화는 하단에.**
-            // 둘을 같은 하단 띠에 그리면 지금 보고 있는 것이 이야기인지 잡담인지 구분되지 않는다.
-            // 딤은 뒤 월드를 눌러 시선을 대사로 모으되, 완전히 가리지는 않는다 —
-            // "지금 어디서 듣고 있는지"가 보여야 장면이 이어진다.
-            Rect panel = storyMode
-                ? UISafeLayout.CenteredPanel(1180f, 560f)
-                : UISafeLayout.BottomPanel(920f, 210f);
-            float panelW = panel.width;
-            float panelH = panel.height;
-            float px = panel.x;
-            float py = panel.y;
+            // **스토리는 무대, 잡담은 하단 띠.** 둘을 같은 모양으로 그리면 지금 보고 있는 것이
+            // 이야기인지 잡담인지 구분되지 않는다 — 스토리는 딤 위에 인물이 서서 주고받고,
+            // 잡담은 초상 없이 작은 검은 띠 하나다.
+            if (storyMode) DrawStoryStage(panelAlpha);
+            else DrawAmbient(panelAlpha);
 
-            if (storyMode)
-            {
-                UISurface.Dim(0.68f);
-                UISurface.Card(new Rect(px, py, panelW, panelH),
-                    new Color(0.04f, 0.05f, 0.10f, 0.97f), UITheme.Instance.accentAmber);
-                // 상단 액센트 — 둥근 모서리를 뚫지 않게 긴 축을 반경만큼 물린다(rules/ui-layout.md).
-                UISurface.Flat(
-                    new Rect(px + UITheme.Radius.Card, py + 3f,
-                        panelW - UITheme.Radius.Card * 2f, 5f),
-                    UITheme.Instance.accentAmber);
-            }
-            else
-            {
-                // 페이드 알파를 곱해 넣고, 복구도 흰색이 아니라 그 알파로 되돌린다 —
-                // 흰색으로 되돌리면 이 뒤의 이름·대사·버튼이 페이드에서 빠진다.
-                GUI.color = new Color(0f, 0f, 0f, 0.82f * panelAlpha);
-                GUI.DrawTexture(new Rect(px, py, panelW, panelH), Texture2D.whiteTexture);
-                GUI.color = new Color(1f, 1f, 1f, panelAlpha);
-            }
+            // 페이드 알파를 남기지 않는다 — GUI.color는 전역이라 다음 컴포넌트의 OnGUI까지 물든다.
+            GUI.color = Color.white;
+            UIScale.End();
+        }
 
-            // 이름 + 대사 — 스토리 모드는 라인별 speaker(없으면 비트 speakerNpcId), 아니면 NPC 이름.
-            string npcName;
-            if (storyMode)
-            {
-                InsectGame.Story.StoryLine sl = (storyLines != null
-                    && lineIndex >= 0 && lineIndex < storyLines.Length) ? storyLines[lineIndex] : null;
-                if (sl != null && !string.IsNullOrEmpty(sl.speaker)) npcName = sl.speaker;
-                else if (currentBeat != null && !string.IsNullOrEmpty(currentBeat.speakerNpcId)) npcName = currentBeat.speakerNpcId;
-                else npcName = "???";
-                // 직접 다가가 말을 건 조우(NpcTalk)면 화자명에 플로리시 — 만남을 강조.
-                if (currentBeat != null && currentBeat.trigger != null && currentBeat.trigger.type == "NpcTalk")
-                    npcName = "✦ " + npcName;
-            }
-            else
-            {
-                npcName = currentNpc != null ? currentNpc.DisplayName : "주민";
-            }
-            // 스토리 모드 + 아는 화자면 좌측에 포트레이트, 텍스트는 그만큼 우측으로 민다.
+        // ───────────────────────── 주민 잡담 — 하단 띠 ─────────────────────────
+        private void DrawAmbient(float panelAlpha)
+        {
+            nameStyle.fontSize = 26;
+            lineStyle.fontSize = 24;
+            Rect panel = UISafeLayout.BottomPanel(920f, 258f);
+            float panelW = panel.width, panelH = panel.height, px = panel.x, py = panel.y;
+
+            // 페이드 알파를 곱해 넣고, 복구도 흰색이 아니라 그 알파로 되돌린다 —
+            // 흰색으로 되돌리면 이 뒤의 이름·대사·버튼이 페이드에서 빠진다.
+            GUI.color = new Color(0f, 0f, 0f, 0.82f * panelAlpha);
+            GUI.DrawTexture(new Rect(px, py, panelW, panelH), Texture2D.whiteTexture);
+            GUI.color = new Color(1f, 1f, 1f, panelAlpha);
+
+            string npcName = currentNpc != null ? currentNpc.DisplayName : "주민";
             float textX = px + 28f;
             float textW = panelW - 56f;
-            if (storyMode && currentBeat != null)
-            {
-                float off = DrawStoryPortrait(px, py, panelH, currentBeat.speakerNpcId);
-                textX += off;
-                textW -= off;
-            }
-            // 중앙 패널은 훨씬 크므로 고정 오프셋을 그대로 쓰면 아래가 텅 빈다 — 높이에서 파생한다.
-            float nameH = storyMode ? 52f : 34f;
-            float nameY = py + (storyMode ? 30f : 16f);
-            float lineY = nameY + nameH + (storyMode ? 18f : 6f);
-            float btnBandH = storyMode ? 96f : 70f;
+            float nameH = 34f;
+            float nameY = py + 16f;
+            float lineY = nameY + nameH + 6f;
+            float btnBandH = 114f;
             float lineH = Mathf.Max(40f, py + panelH - btnBandH - lineY);
 
-            GUI.Label(new Rect(textX, nameY, textW, nameH), npcName, nameStyle);
+            UIHelper.LabelFit(new Rect(textX, nameY, Mathf.Max(40f, textW - 110f), nameH), npcName, nameStyle);
             // 대사 길이는 데이터가 정한다 — 상자에 안 들어가면 폰트를 줄여 맞춘다.
-            // 초상화가 붙는 스토리 대사는 textW까지 좁아져 더 쉽게 넘친다.
             UIHelper.LabelFit(new Rect(textX, lineY, textW, lineH),
                 lines[Mathf.Clamp(lineIndex, 0, lines.Length - 1)], lineStyle);
 
-            // 진행 표시 (n/총)
-            // **상자 높이를 숫자로 박지 않는다.** 이 라벨은 이름과 같은 `nameStyle`을 쓰는데,
-            // 스토리 모드에서 그 폰트가 26 → 38로 커진 뒤에도 상자는 30px 그대로였다 —
-            // 한글 줄높이는 대략 fontSize × 1.35(=51)라 "1/4"가 위아래로 깎였다.
-            // 이름 쪽(nameH)은 52로 함께 키웠는데 여기만 남았다.
-            //
-            // 문자열도 캐시한다 — OnGUI는 프레임당 여러 번 도는데 보간은 매번 새 문자열이다.
+            if (objectiveTracker != null && objectiveTracker.HasObjective)
+            {
+                Color previousTextColor = lineStyle.normal.textColor;
+                lineStyle.normal.textColor = UITheme.Instance.textSecondary;
+                UIHelper.LabelFit(new Rect(textX, py + panelH - 108f, textW, 32f),
+                    "다음 이야기 · " + objectiveTracker.Label, lineStyle);
+                lineStyle.normal.textColor = previousTextColor;
+            }
+
+            // 진행 표시 (n/총) — **상자 높이를 숫자로 박지 않는다**(한글 줄높이 ≈ fontSize × 1.35).
+            UIHelper.LabelFit(new Rect(px + panelW - 120f, nameY, 92f, Mathf.Ceil(nameStyle.fontSize * 1.35f)),
+                ProgressLabel(), nameStyle);
+
+            float btnW = 170f, btnH = 56f;
+            float btnY = py + panelH - btnH - 14f;
+            if (lineIndex < lines.Length - 1)
+            {
+                if (GUI.Button(new Rect(px + panelW - btnW * 2f - 40f, btnY, btnW, btnH), "다음", buttonStyle))
+                    lineIndex++;
+            }
+            if (GUI.Button(new Rect(px + panelW - btnW - 24f, btnY, btnW, btnH), "닫기", buttonStyle))
+                CloseModal();
+            // 라이벌 대결 — 대사를 다 넘기지 않아도 건다(잡담은 매번 같은 말이라 끝까지 읽힐 이유가 없다).
+            if (rivalDuelOffered && currentNpc != null
+                && GUI.Button(new Rect(px + 24f, btnY, 220f, btnH), "승부하기", buttonStyle))
+            {
+                pendingRivalNpcId = currentNpc.StoryNpcId;
+                CloseModal();
+            }
+        }
+
+        // 문자열은 줄이 바뀔 때만 만든다 — OnGUI는 프레임당 여러 번 도는데 보간은 매번 새 문자열이다.
+        private string ProgressLabel()
+        {
             if (progressCacheIndex != lineIndex || progressCacheTotal != lines.Length)
             {
                 progressCacheIndex = lineIndex;
                 progressCacheTotal = lines.Length;
                 progressCache = (lineIndex + 1) + "/" + lines.Length;
             }
-            float progH = Mathf.Ceil(nameStyle.fontSize * 1.35f);
-            UIHelper.LabelFit(new Rect(px + panelW - 120f, nameY, 92f, progH),
-                progressCache, nameStyle);
+            return progressCache;
+        }
 
-            // 버튼 — 마지막 줄이면 [닫기]만, 아니면 [다음]/[닫기]
-            float btnW = storyMode ? 220f : 170f;
-            float btnH = storyMode ? 72f : 56f;
-            float btnY = py + panelH - btnH - (storyMode ? 24f : 14f);
+        // ───────────────────────── 스토리 — 무대 ─────────────────────────
+
+        /// <summary>비트를 열 때 한 번 — 줄마다 초상 ID·좌우 배치·연출 태그를 풀어 둔다.</summary>
+        private void PrepareStage(InsectGame.Story.StoryBeat beat)
+        {
+            int n = storyLines.Length;
+            string[] ids = new string[n];
+            storyFx = new StoryDialogueStaging.LineFx[n];
+            for (int i = 0; i < n; i++)
+            {
+                InsectGame.Story.StoryLine line = storyLines[i];
+                string speaker = line != null ? line.speaker : null;
+                // 지문은 누구의 얼굴도 빌리지 않는다 — 비트 화자로 떨어지면 해설을 그 사람이 말하는 것처럼 보인다.
+                ids[i] = StoryDialogueStaging.IsNarration(speaker)
+                    ? null
+                    : NpcDialogueDatabase.StoryPortraitId(speaker, beat.speakerNpcId);
+                // 초상이 없는 인물은 무대에 세우지 않는다(이름표만 뜬다).
+                if (ids[i] != null && !GetStoryPortrait(ids[i], out _, out _, out _, out _, out _, out _, out _))
+                    ids[i] = null;
+                storyFx[i] = StoryDialogueStaging.ParseFx(line != null ? line.fx : null);
+            }
+            storyStages = StoryDialogueStaging.AssignSides(ids);
+            storyActiveIds = new string[n];
+            for (int i = 0; i < n; i++)
+            {
+                StoryDialogueStaging.Stage st = storyStages[i];
+                storyActiveIds[i] = st.Active == StoryDialogueStaging.Side.Left ? st.LeftId
+                    : st.Active == StoryDialogueStaging.Side.Right ? st.RightId : null;
+            }
+        }
+
+        private void BeginStoryLine(int index)
+        {
+            float now = Time.unscaledTime;
+            bool speakerChanged = index == 0 || storyActiveIds == null || index >= storyActiveIds.Length
+                || storyActiveIds[index] != storyActiveIds[index - 1];
+            lineIndex = index;
+            lineShownAt = now;
+            lineRevealAll = false;
+            if (speakerChanged) speakerChangedAt = now;
+        }
+
+        private StoryDialogueStaging.LineFx CurrentFx =>
+            storyFx != null && lineIndex >= 0 && lineIndex < storyFx.Length
+                ? storyFx[lineIndex] : StoryDialogueStaging.LineFx.None;
+
+        /// <summary>지금 줄이 다 나왔는가 — 다 나오기 전의 [다음]·탭은 넘기지 않고 줄을 마저 보여준다.</summary>
+        private bool IsStoryLineRevealed()
+        {
+            if (lineRevealAll || lines == null || lineIndex < 0 || lineIndex >= lines.Length) return true;
+            string text = lines[lineIndex] ?? "";
+            return StoryDialogueStaging.VisibleChars(text.Length, Time.unscaledTime - lineShownAt, CurrentFx) >= text.Length;
+        }
+
+        /// <summary>[다음]·탭·Space — 덜 나왔으면 마저 보여주고, 다 나왔으면 다음 줄, 마지막이면 닫는다.</summary>
+        private void AdvanceStory()
+        {
+            if (!IsStoryLineRevealed())
+            {
+                lineRevealAll = true;
+                return;
+            }
+            if (lineIndex < lines.Length - 1)
+            {
+                BeginStoryLine(lineIndex + 1);
+                return;
+            }
+            if (!HasChoices) CloseModal();   // 선택지는 반드시 골라야 한다(CloseModal도 삼킨다)
+        }
+
+        private void DrawStoryStage(float panelAlpha)
+        {
+            UITheme t = UITheme.Instance;
+            float now = Time.unscaledTime;
+            float since = now - lineShownAt;
+            StoryDialogueStaging.LineFx fx = CurrentFx;
+            InsectGame.Story.StoryLine sl = storyLines != null && lineIndex >= 0 && lineIndex < storyLines.Length
+                ? storyLines[lineIndex] : null;
+            bool narration = sl != null && StoryDialogueStaging.IsNarration(sl.speaker);
+            StoryDialogueStaging.Stage stage = storyStages != null && lineIndex >= 0 && lineIndex < storyStages.Length
+                ? storyStages[lineIndex] : default(StoryDialogueStaging.Stage);
+
+            UISurface.Dim((fx & StoryDialogueStaging.LineFx.Dark) != 0 ? 0.86f : 0.66f);
+
+            // 상자는 아래, 인물은 그 위에 선다. 세로 화면은 폭이 좁아 대사가 여러 줄로 접히므로 상자를 키운다.
+            bool portraitLayout = UIScale.IsPortrait;
+            float boxW = portraitLayout ? UISafeLayout.ContentWidth : Mathf.Min(1400f, UISafeLayout.ContentWidth);
+            float boxH = portraitLayout ? 500f : 350f;
+            Rect box = UISafeLayout.BottomPanel(boxW, boxH);
+            box.x += StoryDialogueStaging.ShakeOffset(fx, since);
+
+            // ── 인물 ── 발은 상자 뒤로 숨는다. 듣는 쪽을 먼저, 말하는 쪽을 나중에(앞에) 그린다.
+            float figH = portraitLayout ? 440f : 360f;
+            float scale = figH / 137f;                       // CharacterPortraitRenderer 치비 전신 ≈ 137 × scale
+            float cy = box.y + 40f - 74.5f * scale;          // 발끝(cy + 74.5s)이 상자 윗변 40px 아래
+            float inset = box.width * (portraitLayout ? 0.23f : 0.17f);
+            float leftX = box.x + inset, rightX = box.xMax - inset;
+            float hop = StoryDialogueStaging.HopOffset(now - speakerChangedAt);
+            bool leftActive = stage.Active == StoryDialogueStaging.Side.Left;
+            bool rightActive = stage.Active == StoryDialogueStaging.Side.Right;
+            if (!leftActive) DrawStageFigure(stage.LeftId, leftX, cy, scale, false, 0f, now);
+            if (!rightActive) DrawStageFigure(stage.RightId, rightX, cy, scale, false, 0f, now);
+            if (leftActive) DrawStageFigure(stage.LeftId, leftX, cy, scale, true, hop, now);
+            if (rightActive) DrawStageFigure(stage.RightId, rightX, cy, scale, true, hop, now);
+
+            // ── 상자 ──
+            UISurface.Card(box, t.surfaceBase, t.accentAmber);
+            // 상단 액센트 — 둥근 모서리를 뚫지 않게 긴 축을 반경만큼 물린다(rules/ui-layout.md).
+            UISurface.Flat(new Rect(box.x + UITheme.Radius.Card, box.y + 3f, box.width - UITheme.Radius.Card * 2f, 5f),
+                t.accentAmber);
+
+            // ── 이름표 ── 말하는 사람 쪽 가장자리. 지문엔 없다.
+            if (!narration)
+                DrawNamePlate(box, sl, rightActive);
+
+            // ── 대사 ──
+            float btnBandH = portraitLayout ? 112f : 100f;
+            Rect textRect = new Rect(box.x + 40f, box.y + 50f, box.width - 80f,
+                Mathf.Max(40f, box.height - 50f - btnBandH));
+            string text = lines[Mathf.Clamp(lineIndex, 0, lines.Length - 1)] ?? "";
+            int visible = lineRevealAll ? text.Length : StoryDialogueStaging.VisibleChars(text.Length, since, fx);
+
+            int baseSize = lineStyle.fontSize;
+            FontStyle baseFontStyle = lineStyle.fontStyle;
+            TextAnchor baseAnchor = lineStyle.alignment;
+            Color baseColor = lineStyle.normal.textColor;
+            int size = portraitLayout ? 36 : 34;
+            if ((fx & StoryDialogueStaging.LineFx.Shout) != 0)
+            {
+                size = Mathf.RoundToInt(size * 1.15f);
+                lineStyle.fontStyle = FontStyle.Bold;
+            }
+            if ((fx & StoryDialogueStaging.LineFx.Whisper) != 0)
+            {
+                size = Mathf.RoundToInt(size * 0.9f);
+                lineStyle.fontStyle = FontStyle.Italic;
+                lineStyle.normal.textColor = t.textSecondary;
+            }
+            if (narration)
+            {
+                lineStyle.fontStyle = FontStyle.Italic;
+                lineStyle.alignment = TextAnchor.MiddleCenter;
+                lineStyle.normal.textColor = new Color(0.9f, 0.86f, 0.74f);
+            }
+            lineStyle.fontSize = size;
+            UIHelper.LabelFitReveal(textRect, text, visible, lineStyle);
+            lineStyle.fontSize = baseSize;
+            lineStyle.fontStyle = baseFontStyle;
+            lineStyle.alignment = baseAnchor;
+            lineStyle.normal.textColor = baseColor;
+
+            bool revealed = visible >= text.Length;
             bool isLast = lineIndex >= lines.Length - 1;
 
-            if (isLast && HasChoices)
+            // 계속 표시 — 다 나왔고 다음 줄이 있으면 오른쪽 아래에서 깜빡인다.
+            if (revealed && !isLast)
             {
-                // 마지막 줄에 선택지가 있으면 [닫기] 대신 선택 버튼이 대사창을 닫는다 —
-                // 고르지 않고는 못 나간다(ESC는 IModalUI 경로라 여전히 닫히지만 그땐 아무 결과도 안 뜬다).
-                DrawChoices(textX, btnY, px + panelW - 28f - textX, btnH);
+                float blink = 0.45f + 0.55f * Mathf.Abs(Mathf.Sin(now * 3.2f));
+                Color c = GUI.color;
+                GUI.color = new Color(t.accentAmber.r, t.accentAmber.g, t.accentAmber.b, c.a * blink);
+                UIHelper.LabelFit(new Rect(textRect.xMax - 44f, textRect.yMax - 44f, 44f, 44f), "▼", progressStyle);
+                GUI.color = c;
+            }
+
+            // ── 진행 · 버튼 ──
+            float btnW = portraitLayout ? 230f : 220f;
+            float btnH = 72f;
+            float btnY = box.yMax - btnH - 22f;
+            UIHelper.LabelFit(new Rect(box.x + 36f, btnY + (btnH - 40f) * 0.5f, 110f, 40f), ProgressLabel(), progressStyle);
+
+            bool choosing = isLast && revealed && HasChoices;
+            if (choosing)
+            {
+                // 마지막 줄이 다 나온 뒤에만 고른다 — 덜 읽은 채 고르면 선택의 무게가 사라진다.
+                float choiceX = box.x + 160f;
+                DrawChoices(choiceX, btnY, box.xMax - 28f - choiceX, btnH);
+                if (!isOpen) return;   // 골랐다 — CloseModal이 상태를 비웠다
             }
             else
             {
-                if (!isLast)
+                string advanceLabel = revealed && isLast ? "닫기" : "다음 ▶";
+                if (GUI.Button(new Rect(box.xMax - btnW - 24f, btnY, btnW, btnH), advanceLabel, buttonStyle))
                 {
-                    if (GUI.Button(new Rect(px + panelW - btnW * 2f - 40f, btnY, btnW, btnH), "다음", buttonStyle))
-                        lineIndex++;
+                    AdvanceStory();
+                    if (!isOpen) return;
                 }
-                if (GUI.Button(new Rect(px + panelW - btnW - 24f, btnY, btnW, btnH), "닫기", buttonStyle))
+                // 건너뛰기 — 장면 전체를 닫는다(비트는 완료 처리된다). 마지막 줄에선 위 버튼이 그 일을 한다.
+                // 선택지가 있는 비트는 건너뛸 수 없다 — CloseModal이 선택 전 닫기를 삼키므로 누르면 아무 일도 없다.
+                if (!isLast && !HasChoices
+                    && GUI.Button(new Rect(box.xMax - btnW * 2f - 40f, btnY, btnW, btnH), "건너뛰기", buttonStyle))
+                {
                     CloseModal();
+                    return;
+                }
+
+                // 대사 영역을 누르거나 Space/Enter — [다음]과 같다. 버튼 띠와 겹치지 않는 자리라 버튼을 먹지 않는다.
+                if (GUI.Button(new Rect(box.x, box.y, box.width, textRect.yMax - box.y), GUIContent.none, GUIStyle.none))
+                {
+                    AdvanceStory();
+                    if (!isOpen) return;
+                }
+                Event e = Event.current;
+                if (e != null && e.type == EventType.KeyDown
+                    && (e.keyCode == KeyCode.Space || e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter))
+                {
+                    e.Use();
+                    AdvanceStory();
+                    if (!isOpen) return;
+                }
             }
 
-            // 페이드 알파를 남기지 않는다 — GUI.color는 전역이라 다음 컴포넌트의 OnGUI까지 물든다.
-            GUI.color = Color.white;
-            UIScale.End();
+            // ── 번쩍임 ── 맨 위에 덮는다.
+            float flash = StoryDialogueStaging.FlashOverlay(fx, since);
+            if (flash > 0f)
+                UISurface.Flat(new Rect(0f, 0f, UIScale.VirtualScreenWidth, UIScale.VirtualScreenHeight),
+                    new Color(1f, 1f, 1f, flash * panelAlpha));
+        }
+
+        /// <summary>
+        /// 무대 위 인물 하나. 말하는 쪽은 밝고 크게(화자가 바뀌면 한 번 뛰어오른다), 듣는 쪽은 어둡게 한 발 물러선다.
+        /// 숨 쉬듯 아주 조금 오르내린다 — 정지한 종이 인형처럼 보이지 않게.
+        /// </summary>
+        private static void DrawStageFigure(string id, float x, float cy, float scale, bool active, float hop, float now)
+        {
+            if (!HasStoryPortrait(id)) return;
+
+            // 렌더러는 호출부의 GUI.color를 곱해 그린다(패널 페이드 알파) — 듣는 쪽은 그 위에 어둡게 곱한다.
+            Color prev = GUI.color;
+            GUI.color = active
+                ? prev
+                : new Color(prev.r * 0.42f, prev.g * 0.42f, prev.b * 0.5f, prev.a);
+            float s = active ? scale : scale * 0.93f;
+            float breath = Mathf.Sin(now * 1.6f + x * 0.013f) * 1.5f;
+            float y = cy - hop + breath + (active ? 0f : 10f);
+            TryDrawStoryPortrait(id, x, y, s);
+            GUI.color = prev;
+        }
+
+        /// <summary>이 스토리 인물에게 초상이 있는가 — 없으면 대사창·전투 컷인 모두 얼굴 없이 말한다.</summary>
+        internal static bool HasStoryPortrait(string id)
+        {
+            return !string.IsNullOrEmpty(id)
+                && GetStoryPortrait(id, out _, out _, out _, out _, out _, out _, out _);
+        }
+
+        /// <summary>
+        /// 스토리 인물 전신 초상. 전투 컷인·말풍선도 이걸 쓴다 — 한 인물이 화면마다 다르게 생기면 안 된다.
+        /// 기준은 대사창 무대와 같다: (cx, cy)가 몸 가운데, 발끝이 cy + 74.5 × scale. 표에 없으면 false.
+        /// </summary>
+        internal static bool TryDrawStoryPortrait(string id, float cx, float cy, float scale)
+        {
+            if (string.IsNullOrEmpty(id)) return false;
+            if (!GetStoryPortrait(id, out int gender, out int skinIdx, out int hairIdx,
+                    out int hairStyle, out int faceType, out Color top, out Color hat))
+                return false;
+            CharacterPortraitRenderer.Draw(cx, cy, scale, gender, skinIdx, hairIdx, hairStyle, faceType,
+                top, new Color(0.18f, 0.22f, 0.28f), new Color(0.2f, 0.12f, 0.06f), hat, 0f, false);
+            return true;
+        }
+
+        /// <summary>이름표 — 상자 윗변에 걸친 작은 카드. 오른쪽 사람이 말하면 오른쪽 끝으로 옮긴다.</summary>
+        private void DrawNamePlate(Rect box, InsectGame.Story.StoryLine line, bool right)
+        {
+            string speaker = line != null ? line.speaker : null;
+            string fallback = currentBeat != null ? currentBeat.speakerNpcId : null;
+            string name = NpcDialogueDatabase.StorySpeakerName(string.IsNullOrEmpty(speaker) ? fallback : speaker);
+            // 직접 다가가 말을 건 조우(NpcTalk)면 첫 줄 화자명에 플로리시 — 만남을 강조.
+            if (lineIndex == 0 && currentBeat != null && currentBeat.trigger != null
+                && currentBeat.trigger.type == "NpcTalk")
+                name = "✦ " + name;
+
+            namePlateContent.text = name;
+            float w = Mathf.Clamp(namePlateStyle.CalcSize(namePlateContent).x + 48f, 160f, box.width * 0.5f);
+            const float h = 62f;
+            Rect plate = new Rect(right ? box.xMax - 32f - w : box.x + 32f, box.y - h * 0.55f, w, h);
+            UITheme t = UITheme.Instance;
+            UISurface.Card(plate, t.surfaceRaised, t.accentAmber);
+            UIHelper.LabelFit(new Rect(plate.x + 12f, plate.y, plate.width - 24f, plate.height), name, namePlateStyle);
         }
 
         /// <summary>지금 떠 있는 스토리 비트의 마지막 줄에 선택지가 붙어 있는가(다시보기는 제외).</summary>
@@ -452,40 +738,6 @@ namespace InsectGame.UI
             return GUI.Button(r, string.Empty, GUIStyle.none);
         }
 
-        // 스토리 화자(어르신/라온/세라) 좌측 포트레이트 — CharacterPortraitRenderer 재사용.
-        // 반환: 그린 포트레이트 폭 오프셋(0이면 아는 화자 아님 → 포트레이트 없음).
-        private float DrawStoryPortrait(float px, float py, float panelH, string speakerNpcId)
-        {
-            if (!GetStoryPortrait(speakerNpcId, out int gender, out int skinIdx, out int hairIdx,
-                    out int hairStyle, out int faceType, out Color top, out Color hat))
-                return 0f;
-
-            // 중앙 패널은 세로로 길다 — panelH를 그대로 쓰면 초상화가 패널을 통째로 채운다.
-            // 정사각 상자를 상단에 붙이고 남는 세로는 대사가 쓴다.
-            float box = storyMode
-                ? Mathf.Min(300f, panelH * 0.52f)
-                : panelH - 24f;
-            float boxX = px + (storyMode ? 26f : 14f);
-            float boxY = py + (storyMode ? 26f : 12f);
-
-            // 주변색(패널 페이드 알파)을 곱해 넣고 끝에 되돌린다 — 이 메서드는 호출부의
-            // panelAlpha를 인자로 받지 않으므로, UISurface와 같은 방식으로 GUI.color를 보존한다.
-            Color ambient = GUI.color;
-            GUI.color = new Color(0.12f, 0.1f, 0.06f, 0.9f) * ambient;
-            GUI.DrawTexture(new Rect(boxX, boxY, box, box), Texture2D.whiteTexture);
-            GUI.color = new Color(1f, 0.85f, 0.45f, 0.5f) * ambient;
-            GUI.DrawTexture(new Rect(boxX, boxY, box, 3f), Texture2D.whiteTexture);
-            GUI.color = ambient;
-
-            float scale = box / 150f;
-            Color bottom = new Color(0.18f, 0.22f, 0.28f);
-            Color shoe = new Color(0.2f, 0.12f, 0.06f);
-            CharacterPortraitRenderer.Draw(boxX + box * 0.5f, boxY + box * 0.52f, scale,
-                gender, skinIdx, hairIdx, hairStyle, faceType, top, bottom, shoe, hat, 0f, false);
-
-            return box + 22f;
-        }
-
         private static bool GetStoryPortrait(string id, out int gender, out int skinIdx, out int hairIdx,
             out int hairStyle, out int faceType, out Color top, out Color hat)
         {
@@ -504,6 +756,9 @@ namespace InsectGame.UI
                 // 2막 간부와 같은 계열이라 나중에 "그때 그 옷"으로 회수된다.
                 case "ledger_thug_cord": // 끈 — 챙 깊은 모자로 얼굴을 가린다
                     gender = 0; skinIdx = 2; hairIdx = 0; hairStyle = 0; faceType = 1;
+                    top = new Color(0.16f, 0.16f, 0.20f); hat = new Color(0.10f, 0.10f, 0.13f); return true;
+                case "ledger_thug_pin": // 핀 — 짧은 앞머리와 검은 모자
+                    gender = 0; skinIdx = 0; hairIdx = 1; hairStyle = 1; faceType = 0;
                     top = new Color(0.16f, 0.16f, 0.20f); hat = new Color(0.10f, 0.10f, 0.13f); return true;
                 case "ledger_thug_rule": // 자 — 모자 없이 묶은 머리
                     gender = 1; skinIdx = 1; hairIdx = 3; hairStyle = 3; faceType = 1;
@@ -541,7 +796,7 @@ namespace InsectGame.UI
                 fontStyle = FontStyle.Bold,
                 alignment = TextAnchor.MiddleLeft
             };
-            nameStyle.normal.textColor = new Color(1f, 0.85f, 0.45f);
+            nameStyle.normal.textColor = UITheme.Instance.accentAmber;
 
             lineStyle = new GUIStyle(GUI.skin.label)
             {
@@ -566,6 +821,23 @@ namespace InsectGame.UI
                 alignment = TextAnchor.MiddleCenter
             };
             choiceStyle.normal.textColor = Color.white;
+
+            // 무대 이름표 — 상자 윗변에 걸친 카드 안 가운데.
+            namePlateStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 34,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleCenter
+            };
+            namePlateStyle.normal.textColor = UITheme.Instance.accentAmber;
+
+            // 진행 표시·계속 표시(▼) — 작고 흐리게.
+            progressStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 26,
+                alignment = TextAnchor.MiddleLeft
+            };
+            progressStyle.normal.textColor = UITheme.Instance.textSecondary;
 
             stylesInited = true;
         }

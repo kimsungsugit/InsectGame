@@ -52,6 +52,13 @@ namespace InsectGame.Core
         /// </summary>
         public event System.Action<string> GuardianDefeated;
 
+        /// <summary>
+        /// 수문장 배지를 새로 얻었다 — <see cref="DefeatGuardian"/>의 <b>첫 격파에서만</b>, 리전당 일생 한 번.
+        /// <see cref="GuardianDefeated"/>와 나눈 이유: 그쪽은 이미 깬 수문장이 필드에 남아 있을 때 봉인을 걷으려고
+        /// <see cref="TryDefeatGuardian"/>이 <b>다시</b> 울린다. 배지 연출이 그걸 들으면 같은 배지가 두 번 뜬다.
+        /// </summary>
+        public event System.Action<string> GuardianBadgeEarned;
+
         public void SetSubAreaSticky(bool sticky, string exitedId = null)
         {
             subAreaSticky = sticky;
@@ -69,6 +76,8 @@ namespace InsectGame.Core
             string exitedId = currentSubArea.subAreaId;
             currentSubArea = null;
             subAreaSticky = false;
+            nearbySubArea = null;
+            SubAreaProximityChanged?.Invoke(null);
             lastExitedSubAreaId = exitedId;
             lastExitedAtTime = Time.time;
             SubAreaChanged?.Invoke(null);
@@ -255,6 +264,8 @@ namespace InsectGame.Core
             // 해금·저장이 끝난 뒤에 알린다 — 구독자(StoryDirector)가 발화 시점에
             // IsRegionAccessible 같은 상태를 읽어도 이미 갱신된 값을 보게 한다.
             // 위 idempotent 가드 덕에 리전당 정확히 1회만 울린다.
+            // 배지가 먼저다 — 배지 서비스가 이정표 보상까지 지급해 둔 뒤에 스토리·봉인이 움직인다.
+            GuardianBadgeEarned?.Invoke(regionId);
             GuardianDefeated?.Invoke(regionId);
         }
 

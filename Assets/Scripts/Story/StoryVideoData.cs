@@ -3,8 +3,8 @@ using UnityEngine;
 namespace InsectGame.Story
 {
     /// <summary>
-    /// 영상 위에 얹는 자막 한 줄. <b>자막은 영상에 굽지 않는다</b> — AI 생성 영상의 한글 렌더링이
-    /// 불안정하고, 문구 수정·「무명」 금칙(StoryBible 2장)·현지화를 코드 한 곳에서 하기 위해서다.
+    /// 영상 위에 얹는 자막 한 줄. <b>자막은 영상에 굽지 않는다</b> — 영상을 다시 그리지 않고 문구를 고치고,
+    /// 「무명」 금칙(StoryBible 2장)·현지화를 코드 한 곳에서 하기 위해서다(나중에 AI 영상으로 바꿔도 같다).
     /// </summary>
     public struct StoryVideoCue
     {

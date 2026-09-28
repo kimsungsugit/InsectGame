@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using InsectGame.Core;
 using InsectGame.Data;
 using InsectGame.Dex;
@@ -20,6 +20,12 @@ namespace InsectGame.UI
         // 전부 저쪽에 있어서 여기는 좌표와 문구를 받아 그리기만 한다.
         private InsectGame.Story.StoryObjectiveTracker objectiveTracker;
 
+        private InsectGame.NPC.NpcManager npcManager;
+        public void AutoWire(InsectGame.NPC.NpcManager manager)
+        {
+            if (npcManager == null) npcManager = manager;
+        }
+
         private bool isOpen;
         private string selectedRegionId;   // 지도에서 선택돼 정보패널에 표시되는 리전(도감 아님)
         private bool dexOpen;              // 도감 브라우저 열림(정보패널 [도감]이 켬)
@@ -40,26 +46,17 @@ namespace InsectGame.UI
         private readonly Dictionary<string, string> dexInfoCache = new Dictionary<string, string>();
         private readonly Dictionary<int, string> hiddenNameCache = new Dictionary<int, string>();
 
-        // 리전 간 공간 인접(길). RegionData.connections는 전부 null이라 여기서 토폴로지 유지. 정적이라 프레임당 할당 없음.
-        //
-        // **1막 진행 사슬 6링크가 전부 여기 있어야 한다.** 해금은
-        // meadow→pond→forest→swamp→mountain→ruins(+garden) 한 줄로 도는데,
-        // 예전엔 그중 `pond→forest`와 `swamp→mountain`이 **지도에도 땅에도 없었다** —
-        // 다음 목적지로 가는 길만 골라서 안 그려져 있었다. 공간상 가장 가까운 쌍이
-        // meadow―swamp(101m)이고 사슬인 pond→forest는 280m라, 지도를 눈으로 훑으면
-        // 오히려 사슬이 아닌 쪽이 길처럼 보인다.
-        //
-        // 사슬이 아닌 간선(meadow―forest·meadow―swamp·forest―mountain)은 그대로 둔다.
-        // 이 표는 진행 순서가 아니라 **공간 인접**이고, 그쪽은 실제로 가깝다.
-        private static readonly string[,] Connections = {
-            {"meadow","pond"}, {"meadow","forest"}, {"meadow","swamp"}, {"meadow","garden"},
-            {"mountain","ruins"}, {"forest","swamp"}, {"forest","mountain"},
-            {"pond","forest"}, {"swamp","mountain"},
-            // ── 2막(ver2) ── 유적 너머로 이어지는 사슬. 빠뜨리면 지도에 길이 안 그려져
-            // 신규 리전이 허공에 뜬 섬으로 보인다.
-            {"ruins","hollow"}, {"hollow","dunes"}, {"dunes","frostline"},
-            {"frostline","emberfall"}, {"emberfall","canopy"}, {"canopy","nameless"}
-        };
+        private RegionData[] routeRegions;
+        private readonly List<Vector3[]> mapRoutes = new List<Vector3[]>();
+
+        private void EnsureMapRoutes(RegionData[] regions)
+        {
+            if (ReferenceEquals(routeRegions, regions)) return;
+            routeRegions = regions;
+            mapRoutes.Clear();
+            foreach (WorldRouteEdge edge in WorldRouteLayout.FieldConnections)
+                mapRoutes.Add(WorldRouteLayout.BuildRoute(regions, edge.FromRegionId, edge.ToRegionId));
+        }
 
         private struct RaidBossMarker
         {
@@ -313,6 +310,8 @@ namespace InsectGame.UI
             GUI.DrawTexture(new Rect(area.x, area.y, area.width, 2f), Texture2D.whiteTexture);
 
             RegionData[] regions = regionManager.Regions;
+            if (regions == null || regions.Length == 0) return;
+            EnsureMapRoutes(regions);
 
             // 월드 경계 계산
             float minX = float.MaxValue, maxX = float.MinValue, minZ = float.MaxValue, maxZ = float.MinValue;
@@ -324,6 +323,12 @@ namespace InsectGame.UI
                 minZ = Mathf.Min(minZ, r.centerPosition.z - r.radius);
                 maxZ = Mathf.Max(maxZ, r.centerPosition.z + r.radius);
             }
+            foreach (Vector3[] route in mapRoutes)
+                foreach (Vector3 point in route)
+                {
+                    minX = Mathf.Min(minX, point.x); maxX = Mathf.Max(maxX, point.x);
+                    minZ = Mathf.Min(minZ, point.z); maxZ = Mathf.Max(maxZ, point.z);
+                }
             float pad = 40f;
             minX -= pad; maxX += pad; minZ -= pad; maxZ += pad;
             wmW = Mathf.Max(1f, maxX - minX);
@@ -338,14 +343,10 @@ namespace InsectGame.UI
 
             // 1) 연결선(길) — 회전 quad로 깔끔하게
             Color pathCol = new Color(0.5f, 0.44f, 0.3f, 0.5f);
-            for (int i = 0; i < Connections.GetLength(0); i++)
-            {
-                RegionData a = FindRegion(regions, Connections[i, 0]);
-                RegionData b = FindRegion(regions, Connections[i, 1]);
-                if (a == null || b == null) continue;
-                DrawThickLine(WorldToMap(a.centerPosition.x, a.centerPosition.z),
-                              WorldToMap(b.centerPosition.x, b.centerPosition.z), 3f, pathCol);
-            }
+            foreach (Vector3[] route in mapRoutes)
+                for (int i = 1; i < route.Length; i++)
+                    DrawThickLine(WorldToMap(route[i - 1].x, route[i - 1].z),
+                        WorldToMap(route[i].x, route[i].z), 3f, pathCol);
 
             // 2) 리전 원
             foreach (var r in regions)
@@ -373,7 +374,7 @@ namespace InsectGame.UI
                 // 이름
                 regionNameStyle.normal.textColor = accessible ? Color.white : new Color(0.7f, 0.7f, 0.72f);
                 GUI.color = Color.white;
-                UIHelper.LabelFit(new Rect(c.x - Mathf.Max(95f, cr + 10f), c.y - 18f, Mathf.Max(190f, (cr + 10f) * 2f), 36f), r.displayName, regionNameStyle);
+
 
                 // 선택 강조 링
                 if (selectedRegionId == r.regionId)
@@ -387,7 +388,7 @@ namespace InsectGame.UI
                     GUI.DrawTexture(new Rect(c.x - cr, c.y - cr, cr * 2f, cr * 2f), discTex);
                     regionNameStyle.normal.textColor = accessible ? Color.white : new Color(0.7f, 0.7f, 0.72f);
                     GUI.color = Color.white;
-                    UIHelper.LabelFit(new Rect(c.x - Mathf.Max(95f, cr + 10f), c.y - 18f, Mathf.Max(190f, (cr + 10f) * 2f), 36f), r.displayName, regionNameStyle);
+
                 }
 
                 // 서브에리어 — 소형 disc(형태 통일) + 클릭 텔레포트
@@ -395,6 +396,7 @@ namespace InsectGame.UI
                 {
                     foreach (var sub in r.subAreas)
                     {
+                        if (sub == null) continue;
                         Vector2 sc = WorldToMap(sub.centerPosition.x, sub.centerPosition.z);
                         float sr = Mathf.Clamp(cr * 0.22f, 8f, 20f);
                         Color subCol = accessible ? GetSubAreaColor(sub.environmentType) : new Color(0.4f, 0.4f, 0.42f);
@@ -405,7 +407,8 @@ namespace InsectGame.UI
                         GUI.color = new Color(subCol.r, subCol.g, subCol.b, 0.85f);
                         GUI.DrawTexture(new Rect(sc.x - sr, sc.y - sr, sr * 2f, sr * 2f), discTex);
                         GUI.color = Color.white;
-                        UIHelper.LabelFit(new Rect(sc.x - 85f, sc.y + sr + 1f, 170f, 22f), sub.displayName, subNameStyle);
+                        if (selectedRegionId == r.regionId || new Rect(sc.x - sr, sc.y - sr, sr * 2f, sr * 2f).Contains(Event.current.mousePosition))
+                            UIHelper.LabelFit(new Rect(sc.x - 85f, sc.y + sr + 1f, 170f, 22f), sub.displayName, subNameStyle);
 
                         float hot = Mathf.Max(sr, 14f);
                         if (GUI.Button(new Rect(sc.x - hot, sc.y - hot, hot * 2f, hot * 2f), "", GUIStyle.none))
@@ -426,8 +429,14 @@ namespace InsectGame.UI
                     GUI.color = new Color(1f, 0.8f, 0.6f, 1f);
                     GUI.DrawTexture(new Rect(gc.x - 4f, gc.y - 4f, 8f, 8f), discTex);
                     GUI.color = Color.white;
-                    GUI.Label(new Rect(gc.x - 60f, gc.y + 10f, 120f, 22f), $"수문장 Lv{r.guardianLevel}", guardianStyle);
+                    if (new Rect(gc.x - 12f, gc.y - 12f, 24f, 24f).Contains(Event.current.mousePosition))
+                        UIHelper.LabelFit(new Rect(gc.x - 60f, gc.y + 10f, 120f, 22f), $"수문장 Lv{r.guardianLevel}", guardianStyle);
                 }
+
+                regionNameStyle.wordWrap = true;
+                UIHelper.LabelFit(new Rect(c.x - cr + 3f, c.y - 27f, cr * 2f - 6f, 54f),
+                    r.displayName, regionNameStyle, 12);
+                regionNameStyle.wordWrap = false;
 
                 // 리전 클릭 버튼 — 서브에리어 버튼 '이후' 호출해야 서브 점 클릭이 리전에 먹히지 않음(IMGUI 이벤트 소비 순서).
                 if (GUI.Button(new Rect(c.x - cr, c.y - cr, cr * 2f, cr * 2f), "", GUIStyle.none))
@@ -445,6 +454,7 @@ namespace InsectGame.UI
                 // 지도가 가리키는 곳에 가도 아무것도 없다(Update가 이미 entity를 들고 있다).
                 Vector3 mp = m.entity != null ? m.entity.transform.position : m.worldPos;
                 Vector2 mc = WorldToMap(mp.x, mp.z);
+                if (!area.Contains(mc)) continue;
                 Color raidCol = m.rarity == InsectRarity.Legendary ? new Color(1f, 0.8f, 0.15f) : new Color(0.7f, 0.3f, 0.95f);
                 float pulse = 0.7f + Mathf.Sin(Time.time * 4f) * 0.3f;
                 GUI.color = new Color(raidCol.r, raidCol.g, raidCol.b, 0.3f * pulse);
@@ -458,16 +468,22 @@ namespace InsectGame.UI
 
             // 3b) 스토리 목표 마커 — "지금 어디로 가야 하는가". 수문장(주황)·레이드(보라)와
             //     색으로 구분되게 민트다. 레이드 뒤, 플레이어 앞에 그려 플레이어를 가리지 않는다.
+            DrawNpcMarkers(area);
             DrawStoryObjectiveMarker(area);
 
             // 4) 플레이어 마커 — disc + 진행방향
             Transform pl = GetPlayer();
             if (pl != null)
             {
-                Vector2 pc = WorldToMap(pl.position.x, pl.position.z);
+                Vector3 mapPosition = MapMarkerProjection.OverworldPlayerPosition(pl.position,
+                    regionManager != null ? regionManager.CurrentSubArea : null);
+                Vector2 pc = WorldToMap(mapPosition.x, mapPosition.z);
                 GUI.color = new Color(0.4f, 0.85f, 1f, 1f);
                 GUI.DrawTexture(new Rect(pc.x - 8f, pc.y - 8f, 16f, 16f), discTex);
-                Vector3 f = pl.forward;
+                if (regionManager.CurrentSubArea != null)
+                    UIHelper.LabelFit(new Rect(pc.x - 90f, pc.y + 14f, 180f, 24f),
+                        "서브지역 탐험 중", subNameStyle);
+                Vector3 f = regionManager.CurrentSubArea != null ? Vector3.zero : pl.forward;
                 Vector2 fd = new Vector2(f.x, -f.z);
                 if (fd.sqrMagnitude > 0.001f)
                 {
@@ -486,6 +502,24 @@ namespace InsectGame.UI
         /// 미니맵 쐐기는 <b>방향</b>만 알려 준다(반경 밖이면 테두리에 붙는다). 목표가 다른
         /// 리전이면 방향만으로는 어디인지 알 수 없어서, 전체 지도에 실제 위치를 찍는다.
         /// </summary>
+        private void DrawNpcMarkers(Rect area)
+        {
+            if (npcManager == null) return;
+            foreach (var npc in npcManager.StoryNpcs)
+            {
+                if (npc == null || !npc.gameObject.activeInHierarchy) continue;
+                Vector3 position = npc.transform.position;
+                Vector2 marker = WorldToMap(position.x, position.z);
+                if (!area.Contains(marker)) continue;
+                GUI.color = UITheme.Instance.accentAmber;
+                GUI.DrawTexture(new Rect(marker.x - 5f, marker.y - 5f, 10f, 10f), discTex);
+                GUI.color = Color.white;
+                if (new Rect(marker.x - 10f, marker.y - 10f, 20f, 20f).Contains(Event.current.mousePosition))
+                    UIHelper.LabelFit(new Rect(Mathf.Clamp(marker.x - 70f, area.x, area.xMax - 140f),
+                        Mathf.Clamp(marker.y + 8f, area.y, area.yMax - 24f), 140f, 24f), npc.DisplayName, subNameStyle);
+            }
+        }
+
         private void DrawStoryObjectiveMarker(Rect area)
         {
             if (objectiveTracker == null || !objectiveTracker.HasObjective
@@ -519,7 +553,8 @@ namespace InsectGame.UI
 
             // Label()이 wordWrap을 전역으로 꺼 두어 긴 목표명은 가로로 잘린다 — LabelFit이
             // 폭까지 보고 폰트를 줄인다(rules/ui-layout.md).
-            UIHelper.LabelFit(new Rect(lx, ly, lw, 24f), objectiveTracker.Label, objectiveStyle);
+            if (new Rect(mc.x - 17f, mc.y - 17f, 34f, 34f).Contains(Event.current.mousePosition))
+                UIHelper.LabelFit(new Rect(lx, ly, lw, 24f), objectiveTracker.Label, objectiveStyle);
             GUI.color = Color.white;
         }
 
@@ -682,9 +717,9 @@ namespace InsectGame.UI
             if (len < 0.5f) return;
             float ang = Mathf.Atan2(d.y, d.x) * Mathf.Rad2Deg;
             Matrix4x4 saved = GUI.matrix;
-            GUIUtility.RotateAroundPivot(ang, a);
+            GUI.matrix = MapMarkerProjection.PivotMatrix(saved, a, ang);
             GUI.color = col;
-            GUI.DrawTexture(new Rect(a.x, a.y - thickness * 0.5f, len, thickness), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(0f, -thickness * 0.5f, len, thickness), Texture2D.whiteTexture);
             GUI.matrix = saved;
             GUI.color = Color.white;
         }
@@ -864,9 +899,12 @@ namespace InsectGame.UI
             if (sub == null) return;
             Transform pl = GetPlayer();
             if (pl == null) return;
+            // Exit restores the main world synchronously before the new destination is assigned.
+            if (regionManager != null) regionManager.ForceExitSubArea();
             Vector3 dest = sub.centerPosition;
             dest.y = pl.position.y;
             pl.position = dest;
+            pl.GetComponent<PlayerMovement>()?.StopNavigation();
             // 맵은 닫지 않음 — 다음 Update에서 SubArea 진입 팝업 자동 발화.
         }
 
@@ -875,9 +913,11 @@ namespace InsectGame.UI
             if (region == null) return;
             Transform pl = GetPlayer();
             if (pl == null) return;
+            if (regionManager != null) regionManager.ForceExitSubArea();
             Vector3 dest = region.centerPosition;
             dest.y = pl.position.y;
             pl.position = dest;
+            pl.GetComponent<PlayerMovement>()?.StopNavigation();
         }
 
         private Color GetSubAreaColor(string envType)
@@ -937,4 +977,30 @@ namespace InsectGame.UI
             if (spawner != null) spawner.RaidBossSpawned += OnRaidBossSpawned;
         }
     }
+    internal static class MapMarkerProjection
+    {
+        internal static Matrix4x4 PivotMatrix(Matrix4x4 parent, Vector2 pivot, float angle)
+        {
+            return parent * Matrix4x4.TRS(new Vector3(pivot.x, pivot.y, 0f),
+                Quaternion.Euler(0f, 0f, angle), Vector3.one);
+        }
+
+        internal static Vector3 OverworldPlayerPosition(Vector3 playerPosition, SubAreaData currentSubArea)
+        {
+            return currentSubArea != null ? currentSubArea.centerPosition : playerPosition;
+        }
+
+        internal static bool TryRadarOffset(Vector3 origin, Vector3 target, float worldRadius,
+            float mapRadius, out Vector2 offset)
+        {
+            Vector3 delta = target - origin;
+            offset = Vector2.zero;
+            if (worldRadius <= 0f || mapRadius <= 0f) return false;
+            Vector2 horizontal = new Vector2(delta.x, -delta.z);
+            if (horizontal.sqrMagnitude > worldRadius * worldRadius) return false;
+            offset = horizontal / worldRadius * mapRadius;
+            return true;
+        }
+    }
+
 }

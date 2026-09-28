@@ -256,6 +256,52 @@ namespace InsectGame.UI
             style.fontSize = baseSize;
         }
 
+        // 공개 중 문자열 1칸 캐시 — 같은 (텍스트, 공개 글자 수)면 OnGUI 패스마다 새로 잇지 않는다.
+        private static string revealSource;
+        private static int revealCount = -1;
+        private static string revealCache;
+
+        /// <summary>
+        /// 타자 효과용 <see cref="LabelFit"/> — 앞 <paramref name="visibleChars"/>글자만 보이게 그린다.
+        ///
+        /// 잘라서(Substring) 그리면 두 가지가 흔들린다. ① 글자가 늘 때마다 줄바꿈 위치가 바뀌어
+        /// 단어가 윗줄에서 아랫줄로 튄다. ② LabelFit의 축소가 <b>지금 보이는 길이</b>로 폰트를 정해
+        /// 줄이 다 나오는 순간 글자가 갑자기 작아진다. 그래서 폰트는 <b>전체 문장</b>으로 맞추고,
+        /// 아직 안 나온 꼬리는 투명색 리치 텍스트로 자리만 잡아 둔다 — 레이아웃이 처음부터 최종형이다.
+        /// </summary>
+        public static void LabelFitReveal(Rect rect, string text, int visibleChars, GUIStyle style, int minFontSize = 0)
+        {
+            if (style == null || string.IsNullOrEmpty(text))
+                return;
+            // 다 나왔거나, 리치 텍스트 태그와 부딪칠 글자가 있으면 그냥 LabelFit — 대사에 꺾쇠는 없지만
+            // 들어오면 태그로 먹혀 글자가 사라지므로 레이아웃 흔들림을 감수한다.
+            if (visibleChars >= text.Length || text.IndexOf('<') >= 0)
+            {
+                LabelFit(rect, visibleChars >= text.Length ? text : text.Substring(0, Mathf.Max(0, visibleChars)), style, minFontSize);
+                return;
+            }
+
+            int baseSize = style.fontSize > 0 ? style.fontSize : 12;
+            int floor = Mathf.Clamp(
+                minFontSize > 0 ? minFontSize : Mathf.Min(baseSize, MinReadableFontSize), 1, baseSize);
+            int fitted = FitFontSize(text, rect.width, rect.height, style, baseSize, floor);
+
+            int shown = Mathf.Max(0, visibleChars);
+            if (!ReferenceEquals(revealSource, text) || revealCount != shown)
+            {
+                revealSource = text;
+                revealCount = shown;
+                revealCache = text.Substring(0, shown) + "<color=#00000000>" + text.Substring(shown) + "</color>";
+            }
+
+            bool rich = style.richText;
+            style.richText = true;
+            style.fontSize = fitted;
+            GUI.Label(rect, revealCache, style);
+            style.fontSize = baseSize;
+            style.richText = rich;
+        }
+
         /// <summary>
         /// 래핑된 <paramref name="text"/>가 <paramref name="width"/>에서 차지하는 높이.
         /// 상자를 키울 수 있는 레이아웃(스크롤 목록 등)에서 쓴다.

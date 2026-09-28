@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using InsectGame.Core;
 using InsectGame.Spawning;
 using UnityEngine;
@@ -236,22 +236,7 @@ namespace InsectGame.NPC
         // NpcVisualBuilder.StoryNpcAppearance의 외형 switch와 짝이라 둘을 함께 등록해야 한다.
         private static string StoryNpcDisplayName(string storyId)
         {
-            switch (storyId)
-            {
-                case "catcher_rival": return "라온";
-                case "ruins_scholar": return "세라";
-                // 명부회(2막) — 관장만 진명, 간부는 코드네임으로 부른다.
-                case "ledger_chief": return "관장 하월";
-                case "ledger_grip": return "집게";
-                case "ledger_scale": return "저울";
-                case "ledger_ink": return "먹";
-                // 1막 하수 — 정체가 밝혀지기 전이라 **이름이 아니라 인상으로 부른다**.
-                // 2막에서 명부회 간부를 만나고 나서야 이들이 무엇이었는지 알게 된다.
-                case "ledger_thug_cord": return "검은 옷의 사내";
-                case "ledger_thug_rule": return "검은 옷의 여자";
-                case "ledger_thug_pin": return "검은 옷의 청년";
-                default: return "마을 어르신";
-            }
+            return NpcDialogueDatabase.StorySpeakerName(storyId);
         }
 
         private GameObject CreateNpcObject(string name, Vector3 position)

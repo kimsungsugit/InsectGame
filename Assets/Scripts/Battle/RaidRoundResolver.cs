@@ -5,19 +5,6 @@ using UnityEngine;
 
 namespace InsectGame.Battle
 {
-    internal sealed class UnityRaidRandomSource : IRaidRandomSource
-    {
-        public float Next01()
-        {
-            return Random.value;
-        }
-
-        public int NextInt(int minInclusive, int maxExclusive)
-        {
-            return Random.Range(minInclusive, maxExclusive);
-        }
-    }
-
     public static class RaidRoundResolver
     {
         public const float SupportAssistPowerMultiplier = 0.25f;
@@ -25,11 +12,8 @@ namespace InsectGame.Battle
         /// <summary>합체공격 1인분 배율. 기여 자체가 스킬이 아니라 고정 위력이므로 여기서만 쓴다.</summary>
         public const float UniteContributionMultiplier = 1.5f;
 
-        /// <summary>
-        /// 난수원이 주입되지 않았을 때 쓰는 공유 인스턴스. <see cref="UnityRaidRandomSource"/>는 상태가
-        /// 없어 공유해도 안전하다 — 호출마다 <c>new</c>하던 것을 없앤다(명중 판정이 늘어나면서 그 자리가 셋이 됐다).
-        /// </summary>
-        private static readonly IRaidRandomSource SharedRandom = new UnityRaidRandomSource();
+        // Fallback for standalone resolver callers. Controllers always own/inject their stream.
+        private static readonly IRaidRandomSource SharedRandom = new BattleRandomSource();
 
         /// <summary>
         /// 명중 판정. 명중률이 사실상 1이면 굴리지 않는다(난수 소비 순서를 바꾸지 않기 위해서다 —

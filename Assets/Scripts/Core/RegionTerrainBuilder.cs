@@ -1,4 +1,4 @@
-using InsectGame.Data;
+﻿using InsectGame.Data;
 using UnityEngine;
 
 namespace InsectGame.Core
@@ -22,11 +22,14 @@ namespace InsectGame.Core
         /// </summary>
         private const int TerrainLayoutSeed = 20260807;
 
+        private RegionData[] routeRegions;
+
         public void BuildAllRegions(RegionData[] regions)
         {
             // 배치 난수만 시드로 가두고 끝나면 되돌린다. **전역 상태를 복원하지 않으면**
             // 스폰·IV·포획 판정까지 결정론이 되어 훨씬 나쁜 문제가 된다.
             // 빌드 도중 예외가 나도 반드시 되돌아가도록 finally에 둔다.
+            routeRegions = regions;
             Random.State prevRandomState = Random.state;
             Random.InitState(TerrainLayoutSeed);
             try
@@ -69,50 +72,17 @@ namespace InsectGame.Core
         public void BuildBoundaries(RegionData[] regions)
         {
             if (regions == null || regions.Length == 0) return;
-            const float NeighborThresholdExtra = 30f;
-            const float DefaultGatewayWidthDeg = 22f; // 약 5m gateway (r=50 기준 호 길이)
+            routeRegions = regions;
             for (int i = 0; i < regions.Length; i++)
             {
                 RegionData r = regions[i];
                 if (r == null) continue;
-
-                // 인접 리전 자동 검출 → gateway angle 목록
-                var gateways = new System.Collections.Generic.List<(float angleDeg, float widthDeg)>();
-                // RegionData.connections가 명시되면 우선 사용 (수동 통제)
-                if (r.connections != null)
-                {
-                    foreach (var conn in r.connections)
-                    {
-                        if (conn == null || string.IsNullOrEmpty(conn.targetRegionId)) continue;
-                        // gatewayWidth(m) → 각도 변환: 호 = width, 반지름 = r.radius → arc deg = width/radius * Rad2Deg
-                        float widthDeg = Mathf.Min(60f, conn.gatewayWidth / Mathf.Max(1f, r.radius) * Mathf.Rad2Deg);
-                        gateways.Add((NormalizeAngle(conn.gatewayAngle), Mathf.Max(8f, widthDeg)));
-                    }
-                }
-                else
-                {
-                    // 자동 검출 — 가장 가까운 인접 리전 1곳만 gateway (사용자 명시 요청: 각 리전 외부 입구 1곳).
-                    // 옛은 N개 인접 모두 gateway → "어디든 들어갈 수 있다" 인상.
-                    RegionData closest = null;
-                    float closestDist = float.MaxValue;
-                    for (int j = 0; j < regions.Length; j++)
-                    {
-                        if (i == j) continue;
-                        RegionData other = regions[j];
-                        if (other == null) continue;
-                        Vector3 d = other.centerPosition - r.centerPosition;
-                        float dist = new Vector2(d.x, d.z).magnitude;
-                        if (dist > r.radius + other.radius + NeighborThresholdExtra) continue;
-                        if (dist < closestDist) { closest = other; closestDist = dist; }
-                    }
-                    if (closest != null)
-                    {
-                        Vector3 dc = closest.centerPosition - r.centerPosition;
-                        float angle = Mathf.Atan2(dc.z, dc.x) * Mathf.Rad2Deg;
-                        gateways.Add((NormalizeAngle(angle), DefaultGatewayWidthDeg));
-                    }
-                }
-
+                Vector3 direction = WorldRouteLayout.GetGateway(r, regions) - r.centerPosition;
+                float angle = Mathf.Atan2(direction.z, direction.x) * Mathf.Rad2Deg;
+                // 폭 6m 통로 + 가장자리 장애물 여유. 단일 입구와 실제 필드 길이 같은 좌표를 쓴다.
+                float widthDeg = 8f / Mathf.Max(1f, r.radius - 1f) * Mathf.Rad2Deg;
+                var gateways = new System.Collections.Generic.List<(float angleDeg, float widthDeg)> {
+                    (NormalizeAngle(angle), widthDeg) };
                 BuildFenceArc(r, gateways);
             }
         }
@@ -140,7 +110,6 @@ namespace InsectGame.Core
             System.Collections.Generic.List<(float angleDeg, float widthDeg)> gateways)
         {
             Material fenceMat = GetFenceMaterial(r.regionId);
-            Material gatewayMarkerMat = Mat(new Color(1f, 0.85f, 0.3f));
             float fenceR = r.radius - 1f; // 외곽 살짝 안쪽
             int segments = 60; // 6° 간격 (60 × 6 = 360°)
             for (int s = 0; s < segments; s++)
@@ -151,17 +120,106 @@ namespace InsectGame.Core
                 Vector3 pos = r.centerPosition + new Vector3(Mathf.Cos(rad) * fenceR, 0f, Mathf.Sin(rad) * fenceR);
                 BuildFencePost(pos, angDeg, fenceMat, r.regionId);
             }
-            // gateway 위치에 노란 표지등(시각 anchor) — 통과 가능 시각 신호
+            // 기존 marker를 도로 옆 양면 이정표로 재사용한다. 지역당 하나만 만든다.
             for (int g = 0; g < gateways.Count; g++)
             {
                 float rad = gateways[g].angleDeg * Mathf.Deg2Rad;
-                Vector3 pos = r.centerPosition + new Vector3(Mathf.Cos(rad) * fenceR, 0.5f, Mathf.Sin(rad) * fenceR);
-                GameObject marker = Prim(PrimitiveType.Cylinder, $"GatewayMarker_{r.regionId}_{g}");
-                marker.transform.position = pos;
-                marker.transform.localScale = new Vector3(0.4f, 1.2f, 0.4f);
-                Apply(marker, gatewayMarkerMat);
-                Destroy(marker.GetComponent<Collider>());
+                Vector3 outward = new Vector3(Mathf.Cos(rad), 0f, Mathf.Sin(rad));
+                Vector3 gateway = r.centerPosition + outward * fenceR;
+                BuildGatewaySign(r, gateway, outward, g);
             }
+        }
+
+        private void BuildGatewaySign(RegionData region, Vector3 gateway, Vector3 outward, int index)
+        {
+            Vector3 right = Vector3.Cross(Vector3.up, outward).normalized;
+            Vector3 basePosition = gateway + right * 3.4f;
+            GameObject marker = Prim(PrimitiveType.Cylinder, $"GatewayMarker_{region.regionId}_{index}");
+            marker.transform.position = basePosition + Vector3.up * 0.57f;
+            marker.transform.localScale = new Vector3(0.16f, 0.57f, 0.16f);
+            Apply(marker, Mat(new Color(0.28f, 0.23f, 0.18f)));
+            RemoveSignCollider(marker);
+            Quaternion rotation = Quaternion.LookRotation(outward);
+            Vector3 boardPosition = basePosition + Vector3.up * 2.05f;
+            GameObject board = Prim(PrimitiveType.Cube, "WayfindingBoard");
+            board.transform.SetPositionAndRotation(boardPosition, rotation);
+            board.transform.localScale = new Vector3(3.2f, 1.75f, 0.12f);
+            Apply(board, Mat(new Color(0.09f, 0.14f, 0.16f)));
+            RemoveSignCollider(board);
+            board.transform.SetParent(marker.transform, true);
+            GameObject band = Prim(PrimitiveType.Cube, "RegionColorBand");
+            band.transform.SetPositionAndRotation(boardPosition + Vector3.up * 0.81f, rotation);
+            band.transform.localScale = new Vector3(3.22f, 0.13f, 0.15f);
+            Apply(band, Mat(Color.Lerp(region.themeColor, Color.white, 0.2f)));
+            RemoveSignCollider(band);
+            band.transform.SetParent(marker.transform, true);
+            string front = region.displayName;
+            string back = region.displayName;
+            foreach (WorldRouteEdge edge in WorldRouteLayout.FieldConnections)
+            {
+                string targetId = edge.FromRegionId == region.regionId ? edge.ToRegionId :
+                    edge.ToRegionId == region.regionId ? edge.FromRegionId : null;
+                if (targetId == null) continue;
+                RegionData target = WorldRouteLayout.Find(routeRegions, targetId);
+                Vector3[] route = WorldRouteLayout.BuildRoute(routeRegions, region.regionId, targetId);
+                if (target == null || route.Length < 4) continue;
+                Vector3 direction = route[3] - route[2];
+                float side = Vector3.Dot(direction.normalized, right);
+                string frontArrow = side > 0.2f ? "→" : side < -0.2f ? "←" : "↑";
+                string backArrow = side > 0.2f ? "←" : side < -0.2f ? "→" : "↓";
+                front += "\n" + frontArrow + " " + target.displayName;
+                back += "\n" + backArrow + " " + target.displayName;
+            }
+            BuildGatewayText(marker.transform, "DestinationsInside", front,
+                boardPosition - outward * 0.07f, rotation);
+            BuildGatewayText(marker.transform, "DestinationsOutside", back,
+                boardPosition + outward * 0.07f, rotation * Quaternion.Euler(0f, 180f, 0f));
+        }
+
+        private Font gatewayFont;
+
+        private void BuildGatewayText(Transform parent, string name, string label,
+            Vector3 position, Quaternion rotation)
+        {
+            GameObject obj = new GameObject(name);
+            obj.transform.SetPositionAndRotation(position, rotation);
+            TextMesh text = obj.AddComponent<TextMesh>();
+            // Bootstrap의 Malgun Gothic 경로를 재사용하고 모바일/다른 OS의 한글 글꼴도 지정한다.
+            if (gatewayFont == null)
+            {
+                gatewayFont = Font.CreateDynamicFontFromOSFont(new[] {
+                    "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans CJK KR", "Noto Sans KR", "Droid Sans Fallback"
+                }, 48);
+                // 이 빌더가 만든 폰트의 원본 머티리얼을 유지해 동적 atlas 재생성도 그대로 반영한다.
+                // 기본 GUI/Text shader는 깊이를 무시하여 반대편 글자가 판을 투과한다.
+                Shader textShader = Resources.Load<Shader>("GatewayText");
+                if (textShader != null) gatewayFont.material.shader = textShader;
+            }
+            text.font = gatewayFont;
+            text.fontSize = 48;
+            gatewayFont.RequestCharactersInTexture(label, text.fontSize, FontStyle.Normal);
+            obj.GetComponent<MeshRenderer>().sharedMaterial = gatewayFont.material;
+            text.text = label;
+            text.characterSize = 1f;
+            text.anchor = TextAnchor.MiddleCenter;
+            text.alignment = TextAlignment.Center;
+            text.lineSpacing = 1.05f;
+            text.color = new Color(0.96f, 0.96f, 0.87f);
+            // 실제 글리프 경계로 3.2 x 1.75m 판 안에 맞춘다. 긴 한국어 이름/최대 네 줄도 동일 여백.
+            Vector3 measured = obj.GetComponent<MeshRenderer>().localBounds.size;
+            if (measured.x > 0.001f && measured.y > 0.001f)
+                text.characterSize = Mathf.Min(2.85f / measured.x, 1.42f / measured.y);
+            else
+                text.characterSize = 0.12f;
+            obj.transform.SetParent(parent, true);
+        }
+
+        private static void RemoveSignCollider(GameObject obj)
+        {
+            Collider collider = obj.GetComponent<Collider>();
+            if (collider == null) return;
+            collider.enabled = false;
+            Destroy(collider);
         }
 
         private Material GetFenceMaterial(string regionId)
@@ -253,7 +311,7 @@ namespace InsectGame.Core
             for (int i = 0; i < 4; i++)
             {
                 float t = (float)i / 4f;
-                Vector3 from = c + new Vector3(-rad * 0.4f, 0.03f, -rad * 0.3f + t * rad * 0.6f);
+                Vector3 from = c + new Vector3(-rad * 0.4f, 0.13f, -rad * 0.3f + t * rad * 0.6f);
                 GameObject creek = Prim(PrimitiveType.Plane, $"Scenery_Creek_{i}");
                 creek.transform.position = from;
                 creek.transform.localScale = new Vector3(0.2f, 1f, 0.15f);
@@ -345,7 +403,7 @@ namespace InsectGame.Core
 
             // 큰 호수 (리전 중심)
             GameObject lake = Prim(PrimitiveType.Cylinder, "Scenery_Lake");
-            lake.transform.position = c + new Vector3(3f,0.04f, 2f);
+            lake.transform.position = c + new Vector3(3f,0.12f, 2f);
             lake.transform.localScale = new Vector3(rad * 0.5f / 5f, 0.02f, rad * 0.5f / 5f);
             Apply(lake, waterMat);
             Destroy(lake.GetComponent<Collider>());
@@ -406,7 +464,7 @@ namespace InsectGame.Core
             {
                 float a = Random.Range(0f, Mathf.PI * 2f);
                 float d = Random.Range(lakeR * 0.2f, lakeR * 0.85f);
-                Vector3 pos = c + new Vector3(3f + Mathf.Cos(a) * d, 0.07f, 2f + Mathf.Sin(a) * d);
+                Vector3 pos = c + new Vector3(3f + Mathf.Cos(a) * d, 0.15f, 2f + Mathf.Sin(a) * d);
                 GameObject pad = Prim(PrimitiveType.Cylinder, $"Scenery_LilyPad_{i}");
                 pad.transform.position = pos;
                 float ls = Random.Range(0.5f, 0.9f);
@@ -460,6 +518,7 @@ namespace InsectGame.Core
                 float a = Random.Range(0f, Mathf.PI * 2f);
                 float d = Random.Range(5f, rad * 0.65f);
                 Vector3 pos = c + new Vector3(Mathf.Cos(a) * d, 0f,Mathf.Sin(a) * d);
+                pos = ClearSceneryPosition(pos, c, rad, 4f);
 
                 float treeH = Random.Range(0.8f, 1.5f);
                 GameObject trunk = Prim(PrimitiveType.Cylinder, $"Scenery_ForestTree_{i}");
@@ -484,6 +543,7 @@ namespace InsectGame.Core
                 float a = Random.Range(0f, Mathf.PI * 2f);
                 float d = Random.Range(8f, rad * 0.5f);
                 Vector3 pos = c + new Vector3(Mathf.Cos(a) * d,0.25f, Mathf.Sin(a) * d);
+                pos = ClearSceneryPosition(pos, c, rad, 4f);
 
                 GameObject log = Prim(PrimitiveType.Cylinder, $"Scenery_Log_{i}");
                 log.transform.position = pos;
@@ -499,6 +559,7 @@ namespace InsectGame.Core
                 float a = Random.Range(0f, Mathf.PI * 2f);
                 float d = Random.Range(5f, rad * 0.6f);
                 Vector3 pos = c + new Vector3(Mathf.Cos(a) * d, 0f,Mathf.Sin(a) * d);
+                pos = ClearSceneryPosition(pos, c, rad, 4f);
                 float rs = Random.Range(0.6f, 1.5f);
 
                 GameObject rock = Prim(PrimitiveType.Sphere, $"Scenery_ForestRock_{i}");
@@ -548,6 +609,7 @@ namespace InsectGame.Core
                 float a = Random.Range(0f, Mathf.PI * 2f);
                 float d = rad * Random.Range(0.2f, 0.75f);
                 Vector3 pos = c + new Vector3(Mathf.Cos(a) * d, 0f, Mathf.Sin(a) * d);
+                pos = ClearSceneryPosition(pos, c, rad, 4f);
 
                 GameObject stump = Prim(PrimitiveType.Cylinder, $"Scenery_Stump_{i}");
                 float sh = Random.Range(0.25f, 0.45f);
@@ -572,7 +634,8 @@ namespace InsectGame.Core
             {
                 float a = Random.Range(0f, Mathf.PI * 2f);
                 float d = Random.Range(3f, rad * 0.55f);
-                Vector3 pos = c + new Vector3(Mathf.Cos(a) * d,0.02f, Mathf.Sin(a) * d);
+                Vector3 pos = c + new Vector3(Mathf.Cos(a) * d,0.12f, Mathf.Sin(a) * d);
+                pos = ClearSceneryPosition(pos, c, rad, 4f);
                 float ps = Random.Range(2f, 4f);
 
                 GameObject pool = Prim(PrimitiveType.Cylinder, $"Scenery_SwampPool_{i}");
@@ -589,6 +652,7 @@ namespace InsectGame.Core
                 float a = Random.Range(0f, Mathf.PI * 2f);
                 float d = Random.Range(5f, rad * 0.6f);
                 Vector3 pos = c + new Vector3(Mathf.Cos(a) * d, 0f,Mathf.Sin(a) * d);
+                pos = ClearSceneryPosition(pos, c, rad, 4f);
 
                 GameObject trunk = Prim(PrimitiveType.Cylinder, $"Scenery_DeadTree_{i}");
                 float h = Random.Range(2f, 4f);
@@ -649,6 +713,7 @@ namespace InsectGame.Core
                 float a = Random.Range(0f, Mathf.PI * 2f);
                 float d = rad * Random.Range(0.2f, 0.75f);
                 Vector3 pos = c + new Vector3(Mathf.Cos(a) * d, Random.Range(0.8f, 1.6f), Mathf.Sin(a) * d);
+                pos = ClearSceneryPosition(pos, c, rad, 4f);
                 GameObject wisp = Prim(PrimitiveType.Sphere, $"Scenery_Wisp_{i}");
                 wisp.transform.position = pos;
                 float ws = Random.Range(0.15f, 0.25f);
@@ -672,6 +737,7 @@ namespace InsectGame.Core
                 float a = Random.Range(0f, Mathf.PI * 2f);
                 float d = Random.Range(8f, rad * 0.6f);
                 Vector3 pos = c + new Vector3(Mathf.Cos(a) * d, 0f,Mathf.Sin(a) * d);
+                pos = ClearSceneryPosition(pos, c, rad, 4f);
                 float rs = Random.Range(1.5f, 4f);
 
                 GameObject rock = Prim(PrimitiveType.Sphere, $"Scenery_MountainRock_{i}");
@@ -686,7 +752,8 @@ namespace InsectGame.Core
             {
                 float a = Random.Range(0f, Mathf.PI * 2f);
                 float d = Random.Range(5f, rad * 0.5f);
-                Vector3 pos = c + new Vector3(Mathf.Cos(a) * d,0.06f, Mathf.Sin(a) * d);
+                Vector3 pos = c + new Vector3(Mathf.Cos(a) * d,0.13f, Mathf.Sin(a) * d);
+                pos = ClearSceneryPosition(pos, c, rad, 4f);
 
                 GameObject snow = Prim(PrimitiveType.Plane, $"Scenery_Snow_{i}");
                 snow.transform.position = pos;
@@ -709,6 +776,7 @@ namespace InsectGame.Core
                 float a = Random.Range(0f, Mathf.PI * 2f);
                 float d = rad * Random.Range(0.2f, 0.75f);
                 Vector3 pos = c + new Vector3(Mathf.Cos(a) * d, 0f, Mathf.Sin(a) * d);
+                pos = ClearSceneryPosition(pos, c, rad, 4f);
 
                 GameObject pineTrunk = Prim(PrimitiveType.Cylinder, $"Scenery_Pine_{i}");
                 pineTrunk.transform.position = pos + new Vector3(0f, 0.25f, 0f);
@@ -764,7 +832,9 @@ namespace InsectGame.Core
                 float angle = i * Mathf.PI * 0.5f;
                 float d = rad * 0.35f;
                 Vector3 pos = c + new Vector3(Mathf.Cos(angle) * d,0.6f, Mathf.Sin(angle) * d);
+                pos = ClearSceneryPosition(pos, c, rad, 4f);
 
+                if (WorldRouteLayout.IsOnRoute(routeRegions, pos, rad * 0.18f)) continue;
                 GameObject hedge = Prim(PrimitiveType.Cube, $"Scenery_GardenHedge_{i}");
                 hedge.transform.position = pos;
                 hedge.transform.localScale = new Vector3(rad * 0.35f, 1.2f, 0.5f);
@@ -841,6 +911,7 @@ namespace InsectGame.Core
                 float a = Random.Range(0f, Mathf.PI * 2f);
                 float d = rad * Random.Range(0.2f, 0.75f);
                 Vector3 pos = c + new Vector3(Mathf.Cos(a) * d, 0f, Mathf.Sin(a) * d);
+                pos = ClearSceneryPosition(pos, c, rad, 4f);
                 Quaternion bedRot = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
 
                 GameObject soil = Prim(PrimitiveType.Cube, $"Scenery_FlowerBed_{i}");
@@ -895,6 +966,7 @@ namespace InsectGame.Core
                 float a = Random.Range(0f, Mathf.PI * 2f);
                 float d = Random.Range(8f, rad * 0.5f);
                 Vector3 pos = c + new Vector3(Mathf.Cos(a) * d, 0f,Mathf.Sin(a) * d);
+                pos = ClearSceneryPosition(pos, c, rad, 4f);
 
                 float wh = Random.Range(0.3f, 0.8f);
                 float ww = Random.Range(3f, 6f);
@@ -913,6 +985,7 @@ namespace InsectGame.Core
                 float a = i * Mathf.PI * 2f / pillarCount;
                 float d = rad * 0.3f;
                 Vector3 pos = c + new Vector3(Mathf.Cos(a) * d, 0f,Mathf.Sin(a) * d);
+                pos = ClearSceneryPosition(pos, c, rad, 4f);
                 bool fallen = Random.value > 0.6f;
 
                 GameObject pillar = Prim(PrimitiveType.Cylinder, $"Scenery_RuinPillar_{i}");
@@ -941,6 +1014,7 @@ namespace InsectGame.Core
                 float a = Random.Range(0f, Mathf.PI * 2f);
                 float d = Random.Range(4f, rad * 0.5f);
                 Vector3 pos = c + new Vector3(Mathf.Cos(a) * d, 0f,Mathf.Sin(a) * d);
+                pos = ClearSceneryPosition(pos, c, rad, 4f);
                 float rs = Random.Range(0.5f, 1.2f);
 
                 GameObject moss = Prim(PrimitiveType.Sphere, $"Scenery_MossRock_{i}");
@@ -958,6 +1032,7 @@ namespace InsectGame.Core
                 float a = Random.Range(0f, Mathf.PI * 2f);
                 float d = rad * Random.Range(0.2f, 0.75f);
                 Vector3 pos = c + new Vector3(Mathf.Cos(a) * d, 0f, Mathf.Sin(a) * d);
+                pos = ClearSceneryPosition(pos, c, rad, 4f);
                 float lean = Random.Range(4f, 12f);
                 float leanDir = Random.Range(0f, 360f);
                 for (int j = 0; j < 3; j++)
@@ -985,6 +1060,7 @@ namespace InsectGame.Core
                 float a = Random.Range(0f, Mathf.PI * 2f);
                 float d = rad * Random.Range(0.25f, 0.7f);
                 Vector3 pos = c + new Vector3(Mathf.Cos(a) * d, 0f, Mathf.Sin(a) * d);
+                pos = ClearSceneryPosition(pos, c, rad, 4f);
 
                 GameObject pedestal = Prim(PrimitiveType.Cube, $"Scenery_Statue_{i}");
                 pedestal.transform.position = pos + new Vector3(0f, 0.25f, 0f);
@@ -1522,7 +1598,7 @@ namespace InsectGame.Core
                 float segLen = dist / segCount;
 
                 GameObject path = Prim(PrimitiveType.Plane, $"Scenery_InPath_{i}");
-                path.transform.position = mid + new Vector3(0f, 0.06f, 0f);
+                path.transform.position = mid + new Vector3(0f, 0.17f, 0f);
                 path.transform.rotation = Quaternion.Euler(0f, angle, 0f);
                 path.transform.localScale = new Vector3(width / 10f, 1f, segLen / 10f);
                 Apply(path, pathMat);
@@ -1539,7 +1615,7 @@ namespace InsectGame.Core
                 {
                     GameObject stone = Prim(PrimitiveType.Sphere, $"Scenery_PathEdge_{i}_{side}");
                     float ss = Random.Range(0.15f, 0.3f);
-                    stone.transform.position = pos + perp * (width * 0.55f) * side + new Vector3(0f, ss * 0.15f, 0f);
+                    stone.transform.position = pos + perp * (width * 0.55f) * side + new Vector3(0f, 0.12f + ss * 0.15f, 0f);
                     stone.transform.localScale = new Vector3(ss * 1.3f, ss * 0.3f, ss);
                     Apply(stone, edgeMat);
                     Destroy(stone.GetComponent<Collider>());
@@ -1573,6 +1649,26 @@ namespace InsectGame.Core
             return obj;
         }
 
+        private Vector3 ClearSceneryPosition(Vector3 position, Vector3 center, float radius, float footprint)
+        {
+            if (routeRegions == null || !WorldRouteLayout.IsOnRoute(routeRegions, position, footprint)) return position;
+            Vector3 delta = position - center;
+            for (int i = 1; i <= 36; i++)
+            {
+                Vector3 candidate = center + Quaternion.Euler(0f, i * 10f, 0f) * delta;
+                if (!WorldRouteLayout.IsOnRoute(routeRegions, candidate, footprint)) return candidate;
+            }
+            // 중심에 너무 가까운 장식도 통로 바깥 가장자리에서 유한 횟수로 찾는다.
+            for (int i = 0; i < 36; i++)
+            {
+                float angle = i * 10f * Mathf.Deg2Rad;
+                Vector3 candidate = center + new Vector3(Mathf.Cos(angle), 0f, Mathf.Sin(angle)) * radius * 0.7f;
+                candidate.y = position.y;
+                if (!WorldRouteLayout.IsOnRoute(routeRegions, candidate, footprint)) return candidate;
+            }
+            return position;
+        }
+
         private void Apply(GameObject obj, Material mat)
         {
             MeshRenderer mr = obj.GetComponent<MeshRenderer>();
@@ -1596,6 +1692,8 @@ namespace InsectGame.Core
             for (int i = 0; i < runtimeMaterials.Count; i++)
                 if (runtimeMaterials[i] != null) Destroy(runtimeMaterials[i]);
             runtimeMaterials.Clear();
+            if (gatewayFont != null) Destroy(gatewayFont);
+            gatewayFont = null;
         }
 
         private Material Mat(Color color)

@@ -1299,16 +1299,16 @@ namespace InsectGame.UI
             appIconTexture = Resources.Load<Texture2D>(AppIconResourcePath);
 
             backgroundTexture = MakeGradientTex(2, 128,
-                new Color(0.035f, 0.055f, 0.16f, 1f),
-                new Color(0.025f, 0.15f, 0.095f, 1f));
+                UITheme.Instance.surfaceBase,
+                UITheme.Instance.surfaceCard);
             backgroundGlowTexture = MakeRadialTex(64,
                 new Color(0.36f, 0.95f, 0.55f, 0.72f), Color.clear);
 
             // 짙은 유리 질감 + 이중 테두리. GUIStyle.border로 모서리를 늘리지 않고 유지합니다.
             Texture2D panelTex = MakePanelTex(64, 11f,
-                new Color(0.075f, 0.115f, 0.17f, 0.97f),
-                new Color(0.035f, 0.07f, 0.09f, 0.97f),
-                new Color(0.32f, 0.82f, 0.5f, 0.92f));
+                UITheme.Instance.surfaceRaised,
+                UITheme.Instance.surfaceCard,
+                UITheme.Instance.surfaceBorder);
             panelStyle = new GUIStyle(GUI.skin.box);
             panelStyle.normal.background = panelTex;
             panelStyle.border = new RectOffset(14, 14, 14, 14);
@@ -1336,7 +1336,7 @@ namespace InsectGame.UI
             titleStyle = new GUIStyle(GUI.skin.label);
             titleStyle.fontSize = 70;
             titleStyle.fontStyle = FontStyle.Bold;
-            titleStyle.normal.textColor = new Color(1f, 0.84f, 0f, 1f);
+            titleStyle.normal.textColor = UITheme.Instance.accentAmber;
             titleStyle.alignment = TextAnchor.MiddleCenter;
 
             // 서브타이틀
@@ -1349,30 +1349,30 @@ namespace InsectGame.UI
             taglineStyle = new GUIStyle(GUI.skin.label);
             taglineStyle.fontSize = 29;
             taglineStyle.fontStyle = FontStyle.Normal;
-            taglineStyle.normal.textColor = new Color(0.68f, 0.82f, 0.78f, 1f);
+            taglineStyle.normal.textColor = UITheme.Instance.textSecondary;
             taglineStyle.alignment = TextAnchor.MiddleCenter;
 
             brandEyebrowStyle = new GUIStyle(GUI.skin.label);
             brandEyebrowStyle.fontSize = 18;
             brandEyebrowStyle.fontStyle = FontStyle.Bold;
-            brandEyebrowStyle.normal.textColor = new Color(0.44f, 0.98f, 0.6f, 1f);
+            brandEyebrowStyle.normal.textColor = UITheme.Instance.accentMint;
             brandEyebrowStyle.alignment = TextAnchor.MiddleLeft;
 
             helperStyle = new GUIStyle(GUI.skin.label);
             helperStyle.fontSize = 21;
-            helperStyle.normal.textColor = new Color(0.58f, 0.7f, 0.72f, 1f);
+            helperStyle.normal.textColor = UITheme.Instance.textSecondary;
             helperStyle.alignment = TextAnchor.MiddleCenter;
 
             versionStyle = new GUIStyle(GUI.skin.label);
             versionStyle.fontSize = 18;
-            versionStyle.normal.textColor = new Color(0.42f, 0.56f, 0.58f, 1f);
+            versionStyle.normal.textColor = UITheme.Instance.textMuted;
             versionStyle.alignment = TextAnchor.MiddleCenter;
 
             linkStyle = new GUIStyle(GUI.skin.label);
             linkStyle.fontSize = 20;
-            linkStyle.normal.textColor = new Color(0.65f, 0.8f, 0.82f, 1f);
+            linkStyle.normal.textColor = UITheme.Instance.textSecondary;
             linkStyle.hover.textColor = Color.white;
-            linkStyle.active.textColor = new Color(0.44f, 0.98f, 0.6f, 1f);
+            linkStyle.active.textColor = UITheme.Instance.accentMint;
             linkStyle.alignment = TextAnchor.MiddleRight;
 
             // 입력 필드
@@ -1390,12 +1390,12 @@ namespace InsectGame.UI
             // 라벨
             labelStyle = new GUIStyle(GUI.skin.label);
             labelStyle.fontSize = 28;
-            labelStyle.normal.textColor = new Color(0.85f, 0.85f, 0.9f, 1f);
+            labelStyle.normal.textColor = UITheme.Instance.textPrimary;
 
             // 에러
             errorStyle = new GUIStyle(GUI.skin.label);
             errorStyle.fontSize = 25;
-            errorStyle.normal.textColor = new Color(1f, 0.3f, 0.3f, 1f);
+            errorStyle.normal.textColor = UITheme.Instance.accentCoral;
             errorStyle.alignment = TextAnchor.MiddleCenter;
             errorStyle.wordWrap = true;
 
@@ -1416,10 +1416,10 @@ namespace InsectGame.UI
             }
 
             // 녹색 (로그인)
-            btnGreenStyle = BaseBtnStyle(new Color(0.15f, 0.55f, 0.15f, 1f));
+            btnGreenStyle = BaseBtnStyle(UITheme.Instance.accentMint);
 
             // 파란색 (회원가입)
-            btnBlueStyle = BaseBtnStyle(new Color(0.2f, 0.35f, 0.7f, 1f));
+            btnBlueStyle = BaseBtnStyle(UITheme.Instance.surfaceRaised);
             btnBlueStyle.fontSize = 30;
 
             // Google 브랜드에 맞춘 밝은 단일 소셜 버튼
@@ -1431,21 +1431,21 @@ namespace InsectGame.UI
             btnYellowStyle.active.textColor = googleText;
 
             // 회색 (게스트)
-            btnGrayStyle = BaseBtnStyle(new Color(0.35f, 0.35f, 0.38f, 1f));
+            btnGrayStyle = BaseBtnStyle(UITheme.Instance.surfaceRaised);
             btnGrayStyle.fontSize = 28;
 
             // 구분선
             separatorStyle = new GUIStyle(GUI.skin.label);
             separatorStyle.fontSize = 25;
-            separatorStyle.normal.textColor = new Color(0.5f, 0.5f, 0.55f, 1f);
+            separatorStyle.normal.textColor = UITheme.Instance.textMuted;
             separatorStyle.alignment = TextAnchor.MiddleCenter;
 
             // 라디오 버튼
-            radioStyle = BaseBtnStyle(new Color(0.25f, 0.25f, 0.3f, 1f));
+            radioStyle = BaseBtnStyle(UITheme.Instance.surfaceCard);
             radioStyle.fontSize = 25;
             radioStyle.fontStyle = FontStyle.Normal;
 
-            radioSelectedStyle = BaseBtnStyle(new Color(0.2f, 0.5f, 0.8f, 1f));
+            radioSelectedStyle = BaseBtnStyle(UITheme.Instance.accentCoral);
             radioSelectedStyle.fontSize = 25;
             radioSelectedStyle.fontStyle = FontStyle.Bold;
 
@@ -1453,7 +1453,7 @@ namespace InsectGame.UI
             sectionLabelStyle = new GUIStyle(GUI.skin.label);
             sectionLabelStyle.fontSize = 28;
             sectionLabelStyle.fontStyle = FontStyle.Bold;
-            sectionLabelStyle.normal.textColor = new Color(0.9f, 0.85f, 0.6f, 1f);
+            sectionLabelStyle.normal.textColor = UITheme.Instance.textPrimary;
 
             for (int i = 0; i < loadingDotTextures.Length; i++)
             {

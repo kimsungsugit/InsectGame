@@ -432,7 +432,7 @@ namespace InsectGame.UI
 
             // 미리보기가 그리드 영역의 정중앙을 차지한다. 세로는 폭이 1032뿐이라 조금 좁게 잡아야
             // 양옆에 카드 한 열씩이 남는다(400 + 296×2).
-            float previewW = mobile ? 400f : 440f;
+            float previewW = Mathf.Min(gridW * 0.46f, mobile ? 460f : 560f);
             float sideW = Mathf.Max(0f, (gridW - previewW) * 0.5f);
 
             // ── 캐릭터 미리보기 ──

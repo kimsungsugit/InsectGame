@@ -18,6 +18,7 @@ namespace InsectGame.Core
         private Color defaultFogColor = new Color(0.75f, 0.82f, 0.88f);
         private bool defaultFogEnabled;
         private float defaultFogDensity;
+        private FogMode defaultFogMode;
         // 하늘색 폴백 — Camera.main이 없어 캡처를 못 했을 때만 쓰인다(형제 필드와 동일 패턴).
         private Color defaultCameraBg = new Color(0.5f, 0.8f, 1f);
         // 메인 필드의 원래 카메라 클리어 플래그(보통 Skybox). 서브지역에선 SolidColor로 바꿔야
@@ -44,6 +45,14 @@ namespace InsectGame.Core
                 regionManager.SubAreaChanged += OnSubAreaChanged;
         }
 
+        private void OnEnable()
+        {
+            if (regionManager == null) return;
+            regionManager.SubAreaChanged -= OnSubAreaChanged;
+            regionManager.SubAreaChanged += OnSubAreaChanged;
+            OnSubAreaChanged(regionManager.CurrentSubArea);
+        }
+
         private void OnDisable()
         {
             if (regionManager != null)
@@ -59,7 +68,16 @@ namespace InsectGame.Core
         {
             if (initialized) return;
 
-            directionalLight = FindFirstObjectByType<Light>();
+            directionalLight = RenderSettings.sun;
+            if (directionalLight == null)
+            {
+                foreach (Light candidate in FindObjectsByType<Light>(FindObjectsSortMode.None))
+                {
+                    if (candidate.type != LightType.Directional) continue;
+                    directionalLight = candidate;
+                    break;
+                }
+            }
             mainCamera = Camera.main;
 
             if (directionalLight != null)
@@ -74,6 +92,7 @@ namespace InsectGame.Core
             defaultFogEnabled = RenderSettings.fog;
             defaultFogColor = RenderSettings.fogColor;
             defaultFogDensity = RenderSettings.fogDensity;
+            defaultFogMode = RenderSettings.fogMode;
 
             if (mainCamera != null)
             {
@@ -145,7 +164,8 @@ namespace InsectGame.Core
             float targetDensity = to.fogEnabled ? to.fogDensity : 0f;
             float sourceDensity = from.fogEnabled ? from.fogDensity : 0f;
             RenderSettings.fogDensity = Mathf.Lerp(sourceDensity, targetDensity, t);
-            RenderSettings.fogMode = FogMode.Exponential;
+            RenderSettings.fogMode = regionManager != null && regionManager.CurrentSubArea != null
+                ? FogMode.Exponential : defaultFogMode;
 
             if (mainCamera != null)
                 mainCamera.backgroundColor = Color.Lerp(from.cameraBg, to.cameraBg, t);

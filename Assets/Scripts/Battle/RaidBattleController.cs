@@ -138,7 +138,7 @@ namespace InsectGame.Battle
         }
         private bool bossShinyAtStart; // 시작 시점 스냅샷 — 도주/풀 재사용된 라이브 보스 참조로 이로치 오등록 방지
         private RaidRoundStage roundStage = RaidRoundStage.Completed;
-        private IRaidRandomSource randomSource = new UnityRaidRandomSource();
+        private IRaidRandomSource randomSource = new BattleRandomSource();
         private bool raidEndedRaised;
 
         // ── 순차 팀 턴 ──
@@ -645,7 +645,13 @@ namespace InsectGame.Battle
 
         public void SetRandomSource(IRaidRandomSource source)
         {
-            randomSource = source ?? new UnityRaidRandomSource();
+            randomSource = source ?? new BattleRandomSource();
+        }
+
+        /// <summary>Call before StartRaid so the first boss intent uses the same seeded stream.</summary>
+        public void SetRandomSeed(int seed)
+        {
+            randomSource = new BattleRandomSource(seed);
         }
 
         private void PrepareNextBossIntent()

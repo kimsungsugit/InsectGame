@@ -473,7 +473,50 @@ namespace InsectGame.Core
             BuildGachaHut(root, v, result);
             BuildHospital(root, v, result);
             BuildVillageDecorations(root);
+            BuildVillageWalkways(root, meadow);
             AddVillageVillagers(v, result);
+        }
+
+        // Door 노드의 실제 위치를 사용해 건물 배치가 바뀌어도 문 앞과 광장이 이어진다.
+        private void BuildVillageWalkways(Transform root, Data.RegionData meadow)
+        {
+            Transform paths = Child(root, "Walkways", Vector3.zero);
+            Color dirt = new Color(0.68f, 0.56f, 0.38f);
+            foreach (Transform building in root)
+            {
+                Transform door = building.Find("Door");
+                if (door == null) continue;
+                Vector3 start = root.InverseTransformPoint(door.position);
+                start.y = 0f;
+                Vector3 end = start.normalized * 7.6f;
+                BuildWalkway(paths, "Access_" + building.name, start, end, 1.4f, dirt);
+            }
+
+            Vector3 entrance = root.InverseTransformPoint(
+                PlayerStartPlacement.ResolveMainVillageEntrance(new[] { meadow }).Position);
+            entrance.y = 0f;
+            // 병원과 첫 집 사이를 통과한다. 광장까지 직선으로 그리면 병원 벽을 관통한다.
+            Vector3[] route = { entrance, new Vector3(16f, 0f, 2.37f),
+                new Vector3(9f, 0f, 2.37f), new Vector3(7f, 0f, 2f) };
+            for (int i = 0; i < route.Length - 1; i++)
+                BuildWalkway(paths, "Entrance_" + i, route[i], route[i + 1], 1.4f, dirt);
+            // 반폭 안쪽의 원형 캡으로 꺾인 두 평면의 바깥쪽 삼각 틈을 막는다.
+            // 원통 상면은 길과 같은 0.17m, 반경은 벽 이격 검사의 0.7m를 넘지 않는다.
+            for (int i = 1; i < route.Length - 1; i++)
+                Prim(PrimitiveType.Cylinder, "EntranceJoin_" + i, paths,
+                    route[i] + Vector3.up * 0.16f, Vector3.zero,
+                    new Vector3(1.4f, 0.01f, 1.4f), dirt);
+
+        }
+
+        private void BuildWalkway(Transform parent, string name, Vector3 from, Vector3 to,
+            float width, Color color)
+        {
+            Vector3 delta = to - from;
+            if (delta.sqrMagnitude < 0.01f) return;
+            Prim(PrimitiveType.Plane, name, parent, (from + to) * 0.5f + Vector3.up * 0.17f,
+                new Vector3(0f, Mathf.Atan2(delta.x, delta.z) * Mathf.Rad2Deg, 0f),
+                new Vector3(width / 10f, 1f, delta.magnitude / 10f), color);
         }
 
         /// <summary>원형 광장(납작 실린더) + 중앙 우물(원통 벽 + 두레박 지붕).</summary>
@@ -505,9 +548,9 @@ namespace InsectGame.Core
             Prim(PrimitiveType.Cylinder, "WellPostR", well,
                 new Vector3(0.95f, 1.5f, 0f), Vector3.zero, new Vector3(0.12f, 1.0f, 0.12f), wood);
             Prim(PrimitiveType.Cube, "WellRoofF", well,
-                new Vector3(0f, 2.3f, 0.42f), new Vector3(-35f, 0f, 0f), new Vector3(2.3f, 0.1f, 1.1f), roofRed);
+                new Vector3(0f, 2.3f, 0.42f), new Vector3(35f, 0f, 0f), new Vector3(2.3f, 0.1f, 1.1f), roofRed);
             Prim(PrimitiveType.Cube, "WellRoofB", well,
-                new Vector3(0f, 2.3f, -0.42f), new Vector3(35f, 0f, 0f), new Vector3(2.3f, 0.1f, 1.1f), roofRed);
+                new Vector3(0f, 2.3f, -0.42f), new Vector3(-35f, 0f, 0f), new Vector3(2.3f, 0.1f, 1.1f), roofRed);
             // 두레박 + 밧줄
             Prim(PrimitiveType.Cylinder, "WellRope", well,
                 new Vector3(0f, 1.75f, 0f), Vector3.zero, new Vector3(0.03f, 0.35f, 0.03f), new Color(0.8f, 0.72f, 0.55f));
@@ -516,6 +559,8 @@ namespace InsectGame.Core
         }
 
         /// <summary>집 5채 — 벽/지붕 색 변주. 벽만 콜라이더 유지, 문/창/지붕은 장식.</summary>
+        private Mesh houseGableMesh;
+
         private void BuildHouses(Transform root, Vector3 villageCenter)
         {
             // (광장 기준 각도, 거리, 벽색, 지붕색)
@@ -542,11 +587,12 @@ namespace InsectGame.Core
                     new Vector3(0f, 1.4f, 0f), Vector3.zero, new Vector3(3.8f, 2.8f, 3.2f), h.wall, keepCollider: true);
                 // 경사 지붕 2장 + 용마루 (Z축 회전 — 마루가 앞뒤 방향)
                 Prim(PrimitiveType.Cube, "RoofR", house,
-                    new Vector3(0.95f, 3.1f, 0f), new Vector3(0f, 0f, 35f), new Vector3(2.5f, 0.15f, 3.7f), h.roof);
+                    new Vector3(0.95f, 3.52f, 0f), new Vector3(0f, 0f, -35f), new Vector3(2.5f, 0.15f, 3.7f), h.roof);
                 Prim(PrimitiveType.Cube, "RoofL", house,
-                    new Vector3(-0.95f, 3.1f, 0f), new Vector3(0f, 0f, -35f), new Vector3(2.5f, 0.15f, 3.7f), h.roof);
+                    new Vector3(-0.95f, 3.52f, 0f), new Vector3(0f, 0f, 35f), new Vector3(2.5f, 0.15f, 3.7f), h.roof);
                 Prim(PrimitiveType.Cube, "RoofRidge", house,
-                    new Vector3(0f, 3.85f, 0f), Vector3.zero, new Vector3(0.35f, 0.12f, 3.75f), h.roof);
+                    new Vector3(0f, 4.24f, 0f), Vector3.zero, new Vector3(0.35f, 0.12f, 3.75f), h.roof);
+                BuildHouseGable(house, h.wall);
                 // 문/창 — 어두운 장식, 콜라이더 제거
                 Prim(PrimitiveType.Cube, "Door", house,
                     new Vector3(0f, 0.95f, 1.63f), Vector3.zero, new Vector3(0.95f, 1.9f, 0.12f), doorColor);
@@ -555,6 +601,27 @@ namespace InsectGame.Core
                 Prim(PrimitiveType.Cube, "WindowR", house,
                     new Vector3(1.15f, 1.9f, 1.63f), Vector3.zero, new Vector3(0.65f, 0.65f, 0.10f), windowColor);
             }
+        }
+
+        private void BuildHouseGable(Transform house, Color color)
+        {
+            if (houseGableMesh == null)
+            {
+                houseGableMesh = new Mesh { name = "VillageHouseGable" };
+                // 닫힌 삼각기둥: 지붕 아래의 빈 전후면을 벽과 같은 재질로 메운다.
+                houseGableMesh.vertices = new[] {
+                    new Vector3(-1.9f, 2.78f, -1.6f), new Vector3(1.9f, 2.78f, -1.6f),
+                    new Vector3(0f, 4.10f, -1.6f), new Vector3(-1.9f, 2.78f, 1.6f),
+                    new Vector3(1.9f, 2.78f, 1.6f), new Vector3(0f, 4.10f, 1.6f) };
+                houseGableMesh.triangles = new[] { 0,2,1, 3,4,5, 0,1,4, 0,4,3,
+                    0,3,5, 0,5,2, 1,2,5, 1,5,4 };
+                houseGableMesh.RecalculateNormals();
+                houseGableMesh.RecalculateBounds();
+            }
+            GameObject gable = new GameObject("Gable");
+            gable.transform.SetParent(house, false);
+            gable.AddComponent<MeshFilter>().sharedMesh = houseGableMesh;
+            gable.AddComponent<MeshRenderer>().sharedMaterial = Mat(color);
         }
 
         /// <summary>상점 — 집보다 큰 건물 + 줄무늬 차양 + 간판. 문 앞 ItemShop 상호작용.</summary>
@@ -795,7 +862,7 @@ namespace InsectGame.Core
 
             // 울타리 조각 3개 — 건물 사이 빈 각도, 접선 방향 정렬 (장식이므로 콜라이더 제거)
             Color fence = new Color(0.55f, 0.45f, 0.30f);
-            float[] fenceAngles = { 0f, 120f, 245f };
+            float[] fenceAngles = { 120f, 245f }; // 동쪽은 플레이어가 들어오는 열린 입구.
             for (int i = 0; i < fenceAngles.Length; i++)
             {
                 float a = fenceAngles[i];
@@ -1069,7 +1136,9 @@ namespace InsectGame.Core
             for (int i = 0; i < 3; i++)
             {
                 Prim(PrimitiveType.Cylinder, $"FrontLog_{i}", hut,
-                    new Vector3(0f, 0.5f + i * 0.6f, 1.45f), new Vector3(0f, 0f, 90f), new Vector3(0.22f, 1.55f, 0.22f), logDark);
+                    new Vector3(-1.05f, 0.5f + i * 0.6f, 1.45f), new Vector3(0f, 0f, 90f), new Vector3(0.22f, 0.5f, 0.22f), logDark);
+                Prim(PrimitiveType.Cylinder, $"FrontLogRight_{i}", hut,
+                    new Vector3(1.05f, 0.5f + i * 0.6f, 1.45f), new Vector3(0f, 0f, 90f), new Vector3(0.22f, 0.5f, 0.22f), logDark);
             }
             // 경사 지붕 2장 (마루가 좌우 방향)
             Prim(PrimitiveType.Cube, "RoofF", hut,
@@ -1412,7 +1481,11 @@ namespace InsectGame.Core
             if (!keepCollider)
             {
                 Collider col = obj.GetComponent<Collider>();
-                if (col != null) Destroy(col);
+                if (col != null)
+                {
+                    col.enabled = false;
+                    Destroy(col);
+                }
             }
             return obj;
         }
@@ -1481,6 +1554,8 @@ namespace InsectGame.Core
             foreach (Material m in materialCache.Values)
                 if (m != null) Destroy(m);
             materialCache.Clear();
+            if (houseGableMesh != null) Destroy(houseGableMesh);
+            houseGableMesh = null;
         }
 
         /// <summary>색상당 1개 머티리얼 캐시 — RegionTerrainBuilder/부트스트랩과 동일한 셰이더 fallback 체인.</summary>

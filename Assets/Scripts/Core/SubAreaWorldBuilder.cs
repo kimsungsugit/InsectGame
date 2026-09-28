@@ -477,6 +477,7 @@ namespace InsectGame.Core
             // 환경 전체에 SubArea layer 일괄 설정 — CameraFollower 차폐 제외용.
             // 8개 환경 빌드에 개별 추가하지 않고 subAreaRoot 자식 트리 전체 재귀 처리.
             SetLayerRecursively(subAreaRoot, GetSubAreaEnvLayer());
+            Physics.SyncTransforms();
 
             // 플레이어를 서브에리어 입구로 텔레포트 — 벽 겹침 회피.
             // BuildCave의 무작위 미로(7×7), BuildTemple의 z=-8 pillar 등으로 옛 고정 좌표는
@@ -484,6 +485,7 @@ namespace InsectGame.Core
             if (player != null)
             {
                 player.transform.position = FindSafeSpawnPosition(SubAreaOrigin);
+                player.GetComponent<PlayerMovement>()?.StopNavigation();
                 // 좌표 점프 후 카메라 baseline 리셋 — 옛 메인 월드 좌표에서 SubArea(2000m)로
                 // 슬슬 들어오는 시각적 끊김 차단. SetSubAreaMode가 내부적으로 ResetBaseline 호출.
                 if (cameraFollower != null) cameraFollower.SetSubAreaMode(true);
@@ -507,6 +509,10 @@ namespace InsectGame.Core
                         Mathf.Sin(angle) * radii[r],
                         0.5f,
                         -8f + Mathf.Cos(angle) * radii[r]);
+                    // The smallest interior has walls at +/-9. Never select an empty
+                    // point on the far side of a wall just because no collider overlaps it.
+                    if (Mathf.Abs(candidate.x - origin.x) > 8f
+                        || Mathf.Abs(candidate.z - origin.z) > 8f) continue;
                     if (IsSpawnPositionClear(candidate)) return candidate;
                 }
             }
@@ -567,7 +573,6 @@ namespace InsectGame.Core
         {
             isInSubArea = false;
             string exitedId = currentSubArea != null ? currentSubArea.subAreaId : null;
-            SubAreaData exited = currentSubArea;
             currentSubArea = null;
 
             // 서브에리어 파괴
@@ -575,27 +580,21 @@ namespace InsectGame.Core
 
             // 메인 월드 복원
             ShowMainWorld();
+            Physics.SyncTransforms();
 
-            // 플레이어를 원래 위치로. 단 savedPlayerPos가 방금 나온 SubArea 안이면
-            // 자동 재진입을 막기 위해 중심에서 약간 밖으로 밀어낸다.
+            // 명시적 진입과 재진입 쿨다운을 유지하며 원래 접근 위치로 복귀한다.
             GameObject player = GameObject.Find("Player");
             if (player != null)
             {
                 Vector3 dest = savedPlayerPos;
-                if (exited != null && exited.ContainsPoint(savedPlayerPos))
-                {
-                    Vector3 dir = savedPlayerPos - exited.centerPosition;
-                    dir.y = 0f;
-                    if (dir.sqrMagnitude < 0.01f) dir = Vector3.back;
-                    dir.Normalize();
-                    dest = exited.centerPosition + dir * (exited.radius + 2f);
-                    dest.y = savedPlayerPos.y;
-                }
+                // Entry is explicit and RegionManager already applies a cooldown.
+                // Keep the approach location instead of pushing across a region edge.
                 // 진입(FindSafeSpawnPosition)과 대칭으로 지면 스냅 + 충돌 빈자리 보정. ShowMainWorld로
                 // 메인 콜라이더(산 바위 Scenery_MountainRock/경사 등)가 복원된 뒤라, dest가 그 안에 박히면
                 // PlayerMovement.IsBlockedPosition이 모든 이동을 막아 영구 갇힘 → 산에서 못 움직이던 원인.
                 dest = FindClearGroundPositionNear(dest);
                 player.transform.position = dest;
+                player.GetComponent<PlayerMovement>()?.StopNavigation();
                 // 좌표 점프 후 카메라 baseline 리셋 + 일반 모드로 offset 복귀.
                 // SetSubAreaMode(false)가 내부적으로 ResetBaseline 호출하여 한 번에 처리.
                 if (cameraFollower != null) cameraFollower.SetSubAreaMode(false);
@@ -1550,7 +1549,11 @@ namespace InsectGame.Core
         private void NoCollider(GameObject obj)
         {
             Collider c = obj.GetComponent<Collider>();
-            if (c != null) Destroy(c);
+            if (c != null)
+            {
+                c.enabled = false; // Spawn checks run before deferred Destroy completes.
+                Destroy(c);
+            }
         }
 
         private Material Mat(Color color)

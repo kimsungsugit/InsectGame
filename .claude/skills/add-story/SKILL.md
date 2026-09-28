@@ -25,7 +25,7 @@ FAIL 0을 확인한다.**
   "requiredRegionId": "리전 ID 또는 \"\" (무param 트리거 리전 잠금)",
   "trigger": { "type": "RegionEnter", "param": "pond" },
   "speakerNpcId": "village_elder",
-  "lines": [ { "speaker": "이름", "text": "대사" } ],
+  "lines": [ { "speaker": "이름", "text": "대사" }, { "speaker": "지문", "text": "해설", "fx": "pause" } ],
   "choices": [],
   "onComplete": { "rewardCandy": 5, "rewardExp": 0, "rewardItemId": "",
     "rewardInsectId": "", "unlockQuestId": "" },

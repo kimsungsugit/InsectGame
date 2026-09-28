@@ -102,3 +102,4 @@ GameConstants → 전체 (상수 변경 시 밸런스 전체 영향)
 ## 구현 순서 (의존성 기반)
 ## 리스크/주의사항
 ```
+`Assets/Editor/GamePlayEntry.cs` - Hub로 연 에디터의 기본 Play 시작 씬과 개발용 실행 메뉴

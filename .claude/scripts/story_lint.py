@@ -911,6 +911,62 @@ def evaluate_signals() -> list:
         "WARN" if file_notes else "PASS",
     ))
 
+    # 27. 대사 화자 실재성 — lines[].speaker는 **표시명**이고 대사창이 그걸 초상 ID로 푼다
+    #     (NpcDialogueDatabase.StoryPortraitId). 오타면 예외도 경고도 없이 그 줄만 초상 없이
+    #     "세리"라는 이름표로 뜬다 — 무대 연출이 좌우 배치를 화자로 정하므로 한 글자 오타가 장면
+    #     전체의 자리 배치를 흔든다. 허용: StorySpeakerName의 표시명 ∪ 별칭 "하월" ∪ 해설 "지문".
+    db_src = _read_repo("Assets/Scripts/NPC/NpcDialogueDatabase.cs")
+    m_names = re.search(r"public static string StorySpeakerName\(string storyId\)(.*?)default:", db_src, re.S)
+    if not m_names:
+        raise ExtractorBroken("NpcDialogueDatabase.StorySpeakerName switch를 찾지 못했다 — 추출기가 낡았다")
+    speaker_names = set(re.findall(r'case "\w+":\s*return "([^"]+)";', m_names.group(1)))
+    if len(speaker_names) < 5:
+        raise ExtractorBroken(f"StorySpeakerName 표시명 추출 {len(speaker_names)}건 — 추출기가 낡았다")
+    staging_src = _read_repo("Assets/Scripts/UI/StoryDialogueStaging.cs")
+    m_narr = re.search(r'NarrationSpeaker\s*=\s*"([^"]+)"', staging_src)
+    if not m_narr:
+        raise ExtractorBroken("StoryDialogueStaging.NarrationSpeaker를 찾지 못했다 — 추출기가 낡았다")
+    narration_speaker = m_narr.group(1)
+    valid_speakers = speaker_names | {"하월", narration_speaker}
+    bad_speakers = sorted({
+        f"{b['beatId']}:{(l.get('speaker') or '(빈 화자)')}"
+        for b in beats for l in (b.get("lines") or [])
+        if (l.get("speaker") or "") not in valid_speakers})
+    narration_lines = sum(1 for b in beats for l in (b.get("lines") or []) if l.get("speaker") == narration_speaker)
+    signals.append((
+        "대사 화자 실재성 (표시명 · 하월 · 지문)",
+        "0건",
+        f"{len(bad_speakers)}건 ({bad_speakers[:10]})" if bad_speakers
+        else f"0건 (인물 {len(speaker_names)}명 · 지문 {narration_lines}줄)",
+        "FAIL" if bad_speakers else "PASS",
+    ))
+
+    # 28. 줄 연출 토큰 — lines[].fx는 쉼표 토큰이고 모르는 토큰은 ParseFx가 **조용히 버린다**.
+    #     "shak"으로 적으면 흔들림 없이 지나가도 아무도 모른다. 목록의 단일 출처는
+    #     StoryDialogueStaging.KnownFxTokens다(C# 테스트가 목록↔해석 switch 일치를 본다).
+    m_fx = re.search(r"KnownFxTokens\s*=\s*\{(.*?)\};", staging_src, re.S)
+    if not m_fx:
+        raise ExtractorBroken("StoryDialogueStaging.KnownFxTokens를 찾지 못했다 — 추출기가 낡았다")
+    known_fx = set(re.findall(r'"(\w+)"', m_fx.group(1)))
+    bad_fx, fx_lines = [], 0
+    for b in beats:
+        for i, l in enumerate(b.get("lines") or []):
+            raw = l.get("fx") or ""
+            if not raw.strip():
+                continue
+            fx_lines += 1
+            for tok in raw.split(","):
+                tok = tok.strip().lower()
+                if tok and tok not in known_fx:
+                    bad_fx.append(f"{b['beatId']}#{i}:{tok}")
+    signals.append((
+        "줄 연출 토큰 (lines[].fx ↔ KnownFxTokens)",
+        "0건",
+        f"{len(bad_fx)}건 ({bad_fx[:10]})" if bad_fx
+        else f"0건 (연출 {fx_lines}줄 · 토큰 {len(known_fx)}종)",
+        "FAIL" if bad_fx else "PASS",
+    ))
+
     return signals
 
 
@@ -963,8 +1019,8 @@ def main():
     print("- 검사 21은 SubAreaWorldBuilder의 CreateBoundaryWalls 크기와 FindSafeSpawnPosition의")
     print("  입구 좌표를 읽어 연출 워프 지점이 방 안인지 본다. 방은 축정렬 정사각이고 오프셋도")
     print("  월드축이라 좌표가 결정적이다 — 벽 밖이면 배우가 막혀 대사만 뜬다(무증상).")
-    print("- 검사 22는 NpcManager.StoryNpcDisplayName / NpcVisualBuilder.StoryNpcAppearance의")
-    print("  case를 읽어 월드 배치 인물과 대조한다. 둘 다 default가 마을 어르신이라")
+    print("- 검사 22는 NpcDialogueDatabase.StorySpeakerName / NpcVisualBuilder.StoryNpcAppearance의")
+    print("  case를 읽어 월드 배치 인물과 대조한다. 이름 누락은 내부 ID, 외형 누락은 어르신으로 표시되어")
     print("  누락이 무증상이다 — village_elder만 그 default 가지라서 면제한다.")
     print("- 검사 19는 NpcBossDuels.cs의 storyNpcId를 정규식으로 읽어 Story.json의")
     print("  speakerNpcId ∪ NpcTalk param과 대조한다(소개 없는 보스 = 영구 도전 불가).")

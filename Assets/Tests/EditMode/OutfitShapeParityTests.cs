@@ -1,4 +1,4 @@
-#if UNITY_EDITOR
+﻿#if UNITY_EDITOR
 using InsectGame.Core;
 using NUnit.Framework;
 using UnityEngine;
@@ -42,8 +42,8 @@ namespace InsectGame.Tests
         [TestCase("tool_camera", "NetHandle", PrimitiveType.Cube, 0.29f, 0.57f, 0.18f, 0.16f, 0.10f, 0.10f, 0f, 0f, 0f)]
         [TestCase("tool_camera", "NetRing", PrimitiveType.Cylinder, 0.29f, 0.57f, 0.26f, 0.07f, 0.07f, 0.06f, 90f, 0f, 0f)]
         // 기본 잠자리채(else) — PlayerVisualBuilder의 NetHandle/NetRing 초기 좌표와도 일치해야 한다
-        [TestCase("tool_net", "NetHandle", PrimitiveType.Cylinder, 0.29f, 0.74f, 0.02f, 0.04f, 0.40f, 0.04f, 20f, 0f, -15f)]
-        [TestCase("tool_net", "NetRing", PrimitiveType.Cylinder, 0.34f, 1.14f, 0.06f, 0.20f, 0.02f, 0.20f, -20f, 0f, 0f)]
+        [TestCase("tool_net", "NetHandle", PrimitiveType.Cylinder, 0.29f, 0.74f, 0f, 0.04f, 0.40f, 0.04f, 0f, 0f, 0f)]
+        [TestCase("tool_net", "NetRing", PrimitiveType.Cylinder, 0.29f, 1.14f, 0f, 0.20f, 0.02f, 0.20f, -20f, 0f, 0f)]
         public void ToolRecipe_Branch_MatchesLegacyTransform(
             string itemId, string bindName, PrimitiveType prim,
             float px, float py, float pz, float sx, float sy, float sz, float ex, float ey, float ez)

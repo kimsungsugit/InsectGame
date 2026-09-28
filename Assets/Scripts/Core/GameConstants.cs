@@ -52,6 +52,9 @@ namespace InsectGame.Core
             // 정화한 명부회 오염 거점의 리전 ID CSV — 클라우드 동기(DTO blightCleansed).
             // 간부 격파 기록(DefeatedLedgerBosses)에서 파생하지 않는 이유는 RegionBlightManager 참조.
             public const string BlightCleansed = "InsectGame.BlightCleansed";
+            // 수문장 배지 이정표 보상 수령 상태("4,8") — 클라우드 동기(DTO badgeMilestonesClaimed).
+            // 배지 자체는 저장하지 않는다(DefeatedGuardians에서 파생) — GuardianBadges 참조.
+            public const string BadgeMilestonesClaimed = "InsectGame.BadgeMilestonesClaimed";
         }
 
         // ── 플레이어 ──
@@ -82,6 +85,8 @@ namespace InsectGame.Core
         public static class Battle
         {
             public const int MaxTeamSlots = 5;
+            /// <summary>Ordinary wild direct-hit pacing; excludes saved stats, DOT, duels and raids.</summary>
+            public const float WildDamageMultiplier = 0.7f;
             public const float UniteGaugeMax = 100f;
 
             /// <summary>

@@ -407,6 +407,9 @@ namespace InsectGame.Core
                 // 오염 거점 정화 기록 — 안 올리면 기기를 바꿀 때 정화한 리전이 다시 오염으로 뜬다.
                 blightCleansed = PlayerPrefs.GetString(
                     AuthManager.ScopedKey(GameConstants.PrefsKeys.BlightCleansed), ""),
+                // 배지 이정표 보상 수령 상태 — 안 올리면 기기를 바꿀 때마다 같은 보상을 다시 받는다.
+                badgeMilestonesClaimed = PlayerPrefs.GetString(
+                    AuthManager.ScopedKey(GameConstants.PrefsKeys.BadgeMilestonesClaimed), ""),
                 // 퀘스트는 계정별 키에서 읽어 현재 계정의 진행만 클라우드에 올린다(교차 오염 방지).
                 questProgress = PlayerPrefs.GetString(
                     AuthManager.ScopedKey(GameConstants.PrefsKeys.QuestProgress), ""),
@@ -534,6 +537,10 @@ namespace InsectGame.Core
                 QuestSaveMerge.MaxIntDict);
             ApplyQuestField(GameConstants.PrefsKeys.QuestSideRepeat, data.questSideRepeat, forceReplace,
                 QuestSaveMerge.MaxIntDict);
+            // 배지 이정표 수령도 단조 증가(받은 걸 도로 안 받는다)라 합집합이 안전하다 — 낡은 클라우드가 수령
+            // 기록을 지우면 같은 보상을 다시 받는다. 병합 규칙이 퀘스트 완료와 같아 그 경로를 그대로 탄다.
+            ApplyQuestField(GameConstants.PrefsKeys.BadgeMilestonesClaimed, data.badgeMilestonesClaimed, forceReplace,
+                QuestSaveMerge.UnionCsv);
 
             // 캐릭터 외형 — 옛 클라우드 문서엔 없을 수 있어 sentinel(-1)이면 로컬 유지(초기화 방지).
             if (data.charCreated == 1) PlayerPrefs.SetInt(SaveScope.PrefsKey("InsectGame.Character.Created"), 1);
@@ -681,6 +688,7 @@ namespace InsectGame.Core
             sb.Append(","); AppendStringField(sb, "defeatedBosses", data.defeatedBosses);
             sb.Append(","); AppendStringField(sb, "weeklyContestClaimed", data.weeklyContestClaimed);
             sb.Append(","); AppendStringField(sb, "blightCleansed", data.blightCleansed);
+            sb.Append(","); AppendStringField(sb, "badgeMilestonesClaimed", data.badgeMilestonesClaimed);
             sb.Append(","); AppendStringField(sb, "questProgress", data.questProgress);
             sb.Append(","); AppendStringField(sb, "questCompleted", data.questCompleted);
             sb.Append(","); AppendStringField(sb, "activeQuest", data.activeQuest);
@@ -731,6 +739,7 @@ namespace InsectGame.Core
             data.defeatedBosses = ExtractStringValue(json, "defeatedBosses");
             data.weeklyContestClaimed = ExtractStringValue(json, "weeklyContestClaimed");
             data.blightCleansed = ExtractStringValue(json, "blightCleansed");
+            data.badgeMilestonesClaimed = ExtractStringValue(json, "badgeMilestonesClaimed");
             data.questProgress = ExtractStringValue(json, "questProgress");
             data.questCompleted = ExtractStringValue(json, "questCompleted");
             data.activeQuest = ExtractStringValue(json, "activeQuest");
@@ -923,6 +932,10 @@ namespace InsectGame.Core
         /// <summary>정화한 명부회 오염 거점의 리전 ID CSV. 기본 ""이면 전 거점이 오염 상태다
         /// — 옛 문서에 없어도 무해하고, 그게 이 기능이 기존 유저에게 보이는 방식이다.</summary>
         public string blightCleansed;
+
+        /// <summary>받은 배지 이정표("4,8"). 기본 ""이면 아무것도 안 받은 상태다 — 옛 문서에 없어도 무해하고,
+        /// 부트 로드는 로컬과 합집합이라 낡은 문서가 수령 기록을 지우지도 않는다.</summary>
+        public string badgeMilestonesClaimed = "";
 
         public string questProgress;
         public string questCompleted;
