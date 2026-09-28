@@ -7,7 +7,7 @@ namespace InsectGame.Core
     /// PCM 데이터를 직접 생성하여 AudioClip을 만드는 절차적 오디오 생성기.
     /// MonoBehaviour 없이 static으로 동작하며 캐시를 통해 중복 생성을 방지합니다.
     /// </summary>
-    public static class ProceduralAudioGenerator
+    public static partial class ProceduralAudioGenerator
     {
         private const int SampleRate = 44100;
         private const float MasterGain = 0.4f;
@@ -77,8 +77,8 @@ namespace InsectGame.Core
             {
                 case "attack":          clip = GenerateAttackSFX(); break;
                 case "skill_use":       clip = GenerateSkillUseSFX(); break;
-                case "hit":             clip = GenerateHitSFX(); break;
-                case "critical":        clip = GenerateCriticalHitSFX(); break;
+                case "hit":             clip = GenerateImpactSFX(false); break;
+                case "critical":        clip = GenerateImpactSFX(true); break;
                 case "capture":         clip = GenerateCaptureSFX(); break;
                 case "capture_success": clip = GenerateCaptureSuccessSFX(); break;
                 case "capture_fail":    clip = GenerateCaptureFailSFX(); break;
@@ -112,8 +112,13 @@ namespace InsectGame.Core
                 case "skill_dark":      clip = GenerateElementSkillSFX(8); break;
                 case "skill_metal":     clip = GenerateElementSkillSFX(9); break;
                 default:
-                    Debug.LogWarning($"[ProceduralAudio] Unknown SFX type: {type}");
-                    return null;
+                    // 전투 울음·비명(cry_*/hurt_*)은 종 계열 표에서 만든다 — ProceduralAudioGenerator.Battle.cs.
+                    if (!TryGenerateBattleVoice(type, out clip))
+                    {
+                        Debug.LogWarning($"[ProceduralAudio] Unknown SFX type: {type}");
+                        return null;
+                    }
+                    break;
             }
 
             cache[key] = clip;
@@ -756,43 +761,6 @@ namespace InsectGame.Core
             }
 
             return CreateClip("SFX_SkillUse", data, false);
-        }
-
-        /// <summary>타격 SFX: "탁" (0.1초).</summary>
-        private static AudioClip GenerateHitSFX()
-        {
-            int totalSamples = SecondsToSamples(0.1f);
-            float[] data = new float[totalSamples];
-            System.Random rng = new System.Random(12);
-
-            for (int i = 0; i < totalSamples; i++)
-            {
-                float env = Decay(i, totalSamples, 15f);
-                float lowPulse = SinWave(100f, i) * 0.5f;
-                float noise = Noise(rng) * 0.3f;
-                data[i] = (lowPulse + noise) * env * 0.7f;
-            }
-
-            return CreateClip("SFX_Hit", data, false);
-        }
-
-        /// <summary>크리티컬 타격 SFX: "퍽!" (0.2초).</summary>
-        private static AudioClip GenerateCriticalHitSFX()
-        {
-            int totalSamples = SecondsToSamples(0.2f);
-            float[] data = new float[totalSamples];
-            System.Random rng = new System.Random(13);
-
-            for (int i = 0; i < totalSamples; i++)
-            {
-                float env = Decay(i, totalSamples, 10f);
-                float lowPulse = SinWave(60f, i) * 0.5f;
-                float noise = Noise(rng) * 0.4f;
-                float highAccent = SinWave(1200f, i) * 0.15f * Decay(i, totalSamples, 20f);
-                data[i] = (lowPulse + noise + highAccent) * env * 0.8f;
-            }
-
-            return CreateClip("SFX_CriticalHit", data, false);
         }
 
         /// <summary>포획 시도 SFX: "삐리리" 떨림 (0.5초).</summary>

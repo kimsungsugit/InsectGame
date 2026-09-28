@@ -15,6 +15,8 @@ namespace InsectGame.Battle
     public sealed class BattleVisualCapture : MonoBehaviour
     {
         private const BindingFlags PrivateInstance = BindingFlags.Instance | BindingFlags.NonPublic;
+        /// <summary>프레임 사이 간격(실제 초). 히트스톱(0.06~0.2초)을 보려면 0.1보다 촘촘해야 한다.</summary>
+        internal static float CaptureInterval = 0.1f;
         private float watchdogStart;
         private float watchdogSeconds = 120f;
         private void Awake()
@@ -40,6 +42,17 @@ namespace InsectGame.Battle
             Directory.CreateDirectory(output);
             int scenarioArg = Array.IndexOf(args, "-battleScenario");
             string scenario = scenarioArg >= 0 && scenarioArg + 1 < args.Length ? args[scenarioArg + 1] : "duel";
+            // 연출 비교용 — 같은 장면을 카메라 스타일만 바꿔 찍는다(off|punch|cinematic).
+            int styleArg = Array.IndexOf(args, "-battleCamStyle");
+            if (styleArg >= 0 && styleArg + 1 < args.Length
+                && Enum.TryParse(args[styleArg + 1], true, out BattleCameraDirector.Style camStyle))
+                BattleCameraDirector.Current = camStyle;
+            int intervalArg = Array.IndexOf(args, "-captureInterval");
+            float interval = 0.1f;
+            if (intervalArg >= 0 && intervalArg + 1 < args.Length)
+                float.TryParse(args[intervalArg + 1], System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture, out interval);
+            CaptureInterval = Mathf.Clamp(interval, 0.02f, 1f);
             Application.runInBackground = true;
             Application.targetFrameRate = 60;
             QualitySettings.vSyncCount = 0;
@@ -84,9 +97,9 @@ namespace InsectGame.Battle
                 yield break;
             }
             BattleArenaController arena = new GameObject("QAArena").AddComponent<BattleArenaController>();
-            if (scenario == "raid")
+            if (scenario == "raid" || scenario == "raid-unite")
             {
-                yield return RaidVisualCapture.Run(output, follower, arena);
+                yield return RaidVisualCapture.Run(output, follower, arena, scenario == "raid-unite");
                 yield break;
             }
             InsectBattleController controller = new GameObject("QAController").AddComponent<InsectBattleController>();
@@ -96,6 +109,14 @@ namespace InsectGame.Battle
             ui.AutoWire(arena);
             InsectData player = Fixture("rhinoceros_beetle", "장수풍뎅이");
             InsectData enemy = Fixture("mantis", "사마귀");
+            // 속성 임팩트 검수 — 같은 스킬의 속성만 매 턴 바꿔 10종을 차례로 쓴다. 한쪽이 먼저 쓰러지지
+            // 않게 양쪽 HP를 크게 잡고 재사용 대기를 없앤다(연출만 보는 픽스처, 밸런스와 무관).
+            InsectElement[] elementCycle = (InsectElement[])Enum.GetValues(typeof(InsectElement));
+            if (scenario == "elements")
+            {
+                player.baseHp = enemy.baseHp = 4000;
+                player.skills[0].cooldownTurns = 0;
+            }
             InsectBattleStats playerStats = null, enemyStats = null;
             PlayerInsectData first = scenario == "swap" ? ConfigureSwap(ui, player) : null;
             controller.SetRandomSeed(8173);
@@ -122,8 +143,10 @@ namespace InsectGame.Battle
             int frame = 0, turns = 0;
             bool swapped = false, speedChanged = false;
             string previous = "";
+            using (var elementLog = new StreamWriter(Path.Combine(output, "elements.csv")))
             using (var timeline = new StreamWriter(Path.Combine(output, "timeline.csv")))
             {
+                elementLog.WriteLine("frame,elapsed,element");
                 timeline.WriteLine("frame,elapsed,phase,actualPlayerHp,actualEnemyHp,displayPlayerHp,displayEnemyHp,impactRevealed,phaseTimer,width,height,speed,playerX,enemyX");
                 while (Time.realtimeSinceStartup - started < 90f)
                 {
@@ -149,12 +172,21 @@ namespace InsectGame.Battle
                         timeline.WriteLine(FormattableString.Invariant($"{frame},{elapsed:F3},{phase},{playerStats.CurrentHp},{enemyStats.CurrentHp},{shownPlayer.GetValue(ui)},{shownEnemy.GetValue(ui)},{impact.GetValue(ui)},{phaseTimer.GetValue(ui)},{Screen.width},{Screen.height},{BattlePresentation.Speed},{px},{ex}"));
                         timeline.Flush();
                         frame++;
-                        nextFrame = elapsed + 0.1f;
+                        nextFrame = elapsed + CaptureInterval;
                     }
                     previous = phase;
                     if (phase == "PlayerTurn" && elapsed - turnAt >= 0.8f)
                     {
                         if (scenario == "escape") escape.Invoke(ui, null);
+                        else if (scenario == "elements")
+                        {
+                            if (turns >= elementCycle.Length) break;
+                            InsectElement element = elementCycle[turns++];
+                            player.skills[0].element = element;
+                            elementLog.WriteLine(FormattableString.Invariant($"{frame},{elapsed:F3},{element}"));
+                            elementLog.Flush();
+                            skill.Invoke(ui, new object[] { 0 });
+                        }
                         else if (turns++ == 0) skill.Invoke(ui, new object[] { 0 });
                         else attack.Invoke(ui, null);
                         turnAt = elapsed;
@@ -165,8 +197,9 @@ namespace InsectGame.Battle
                 }
             }
             File.WriteAllText(Path.Combine(output, "manifest.txt"),
-                $"Actual standalone ScreenCapture including IMGUI\nScenario={scenario}\nSeed=8173\nSize={Screen.width}x{Screen.height}\nFrames={frame}\nResultReached={resultAt >= 0f}\nSwapped={swapped}\nSpeedChanged={speedChanged}\nFixture=neutral level15 duel; not a balance certification\n");
-            Application.Quit(resultAt >= 0f ? 0 : 3);
+                $"Actual standalone ScreenCapture including IMGUI\nScenario={scenario}\nCameraStyle={BattleCameraDirector.Current}\nSeed=8173\nSize={Screen.width}x{Screen.height}\nFrames={frame}\nResultReached={resultAt >= 0f}\nSwapped={swapped}\nSpeedChanged={speedChanged}\nFixture=neutral level15 duel; not a balance certification\n");
+            bool completed = scenario == "elements" ? turns >= elementCycle.Length : resultAt >= 0f;
+            Application.Quit(completed ? 0 : 3);
         }
 
         private static PlayerInsectData ConfigureSwap(BattleScreenUI ui, InsectData starter)

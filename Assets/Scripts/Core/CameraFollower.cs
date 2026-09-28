@@ -36,6 +36,12 @@ namespace InsectGame.Core
         private Quaternion normalRot;
         private float battleTransition;
 
+        // 전투 연출 샷 — 배틀 구도(battlePos/battleRot) 위에 가중치로 얹는다. 구도 자체를 덮어쓰지
+        // 않으므로 가중치만 0으로 내리면 원래 구도로 정확히 돌아온다(연출이 끊겨도 카메라가 남지 않는다).
+        private Vector3 shotPos;
+        private Quaternion shotRot = Quaternion.identity;
+        private float shotWeight;
+
         private float shakeIntensity;
         private float shakeDuration;
         private float shakeTimer;
@@ -99,6 +105,7 @@ namespace InsectGame.Core
             normalRot = transform.rotation;
 
             battlePos = camPos;
+            shotWeight = 0f;   // 새 구도 — 앞 연출의 샷을 물려받지 않는다
             Vector3 toTarget = lookTarget - camPos;
             // 카메라와 시선 지점이 겹치면 LookRotation이 0벡터를 받아 회전이 무너진다.
             battleRot = toTarget.sqrMagnitude > 0.0001f
@@ -106,9 +113,26 @@ namespace InsectGame.Core
                 : transform.rotation;
         }
 
+        /// <summary>
+        /// 전투 연출 샷을 건다 — 배틀 구도와 <paramref name="weight"/>만큼 섞는다(0이면 원래 구도).
+        /// 매 프레임 불러 움직이는 샷을 만든다. 구도는 호출부(<c>BattleCameraDirector</c>)가 계산한다.
+        /// </summary>
+        public void SetBattleShot(Vector3 position, Quaternion rotation, float weight)
+        {
+            shotPos = position;
+            shotRot = rotation;
+            shotWeight = Mathf.Clamp01(weight);
+        }
+
+        public void ClearBattleShot()
+        {
+            shotWeight = 0f;
+        }
+
         public void ExitBattleMode()
         {
             battleMode = false;
+            shotWeight = 0f;
             // battle→normal 전환 시 baselinePos가 옛 battlePos 잔존 → normal 첫 프레임 lerpFrom이
             // 멀리서 슬슬 들어오는 어색함. transition 보간이 별도 수행되므로 baseline은 reset.
             baselineValid = false;
@@ -239,9 +263,16 @@ namespace InsectGame.Core
                 float t = Mathf.SmoothStep(0f, 1f, battleTransition);
 
                 Vector3 followPos = target.position + offset + target.forward * lookAheadDistance;
-                finalPos = Vector3.Lerp(followPos, battlePos, t);
+                Vector3 framedPos = battlePos;
+                Quaternion framedRot = battleRot;
+                if (shotWeight > 0f)
+                {
+                    framedPos = Vector3.Lerp(battlePos, shotPos, shotWeight);
+                    framedRot = Quaternion.Slerp(battleRot, shotRot, shotWeight);
+                }
+                finalPos = Vector3.Lerp(followPos, framedPos, t);
                 Quaternion followRot = Quaternion.LookRotation(target.position + Vector3.up - followPos);
-                finalRot = Quaternion.Slerp(followRot, battleRot, t);
+                finalRot = Quaternion.Slerp(followRot, framedRot, t);
             }
             else
             {

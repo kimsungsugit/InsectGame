@@ -59,7 +59,9 @@ namespace InsectGame.UI
 
             float now = Time.time;
             float centerX = UIScale.VirtualScreenWidth * 0.5f;
-            float baseY = UIScale.VirtualScreenHeight * 0.35f;
+            // 화면 높이 25% — 35%였을 때 시네마틱 카메라가 대상을 화면 가운데로 당기면 이 문구가
+            // 대상 머리 위 비명·피해 숫자와 한 자리에 겹쳤다(속성 10종 QA 캡처).
+            float baseY = UIScale.VirtualScreenHeight * 0.25f;
             float width = Mathf.Min(MaxWidth, UIScale.ContentWidth());
 
             Color previous = GUI.color;

@@ -984,7 +984,7 @@ namespace InsectGame.UI
             float barW = Mathf.Min(200f, (UISafeLayout.ContentWidth - (count - 1) * 10f) / count);
             float totalW = count * barW + (count - 1) * 10f;
             float startX = UISafeLayout.Content.center.x - totalW * 0.5f;
-            float y = Mathf.Clamp(UIScale.VirtualScreenHeight * 0.53f, UISafeLayout.ContentTop, UISafeLayout.ContentBottom - 104f);
+            float y = TeamStripY();   // 3D 연출 중엔 화면 아래로 비켜선다(RaidBattleUI.Impact)
             for (int i = 0; i < count; i++)
             {
                 var stats = raidController.TeamStats[i];
@@ -1511,22 +1511,29 @@ namespace InsectGame.UI
                 ? new Color(1f, 0.22f, 0.16f)
                 : new Color(1f, 0.58f, 0.18f);
 
-            GUI.color = new Color(accent.r, accent.g, accent.b, 0.10f * pulse);
-            GUI.DrawTexture(new Rect(0, sh * 0.20f, sw, sh * 0.28f), Texture2D.whiteTexture);
+            // 3D면 띠를 보스 HP·예고 상자 바로 아래(20%)로 올리고 화면을 물들이는 틴트는 뺀다 — 28% 높이의
+            // 띠와 20~48% 틴트가 보스 몸통을 덮어, 보스가 기를 모으고 몸을 젖히는 예고가 가려졌다.
+            bool arena3D = Arena3D;
+            float barY = arena3D ? sh * 0.20f : sh * 0.28f;
+            if (!arena3D)
+            {
+                GUI.color = new Color(accent.r, accent.g, accent.b, 0.10f * pulse);
+                GUI.DrawTexture(new Rect(0, sh * 0.20f, sw, sh * 0.28f), Texture2D.whiteTexture);
+            }
             GUI.color = new Color(0.025f, 0.02f, 0.05f, 0.74f);
-            GUI.DrawTexture(new Rect(0, sh * 0.28f, sw, 104f), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(0, barY, sw, 104f), Texture2D.whiteTexture);
             GUI.color = new Color(accent.r, accent.g, accent.b, pulse);
-            GUI.DrawTexture(new Rect(0, sh * 0.28f, sw, 4f), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(0, sh * 0.28f + 100f, sw, 4f), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(0, barY, sw, 4f), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(0, barY + 100f, sw, 4f), Texture2D.whiteTexture);
 
             introFightStyleCache.fontSize = UIScale.IsMobileLayout ? 50 : 58;
             introFightStyleCache.normal.textColor = new Color(accent.r, accent.g, accent.b, 1f);
             GUI.color = Color.white;
-            GUI.Label(new Rect(0, sh * 0.28f + 4f, sw, 62f),
+            GUI.Label(new Rect(0, barY + 4f, sw, 62f),
                 intent.IsArea ? "보스 전체 공격!" : "보스 공격 준비!", introFightStyleCache);
 
             bossIntentStyleCache.normal.textColor = Color.white;
-            GUI.Label(new Rect(0, sh * 0.28f + 60f, sw, 36f),
+            GUI.Label(new Rect(0, barY + 60f, sw, 36f),
                 intent.DisplayName, bossIntentStyleCache);
         }
         /// <summary>
@@ -1655,6 +1662,8 @@ namespace InsectGame.UI
 
                 float x = RaidSlotLayout.AnchorX(action.SourceSlot, teamCount, sw);
                 float y = sh * 0.40f - 58f - localT * 44f;
+                // 3D면 그 팀원 모델 머리 위 — 2D 슬롯 좌표는 3D 배치와 어긋난다.
+                if (ArenaPoint(action.SourceSlot, out Vector2 member)) { x = member.x; y = member.y - 110f - localT * 44f; }
                 float alpha = Mathf.Clamp01(1f - localT * 0.7f);
                 Color col = ContributionColor(action);
 
@@ -1684,6 +1693,7 @@ namespace InsectGame.UI
 
                     float hx = RaidSlotLayout.AnchorX(slot, teamCount, sw);
                     float hy = sh * 0.40f - 96f - rise * 40f;
+                    if (ArenaPoint(slot, out Vector2 healed)) { hx = healed.x; hy = healed.y - 150f - rise * 40f; }
                     float hAlpha = Mathf.Clamp01(1f - rise * 0.7f);
                     slotContribStyleCache.normal.textColor = new Color(
                         theme.accentMint.r, theme.accentMint.g, theme.accentMint.b, hAlpha);
@@ -1711,6 +1721,10 @@ namespace InsectGame.UI
             {
                 float bossX = sw * 0.5f;
                 float bossY = sh * 0.12f;
+                // 3D 아레나면 숫자를 실제 보스 위에 붙이고, 2D용 사각형 투사체·임팩트는 그리지 않는다 —
+                // 화면 고정 좌표(위 중앙)에 그려져 HP 바 근처에 사각형이 떠다녔다(레이드 QA 캡처).
+                bool arena3D = ArenaPoint(-1, out Vector2 bossPoint);
+                if (arena3D) { bossX = bossPoint.x; bossY = bossPoint.y; }
 
                 // 방금 행동한 그 곤충의 스킬을 쓴다. 순차 턴에서 라운드의 첫 행동(리더)을 읽으면
                 // 3번째 곤충이 때리는데 1번째 곤충의 속성 이펙트가 터진다.
@@ -1725,7 +1739,7 @@ namespace InsectGame.UI
                 }
                 Color elemCol = GetElementColor(element);
 
-                if (t < 0.35f)
+                if (t < 0.35f && !arena3D)
                 {
                     float projT = t / 0.35f;
                     float easeT = projT * projT * (3f - 2f * projT);
@@ -1754,18 +1768,20 @@ namespace InsectGame.UI
                     }
                 }
 
-                if (t >= 0.3f && t < 0.7f)
+                if (t >= 0.3f && t < 0.7f && !arena3D)
                 {
                     float impactT = (t - 0.3f) / 0.4f;
                     DrawElementImpact(bossX, bossY, impactT, element, elemCol);
                 }
 
-                if (t >= 0.3f)
+                // 3D 타격은 볼리 0.46초의 끝에서 난다 — 숫자를 그 순간에 맞춘다.
+                float dmgStart = arena3D ? 0.45f : 0.3f;
+                if (t >= dmgStart)
                 {
-                    float dmgT = (t - 0.3f) / 0.7f;
+                    float dmgT = (t - dmgStart) / 0.7f;
 
-                    // Skill name with colored background flash
-                    if (!string.IsNullOrEmpty(lastSkillUsedName))
+                    // Skill name with colored background flash — 3D에선 시전자가 말풍선으로 외친다.
+                    if (!arena3D && !string.IsNullOrEmpty(lastSkillUsedName))
                     {
                         float skillAlpha = Mathf.Clamp01(1f - dmgT * 1.5f);
 
@@ -1862,9 +1878,13 @@ namespace InsectGame.UI
                     int teamCount = raidController.TeamStats.Length;
                     float hx = RaidSlotLayout.AnchorX(lastHitSlot, teamCount, sw);
                     float hy = sh * 0.40f;
+                    // 3D면 맞은 팀원 모델 위에 숫자만 — 빨간 사각형 투사체·섬광은 2D 폴백 전용이다.
+                    bool arena3D = ArenaPoint(lastHitSlot, out Vector2 hitPoint);
+                    if (arena3D) { hx = hitPoint.x; hy = hitPoint.y; }
+                    float popAt = arena3D ? 0.42f : 0.35f;   // 3D 보스 공격은 0.42초에 닿는다
 
                     // Red energy projectile from boss to target
-                    if (t < 0.4f)
+                    if (t < 0.4f && !arena3D)
                     {
                         float projT = t / 0.4f;
                         float easeT = projT * projT * (3f - 2f * projT);
@@ -1893,15 +1913,18 @@ namespace InsectGame.UI
                         }
                     }
 
-                    if (t >= 0.35f)
+                    if (t >= popAt)
                     {
-                        float impT = (t - 0.35f) / 0.4f;
+                        float impT = (t - popAt) / 0.4f;
 
-                        // Impact flash on hit member
-                        float flashAlpha = BattlePresentation.ReducedFlashes ? 0f : ((1f - Mathf.Clamp01(impT)) * 0.5f);
-                        GUI.color = new Color(0.9f, 0.2f, 0.3f, flashAlpha);
-                        float fs = 60f + impT * 40f;
-                        GUI.DrawTexture(new Rect(hx - fs / 2, hy - fs / 2, fs, fs), Texture2D.whiteTexture);
+                        // Impact flash on hit member (2D 폴백 — 3D는 모델이 직접 번쩍인다)
+                        if (!arena3D)
+                        {
+                            float flashAlpha = BattlePresentation.ReducedFlashes ? 0f : ((1f - Mathf.Clamp01(impT)) * 0.5f);
+                            GUI.color = new Color(0.9f, 0.2f, 0.3f, flashAlpha);
+                            float fs = 60f + impT * 40f;
+                            GUI.DrawTexture(new Rect(hx - fs / 2, hy - fs / 2, fs, fs), Texture2D.whiteTexture);
+                        }
 
                         // Damage popup
                         float dmgAlpha2 = Mathf.Clamp01(1f - impT * 0.7f);
@@ -1929,6 +1952,8 @@ namespace InsectGame.UI
             string[] lines = actionText.Split('\n');
             float lineH = 40f;
             float totalH = lines.Length * lineH;
+            // 3D면 팀 패널 줄 바로 위에 붙인다 — 화면 한가운데 띠가 팀원·보스 발치를 가렸다.
+            if (Arena3D) cy = TeamStripY() - totalH - 26f;
             float bgW = 700;
 
             GUI.color = new Color(0, 0, 0, 0.75f * alpha);
@@ -2102,6 +2127,8 @@ namespace InsectGame.UI
         private void DrawUniteGaugeBar()
         {
             if (raidController == null || !raidController.IsActive || phase == Phase.Intro || phase == Phase.Result) return;
+            // 3D 연출 중엔 팀 패널 줄이 아래로 비켜서면서 게이지만 보스 발치(화면 64%)에 남았다 — 같이 비킨다.
+            if (Arena3D && teamStripDrop > 0.5f) return;
             float gauge = raidController.UniteGauge;
             float max = RaidBattleController.UniteGaugeMax;
             bool ready = raidController.CanUniteAttack;
@@ -2120,17 +2147,21 @@ namespace InsectGame.UI
             float sw = UIScale.VirtualScreenWidth;
             float sh = UIScale.VirtualScreenHeight;
             float t = uniteAnimTimer;
+            // 3D 아레나가 돌진·타격·폭발을 직접 보여 준다(BattleArenaController.Raid). 그때는 2D 폴백 그림 —
+            // 화면 전체 노란 섬광, 사각형 곤충 그림·잔상, 사각형 폭발 — 을 걷어내고 숫자와 제목만 남긴다.
+            // 걷어내기 전엔 0.4초간 화면이 노랗게 덮이고 3D 장면 위로 사각형이 날아다녔다(합체공격 QA 캡처).
+            bool arena3D = ArenaPoint(-1, out Vector2 bossPoint);
 
             // Initial bright flash
-            float flashAlpha = BattlePresentation.ReducedFlashes ? 0f : (Mathf.Clamp01(1f - t * 2f) * 0.7f);
+            float flashAlpha = BattlePresentation.ReducedFlashes || arena3D ? 0f : (Mathf.Clamp01(1f - t * 2f) * 0.7f);
             if (flashAlpha > 0)
             {
                 GUI.color = new Color(1f, 0.9f, 0.3f, flashAlpha);
                 GUI.DrawTexture(new Rect(0, 0, sw, sh), Texture2D.whiteTexture);
             }
 
-            float bossCx = sw * 0.5f;
-            float bossCy = sh * 0.22f;
+            float bossCx = arena3D ? bossPoint.x : sw * 0.5f;
+            float bossCy = arena3D ? bossPoint.y : sh * 0.22f;
 
             // Sequential team member rush
             if (raidController.TeamStats != null)
@@ -2141,10 +2172,11 @@ namespace InsectGame.UI
                 {
                     if (raidController.TeamStats[i] == null || raidController.TeamStats[i].CurrentHp <= 0) continue;
 
-                    float memberDelay = idx * 0.2f; // Staggered timing per member
+                    // 시각은 아레나와 같은 표(RaidUniteTimeline)에서 — 3D 타격 순간에 숫자가 뜬다.
+                    float departAt = RaidUniteTimeline.MemberStart + idx * RaidUniteTimeline.MemberStagger;
                     float startX = sw * 0.1f + idx * (sw * 0.16f);
                     float startY = sh * 0.55f;
-                    float progress = Mathf.Clamp01((t - 0.3f - memberDelay) / 0.45f);
+                    float progress = arena3D ? 0f : Mathf.Clamp01((t - departAt) / RaidUniteTimeline.MemberTravel);
                     float cx = Mathf.Lerp(startX, bossCx, progress);
                     float cy = Mathf.Lerp(startY, bossCy, progress) - Mathf.Sin(progress * Mathf.PI) * 90f;
 
@@ -2178,9 +2210,8 @@ namespace InsectGame.UI
                     }
 
                     // Per-slot hit flash on boss
-                    float hitTime = 0.3f + memberDelay + 0.45f;
-                    float hitT = t - hitTime;
-                    if (hitT > 0 && hitT < 0.3f)
+                    float hitT = t - RaidUniteTimeline.MemberHit(idx);
+                    if (hitT > 0 && hitT < 0.3f && !arena3D)
                     {
                         float hitAlpha = BattlePresentation.ReducedFlashes ? 0f : ((0.3f - hitT) / 0.3f);
                         float hitSize = 50f + hitT * 120f;
@@ -2204,9 +2235,9 @@ namespace InsectGame.UI
                 }
             }
 
-            // Final combined impact explosion
-            float impactT = t - 1.5f;
-            if (impactT > 0 && impactT < 1.0f)
+            // Final combined impact explosion (2D 폴백 — 3D는 아레나의 합동 일격)
+            float impactT = t - RaidUniteTimeline.FinalStrike;
+            if (impactT > 0 && impactT < 1.0f && !arena3D)
             {
                 float impactAlpha = Mathf.Clamp01(1f - impactT / 1.0f);
 
@@ -2265,38 +2296,45 @@ namespace InsectGame.UI
                 // Text shake during impact period
                 float shakeX = 0f;
                 float shakeY = 0;
-                if (!BattlePresentation.ReducedMotion && t > 1.5f && t < 2.0f)
+                if (!BattlePresentation.ReducedMotion && t > RaidUniteTimeline.FinalStrike && t < RaidUniteTimeline.FinalStrike + 0.5f)
                 {
                     shakeX = Mathf.Sin(Time.time * 45f) * 6f;
                     shakeY = Mathf.Cos(Time.time * 50f) * 3f;
                 }
 
-                // Background glow behind text
-                GUI.color = new Color(1f, 0.7f, 0.1f, txtAlpha * 0.15f);
-                GUI.DrawTexture(new Rect(sw * 0.2f, sh * 0.40f + shakeY, sw * 0.6f, 68), Texture2D.whiteTexture);
+                // 3D면 제목을 위로 올리고 노란 띠는 뺀다 — 화면 42% 높이의 띠가 보스 발치와 돌진하는
+                // 팀원을 통째로 덮었다.
+                float bannerY = arena3D ? sh * 0.215f : sh * 0.42f;   // 3D: 보스 HP·예고 줄 아래
+                if (!arena3D)
+                {
+                    // Background glow behind text
+                    GUI.color = new Color(1f, 0.7f, 0.1f, txtAlpha * 0.15f);
+                    GUI.DrawTexture(new Rect(sw * 0.2f, sh * 0.40f + shakeY, sw * 0.6f, 68), Texture2D.whiteTexture);
+                }
 
                 uniteLabelStyleCache.fontSize = fs;
                 uniteLabelStyleCache.normal.textColor = new Color(1f, 0.9f, 0.2f, txtAlpha);
                 GUI.color = Color.white;
-                GUI.Label(new Rect(shakeX, sh * 0.42f + shakeY, sw, 60), "★ 합체공격! ★", uniteLabelStyleCache);
+                GUI.Label(new Rect(shakeX, bannerY + shakeY, sw, 60), "★ 합체공격! ★", uniteLabelStyleCache);
             }
 
             // Total damage display
-            if (lastDmgToBoss > 0 && t > 1.8f)
+            if (lastDmgToBoss > 0 && t > RaidUniteTimeline.TotalReveal)
             {
-                float totalT = t - 1.8f;
+                float totalT = t - RaidUniteTimeline.TotalReveal;
                 float totalAlpha = Mathf.Clamp01(totalT / 0.3f);
                 float totalScale = 1f + Mathf.Max(0, 1f - totalT * 2f) * 0.4f;
                 int totalFs = Mathf.RoundToInt(52 * totalScale);
 
+                float totalY = arena3D ? sh * 0.285f : sh * 0.30f;
                 // Red glow background
                 GUI.color = new Color(1f, 0.1f, 0.05f, totalAlpha * 0.12f);
-                GUI.DrawTexture(new Rect(sw * 0.25f, sh * 0.28f, sw * 0.5f, 68), Texture2D.whiteTexture);
+                GUI.DrawTexture(new Rect(sw * 0.25f, totalY - 2f, sw * 0.5f, 68), Texture2D.whiteTexture);
 
                 uniteTotalStyleCache.fontSize = totalFs;
                 uniteTotalStyleCache.normal.textColor = new Color(1f, 0.2f, 0.1f, totalAlpha);
                 GUI.color = Color.white;
-                GUI.Label(new Rect(0, sh * 0.30f, sw, 60), $"TOTAL -{lastDmgToBoss}", uniteTotalStyleCache);
+                GUI.Label(new Rect(0, totalY, sw, 60), $"TOTAL -{lastDmgToBoss}", uniteTotalStyleCache);
             }
         }
         private void DrawRotatedLine(float x1, float y1, float x2, float y2, float thickness, Color color)

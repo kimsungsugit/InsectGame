@@ -21,6 +21,8 @@ tools:
 - `Assets/Scripts/Battle/InsectBattleUIController.cs` - 배틀 UI 브릿지
 - `Assets/Scripts/Battle/RaidBattleController.cs` - 5v1 레이드
 - `Assets/Scripts/Battle/BattleArenaController.cs` - 배틀 아레나 ※비주얼은 visual-dev
+- `Assets/Scripts/UI/BattleScreenUI.Impact.cs` - 1v1 연출용 타격 정보(HitCue: 세기·마무리·빗나감)를 전투 결과에서 만든다 ※연출은 visual-dev
+- `Assets/Scripts/UI/RaidBattleUI.Impact.cs` - 레이드 타격 정보·보스 예고 호출·3D 좌표 변환 ※숫자 배치는 ui-dev, 연출은 visual-dev
 - `Assets/Scripts/Battle/RaidRoundResolver.cs` - 레이드 동시 라운드 판정(순수 정적). 1v1과 달리 버프 만료가 없다 — 의도된 divergence, 상한은 `MaxBuffStacks`
 - `Assets/Scripts/Battle/RaidRoundModels.cs` - 레이드 라운드 결과 모델(순수 데이터). 슬롯 피해 배열에 세터를 만들지 말 것 — 컨트롤러가 따로 합산해 이중 가산이 된다
 - `Assets/Editor/LedgerDuelProbe.cs` - 장부 압박이 실제 보스전에서 도는지 배치모드 확인 ※순수부는 테스트가 잡고, **배선 누락은 무증상**이라 이쪽이 필요하다

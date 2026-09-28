@@ -75,7 +75,8 @@ namespace InsectGame.UI
         // 5인 팀이면 3명의 착탄·데미지 숫자와 폭발·TOTAL이 통째로 렌더되지 않았다(아레나 코루틴은
         // 0.42+0.28=0.70s에 끝나 `teamAnimationComplete`가 먼저 서고, 2D 폴백은 아예 즉시 true라
         // 두 경로 모두 정확히 상한에서 이탈한다). 오버레이는 3D 아레나 위에도 그려지므로 공통 문제다.
-        private const float UniteRushMinDuration = 2.5f;
+        // 이제 아레나와 오버레이가 같은 표를 쓴다 — 값은 RaidUniteTimeline.Total(2.5초) 한 곳에서 바꾼다.
+        private const float UniteRushMinDuration = RaidUniteTimeline.Total;
         private const float BossTelegraphDuration = 0.72f;
         private const float BossImpactMinDuration = 0.8f;
 
@@ -239,7 +240,8 @@ namespace InsectGame.UI
             arena.PlayRaidVolley(
                 new[] { action.SourceSlot },
                 new[] { action.Element },
-                () => { teamAnimationComplete = true; });
+                () => { teamAnimationComplete = true; },
+                BuildMemberCue(action));   // 기술명 외치기 + 피해에 맞춘 타격감
         }
 
         /// <summary>
@@ -279,11 +281,9 @@ namespace InsectGame.UI
 
             if (arena == null || !arena.IsActive) return;
 
-            arena.PlayUniteAttackAnimation(() =>
-            {
-                teamAnimationComplete = true;
-                if (cameraFollower != null && !BattlePresentation.ReducedMotion) cameraFollower.Shake(0.5f, 0.6f);
-            });
+            // 흔들림은 아레나가 합동 일격 순간에 건다(RaidUniteTimeline.FinalStrike). 여기서 또 흔들면
+            // 팀원이 제자리로 돌아온 **뒤에** 화면이 흔들렸다.
+            arena.PlayUniteAttackAnimation(() => { teamAnimationComplete = true; });
         }
 
         private void OnRaidBossResponseResolved(RaidRoundResult round)
@@ -318,7 +318,8 @@ namespace InsectGame.UI
                 bossAction.Element,
                 lastAoe,
                 lastHitSlot,
-                () => { bossAnimationComplete = true; });
+                () => { bossAnimationComplete = true; },
+                BuildBossCue(round, lastAoe ? -1 : lastHitSlot));
         }
 
         private void OnRaidRoundCompleted(RaidRoundResult round)
@@ -522,6 +523,7 @@ namespace InsectGame.UI
                         phase = Phase.BossTelegraph;
                         phaseTimer = 0f;
                         bossResponseRequested = false;
+                        BeginBossTelegraphPresentation();   // 3D 예고 — 기 모으기·경고 고리·포효
                     }
                     else
                     {
@@ -735,6 +737,9 @@ namespace InsectGame.UI
 
             if (actionTimer > 0)
                 DrawActionText();
+
+            // 기술 이름 외치기·비명·의성어 — 1v1과 같은 오버레이. 결과 패널보다 먼저(아래에).
+            BattleShoutOverlay.Draw(arena);
 
             if (resultShown)
                 DrawResult();

@@ -24,12 +24,20 @@ OnGUI의 Rect 좌표와 레이아웃은 **ui-dev 영역**입니다. 여기서는
 - `Assets/Scripts/Spawning/InsectSculptureMeshes.cs` - 캐시된 곤충 뿔·턱·외골격·날개 커스텀 메시
 - `Assets/Tests/EditMode/InsectSculptureMeshTests.cs` - 곤충 메시 폐곡면·와인딩·유한 좌표·캐시 검증
 - `Assets/Scripts/Battle/BattleArenaController.cs` - 배틀 아레나 환경 구축
+- `Assets/Scripts/Battle/BattleArenaController.Impact.cs` - 타격감 partial: 히트스톱·넉백·피격 섬광(PropertyBlock)·임팩트 버스트·외침 목록·연출 카메라 구동 ※반투명·빛 이펙트 머티리얼은 `CreateFxMaterial`이 단일 출처(Standard Fade는 빌드에서 불투명으로 그려진다)
+- `Assets/Scripts/Battle/BattleArenaController.Raid.cs` - 레이드 3D 연출 partial: 합체공격(차례 돌진·합동 일격), 팀원 한 마리 공격, 보스 공격 예고·보스 공격
+- `Assets/Scripts/Battle/BattleCameraDirector.cs` - 스킬 타임라인 → 연출 카메라 샷(시네마틱·펀치·합체공격) 순수 계산 ※1v1 기본은 시네마틱(2026-09-28 A/B 비교 후 결정)
+- `Assets/Scripts/Battle/BattleShout.cs` - 외침 문구 표(기술명·비명·의성어)와 종 계열 울음 분류(ID 토막 단위) ※문구 톤은 game-designer와 상의
+- `Assets/Scripts/Battle/RaidUniteTimeline.cs` - 합체공격 타임라인 단일 출처 — 아레나 돌진·타격과 UI 슬롯 숫자·TOTAL이 공유
+- `Assets/Tests/EditMode/BattleImpactFeelTests.cs` - 연출 카메라 샷·히트스톱 시계·외침 분류·타격 세기·합체공격 타임라인 검증
 - `Assets/Scripts/Battle/ForestBattleSet.cs` - 머티리얼별 병합 숲 공터 아레나 메시
 - `Assets/Scripts/Battle/BattleMotion.cs` - 종별 전투 준비·타격·복귀 포즈 곡선
 - `Assets/Scripts/Battle/BattleFraming.cs` - 모델 경계·안전 영역 기반 전투 카메라 프레이밍
 - `Assets/Scripts/Core/BattlePresentation.cs` - 전투 표시 배속·움직임·섬광 설정
 - `Assets/Tests/EditMode/BattleFramingTests.cs` - 화면 비율·모델 크기별 프레이밍 검증
 - `Assets/Scripts/Core/ProceduralAudioGenerator.cs` - 프로시저럴 오디오
+- `Assets/Scripts/Core/ProceduralAudioGenerator.Battle.cs` - 곤충 계열 울음·비명(`cry_*`/`hurt_*`)과 층 타격음 합성 ※폰 스피커 대역(300Hz~6kHz)에 에너지가 있어야 기기에서 들린다
+- `Assets/Editor/BattleVoiceExport.cs` - 전투 목소리를 WAV로 추출 — 소리는 화면 캡처로 못 보므로 귀로 검수
 - `Assets/Scripts/Core/AudioManager.cs` - 오디오 매니저 (싱글턴)
 - `Assets/Scripts/Core/UIAudioBinder.cs` - UI 버튼 자동 hover/click 사운드 부착
 - `Assets/Scripts/Data/ItemRarityPalette.cs` - 레어도별 색상 ※data-architect 공유
@@ -115,7 +123,7 @@ Legendary: 금색/주황
 경계 밖 수정이 필요하면 변경하지 말고 메인 모델에 보고하여 적절한 에이전트에 재위임.
 
 ## 설계 원칙
-- `Assets/Scripts/Battle/BattleVisualCapture.cs` — 저장 없는 독립 전투 화면 QA
+- `Assets/Scripts/Battle/BattleVisualCapture.cs` — 저장 없는 독립 전투 화면 QA. 전투 연출 검수 인자: `-battleCamStyle off|punch|cinematic`(같은 장면을 카메라만 바꿔 비교), `-captureInterval 0.05`(히트스톱은 0.1초 간격으론 안 잡힌다), `-battleScenario elements`(속성 10종 임팩트 순환) · `raid-unite`(첫 차례에 합체공격). 소리는 캡처되지 않으니 `BattleVoiceExport`로 WAV를 뽑아 듣는다
 - `Assets/Scripts/Battle/RaidVisualCapture.cs` — 실제 레이드 화면 QA
 - `Assets/Editor/BattleVisualCaptureBuilder.cs` — Windows 실제 IMGUI 검수 빌드
 - 프리팹 없이 코드로 시각물 생성 (프로시저럴 우선)

@@ -450,7 +450,8 @@ namespace InsectGame.UI
             SkillEffectType eff = es != null ? es.effectType : SkillEffectType.Damage;
             arena.PlaySkillEffect(false, elem, eff,
                 () => { if (isActiveAndEnabled && phase == Phase.EnemyAttack) RevealImpact(false); },
-                BattleArenaController.IsMeleeElement(elem), attackDuration);
+                BattleArenaController.IsMeleeElement(elem), attackDuration,
+                BuildHitCue(false, es != null ? es.displayName : null, eff));
         }
 
         // 적 치명타 연출이 끝난 뒤 교체창 진입.
@@ -720,7 +721,8 @@ namespace InsectGame.UI
                 SkillEffectType effectType = (skill != null) ? skill.effectType : SkillEffectType.Damage;
                 arena.PlaySkillEffect(true, elem, effectType,
                     () => { if (isActiveAndEnabled && phase == Phase.PlayerAttack) RevealImpact(true); },
-                    BattleArenaController.IsMeleeElement(elem), attackDuration);
+                    BattleArenaController.IsMeleeElement(elem), attackDuration,
+                    BuildHitCue(true, skill != null ? skill.displayName : null, effectType));
             }
 
         }
@@ -741,9 +743,11 @@ namespace InsectGame.UI
             if (battleController.PlayerActedThisRound && arena != null && arena.IsActive)
             {
                 InsectElement elem = (playerStats != null && playerStats.Data != null) ? playerStats.Data.primaryType : InsectElement.Bug;
+                // 기본 공격은 외치지 않는다(이름이 없다) — 울음과 타격감만.
                 arena.PlaySkillEffect(true, elem, SkillEffectType.Damage,
                     () => { if (isActiveAndEnabled && phase == Phase.PlayerAttack) RevealImpact(true); },
-                    BattleArenaController.IsMeleeElement(elem), attackDuration);
+                    BattleArenaController.IsMeleeElement(elem), attackDuration,
+                    BuildHitCue(true, null, SkillEffectType.Damage));
             }
 
         }
@@ -1055,6 +1059,10 @@ namespace InsectGame.UI
 
             if (actionTimer > 0)
                 DrawActionText();
+
+            // 기술 이름 외치기·비명·타격 의성어 — 결과 패널보다 먼저(아래에). 마지막 "털썩…"이
+            // 결과 패널 위에 찍히던 자리다.
+            BattleShoutOverlay.Draw(arena);
 
             DrawDuelBubble();
 

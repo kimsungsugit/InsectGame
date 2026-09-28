@@ -587,6 +587,19 @@ namespace InsectGame.Core
                 sfxSource.PlayOneShot(clip, masterVolume * sfxVolume);
         }
 
+        /// <summary>
+        /// 전투 중 곤충 울음·비명 — 키는 <c>cry_계열</c>/<c>hurt_계열</c>(계열 분류는 BattleShout.CryFor).
+        /// 효과음보다 살짝 작게 — 타격음을 덮으면 "맞았다"가 흐려진다.
+        /// </summary>
+        public void PlayCry(string key)
+        {
+            EnsureInitialized();
+            if (string.IsNullOrEmpty(key)) return;
+            AudioClip clip = ProceduralAudioGenerator.GetSFX(key);
+            if (clip != null)
+                sfxSource.PlayOneShot(clip, masterVolume * sfxVolume * 0.8f);
+        }
+
         private static string ElementToString(InsectGame.Data.InsectElement element)
         {
             switch (element)

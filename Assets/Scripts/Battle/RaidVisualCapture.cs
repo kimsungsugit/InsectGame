@@ -15,7 +15,8 @@ namespace InsectGame.Battle
     /// <summary>Actual raid UI fixture; deliberately has no collection or reward persistence.</summary>
     public static class RaidVisualCapture
     {
-        public static IEnumerator Run(string output, CameraFollower follower, BattleArenaController arena)
+        /// <param name="unite">첫 차례에 게이지를 채워 합체공격을 쏜다 — 팀 전원 공격 연출 검수용.</param>
+        public static IEnumerator Run(string output, CameraFollower follower, BattleArenaController arena, bool unite = false)
         {
             const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
             var controller = new GameObject("QARaidController").AddComponent<RaidBattleController>();
@@ -51,6 +52,8 @@ namespace InsectGame.Battle
             FieldInfo bossHp = typeof(RaidBattleUI).GetField("displayBossHp", flags);
             FieldInfo teamHp = typeof(RaidBattleUI).GetField("displayTeamHp", flags);
             MethodInfo auto = typeof(RaidBattleUI).GetMethod("TryAutoAll", flags);
+            MethodInfo uniteAttack = typeof(RaidBattleUI).GetMethod("TryUnite", flags);
+            bool uniteFired = false;
             float start = Time.realtimeSinceStartup, next = 0f, readyAt = 0f, resultAt = -1f;
             int frame = 0;
             bool bossAttackSeen = false, aoeSeen = false;
@@ -76,16 +79,26 @@ namespace InsectGame.Battle
                         UnityEngine.Object.Destroy(shot);
                         float[] displayed = (float[])teamHp.GetValue(ui);
                         csv.WriteLine(FormattableString.Invariant($"{frame},{time:F3},{phase},{controller.TeamStats.Sum(s => s.CurrentHp)},{controller.BossStats.CurrentHp},{(displayed == null ? 0f : displayed.Sum())},{bossHp.GetValue(ui)},,,{Screen.width},{Screen.height},{controller.ActiveSlot},{controller.TurnNumber},{controller.BossUsedAoe}"));
-                        csv.Flush(); frame++; next = time + 0.1f;
+                        csv.Flush(); frame++; next = time + BattleVisualCapture.CaptureInterval;
                     }
                     previous = phase;
                     if (phase == "SelectSkill" && time - readyAt >= 0.6f)
-                    { auto.Invoke(ui, null); readyAt = time; }
+                    {
+                        if (unite && !uniteFired)
+                        {
+                            typeof(RaidBattleController).GetProperty("UniteGauge")
+                                .SetValue(controller, RaidBattleController.UniteGaugeMax);
+                            uniteAttack.Invoke(ui, null);
+                            uniteFired = true;
+                        }
+                        else auto.Invoke(ui, null);
+                        readyAt = time;
+                    }
                     if (resultAt >= 0f && time - resultAt >= 1.8f) break;
                 }
             }
             File.WriteAllText(Path.Combine(output, "manifest.txt"),
-                $"Actual standalone IMGUI raid fixture\nSeed=8173\nSize={Screen.width}x{Screen.height}\nFrames={frame}\nResultReached={resultAt >= 0f}\nBossAttackSeen={bossAttackSeen}\nAoeSeen={aoeSeen}\nNo audio/input hit-test/performance certification\n");
+                $"Actual standalone IMGUI raid fixture\nUnite={uniteFired}\nSeed=8173\nSize={Screen.width}x{Screen.height}\nFrames={frame}\nResultReached={resultAt >= 0f}\nBossAttackSeen={bossAttackSeen}\nAoeSeen={aoeSeen}\nNo audio/input hit-test/performance certification\n");
             Application.Quit(resultAt >= 0f && bossAttackSeen ? 0 : 3);
         }
     }

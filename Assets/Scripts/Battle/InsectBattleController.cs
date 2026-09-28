@@ -542,11 +542,9 @@ namespace InsectGame.Battle
                 return;
             }
 
-            // 스킬 이름 효과 텍스트 (속성 색상)
-            if (!string.IsNullOrEmpty(skill.displayName))
-            {
-                TryPlayEffectText($"{skill.displayName}!", BattleArenaController.GetUIElementColor(skill.element));
-            }
+            // 스킬 이름은 여기서 띄우지 않는다 — 시전자가 준비 동작과 함께 머리 위 말풍선으로 외친다
+            // (BattleArenaController.BeginSkillPresentation). 예전 "{기술}!" 효과 문구는 타격 순간 화면
+            // 가운데에 떠서 피해 숫자·의성어·비명과 한 자리에 겹쳤다.
 
             switch (skill.effectType)
             {
