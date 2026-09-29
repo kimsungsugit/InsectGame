@@ -61,6 +61,7 @@ namespace InsectGame.UI
 
         private GUIStyle labelStyle;
         private GUIStyle wedgeStyle;
+        private GUIStyle taleMarkStyle;   // 의뢰 주민 원 안의 !/?
         private Texture2D dotTex;
         private bool ready;
 
@@ -90,6 +91,9 @@ namespace InsectGame.UI
             wedgeStyle = new GUIStyle(GUI.skin.label)
             { fontSize = 22, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             wedgeStyle.normal.textColor = UITheme.Instance.accentAmber;
+            taleMarkStyle = new GUIStyle(GUI.skin.label)
+            { fontSize = 15, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            taleMarkStyle.normal.textColor = UITheme.Instance.surfaceBase;
             // 소프트 디스크는 UIShapes가 소유한다 — 여기 있던 MakeDisc는 하드 엣지라
             // 확대 시 계단이 보였다(RegionMapUI 사본은 소프트였다). 공용판으로 통일.
             dotTex = UIShapes.Disc;
@@ -163,7 +167,7 @@ namespace InsectGame.UI
             {
                 DrawObjectiveWedge(cx, cy, mapRadius);
                 UIHelper.LabelFit(new Rect(x + 8f, y + size - 30f, size - 16f, 24f),
-                    "노랑 주민 · 민트 입구", labelStyle);
+                    "노랑 주민·의뢰 · 민트 입구", labelStyle);
             }
             else
                 UIHelper.LabelFit(new Rect(x + 8f, y + size - 30f, size - 16f, 24f),
@@ -198,8 +202,14 @@ namespace InsectGame.UI
                     if (npc != null && npc.gameObject.activeInHierarchy)
                         DrawLandmark(npc.transform.position, cx, cy, mapRadius, UITheme.Instance.accentAmber);
                 foreach (var npc in npcManager.StoryNpcs)
-                    if (npc != null && npc.gameObject.activeInHierarchy)
-                        DrawLandmark(npc.transform.position, cx, cy, mapRadius, UITheme.Instance.accentAmber);
+                {
+                    if (npc == null || !npc.gameObject.activeInHierarchy) continue;
+                    // 의뢰 주민은 네모 대신 !/? 원 — 지도 배지·머리 위 표식과 같은 기호다.
+                    InsectGame.NPC.QuestMark mark = objectiveTracker != null
+                        ? objectiveTracker.TaleMarkOf(npc) : InsectGame.NPC.QuestMark.None;
+                    if (mark != InsectGame.NPC.QuestMark.None) DrawTaleMark(npc.transform.position, cx, cy, mapRadius, mark);
+                    else DrawLandmark(npc.transform.position, cx, cy, mapRadius, UITheme.Instance.accentAmber);
+                }
             }
             if (regionManager == null || regionManager.Regions == null) return;
             foreach (var region in regionManager.Regions)
@@ -217,6 +227,18 @@ namespace InsectGame.UI
             GUI.color = color;
             GUI.DrawTexture(new Rect(cx + offset.x - 5f, cy + offset.y - 5f, 10f, 10f), Texture2D.whiteTexture);
             GUI.color = Color.white;
+        }
+
+        private void DrawTaleMark(Vector3 position, float cx, float cy, float mapRadius, InsectGame.NPC.QuestMark mark)
+        {
+            if (!MapMarkerProjection.TryRadarOffset(player.position, position, worldRadius, mapRadius, out Vector2 offset)) return;
+            bool report = mark == InsectGame.NPC.QuestMark.Report;
+            Rect r = new Rect(cx + offset.x - 9f, cy + offset.y - 9f, 18f, 18f);
+            // !·? 모두 호박색 — 민트는 서브에리어 입구와 목표 쐐기 색이다(지도 배지와 같은 규칙).
+            GUI.color = UITheme.Instance.accentAmber;
+            GUI.DrawTexture(r, dotTex);
+            GUI.color = Color.white;
+            GUI.Label(r, report ? "?" : "!", taleMarkStyle);
         }
 
         private void DrawObjectiveWedge(float cx, float cy, float mapRadius)

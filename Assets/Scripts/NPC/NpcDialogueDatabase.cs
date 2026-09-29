@@ -27,6 +27,20 @@ namespace InsectGame.NPC
                 case "ledger_thug_rule": return "검은 옷의 여자";
                 case "ledger_thug_pin": return "검은 옷의 청년";
                 case "village_elder": return "마을 어르신";
+                // 마을 이야기(town 챕터) — 전초기지마다 한 명. 처음 보는 사람이라 **역할을 이름 앞에**
+                // 붙인다("[E] 대화: 나무꾼 솔"). 이름만 두면 동행자와 구분이 안 된다.
+                case "town_meadow": return "꼬마 화가 달래";
+                case "town_pond": return "물결 할머니";
+                case "town_forest": return "나무꾼 솔";
+                case "town_swamp": return "약초꾼 이끼";
+                case "town_mountain": return "봉수지기 너울";
+                case "town_garden": return "정원사 누리";
+                case "town_ruins": return "탁본꾼 결";
+                case "town_hollow": return "풍경지기 메아리";
+                case "town_dunes": return "떠돌이 상인 모래";
+                case "town_frostline": return "필사생 서리";
+                case "town_emberfall": return "광부 숯";
+                case "town_canopy": return "나무타기 잎새";
                 default: return string.IsNullOrEmpty(storyId) ? "이야기" : storyId;
             }
         }
@@ -233,6 +247,55 @@ namespace InsectGame.NPC
             { "ledger_chief", new[] {
                 "시간이 없다. 나에게도, 저 아이들에게도.",
                 "네 방식이 틀렸다곤 안 했다. 느리다고 했지.",
+            } },
+            // 마을 이야기 주민 — 이야기가 없는 차례(본편을 기다리는 중·다 들은 뒤)에 쓴다.
+            { "town_meadow", new[] {
+                "그림책 봐요! 무당벌레 점은 일곱 개로 그렸어요.",
+                "채집가님은 오늘 누구 만났어요?",
+            } },
+            { "town_pond", new[] {
+                "배는 안 떠. 이야기는 떠도 되고.",
+                "기둥에 금이 느는 걸 보는 게 요즘 낙이야.",
+            } },
+            { "town_forest", new[] {
+                "나무는 베면 심으면 돼. 그물은 걷으면 되고.",
+                "도끼 소리가 나면 녀석들이 구경을 와.",
+            } },
+            { "town_swamp", new[] {
+                "해독약 떨어지면 말해. 바구니는 늘 채워 둘게.",
+                "안개 낀 날은 코로 찾아. 약초는 냄새가 먼저 와.",
+            } },
+            { "town_mountain", new[] {
+                "오늘은 여치가 높게 울었어. 맑겠구먼.",
+                "공책은 번져도 괜찮아. 내일 또 쓰면 되니까.",
+            } },
+            { "town_garden", new[] {
+                "미로 울타리는 건드리지 마요. 나머지는 마음대로!",
+                "가위를 들 때마다 할머니 목소리가 들려요.",
+            } },
+            { "town_ruins", new[] {
+                "먹은 천천히 말라야 번지지 않아요.",
+                "선생님은 잘 지내시죠? …물어볼 걸 그랬나.",
+            } },
+            { "town_hollow", new[] {
+                "바람이 불면 귀를 기울여 봐요. 풍경이 먼저 알아요.",
+                "조용한 게 익숙해지면 안 돼요. 그게 제일 무서워요.",
+            } },
+            { "town_dunes", new[] {
+                "물은 공짜 아니야. 이야기 한 자락이면 되고.",
+                "빈 상자는 안 팔아. 그건 파는 물건이 아니야.",
+            } },
+            { "town_frostline", new[] {
+                "손이 곱아서 글씨가 삐뚤어요. 그래도 읽히면 돼요.",
+                "한 벌은 여기, 한 벌은 가져가요. 그게 제 원칙이에요.",
+            } },
+            { "town_emberfall", new[] {
+                "기억나는 거 있으면 말해 줘. 곤충 얘기면 더 좋고.",
+                "갱도는 무너져도 사람은 또 파. 기록도 그래.",
+            } },
+            { "town_canopy", new[] {
+                "고치는 만지면 안 돼요! 보기만 해요!",
+                "기다리는 건 잘해요. 제일 잘해요.",
             } },
         };
 

@@ -508,6 +508,9 @@ namespace InsectGame.NPC
 
         // 아직 잡은 게 없는 아이에게 현재 리전 풀에서 한 마리를 배정한다.
         // 아이 인스턴스 ID로 결정적으로 고르므로 같은 아이는 항상 같은 곤충을 들고 있다.
+        // **희귀 이상은 건너뛴다** — 아이는 필드에서 희귀 이상을 구경만 한다(NpcCatchRules.ShouldWatchOnly).
+        // 리전 풀이 등급마다 종을 갖추도록 보충된 뒤로(모든 리전에 희귀·영웅·전설) 거르지 않으면 해시 인덱스가
+        // 영웅·희귀에 떨어진 아이가 생긴다(습지 아이가 밤말벌을 든다). 풀엔 일반·고급이 늘 있어 빈손은 안 된다.
         private void EnsureDuelInsect(CatcherKidNpc kid)
         {
             if (kid == null || kid.DuelInsect != null || database == null) return;
@@ -520,7 +523,7 @@ namespace InsectGame.NPC
             for (int attempt = 0; attempt < pool.Length; attempt++)
             {
                 InsectData data = database.GetById(pool[PoolIndexFor(kid.NpcId, pool.Length, attempt)]);
-                if (data == null) continue;
+                if (data == null || NpcCatchRules.ShouldWatchOnly(data.rarity)) continue;
                 PlayerInsectData leader = FindPlayerLeader();
                 kid.SetDuelInsect(data, leader != null ? leader.level : 1);
                 return;

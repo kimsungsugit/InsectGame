@@ -49,6 +49,15 @@ OnGUI의 Rect 좌표와 레이아웃은 **ui-dev 영역**입니다. 여기서는
 - `Assets/Scripts/Core/WorldTerrainBuilder.cs` - 월드 지형 생성 (절벽, 강, 다리, 경사면)
 - `Assets/Scripts/Core/SubAreaWorldBuilder.cs` - 서브에리어 프로시저럴 던전/환경 생성
 - `Assets/Scripts/Core/RegionTerrainBuilder.cs` - 리전별 필드 지형 생성 (언덕, 길, 바위, 나무)
+- `Assets/Scripts/Core/WorldBackdropBuilder.cs` - 원경(월드 둘레 산맥·뭉게구름) — 리전·길을 피해 바깥으로 훑어 배치, 산 모양은 가장 가까운 리전을 따른다
+- `Assets/Scripts/Core/RegionPalette.cs` - 리전 바닥색·얼룩 톤의 단일 출처(부트스트랩 바닥 평면 + RegionDressingBuilder) ※감마 반사율, 0.8 넘으면 하얗게 날아간다
+- `Assets/Scripts/Core/RegionAtmosphere.cs` - 리전별 햇빛 색·세기·환경광·Exp2 연무(원경 공기원근) ※11m 투과율 98% 상한(MaxFogDensity)
+- `Assets/Scripts/Core/SceneryBatcher.cs` - 콜라이더 없는 장식 소품을 칸×색 단위 메시로 합치는 배처(드로우콜·컬링)
+- `Assets/Scripts/Core/RegionDressingBuilder.cs` - 리전 표면 장식(바닥 얼룩·발밑 디테일·호수·울타리 밖 테두리) ※콜라이더 없음, 남쪽 테두리 키 제한(카메라 차폐), 마을·전초기지가 지어진 뒤 Start에서 빌드
+- `Assets/Scripts/Core/SubAreaGateBuilder.cs` - 필드 쪽 서브에리어 테마 입구 표식 ※여기 등록한 ID는 부트스트랩 CreateSubAreaEntries가 건너뛴다
+- `Assets/Scripts/Core/SubAreaWorldBuilder.Themes.cs` - 같은 environmentType을 공유하는 서브에리어의 subAreaId별 변주(동굴 7테마·개미귀신 구덩이·빈칸·가장 높은 가지 등) ※방 크기는 원래 빌더와 같게(story_lint 21)
+- `Assets/Scripts/Core/SceneryMaterials.cs` - 월드 소품 머티리얼의 단일 출처 — 셰이더 폴백(`LitShader`·`Create`), 무광·발광 마감, 반투명(`MakeFade`), 배처 캐시 키(`SceneryMaterialKey`: 색+표면 종류) ※부위별 광택을 따로 주는 곳(곤충 키틴·플레이어 옷·의상 spawn 파츠 — `CharacterPalette.ApplySurface`)은 `Create` 대신 `LitShader`만 빌린다. 오염 거점(`BlightVfx.Mat`)·전투 아레나(`CreateSafeMaterial`)는 2026-09-29 광택 통일로 `Create`(무광)를 쓰고, 금속·물처럼 광택이 제 질감인 스킬 파츠만 `CreateSheenMaterial`로 가른다. 전투 이펙트 반투명·가산은 `BattleArenaController.CreateFxMaterial`(FX 셰이더)이 따로 맡는다. **Standard의 반투명·발광 변형은 `BuildKeepers`(Resources 머티리얼 4벌)가 빌드에 남긴다** — 그게 없던 시절 플레이어 빌드에서 반투명이 불투명, 발광이 무발광으로 그려졌다(2026-09-29 QA 빌드 실측). **Standard를 Always Included Shaders에 다시 넣지 말 것** — 그 목록의 셰이더는 머티리얼 키워드를 안 봐서 이 방법이 무력해진다. 런타임에 새 Standard 키워드 조합을 켜면 `BuildKeepers`에 한 줄 추가 후 `ShaderVariantKeepers.Ensure`
+- `Assets/Scripts/Core/FieldGround.cs` - 필드 둔덕(사구·재 더미·이끼 둔덕)의 윗면 높이 조회(`SurfaceY`·`LiftAt`) — 둔덕엔 콜라이더가 없어 곤충 스폰·플레이어 접지가 이걸로 올라탄다 ※`RegionTerrainBuilder.PlaceMound`/`RegisterDome`가 등록, 빌드 시작·OnDestroy에서 비운다
 
 ### 캐릭터/의상 비주얼
 - `Assets/Editor/OutfitRenderProbe.cs` - 의상을 입힌 마네킹을 3D 리그로 직접 촬영해 spawn/bind 파츠가 실제로 그려지는지 확인 ※IMGUI를 안 거치므로 배치모드로 돈다
@@ -56,7 +65,8 @@ OnGUI의 Rect 좌표와 레이아웃은 **ui-dev 영역**입니다. 여기서는
 - `Assets/Scripts/Core/ProcMeshLibrary.cs` - 캐릭터용 프로시저럴 메시 생성기(Disc/LowSphere/RoundedBox/TaperedCapsule/Diamond) + 프로세스 수명 정적 캐시 ※bind 가능 노드(Cap·NetHandle 등)에는 쓰지 말 것 — ApplyBound가 sharedMesh·localScale을 덮어쓴다
 - `Assets/Scripts/Core/CharacterPalette.cs` - 피부·머리 색 팔레트와 부위별 PBR 재질(SurfaceKind)의 단일 출처. 3D 캐릭터·마네킹·2D 초상·NPC가 전부 여기를 읽는다 ※인덱스 순서는 세이브가 가리키므로 바꾸지 말 것
 - `Assets/Scripts/Core/CharacterOutfitManager.cs` - 의상 관리
-- `Assets/Scripts/Core/OutfitShapeLibrary.cs` - 의상 파츠 레시피(itemId → OutfitPart[]) 형태의 단일 출처 ※스키마·앵커 확장은 data-architect 공유
+- `Assets/Scripts/Core/OutfitShapeLibrary.cs` - 의상 파츠 레시피(itemId → OutfitPart[]) 형태의 단일 출처 ※스키마·앵커 확장은 data-architect 공유. spawn 파츠 재질은 슬롯 기본(천·가죽) + `SurfaceOverrides`(금속·유리·가죽 아이템, 색 역할 단위) — `OutfitPart`에 필드를 늘리지 않는다
+- `Assets/Tests/EditMode/OutfitPartSurfaceTests.cs` - 의상 파츠 재질 예외 표의 키 실재·예외 역할 실재·역참조·슬롯 기본 무광 검증
 - `Assets/Scripts/Core/CharacterModelPreviewRenderer.cs` - 의상 미리보기용 3D 마네킹 리그·썸네일 렌더 ※화면 배치는 ui-dev
 - `Assets/Scripts/Core/OutfitBonusProvider.cs` - 의상 보너스
 - `Assets/Scripts/Core/CameraFollower.cs` - 카메라 팔로우
@@ -78,6 +88,7 @@ OnGUI의 Rect 좌표와 레이아웃은 **ui-dev 영역**입니다. 여기서는
 - `Assets/Editor/ModelDesignCapture.cs` - 대표 곤충·플레이어·성인·아동 NPC의 표준 조명 3면 비교 캡처 ※IMGUI 제외
 - `Assets/Editor/VillageDesignCapture.cs` - 저장과 분리된 마을 건물 고정 구도 전후 캡처
 - `Assets/Editor/WorldMapDesignCapture.cs` - 실제 지형·소품·마을을 함께 생성한 전체 지역 격리 캡처
+- `Assets/Editor/FieldDesignTour.cs` - 실제 PlayScene으로 마을·리전·전초기지·서브에리어·NPC 전원을 한 번에 도는 전후 비교 캡처(`-tourOnly`·`-tourFilter`) ※IMGUI 제외
 - `Assets/Scripts/UI/WorldMapVisualCapture.cs` - 저장과 분리된 실제 지도/미니맵 IMGUI 촬영 fixture
 - `Assets/Scripts/Story/StoryDialogueCapture.cs` - 저장과 분리된 실제 대화 IMGUI 촬영 fixture
 - `Assets/Scripts/UI/BadgeVisualCapture.cs` - 저장과 분리된 실제 배지 획득 연출·배지 케이스 IMGUI 촬영 fixture(`-battleScenario badge`)
@@ -126,6 +137,9 @@ Legendary: 금색/주황
 - `Assets/Scripts/Battle/BattleVisualCapture.cs` — 저장 없는 독립 전투 화면 QA. 전투 연출 검수 인자: `-battleCamStyle off|punch|cinematic`(같은 장면을 카메라만 바꿔 비교), `-captureInterval 0.05`(히트스톱은 0.1초 간격으론 안 잡힌다), `-battleScenario elements`(속성 10종 임팩트 순환) · `raid-unite`(첫 차례에 합체공격). 소리는 캡처되지 않으니 `BattleVoiceExport`로 WAV를 뽑아 듣는다
 - `Assets/Scripts/Battle/RaidVisualCapture.cs` — 실제 레이드 화면 QA
 - `Assets/Editor/BattleVisualCaptureBuilder.cs` — Windows 실제 IMGUI 검수 빌드
+- `Assets/Scripts/Core/SceneryMaterialVisualCapture.cs` — 월드 반투명·발광이 **플레이어 빌드에서** 살아 있는지 수치로 재는 촬영 fixture(`-battleScenario materials`, 줄무늬 벽 앞 구의 (r−b) 편차·발광 휘도차, 안개 Exp2 판 포함, README에 PASS/FAIL)
+- `Assets/Editor/ShaderVariantKeepers.cs` — `SceneryMaterials.BuildKeepers` 조합대로 `Resources/ShaderVariantKeepers/*.mat`을 만들어 Standard 반투명·발광 변형을 빌드에 남긴다(`-executeMethod …ShaderVariantKeepers.Ensure`) + 빌드 로그에 `[ShaderVariants]` 변형 수 보고
+- `Assets/Tests/EditMode/ShaderVariantKeeperTests.cs` — 런타임 키워드 조합이 전부 BuildKeepers에 있고 Resources 머티리얼이 그 키워드를 갖는지
 - 프리팹 없이 코드로 시각물 생성 (프로시저럴 우선)
 - CreatePrimitive 기반이지만 성능 주의 (배틀아레나: 24개 돌 구체)
 - GUI 색상 변경 후 반드시 원래값 복원

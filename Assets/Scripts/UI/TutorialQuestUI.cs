@@ -97,6 +97,8 @@ namespace InsectGame.UI
         private readonly List<QuestRewardEntry> rewardChipBuffer = new List<QuestRewardEntry>(4);
         // 아코디언으로 펼쳐진 퀘스트. 빈 문자열이면 모두 접힌 상태.
         private string expandedQuestId = string.Empty;
+        // 펼친 행에 [따라가기]가 붙는가 — DrawDetailPanel이 패스마다 한 번 정하고 DrawQuestRow가 읽는다.
+        private bool expandedRowTrackable;
 
         private float newQuestAnimTimer;
         private string newQuestTitle;
@@ -639,21 +641,36 @@ namespace InsectGame.UI
             }
             string label = objectiveLabelCache;
 
+            // 의뢰를 따라가는 중이면 오른쪽 끝에 ✕(해제 → 본편 목표로 복귀)를 붙인다.
+            // **✕를 먼저 그린다** — IMGUI는 먼저 처리된 버튼이 MouseDown을 가져가므로, 행 버튼이
+            // 먼저면 ✕를 눌러도 자동 주행이 시작된다. 행은 ✕ 폭만큼 줄여 겹치지 않게 한다.
+            Rect body = row;
+            if (objectiveTracker.IsTrackingTale)
+            {
+                Rect closeRect = new Rect(row.xMax - row.height, row.y, row.height, row.height);
+                body = new Rect(row.x, row.y, row.width - row.height - UITheme.Space.XS, row.height);
+                if (UISurface.Button(closeRect, "✕", theme.surfaceRaised, panelSurfaceBtnStyleCache))
+                {
+                    objectiveTracker.StopTrackingTale();
+                    return;   // 목표가 본편으로 바뀌었다 — 옛 라벨로 한 번 더 그리지 않는다
+                }
+            }
+
             if (canRun)
             {
                 Color bg = running ? theme.accentCoral : theme.surfaceRaised;
-                if (UISurface.Button(row, string.Empty, bg, panelSurfaceBtnStyleCache))
+                if (UISurface.Button(body, string.Empty, bg, panelSurfaceBtnStyleCache))
                     objectiveTracker.Toggle();
                 // 라벨은 좌측 정렬이라 UISurface.Button의 중앙 정렬 스타일을 쓰지 않고 따로 그린다.
                 UIHelper.LabelFit(
-                    new Rect(row.x + UITheme.Space.M, row.y, row.width - UITheme.Space.M * 2f, row.height),
+                    new Rect(body.x + UITheme.Space.M, body.y, body.width - UITheme.Space.M * 2f, body.height),
                     label, objectiveStyleCache);
             }
             else
             {
-                UISurface.HudCard(row);
+                UISurface.HudCard(body);
                 UIHelper.LabelFit(
-                    new Rect(row.x + UITheme.Space.M, row.y, row.width - UITheme.Space.M * 2f, row.height),
+                    new Rect(body.x + UITheme.Space.M, body.y, body.width - UITheme.Space.M * 2f, body.height),
                     label, objectiveStyleCache);
             }
 
@@ -979,6 +996,9 @@ namespace InsectGame.UI
             if (questManager == null) return;
 
             InitDetailStyles();
+            // [따라가기] 버튼이 칩과 같은 표면 스타일(panelSurfaceBtnStyleCache)을 쓴다 — 칩이 한 번도
+            // 안 그려진 채(가이드 숨김 등) 목록부터 열면 null이라 여기서도 보장한다(가드가 있어 1회뿐).
+            InitQuestPanelStyles();
 
             float panelW = UIScale.IsMobileLayout
                 ? Mathf.Min(860f, UIScale.VirtualScreenWidth - UIScale.VirtualSafeLeft - UIScale.VirtualSafeRight - 32f)
@@ -1034,7 +1054,15 @@ namespace InsectGame.UI
             float headH = QuestListLayout.SectionHeaderHeight;
             // 펼쳐진 행이 있으면 그만큼 콘텐츠가 길어진다(한 번에 하나만 펼친다).
             int expandedCount = string.IsNullOrEmpty(expandedQuestId) ? 0 : 1;
-            float contentH = QuestListLayout.GetContentHeight(story.Count, side.Count, expandedCount);
+            // [따라가기] 여부는 **이번 패스에 한 번만** 정한다 — 행 높이(DrawQuestRow)와 콘텐츠 높이가
+            // 같은 답을 봐야 스크롤 끝이 안 잘린다. 판정이 스토리 진행을 훑어서 매 행마다 부를 값도 아니다.
+            // Layout 패스에서만 정한다 — 판정이 이야기 비트 전체를 훑어서, Repaint·입력 패스마다 되풀이하면
+            // 행을 펼쳐 둔 동안 프레임마다 두세 번 돈다. 같은 프레임의 뒤 패스는 이 값을 그대로 쓴다.
+            if (Event.current.type == EventType.Layout)
+                expandedRowTrackable = expandedCount > 0 && objectiveTracker != null
+                    && (objectiveTracker.IsQuestTracked(expandedQuestId) || objectiveTracker.CanTrackQuestNow(expandedQuestId));
+            float contentH = QuestListLayout.GetContentHeight(story.Count, side.Count, expandedCount,
+                expandedRowTrackable ? 1 : 0);
             Rect listArea = new Rect(listX, listY, listW, listH);
             Rect viewRect = new Rect(0, 0, listW, contentH);
             detailDirectScroll.Handle(ref detailScroll, listArea, contentH, rowH);
@@ -1053,7 +1081,8 @@ namespace InsectGame.UI
 
             if (side.Count > 0)
             {
-                DrawQuestSectionHeader(viewRect.width, ref ry, headH, "\u25c6 \uc11c\ube0c (\ubc18\ubcf5 \uc2dc \ubaa9\ud45c \uc0c1\uc2b9)");
+                // \ub9c8\uc744 \uc758\ub8b0(1\ud68c)\uac00 \ud568\uaed8 \ub4e4\uc5b4\uc624\uba74\uc11c "\ubc18\ubcf5 \uc2dc \ubaa9\ud45c \uc0c1\uc2b9"\ub9cc\uc73c\ub85c\ub294 \uc124\uba85\uc774 \ubaa8\uc790\ub77c\ub2e4.
+                DrawQuestSectionHeader(viewRect.width, ref ry, headH, "\u25c6 \uc11c\ube0c \u00b7 \ub9c8\uc744 \uc758\ub8b0");
                 for (int i = 0; i < side.Count; i++)
                     DrawQuestRow(side[i], viewRect.width, ref ry, rowH, i);
             }
@@ -1086,19 +1115,20 @@ namespace InsectGame.UI
 
             if (isSide)
             {
-                bool unlocked = string.IsNullOrEmpty(quest.prerequisiteQuestId)
-                    || questManager.IsQuestCompleted(quest.prerequisiteQuestId);
+                // 선행 퀘스트 + (지역 의뢰면) 리전 해금 — 진행을 세는 쪽과 같은 판정을 쓴다.
+                // prereq만 보면 잠긴 리전의 의뢰가 0/5 진행 중으로 떠 갈 수 없는 곳을 할 일처럼 보인다.
+                // 완료를 먼저 본다 — 끝낸 의뢰는 나중에 리전 접근이 꺼져도(마스터 특권 해제 등) 완료다.
                 tgt = questManager.EffectiveTarget(quest);
-                if (!unlocked)
-                {
-                    icon = "\ud83d\udd12 "; titleCol = RowLockedCol;
-                    statusText = "\ubbf8\ud574\uae08"; statusCol = RowLockedCol;
-                }
-                else if (!quest.repeatable && questManager.IsQuestCompleted(quest.questId))
+                if (!quest.repeatable && questManager.IsQuestCompleted(quest.questId))
                 {
                     icon = "\u2713 "; titleCol = RowCompletedCol;
                     statusText = "\uc644\ub8cc"; statusCol = StatusCompletedCol;
                     cur = tgt;
+                }
+                else if (!questManager.IsSideUnlocked(quest))
+                {
+                    icon = "\ud83d\udd12 "; titleCol = RowLockedCol;
+                    statusText = "\ubbf8\ud574\uae08"; statusCol = RowLockedCol;
                 }
                 else
                 {
@@ -1147,7 +1177,8 @@ namespace InsectGame.UI
             }
 
             bool expanded = !string.IsNullOrEmpty(quest.questId) && quest.questId == expandedQuestId;
-            float totalH = QuestListLayout.GetRowHeight(expanded);
+            bool trackable = expanded && expandedRowTrackable;
+            float totalH = QuestListLayout.GetRowHeight(expanded, trackable);
             UITheme t = UITheme.Instance;
 
             // \ubc30\uacbd(\uad50\ub300) + \ud65c\uc131 \uc2a4\ud1a0\ub9ac \ud558\uc774\ub77c\uc774\ud2b8 \u2014 \ud3bc\uce5c \uc601\uc5ed\uae4c\uc9c0 \ud568\uaed8 \uce60\ud55c\ub2e4.
@@ -1171,7 +1202,8 @@ namespace InsectGame.UI
             GUI.color = Color.white;
 
             detailRowStyleCache.normal.textColor = titleCol;
-            GUI.Label(new Rect(10f, ry, width * 0.46f, rowH), icon + QuestTitle(quest), detailRowStyleCache);
+            // 마을 의뢰 제목("◆ [잿불 골짜기] 타지 않은 기억")은 28pt에서 이 상자를 넘는다 — 줄여 맞춘다.
+            UIHelper.LabelFit(new Rect(10f, ry, width * 0.46f, rowH), icon + QuestTitle(quest), detailRowStyleCache);
 
             // \ubcf4\uc0c1 \uc694\uc57d \u2014 \ubaa9\ub85d\uc5d0\uc11c "\uc774\uac70 \uae68\uba74 \ubb58 \uc8fc\ub098"\uac00 \ubc14\ub85c \ubcf4\uc774\uac8c.
             string rewardText = GetRewardText(quest);
@@ -1229,6 +1261,28 @@ namespace InsectGame.UI
                 GUI.Label(new Rect(16f, ey, 60f, rewardRowH), "\ubcf4\uc0c1", detailRewardLabelStyleCache);
                 GUI.Label(new Rect(80f, ey, width - 96f, rewardRowH),
                     string.IsNullOrEmpty(rewardText) ? "\uc5c6\uc74c" : rewardText, detailRewardStyleCache);
+
+                // \ub9c8\uc744 \uc758\ub8b0 \u2014 [\ub530\ub77c\uac00\uae30]. \ub204\ub974\uba74 \ubaa9\ud45c \ud589\u00b7\ubbf8\ub2c8\ub9f5\u00b7\uc9c0\ub3c4\uac00 \uadf8 \uc8fc\ubbfc\uc758 \uc774\uc57c\uae30\ub97c \uac00\ub9ac\ud0a8\ub2e4.
+                // \ubc84\ud2bc \uc790\ub9ac\ub294 \ud589 \ub192\uc774 \uacc4\uc0b0(QuestListLayout.TrackButtonExtra)\uacfc \uac19\uc740 \ud310\uc815\uc73c\ub85c \ud655\ubcf4\ub3fc \uc788\ub2e4.
+                if (trackable)
+                {
+                    Rect btn = new Rect(16f,
+                        ry + QuestListLayout.RowHeight + QuestListLayout.ExpandedExtra + QuestListLayout.TrackButtonTopGap,
+                        Mathf.Min(360f, width - 32f), QuestListLayout.TrackButtonHeight);
+                    bool tracked = objectiveTracker.IsQuestTracked(quest.questId);
+                    Color btnBg = tracked ? t.accentCoral : t.accentMint;
+                    if (UISurface.Button(btn, tracked ? "\ub530\ub77c\uac00\uae30 \ud574\uc81c" : "\u25b6 \ub530\ub77c\uac00\uae30", btnBg, panelSurfaceBtnStyleCache)
+                        && !detailDirectScroll.IsDragging)
+                    {
+                        if (tracked) objectiveTracker.StopTrackingTale();
+                        else
+                        {
+                            objectiveTracker.TrackQuest(quest.questId);
+                            // \ubaa9\ub85d\uc744 \ub2eb\uc544 \ubc14\ub85c \ud544\ub4dc\uc640 \ubaa9\ud45c \ud589\uc744 \ubcf4\uac8c \ud55c\ub2e4 \u2014 \ub530\ub77c\uac00\uae30\ub97c \ucf1c \ub193\uace0 \ubaa9\ub85d\uc5d0 \uba38\ubb3c \uc774\uc720\uac00 \uc5c6\ub2e4.
+                            SetDetailOpen(false);
+                        }
+                    }
+                }
             }
 
             ry += totalH;

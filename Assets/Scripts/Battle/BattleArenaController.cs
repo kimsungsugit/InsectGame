@@ -742,8 +742,9 @@ namespace InsectGame.Battle
                     break;
 
                 case InsectElement.Water:
-                    CreateProjPart(proj, PrimitiveType.Sphere, Vector3.zero, 0.3f, color);
-                    CreateProjPart(proj, PrimitiveType.Sphere, new Vector3(0f, 0.2f, 0f), 0.15f, new Color(0.5f, 0.8f, 1f));
+                    // 물 구체·금속 칼날만 광택을 남긴다 — 나머지 투사체 파츠는 무광(CreateSafeMaterial).
+                    CreateProjPart(proj, PrimitiveType.Sphere, Vector3.zero, 0.3f, color, SurfaceKind.Wet);
+                    CreateProjPart(proj, PrimitiveType.Sphere, new Vector3(0f, 0.2f, 0f), 0.15f, new Color(0.5f, 0.8f, 1f), SurfaceKind.Wet);
                     break;
 
                 case InsectElement.Leaf:
@@ -784,8 +785,8 @@ namespace InsectGame.Battle
                     break;
 
                 case InsectElement.Metal:
-                    CreateProjPart(proj, PrimitiveType.Cube, Vector3.zero, new Vector3(0.5f, 0.03f, 0.15f), color);
-                    CreateProjPart(proj, PrimitiveType.Cube, Vector3.zero, new Vector3(0.03f, 0.5f, 0.15f), new Color(0.9f, 0.9f, 0.95f));
+                    CreateProjPart(proj, PrimitiveType.Cube, Vector3.zero, new Vector3(0.5f, 0.03f, 0.15f), color, SurfaceKind.Metal);
+                    CreateProjPart(proj, PrimitiveType.Cube, Vector3.zero, new Vector3(0.03f, 0.5f, 0.15f), new Color(0.9f, 0.9f, 0.95f), SurfaceKind.Metal);
                     break;
 
                 default: // Bug, None
@@ -1445,7 +1446,8 @@ namespace InsectGame.Battle
                 frags[i].transform.position = pos;
                 frags[i].transform.localScale = Vector3.one * 0.1f;
                 float shade = 0.6f + Random.Range(0f, 0.3f);
-                Material fMat = CreateSafeMaterial(new Color(shade, shade, shade + 0.05f));
+                // 쇳조각 — 광택이 제 질감이라 무광에서 뺀다.
+                Material fMat = CreateSheenMaterial(new Color(shade, shade, shade + 0.05f), SurfaceKind.Metal);
                 frags[i].GetComponent<MeshRenderer>().material = fMat;
                 Object.Destroy(frags[i].GetComponent<Collider>());
                 fragVels[i] = new Vector3(Random.Range(-2f, 2f), Random.Range(0.5f, 3f), Random.Range(-2f, 2f));
@@ -1714,19 +1716,24 @@ namespace InsectGame.Battle
             }
         }
 
-        private void CreateProjPart(GameObject parent, PrimitiveType type, Vector3 localPos, float uniformScale, Color color)
+        private void CreateProjPart(GameObject parent, PrimitiveType type, Vector3 localPos, float uniformScale, Color color,
+            SurfaceKind? sheen = null)
         {
-            CreateProjPart(parent, type, localPos, Vector3.one * uniformScale, color);
+            CreateProjPart(parent, type, localPos, Vector3.one * uniformScale, color, sheen);
         }
 
-        private void CreateProjPart(GameObject parent, PrimitiveType type, Vector3 localPos, Vector3 scale, Color color)
+        /// <param name="sheen">광택이 제 질감인 파츠만 채운다(물·금속). 비우면 무광.</param>
+        private void CreateProjPart(GameObject parent, PrimitiveType type, Vector3 localPos, Vector3 scale, Color color,
+            SurfaceKind? sheen = null)
         {
             GameObject part = GameObject.CreatePrimitive(type);
             part.name = "ProjPart";
             part.transform.SetParent(parent.transform, false);
             part.transform.localPosition = localPos;
             part.transform.localScale = scale;
-            Material mat = (color.a < 1f) ? CreateTransparentMaterial(color) : CreateSafeMaterial(color);
+            Material mat = (color.a < 1f) ? CreateTransparentMaterial(color)
+                : sheen.HasValue ? CreateSheenMaterial(color, sheen.Value)
+                : CreateSafeMaterial(color);
             part.GetComponent<MeshRenderer>().material = mat;
             Object.Destroy(part.GetComponent<Collider>());
         }
@@ -1910,17 +1917,10 @@ namespace InsectGame.Battle
         private static void SetMaterialTransparentFade(Material mat)
         {
             if (mat == null) return;
-            // Standard (Built-in)
+            // Standard (Built-in) — Fade 설정은 SceneryMaterials.MakeFade가 단일 출처다.
+            // _Mode 가드는 유지한다: 모델에 섞인 Standard 아닌 머티리얼(FX 셰이더 등)의 블렌드·키워드를 건드리지 않게.
             if (mat.HasProperty("_Mode"))
-            {
-                mat.SetFloat("_Mode", 2f); // Fade
-                mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
-                mat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
-                mat.SetInt("_ZWrite", 0);
-                mat.DisableKeyword("_ALPHATEST_ON");
-                mat.EnableKeyword("_ALPHABLEND_ON");
-                mat.DisableKeyword("_ALPHAPREMULTIPLY_ON");
-            }
+                SceneryMaterials.MakeFade(mat);
             // URP Lit
             if (mat.HasProperty("_Surface"))
             {
@@ -2074,15 +2074,30 @@ namespace InsectGame.Battle
         private readonly List<Material> runtimeMaterials = new List<Material>();
         private readonly List<Mesh> runtimeMeshes = new List<Mesh>();
 
+        /// <summary>
+        /// 불투명 아레나·연출 파츠 — 월드 소품과 같은 무광 마감이다(<see cref="SceneryMaterials.Create"/>:
+        /// 셰이더 폴백 + <see cref="SceneryMaterials.MatteGloss"/>). 숲 공터 세트·벽·보스 받침·흙기둥·잎·파편이 전부 여기로 온다.
+        ///
+        /// 예전엔 Standard 기본 광택(0.5)이라 공터 흙과 벽이 필드와 달리 플라스틱처럼 반짝였다(2026-09-29 광택 통일).
+        /// 광택이 제 질감인 파츠(금속 칼날·조각, 물 구체)만 <see cref="CreateSheenMaterial"/>로 갈라 둔다.
+        /// 알파가 있는 색(임팩트 링·스파크)은 마감이 건너뛴다 — 불투명 셰이더라 알파는 어차피 안 보이고, 결과도 예전 그대로다.
+        /// </summary>
         private Material CreateSafeMaterial(Color color)
         {
-            Shader shader = Shader.Find("Standard");
-            if (shader == null) shader = Shader.Find("Universal Render Pipeline/Lit");
-            if (shader == null) shader = Shader.Find("Unlit/Color");
-            if (shader == null) shader = Shader.Find("Sprites/Default");
-            Material mat = shader != null ? new Material(shader) : new Material(Shader.Find("Hidden/InternalErrorShader"));
-            mat.color = color;
+            Material mat = SceneryMaterials.Create(color);
             runtimeMaterials.Add(mat);   // CleanupArena가 일괄 파기 — 안 하면 연출마다 샌다
+            return mat;
+        }
+
+        /// <summary>
+        /// 광택이 제 질감인 스킬 파츠 — 금속(<see cref="SurfaceKind.Metal"/>)·물(<see cref="SurfaceKind.Wet"/>).
+        /// 수치는 캐릭터 재질표(<see cref="CharacterPalette.ApplySurface"/>)를 빌린다 — 여기 사본을 두지 않는다.
+        /// 반투명 색에는 걸지 않는다(무광 마감과 같은 규칙).
+        /// </summary>
+        private Material CreateSheenMaterial(Color color, SurfaceKind kind)
+        {
+            Material mat = CreateSafeMaterial(color);
+            if (!SceneryMaterials.IsTranslucent(color)) CharacterPalette.ApplySurface(mat, kind);
             return mat;
         }
     }

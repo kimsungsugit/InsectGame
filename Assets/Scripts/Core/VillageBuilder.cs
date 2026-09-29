@@ -903,6 +903,16 @@ namespace InsectGame.Core
                     wanderRadius = wander
                 });
             }
+
+            // 마을 이야기 — 꼬마 화가 달래. 광장 안쪽(110°/6m): 가챠 오두막(90°/12m)과 집3(145°/13m)
+            // 사이 빈 자리이고, 가로등(8.8m)·화분(9.5m) 고리보다 안이다. 마을 어르신과 22.2m,
+            // 숨겨진 웅덩이 진입 반경 밖으로 18m 떨어진다.
+            result.npcAnchors.Add(new NpcSpawnAnchor
+            {
+                position = Polar(v, 110f, 6f),
+                kind = NpcKind.StoryNpc, regionId = "meadow",
+                storyNpcId = "town_meadow", wanderRadius = 0f
+            });
         }
 
         // ================= 전초기지 =================
@@ -950,7 +960,59 @@ namespace InsectGame.Core
                 wanderRadius = 6f
             });
 
+            AddTownStoryNpc(region, outpost, result);
             BuildOutpostFacilities(region, outpost, result);
+        }
+
+        /// <summary>
+        /// 마을 이야기(Story.json <c>town</c> 챕터)의 주민 — 전초기지 모닥불 오른편에 선다.
+        ///
+        /// <b>로컬 (3.4, 0, 0.6)</b>은 1막 6곳을 월드 좌표로 재서 고른 값이다(RegionDefinitions의
+        /// WorldScale 1.5 적용 후, 전초기지는 리전 중심을 바라본다). 서브에리어 **진입 반경 밖 여유**:
+        /// 연못 갈대 +9.0 · 숲 깊은 숲 +18.5 · 습지 +19.1 · 산 동굴 +19.4 · 꽃밭 온실 +11.8 · 유적 신전 +12.5m.
+        /// 같은 리전의 다른 스토리 NPC와는 14.2m 이상(가장 가까운 것이 꽃밭 세라)이다.
+        /// 모닥불 왼편(-2.2, 3.4)도 재 봤는데 꽃밭 온실까지 +5.6m라 말을 걸려다 구역에 빨려 들 수 있어 버렸다.
+        ///
+        /// <b>2막은 리전마다 자리가 다르다.</b> 전초기지 대부분이 230°라 라온 앵커(240°/0.28R)가 모닥불 바로
+        /// 앞에 서 있고(1막 자리에서 2.2m), 모래언덕·우듬지는 가판대(상점 ±4.6 · 병원 · 훈련소 0,6.4)가
+        /// 막는다. 그래서 오두막(+천막 기둥)·모닥불·가판대·상호작용 지점(3.5m)을 피하고 모닥불 7.5m 안에서
+        /// **서브에리어 진입 반경 밖 8m 이상 · 다른 스토리 NPC 12m 이상**인 자리를 격자로 골랐다(월드 좌표):
+        /// 텅 빈 들 (-6.6,-1.0) 침묵의 자리 +20.3 · 라온 13.6 / 모래언덕 (-1.4,1.4) 창고 +22.0 · 집게 14.3 /
+        /// 서릿길 (-6.0,-1.0) 서고 +15.5 · 저울 13.1 · 라온 13.2 / 잿불 골짜기 (-2.0,1.4) 가마 +8.9 · 라온 12.9 /
+        /// 우듬지 (3.2,6.2) 수관 +20.3 · 병원 3.6 · 훈련소 3.7. 이름 없는 자리는 주민을 두지 않는다(결말 톤).
+        ///
+        /// **storyNpcId는 리터럴로 적는다** — <c>game_facts.story_npc_ids()</c>가
+        /// <c>storyNpcId = "..."</c> 꼴을 줄 단위로 읽어 story_lint 검사 3(NpcTalk 대상이 월드에 있는가)을
+        /// 돌린다. 그래서 지역변수 이름도 <c>storyNpcId</c>다.
+        /// </summary>
+        private static void AddTownStoryNpc(Data.RegionData region, Transform outpost, VillageBuildResult result)
+        {
+            string storyNpcId = null;
+            Vector3 local = new Vector3(3.4f, 0f, 0.6f);   // 1막 공통 — 모닥불 오른편
+            switch (region.regionId)
+            {
+                case "pond": storyNpcId = "town_pond"; break;
+                case "forest": storyNpcId = "town_forest"; break;
+                case "swamp": storyNpcId = "town_swamp"; break;
+                case "mountain": storyNpcId = "town_mountain"; break;
+                case "garden": storyNpcId = "town_garden"; break;
+                case "ruins": storyNpcId = "town_ruins"; break;
+                case "hollow": storyNpcId = "town_hollow"; local = new Vector3(-6.6f, 0f, -1.0f); break;
+                case "dunes": storyNpcId = "town_dunes"; local = new Vector3(-1.4f, 0f, 1.4f); break;
+                case "frostline": storyNpcId = "town_frostline"; local = new Vector3(-6.0f, 0f, -1.0f); break;
+                case "emberfall": storyNpcId = "town_emberfall"; local = new Vector3(-2.0f, 0f, 1.4f); break;
+                case "canopy": storyNpcId = "town_canopy"; local = new Vector3(3.2f, 0f, 6.2f); break;
+            }
+            if (storyNpcId == null) return;
+
+            result.npcAnchors.Add(new NpcSpawnAnchor
+            {
+                position = outpost.TransformPoint(local),
+                kind = NpcKind.StoryNpc,
+                regionId = region.regionId,
+                storyNpcId = storyNpcId,
+                wanderRadius = 0f
+            });
         }
 
         /// <summary>
@@ -1247,6 +1309,35 @@ namespace InsectGame.Core
             // 눈처마 — 벽 위에 얹힌 눈.
             Prim(PrimitiveType.Cube, "SnowCap", shelter,
                 new Vector3(0f, 1.92f, -1.5f), new Vector3(4f, 0f, 0f), new Vector3(4.2f, 0.16f, 1.7f), snow);
+
+            // 이글루 — 바람벽만으로는 "쉼터"로 안 읽혔다(배치 캡처에서 검은 상자 몇 개). 벽 안쪽에 눈 돔,
+            // 앞으로 낮은 굴 입구, 안에서 새는 등불. 콜라이더는 두지 않는다 — 벽(keepCollider)이 이미 막는다.
+            Prim(PrimitiveType.Sphere, "IglooDome", shelter,
+                new Vector3(0f, 0.05f, -0.9f), Vector3.zero, new Vector3(3.0f, 2.5f, 2.8f), snow);
+            Prim(PrimitiveType.Cylinder, "IglooTunnel", shelter,
+                new Vector3(0f, 0.42f, 0.55f), new Vector3(90f, 0f, 0f), new Vector3(1.05f, 0.55f, 0.95f), snow);
+            Prim(PrimitiveType.Cube, "IglooDoor", shelter,
+                new Vector3(0f, 0.38f, 1.08f), Vector3.zero, new Vector3(0.62f, 0.55f, 0.04f), new Color(0.16f, 0.22f, 0.30f));
+            GameObject glow = Prim(PrimitiveType.Cube, "IglooGlow", shelter,
+                new Vector3(0f, 0.3f, 1.1f), Vector3.zero, new Vector3(0.34f, 0.22f, 0.03f), new Color(1f, 0.78f, 0.42f));
+            Glow(glow, new Color(1.3f, 0.85f, 0.4f));
+            // 블록 이음매 — 돔 둘레의 얕은 띠 두 줄
+            for (int k = 0; k < 2; k++)
+            {
+                Prim(PrimitiveType.Sphere, $"IglooBand_{k}", shelter,
+                    new Vector3(0f, 0.05f + k * 0.42f, -0.9f), Vector3.zero,
+                    new Vector3(3.04f - k * 0.34f, 0.05f, 2.84f - k * 0.34f), deepIce);
+            }
+        }
+
+        /// <summary>
+        /// 발광 마감 — 같은 색을 쓰는 물체가 전부 함께 빛나므로(<see cref="Mat"/>은 색 캐시) 발광체에는 고유색을 쓴다.
+        /// </summary>
+        private static void Glow(GameObject obj, Color emission)
+        {
+            if (obj == null) return;
+            MeshRenderer mr = obj.GetComponent<MeshRenderer>();
+            if (mr != null) SceneryMaterials.SetEmission(mr.sharedMaterial, emission);
         }
 
         /// <summary>잿불 골짜기 — 현무암 판을 세운 은신처. 지붕에 재가 쌓였다.</summary>
@@ -1275,8 +1366,24 @@ namespace InsectGame.Core
             Prim(PrimitiveType.Cube, "AshRoof", shelter,
                 new Vector3(0f, 1.95f, -0.6f), new Vector3(-7f, 0f, 0f), new Vector3(4.6f, 0.14f, 2.6f), ash);
             // 잉걸 — 벽 틈에서 새는 열.
-            Prim(PrimitiveType.Cube, "EmberCrack", shelter,
+            GameObject crack = Prim(PrimitiveType.Cube, "EmberCrack", shelter,
                 new Vector3(0f, 0.35f, -0.95f), Vector3.zero, new Vector3(2.2f, 0.09f, 0.1f), ember);
+            Glow(crack, new Color(0.9f, 0.3f, 0.08f));
+
+            // 광부의 화덕 — 돌 받침 위 잉걸불과 굴뚝. 이 골짜기에서 사람이 버티는 방법이다.
+            Prim(PrimitiveType.Cube, "ForgeBase", shelter,
+                new Vector3(1.25f, 0.35f, -0.35f), new Vector3(0f, 12f, 0f), new Vector3(0.9f, 0.7f, 0.8f), new Color(0.30f, 0.27f, 0.26f));
+            GameObject coals = Prim(PrimitiveType.Sphere, "ForgeCoals", shelter,
+                new Vector3(1.25f, 0.74f, -0.35f), Vector3.zero, new Vector3(0.62f, 0.16f, 0.52f), new Color(0.98f, 0.42f, 0.13f));
+            Glow(coals, new Color(1.8f, 0.62f, 0.14f));
+            Prim(PrimitiveType.Cylinder, "ForgeChimney", shelter,
+                new Vector3(1.55f, 1.55f, -0.75f), Vector3.zero, new Vector3(0.28f, 0.75f, 0.28f), basalt);
+            // 매달린 광산 등
+            Prim(PrimitiveType.Cylinder, "LampHook", shelter,
+                new Vector3(-1.4f, 1.72f, 0.3f), Vector3.zero, new Vector3(0.04f, 0.2f, 0.04f), basalt);
+            GameObject lamp = Prim(PrimitiveType.Sphere, "MineLamp", shelter,
+                new Vector3(-1.4f, 1.46f, 0.3f), Vector3.zero, new Vector3(0.22f, 0.26f, 0.22f), new Color(1f, 0.84f, 0.50f));
+            Glow(lamp, new Color(1.4f, 1.0f, 0.5f));
         }
 
         /// <summary>우듬지 — 나무 위 오두막. 사다리로 오른다.</summary>
@@ -1547,7 +1654,7 @@ namespace InsectGame.Core
         ///
         /// 색상 캐시라 개수는 유한하고, 캐시가 안전한 이유는 <see cref="Mat"/>가 생성 시
         /// 색만 설정하고 그 뒤 아무도 변형하지 않기 때문이다 — 지형 빌더 둘은
-        /// <c>SetTransparent</c>로 변형해서 같은 캐시를 쓸 수 없다(그쪽은 목록으로 추적한다).
+        /// <see cref="SceneryMaterials.MakeFade"/>로 변형해서 같은 캐시를 쓸 수 없다(그쪽은 목록으로 추적한다).
         /// </summary>
         private void OnDestroy()
         {
@@ -1558,17 +1665,12 @@ namespace InsectGame.Core
             houseGableMesh = null;
         }
 
-        /// <summary>색상당 1개 머티리얼 캐시 — RegionTerrainBuilder/부트스트랩과 동일한 셰이더 fallback 체인.</summary>
+        /// <summary>색상당 1개 머티리얼 캐시 — 셰이더 폴백·무광 마감은 <see cref="SceneryMaterials.Create"/>가 한다.</summary>
         private Material Mat(Color color)
         {
             if (materialCache.TryGetValue(color, out Material cached)) return cached;
 
-            Shader shader = Shader.Find("Standard");
-            if (shader == null) shader = Shader.Find("Universal Render Pipeline/Lit");
-            if (shader == null) shader = Shader.Find("Unlit/Color");
-            if (shader == null) shader = Shader.Find("Sprites/Default");
-            Material mat = shader != null ? new Material(shader) : new Material(Shader.Find("Hidden/InternalErrorShader"));
-            mat.color = color;
+            Material mat = SceneryMaterials.Create(color);
             materialCache[color] = mat;
             return mat;
         }

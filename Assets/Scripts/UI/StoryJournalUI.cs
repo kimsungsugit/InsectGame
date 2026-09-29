@@ -45,7 +45,7 @@ namespace InsectGame.UI
         /// 뒤섞여 뜰 수 있다(스토리 엔진이 <c>StoryService.AllBeats()</c>의 Dictionary 순서를
         /// 못 믿어 prereq로 엮는 것과 같은 이유다). 순서가 의미를 가지면 배열로 적는다.
         ///
-        /// Story.json의 chapterId는 현재 ch1…ch12/fin/side/npc다. 여기 없는 chapterId는
+        /// Story.json의 chapterId는 현재 ch1…ch12/fin/bl/town/side/npc다. 여기 없는 chapterId는
         /// ID를 그대로 라벨로 쓰고 뒤에 붙는다 — 챕터를 추가해도 저널이 깨지지 않는다.
         /// </summary>
         private static readonly (string id, string label)[] ChapterOrder =
@@ -64,6 +64,7 @@ namespace InsectGame.UI
             ("ch12", "12장 · 이름 없는 자리"),
             ("fin", "종장"),
             ("bl", "오염 거점"),
+            ("town", "마을 이야기"),
             ("side", "곁이야기"),
             ("npc", "동행자와의 대화"),
         };
@@ -418,7 +419,9 @@ namespace InsectGame.UI
                         return line.speaker;
                 }
             }
-            return string.IsNullOrEmpty(beat.speakerNpcId) ? "???" : beat.speakerNpcId;
+            // 지문뿐인 비트(마을 징후 등)는 그 장면의 인물로 — ID("town_meadow")가 그대로 뜨지 않게 표시명을 쓴다.
+            return string.IsNullOrEmpty(beat.speakerNpcId) ? "???"
+                : InsectGame.NPC.NpcDialogueDatabase.StorySpeakerName(beat.speakerNpcId);
         }
 
         /// <summary>

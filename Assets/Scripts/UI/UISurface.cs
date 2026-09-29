@@ -179,7 +179,11 @@ namespace InsectGame.UI
         public static bool Button(Rect rect, string label, Color background, GUIStyle style, bool selected = false)
         {
             Color body = selected ? Color.Lerp(background, Color.white, 0.32f) : background;
-            if (rect.Contains(UIScale.VirtualMousePosition))
+            // 호버는 지금 GUI 좌표계의 마우스로 잰다 — 스크롤 뷰·그룹·GUI.matrix가 반영돼 rect와 같은 공간이다.
+            // 가상 화면 좌표(UIScale.VirtualMousePosition)로 재면 스크롤 뷰 안 버튼(퀘스트 목록 [따라가기])은
+            // 버튼이 아니라 스크롤 원점 기준의 엉뚱한 자리에서 밝아졌다.
+            Event e = Event.current;
+            if (e != null && rect.Contains(e.mousePosition))
             {
                 body = Color.Lerp(body, Color.white, 0.16f);
             }

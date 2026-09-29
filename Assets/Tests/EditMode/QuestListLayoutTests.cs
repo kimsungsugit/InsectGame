@@ -56,6 +56,28 @@ namespace InsectGame.Tests
         }
 
         [Test]
+        public void GetRowHeight_TrackableExpandedRow_AddsFollowButtonSpace_OnlyWhenExpanded()
+        {
+            Assert.AreEqual(
+                QuestListLayout.RowHeight + QuestListLayout.ExpandedExtra + QuestListLayout.TrackButtonExtra,
+                QuestListLayout.GetRowHeight(true, true), Delta);
+            // 접힌 행엔 버튼이 없다 — 따라갈 수 있어도 높이는 그대로다.
+            Assert.AreEqual(QuestListLayout.RowHeight, QuestListLayout.GetRowHeight(false, true), Delta);
+        }
+
+        [Test]
+        public void GetContentHeight_TrackableExpanded_MatchesRowHeight_AndIsClampedToExpanded()
+        {
+            // 행 높이와 콘텐츠 높이가 같은 답을 내야 스크롤 끝의 [따라가기]가 잘리지 않는다.
+            float collapsed = QuestListLayout.GetContentHeight(5, 3, 0);
+            Assert.AreEqual(
+                collapsed + QuestListLayout.GetRowHeight(true, true) - QuestListLayout.RowHeight,
+                QuestListLayout.GetContentHeight(5, 3, 1, 1), Delta);
+            // 펼친 행이 없는데 버튼 수만 넘어오면 무시한다.
+            Assert.AreEqual(collapsed, QuestListLayout.GetContentHeight(5, 3, 0, 1), Delta);
+        }
+
+        [Test]
         public void GetContentHeight_ExpandedCountAboveRowCount_IsClamped()
         {
             // 펼침 수가 행 수를 넘으면 콘텐츠가 실제보다 길어져 빈 스크롤이 생긴다.
@@ -80,6 +102,15 @@ namespace InsectGame.Tests
                 QuestListLayout.SectionHeaderHeight,
                 QuestListLayout.GetContentHeight(0, 0, 0),
                 Delta);
+        }
+
+        [Test]
+        public void TrackButton_FitsInsideReservedSpace_AndMeetsTouchMinimum()
+        {
+            // 버튼 기하(TutorialQuestUI)와 행 높이 예약(TrackButtonExtra)이 따로 놀면 버튼이 다음 행을 덮는다.
+            Assert.LessOrEqual(QuestListLayout.TrackButtonTopGap + QuestListLayout.TrackButtonHeight,
+                QuestListLayout.TrackButtonExtra);
+            Assert.GreaterOrEqual(QuestListLayout.TrackButtonHeight, UIScale.MinTouchHeight);
         }
     }
 }

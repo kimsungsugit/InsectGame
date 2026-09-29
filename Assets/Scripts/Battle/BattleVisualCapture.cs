@@ -90,6 +90,13 @@ namespace InsectGame.Battle
                 yield return InsectGame.Story.StoryDialogueCapture.Run(output, camera);
                 yield break;
             }
+            if (scenario == "materials")
+            {
+                // 월드 반투명·발광이 빌드에서 살아 있는가 — 수치 판정(SceneryMaterialVisualCapture 주석).
+                follower.enabled = false;
+                yield return SceneryMaterialVisualCapture.Run(output, camera);
+                yield break;
+            }
             if (scenario == "badge")
             {
                 follower.enabled = false;

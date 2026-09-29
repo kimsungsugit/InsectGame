@@ -647,16 +647,36 @@ namespace InsectGame.UI
         }
 
         /// <summary>
+        /// 초상의 상의·모자색(모자 없으면 알파 0). 월드 외형(<c>NpcVisualBuilder.StoryNpcAppearance</c>)과
+        /// 같은지 테스트가 대조한다 — 두 표가 따로 있어 한쪽만 고치면 대사창과 필드의 옷이 갈린다.
+        /// </summary>
+        internal static bool TryGetStoryPortraitColors(string id, out Color top, out Color hat)
+        {
+            top = hat = default;
+            return !string.IsNullOrEmpty(id)
+                && GetStoryPortrait(id, out _, out _, out _, out _, out _, out top, out hat);
+        }
+
+        /// <summary>초상의 피부·머리색·머리 모양(초상 번호) — 월드 외형과 같은지 테스트가 대조한다.</summary>
+        internal static bool TryGetStoryPortraitFace(string id, out Color skin, out Color hair, out int hairStyle)
+        {
+            skin = hair = default;
+            hairStyle = 0;
+            return !string.IsNullOrEmpty(id)
+                && GetStoryPortrait(id, out _, out skin, out hair, out hairStyle, out _, out _, out _);
+        }
+
+        /// <summary>
         /// 스토리 인물 전신 초상. 전투 컷인·말풍선도 이걸 쓴다 — 한 인물이 화면마다 다르게 생기면 안 된다.
         /// 기준은 대사창 무대와 같다: (cx, cy)가 몸 가운데, 발끝이 cy + 74.5 × scale. 표에 없으면 false.
         /// </summary>
         internal static bool TryDrawStoryPortrait(string id, float cx, float cy, float scale)
         {
             if (string.IsNullOrEmpty(id)) return false;
-            if (!GetStoryPortrait(id, out int gender, out int skinIdx, out int hairIdx,
+            if (!GetStoryPortrait(id, out int gender, out Color skin, out Color hair,
                     out int hairStyle, out int faceType, out Color top, out Color hat))
                 return false;
-            CharacterPortraitRenderer.Draw(cx, cy, scale, gender, skinIdx, hairIdx, hairStyle, faceType,
+            CharacterPortraitRenderer.DrawWithColors(cx, cy, scale, gender, skin, hair, hairStyle, faceType,
                 top, new Color(0.18f, 0.22f, 0.28f), new Color(0.2f, 0.12f, 0.06f), hat, 0f, false);
             return true;
         }
@@ -738,51 +758,85 @@ namespace InsectGame.UI
             return GUI.Button(r, string.Empty, GUIStyle.none);
         }
 
-        private static bool GetStoryPortrait(string id, out int gender, out int skinIdx, out int hairIdx,
+        /// <summary>
+        /// 초상 한 장의 재료. 표(<see cref="GetStoryPortraitEntry"/>)는 성별·표정만 들고,
+        /// 피부·머리색·머리 모양·몸통·모자는 전부 <b>월드 외형에서 받는다</b>(<see cref="ApplyWorldAppearance"/>).
+        /// </summary>
+        private static bool GetStoryPortrait(string id, out int gender, out Color skin, out Color hair,
             out int hairStyle, out int faceType, out Color top, out Color hat)
+        {
+            skin = hair = top = hat = default;
+            hairStyle = 0;
+            if (!GetStoryPortraitEntry(id, out gender, out faceType)) return false;
+            ApplyWorldAppearance(id, out skin, out hair, out hairStyle, out top, out hat);
+            return true;
+        }
+
+        /// <summary>
+        /// 월드 외형(<c>NpcVisualBuilder.StoryNpcAppearance</c>) → 초상. 색을 표에 따로 적지 않는다.
+        ///
+        /// 따로 적었던 시절 두 표가 같은 번호를 <b>서로 다른 팔레트</b>로 읽었다(초상은 플레이어 팔레트
+        /// <c>CharacterPalette</c>, 월드는 NPC 팔레트). 그래서 명부회 일곱 전원, 동행자 셋, 마을 주민 대부분이 필드와
+        /// 달랐다 — 세라는 필드 검은 머리가 대사창 보라, 어르신·물결 할머니·너울은 필드 백발이 대사창 금발, 라온은
+        /// 밝은 피부가 대사창 구릿빛이었다. 플레이어 팔레트엔 회색이 없어 번호로는 백발을 옮길 수도 없었다.
+        ///
+        /// 몸통은 <b>겉옷을 입었으면 겉옷 색</b>이다(플레이어 초상과 같은 관례 — <c>CharacterPortraitRenderer</c>의
+        /// Outerwear 처리). 명부회 간부는 아이보리 코트, 하수는 남색 조끼라 대사창의 "검은 옷의 사내" 호칭과 초상의
+        /// 짙은 몸통이 어긋나지 않는다. 머리 모양 번호는 두 체계가 다르다 — 월드 0 짧은·1 중간·2 올림 ↔
+        /// 초상 0 짧은·1 중간·2 긴·3 올림.
+        /// </summary>
+        private static void ApplyWorldAppearance(string id, out Color skin, out Color hair, out int hairStyle,
+            out Color top, out Color hat)
+        {
+            NpcAppearance a = NpcVisualBuilder.StoryNpcAppearance(id);
+            skin = a.skin;
+            hair = a.hair;
+            hairStyle = a.hairStyle == 2 ? 3 : a.hairStyle;
+            top = VisibleTorsoColor(a);
+            hat = a.hasHat ? new Color(a.hat.r, a.hat.g, a.hat.b, 1f) : new Color(0f, 0f, 0f, 0f);
+        }
+
+        /// <summary>월드 모델에서 몸통으로 보이는 색 — 코트·조끼·도포는 겉옷 색, 그 밖엔 셔츠 색(앞치마는 앞판뿐이다).</summary>
+        internal static Color VisibleTorsoColor(NpcAppearance a)
+        {
+            bool outer = a.wear == NpcWear.Coat || a.wear == NpcWear.Vest || a.wear == NpcWear.Robe;
+            return outer ? a.wearColor : a.top;
+        }
+
+        // 초상 표 — 초상이 있는 인물과 그 성별·표정(월드 외형에 성별·표정이 없다). 색·머리는 ApplyWorldAppearance.
+        // 표에 없으면 **얼굴 없이** 말한다 — 8~12장 대치의 간부들, 최종 보스인 관장까지 그랬다.
+        private static bool GetStoryPortraitEntry(string id, out int gender, out int faceType)
         {
             switch (id)
             {
-                case "catcher_rival": // 라온 — 밝은 주황 상의, 캡, 미소
-                    gender = 0; skinIdx = 2; hairIdx = 1; hairStyle = 0; faceType = 1;
-                    top = new Color(1f, 0.55f, 0.3f); hat = new Color(1f, 0.65f, 0.2f); return true;
-                case "ruins_scholar": // 세라 — 보라 상의, 올림머리, 모자 없음
-                    gender = 1; skinIdx = 0; hairIdx = 4; hairStyle = 3; faceType = 0;
-                    top = new Color(0.6f, 0.45f, 0.7f); hat = new Color(0f, 0f, 0f, 0f); return true;
-                case "village_elder": // 마을 어르신 — 따뜻한 상의, 모자, 밝은 머리
-                    gender = 0; skinIdx = 1; hairIdx = 2; hairStyle = 0; faceType = 0;
-                    top = new Color(0.85f, 0.7f, 0.4f); hat = new Color(0.55f, 0.35f, 0.25f); return true;
-                // 1막 하수 2인 — 검은 상의로 통일한다. 이름 대신 그 색이 이들의 정체다.
-                // 2막 간부와 같은 계열이라 나중에 "그때 그 옷"으로 회수된다.
-                case "ledger_thug_cord": // 끈 — 챙 깊은 모자로 얼굴을 가린다
-                    gender = 0; skinIdx = 2; hairIdx = 0; hairStyle = 0; faceType = 1;
-                    top = new Color(0.16f, 0.16f, 0.20f); hat = new Color(0.10f, 0.10f, 0.13f); return true;
-                case "ledger_thug_pin": // 핀 — 짧은 앞머리와 검은 모자
-                    gender = 0; skinIdx = 0; hairIdx = 1; hairStyle = 1; faceType = 0;
-                    top = new Color(0.16f, 0.16f, 0.20f); hat = new Color(0.10f, 0.10f, 0.13f); return true;
-                case "ledger_thug_rule": // 자 — 모자 없이 묶은 머리
-                    gender = 1; skinIdx = 1; hairIdx = 3; hairStyle = 3; faceType = 1;
-                    top = new Color(0.16f, 0.16f, 0.20f); hat = new Color(0f, 0f, 0f, 0f); return true;
+                case "catcher_rival": gender = 0; faceType = 1; return true;   // 라온 — 미소
+                case "ruins_scholar": gender = 1; faceType = 0; return true;   // 세라
+                case "village_elder": gender = 0; faceType = 0; return true;   // 마을 어르신
 
-                // 2막 간부 4인. 표에 없으면 **얼굴 없이** 말한다 — 1막 하수에게는 초상이 있는데
-                // 8~12장 대치의 상대들, 심지어 최종 보스인 관장이 그랬다. 하수의 검은 상의를
-                // 그대로 이어받되(같은 계열임이 색으로 읽힌다) 채도를 조금씩 달리해 구분한다.
-                case "ledger_grip": // 집게 — 힘으로 밀어붙인다. 짧은 머리, 모자 없음
-                    gender = 0; skinIdx = 3; hairIdx = 0; hairStyle = 0; faceType = 1;
-                    top = new Color(0.18f, 0.17f, 0.21f); hat = new Color(0f, 0f, 0f, 0f); return true;
-                case "ledger_scale": // 저울 — 숫자로 말한다. 단정한 올림머리
-                    gender = 1; skinIdx = 0; hairIdx = 1; hairStyle = 3; faceType = 0;
-                    top = new Color(0.20f, 0.20f, 0.26f); hat = new Color(0f, 0f, 0f, 0f); return true;
-                case "ledger_ink": // 먹 — 붓을 놓지 못한다. 챙 있는 모자로 눈을 가린다
-                    gender = 0; skinIdx = 1; hairIdx = 4; hairStyle = 0; faceType = 0;
-                    top = new Color(0.14f, 0.14f, 0.18f); hat = new Color(0.09f, 0.09f, 0.12f); return true;
-                case "ledger_chief": // 관장 — 최종 보스. 유일하게 밝은 머리로 격을 가른다
-                    gender = 0; skinIdx = 2; hairIdx = 2; hairStyle = 0; faceType = 0;
-                    top = new Color(0.12f, 0.12f, 0.16f); hat = new Color(0.30f, 0.26f, 0.18f); return true;
+                // 명부회 일곱
+                case "ledger_thug_cord": gender = 0; faceType = 1; return true;   // 끈 — 챙 깊은 모자로 얼굴을 가린다
+                case "ledger_thug_pin": gender = 0; faceType = 0; return true;    // 핀 — 가장 어린 말단
+                case "ledger_thug_rule": gender = 1; faceType = 1; return true;   // 자 — 모자 없이 묶은 머리
+                case "ledger_grip": gender = 0; faceType = 1; return true;        // 집게 — 힘으로 밀어붙인다
+                case "ledger_scale": gender = 1; faceType = 0; return true;       // 저울 — 숫자로 말한다
+                case "ledger_ink": gender = 0; faceType = 0; return true;         // 먹 — 붓을 놓지 못한다
+                case "ledger_chief": gender = 0; faceType = 0; return true;       // 관장 — 최종 보스
 
-                default:
-                    gender = 0; skinIdx = 0; hairIdx = 0; hairStyle = 0; faceType = 0;
-                    top = Color.white; hat = new Color(0f, 0f, 0f, 0f); return false;
+                // 마을 이야기 주민 12인
+                case "town_meadow": gender = 1; faceType = 1; return true;     // 달래
+                case "town_pond": gender = 1; faceType = 0; return true;       // 물결 할머니
+                case "town_forest": gender = 0; faceType = 1; return true;     // 솔
+                case "town_swamp": gender = 1; faceType = 0; return true;      // 이끼
+                case "town_mountain": gender = 0; faceType = 0; return true;   // 너울
+                case "town_garden": gender = 1; faceType = 1; return true;     // 누리
+                case "town_ruins": gender = 0; faceType = 0; return true;      // 결
+                case "town_hollow": gender = 1; faceType = 0; return true;     // 메아리
+                case "town_dunes": gender = 0; faceType = 1; return true;      // 모래
+                case "town_frostline": gender = 1; faceType = 0; return true;  // 서리
+                case "town_emberfall": gender = 0; faceType = 0; return true;  // 숯
+                case "town_canopy": gender = 1; faceType = 1; return true;     // 잎새
+
+                default: gender = 0; faceType = 0; return false;
             }
         }
 

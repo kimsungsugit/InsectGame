@@ -24,12 +24,31 @@ namespace InsectGame.Core
 
         private RegionData[] routeRegions;
 
+        /// <summary>리전 안 길 한 구간(XZ). 폭은 m.</summary>
+        public struct PathSegment
+        {
+            public Vector3 from;
+            public Vector3 to;
+            public float width;
+        }
+
+        private readonly System.Collections.Generic.List<PathSegment> internalPaths =
+            new System.Collections.Generic.List<PathSegment>();
+
+        /// <summary>
+        /// 이 빌더가 깐 리전 안 길. <see cref="RegionDressingBuilder"/>가 풀포기·조약돌을 길 위에
+        /// 뿌리지 않으려고 읽는다 — 길은 콜라이더가 없어 레이캐스트로는 못 가린다. 읽기 전용으로만 내준다.
+        /// </summary>
+        public System.Collections.Generic.IReadOnlyList<PathSegment> InternalPaths => internalPaths;
+
         public void BuildAllRegions(RegionData[] regions)
         {
             // 배치 난수만 시드로 가두고 끝나면 되돌린다. **전역 상태를 복원하지 않으면**
             // 스폰·IV·포획 판정까지 결정론이 되어 훨씬 나쁜 문제가 된다.
             // 빌드 도중 예외가 나도 반드시 되돌아가도록 finally에 둔다.
             routeRegions = regions;
+            // 둔덕 높이 표는 이 빌더가 채운다 — 씬 재로드(로그아웃·계정삭제) 뒤 옛 월드의 둔덕이 남지 않게 비우고 시작한다
+            FieldGround.Clear();
             Random.State prevRandomState = Random.state;
             Random.InitState(TerrainLayoutSeed);
             try
@@ -73,6 +92,7 @@ namespace InsectGame.Core
         {
             if (regions == null || regions.Length == 0) return;
             routeRegions = regions;
+            BeginFenceBatch();
             for (int i = 0; i < regions.Length; i++)
             {
                 RegionData r = regions[i];
@@ -85,6 +105,7 @@ namespace InsectGame.Core
                     (NormalizeAngle(angle), widthDeg) };
                 BuildFenceArc(r, gateways);
             }
+            EndFenceBatch();
         }
 
         private static float NormalizeAngle(float deg)
@@ -105,20 +126,64 @@ namespace InsectGame.Core
             return false;
         }
 
+        /// <summary>
+        /// 기둥 자리가 <b>다른 리전의 울타리 줄(반경 − 1m) 안쪽</b>인가. 겹친 리전은 서로의 원 안으로 울타리가 파고든다 —
+        /// 초원·습지는 약 42m 겹쳐 습지 둔덕 기둥 16개가 초원 안에 섰고, 그중 4개가 본 마을(중심에서 12~17m)에,
+        /// 하나는 가챠 오두막 한가운데(1.0m)에 박혔다. 초원 기둥 14개도 반대로 습지 바닥 위를 가로질렀다.
+        /// 양쪽을 다 빼면 두 링이 교차점에서 만나 합집합의 바깥 테두리 하나가 된다.
+        ///
+        /// <b>기둥은 통행을 막지 않는다</b>(6° 간격이라 기둥 사이가 리전에 따라 4.7~8m 빈다) — 잠긴 리전을 막는 것은
+        /// <c>PlayerMovement.IsBlockedPosition</c>의 원 판정(<c>RegionData.ContainsPoint</c>)이라 기둥을 빼도 진입 차단은 그대로다.
+        /// 겹친 자리의 경계는 위에 깔리는 리전 바닥(평면 높이가 순번 × 1mm라 습지가 초원 위)의 색 경계로 읽힌다 —
+        /// 그 색 경계가 곧 습지 잠금 원이다.
+        /// 기둥 배치엔 난수가 없어(<see cref="DecorateFencePost"/>) 개수가 줄어도 뒤따르는 배치가 밀리지 않는다.
+        ///
+        /// <b>부트스트랩의 <c>Barrier_</c> 고리(0.85R, 8개)도 이 판정을 쓴다</b>(<c>PlaySceneBootstrap.EnsureGround</c>) —
+        /// 같은 겹침에서 초원 바위 하나(콜라이더 있음)가 습지 안에, 습지 말뚝 둘이 초원 안에 섰다. 규칙을 한 곳에 둬야
+        /// 울타리는 비었는데 그 안쪽 장식만 남의 리전에 박히는 식으로 둘이 갈라지지 않는다.
+        /// </summary>
+        internal static bool IsInsideOtherRegionFence(RegionData[] regions, RegionData self, Vector3 pos)
+        {
+            if (regions == null) return false;
+            foreach (RegionData o in regions)
+            {
+                if (o == null || o == self) continue;
+                float dx = pos.x - o.centerPosition.x, dz = pos.z - o.centerPosition.z;
+                float inner = o.radius - 1f;
+                if (dx * dx + dz * dz < inner * inner) return true;
+            }
+            return false;
+        }
+
         // 리전 외곽 원주 fence — 각도 sample마다 fence post 배치. gateway angle 범위는 빈 공간.
         private void BuildFenceArc(RegionData r,
             System.Collections.Generic.List<(float angleDeg, float widthDeg)> gateways)
         {
             Material fenceMat = GetFenceMaterial(r.regionId);
             float fenceR = r.radius - 1f; // 외곽 살짝 안쪽
-            int segments = 60; // 6° 간격 (60 × 6 = 360°)
+            const int segments = 60; // 6° 간격 (60 × 6 = 360°)
+
+            // 빈 자리를 먼저 정한다 — 난간은 양 끝 기둥이 다 설 때만 잇는다(통로 쪽·다른 리전 쪽 모두)
+            var open = new bool[segments];
+            var posts = new Vector3[segments];
             for (int s = 0; s < segments; s++)
             {
                 float angDeg = (360f / segments) * s;
-                if (IsInGateway(angDeg, gateways)) continue;
                 float rad = angDeg * Mathf.Deg2Rad;
-                Vector3 pos = r.centerPosition + new Vector3(Mathf.Cos(rad) * fenceR, 0f, Mathf.Sin(rad) * fenceR);
-                BuildFencePost(pos, angDeg, fenceMat, r.regionId);
+                posts[s] = r.centerPosition + new Vector3(Mathf.Cos(rad) * fenceR, 0f, Mathf.Sin(rad) * fenceR);
+                open[s] = IsInGateway(angDeg, gateways) || IsInsideOtherRegionFence(routeRegions, r, posts[s]);
+            }
+
+            for (int s = 0; s < segments; s++)
+            {
+                if (open[s]) continue;
+                float angDeg = (360f / segments) * s;
+                BuildFencePost(posts[s], angDeg, fenceMat, r.regionId);
+
+                // 다음 기둥까지 잇는 난간 — 통로(gateway)나 다른 리전 쪽으로 빈 자리로는 잇지 않는다
+                int next = (s + 1) % segments;
+                if (open[next]) continue;
+                BuildFenceRail(posts[s], posts[next], r.regionId, s);
             }
             // 기존 marker를 도로 옆 양면 이정표로 재사용한다. 지역당 하나만 만든다.
             for (int g = 0; g < gateways.Count; g++)
@@ -226,13 +291,20 @@ namespace InsectGame.Core
         {
             switch (regionId)
             {
-                case "meadow": return Mat(new Color(0.55f, 0.45f, 0.3f));  // 돌담
+                case "meadow": return Mat(new Color(0.52f, 0.38f, 0.22f));  // 나무 울타리
                 case "pond": return Mat(new Color(0.35f, 0.5f, 0.3f));      // 갈대
                 case "forest": return Mat(new Color(0.25f, 0.18f, 0.1f));   // 나무 wall
                 case "swamp": return Mat(new Color(0.3f, 0.25f, 0.15f));    // 진흙 둔덕
                 case "mountain": return Mat(new Color(0.45f, 0.45f, 0.45f));// 바위 벽
                 case "garden": return Mat(new Color(0.3f, 0.6f, 0.3f));     // 생울타리
                 case "ruins": return Mat(new Color(0.55f, 0.5f, 0.45f));    // 폐허 벽
+                // ── 2막 ── 옛날엔 case가 없어 여섯 곳 모두 같은 갈색 판자(default)가 섰다
+                case "hollow": return Mat(new Color(0.74f, 0.72f, 0.66f));     // 표백된 말뚝
+                case "dunes": return Mat(new Color(0.76f, 0.60f, 0.40f));      // 사암 덩이
+                case "frostline": return Mat(new Color(0.72f, 0.86f, 0.95f));  // 얼음 덩이
+                case "emberfall": return Mat(new Color(0.17f, 0.15f, 0.15f));  // 현무암 기둥
+                case "canopy": return Mat(new Color(0.36f, 0.27f, 0.17f));     // 굵은 뿌리
+                case "nameless": return Mat(new Color(0.24f, 0.23f, 0.28f));   // 이름 없는 석판
                 default: return Mat(new Color(0.5f, 0.45f, 0.35f));
             }
         }
@@ -269,16 +341,234 @@ namespace InsectGame.Core
                     post = Prim(PrimitiveType.Cube, "FenceMound");
                     scale = new Vector3(1.4f, 1.2f, 1.4f);
                     break;
+                case "meadow":
+                    // 목장 울타리 기둥 — 난간(BuildFenceRail)이 사이를 잇는다
+                    post = Prim(PrimitiveType.Cube, "FencePost");
+                    scale = new Vector3(0.24f, 1.15f, 0.24f);
+                    break;
+                case "hollow":
+                    post = Prim(PrimitiveType.Cylinder, "FenceStake");
+                    scale = new Vector3(0.16f, 0.7f, 0.16f);
+                    break;
+                case "dunes":
+                    post = Prim(PrimitiveType.Cube, "FenceSandstone");
+                    scale = new Vector3(1.3f, 1.0f, 0.9f);
+                    break;
+                case "frostline":
+                    post = Prim(PrimitiveType.Cube, "FenceIce");
+                    scale = new Vector3(1.1f, 1.25f, 0.8f);
+                    break;
+                case "emberfall":
+                    post = Prim(PrimitiveType.Cylinder, "FenceBasalt");
+                    scale = new Vector3(0.7f, 0.8f, 0.7f);
+                    break;
+                case "canopy":
+                    post = Prim(PrimitiveType.Cylinder, "FenceRoot");
+                    scale = new Vector3(0.55f, 0.9f, 0.55f);
+                    break;
+                case "nameless":
+                    post = Prim(PrimitiveType.Cube, "FenceSlab");
+                    scale = new Vector3(0.9f, 1.7f, 0.28f);
+                    break;
                 default:
                     post = Prim(PrimitiveType.Cube, "FencePost");
                     scale = new Vector3(0.4f, 1.5f, 1.2f);
                     break;
             }
-            post.transform.position = pos + new Vector3(0f, scale.y * 0.5f, 0f);
+            // 새로 둔 원기둥 기둥은 바닥에 선다(Cylinder 프리미티브는 높이 2단위라 반 높이가 scale.y다).
+            // 숲·연못의 옛 원기둥은 scale.y * 0.5 높이에 떠 있던 그대로 둔다 — 콜라이더 위치가 바뀌지 않게.
+            float halfHeight = IsGroundedCylinderPost(post.name) ? scale.y : scale.y * 0.5f;
+            post.transform.position = pos + new Vector3(0f, halfHeight, 0f);
             post.transform.localScale = scale;
             post.transform.rotation = Quaternion.Euler(0f, -facingDeg + 90f, 0f); // 원 접선 방향
             Apply(post, mat);
             // collider 보존 — PlayerMovement.IsBlockedPosition OverlapSphere가 통과 차단
+            DecorateFencePost(post.transform, pos, facingDeg, regionId);
+            RaiseColliderToBlockHeight(post);   // 장식이 기울이고 묻은 뒤의 최종 자세로 잰다
+        }
+
+        private static bool IsGroundedCylinderPost(string name) =>
+            name == "FenceStake" || name == "FenceBasalt" || name == "FenceRoot";
+
+        /// <summary>
+        /// 울타리 기둥 콜라이더 꼭대기의 최저 높이(월드 y). <c>PlayerMovement.IsBlockedPosition</c>은 발 위 1.4m에 반경
+        /// 0.4m 구를 띄워 겹침을 보는데, 발은 리전 바닥 평면(0.08 + 순번 × 0.001) 위라 구 중심이 최고 1.49m다.
+        /// 콜라이더가 그 높이에 닿아야 구가 옆으로 0.4m를 온전히 잡는다 — 기울어진 기둥 몫으로 0.1m를 더 얹는다.
+        /// </summary>
+        private const float FenceColliderTopY = 1.6f;
+
+        /// <summary>
+        /// 기둥의 <b>보이는 모양은 그대로 두고</b> 콜라이더만 위로 늘려 <see cref="FenceColliderTopY"/>에 닿게 한다(아래는 그대로).
+        ///
+        /// 검사 구의 바닥이 발 위 1.0m라, 그보다 낮은 기둥은 아예 안 걸려 플레이어가 기둥을 뚫고 지나갔다 — 모래언덕
+        /// 사암 덩이(0.2m 묻어 꼭대기 0.8m)와 산·유적 돌무더기(0.8m)가 그랬다. 1.49m보다 낮으면 걸리긴 해도 옆으로 닿는
+        /// 거리가 짧아진다(초원 기둥 1.15m는 0.23m — 몸이 기둥에 반쯤 박힌다). 이미 높은 기둥은 건드리지 않는다.
+        /// 카메라 차폐(<c>CameraFollower.ResolveObstruction</c>)도 콜라이더를 보지만 꽃밭 생울타리(1.5m)·잿불 현무암(1.6m)·
+        /// 이름 없는 석판(1.7m)과 같은 높이라 새로운 종류의 가림은 아니다.
+        /// </summary>
+        private static void RaiseColliderToBlockHeight(GameObject post)
+        {
+            Transform t = post.transform;
+            // 기둥 로컬 y축이 기울면 같은 길이로 덜 올라간다 — 월드 높이를 로컬 길이로 바꿀 때 up.y로 나눈다
+            float perLocalY = t.lossyScale.y * Mathf.Max(0.5f, t.up.y);
+            if (perLocalY < 0.0001f) return;
+            float neededTop = (FenceColliderTopY - t.position.y) / perLocalY;
+
+            if (post.TryGetComponent(out BoxCollider box))
+            {
+                float bottom = box.center.y - box.size.y * 0.5f;
+                if (bottom + box.size.y >= neededTop) return;
+                box.size = new Vector3(box.size.x, neededTop - bottom, box.size.z);
+                box.center = new Vector3(box.center.x, (bottom + neededTop) * 0.5f, box.center.z);
+            }
+            else if (post.TryGetComponent(out CapsuleCollider capsule) && capsule.direction == 1)
+            {
+                float bottom = capsule.center.y - capsule.height * 0.5f;
+                if (bottom + capsule.height >= neededTop) return;
+                capsule.height = neededTop - bottom;
+                capsule.center = new Vector3(capsule.center.x, (bottom + neededTop) * 0.5f, capsule.center.z);
+            }
+        }
+
+        /// <summary>
+        /// 기둥 하나에 붙는 장식(콜라이더 없음). 기둥은 콜라이더를 보존해야 해서 모양을 크게 못 바꾸므로
+        /// 테마의 인상은 여기서 준다 — 얼음 위 눈, 현무암 기둥 다발, 뿌리의 이끼, 말뚝의 기울기.
+        /// <b>난수를 쓰지 않는다</b>: 시드 고정 배치라 한 번만 더 뽑아도 뒤따르는 소품 자리가 통째로 밀린다.
+        /// 변주는 각도에서 파생한다.
+        ///
+        /// 장식은 GameObject가 아니라 <see cref="fenceBatch"/>에 모아 칸 단위 메시로 합친다 — 리전 13곳 × 기둥 60개에
+        /// 장식 두세 개씩이면 오브젝트가 800개를 넘는다(드로우콜도 그만큼).
+        /// </summary>
+        private void DecorateFencePost(Transform post, Vector3 pos, float facingDeg, string regionId)
+        {
+            float v = Mathf.Repeat(facingDeg * 0.37f, 1f);          // 기둥마다 다른 0~1
+            Quaternion tangent = Quaternion.Euler(0f, -facingDeg + 90f, 0f);
+            switch (regionId)
+            {
+                case "frostline":
+                    Deco(PrimitiveType.Sphere, pos + new Vector3(0f, 1.27f, 0f), tangent, new Vector3(1.25f, 0.28f, 0.95f), new Color(0.95f, 0.97f, 1f));
+                    Deco(PrimitiveType.Sphere, pos + tangent * new Vector3(0.3f, 0.12f, 0.25f), tangent, new Vector3(1.6f, 0.5f, 1.2f), new Color(0.93f, 0.95f, 0.98f));
+                    break;
+                case "dunes":
+                    post.rotation = tangent * Quaternion.Euler(v * 10f - 5f, 0f, v * 12f - 6f);
+                    post.position += Vector3.down * 0.2f;   // 반쯤 묻힌 덩이
+                    Deco(PrimitiveType.Sphere, pos + new Vector3(0f, 0.05f, 0f), tangent, new Vector3(2.2f, 0.45f, 1.5f), new Color(0.74f, 0.63f, 0.44f));
+                    break;
+                case "emberfall":
+                {
+                    // 높이가 다른 현무암 기둥 다발
+                    Color basalt = new Color(0.21f, 0.18f, 0.18f);
+                    float hb = 0.55f + v * 0.3f;
+                    Deco(PrimitiveType.Cylinder, pos + tangent * new Vector3(0.5f, hb, 0.15f), Quaternion.identity, new Vector3(0.5f, hb, 0.5f), basalt);
+                    Deco(PrimitiveType.Cylinder, pos + tangent * new Vector3(-0.45f, 0.35f, -0.1f), Quaternion.identity, new Vector3(0.45f, 0.35f, 0.45f), basalt);
+                    if (v > 0.6f)
+                        Deco(PrimitiveType.Sphere, pos + new Vector3(0f, 1.62f, 0f), Quaternion.identity, new Vector3(0.32f, 0.12f, 0.32f), EmberGlow);
+                    break;
+                }
+                case "canopy":
+                    post.rotation = tangent * Quaternion.Euler(0f, 0f, v * 16f - 8f);
+                    Deco(PrimitiveType.Sphere, pos + new Vector3(0f, 1.75f, 0f), tangent, new Vector3(0.75f, 0.35f, 0.75f), new Color(0.30f, 0.50f, 0.24f));
+                    Deco(PrimitiveType.Sphere, pos + tangent * new Vector3(0.55f, 0.3f, 0.3f), tangent, new Vector3(1.1f, 0.55f, 0.9f), new Color(0.26f, 0.52f, 0.22f));
+                    break;
+                case "hollow":
+                    post.rotation = tangent * Quaternion.Euler(v * 22f - 11f, 0f, v * 18f - 9f);
+                    break;
+                case "nameless":
+                    post.rotation = tangent * Quaternion.Euler(0f, 0f, v * 8f - 4f);
+                    break;
+                case "pond":
+                {
+                    // 갈대 한 줄기 → 세 줄기 + 부들 이삭
+                    Color reed = new Color(0.38f, 0.50f, 0.24f);
+                    Deco(PrimitiveType.Cylinder, pos + tangent * new Vector3(0.35f, 1.0f, 0.1f), Quaternion.Euler(v * 10f - 5f, 0f, 6f), new Vector3(0.08f, 1.0f, 0.08f), reed);
+                    Deco(PrimitiveType.Cylinder, pos + tangent * new Vector3(-0.3f, 0.8f, -0.1f), Quaternion.Euler(0f, 0f, -7f), new Vector3(0.08f, 0.8f, 0.08f), reed);
+                    // 이삭은 가운데 기둥(FenceReed) 꼭대기에 얹는다. 원기둥 메시는 높이 2단위라 꼭대기는 중심 + scale.y다
+                    // (FenceReed는 1.25 + 2.5 = 3.75m). 옛 y 2.35는 기둥 속(2.13~2.57)이었고 반경 0.07이 기둥 0.075보다
+                    // 가늘어 통째로 묻혔다 — 기둥 60개 × 원기둥 88정점이 안 보이는 채 합쳐졌다. 기둥보다 굵게(반경 0.1) 둔다.
+                    const float headHalf = 0.22f;
+                    float reedTop = post.position.y + post.localScale.y;
+                    Deco(PrimitiveType.Cylinder, new Vector3(pos.x, reedTop + headHalf - 0.06f, pos.z), Quaternion.identity,
+                        new Vector3(0.2f, headHalf, 0.2f), new Color(0.42f, 0.28f, 0.16f));
+                    break;
+                }
+            }
+        }
+
+        /// <summary>
+        /// 기둥 사이 난간 — 초원은 두 줄 목책, 텅 빈 들은 군데군데 끊긴 밧줄. 콜라이더 없음(기둥이 막는다).
+        /// </summary>
+        private void BuildFenceRail(Vector3 from, Vector3 to, string regionId, int index)
+        {
+            float height;
+            float thick;
+            Color color;
+            int rails;
+            switch (regionId)
+            {
+                case "meadow": height = 0.95f; thick = 0.11f; color = new Color(0.58f, 0.43f, 0.26f); rails = 2; break;
+                case "hollow": height = 0.95f; thick = 0.035f; color = new Color(0.60f, 0.55f, 0.44f); rails = 1; break;
+                default: return;
+            }
+            if (regionId == "hollow" && index % 4 == 1) return;   // 버려진 목장 — 끊긴 칸
+
+            Vector3 d = to - from;
+            Vector3 flat = new Vector3(d.x, 0f, d.z);
+            float len = flat.magnitude;
+            if (len < 0.1f) return;
+            Quaternion rot = Quaternion.LookRotation(flat / len, Vector3.up);
+            for (int k = 0; k < rails; k++)
+            {
+                float y = rails == 1 ? height - 0.12f : height * (0.5f + 0.5f * k);
+                Deco(PrimitiveType.Cube, (from + to) * 0.5f + Vector3.up * y, rot, new Vector3(thick, thick, len), color);
+            }
+        }
+
+        // ── 울타리 장식 배치(합친 메시) ──
+        private static readonly Color EmberGlow = new Color(1f, 0.45f, 0.15f);
+        private SceneryBatcher fenceBatch;
+        private readonly SceneryPalette fencePalette = new SceneryPalette();
+        private readonly System.Collections.Generic.List<Mesh> fenceMeshes = new System.Collections.Generic.List<Mesh>();
+        private readonly System.Collections.Generic.List<Texture2D> fenceTextures = new System.Collections.Generic.List<Texture2D>();
+        // 색 + 표면(발광·광택) 키 — 울타리 장식 배처 하나만 쓴다(리전 장식 RegionDressingBuilder의 캐시와는 따로)
+        private readonly System.Collections.Generic.Dictionary<SceneryMaterialKey, Material> fenceColorMats =
+            new System.Collections.Generic.Dictionary<SceneryMaterialKey, Material>();
+
+        private void Deco(PrimitiveType type, Vector3 position, Quaternion rotation, Vector3 scale, Color color)
+        {
+            if (fenceBatch == null) return;
+            fenceBatch.Add(DecoMesh(type), position, rotation, scale, color);
+        }
+
+        /// <summary>
+        /// 장식 메시 — 구는 저정점(내장 구는 515정점이라 수백 개를 합치면 정점만 수만 개다), 원기둥은 내장 것,
+        /// 상자는 모서리가 둥근 것. 전부 프로세스 캐시라 파괴하지 않는다.
+        /// </summary>
+        private static Mesh DecoMesh(PrimitiveType type)
+        {
+            switch (type)
+            {
+                case PrimitiveType.Sphere: return ProcMeshLibrary.LowSphere(0.5f, 0.5f, 0.5f, 6, 10);
+                case PrimitiveType.Cube: return ProcMeshLibrary.RoundedBox(Vector3.one, 0.04f, 1);
+                default: return OutfitShapeLibrary.GetPrimMesh(type);
+            }
+        }
+
+        private void BeginFenceBatch()
+        {
+            fenceBatch = new SceneryBatcher(40f, fencePalette);
+            fenceBatch.MarkGlow(EmberGlow, new Color(1.4f, 0.5f, 0.12f));
+        }
+
+        private void EndFenceBatch()
+        {
+            if (fenceBatch == null) return;
+            var root = new GameObject("Scenery_FenceDeco").transform;
+            root.SetParent(transform, false);
+            // 칸 이름엔 Scenery_를 안 단다 — HideMainWorld가 위 root 하나만 끄면 된다(SceneryBatcher.Build 주석)
+            fenceBatch.Build(root, "FenceDeco", true, fenceMeshes, runtimeMaterials, fenceTextures, fenceColorMats);
+            fencePalette.Apply();
+            SceneryBatcher.ClearSourceCache();
+            fenceBatch = null;
         }
 
 
@@ -299,15 +589,14 @@ namespace InsectGame.Core
                 float hs = Random.Range(4f, 8f);
 
                 GameObject hill = Prim(PrimitiveType.Sphere, $"Scenery_MeadowHill_{i}");
-                hill.transform.position = pos + new Vector3(0f, -hs * 0.25f, 0f);
-                hill.transform.localScale = new Vector3(hs * 2f, hs * 0.5f, hs * 2f);
+                PlaceMound(hill, pos, hs * 2f, hs * 2f, Mathf.Lerp(0.28f, 0.42f, Mathf.InverseLerp(4f, 8f, hs)));
                 Apply(hill, hillMat);
                 Destroy(hill.GetComponent<Collider>());
             }
 
             // 개울 (얇은 물길)
             Material waterMat = Mat(new Color(0.3f, 0.5f, 0.7f, 0.5f));
-            SetTransparent(waterMat);
+            SceneryMaterials.MakeFade(waterMat);
             for (int i = 0; i < 4; i++)
             {
                 float t = (float)i / 4f;
@@ -393,45 +682,64 @@ namespace InsectGame.Core
             return avoidCenter + away.normalized * (Mathf.Sqrt(avoidSq) + 2f);
         }
 
+        /// <summary>
+        /// 연못 부두(나루터 널판)의 바닥 자리 — XZ 중심과 크기(x 폭 2m · z 길이 6m, 남북으로 놓인다).
+        /// 호수 윤곽(<see cref="RegionDressingBuilder.PondLake"/>)이 이 자리를 기준으로 잡혀 있어 검사(<c>FieldThemeTests</c>)와
+        /// 장식 회피가 같은 값을 읽는다. 부두를 옮기면 호수 쪽 끝이 물 밖으로 나간다 — 함께 다시 잰다.
+        /// </summary>
+        internal static void PondDockFootprint(Vector3 regionCenter, float rad, out Vector3 center, out Vector2 size)
+        {
+            center = regionCenter + new Vector3(-rad * 0.15f, 0f, -rad * 0.2f);
+            size = new Vector2(2f, 6f);
+        }
+
+        private static bool OnDock(Vector3 p, Vector3 dockCenter, Vector2 dockSize, float margin) =>
+            Mathf.Abs(p.x - dockCenter.x) < dockSize.x * 0.5f + margin && Mathf.Abs(p.z - dockCenter.z) < dockSize.y * 0.5f + margin;
+
         // ======= 연못: 큰 호수 + 데크/부두 + 갈대 =======
+        // 물 자체는 RegionDressingBuilder가 깐다(진흙·여울·깊은 물 세 겹 원반). 여기엔 물 위·물가 소품만 있다.
         private void BuildPondTerrain(Vector3 c, float rad)
         {
-            Material waterMat = Mat(new Color(0.15f, 0.35f, 0.6f, 0.6f));
-            SetTransparent(waterMat);
             Material deckMat = Mat(new Color(0.45f, 0.32f, 0.15f));
             Material reedMat = Mat(new Color(0.4f, 0.5f, 0.2f));
 
-            // 큰 호수 (리전 중심)
-            GameObject lake = Prim(PrimitiveType.Cylinder, "Scenery_Lake");
-            lake.transform.position = c + new Vector3(3f,0.12f, 2f);
-            lake.transform.localScale = new Vector3(rad * 0.5f / 5f, 0.02f, rad * 0.5f / 5f);
-            Apply(lake, waterMat);
-            Destroy(lake.GetComponent<Collider>());
+            // 옛 "큰 호수"(반경 0.05R = 3.4m 반투명 원기둥)는 뺐다 — 장식 호수(평균 물 반경 0.29R)가 들어선 뒤로는
+            // 깊은 물 한쪽에 떠 있는 어두운 얼룩일 뿐이었다. 난수를 쓰지 않던 자리라 뒤따르는 배치는 그대로다.
 
-            // 부두/데크
+            // 부두/데크 — 호수 서쪽 물가에 남북으로 놓인다. 북쪽(호수 쪽) 끝 약 3m가 여울 위, 나머지는 진흙 물가 위다
+            // (호수 윤곽을 이 자리에 맞췄다 — RegionDressingBuilder.PondLake). 옛 주석은 "부두가 호수 안에 든다"였지만
+            // 실제로는 옛 호수의 진흙 끝에서도 1.2m 떨어진 풀밭이었다.
+            PondDockFootprint(c, rad, out Vector3 dockCenter, out Vector2 dockSize);
             GameObject deck = Prim(PrimitiveType.Cube, "Scenery_Dock");
-            deck.transform.position = c + new Vector3(-rad * 0.15f,0.2f, -rad * 0.2f);
-            deck.transform.localScale = new Vector3(2f, 0.15f, 6f);
+            deck.transform.position = dockCenter + new Vector3(0f, 0.2f, 0f);
+            deck.transform.localScale = new Vector3(dockSize.x, 0.15f, dockSize.y);
             Apply(deck, deckMat);
             Destroy(deck.GetComponent<Collider>());
             // 부두 기둥
             for (int i = 0; i < 4; i++)
             {
                 GameObject post = Prim(PrimitiveType.Cylinder, $"Scenery_DockPost_{i}");
-                float z = -rad * 0.2f - 2f + i * 1.8f;
-                post.transform.position = c + new Vector3(-rad * 0.15f + (i % 2 == 0 ? -0.8f : 0.8f), -0.5f, z);
+                float z = -2f + i * 1.8f;
+                post.transform.position = dockCenter + new Vector3(i % 2 == 0 ? -0.8f : 0.8f, -0.5f, z);
                 post.transform.localScale = new Vector3(0.1f, 0.7f, 0.1f);
                 Apply(post, deckMat);
                 Destroy(post.GetComponent<Collider>());
             }
 
-            // 갈대 군락 — 면적 비례 개수 (설계 반경 45)
+            // 갈대 군락 — 면적 비례 개수 (설계 반경 45). 옛 자리(옛 호수 중심에서 0.2~0.35R 고리)는 호수가 커지자 44%가
+            // 물 안(34%는 물가에서 2m 넘게 안쪽)에 섰다. 같은 난수 두 개(각·거리)를 호수 윤곽 기준 물가 고리(물 가장자리의
+            // 96~108%)로 옮긴다 — 난수 호출 수가 같아 뒤 리전(콜라이더 있는 나무·바위)의 배치가 밀리지 않는다.
+            RegionDressingBuilder.PondLakeLayout lake = RegionDressingBuilder.PondLake(c, rad);
             int reedCount = ScaleCount(20, rad, 45f);
             for (int i = 0; i < reedCount; i++)
             {
                 float a = Random.Range(0f, Mathf.PI * 2f);
-                float d = rad * Random.Range(0.2f, 0.35f);
-                Vector3 pos = c + new Vector3(Mathf.Cos(a) * d + 3f, 0f,Mathf.Sin(a) * d + 2f);
+                float shore = Random.Range(0.96f, 1.08f);
+                Vector3 pos = lake.water.EdgePoint(a, shore);
+                // 부두 널판을 뚫고 솟지 않게 — 난수를 더 뽑지 않고 각을 정해진 만큼 돌려 비킨다
+                for (int k = 0; k < 8 && OnDock(pos, dockCenter, dockSize, 0.4f); k++)
+                    pos = lake.water.EdgePoint(a += 0.3f, shore);
+                pos.y = 0f;
 
                 GameObject reed = Prim(PrimitiveType.Cylinder, $"Scenery_PondReed_{i}");
                 reed.transform.position = pos + new Vector3(0f, 1f, 0f);
@@ -456,10 +764,11 @@ namespace InsectGame.Core
                 Destroy(step.GetComponent<Collider>());
             }
 
-            // 수련잎 — 호수 수면 위 납작 원반 (신규 장식, 호수가 리전 중심이라 예외적으로 중심부 배치)
+            // 수련잎 — 옛 호수 중심(c + (3,2)) 둘레 3m 안의 한 무리. 장식 호수의 깊은 물 안쪽(호수 중심에서 약 8.6m)이라
+            // 그대로 둔다 — 호수 전체에 흩어진 수련은 RegionDressingBuilder가 따로 띄운다.
             Material lilyMat = Mat(new Color(0.2f, 0.55f, 0.25f));
             int lilyCount = ScaleCount(5, rad, 45f);
-            float lakeR = rad * 0.05f; // Scenery_Lake 반경 (scale x = rad*0.1 = 지름)
+            float lakeR = rad * 0.05f; // 무리 반경의 기준(옛 원기둥 호수 반경이었다)
             for (int i = 0; i < lilyCount; i++)
             {
                 float a = Random.Range(0f, Mathf.PI * 2f);
@@ -625,7 +934,7 @@ namespace InsectGame.Core
         {
             Material mudMat = Mat(new Color(0.2f, 0.22f, 0.12f));
             Material waterMat = Mat(new Color(0.12f, 0.2f, 0.15f, 0.5f));
-            SetTransparent(waterMat);
+            SceneryMaterials.MakeFade(waterMat);
             Material deadWoodMat = Mat(new Color(0.3f, 0.22f, 0.15f));
 
             // 수렁 (진흙 + 물 웅덩이) — 면적 비례 개수 (설계 반경 45)
@@ -755,10 +1064,11 @@ namespace InsectGame.Core
                 Vector3 pos = c + new Vector3(Mathf.Cos(a) * d,0.13f, Mathf.Sin(a) * d);
                 pos = ClearSceneryPosition(pos, c, rad, 4f);
 
-                GameObject snow = Prim(PrimitiveType.Plane, $"Scenery_Snow_{i}");
-                snow.transform.position = pos;
+                // Plane(10m 정사각형)이면 종이를 깐 듯 모서리가 각져 보였다 — 낮은 눈 더미로 둔다.
+                // 크기는 옛 면적(한 변 ss×10m)을 그대로 따르고 난수는 새로 뽑지 않는다(시드 배치 보존).
+                GameObject snow = Prim(PrimitiveType.Sphere, $"Scenery_Snow_{i}");
                 float ss = Random.Range(0.3f, 0.6f);
-                snow.transform.localScale = new Vector3(ss, 1f, ss);
+                PlaceMound(snow, pos, ss * 10f, ss * 8.5f, 0.12f);
                 Apply(snow, snowMat);
                 Destroy(snow.GetComponent<Collider>());
             }
@@ -1102,8 +1412,7 @@ namespace InsectGame.Core
                 float hs = Random.Range(4f, 7f);
 
                 GameObject hill = Prim(PrimitiveType.Sphere, $"Scenery_HollowRidge_{i}");
-                hill.transform.position = pos + new Vector3(0f, -hs * 0.3f, 0f);
-                hill.transform.localScale = new Vector3(hs * 2.2f, hs * 0.28f, hs * 2.2f);
+                PlaceMound(hill, pos, hs * 2.2f, hs * 2.2f, Mathf.Lerp(0.2f, 0.3f, Mathf.InverseLerp(4f, 7f, hs)));
                 Apply(hill, dirtMat);
                 Destroy(hill.GetComponent<Collider>());
             }
@@ -1185,8 +1494,9 @@ namespace InsectGame.Core
         // ======= 모래언덕: 사구 능선 + 바위 노두 + 마른 관목 + 명부회 화물 =======
         private void BuildDunesTerrain(Vector3 c, float rad)
         {
-            Material sandMat = Mat(new Color(0.86f, 0.74f, 0.46f));
-            Material sandShadeMat = Mat(new Color(0.72f, 0.60f, 0.36f));
+            // 바닥(RegionPalette)보다 한 톤만 밝게 — 더 밝으면 둔덕이 흰 원판처럼 떠 보인다
+            Material sandMat = Mat(new Color(0.72f, 0.62f, 0.43f));
+            Material sandShadeMat = Mat(new Color(0.62f, 0.52f, 0.36f));
             Material rockMat = Mat(new Color(0.60f, 0.50f, 0.40f));
             Material shrubMat = Mat(new Color(0.48f, 0.46f, 0.30f));
             Material crateMat = Mat(new Color(0.55f, 0.42f, 0.26f));
@@ -1201,9 +1511,7 @@ namespace InsectGame.Core
                 float ds = Random.Range(6f, 11f);
 
                 GameObject dune = Prim(PrimitiveType.Sphere, $"Scenery_Dune_{i}");
-                dune.transform.position = pos + new Vector3(0f, -ds * 0.32f, 0f);
-                dune.transform.localScale = new Vector3(ds * 3f, ds * 0.42f, ds * 1.4f);
-                dune.transform.rotation = Quaternion.Euler(0f, 35f, 0f);
+                PlaceMound(dune, pos, ds * 3f, ds * 1.4f, Mathf.Lerp(0.4f, 0.62f, Mathf.InverseLerp(6f, 11f, ds)), 35f);
                 Apply(dune, i % 3 == 0 ? sandShadeMat : sandMat);
                 Destroy(dune.GetComponent<Collider>());
             }
@@ -1271,9 +1579,9 @@ namespace InsectGame.Core
         // ======= 서릿길: 눈 언덕 + 얼음 기둥 + 언 나무 =======
         private void BuildFrostlineTerrain(Vector3 c, float rad)
         {
-            Material snowMat = Mat(new Color(0.90f, 0.93f, 0.96f));
+            Material snowMat = Mat(new Color(0.77f, 0.81f, 0.86f));   // 바닥(RegionPalette)보다 한 톤 밝게
             Material iceMat = Mat(new Color(0.66f, 0.84f, 0.92f, 0.72f));
-            SetTransparent(iceMat);
+            SceneryMaterials.MakeFade(iceMat);
             Material rockMat = Mat(new Color(0.52f, 0.56f, 0.60f));
             Material frozenWoodMat = Mat(new Color(0.44f, 0.48f, 0.52f));
 
@@ -1287,8 +1595,7 @@ namespace InsectGame.Core
                 float ds = Random.Range(5f, 9f);
 
                 GameObject drift = Prim(PrimitiveType.Sphere, $"Scenery_SnowDrift_{i}");
-                drift.transform.position = pos + new Vector3(0f, -ds * 0.28f, 0f);
-                drift.transform.localScale = new Vector3(ds * 2.4f, ds * 0.45f, ds * 2f);
+                PlaceMound(drift, pos, ds * 2.4f, ds * 2f, Mathf.Lerp(0.3f, 0.48f, Mathf.InverseLerp(5f, 9f, ds)));
                 Apply(drift, snowMat);
                 Destroy(drift.GetComponent<Collider>());
             }
@@ -1386,9 +1693,8 @@ namespace InsectGame.Core
                 float fs = Random.Range(6f, 10f);
 
                 GameObject flow = Prim(PrimitiveType.Sphere, $"Scenery_LavaFlow_{i}");
-                flow.transform.position = pos + new Vector3(0f, -fs * 0.34f, 0f);
-                flow.transform.localScale = new Vector3(fs * 2.6f, fs * 0.38f, fs * 1.8f);
-                flow.transform.rotation = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
+                // 요 난수는 예전(놓은 뒤 rotation 대입)과 같은 차례에 한 번 뽑힌다 — 뒤따르는 배치가 밀리지 않는다
+                PlaceMound(flow, pos, fs * 2.6f, fs * 1.8f, 0.08f, Random.Range(0f, 360f));
                 Apply(flow, basaltMat);
                 Destroy(flow.GetComponent<Collider>());
             }
@@ -1421,6 +1727,7 @@ namespace InsectGame.Core
                 GameObject mound = Prim(PrimitiveType.Sphere, $"Scenery_AshMound_{i}");
                 mound.transform.position = pos + new Vector3(0f, ms * 0.18f, 0f);
                 mound.transform.localScale = new Vector3(ms * 1.8f, ms * 0.6f, ms * 1.8f);
+                RegisterDome(mound);   // 꼭대기가 바닥 위 0.48~1.05m — 기어다니는 곤충이 통째로 묻히는 높이다
                 Apply(mound, ashMat);
                 Destroy(mound.GetComponent<Collider>());
             }
@@ -1508,6 +1815,7 @@ namespace InsectGame.Core
                 GameObject mound = Prim(PrimitiveType.Sphere, $"Scenery_MossMound_{i}");
                 mound.transform.position = pos + new Vector3(0f, ms * 0.12f, 0f);
                 mound.transform.localScale = new Vector3(ms * 2f, ms * 0.42f, ms * 2f);
+                RegisterDome(mound);   // 꼭대기가 바닥 위 0.36~0.9m
                 Apply(mound, mossMat);
                 Destroy(mound.GetComponent<Collider>());
             }
@@ -1531,8 +1839,7 @@ namespace InsectGame.Core
                 float ps = Random.Range(7f, 11f);
 
                 GameObject plate = Prim(PrimitiveType.Sphere, $"Scenery_VoidPlate_{i}");
-                plate.transform.position = pos + new Vector3(0f, -ps * 0.36f, 0f);
-                plate.transform.localScale = new Vector3(ps * 2.6f, ps * 0.4f, ps * 2.4f);
+                PlaceMound(plate, pos, ps * 2.6f, ps * 2.4f, 0.05f);
                 Apply(plate, voidGroundMat);
                 Destroy(plate.GetComponent<Collider>());
             }
@@ -1576,6 +1883,46 @@ namespace InsectGame.Core
 
         // ======= 공통 유틸 =======
 
+        /// <summary>리전 바닥 평면의 높이(<c>PlaySceneBootstrap</c>이 0.08 + 리전 순번 × 0.001에 깐다). 둔덕 높이 표와 같은 기준이어야 한다.</summary>
+        private const float RegionFloorY = FieldGround.FloorY;
+
+        /// <summary>
+        /// 꼭대기가 리전 바닥 위로 <paramref name="rise"/>m 드러나는 낮은 둔덕으로 구를 놓는다.
+        /// width·depth는 **지면에 드러난 자국의 지름**이다.
+        ///
+        /// 옛 식(<c>y = -0.3hs, scaleY = 0.28hs</c> 같은 것)은 꼭대기가 지면 **아래**였다 — 모래언덕의 사구,
+        /// 서릿길의 눈 언덕, 텅 빈 들의 능선, 잿불의 용암 판, 초원의 언덕이 전부 묻혀 안 보였고
+        /// 그 리전들이 평평한 단색 판으로 찍혔다.
+        ///
+        /// 높이는 호출부의 기존 크기 난수에서 파생한다 — <b>난수를 새로 뽑지 않는다.</b> 시드 고정 배치라
+        /// 한 번만 더 뽑아도 뒤따르는 나무·바위(콜라이더가 있다) 자리가 통째로 밀려 길이 바뀐다.
+        ///
+        /// 구의 위 40%(수직 반축 b 중 0.4b)만 드러내 가장자리 경사를 완만하게 둔다. **콜라이더는 두지 않는다** —
+        /// <c>PlayerMovement</c>의 접지는 <c>Max(pos.y, hit.y)</c>라 올라가기만 하고 내려오지 않아서,
+        /// 둔덕을 밟고 지나가면 그 높이에 뜬 채 남는다. 그래서 rise를 발목~무릎 아래로 낮게 잡는다.
+        ///
+        /// 대신 모양을 <see cref="FieldGround"/>에 올린다 — 평면 y에 서는 곤충·플레이어가 둔덕 속에 묻히지 않게
+        /// 스폰·이동 쪽이 좌표로 높이를 묻는다. 회전(<paramref name="yawDeg"/>)까지 여기서 정해야 등록이 최종 자세를 본다
+        /// (예전엔 사구·용암 판이 놓은 뒤에 따로 돌렸다 — 난수를 쓰는 용암 판은 인자 자리에서 뽑아 순서가 같다).
+        /// </summary>
+        internal static void PlaceMound(GameObject mound, Vector3 pos, float width, float depth, float rise, float yawDeg = 0f)
+        {
+            float b = Mathf.Max(0.01f, rise) / 0.4f;
+            mound.transform.SetPositionAndRotation(new Vector3(pos.x, RegionFloorY + rise - b, pos.z), Quaternion.Euler(0f, yawDeg, 0f));
+            mound.transform.localScale = new Vector3(width / 0.8f, b * 2f, depth / 0.8f);
+            RegisterDome(mound);
+        }
+
+        /// <summary>
+        /// 콜라이더 없는 구 둔덕(내장 Sphere, 부모 없음)을 지면 높이 표에 올린다 — <see cref="PlaceMound"/>를 거치지 않는
+        /// 재 더미·이끼 둔덕도 같은 타원체라 여기로 부른다. 자세가 다 정해진 뒤에 불러야 한다.
+        /// </summary>
+        internal static void RegisterDome(GameObject mound)
+        {
+            Transform t = mound.transform;
+            FieldGround.AddDome(t.position, t.lossyScale * 0.5f, t.eulerAngles.y);
+        }
+
         // 소품 개수를 면적 비례로 유지 — designRadius는 소품 수치를 설계했던 스케일 1.0 기준 반경.
         // WorldScale 확장으로 radius가 커져도 밀도(개수/면적)가 희석되지 않도록 보정.
         private static int ScaleCount(int baseCount, float radius, float designRadius)
@@ -1585,6 +1932,7 @@ namespace InsectGame.Core
 
         private void CreateInternalPath(Vector3 from, Vector3 to, float width, Material pathMat, Material edgeMat)
         {
+            internalPaths.Add(new PathSegment { from = from, to = to, width = width });
             Vector3 dir = to - from;
             float dist = new Vector3(dir.x, 0f, dir.z).magnitude;
             if (dist < 1f) return;
@@ -1625,6 +1973,7 @@ namespace InsectGame.Core
 
         private void CreateStairPath(Vector3 from, Vector3 to, int stepCount, Material mat)
         {
+            internalPaths.Add(new PathSegment { from = from, to = to, width = 3f });
             Vector3 dir = to - from;
             float yDiff = dir.y;
             for (int i = 0; i < stepCount; i++)
@@ -1680,7 +2029,7 @@ namespace InsectGame.Core
         /// 로그아웃·계정삭제가 씬을 재로드하므로 회수하지 않으면 재로드마다 지형 한 벌이 샌다.
         ///
         /// <b>색상 캐시를 쓰지 않는 이유</b>: 여기서 나온 머티리얼은 뒤에서 변형된다
-        /// (<c>SetTransparent</c>가 물·얼음에, 발광 설정이 따로). 색으로 공유하면 같은 색의
+        /// (<see cref="SceneryMaterials.MakeFade"/>가 물·얼음에, 발광 설정이 따로). 색으로 공유하면 같은 색의
         /// 불투명 지형까지 함께 투명해진다. <c>VillageBuilder</c>는 생성 뒤 아무도 안 건드려서
         /// 캐시가 성립한다 — 그쪽과 방식이 갈리는 건 그 차이 때문이다.
         /// </summary>
@@ -1689,34 +2038,33 @@ namespace InsectGame.Core
 
         private void OnDestroy()
         {
+            // 둔덕 높이 표는 정적이다 — 월드가 사라지면 함께 비워 다음 씬(메인 메뉴 등)이 옛 둔덕 높이를 보지 않게 한다
+            FieldGround.Clear();
             for (int i = 0; i < runtimeMaterials.Count; i++)
                 if (runtimeMaterials[i] != null) Destroy(runtimeMaterials[i]);
             runtimeMaterials.Clear();
+            foreach (Mesh m in fenceMeshes) if (m != null) Destroy(m);
+            foreach (Texture2D t in fenceTextures) if (t != null) Destroy(t);
+            fenceMeshes.Clear();
+            fenceTextures.Clear();
             if (gatewayFont != null) Destroy(gatewayFont);
             gatewayFont = null;
         }
 
+        /// <summary>
+        /// 셰이더 폴백·색·무광 마감은 <see cref="SceneryMaterials.Create"/>가 단일 출처다(체인 사본이 빌더마다 있었다).
+        /// 여기선 회수 목록에만 올린다 — 반투명·발광은 호출부가 뒤에서 따로 입힌다(색 캐시를 안 쓰는 이유, 위 주석).
+        /// </summary>
         private Material Mat(Color color)
         {
-            Shader shader = Shader.Find("Standard");
-            if (shader == null) shader = Shader.Find("Universal Render Pipeline/Lit");
-            if (shader == null) shader = Shader.Find("Unlit/Color");
-            if (shader == null) shader = Shader.Find("Sprites/Default");
-            Material mat = shader != null ? new Material(shader) : new Material(Shader.Find("Hidden/InternalErrorShader"));
-            mat.color = color;
+            Material mat = SceneryMaterials.Create(color);
             runtimeMaterials.Add(mat);
             return mat;
         }
 
-        private void SetTransparent(Material mat)
-        {
-            mat.SetFloat("_Mode", 3);
-            mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
-            mat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
-            mat.SetInt("_ZWrite", 0);
-            mat.EnableKeyword("_ALPHABLEND_ON");
-            mat.renderQueue = 3000;
-        }
+        // 반투명(물·얼음)은 SceneryMaterials.MakeFade가 단일 출처다. 옛 사본(SetTransparent)은 _Mode를 3으로 적고
+        // 키워드 둘(_ALPHATEST_ON·_ALPHAPREMULTIPLY_ON)을 끄지 않았지만, Create가 그 둘을 켜지 않고 _Mode는 셰이더 패스가
+        // 안 읽는 인스펙터 값이라 그리는 결과(블렌드·ZWrite·_ALPHABLEND_ON·큐 3000)는 같다.
 
         // 에미시브 느낌 — 실시간 Light 컴포넌트 없이 자체 발광 색상만 부여 (빌드 타임 1회).
         private void SetEmissive(Material mat, Color emission)

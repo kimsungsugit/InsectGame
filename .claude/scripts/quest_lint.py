@@ -321,6 +321,28 @@ def evaluate_signals() -> list:
                     f"{len(sep_bad)}건 ({sep_bad})" if sep_bad else f"0건 ({len(ids)}개)",
                     "FAIL" if sep_bad else "PASS"))
 
+    # 12. 지역 의뢰(requiredRegionId) 정합 — 세 가지가 전부 무증상이다.
+    #     ① 리전 ID 오타: IsSideUnlocked가 GetRegionById null로 영원히 닫혀 **의뢰가 목록에서 잠긴 채**
+    #        남는다(예외도 경고도 없다). ② Story 카테고리에 달면: 스토리 체인(ActivateNextQuest·
+    #        NotifyAction의 ActiveQuest 경로)은 이 필드를 보지 않아 **어디서든 세어진다** — 적어 둔
+    #        한정이 거짓이 된다. ③ 위치가 없는 목표 타입(LevelUp·OpenDex 등)에 달면 "그 리전에서
+    #        레벨업"처럼 우연에 기대는 목표가 된다 — 행동이 일어난 곳이 곧 리전인 타입만 허용한다.
+    region_types = {"Capture", "CaptureRare", "CaptureRarity", "Battle", "RaidBattle",
+                    "VisitSubArea", "NpcDuel"}
+    region_bad = []
+    region_quests = [q for q in quests if q.get("region")]
+    for q in region_quests:
+        if q["region"] not in region_ids:
+            region_bad.append(f"{q['questId']}:{q['region']}(리전 없음)")
+        if q.get("category", "Story") != "Side":
+            region_bad.append(f"{q['questId']}(Story 퀘스트엔 리전 한정이 적용되지 않는다)")
+        if q.get("type") not in region_types:
+            region_bad.append(f"{q['questId']}:{q.get('type')}(위치 없는 목표 타입)")
+    signals.append(("지역 의뢰 정합 (리전 실재 · Side 전용 · 위치 있는 목표)", "0건",
+                    f"{len(region_bad)}건 ({region_bad})" if region_bad
+                    else f"0건 (지역 의뢰 {len(region_quests)}개)",
+                    "FAIL" if region_bad else "PASS"))
+
     return signals
 
 

@@ -48,11 +48,21 @@ namespace InsectGame.UI
             Color topColor, Color bottomColor, Color shoeColor, Color hatColor,
             float swayX = 0f, bool drawDefaultPack = true)
         {
+            DrawWithColors(cx, cy, scale, gender, GetSkinColor(skinColorIdx), GetHairColor(hairColorIdx),
+                hairStyle, faceType, topColor, bottomColor, shoeColor, hatColor, swayX, drawDefaultPack);
+        }
+
+        /// <summary>
+        /// 피부·머리를 팔레트 번호가 아니라 <b>색으로</b> 받는 판. 플레이어 팔레트(<c>CharacterPalette</c>)에 없는 색
+        /// — 월드 NPC의 백발 같은 — 을 초상에 그대로 옮길 때 쓴다(<c>NpcDialogueUI</c>의 월드 파생 초상).
+        /// </summary>
+        public static void DrawWithColors(float cx, float cy, float scale,
+            int gender, Color skin, Color hair, int hairStyle, int faceType,
+            Color topColor, Color bottomColor, Color shoeColor, Color hatColor,
+            float swayX = 0f, bool drawDefaultPack = true)
+        {
             // 호출부의 색(패널 페이드 알파 등)을 잡아 둔다 — 파츠는 여기에 곱해 그린다.
             ambientColor = GUI.color;
-
-            Color skin = GetSkinColor(skinColorIdx);
-            Color hair = GetHairColor(hairColorIdx);
 
             // 공용 비례 헬퍼 — DrawArmsAsSkin/DrawBackpackWithSlot/DrawOutfitAccessories와 자동 동기.
             Proportions p = CalculateProportions(cy, scale, gender);

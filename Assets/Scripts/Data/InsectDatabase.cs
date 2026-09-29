@@ -35,24 +35,42 @@ namespace InsectGame.Data
 
         public InsectData GetWeightedRandom(List<InsectData> candidates)
         {
+            return PickWeighted(candidates, Random.value);
+        }
+
+        /// <summary>
+        /// <c>spawnWeight</c> 가중 선택의 <b>단일 출처</b> — <paramref name="roll01"/>(0~1)로 고른다. 난수를 밖에서 받아
+        /// 테스트가 분포를 고정할 수 있다. 필드 스폰은 등급을 먼저 굴린 뒤 그 등급 후보 안에서 이걸 부른다
+        /// (<c>FieldSpawnRules</c>). 가중치는 0.01 아래로 내리지 않는다 — 가챠 전용(0)이 섞여도 0으로 나누지 않는다.
+        ///
+        /// (여기 있던 <c>GetWeightedRandomWithRareBoost</c>·<c>GetRarityWeight</c>는 지웠다. 필드 스폰만 부르던 것인데
+        /// 부스트가 1을 넘는 순간 등급 기본 가중치 표까지 함께 곱해 희귀가 오히려 줄었다 — 레어 부스트는 이제
+        /// <c>FieldSpawnRules.BoostedShare</c>가 등급표에 건다.)
+        /// </summary>
+        public static InsectData PickWeighted(IReadOnlyList<InsectData> candidates, float roll01)
+        {
             if (candidates == null || candidates.Count == 0)
             {
                 return null;
             }
 
             float total = 0f;
-            foreach (InsectData data in candidates)
+            for (int i = 0; i < candidates.Count; i++)
             {
                 // null 가드 — 외부에서 직접 candidates 전달 시 NRE 차단(GetCandidates 외 경로).
+                InsectData data = candidates[i];
                 if (data == null) continue;
                 total += Mathf.Max(0.01f, data.spawnWeight);
             }
 
-            float roll = Random.Range(0f, total);
+            float roll = Mathf.Clamp01(roll01) * total;
             float cumulative = 0f;
-            foreach (InsectData data in candidates)
+            InsectData last = null;
+            for (int i = 0; i < candidates.Count; i++)
             {
+                InsectData data = candidates[i];
                 if (data == null) continue;
+                last = data;
                 cumulative += Mathf.Max(0.01f, data.spawnWeight);
                 if (roll <= cumulative)
                 {
@@ -60,76 +78,7 @@ namespace InsectGame.Data
                 }
             }
 
-            return candidates[0];
-        }
-
-        public InsectData GetWeightedRandomWithRareBoost(List<InsectData> candidates, float rareMultiplier)
-        {
-            if (candidates == null || candidates.Count == 0)
-            {
-                return null;
-            }
-
-            float total = 0f;
-            foreach (InsectData data in candidates)
-            {
-                if (data == null) continue;
-                float weight = Mathf.Max(0.01f, data.spawnWeight) * GetRarityWeight(data, rareMultiplier);
-                total += weight;
-            }
-
-            float roll = Random.Range(0f, total);
-            float cumulative = 0f;
-            foreach (InsectData data in candidates)
-            {
-                if (data == null) continue;
-                float weight = Mathf.Max(0.01f, data.spawnWeight) * GetRarityWeight(data, rareMultiplier);
-                cumulative += weight;
-                if (roll <= cumulative)
-                {
-                    return data;
-                }
-            }
-
-            return candidates[0];
-        }
-
-        private float GetRarityWeight(InsectData data, float rareMultiplier)
-        {
-            if (data == null)
-            {
-                return 1f;
-            }
-
-            float baseWeight;
-            switch (data.rarity)
-            {
-                case InsectRarity.Common:
-                    baseWeight = 1f;
-                    break;
-                case InsectRarity.Uncommon:
-                    baseWeight = 0.45f;
-                    break;
-                case InsectRarity.Rare:
-                    baseWeight = 0.12f;
-                    break;
-                case InsectRarity.Epic:
-                    baseWeight = 0.03f;
-                    break;
-                case InsectRarity.Legendary:
-                    baseWeight = 0.008f;
-                    break;
-                default:
-                    baseWeight = 1f;
-                    break;
-            }
-
-            if (data.rarity >= InsectRarity.Rare)
-            {
-                baseWeight *= Mathf.Max(1f, rareMultiplier);
-            }
-
-            return baseWeight;
+            return last;
         }
     }
 }

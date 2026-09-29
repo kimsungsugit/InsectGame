@@ -64,42 +64,19 @@ namespace InsectGame.Core
         }
 
         /// <summary>
-        /// 셰이더 폴백 4단계를 거쳐 머티리얼을 만든다. <b>알파 &lt; 1이면 투명 렌더로 전환한다.</b>
+        /// 셰이더 폴백·무광 마감은 <see cref="SceneryMaterials.Create"/>가 한다. <b>알파 &lt; 1이면 투명 렌더로 전환한다.</b>
         ///
         /// Standard 셰이더는 기본이 Opaque라 <c>mat.color</c>에 알파를 넣어도 **무시된다** —
-        /// 렌더 모드·블렌드·ZWrite·렌더큐를 함께 세워야 실제로 비친다. 그 설정이 없어서
+        /// 렌더 모드·블렌드·ZWrite·렌더큐를 함께 세워야 실제로 비친다(<see cref="SceneryMaterials.MakeFade"/>). 그 설정이 없어서
         /// 반투명을 의도한 10곳(물웅덩이·호수·물결·거미줄·분수·늪안개·발광체·구름·수문장 아우라)이
         /// 전부 **불투명 덩어리**로 그려지고 있었다. 수문장 아우라(알파 0.15)는 지름 5m 불투명
         /// 빨간 구체가 되어 그 안의 수문장 곤충을 통째로 가렸다.
         /// </summary>
         private static Material CreateSafeMaterial(Color color)
         {
-            Shader shader = Shader.Find("Standard");
-            if (shader == null) shader = Shader.Find("Universal Render Pipeline/Lit");
-            if (shader == null) shader = Shader.Find("Unlit/Color");
-            if (shader == null) shader = Shader.Find("Sprites/Default");
-            Material mat = shader != null ? new Material(shader) : new Material(Shader.Find("Hidden/InternalErrorShader"));
-            mat.color = color;
-
-            if (color.a < 0.999f) MakeTransparent(mat);
+            Material mat = SceneryMaterials.Create(color);
+            if (SceneryMaterials.IsTranslucent(color)) SceneryMaterials.MakeFade(mat);
             return mat;
-        }
-
-        /// <summary>
-        /// Standard 셰이더를 Fade 모드로 돌린다 — Unity 표준 머티리얼 인스펙터가 하는 것과 같은 설정이다.
-        /// 프로퍼티가 없는 폴백 셰이더(Unlit/Color 등)에서는 <c>HasProperty</c> 가드가 조용히 넘어간다.
-        /// </summary>
-        private static void MakeTransparent(Material mat)
-        {
-            if (mat == null) return;
-            if (mat.HasProperty("_Mode")) mat.SetFloat("_Mode", 2f);   // 2 = Fade
-            if (mat.HasProperty("_SrcBlend")) mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
-            if (mat.HasProperty("_DstBlend")) mat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
-            if (mat.HasProperty("_ZWrite")) mat.SetInt("_ZWrite", 0);
-            mat.DisableKeyword("_ALPHATEST_ON");
-            mat.EnableKeyword("_ALPHABLEND_ON");
-            mat.DisableKeyword("_ALPHAPREMULTIPLY_ON");
-            mat.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
         }
 
         private void Awake()
@@ -627,6 +604,9 @@ namespace InsectGame.Core
             InsectGame.Story.StoryDirector storyDirector =
                 EnsureComponent<InsectGame.Story.StoryDirector>("World/StoryDirector");
             storyDirector.AutoWire(regionMgr, battleController, progress, insectCollection, questManager);
+            // 필드 스포너의 스토리 포획 보조 — 발화를 기다리는 종 지정 포획 비트의 종을 리전별로 묻는다(시간 기반 재생이라
+            // 리전을 오가며 다시 굴릴 수 없다). 스포닝이 스토리를 직접 참조하지 않게 정적 훅이다(도주 방지 훅과 같은 형태).
+            InsectSpawner.StoryCaptureTargetProvider = storyDirector.CollectPendingCaptureSpecies;
                 // RegionCleansed 트리거 소스 — DexController와 같은 이유로 Start 전에 주입한다.
                 storyDirector.AutoWire(blight);
             storyDirector.AutoWire(candyInventory, itemInventory);
@@ -876,7 +856,16 @@ namespace InsectGame.Core
         private void EnsureLight()
         {
             // 그늘(그림자 지는 곳)이 새까매지지 않도록 그림자 강도를 낮추고 환경광을 약간 올린다.
-            // 메인 필드는 Skybox 환경광이라 ambientIntensity가 그늘 밝기에 직접 기여.
+            //
+            // **Skybox 환경광을 쓰지 않는다.** 이 씬엔 라이팅 데이터(LightingDataAsset)가 없어
+            // 하늘에서 구운 환경광 프로브가 비어 있다 — ambientIntensity를 아무리 올려도 0에 곱해진다.
+            // 배치 캡처에서 해를 등진 벽과 NPC 정면이 완전한 검정으로 찍혔다(NPC 70명 전원이 실루엣).
+            // Trilight는 프로브 없이 색 세 개로 바로 비추므로 굽기 없이도 그늘이 산다.
+            // 서브에리어 진입 시 SubAreaEnvironment가 Flat으로 바꿨다가 이 모드로 되돌린다.
+            RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Trilight;
+            RenderSettings.ambientSkyColor = new Color(0.50f, 0.55f, 0.62f);
+            RenderSettings.ambientEquatorColor = new Color(0.42f, 0.43f, 0.41f);
+            RenderSettings.ambientGroundColor = new Color(0.26f, 0.24f, 0.21f);
             RenderSettings.ambientIntensity = Mathf.Max(RenderSettings.ambientIntensity, 1.25f);
 
             Light existing = FindFirstObjectByType<Light>();
@@ -1022,8 +1011,9 @@ namespace InsectGame.Core
             for (int ri = 0; ri < regionDefs.Length; ri++)
             {
                 var region = regionDefs[ri];
-                Color col = region.themeColor;
-                Material mat = CreateSafeMaterial(new Color(col.r * 0.5f + 0.1f, col.g * 0.5f + 0.1f, col.b * 0.4f + 0.08f));
+                // 바닥색은 RegionPalette가 단일 출처 — 옛 공식(themeColor × 0.5)은 서릿길을 회녹색,
+                // 연못을 리전 전체가 파란 "물"로 칠했다.
+                Material mat = CreateSafeMaterial(RegionPalette.Ground(region.regionId, region.themeColor));
                 GameObject regionGround = GameObject.CreatePrimitive(PrimitiveType.Plane);
                 regionGround.name = $"Region_{region.regionId}";
                 regionGround.transform.position = region.centerPosition + new Vector3(0f, 0.08f + ri * 0.001f, 0f);
@@ -1047,19 +1037,25 @@ namespace InsectGame.Core
                     float ba = Mathf.PI * 2f * bi / barrierCount;
                     Vector3 bPos = region.centerPosition + new Vector3(Mathf.Cos(ba) * bRad, 0f, Mathf.Sin(ba) * bRad);
                     if (WorldRouteLayout.IsOnRoute(regionDefs, bPos, 2f)) continue;
+                    // 겹친 리전(초원·습지 약 42m)에서 남의 리전 울타리 줄 안에 떨어지는 것은 짓지 않는다 — 울타리 기둥과 같은
+                    // 판정(RegionTerrainBuilder.IsInsideOtherRegionFence). 경계가 아니라 0.85R 고리 장식이다(45° 간격, 통행 차단 없음).
+                    bool inOtherRegion = RegionTerrainBuilder.IsInsideOtherRegionFence(regionDefs, region, bPos);
 
                     if (bi % 3 == 0)
                     {
+                        // 크기 난수는 짓지 않아도 뽑는다 — 전역 난수 줄기라 건너뛰면 뒤따르는 필드 소품이 전부 밀린다
+                        float bs = Random.Range(1.2f, 2f);
+                        if (inOtherRegion) continue;
                         // Large boulder barrier
                         GameObject boulder = GameObject.CreatePrimitive(PrimitiveType.Sphere);
                         boulder.name = $"Barrier_{region.regionId}_{bi}_Rock";
-                        float bs = Random.Range(1.2f, 2f);
                         boulder.transform.position = bPos + new Vector3(0f, bs * 0.2f, 0f);
                         boulder.transform.localScale = new Vector3(bs * 1.5f, bs * 0.6f, bs);
                         boulder.GetComponent<MeshRenderer>().material = barrierRockMat;
                     }
                     else
                     {
+                        if (inOtherRegion) continue;   // 말뚝은 난수를 안 쓴다
                         // Low fence post
                         GameObject fPost = GameObject.CreatePrimitive(PrimitiveType.Cube);
                         fPost.name = $"Barrier_{region.regionId}_{bi}_Post";
@@ -1085,14 +1081,26 @@ namespace InsectGame.Core
             });
 
             // 리전별 게임 필드 지형 (언덕, 길, 바위, 나무 등)
+            RegionTerrainBuilder regionTerrain = null;
             GroundStep("RegionTerrainBuilder", () =>
             {
-                RegionTerrainBuilder regionTerrain = new GameObject("RegionTerrainBuilder").AddComponent<RegionTerrainBuilder>();
+                regionTerrain = new GameObject("RegionTerrainBuilder").AddComponent<RegionTerrainBuilder>();
                 regionTerrain.BuildAllRegions(regionDefs);
             });
 
+            // 리전 표면 장식(바닥 얼룩·발밑 디테일·호수·울타리 밖 테두리). 마을·전초기지를 피해야 해서
+            // 실제 배치는 그것들이 지어진 뒤(Start)에 한다 — 여기선 설정만 건넨다.
+            GroundStep("RegionDressingBuilder", () =>
+                new GameObject("RegionDressingBuilder").AddComponent<RegionDressingBuilder>().Configure(regionDefs, regionTerrain));
+
+            // 원경 — 리전·길을 피해 월드 둘레에 산맥, 하늘에 뭉게구름
+            GroundStep("WorldBackdropBuilder", () =>
+                new GameObject("WorldBackdropBuilder").AddComponent<WorldBackdropBuilder>().Build(regionDefs));
+
             // 수문장은 BuildSystems에서 database와 함께 생성
             GroundStep("CreateSubAreaEntries", () => CreateSubAreaEntries(regionDefs));
+            GroundStep("SubAreaGateBuilder", () =>
+                new GameObject("SubAreaGateBuilder").AddComponent<SubAreaGateBuilder>().Build(regionDefs));
         }
 
         // 지형 생성 단계 격리 실행 — 실패 시 해당 단계명+예외를 로그/배너로 남기고 다음 단계 진행.
@@ -1216,7 +1224,7 @@ namespace InsectGame.Core
                 }
                 else if (r.regionId == "pond")
                 {
-                    AddPondScenery(c, rad);
+                    AddPondScenery(c, rad, r.radius);
                 }
                 else if (r.regionId == "forest")
                 {
@@ -1479,7 +1487,9 @@ namespace InsectGame.Core
             Object.Destroy(puddle.GetComponent<Collider>());
         }
 
-        private void AddPondScenery(Vector3 c, float rad)
+        /// <param name="rad">소품 배치 반경(리전 반경 × 0.7 — AddRegionScenery가 넘긴다)</param>
+        /// <param name="regionRadius">리전 반경 그대로 — 호수 윤곽(RegionDressingBuilder.PondLake)이 이 값의 배율로 잡혀 있다</param>
+        private void AddPondScenery(Vector3 c, float rad, float regionRadius)
         {
             Material waterMat = CreateSafeMaterial(new Color(0.2f, 0.4f, 0.7f, 0.6f));
             Material reedMat = CreateSafeMaterial(new Color(0.35f, 0.55f, 0.2f));
@@ -1580,6 +1590,10 @@ namespace InsectGame.Core
                 GameObject rock = GameObject.CreatePrimitive(PrimitiveType.Sphere);
                 rock.name = $"Pond_ShoreRock_{i}";
                 float rs = Random.Range(0.4f, 0.9f);
+                // 커진 호수(RegionDressingBuilder.PondLake — 중심이 남동으로 옮겨 앉았다)에 잠기는 바위(0°·300° 쪽)는 같은
+                // 방위의 진흙 띠 바깥 가장자리로 옮긴다. 자리만 바꾸고 난수는 그대로 뽑는다(뒤따르는 소품이 밀리지 않게).
+                // 몸 반경은 스케일 긴 축(1.2rs)의 절반.
+                rockPos = RegionDressingBuilder.PondShoreSpot(c, regionRadius, rockPos, rs * 0.6f);
                 rock.transform.position = rockPos + new Vector3(0f, rs * 0.2f, 0f);
                 rock.transform.localScale = new Vector3(rs * 1.2f, rs * 0.5f, rs);
                 rock.GetComponent<MeshRenderer>().material = shoreMat;
@@ -2595,8 +2609,6 @@ namespace InsectGame.Core
             Material bushDarkMat = CreateSafeMaterial(new Color(0.12f, 0.4f, 0.1f));
             Material logMat = CreateSafeMaterial(new Color(0.4f, 0.28f, 0.12f));
             Material grassTuftMat = CreateSafeMaterial(new Color(0.3f, 0.6f, 0.2f));
-            Material cloudMat = CreateSafeMaterial(new Color(1f, 1f, 1f, 0.4f));
-            Material mountainMat = CreateSafeMaterial(new Color(0.35f, 0.42f, 0.3f));
             Material lampPostMat = CreateSafeMaterial(new Color(0.3f, 0.3f, 0.3f));
             Material lampGlowMat = CreateSafeMaterial(new Color(1f, 0.92f, 0.6f));
 
@@ -2686,38 +2698,8 @@ namespace InsectGame.Core
                 CreateMushroom(pos, Random.Range(0.3f, 0.6f), $"Mushroom_{i}");
             }
 
-            // --- NEW: Distant mountains/hills (background, flattened Spheres far out) ---
-            Vector3[] mountainPositions = {
-                new Vector3(160f, 0f, 0f), new Vector3(-150f, 0f, 50f),
-                new Vector3(0f, 0f, 170f), new Vector3(100f, 0f, -140f)
-            };
-            float[] mountainScales = { 40f, 35f, 45f, 30f };
-            for (int i = 0; i < mountainPositions.Length; i++)
-            {
-                GameObject mountain = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                mountain.name = $"Scenery_Mountain_{i}";
-                float ms = mountainScales[i];
-                mountain.transform.position = mountainPositions[i] + new Vector3(0f, ms * 0.15f, 0f);
-                mountain.transform.localScale = new Vector3(ms * 2f, ms * 0.6f, ms * 2f);
-                mountain.GetComponent<MeshRenderer>().material = mountainMat;
-                Object.Destroy(mountain.GetComponent<Collider>());
-            }
-
-            // --- NEW: Clouds (high altitude, white translucent Spheres) ---
-            for (int i = 0; i < 5; i++)
-            {
-                float cx = Random.Range(-80f, 80f);
-                float cz = Random.Range(-80f, 80f);
-                float cy = Random.Range(50f, 60f);
-
-                GameObject cloud = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                cloud.name = $"Scenery_Cloud_{i}";
-                float cs = Random.Range(8f, 14f);
-                cloud.transform.position = new Vector3(cx, cy, cz);
-                cloud.transform.localScale = new Vector3(cs * 2f, cs * 0.4f, cs);
-                cloud.GetComponent<MeshRenderer>().material = cloudMat;
-                Object.Destroy(cloud.GetComponent<Collider>());
-            }
+            // 원경(먼 산·구름)은 WorldBackdropBuilder가 짓는다 — 여기 박혀 있던 좌표는 월드를 1.5배로
+            // 넓히기 전 값이라 「먼 산」이 꽃밭·유적·연못 옆 필드 안쪽을 올리브색 돔으로 덮었다.
 
             // --- NEW: Street lamps along paths (4) ---
             Vector3[] lampPositions = {
@@ -5131,6 +5113,9 @@ namespace InsectGame.Core
                 if (region.subAreas == null) continue;
                 foreach (var sub in region.subAreas)
                 {
+                    // 테마 입구는 SubAreaGateBuilder가 짓는다(2막·안개·정상·신전·지하 등 표식이 없던 곳 +
+                    // environmentType이 cave라 동굴 석문이 서던 개미귀신 구덩이).
+                    if (SubAreaGateBuilder.Handles(sub.subAreaId)) continue;
                     Vector3 c = sub.centerPosition;
                     switch (sub.environmentType)
                     {

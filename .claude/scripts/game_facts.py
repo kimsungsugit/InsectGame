@@ -38,6 +38,8 @@ PATHS = {
     "reward_calc": "Assets/Scripts/Data/InsectRewardCalculator.cs",
     "tutorial": "Assets/Scripts/Core/TutorialQuestManager.cs",
     "insect_entity": "Assets/Scripts/Spawning/InsectEntity.cs",
+    # 필드 스폰 규칙(전역 등급표 · 레벨 · 슬롯). 리전 등급 분포의 단일 출처다(2026-09-29부터).
+    "field_rules": "Assets/Scripts/Spawning/FieldSpawnRules.cs",
     "raid": "Assets/Scripts/Battle/RaidBattleController.cs",
     "game_constants": "Assets/Scripts/Core/GameConstants.cs",
     "trainer_progress": "Assets/Scripts/Core/PlayerProgressController.cs",
@@ -361,8 +363,10 @@ def field_roster() -> dict:
 
     출처: PlaySceneBootstrap.CreateStableInsect(id, name, InsectRarity.X, weight, ...) +
     InsectExpansion(2)Definitions.new InsectSeed(id, name, InsectRarity.X, weight, ...).
-    가챠 전용(weight=0)은 필드 스폰이 없으므로 제외한다. InsectSpawner.GetWeightedRandom이
-    이 spawnWeight로 후보를 뽑으므로, 리전 내 실제 조우 등급 분포의 단일 출처다.
+    가챠 전용(weight=0)은 필드 스폰이 없으므로 제외한다.
+
+    **등급 분포의 출처는 이제 여기가 아니다.** 필드 스폰은 등급을 전역 표(field_rarity_shares)로 먼저 굴리고
+    spawnWeight는 그 등급 안에서 종을 고를 때만 쓴다(2026-09-29). 리전 풀에 어떤 등급이 있는지를 가리는 데 쓴다.
     """
     out = {}
     for key, pat in (
@@ -468,6 +472,8 @@ def quest_defs() -> list:
             "category": cat.group(1) if cat else "Story",
             "repeatable": (rep.group(1) == "true") if rep else False,
             "target_increment": i("targetIncrement") or 0,
+            # 지역 의뢰(Side 전용) — 비면 None(어디서든 센다).
+            "region": s("requiredRegionId"),
         })
     if not out:
         raise ExtractorBroken("allQuests 배열에서 퀘스트를 하나도 못 읽었다 — 구조가 바뀌었는가?")
@@ -684,12 +690,15 @@ def story_npc_display_ids() -> set:
 
 
 def story_npc_appearance_ids() -> set:
-    """외형 switch에 등록된 스토리 NPC(NpcVisualBuilder.StoryNpcAppearance).
+    """외형 switch에 등록된 스토리 NPC(NpcVisualBuilder.StoryNpcFace — 얼굴·색).
 
     **빠뜨리면 default로 떨어져 마을 어르신 외형(백발·모자·따뜻한 상의)으로 뜬다.**
     명부회 하수가 마을 어르신 얼굴로 서 있어도 예외도 경고도 안 난다.
+
+    공개 진입점 `StoryNpcAppearance`는 얼굴(`StoryNpcFace`) 위에 옷차림(`StorySignature`)을 입히는
+    래퍼다. 등록 여부를 가르는 건 얼굴 switch라 그쪽을 읽는다(옷차림 switch는 default가 어르신 옷이다).
     """
-    return _switch_case_ids("npc_visual", "StoryNpcAppearance")
+    return _switch_case_ids("npc_visual", "StoryNpcFace")
 
 
 def stage_offsets() -> dict:
@@ -977,19 +986,62 @@ def tutorial_rewards() -> dict:
 
 
 def field_shiny_pct() -> float:
-    """필드 샤이니 확률(%). 출처: InsectEntity.cs의 `shiny = Random.value < 0.01f`.
+    """필드 샤이니 확률(%). 출처: InsectEntity.cs의 `const float FieldShinyChance = 0.01f`.
 
     느슨한 정규식(`shiny\\w*\\s*[=<]\\s*([\\d.]+)f`)을 먼저 썼다가 `cachedShinyShift = -1f`
-    같은 무관한 필드를 물어 조용히 0.0을 반환했다. 대입 형태를 통째로 고정한다 —
-    형태가 바뀌면 0을 반환하는 대신 ExtractorBroken으로 죽는 게 낫다.
+    같은 무관한 필드를 물어 조용히 0.0을 반환했다. 선언 형태를 통째로 고정한다 —
+    형태가 바뀌면 0을 반환하는 대신 ExtractorBroken으로 죽는 게 낫다. (2026-09-29부터 스포너가 슬롯에 개체를
+    들일 때 이 상수로 한 번 굴려 기록한다 — 예전의 `shiny = Random.value < 0.01f` 대입은 상수로 옮겨 갔다.)
     """
     src = _read("insect_entity")
     m = _need(
-        re.search(r"\bshiny\s*=\s*UnityEngine\.Random\.value\s*<\s*([\d.]+)f", src),
-        "`shiny = UnityEngine.Random.value < Xf` 형태의 샤이니 확률",
+        re.search(r"\bconst\s+float\s+FieldShinyChance\s*=\s*([\d.]+)f", src),
+        "`const float FieldShinyChance = Xf` 형태의 샤이니 확률",
         "insect_entity",
     )
     return float(m.group(1)) * 100.0
+
+
+def field_rarity_shares() -> dict:
+    """{"Common": 0.60, ..., "Legendary": 0.005} — 필드 전역 등급표(정규화 전 원래 몫).
+
+    출처: FieldSpawnRules.cs의 `public const float {Rarity}Share = Xf` 다섯 줄. 리전과 무관한 표다 —
+    종은 그 등급 안에서 리전 풀로 고른다. 풀에 그 등급이 없으면 가까운 아래 → 위 등급으로 대체한다
+    (field_rarity_fallback).
+    """
+    src = _read("field_rules")
+    out = {}
+    for r in RARITIES:
+        m = _need(re.search(rf"\b{r}Share\s*=\s*([\d.]+)f", src), f"{r}Share 등급 몫", "field_rules")
+        out[r] = float(m.group(1))
+    if sum(out.values()) <= 0:
+        raise ExtractorBroken(f"필드 등급표 합이 0 이하다 ({out}) — 추출이 어긋났는가?")
+    return out
+
+
+def field_rarity_fallback(wanted: str, available: set):
+    """풀에 없는 등급의 대체 — FieldSpawnRules.Fallback과 같은 규칙(가까운 아래 → 위). 없으면 None.
+
+    규칙은 코드의 순수 함수가 단일 출처이고 여기는 시뮬이 같은 답을 내도록 옮긴 것이다. 코드에서
+    순서 문장을 읽어 확인한다 — "아래 → 위"가 바뀌면(주석이 아니라 루프 방향) 시뮬이 어긋나므로 죽는다.
+    """
+    src = _read("field_rules")
+    body = _need(re.search(r"static int Fallback\(.*?\n        \}", src, re.DOTALL),
+                 "Fallback 본체", "field_rules").group(0)
+    down = body.find("r >= 0; r--")
+    up = body.find("r < available.Length; r++")
+    if down < 0 or up < 0 or down > up:
+        raise ExtractorBroken("FieldSpawnRules.Fallback의 순서(아래 먼저 → 위)가 바뀌었다 — 시뮬 규칙도 고칠 것")
+    if wanted in available:
+        return wanted
+    i = RARITIES.index(wanted)
+    for r in reversed(RARITIES[:i]):
+        if r in available:
+            return r
+    for r in RARITIES[i + 1:]:
+        if r in available:
+            return r
+    return None
 
 
 def gacha_has_shiny() -> bool:

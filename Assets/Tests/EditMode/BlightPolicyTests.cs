@@ -27,7 +27,7 @@ namespace InsectGame.Tests
         ///
         /// 하한은 리전이 허용하는 만큼까지다: <c>min(MinActive, baseMax)</c>.
         /// 절대 불변식(<b>1 이상</b>)은 그대로 못 박는다 — 캠페인 정지는 거기서 난다.
-        /// 도달 가능한 값이라 1도 함께 본다(<c>GameplayTuningProfile</c>이 <c>[Range(1, 15)]</c>).
+        /// 정의역 전체에서 지키는 규칙이라 1도 함께 본다(지금 스포너는 슬롯 수 8~40을 넘긴다 — <c>FieldSpawnRules</c>).
         /// </summary>
         [TestCase(1)]
         [TestCase(2)]
@@ -73,13 +73,12 @@ namespace InsectGame.Tests
         /// <c>Mathf.Max(MinActive, 1/3)</c>이 2라, 오염된 리전이 멀쩡한 리전(1)보다
         /// **곤충이 많았다.** 하한을 보장 수량으로 쓴 탓이다.
         ///
-        /// 범위는 <c>GameplayTuningProfile.maxActivePerRegion</c>의 <c>[Range(1, 15)]</c>다 —
-        /// 인스펙터에서 넣을 수 있는 값 전부가 정의역이므로 전부 본다.
+        /// 범위는 1부터 스포너가 넘길 수 있는 최대 슬롯 수(<c>FieldSpawnRules.MaxRegionSlots</c>)까지 전부다.
         /// </summary>
         [Test]
         public void MaxActiveFor_Blighted_NeverExceedsClean_AcrossTuningRange()
         {
-            for (int baseMax = 1; baseMax <= 15; baseMax++)
+            for (int baseMax = 1; baseMax <= InsectGame.Spawning.FieldSpawnRules.MaxRegionSlots; baseMax++)
             {
                 int clean = BlightPolicy.MaxActiveFor(false, baseMax);
                 int blighted = BlightPolicy.MaxActiveFor(true, baseMax);
@@ -91,8 +90,8 @@ namespace InsectGame.Tests
         }
 
         /// <summary>
-        /// 스포너는 maxActivePerRegion &lt;= 0을 "리전 상한 없음"으로 쓴다(InsectSpawner:409).
-        /// 그 의미를 오염이 뒤집으면 안 된다 — 갑자기 상한 2가 생겨 전 리전이 조인다.
+        /// 0 이하는 "상한 없음"으로 통과시킨다 — 옛 스포너가 리전 상한 0 이하를 그렇게 썼다. 지금 스포너는 슬롯 수
+        /// 8 이상만 넘기지만, 이 의미를 오염이 뒤집어 갑자기 상한 2가 생기는 일은 정의역 전체에서 막아 둔다.
         /// </summary>
         [TestCase(0)]
         [TestCase(-1)]

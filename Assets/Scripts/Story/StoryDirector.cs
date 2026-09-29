@@ -226,6 +226,11 @@ namespace InsectGame.Story
         private void OnDestroy()
         {
             UnsubscribeEvents();
+            // 부트스트랩이 스포너의 정적 훅에 이 인스턴스를 걸었다 — 씬 재로드(로그아웃·계정 삭제)로 파기된 뒤에도
+            // 붙잡고 있으면 옛 계정 진행으로 답한다. 내 것일 때만 푼다(새 씬이 먼저 새 인스턴스를 걸었을 수 있다).
+            System.Action<string, System.Collections.Generic.List<string>> hook = InsectGame.Spawning.InsectSpawner.StoryCaptureTargetProvider;
+            if (hook != null && ReferenceEquals(hook.Target, this))
+                InsectGame.Spawning.InsectSpawner.StoryCaptureTargetProvider = null;
         }
 
         // --- 이벤트 구독 (SubscribeEvents/UnsubscribeEvents 짝) ---
@@ -627,6 +632,10 @@ namespace InsectGame.Story
 
         private void OnQuestCompleted(TutorialQuest quest)
         {
+            // **목표 캐시를 버린다.** requiredQuestId가 걸린 비트(ch1_intro·마을 이야기의 매듭)는
+            // 퀘스트가 끝나는 순간 자격을 얻는데, 캐시는 MarkSeen·클라우드 재적재에서만 비워져서
+            // 다음 비트를 볼 때까지 HUD가 낡은 목표에 굳어 있었다.
+            objectiveDirty = true;
             if (quest != null) RouteTrigger(TriggerQuestComplete, quest.questId);
         }
 
@@ -1046,6 +1055,29 @@ namespace InsectGame.Story
             return IsSeen(beatId);
         }
 
+        /// <summary>
+        /// 이 리전에서 <b>지금 발화를 기다리는</b> 종 지정 포획 비트(<c>CaptureInsect</c> + param)의 종 ID를 모은다
+        /// (<paramref name="into"/>를 비우지 않는다). 필드 스포너의 스토리 포획 보조가 부트스트랩 배선으로 부른다 —
+        /// 리전 이동으로 곤충을 다시 굴릴 수 없게 된 뒤(시간 기반 재생) 특정 영웅·희귀 한 종을 찾다 본편이 멈추지 않게.
+        ///
+        /// 게이트는 발화(<see cref="EvaluateTriggers"/>)와 <b>같은 것</b>을 그대로 부른다 — 미열람·대기 중 아님·선행·
+        /// 퀘스트·진행 게이트. 리전 게이트만 "지금 리전"이 아니라 묻는 리전으로 바꿔 본다(스포너는 플레이어가 없는
+        /// 리전의 자리도 굴린다). 읽기 전용이라 진행은 건드리지 않는다.
+        /// </summary>
+        public void CollectPendingCaptureSpecies(string regionId, List<string> into)
+        {
+            if (into == null || string.IsNullOrEmpty(regionId)) return;
+            foreach (StoryBeat beat in StoryService.AllBeats())
+            {
+                if (beat == null || beat.trigger == null || beat.trigger.type != TriggerCaptureInsect) continue;
+                if (string.IsNullOrEmpty(beat.trigger.param)) continue;   // 아무 포획이나 — 도울 종이 없다
+                if (beat.requiredRegionId != regionId) continue;
+                if (IsSeen(beat.beatId) || beat.beatId == pendingBeatId) continue;
+                if (!PrerequisiteSatisfied(beat) || !QuestGateSatisfied(beat) || !BeatGateSatisfied(beat)) continue;
+                if (!into.Contains(beat.trigger.param)) into.Add(beat.trigger.param);
+            }
+        }
+
         /// <summary>열람한 비트 수 — 저널 헤더의 진행률 표시용.</summary>
         public int SeenCount => progress != null && progress.seenBeatIds != null
             ? progress.seenBeatIds.Count : 0;
@@ -1066,6 +1098,61 @@ namespace InsectGame.Story
         public bool HasMetStoryNpc(string npcId)
         {
             return StoryObjectiveResolver.HasMetNpc(StoryService.AllBeats(), IsSeen, npcId);
+        }
+
+        // ------------------------------------------------------------------
+        // 마을 이야기 — 따라가기·표식(StoryObjectiveTracker)이 소비. 판정은 StoryTaleResolver.
+        // ------------------------------------------------------------------
+
+        // Story.json에서만 나오므로 1회 계산(스파인 캐시와 같은 성격).
+        private List<string> taleNpcIdsCache;
+        // 의뢰 → 주민. 퀘스트 목록이 행을 펼쳐 두면 OnGUI 패스마다 묻는다 — 비트 전체를 매번 훑지 않게
+        // 답(없음 포함)을 기억한다. 비트는 진행과 무관하게 고정이라 무효화가 필요 없다.
+        private Dictionary<string, string> taleNpcByQuestCache;
+        // 트래커가 0.5초마다 주민 수만큼 묻는다 — 호출마다 대리자를 새로 만들지 않게 묶어 둔다.
+        private System.Func<string, bool> isSeenProbe;
+        private System.Func<string, bool> isQuestDoneProbe;
+
+        /// <summary>마을 이야기 주민(storyNpcId) 목록. 저작 순서대로.</summary>
+        public IReadOnlyList<string> TaleNpcIds
+        {
+            get
+            {
+                if (taleNpcIdsCache == null)
+                    taleNpcIdsCache = StoryTaleResolver.CollectTaleNpcIds(StoryService.AllBeats());
+                return taleNpcIdsCache;
+            }
+        }
+
+        /// <summary>
+        /// 이 주민의 이야기에서 지금 할 일. Errand면 <paramref name="questId"/>에 기다리는 의뢰가 온다.
+        /// 게이트는 발화 쪽과 같다 — 퀘스트 판정기가 없으면 <see cref="QuestGateSatisfied"/>처럼 통과시킨다.
+        /// </summary>
+        public TaleStepKind GetTaleStep(string npcId, out string questId)
+        {
+            if (isSeenProbe == null) isSeenProbe = IsSeen;
+            if (isQuestDoneProbe == null) isQuestDoneProbe = IsQuestDoneForGate;
+            return StoryTaleResolver.ResolveStep(StoryService.AllBeats(), npcId,
+                isSeenProbe, isQuestDoneProbe, out _, out questId);
+        }
+
+        /// <summary>이 의뢰를 기다리는 주민(storyNpcId). 마을 이야기가 아닌 퀘스트면 null.</summary>
+        public string FindTaleNpcForQuest(string questId)
+        {
+            if (string.IsNullOrEmpty(questId)) return null;
+            if (taleNpcByQuestCache == null) taleNpcByQuestCache = new Dictionary<string, string>();
+            if (!taleNpcByQuestCache.TryGetValue(questId, out string npcId))
+            {
+                npcId = StoryTaleResolver.FindNpcForQuest(StoryService.AllBeats(), questId);
+                taleNpcByQuestCache[questId] = npcId;
+            }
+            return npcId;
+        }
+
+        // QuestGateSatisfied와 같은 규칙 — 매니저가 없으면 막지 않는다.
+        private bool IsQuestDoneForGate(string questId)
+        {
+            return questManager == null || questManager.IsQuestCompleted(questId);
         }
 
         // 보상 지급 — TutorialQuestManager.CompleteQuest 패턴 동일(null 시 경고 후 계속).

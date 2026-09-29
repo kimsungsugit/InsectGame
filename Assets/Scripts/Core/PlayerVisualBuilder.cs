@@ -328,14 +328,13 @@ namespace InsectGame.Core
         /// </summary>
         private Material MakeMaterial(Color color, SurfaceKind kind)
         {
-            // Unity 6 + Built-in Pipeline 환경 가정. Standard 못 찾으면 URP/Unlit 순으로 fallback.
-            // 최종 fallback도 실패하면 캐릭터가 검정/마젠타 → 진단 로그로 알림.
-            Shader shader = Shader.Find("Standard");
-            string usedName = "Standard";
-            if (shader == null) { shader = Shader.Find("Universal Render Pipeline/Lit"); usedName = "URP/Lit"; }
-            if (shader == null) { shader = Shader.Find("Unlit/Color"); usedName = "Unlit/Color"; }
-            if (shader == null) { shader = Shader.Find("Sprites/Default"); usedName = "Sprites/Default"; }
-            if (shader == null)
+            // Unity 6 + Built-in Pipeline 환경 가정. 폴백 체인(Standard → URP Lit → Unlit/Color →
+            // Sprites/Default → 에러 셰이더)은 SceneryMaterials.LitShader가 단일 출처다 — 여기선 진단만 한다.
+            // 최종 fallback까지 떨어지면 캐릭터가 검정/마젠타 → 진단 로그로 알림.
+            // 광택은 공유하지 않는다: 부위별 재질은 아래 CharacterPalette.ApplySurface가 정한다(무광 마감 X).
+            Shader shader = SceneryMaterials.LitShader;
+            string usedName = shader != null ? shader.name : "(없음)";
+            if (shader == null || usedName == "Hidden/InternalErrorShader")
             {
                 if (!shaderDiagLogged)
                 {
@@ -344,7 +343,6 @@ namespace InsectGame.Core
                         + "ProjectSettings → Graphics에서 Standard/URP shader가 Always Included Shaders에 포함되어 있는지 확인하세요.");
                     shaderDiagLogged = true;
                 }
-                shader = Shader.Find("Hidden/InternalErrorShader");
             }
             else if (!shaderDiagLogged && usedName != "Standard")
             {

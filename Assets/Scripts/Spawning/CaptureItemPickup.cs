@@ -10,6 +10,9 @@ namespace InsectGame.Spawning
         private PlayerItemInventory inventory;
         private float bobOffset;
         private float lifetime;
+        // 떠 있는 기준 높이(월드 y) — 스폰 자리가 정한다(CaptureItemSpawner: 그 자리 지면 + 떠 있는 높이).
+        // 옛날엔 Update가 절대 0.8을 박아서 재 더미(꼭대기 바닥 위 1.05)에 묻히고 사구에 잠겼다.
+        private float baseY;
 
         public void Initialize(CaptureItemData data, PlayerItemInventory inv)
         {
@@ -17,6 +20,7 @@ namespace InsectGame.Spawning
             inventory = inv;
             bobOffset = Random.value * Mathf.PI * 2f;
             lifetime = 0f;
+            baseY = transform.position.y;
 
             MeshFilter mf = gameObject.GetComponent<MeshFilter>();
             if (mf == null) mf = gameObject.AddComponent<MeshFilter>();
@@ -51,7 +55,7 @@ namespace InsectGame.Spawning
             lifetime += Time.deltaTime;
             float bob = Mathf.Sin(Time.time * 2f + bobOffset) * 0.15f;
             Vector3 pos = transform.position;
-            pos.y = 0.8f + bob;
+            pos.y = baseY + bob;
             transform.position = pos;
             transform.Rotate(Vector3.up, 90f * Time.deltaTime, Space.World);
 

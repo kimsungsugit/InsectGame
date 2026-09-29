@@ -270,10 +270,10 @@ namespace InsectGame.Core
         }
 
         // GetRegionWithGuardianNear(위치, 반경)는 제거했다 — **좌표로는 수문장을 판별할 수 없다.**
-        // 야생 스폰 링이 플레이어를 따라오므로(InsectSpawner.RelocateSpawnPoints: 10~43m 나선 +
-        // SpawnPoint.radius 5m) 수문장 앞에 선 순간 야생이 반경 5m까지 들어온다. 어떤 반경을 골라도
-        // 야생 조우가 격파로 잡히는 구조라, 격파 판정은 개체 표식(InsectEntity.GuardianRegionId)으로
-        // 옮겼다. 이름이 그럴듯해 다시 불려 나가지 않도록 함수째 지운다.
+        // 당시 야생 스폰 링이 플레이어를 따라왔으므로(10~43m 나선 + 5m 산포) 수문장 앞에 선 순간 야생이
+        // 반경 5m까지 들어왔다. 지금은 야생이 리전 원판 전체에 기록돼 흩어지지만(InsectSpawner) 수문장 앞을
+        // 비켜 두지 않으니 같다 — 어떤 반경을 골라도 야생 조우가 격파로 잡히는 구조라, 격파 판정은 개체 표식
+        // (InsectEntity.GuardianRegionId)으로 옮겼다. 이름이 그럴듯해 다시 불려 나가지 않도록 함수째 지운다.
 
         /// <summary>
         /// 수문장이 서는 자리 — 이전 리전에서 오는 <b>길목</b>, 리전 경계 안쪽이다.

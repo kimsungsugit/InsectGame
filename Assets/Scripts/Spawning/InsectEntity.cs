@@ -10,9 +10,12 @@ namespace InsectGame.Spawning
         [SerializeField] private int level = 1;
 
         private Action<InsectEntity> onDespawn;
-        private SpawnPoint ownerPoint;
+        // 소속 리전(필드 곤충). 서브에리어·배틀·수문장 개체는 빈 문자열.
+        private string regionId = string.Empty;
         private float bobPhase;
         private Vector3 basePosition;
+        // basePosition 자리의 둔덕 윗면(FieldGround.SurfaceY) — 이동 중 높이를 그 자리 지면만큼 오르내리는 기준(GroundRise)
+        private float baseSurfaceY = Core.FieldGround.FloorY;
         private float wingPhase;
         private bool shiny;
         private bool erased;   // 「지워진 개체」 — IsErased 요약 참조
@@ -42,6 +45,9 @@ namespace InsectGame.Spawning
         private float alertGraceTimer;        // 경계 직후 도주 유예(반응 시간 보장)
         private Vector3 fleeDir;
         private float fleeTimer;
+        // 도주로 갈 수 있는 수평 거리와 지금까지 간 거리 — 장애물 앞에서 멈추게 한다(FleePath 주석).
+        private float fleeAllowed;
+        private float fleeTravelled;
         private bool engaged;                 // 포획 상호작용 중 — 절대 도주 안 함
         // 플레이어 추적(전 곤충 공유, 프레임당 1회 계산)
         private static Transform cachedPlayer;
@@ -54,6 +60,31 @@ namespace InsectGame.Spawning
         private bool despawnedThisCycle; // Despawn 다중 호출 가드 (Battle/Capture 동시 호출 시 풀 중복 반환 차단)
         // 수문장 표식 — 기본은 빈 문자열(야생). 풀 재사용마다 반드시 지운다(GuardianRegionId 주석 참조).
         private string guardianRegionId = string.Empty;
+        // 몸을 새로 지을 때마다 오르는 번호 — SpawnSerial 요약 참조.
+        private int spawnSerial;
+        private static int nextSpawnSerial;
+
+        /// <summary>
+        /// 필드 곤충이 「색다른 개체」로 나올 확률. 스포너가 슬롯에 개체를 들일 때 한 번 굴려 기록한다 —
+        /// 몸을 다시 세울 때마다 굴리면 멀어졌다 돌아온 같은 곤충의 색이 바뀐다. (gacha_sim이 이 상수를 읽는다.)
+        /// </summary>
+        internal const float FieldShinyChance = 0.01f;
+
+        // 도주 경로 측정 — 도주를 시작할 때만 쏜다(매 프레임이 아니다). 전 곤충이 한 스레드에서 번갈아 쓰므로 정적 버퍼 하나로 족하다.
+        /// <summary>
+        /// 이번 퇴장이 놓침 도주의 끝인가(<see cref="Despawn"/> 직전에 선다). 스포너가 본다 — 도주는 개체가 죽은 게 아니라
+        /// 달아난 것이라, 자리를 비우고 1~2분 기다리는 대신 같은 개체를 플레이어 눈 밖 다른 자리로 옮긴다.
+        /// </summary>
+        internal bool Fled => fled;
+        private bool fled;
+
+        // NonAlloc 결과는 거리순이 아니다 — 버퍼가 차면 가장 가까운 벽이 빠졌을 수 있어 그 방향은 막힌 것으로 친다.
+        private static readonly RaycastHit[] fleeProbeHits = new RaycastHit[32];
+        private static Vector3 fleeProbeOrigin;
+        private static Func<Vector3, float> fleeClearanceProbe;
+        /// <summary>도주 경로 측정 높이(발 위 m)와 굵기 — 낮은 풀·돌턱은 넘고 벽·줄기·바위 옆면에는 걸린다.</summary>
+        private const float FleeProbeHeight = 0.6f;
+        private const float FleeProbeRadius = 0.3f;
 
         // Camera.main은 매 호출마다 FindGameObjectWithTag — 최대 20마리×매 프레임 핫패스 회피.
         private static Camera cachedMainCam;
@@ -101,17 +132,31 @@ namespace InsectGame.Spawning
         /// </summary>
         public bool CanBeEngaged =>
             (!forBattle || IsGuardian) && !engaged && alertState != 2 && !despawnedThisCycle;
-        public SpawnPoint OwnerPoint => ownerPoint;
-        public string RegionId => ownerPoint != null ? ownerPoint.regionId : string.Empty;
+        /// <summary>소속 리전 ID(필드 곤충). 서브에리어·배틀·수문장 개체는 빈 문자열.</summary>
+        public string RegionId => regionId;
+
+        /// <summary>포획·전투에 붙잡혀 있는가. 스포너는 이 개체를 거두거나 바꾸지 않는다.</summary>
+        public bool IsEngaged => engaged;
+
+        /// <summary>플레이어를 알아챘거나(경계) 달아나는 중인가. 스포너가 수명 교체를 미룬다.</summary>
+        public bool IsAlerted => alertState != 0;
+
+        /// <summary>
+        /// 몸을 지을 때마다(<see cref="Initialize(InsectData,int,string,Action{InsectEntity},bool,bool)"/>·
+        /// <see cref="BuildForBattle"/>) 새로 붙는 번호. 풀 객체는 같은 참조가 다른 개체로 되살아나므로,
+        /// 참조를 쥔 쪽(지도 레이드 마커)이 "아직 그 개체인가"를 이걸로 묻는다 — 활성 여부만 보면
+        /// 한 프레임 안에 거뒀다 다시 꺼낸 몸을 옛 개체로 착각한다.
+        /// </summary>
+        public int SpawnSerial => spawnSerial;
 
         /// <summary>
         /// 이 개체가 <b>어느 리전의 수문장인가</b>. 수문장이 아니면 빈 문자열이다.
         ///
         /// <b>왜 좌표가 아니라 정체성인가.</b> 예전엔 격파 판정이 "수문장 자리에서 15m 안이었나"를
-        /// 봤는데, 그 반경은 야생 스폰이 그대로 들어온다 — <c>InsectSpawner.RelocateSpawnPoints</c>가
-        /// 현재 리전 포인트를 <b>플레이어로부터 10~43m</b> 나선 위로 끌어오고, 거기서 다시
-        /// <c>SpawnPoint.radius</c>(5m)만큼 흩어진다. 최근접 스폰이 플레이어에서 5m다.
-        /// 수문장과 싸우려면 그 앞에 서야 하니 <b>야생이 반경 안에 들어오는 건 우연이 아니라 구조</b>고,
+        /// 봤는데, 그 반경은 야생 스폰이 그대로 들어왔다 — 당시 스포너는 현재 리전 스폰 포인트를
+        /// <b>플레이어로부터 10~43m</b> 나선 위로 끌어오고 거기서 다시 5m만큼 흩었다. 최근접 스폰이 플레이어에서 5m였다.
+        /// 지금은 야생이 리전 원판 전체에 흩어져 기록되지만(<c>FieldPopulation</c>) 수문장 앞이라고 비켜 두지 않으니
+        /// <b>야생이 반경 안에 들어오는 건 여전히 구조</b>고,
         /// 13곳 중 9곳은 수문장 종이 자기 리전 야생 풀에도 있어 종·레벨 조건까지 함께 맞는다.
         ///
         /// 그래서 "그 자리였나"가 아니라 <b>"바로 그 개체였나"</b>를 묻는다. 수문장은
@@ -128,16 +173,35 @@ namespace InsectGame.Spawning
             guardianRegionId = string.IsNullOrEmpty(regionId) ? string.Empty : regionId;
         }
 
+        /// <summary>
+        /// 색다름·지워짐을 여기서 굴려 세운다 — 기록 없이 한 번 쓰고 마는 개체용(옛 진입점, 테스트).
+        /// 필드 곤충은 스포너가 슬롯에 굴려 둔 값을 넘기는 아래 오버로드를 쓴다.
+        /// </summary>
         public void Initialize(InsectData insectData, int insectLevel, SpawnPoint point,
             Action<InsectEntity> despawnCallback, float erasedChance = 0f)
         {
+            bool rolledShiny = UnityEngine.Random.value < FieldShinyChance;
+            // 지워진 개체 — 확률은 스폰너가 리전에서 정해 넘긴다(여기에 리전 목록을 두지 않는다).
+            bool rolledErased = erasedChance > 0f && UnityEngine.Random.value < erasedChance;
+            Initialize(insectData, insectLevel, point != null ? point.regionId : null, despawnCallback,
+                rolledShiny, rolledErased);
+        }
+
+        /// <summary>
+        /// <b>기록된 개체를 그대로</b> 세운다 — 종·레벨·색다름·지워짐을 굴리지 않는다. 스포너가 슬롯(<c>FieldSlot</c>)에
+        /// 적어 둔 값을 넘기므로, 멀어졌다 돌아와 몸을 다시 세워도 같은 곤충이다. 자리는 호출 전에 옮겨 둔다
+        /// (<c>transform.position</c>이 곧 배회·풀 더미의 기준 <c>basePosition</c>이 된다).
+        /// </summary>
+        public void Initialize(InsectData insectData, int insectLevel, string homeRegionId,
+            Action<InsectEntity> despawnCallback, bool isShiny, bool isErased)
+        {
             data = insectData;
             level = insectLevel;
-            ownerPoint = point;
+            regionId = homeRegionId ?? string.Empty;
             onDespawn = despawnCallback;
-            shiny = UnityEngine.Random.value < 0.01f; // 1% 확률 색다른 곤충
-            // 지워진 개체 — 확률은 스폰너가 리전에서 정해 넘긴다(여기에 리전 목록을 두지 않는다).
-            erased = erasedChance > 0f && UnityEngine.Random.value < erasedChance;
+            shiny = isShiny;
+            erased = isErased;
+            spawnSerial = ++nextSpawnSerial;
             // 풀 재사용 회귀 방지: BuildForBattle에서 true로 설정된 forBattle이 남아있으면
             // 다음 Update에서 회전 안 하는 정적 곤충이 됨. 매 Initialize마다 명시적 false.
             forBattle = false;
@@ -154,8 +218,11 @@ namespace InsectGame.Spawning
             nameLabelResolved = false;
             alertState = 0;
             fleeTimer = 0f;
+            fleeAllowed = 0f;
+            fleeTravelled = 0f;
             engaged = false;
             despawnedThisCycle = false;
+            fled = false;
             guardianRegionId = string.Empty;   // 풀에서 왔다면 직전 개체의 표식을 물려받지 않는다
 
             ClearChildren();
@@ -166,6 +233,7 @@ namespace InsectGame.Spawning
             float scale = GetRarityScale();
             transform.localScale = Vector3.one * scale;
             basePosition = transform.position;
+            baseSurfaceY = Core.FieldGround.SurfaceY(basePosition.x, basePosition.z);
             bobPhase = UnityEngine.Random.Range(0f, Mathf.PI * 2f);
             wingPhase = UnityEngine.Random.Range(0f, Mathf.PI * 2f);
         }
@@ -179,6 +247,8 @@ namespace InsectGame.Spawning
             // 풀 재사용 회귀 방지 — 명시하지 않으면 직전 개체의 erased가 남아 도감 프리뷰까지 검게 나온다.
             erased = erasedOverride;
             forBattle = true;
+            regionId = string.Empty;
+            spawnSerial = ++nextSpawnSerial;
             cachedNameLabel = null;
             cachedShinySparkle = null;
             cachedShinyShift = -1f;
@@ -191,8 +261,11 @@ namespace InsectGame.Spawning
             nameLabelResolved = false;
             alertState = 0;
             fleeTimer = 0f;
+            fleeAllowed = 0f;
+            fleeTravelled = 0f;
             engaged = false;
             despawnedThisCycle = false;
+            fled = false;
             guardianRegionId = string.Empty;   // 풀에서 왔다면 직전 개체의 표식을 물려받지 않는다
 
             ClearChildren();
@@ -256,6 +329,9 @@ namespace InsectGame.Spawning
             float dt = Time.deltaTime;
 
             // ===== 도주 진행 (이동 방식별로 다른 도주 모션) =====
+            // 도주는 1.1초에 최대 8m를 간다 — 높이를 스폰 자리(basePosition.y)에 묶어 두면 사구·재 더미를 지날 때 몸이
+            // 둔덕 속에 묻히고, 둔덕 위에서 내려오면 허공에 뜬다. 세 모션 모두 지금 자리 지면만큼 오르내린다(GroundRise).
+            // 수평으로는 도주를 시작할 때 잰 거리(fleeAllowed)까지만 간다 — 벽·건물·줄기를 뚫지 않고 그 앞에 멈춘다(BeginFlee).
             if (alertState == 2)
             {
                 fleeTimer -= dt;
@@ -263,8 +339,8 @@ namespace InsectGame.Spawning
                 if (cachedMoveStyle == 1)
                 {
                     // 비행: 날개로 날아오르며 멀어짐 — 점점 고도 상승(하늘로 사라짐)
-                    Vector3 p = transform.position + fleeDir * 7.5f * dt;
-                    p.y = basePosition.y + 0.55f + elapsed * 2.8f;
+                    Vector3 p = transform.position + FleeStep(7.5f * dt);
+                    p.y = basePosition.y + GroundRise(baseSurfaceY, p.x, p.z) + 0.55f + elapsed * 2.8f;
                     transform.position = p;
                     FaceFlee(dt, 8f);
                 }
@@ -273,21 +349,21 @@ namespace InsectGame.Spawning
                     // 점프: 큰 포물선 도약으로 튀어 달아남 — 공중에 뜬 동안 더 멀리, 착지 땐 멈칫
                     float ph = (elapsed % 0.45f) / 0.45f;
                     float hop = Mathf.Sin(ph * Mathf.PI);
-                    Vector3 p = transform.position + fleeDir * (6.5f * (0.3f + hop)) * dt;
-                    p.y = basePosition.y + hop * 0.75f;
+                    Vector3 p = transform.position + FleeStep(6.5f * (0.3f + hop) * dt);
+                    p.y = basePosition.y + GroundRise(baseSurfaceY, p.x, p.z) + hop * 0.75f;
                     transform.position = p;
                     FaceFlee(dt, 11f);
                 }
                 else
                 {
                     // 기어다님: 지면에 낮게 빠르게 허둥지둥
-                    Vector3 p = transform.position + fleeDir * 6.0f * dt;
-                    p.y = basePosition.y + 0.05f + Mathf.Abs(Mathf.Sin(elapsed * 24f)) * 0.07f;
+                    Vector3 p = transform.position + FleeStep(6.0f * dt);
+                    p.y = basePosition.y + GroundRise(baseSurfaceY, p.x, p.z) + 0.05f + Mathf.Abs(Mathf.Sin(elapsed * 24f)) * 0.07f;
                     transform.position = p;
                     FaceFlee(dt, 12f);
                 }
                 AnchorGrass();
-                if (fleeTimer <= 0f) Despawn(); // 놓침 — 사라짐
+                if (fleeTimer <= 0f) { fled = true; Despawn(); } // 놓침 — 눈앞에서 사라짐(스포너가 개체를 다른 자리로 옮긴다)
                 return;
             }
 
@@ -319,10 +395,7 @@ namespace InsectGame.Spawning
                     }
                     else
                     {
-                        alertState = 2;
-                        Vector3 away = transform.position - cachedPlayer.position; away.y = 0f;
-                        fleeDir = away.sqrMagnitude > 0.01f ? away.normalized : Vector3.forward;
-                        fleeTimer = 1.1f;
+                        BeginFlee(transform.position - cachedPlayer.position);
                         return;
                     }
                 }
@@ -376,13 +449,28 @@ namespace InsectGame.Spawning
                 rotSpeed = 8f;
             }
 
-            transform.position = basePosition + offset;
+            Vector3 pos = basePosition + offset;
+            // 수평으로 떠도는 건 비행 드리프트(±0.55m)·경계 떨림뿐이다 — 재 더미 가장자리(턱 0.33m)에서는 그만큼으로도
+            // 둔덕 속을 드나든다. 제자리 모션(기어다님·점프)은 xz가 0이라 둔덕 조회를 건너뛴다.
+            if (offset.x != 0f || offset.z != 0f)
+                pos.y += GroundRise(baseSurfaceY, pos.x, pos.z);
+            transform.position = pos;
             if (rotSpeed > 0f)
                 transform.Rotate(Vector3.up, rotSpeed * Time.deltaTime, Space.World);
 
+            // 오르내린 지면만큼은 마커도 따라간다 — 상쇄는 모션 높이(offset.y)만(마커는 발밑 지면에 붙는다)
             AnchorGroundMarker(offset.y);
             AnchorGrass();
         }
+
+        /// <summary>
+        /// (x, z) 지면이 스폰 자리 지면(<paramref name="baseSurfaceY"/>)보다 얼마나 높은가(m, 음수면 낮다). 둔덕은 콜라이더가
+        /// 없어 <see cref="Core.FieldGround"/>에 묻는다 — 스폰(<c>InsectSpawner.PickSpawnPosition</c>)과 같은 지면이다.
+        /// 서브에리어는 (2000,·,2000) 너머라 둔덕이 없어 늘 0이다. 스폰 자리가 둔덕 밖 콜라이더(물가 바위 등) 위였다면
+        /// 그 높이는 옛날처럼 이동 내내 유지된다 — 콜라이더를 매 프레임 쏘지 않는다.
+        /// </summary>
+        internal static float GroundRise(float baseSurfaceY, float x, float z)
+            => Core.FieldGround.SurfaceY(x, z) - baseSurfaceY;
 
         // 이동 스타일 1회 판정(캐시): grasshopper/cricket/katydid=점프, WingL 보유=비행, 그 외=일반.
         // 지상 곤충(기어다님/점프)은 풀숲 은신 더미 생성(비행 곤충은 공중이라 제외).
@@ -413,13 +501,64 @@ namespace InsectGame.Spawning
             if (!CanBeEngaged) return;
 
             UpdatePlayerTracking();
-            alertState = 2;
-            Vector3 away = cachedPlayer != null
+            BeginFlee(cachedPlayer != null
                 ? transform.position - cachedPlayer.position
-                : transform.forward;
-            away.y = 0f;
-            fleeDir = away.sqrMagnitude > 0.01f ? away.normalized : Vector3.forward;
+                : transform.forward);
+        }
+
+        /// <summary>
+        /// 도주를 시작한다 — 도주가 시작되는 두 곳(인내 소진·<see cref="ScareAway"/>)이 함께 쓴다.
+        ///
+        /// 플레이어 반대쪽부터 좌우로 벌려 가며 몸 높이에서 장애물을 재고(<see cref="FleePath.Choose"/>) 뚫린 방향을 고른다.
+        /// 다 막혔으면 가장 멀리 가는 쪽으로 <b>장애물 앞까지만</b> 간다. 곤충은 몸 콜라이더가 없어 물리가 막아 주지
+        /// 않으므로 여기서 재지 않으면 벽·건물·바위·나무 줄기, 서브에리어 방 벽을 그대로 뚫고 나간다.
+        /// 측정은 도주 시작 때 한 번이다(최대 7방향) — 매 프레임 쏘지 않는다.
+        /// </summary>
+        private void BeginFlee(Vector3 away)
+        {
+            alertState = 2;
             fleeTimer = 1.1f;
+            fleeTravelled = 0f;
+            away.y = 0f;
+            if (away.sqrMagnitude <= 0.01f) away = Vector3.forward;
+
+            if (fleeClearanceProbe == null) fleeClearanceProbe = MeasureFleeClearance;
+            fleeProbeOrigin = new Vector3(transform.position.x, basePosition.y + FleeProbeHeight, transform.position.z);
+            float side = UnityEngine.Random.value < 0.5f ? -1f : 1f;
+            fleeDir = FleePath.Choose(away, side, fleeClearanceProbe, out fleeAllowed);
+        }
+
+        /// <summary>
+        /// <c>fleeProbeOrigin</c>에서 <paramref name="dir"/>로 막히지 않고 갈 수 있는 거리(m). 트리거(NPC 몸통·줍기 구)는
+        /// 장애물이 아니고, 곤충·플레이어 몸도 아니다. 위를 향한 면(바닥·바위 윗면)은 올라타는 곳이지 벽이 아니다.
+        /// </summary>
+        private static float MeasureFleeClearance(Vector3 dir)
+        {
+            float length = FleePath.ProbeLength;
+            int n = Physics.SphereCastNonAlloc(fleeProbeOrigin, FleeProbeRadius, dir, fleeProbeHits, length,
+                Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore);
+            if (n >= fleeProbeHits.Length) return 0f;   // 버퍼가 찼다 — 빠진 충돌 중 벽이 있을 수 있다
+            float nearest = length;
+            for (int i = 0; i < n; i++)
+            {
+                RaycastHit hit = fleeProbeHits[i];
+                Collider c = hit.collider;
+                if (c == null) continue;
+                if (c.GetComponentInParent<InsectEntity>() != null) continue;
+                if (c.GetComponentInParent<Core.PlayerMovement>() != null) continue;
+                // 시작부터 겹친 콜라이더는 거리 0으로 온다 — 그 방향은 막힌 것이다(법선을 믿지 않는다).
+                if (hit.distance > 0f && hit.normal.y > 0.7f) continue;
+                if (hit.distance < nearest) nearest = hit.distance;
+            }
+            return nearest;
+        }
+
+        /// <summary>이번 프레임 도주 이동 — 시작 때 잰 허용 거리를 넘지 않는다(장애물 앞에서 멈춤).</summary>
+        private Vector3 FleeStep(float wanted)
+        {
+            float step = FleePath.StepDistance(wanted, fleeAllowed, fleeTravelled);
+            fleeTravelled += step;
+            return fleeDir * step;
         }
 
         // 플레이어 위치/속도 추적 — 프레임당 1회만 계산(전 곤충 공유).
@@ -1709,11 +1848,13 @@ namespace InsectGame.Spawning
         {
             Renderer r = go.GetComponent<Renderer>();
             if (r == null) return;
-            Shader shader = Shader.Find("Standard");
-            if (shader == null) shader = Shader.Find("Universal Render Pipeline/Lit");
-            if (shader == null) shader = Shader.Find("Unlit/Color");
-            if (shader == null) shader = Shader.Find("Sprites/Default");
-            if (shader == null) return;
+            // 셰이더 폴백 체인은 SceneryMaterials.LitShader가 단일 출처다. 광택·반투명은 공유하지 않는다 —
+            // 아래 키틴·눈·막 광택이 곤충의 외형이고(무광 마감 ApplyFinish를 쓰면 전 종이 점토가 된다),
+            // 반투명 경로엔 날개뿐 아니라 샤이니 반짝임·오라·바닥 마커 같은 이펙트가 섞여 있다.
+            // 공유 체인의 마지막 방어선(에러 셰이더)은 칠하지 않는다 — 옛 체인은 Sprites/Default에서 멈추고
+            // 못 찾으면 프리미티브의 기본 머티리얼을 그대로 두었다.
+            Shader shader = InsectGame.Core.SceneryMaterials.LitShader;
+            if (shader == null || shader.name == "Hidden/InternalErrorShader") return;
             Material mat = new Material(shader);
             mat.color = color;
             if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", color);
@@ -2019,7 +2160,7 @@ namespace InsectGame.Spawning
 
         public void Despawn()
         {
-            // 수문장은 풀 객체가 아니다(onDespawn·ownerPoint 둘 다 없음) — 아래 래치를 걸면 아무것도
+            // 수문장은 풀 객체가 아니다(onDespawn도 소속 리전도 없음) — 아래 래치를 걸면 아무것도
             // 반환·파괴되지 않은 채 CanBeEngaged만 영구 false가 돼, **한 번 지거나 도주하면 눈앞에
             // 서 있는 수문장에게 다시 말을 걸 수 없고 리전이 영영 잠긴다**(2026-09-09). 격파 시 실제
             // 제거는 PlaySceneBootstrap.RemoveGuardianSeal이 한다. 여기서는 교전만 풀어 준다.
@@ -2036,9 +2177,24 @@ namespace InsectGame.Spawning
 
             // 풀 반환 전 진행 중 코루틴 정리 (다음 인스턴스 사용 시 잔존 영향 방지)
             StopAllCoroutines();
-            if (ownerPoint != null)
-                ownerPoint.NotifyDespawned();
             onDespawn?.Invoke(this);
+        }
+
+        /// <summary>
+        /// 스포너가 몸만 <b>조용히 거둔다</b>(플레이어가 멀어짐·서브에리어 전환) — 게임플레이 퇴장이 아니다.
+        /// <see cref="Despawn"/>과 달리 콜백을 부르지 않는다: 콜백은 "그 자리가 비었다"(재생 지연 시작)는 뜻이라,
+        /// 거리로 거둔 것까지 그 길로 보내면 멀어졌다 돌아올 때마다 새 곤충이 된다(옛 리전 이동 리롤).
+        /// 다중 호출 가드는 같이 건다 — 이 참조를 쥔 쪽(아이 NPC 등)이 뒤늦게 <c>Despawn</c>을 불러도 no-op이다.
+        /// 거뒀으면 true(호출부가 풀에 돌린다). 수문장·이미 퇴장한 몸은 false.
+        /// </summary>
+        internal bool Recall()
+        {
+            if (IsGuardian || despawnedThisCycle) return false;
+            despawnedThisCycle = true;
+            engaged = false;
+            alertState = 0;
+            StopAllCoroutines();
+            return true;
         }
     }
 }

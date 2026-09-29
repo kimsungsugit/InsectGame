@@ -72,8 +72,8 @@ namespace InsectGame.Battle
             renderer.sharedMaterial = material;
             renderer.shadowCastingMode = castShadows ? ShadowCastingMode.On : ShadowCastingMode.Off;
             renderer.receiveShadows = true;
-            if (material.HasProperty("_Glossiness")) material.SetFloat("_Glossiness", 0.15f);
-            if (material.HasProperty("_Smoothness")) material.SetFloat("_Smoothness", 0.15f);
+            // 광택은 여기서 따로 정하지 않는다 — materialFactory(BattleArenaController.CreateSafeMaterial)가
+            // 월드 소품과 같은 무광 마감(SceneryMaterials.MatteGloss)을 이미 입혀 온다. 예전의 0.15 사본은 그 전의 흔적이다.
         }
     }
 }

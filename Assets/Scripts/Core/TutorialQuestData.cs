@@ -68,6 +68,39 @@ namespace InsectGame.Core
         // QuestType.CaptureRarity 전용: 이 등급을 포획해야 진행된다. 다른 타입에서는 무시.
         // 기본값 Common은 enum의 0이라, 이 필드를 안 쓰는 기존 퀘스트에 영향이 없다.
         public InsectGame.Data.InsectRarity requiredRarity = InsectGame.Data.InsectRarity.Common;
+        // Side 전용 "지역 의뢰": 채우면 ①그 리전이 열리기 전에는 활성이 아니고 ②그 리전 안에서
+        // 한 행동만 센다(서브에리어 포함 — 진입 중에도 RegionManager.CurrentRegion은 부모 리전에 머문다).
+        // 비우면(기본 null) 기존 서브 퀘스트 그대로 어디서든 센다. 마을 이야기(Story.json의 town
+        // 챕터)의 매듭 비트가 requiredQuestId로 이 퀘스트의 완료를 관찰한다 — 퀘스트는 스토리를 모른다.
+        public string requiredRegionId;
+    }
+
+    /// <summary>
+    /// 지역 의뢰(<see cref="TutorialQuest.requiredRegionId"/>)의 <b>순수</b> 판정.
+    /// MonoBehaviour와 떼어 놓아 테스트로 고정한다(<see cref="MovementProgress"/>와 같은 성격).
+    /// </summary>
+    public static class QuestRegionGate
+    {
+        /// <summary>
+        /// 이번 행동이 이 퀘스트의 진행으로 세어지는가. 리전 한정이 없으면 늘 true.
+        /// 리전 밖(리전 사이 빈 땅 — <c>CurrentRegion</c>이 null)에서 한 행동은 세지 않는다.
+        /// </summary>
+        public static bool Counts(string requiredRegionId, string currentRegionId)
+        {
+            if (string.IsNullOrEmpty(requiredRegionId)) return true;
+            return requiredRegionId == currentRegionId;
+        }
+
+        /// <summary>
+        /// 리전 게이트가 열렸는가. 판정 자체(<c>RegionManager.IsRegionAccessible</c>)는 호출부가 넘긴다 —
+        /// 해금 규칙의 단일 출처를 여기 복제하지 않는다. 판정기가 없으면 닫힌 쪽으로 둔다
+        /// (잠긴 리전의 의뢰가 먼저 뜨는 것보다 조금 늦게 뜨는 편이 낫다).
+        /// </summary>
+        public static bool IsOpen(string requiredRegionId, System.Func<string, bool> isRegionAccessible)
+        {
+            if (string.IsNullOrEmpty(requiredRegionId)) return true;
+            return isRegionAccessible != null && isRegionAccessible(requiredRegionId);
+        }
     }
 
     /// <summary>

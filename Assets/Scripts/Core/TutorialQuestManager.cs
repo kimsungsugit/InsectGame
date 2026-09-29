@@ -528,6 +528,146 @@ namespace InsectGame.Core
                     rewardCandy = 120, rewardExp = 100,
                     rewardItemId = "spirit_blessing", rewardItemCount = 1
                 },
+
+                // --- 마을 의뢰(지역 한정·1회) — category=Side + requiredRegionId ---
+                // 마을 이야기(Story.json town 챕터)의 짝이다. 부탁은 주민이 대사로 하고(만남 비트),
+                // 진행은 여기서 세고, 매듭 비트가 requiredQuestId로 완료를 관찰한다.
+                // **반복 금지** — 반복 서브는 completedQuests에 들어가지 않아 매듭 비트의
+                // 퀘스트 게이트가 영영 안 열린다(story_lint가 잡는다).
+                // 보상은 퀘스트가 캔디·XP·소모품을, 매듭 비트가 다음 수문장 대비용 아이템을 준다.
+                new TutorialQuest
+                {
+                    questId = "s_town_meadow", title = "[초원] 그림책의 빈 페이지",
+                    description = "꼬마 화가 달래가 그림책에 그릴 초원 곤충을 보고 싶어 합니다. 초원에서 곤충 6마리를 포획한 뒤 달래에게 알려 주세요.",
+                    hint = "본 마을 광장의 달래를 찾아가 보세요",   // 만나기 전에 다 잡아도 된다(13장) — "먼저"라 쓰지 않는다
+                    type = QuestType.Capture, targetCount = 6,
+                    category = QuestCategory.Side, requiredRegionId = "meadow",
+                    prerequisiteQuestId = "q_capture3",
+                    rewardCandy = 20, rewardExp = 25,
+                    rewardItemId = "wound_salve", rewardItemCount = 3
+                },
+                new TutorialQuest
+                {
+                    questId = "s_town_pond", title = "[연못] 나루터 기둥의 금",
+                    description = "물결 할머니가 연못에 곤충이 얼마나 남았는지 궁금해합니다. 연못에서 곤충 5마리를 포획한 뒤 할머니에게 알려 주세요.",
+                    hint = "연못 나루터(모닥불 옆)의 물결 할머니를 찾아가세요",
+                    type = QuestType.Capture, targetCount = 5,
+                    category = QuestCategory.Side, requiredRegionId = "pond",
+                    prerequisiteQuestId = "q_capture3",
+                    rewardCandy = 25, rewardExp = 30,
+                    rewardItemId = "net_silver", rewardItemCount = 2
+                },
+                new TutorialQuest
+                {
+                    questId = "s_town_forest", title = "[숲] 그물 아래의 소리",
+                    description = "그물에서 풀려나 성이 난 곤충들이 숲을 어지럽힙니다. 숲에서 전투 3번을 이긴 뒤 나무꾼 솔에게 알려 주세요.",
+                    hint = "숲 통나무집(모닥불 옆)의 나무꾼 솔을 찾아가세요",
+                    type = QuestType.Battle, targetCount = 3,
+                    category = QuestCategory.Side, requiredRegionId = "forest",
+                    prerequisiteQuestId = "q_battle",
+                    rewardCandy = 30, rewardExp = 40,
+                    rewardItemId = "antidote", rewardItemCount = 2
+                },
+                new TutorialQuest
+                {
+                    questId = "s_town_swamp", title = "[습지] 안개 속 약초 바구니",
+                    description = "약초꾼 이끼가 늪에 누가 남아 있는지 알고 싶어 합니다. 습지에서 곤충 5마리를 포획한 뒤 이끼에게 알려 주세요.",
+                    hint = "습지 원두막(모닥불 옆)의 약초꾼 이끼를 찾아가세요",
+                    type = QuestType.Capture, targetCount = 5,
+                    category = QuestCategory.Side, requiredRegionId = "swamp",
+                    prerequisiteQuestId = "q_capture3",
+                    rewardCandy = 35, rewardExp = 50,
+                    rewardItemId = "antidote", rewardItemCount = 3
+                },
+                new TutorialQuest
+                {
+                    questId = "s_town_mountain", title = "[산] 봉수대의 곤충 달력",
+                    description = "무릎이 아픈 봉수지기 너울 대신 산 곤충들의 기운을 살펴 주세요. 산에서 전투 4번을 이긴 뒤 너울에게 알려 주세요.",
+                    hint = "산 돌집(모닥불 옆)의 봉수지기 너울을 찾아가세요",
+                    type = QuestType.Battle, targetCount = 4,
+                    category = QuestCategory.Side, requiredRegionId = "mountain",
+                    prerequisiteQuestId = "q_battle",
+                    rewardCandy = 40, rewardExp = 60,
+                    rewardItemId = "wound_salve_great", rewardItemCount = 2
+                },
+                new TutorialQuest
+                {
+                    questId = "s_town_garden", title = "[꽃밭] 모양을 바꾸지 마라",
+                    description = "정원사 누리가 가훈대로라면 나비가 여전히 오는지 알고 싶어 합니다. 꽃밭에서 곤충 5마리를 포획한 뒤 누리에게 알려 주세요.",
+                    hint = "꽃밭 정자(모닥불 옆)의 정원사 누리를 찾아가세요",
+                    type = QuestType.Capture, targetCount = 5,
+                    category = QuestCategory.Side, requiredRegionId = "garden",
+                    prerequisiteQuestId = "q_capture3",
+                    rewardCandy = 35, rewardExp = 50,
+                    rewardItemId = "disc_nature_force", rewardItemCount = 1
+                },
+                new TutorialQuest
+                {
+                    questId = "s_town_ruins", title = "[유적] 탁본의 빈칸",
+                    description = "탁본꾼 결이 벽에서 빠진 문양의 주인을 찾고 있습니다. 고대 유적에서 희귀 곤충(고급 이상) 3마리를 포획한 뒤 결에게 알려 주세요.",
+                    hint = "유적 천막(모닥불 옆)의 탁본꾼 결을 찾아가세요",
+                    type = QuestType.CaptureRare, targetCount = 3,
+                    category = QuestCategory.Side, requiredRegionId = "ruins",
+                    prerequisiteQuestId = "q_capture3",
+                    rewardCandy = 50, rewardExp = 80,
+                    rewardItemId = "full_restore", rewardItemCount = 2
+                },
+                // 2막 — 이름 없는 자리는 두지 않는다(결말 톤. 잡기 아이를 안 두는 것과 같은 이유).
+                new TutorialQuest
+                {
+                    questId = "s_town_hollow", title = "[텅 빈 들] 울지 않는 풍경",
+                    description = "풍경지기 메아리가 들판에 소리가 돌아오기를 기다립니다. 텅 빈 들에서 곤충 5마리를 포획한 뒤 메아리에게 알려 주세요.",
+                    hint = "텅 빈 들 표석 야영지(모닥불 옆)의 풍경지기 메아리를 찾아가세요",
+                    type = QuestType.Capture, targetCount = 5,
+                    category = QuestCategory.Side, requiredRegionId = "hollow",
+                    prerequisiteQuestId = "q_capture3",
+                    rewardCandy = 45, rewardExp = 90,
+                    rewardItemId = "net_gold", rewardItemCount = 2
+                },
+                new TutorialQuest
+                {
+                    questId = "s_town_dunes", title = "[모래언덕] 열어 둔 상자",
+                    description = "떠돌이 상인 모래가 상자에서 풀어 준 곤충들이 잘 버티는지 궁금해합니다. 모래언덕에서 곤충 5마리를 포획한 뒤 모래에게 알려 주세요.",
+                    hint = "모래언덕 천막(모닥불 옆)의 떠돌이 상인 모래를 찾아가세요",
+                    type = QuestType.Capture, targetCount = 5,
+                    category = QuestCategory.Side, requiredRegionId = "dunes",
+                    prerequisiteQuestId = "q_capture3",
+                    rewardCandy = 50, rewardExp = 100,
+                    rewardItemId = "wound_salve_great", rewardItemCount = 3
+                },
+                new TutorialQuest
+                {
+                    questId = "s_town_frostline", title = "[서릿길] 두 벌의 필사",
+                    description = "누군가 얼음 서고 앞의 곤충들을 들쑤셔 필사생 서리가 벽에 다가가지 못합니다. 서릿길에서 전투 4번을 이긴 뒤 서리에게 알려 주세요.",
+                    hint = "서릿길 얼음 움막(모닥불 옆)의 필사생 서리를 찾아가세요",
+                    type = QuestType.Battle, targetCount = 4,
+                    category = QuestCategory.Side, requiredRegionId = "frostline",
+                    prerequisiteQuestId = "q_battle",
+                    rewardCandy = 55, rewardExp = 110,
+                    rewardItemId = "full_restore", rewardItemCount = 2
+                },
+                new TutorialQuest
+                {
+                    questId = "s_town_emberfall", title = "[잿불 골짜기] 타지 않은 기억",
+                    description = "광부 숯이 사람들의 기억이 맞는지 눈으로 확인하고 싶어 합니다. 잿불 골짜기에서 곤충 5마리를 포획한 뒤 숯에게 알려 주세요.",
+                    hint = "잿불 골짜기 현무암 움막(모닥불 옆)의 광부 숯을 찾아가세요",
+                    type = QuestType.Capture, targetCount = 5,
+                    category = QuestCategory.Side, requiredRegionId = "emberfall",
+                    prerequisiteQuestId = "q_capture3",
+                    rewardCandy = 60, rewardExp = 120,
+                    rewardItemId = "net_gold", rewardItemCount = 2
+                },
+                new TutorialQuest
+                {
+                    questId = "s_town_canopy", title = "[우듬지] 없어진 누에",
+                    description = "나무타기 잎새가 우듬지 곤충들이 다 무사한지 걱정합니다. 우듬지에서 희귀 곤충(고급 이상) 3마리를 포획한 뒤 잎새에게 알려 주세요.",
+                    hint = "우듬지 나무 위 오두막(모닥불 옆)의 나무타기 잎새를 찾아가세요",
+                    type = QuestType.CaptureRare, targetCount = 3,
+                    category = QuestCategory.Side, requiredRegionId = "canopy",
+                    prerequisiteQuestId = "q_capture3",
+                    rewardCandy = 65, rewardExp = 130,
+                    rewardItemId = "full_restore", rewardItemCount = 3
+                },
             };
         }
 
@@ -913,14 +1053,46 @@ namespace InsectGame.Core
 
         // --- 서브 퀘스트(다중 활성 + 반복 상승) ---
 
-        // 해금(prereq 완료)됐고, 반복이거나 아직 미완료면 활성.
+        // 해금(prereq 완료 + 리전 게이트)됐고, 반복이거나 아직 미완료면 활성.
         private bool IsSideActive(TutorialQuest q)
+        {
+            if (!IsSideUnlocked(q)) return false;
+            if (!q.repeatable && completedQuests.Contains(q.questId)) return false;
+            return true;
+        }
+
+        /// <summary>
+        /// 서브 퀘스트가 열렸는가 — 선행 퀘스트 완료 + (지역 의뢰면) 그 리전 해금.
+        /// 목록 UI가 "미해금"을 가를 때도 이것을 쓴다. 저쪽이 prereq만 보면 잠긴 리전의
+        /// 의뢰가 0/5 진행 중으로 떠서, 갈 수 없는 곳을 할 일처럼 보여 준다.
+        /// </summary>
+        public bool IsSideUnlocked(TutorialQuest q)
         {
             if (q == null || q.category != QuestCategory.Side) return false;
             if (!string.IsNullOrEmpty(q.prerequisiteQuestId) && !completedQuests.Contains(q.prerequisiteQuestId))
                 return false;
-            if (!q.repeatable && completedQuests.Contains(q.questId)) return false;
-            return true;
+            return QuestRegionGate.IsOpen(q.requiredRegionId, RegionAccessibleProbe);
+        }
+
+        // 리전 해금 판정 대리자 — 목록 UI가 OnGUI 패스마다 IsSideUnlocked를 부르므로
+        // 호출마다 람다를 새로 만들지 않게 한 번만 묶어 둔다.
+        private System.Func<string, bool> regionAccessibleProbe;
+        private System.Func<string, bool> RegionAccessibleProbe
+            => regionAccessibleProbe ?? (regionAccessibleProbe = IsRegionIdAccessible);
+
+        private bool IsRegionIdAccessible(string regionId)
+        {
+            if (regionManager == null) return false;
+            RegionData region = regionManager.GetRegionById(regionId);
+            return region != null && regionManager.IsRegionAccessible(region);
+        }
+
+        // 이번 행동이 지역 의뢰의 진행으로 세어지는가 — 행동이 일어난 순간의 현재 리전으로 판정한다.
+        private bool CountsHere(TutorialQuest q)
+        {
+            string current = regionManager != null && regionManager.CurrentRegion != null
+                ? regionManager.CurrentRegion.regionId : null;
+            return QuestRegionGate.Counts(q.requiredRegionId, current);
         }
 
         // 유효 목표 = 기본 + (반복 완료 횟수 × 증가량). 반복 아니면 기본 그대로.
@@ -951,7 +1123,7 @@ namespace InsectGame.Core
             if (allQuests == null) return;
             foreach (TutorialQuest q in allQuests)
             {
-                if (q.type != type || !IsSideActive(q)) continue;
+                if (q.type != type || !IsSideActive(q) || !CountsHere(q)) continue;
                 IncrementSideProgress(q, count);
             }
         }
@@ -961,7 +1133,7 @@ namespace InsectGame.Core
             if (allQuests == null) return;
             foreach (TutorialQuest q in allQuests)
             {
-                if (!IsSideActive(q)) continue;
+                if (!IsSideActive(q) || !CountsHere(q)) continue;
                 if (q.type == QuestType.Capture) IncrementSideProgress(q, 1);
                 else if (q.type == QuestType.CaptureRare && rarity >= InsectRarity.Uncommon) IncrementSideProgress(q, 1);
                 else if (q.type == QuestType.CaptureRarity && rarity == q.requiredRarity) IncrementSideProgress(q, 1);
@@ -1148,6 +1320,12 @@ namespace InsectGame.Core
             TutorialQuest quest = GetQuest(questId);
             return quest != null ? quest.title : null;
         }
+
+        /// <summary>
+        /// questId로 퀘스트 정의를 찾는다(없으면 null). 의뢰 따라가기(<c>StoryObjectiveTracker</c>)가
+        /// 진행 문구("연못에서 곤충 포획 3/5")를 만들 때 읽는다. 읽기 전용 — 진행은 바꾸지 않는다.
+        /// </summary>
+        public TutorialQuest FindQuest(string questId) => GetQuest(questId);
 
         // 사용자가 퀘스트 창을 열어 완료 목록을 확인했을 때 호출 — 미확인 완료 배지를 0으로 리셋.
         public void MarkQuestsSeen()

@@ -180,7 +180,7 @@ namespace InsectGame.Core
             const float length = 26f;
             const float width = 5f;
             Material waterMat = CreateMat(new Color(0.15f, 0.35f, 0.65f, 0.7f));
-            SetTransparent(waterMat);
+            SceneryMaterials.MakeFade(waterMat);
             GameObject water = GameObject.CreatePrimitive(PrimitiveType.Plane);
             water.name = "River_Water_0";
             water.transform.position = center + Vector3.up * 0.14f;
@@ -404,7 +404,7 @@ namespace InsectGame.Core
         /// <summary>
         /// 이 빌더가 만든 런타임 머티리얼 — <c>RegionTerrainBuilder</c>와 같은 이유로 회수한다
         /// (GameObject를 지워도 머티리얼은 남고, 로그아웃·계정삭제가 씬을 재로드한다).
-        /// 여기서 나온 것도 <c>SetTransparent</c>로 변형되므로 색상 캐시를 쓰지 않는다.
+        /// 여기서 나온 것도 <see cref="SceneryMaterials.MakeFade"/>로 변형되므로 색상 캐시를 쓰지 않는다.
         /// </summary>
         private readonly System.Collections.Generic.List<Material> runtimeMaterials =
             new System.Collections.Generic.List<Material>();
@@ -416,26 +416,12 @@ namespace InsectGame.Core
             runtimeMaterials.Clear();
         }
 
+        /// <summary>셰이더 폴백·무광 마감은 <see cref="SceneryMaterials.Create"/>가 한다 — 여기선 회수 목록에만 올린다.</summary>
         private Material CreateMat(Color color)
         {
-            Shader shader = Shader.Find("Standard");
-            if (shader == null) shader = Shader.Find("Universal Render Pipeline/Lit");
-            if (shader == null) shader = Shader.Find("Unlit/Color");
-            if (shader == null) shader = Shader.Find("Sprites/Default");
-            Material mat = shader != null ? new Material(shader) : new Material(Shader.Find("Hidden/InternalErrorShader"));
-            mat.color = color;
+            Material mat = SceneryMaterials.Create(color);
             runtimeMaterials.Add(mat);
             return mat;
-        }
-
-        private void SetTransparent(Material mat)
-        {
-            mat.SetFloat("_Mode", 3);
-            mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
-            mat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
-            mat.SetInt("_ZWrite", 0);
-            mat.EnableKeyword("_ALPHABLEND_ON");
-            mat.renderQueue = 3000;
         }
     }
 }

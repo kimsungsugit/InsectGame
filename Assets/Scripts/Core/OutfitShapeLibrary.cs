@@ -211,6 +211,7 @@ namespace InsectGame.Core
             int spawnIndex = 0;
             if (recipe != null && recipe.parts != null)
             {
+                string itemId = needSpawn > 0 ? ItemIdOf(recipe) : null;
                 for (int i = 0; i < recipe.parts.Length; i++)
                 {
                     OutfitPart p = recipe.parts[i];
@@ -221,7 +222,7 @@ namespace InsectGame.Core
                     }
                     else
                     {
-                        ApplySpawned(root, container, spawnIndex, p, c);
+                        ApplySpawned(root, container, spawnIndex, p, c, SurfaceOf(slot, itemId, p.role));
                         spawnIndex++;
                     }
                 }
@@ -297,7 +298,8 @@ namespace InsectGame.Core
             t.localRotation = Quaternion.Euler(p.euler);
         }
 
-        private static void ApplySpawned(Transform root, Transform container, int index, OutfitPart p, Color c)
+        private static void ApplySpawned(Transform root, Transform container, int index, OutfitPart p, Color c,
+            SurfaceKind surface)
         {
             Transform t = index < container.childCount ? container.GetChild(index) : null;
             if (t == null)
@@ -326,6 +328,9 @@ namespace InsectGame.Core
                 // renderer.material(getter)을 쓰면 파츠마다 인스턴스가 하나씩 더 생겨 샌다.
                 mr.sharedMaterial.color = c;
                 if (mr.sharedMaterial.HasProperty("_BaseColor")) mr.sharedMaterial.SetColor("_BaseColor", c);
+                // 재질도 색처럼 매번 다시 준다 — 같은 자식이 왕관(금속)에서 밀짚모자(천)로 재사용된다.
+                // 반투명 색에는 걸지 않는다(SceneryMaterials.ApplyFinish와 같은 규칙). 지금 레시피엔 그런 색이 없다.
+                if (!SceneryMaterials.IsTranslucent(c)) CharacterPalette.ApplySurface(mr.sharedMaterial, surface);
             }
         }
 
@@ -370,17 +375,16 @@ namespace InsectGame.Core
         /// <summary>
         /// spawn 파츠용 머티리얼. 셰이더는 캐릭터가 이미 쓰고 있는 것을 그대로 빌린다 —
         /// Standard/URP/Unlit 중 어느 것이 잡혔든 자동으로 맞고, 파이프라인 판정이 한 곳에만 있게 된다
-        /// (PlayerVisualBuilder.MakeMaterial의 fallback 체인이 그 한 곳이다).
+        /// (<see cref="SceneryMaterials.LitShader"/>의 폴백 체인이 그 한 곳이다 — PlayerVisualBuilder.MakeMaterial도 거기서 받는다).
+        /// 재질(광택)은 여기서 주지 않는다 — 파츠가 재사용될 때마다 바뀌므로 <see cref="ApplySpawned"/>가 매번 준다
+        /// (<see cref="SurfaceOf"/>).
         /// </summary>
         private static Material CreatePartMaterial(Transform root, Color c)
         {
             Shader sh = null;
             MeshRenderer any = root.GetComponentInChildren<MeshRenderer>(true);
             if (any != null && any.sharedMaterial != null) sh = any.sharedMaterial.shader;
-            if (sh == null) sh = Shader.Find("Standard");
-            if (sh == null) sh = Shader.Find("Universal Render Pipeline/Lit");
-            if (sh == null) sh = Shader.Find("Unlit/Color");
-            if (sh == null) sh = Shader.Find("Sprites/Default");
+            if (sh == null) sh = SceneryMaterials.LitShader;
 
             Material m = new Material(sh);
             m.color = c;
@@ -405,6 +409,122 @@ namespace InsectGame.Core
         internal static Color Darken(Color c)
         {
             return new Color(c.r * 0.7f, c.g * 0.7f, c.b * 0.7f, c.a);
+        }
+
+        // ── 파츠 재질(광택) ──────────────────────────────────
+        //
+        // spawn 파츠는 오래 셰이더 기본 광택(0.5)으로 그려졌다 — 밀짚모자·망토·스카프가 전부 플라스틱처럼 반짝였고,
+        // 바로 옆 bind 노드(Cap·Backpack·Body)는 PlayerVisualBuilder.MakeMaterial이 부위 재질을 줘서 한 옷이 두 재료로
+        // 갈라져 보였다. 수치는 CharacterPalette 재질표를 그대로 쓴다(사본 없음).
+        //
+        // OutfitPart에 재질 필드를 두지 않는다(스키마는 data-architect 경계). 슬롯 기본값 + 아이템별 예외 표로 가른다.
+        // spawn 파츠엔 이름이 없어(bindName은 bind 전용) 파츠 단위가 아니라 **색 역할** 단위로 가른다 —
+        // 같은 역할이면 같은 색이고, 같은 색이면 대개 같은 재료다.
+
+        /// <summary>
+        /// 아이템 하나의 재질 — 한 재질에 한 색 역할만 다를 수 있다(왕관의 보석, 수정구의 구슬).
+        /// 지금 레시피엔 예외 역할이 둘 이상 필요한 아이템이 없다.
+        /// </summary>
+        internal readonly struct ItemSurface
+        {
+            public SurfaceKind Kind { get; }
+            public bool HasExcept { get; }
+            public PartColorRole ExceptRole { get; }
+            public SurfaceKind ExceptKind { get; }
+
+            public ItemSurface(SurfaceKind kind)
+            {
+                Kind = kind;
+                HasExcept = false;
+                ExceptRole = default;
+                ExceptKind = kind;
+            }
+
+            public ItemSurface(SurfaceKind kind, PartColorRole exceptRole, SurfaceKind exceptKind)
+            {
+                Kind = kind;
+                HasExcept = true;
+                ExceptRole = exceptRole;
+                ExceptKind = exceptKind;
+            }
+
+            public SurfaceKind For(PartColorRole role) => HasExcept && role == ExceptRole ? ExceptKind : Kind;
+        }
+
+        /// <summary>
+        /// 광택이 제 질감인 아이템만 적는다 — 나머지는 <see cref="DefaultSurface"/>(천·가죽)라 무광 계열이다.
+        /// 키가 실재하는 레시피인지, 예외 역할이 그 레시피에 실제로 있는지는 <c>OutfitPartSurfaceTests</c>가 고정한다
+        /// (오타면 예외도 경고도 없이 조용히 천으로 그려진다).
+        ///
+        /// 일부러 뺀 것: 꽃 왕관의 금색 꽃술(꽃이다), 마법사 모자 끝 금색 구슬(수놓은 별 모자다), 히어로 마스크 눈
+        /// (보조색 역할이 이마 장식과 같다), 오라·후광·네온 팔찌(빛이지 반사가 아니다 — 광택으로는 안 산다).
+        /// </summary>
+        private static readonly Dictionary<string, ItemSurface> SurfaceOverrides = new Dictionary<string, ItemSurface>
+        {
+            // 금속 — 왕관 금테·꼭지 장식, 배지, 군번줄. 왕관의 보석(보조색)만 유리 광택.
+            ["hat_crown"] = new ItemSurface(SurfaceKind.Metal, PartColorRole.Secondary, SurfaceKind.Wet),
+            ["acc_badge"] = new ItemSurface(SurfaceKind.Metal),
+            ["acc_dog_tag"] = new ItemSurface(SurfaceKind.Metal),
+
+            // 줄·받침은 금속, 알(수정구·펜던트, 기본색)은 유리 광택.
+            ["acc_crystal_orb"] = new ItemSurface(SurfaceKind.Metal, PartColorRole.Primary, SurfaceKind.Wet),
+            ["acc_pendant"] = new ItemSurface(SurfaceKind.Metal, PartColorRole.Primary, SurfaceKind.Wet),
+
+            // 렌즈 — 바이저 렌즈(와 같은 색의 안테나)만 유리 광택, 프레임은 모자 기본(천).
+            ["hat_cyber_visor"] = new ItemSurface(SurfaceKind.Cloth, PartColorRole.Secondary, SurfaceKind.Wet),
+
+            // 잠금쇠·시료 탱크(보조색)는 금속, 손잡이는 가방 기본(가죽).
+            ["bag_science"] = new ItemSurface(SurfaceKind.Leather, PartColorRole.Secondary, SurfaceKind.Metal),
+
+            // 가죽 — 카탈로그 설명이 가죽인 모자("가죽 모자"), 안대, 뿔테.
+            ["hat_cowboy"] = new ItemSurface(SurfaceKind.Leather),
+            ["acc_eyepatch"] = new ItemSurface(SurfaceKind.Leather),
+            ["acc_glasses"] = new ItemSurface(SurfaceKind.Leather),
+        };
+
+        internal static IEnumerable<KeyValuePair<string, ItemSurface>> SurfaceOverrideEntries() => SurfaceOverrides;
+
+        /// <summary>
+        /// 슬롯 기본 재질 — bind 노드가 <c>PlayerVisualBuilder</c>에서 받는 재질에 맞춘다(모자 Cap·옷 = 천,
+        /// 부츠·배낭 = 가죽). 덧붙인 파츠가 그 노드와 다르면 한 아이템이 두 재료로 갈라져 보인다.
+        /// 도구는 전부 bind라(손잡이 가죽·망 금속은 빌더 몫) 여기 올 일이 없다.
+        /// </summary>
+        internal static SurfaceKind DefaultSurface(OutfitSlot slot)
+        {
+            switch (slot)
+            {
+                case OutfitSlot.Shoes:
+                case OutfitSlot.Backpack:
+                    return SurfaceKind.Leather;
+                default:
+                    return SurfaceKind.Cloth;
+            }
+        }
+
+        /// <summary>spawn 파츠 하나의 재질. 순수 함수라 셰이더 없이 테스트한다.</summary>
+        internal static SurfaceKind SurfaceOf(OutfitSlot slot, string itemId, PartColorRole role)
+        {
+            if (itemId != null && SurfaceOverrides.TryGetValue(itemId, out ItemSurface s)) return s.For(role);
+            return DefaultSurface(slot);
+        }
+
+        /// <summary>
+        /// 레시피 → itemId 역참조. <see cref="Apply"/>는 itemId를 받지 않는다 — <see cref="ExactRecipes"/>의 값이
+        /// 아이템마다 고유 인스턴스라(테스트가 고정) 레시피가 곧 아이템이다. 호출부에 인자를 늘리면 레시피와 id가
+        /// 어긋나게 넘어올 자리가 생긴다. 도구 레시피는 여러 id가 한 인스턴스를 나누지만 전부 bind라 재질을 묻지 않는다.
+        /// </summary>
+        private static Dictionary<OutfitRecipe, string> recipeItemIds;
+
+        internal static string ItemIdOf(OutfitRecipe recipe)
+        {
+            if (recipe == null) return null;
+            if (recipeItemIds == null)
+            {
+                Dictionary<OutfitRecipe, string> map = new Dictionary<OutfitRecipe, string>();
+                foreach (KeyValuePair<string, OutfitRecipe> kv in ExactRecipes) map[kv.Value] = kv.Key;
+                recipeItemIds = map;
+            }
+            return recipeItemIds.TryGetValue(recipe, out string id) ? id : null;
         }
 
         // ── 프리미티브 메시 캐시 ──────────────────────────────

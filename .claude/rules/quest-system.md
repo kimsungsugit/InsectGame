@@ -35,6 +35,18 @@ description: 퀘스트 데이터 정의 위치·추가 절차·Notify 배선 규
 (`TutorialQuestManager.cs:322` 주석이 방어 흔적). 이벤트 기반 QuestType은 3번(호출부)이
 아니라 4번(구독 등록)이 누락 지점이다.
 
+## 지역 의뢰 — `requiredRegionId` (Side 전용)
+
+서브 퀘스트에 `requiredRegionId`를 채우면 **①그 리전이 열려야 목록에 뜨고 ②그 리전 안(서브에리어 포함)에서 한
+행동만 센다.** 판정은 `QuestRegionGate`(순수)가 하고, 해금 여부는 `RegionManager.IsRegionAccessible`을 읽는다.
+마을 이야기(`Docs/StoryBible.md` 13장)의 짝이다 — 매듭 비트가 `requiredQuestId`로 이 퀘스트의 완료를 **관찰**한다.
+
+- **Story 퀘스트에 달지 않는다.** 선형 체인(`ActivateNextQuest`·`NotifyAction`의 활성 퀘스트 경로)은 이 필드를 안 본다 —
+  적어 둔 한정이 거짓이 된다.
+- **위치가 있는 목표만** — Capture·CaptureRare·CaptureRarity·Battle·RaidBattle·VisitSubArea·NpcDuel.
+- **스토리가 물면 1회형이어야 한다.** 반복 서브는 완료 기록이 안 남아 `requiredQuestId` 게이트가 영영 안 열린다(story_lint 29).
+- 목록 UI의 "미해금"도 `IsSideUnlocked`를 쓴다. prereq만 보면 잠긴 리전의 의뢰가 0/5 진행 중으로 뜬다.
+
 ## 검증 — 반드시 quest_lint 실행
 
 퀘스트를 수정하면 반드시:
@@ -43,10 +55,11 @@ description: 퀘스트 데이터 정의 위치·추가 절차·Notify 배선 규
 python -X utf8 .claude/scripts/quest_lint.py
 ```
 
-11검사: questId 중복 / prerequisite 무결성(끊김·순환) / 보상 곤충 ID 존재 / 보상 아이템 ID 존재 /
+12검사: questId 중복 / prerequisite 무결성(끊김·순환) / 보상 곤충 ID 존재 / 보상 아이템 ID 존재 /
 보스 대결 보상 아이템 ID 존재 / **QuestType↔진행 배선**(q_team류 정지 검출) / 대화 리전키 정합성 /
 서브 퀘스트 정합(반복은 Side 전용) / 팀 자동 편성 경로 / **prereq 방향**(배열 앞을 가리켜야
 소급 완료가 안전 — 뒤를 가리키면 아직 할 차례인 퀘스트를 보상 없이 삼킨다) /
+**지역 의뢰 정합**(리전 실재 · Side 전용 · 위치 있는 목표 — 리전 ID 오타면 의뢰가 목록에서 잠긴 채 남는다) /
 **questId 구분자 금지**(`,`·`:`·공백 — `QuestSaveMerge`의 세이브 병합 포맷이 그 문자를 구분자로
 쓴다. 든 ID는 병합에서 조용히 버려지고 write-back이 손실을 영구화한다).
 `ci_check`에도 포함돼 세션 밖 편집(Codex CLI 등)의 결함도 CI가 잡는다.

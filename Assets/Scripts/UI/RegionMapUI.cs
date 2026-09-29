@@ -64,6 +64,8 @@ namespace InsectGame.UI
             public Vector3 worldPos;
             public InsectRarity rarity;
             public InsectEntity entity;
+            // 표식을 단 순간의 몸 번호 — 풀 객체라 같은 참조가 다른 개체로 되살아난다(InsectEntity.SpawnSerial).
+            public int serial;
         }
 
         public bool IsOpen => isOpen;
@@ -120,7 +122,7 @@ namespace InsectGame.UI
         private Texture2D discTex;
         private GUIStyle titleStyle, closeStyle, levelStyle, noDataStyle;
         private GUIStyle regionNameStyle, subNameStyle, raidLabelStyle, guardianStyle, mapErrStyle;
-        private GUIStyle objectiveStyle;
+        private GUIStyle objectiveStyle, taleBadgeStyle;
         private GUIStyle infoTitleStyle, infoLineStyle, legendStyle, btnStyle, hintStyle;
         private GUIStyle detailTitleStyle, detailBtnStyle, detailDescStyle, detailSummaryStyle, detailNoInsectStyle;
         private GUIStyle dexNameStyle, dexInfoStyle, dexCheckStyle, dexUnknownStyle, dexHiddenStyle, dexNotCaughtStyle;
@@ -145,6 +147,8 @@ namespace InsectGame.UI
             raidLabelStyle = Label(17, FontStyle.Bold, TextAnchor.MiddleCenter, Color.white);
             guardianStyle = Label(16, FontStyle.Bold, TextAnchor.MiddleCenter, new Color(1f, 0.75f, 0.55f));
             objectiveStyle = Label(19, FontStyle.Bold, TextAnchor.MiddleCenter, UITheme.Instance.accentMint);
+            // 의뢰 주민 배지 안의 !/? — 밝은 원 위에 올라가므로 어두운 글자.
+            taleBadgeStyle = Label(20, FontStyle.Bold, TextAnchor.MiddleCenter, UITheme.Instance.surfaceBase);
             mapErrStyle = Label(26, FontStyle.Bold, TextAnchor.MiddleCenter, new Color(1f, 0.6f, 0.6f));
 
             infoTitleStyle = Label(34, FontStyle.Bold, TextAnchor.MiddleLeft, Color.white);
@@ -184,7 +188,8 @@ namespace InsectGame.UI
                 name = entity.Data.displayName,
                 worldPos = entity.transform.position,
                 rarity = entity.Data.rarity,
-                entity = entity
+                entity = entity,
+                serial = entity.SpawnSerial
             });
         }
 
@@ -192,7 +197,9 @@ namespace InsectGame.UI
         {
             for (int i = raidMarkers.Count - 1; i >= 0; i--)
             {
-                if (raidMarkers[i].entity == null || !raidMarkers[i].entity.gameObject.activeInHierarchy)
+                // 몸 번호가 바뀌었으면 풀로 돌아갔다가 다른 개체로 다시 선 것이다 — 활성 여부만으론 못 가린다.
+                if (raidMarkers[i].entity == null || !raidMarkers[i].entity.gameObject.activeInHierarchy
+                    || raidMarkers[i].entity.SpawnSerial != raidMarkers[i].serial)
                     raidMarkers.RemoveAt(i);
             }
             if (errorTimer > 0f) errorTimer -= Time.deltaTime;
@@ -340,6 +347,11 @@ namespace InsectGame.UI
             wmOx = area.x + (area.width - wmDrawW) * 0.5f;
             wmOy = area.y + (area.height - wmDrawH) * 0.5f;
             float worldToPx = fit;
+
+            // 0) 의뢰 주민 배지 탭 → 따라가기. **리전·서브에리어 버튼보다 먼저** 처리한다 —
+            //    IMGUI는 먼저 호출된 GUI.Button이 MouseDown을 가져가는데, 배지는 리전 원 안에 있어
+            //    뒤에 두면 배지를 눌러도 리전 선택만 된다. 좌표 변환(wmOx 등)이 위에서 끝난 뒤라야 한다.
+            HandleTaleMarkerInput(area);
 
             // 1) 연결선(길) — 회전 quad로 깔끔하게
             Color pathCol = new Color(0.5f, 0.44f, 0.3f, 0.5f);
@@ -511,6 +523,15 @@ namespace InsectGame.UI
                 Vector3 position = npc.transform.position;
                 Vector2 marker = WorldToMap(position.x, position.z);
                 if (!area.Contains(marker)) continue;
+
+                InsectGame.NPC.QuestMark mark = objectiveTracker != null
+                    ? objectiveTracker.TaleMarkOf(npc) : InsectGame.NPC.QuestMark.None;
+                if (mark != InsectGame.NPC.QuestMark.None)
+                {
+                    DrawTaleBadge(marker, npc, mark, area);
+                    continue;
+                }
+
                 GUI.color = UITheme.Instance.accentAmber;
                 GUI.DrawTexture(new Rect(marker.x - 5f, marker.y - 5f, 10f, 10f), discTex);
                 GUI.color = Color.white;
@@ -518,6 +539,61 @@ namespace InsectGame.UI
                     UIHelper.LabelFit(new Rect(Mathf.Clamp(marker.x - 70f, area.x, area.xMax - 140f),
                         Mathf.Clamp(marker.y + 8f, area.y, area.yMax - 24f), 140f, 24f), npc.DisplayName, subNameStyle);
             }
+        }
+
+        // ── 의뢰 주민 배지 ──
+        // 반경은 손가락이 닿게 잡는다 — 지도 점(10px)과 같은 크기면 모바일에서 누를 수가 없다.
+        private const float TaleBadgeRadius = 13f;
+        private const float TaleBadgeHotPad = 8f;
+
+        /// <summary>
+        /// 지도에서 의뢰 주민 배지를 누르면 그 이야기를 따라간다. 지도는 닫지 않는다 — 목표 마커(민트)가
+        /// 곧바로 그 자리로 옮겨 가는 것을 보여 주고, 다른 리전이면 이어서 [이동]을 누르게 한다.
+        /// </summary>
+        private void HandleTaleMarkerInput(Rect area)
+        {
+            Event e = Event.current;
+            if (e == null || e.type != EventType.MouseDown || e.button != 0 || objectiveTracker == null) return;
+
+            var marks = objectiveTracker.TaleMarkers;
+            float hot = TaleBadgeRadius + TaleBadgeHotPad;
+            for (int i = 0; i < marks.Count; i++)
+            {
+                InsectGame.NPC.VillagerNpc npc = marks[i].Npc;
+                if (npc == null || !npc.gameObject.activeInHierarchy) continue;
+                Vector2 m = WorldToMap(npc.transform.position.x, npc.transform.position.z);
+                if (!area.Contains(m)) continue;
+                if (!new Rect(m.x - hot, m.y - hot, hot * 2f, hot * 2f).Contains(e.mousePosition)) continue;
+
+                selectedRegionId = npc.RegionId;   // 정보 패널도 그 리전으로 — [이동]이 바로 보인다
+                objectiveTracker.TrackTale(npc.StoryNpcId);
+                e.Use();
+                return;
+            }
+        }
+
+        private void DrawTaleBadge(Vector2 m, InsectGame.NPC.VillagerNpc npc, InsectGame.NPC.QuestMark mark, Rect area)
+        {
+            UITheme t = UITheme.Instance;
+            bool report = mark == InsectGame.NPC.QuestMark.Report;
+            // !·? 모두 호박색 — 민트는 이야기 목표 마커와 서브에리어 자리라, ?를 민트로 두면 셋이 한 색이 됐다.
+            // 새 이야기와 보고는 기호로 가른다(머리 위 표식·미니맵과 같은 규칙).
+            Color col = t.accentAmber;
+            bool tracked = objectiveTracker != null && objectiveTracker.IsTaleTracked(npc.StoryNpcId);
+
+            // 따라가는 주민은 흰 테두리로 한 번 더 두른다 — 여러 배지 중 어느 것을 골랐는지 보이게.
+            float r = TaleBadgeRadius;
+            GUI.color = tracked ? Color.white : new Color(t.surfaceShadow.r, t.surfaceShadow.g, t.surfaceShadow.b, 0.55f);
+            GUI.DrawTexture(new Rect(m.x - r - 3f, m.y - r - 3f, (r + 3f) * 2f, (r + 3f) * 2f), discTex);
+            GUI.color = col;
+            GUI.DrawTexture(new Rect(m.x - r, m.y - r, r * 2f, r * 2f), discTex);
+            GUI.color = Color.white;
+            GUI.Label(new Rect(m.x - r, m.y - r, r * 2f, r * 2f), report ? "?" : "!", taleBadgeStyle);
+
+            // 이름은 누르기 전에도 보인다 — 배지만으로는 누구의 의뢰인지 모른다. 다른 점과 달리 개수가 적다(주민 7명).
+            float lw = 150f;
+            UIHelper.LabelFit(new Rect(Mathf.Clamp(m.x - lw * 0.5f, area.x, area.xMax - lw),
+                Mathf.Clamp(m.y + r + 2f, area.y, area.yMax - 24f), lw, 24f), npc.DisplayName, subNameStyle);
         }
 
         private void DrawStoryObjectiveMarker(Rect area)
@@ -579,7 +655,7 @@ namespace InsectGame.UI
                 // 대략 334px밖에 안 된다 — 고정 34px로 일곱 줄을 쌓으면 마지막 두 줄이 아래
                 // 안내 문구를 뚫고 나간다. 범례는 한 항목만 빠져도 지도를 못 읽으므로
                 // 줄을 버리는 대신 간격을 줄인다(rules/ui-layout.md의 "고정 개수 행" 처리).
-                const int LegendRows = 7;
+                const int LegendRows = 8;
                 float legendPitch = Mathf.Clamp(
                     (area.y + area.height - 66f - ly) / LegendRows, 22f, 34f);
 
@@ -590,6 +666,7 @@ namespace InsectGame.UI
                 DrawLegendRow(ix, ref ly, iw, new Color(0.4f, 0.85f, 1f), "내 위치", legendPitch);
                 DrawLegendRow(ix, ref ly, iw, new Color(0.5f, 0.7f, 0.4f), "서브에리어 (소형 원, 눌러 이동)", legendPitch);
                 DrawLegendRow(ix, ref ly, iw, UITheme.Instance.accentMint, "이야기 목표 (민트, 맥동)", legendPitch);
+                DrawLegendRow(ix, ref ly, iw, UITheme.Instance.accentAmber, "마을 의뢰 (!·? 눌러 따라가기)", legendPitch);
 
                 // 목표 문구 자체는 여기 두지 않는다 — 마커 바로 위에 이미 붙어 있고(지도),
                 // 패널 밖 HUD 목표 행에도 있다. 세로에서는 넣을 자리도 없다.

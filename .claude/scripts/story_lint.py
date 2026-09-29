@@ -967,6 +967,25 @@ def evaluate_signals() -> list:
         "FAIL" if bad_fx else "PASS",
     ))
 
+    # 29. 퀘스트 게이트가 **반복 서브 퀘스트**를 물면 영영 안 열린다.
+    #     `TutorialQuestManager.CompleteSideQuest`는 반복 퀘스트를 completedQuests에 넣지 않고
+    #     목표만 올려 재시작한다 — `IsQuestCompleted`가 영원히 false라 그 비트는 조용히 잠긴다.
+    #     마을 이야기의 매듭 비트(`town_*_close`)가 지역 의뢰(`s_town_*`)의 완료를 이 게이트로
+    #     관찰하므로, 의뢰를 반복형으로 바꾸는 순간 이야기가 거기서 끊긴다(예외도 경고도 없다).
+    repeatable_quests = {q["questId"] for q in game_facts.quest_defs() if q.get("repeatable")}
+    gated_on_repeat = sorted(
+        f"{b['beatId']}→{b['requiredQuestId']}"
+        for b in beats
+        if b.get("requiredQuestId") and b["requiredQuestId"] in repeatable_quests)
+    quest_gated = sum(1 for b in beats if b.get("requiredQuestId"))
+    signals.append((
+        "퀘스트 게이트 대상이 1회 완료형인가 (반복 서브는 완료 기록이 안 남는다)",
+        "0건",
+        f"{len(gated_on_repeat)}건 ({gated_on_repeat})" if gated_on_repeat
+        else f"0건 (퀘스트 게이트 {quest_gated}건 / 반복 퀘스트 {len(repeatable_quests)}개)",
+        "FAIL" if gated_on_repeat else "PASS",
+    ))
+
     return signals
 
 
@@ -1019,7 +1038,7 @@ def main():
     print("- 검사 21은 SubAreaWorldBuilder의 CreateBoundaryWalls 크기와 FindSafeSpawnPosition의")
     print("  입구 좌표를 읽어 연출 워프 지점이 방 안인지 본다. 방은 축정렬 정사각이고 오프셋도")
     print("  월드축이라 좌표가 결정적이다 — 벽 밖이면 배우가 막혀 대사만 뜬다(무증상).")
-    print("- 검사 22는 NpcDialogueDatabase.StorySpeakerName / NpcVisualBuilder.StoryNpcAppearance의")
+    print("- 검사 22는 NpcDialogueDatabase.StorySpeakerName / NpcVisualBuilder.StoryNpcFace의")
     print("  case를 읽어 월드 배치 인물과 대조한다. 이름 누락은 내부 ID, 외형 누락은 어르신으로 표시되어")
     print("  누락이 무증상이다 — village_elder만 그 default 가지라서 면제한다.")
     print("- 검사 19는 NpcBossDuels.cs의 storyNpcId를 정규식으로 읽어 Story.json의")

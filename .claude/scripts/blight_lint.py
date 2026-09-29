@@ -199,14 +199,34 @@ def main():
     add("정화 호출부(NpcDuelController)", "존재",
         "있음" if cleanse else "**없음 — 이겨도 정화되지 않는다**", cleanse)
 
-    # 13. 스폰 상한이 전부 BlightPolicy 경유인가.
-    #     CountActiveInRegion(...) 비교가 곧 "이 리전에 더 띄울까"다. 하나라도 날것의
-    #     maxActivePerRegion을 쓰면 그 경로만 오염을 무시해 스폰 편향이 생긴다.
+    # 13. 리전 곤충 수가 전부 BlightPolicy 경유인가.
+    #     스포너는 리전마다 슬롯(기록된 개체)을 두고 그 수를 EnsureSlotCount 하나로만 바꾼다
+    #     (2026-09-29 시간 기반 재생 — 옛 "CountActiveInRegion < maxActivePerRegion" 비교는 없어졌다).
+    #     메인 필드 호출(isSubArea: false)이 하나라도 RegionCap을 거치지 않으면 그 경로만 오염을 무시하고,
+    #     RegionCap이 MaxActiveFor를 안 부르면 오염 리전이 줄지 않는다. 옛 날것 비교도 계속 0건이어야 한다.
     spawner = code_only(read("Assets/Scripts/Spawning/InsectSpawner.cs"))
     raw_cmp = re.findall(r"CountActiveInRegion\([^)]*\)\s*[<>]=?\s*maxActivePerRegion", spawner)
-    add("리전 상한 비교 = BlightPolicy 경유", "0건 날것",
-        str(len(raw_cmp)) + "건 " + str(raw_cmp) if raw_cmp else "0건 (전부 RegionCap 경유)",
-        not raw_cmp)
+    cap_idx = spawner.find("int RegionCap(")
+    if cap_idx < 0:
+        raise gf.ExtractorBroken("InsectSpawner에서 RegionCap을 못 찾았다 — 이름이 바뀌었으면 검사기부터 고칠 것")
+    cap_tail = spawner[cap_idx:]
+    cap_end = re.search(r"\n        (?:private|public|internal|protected)\s", cap_tail[1:])
+    cap_body = cap_tail[:cap_end.start() + 1] if cap_end else cap_tail
+    field_calls = [c for c in re.findall(r"EnsureSlotCount\(([^;]*)\)\s*;", spawner) if "isSubArea: false" in c]
+    if not field_calls:
+        raise gf.ExtractorBroken(
+            "InsectSpawner에서 메인 필드 EnsureSlotCount(…, isSubArea: false) 호출을 못 찾았다 — 구조가 바뀌었는가?")
+    bypass = [c.strip() for c in field_calls if "RegionCap(" not in c]
+    problems = []
+    if "BlightPolicy.MaxActiveFor(" not in cap_body:
+        problems.append("RegionCap이 BlightPolicy.MaxActiveFor를 안 부름")
+    if bypass:
+        problems.append("RegionCap 우회 %d건 %s" % (len(bypass), bypass))
+    if raw_cmp:
+        problems.append("날것 비교 %d건 %s" % (len(raw_cmp), raw_cmp))
+    add("리전 곤충 수 = BlightPolicy 경유", "0건 우회",
+        "; ".join(problems) if problems else "0건 (슬롯 조정 %d곳 전부 RegionCap 경유)" % len(field_calls),
+        not problems)
 
     # 14. 스폰 하한 — 0이면 그 리전의 포획·전투 비트가 전부 도달 불가가 된다.
     policy = code_only(read("Assets/Scripts/Core/BlightPolicy.cs"))

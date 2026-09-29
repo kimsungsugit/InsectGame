@@ -58,6 +58,7 @@ def _load_facts():
             "battle": game_facts.battle_rewards_by_rarity(),
             "roster": game_facts.field_roster(),
             "regions": game_facts.region_pools(),
+            "shares": game_facts.field_rarity_shares(),
         }
     except game_facts.ExtractorBroken as e:
         print(f"추출기 고장: {e}\n게임 수치를 코드에서 읽지 못했다 — 시뮬을 돌리지 않는다.",
@@ -124,25 +125,36 @@ def _candy_of(rarity: str) -> int:
     return int(F["battle"][rarity]["candy"] * MULT[rarity])
 
 
-def region_income_curve() -> list:
-    """[(requiredLevel, E[candy]/전투), ...] 오름차순 — 리전별 스폰가중 기대 캔디.
+def region_rarity_shares(ids) -> dict:
+    """리전 풀 하나의 실제 등급 분포 — 전역 등급표(FieldSpawnRules)를 풀에 있는 등급으로 대체해 합친 것.
 
-    각 리전 insectIds를 spawnWeight로 가중해(InsectSpawner.GetWeightedRandom 그대로) 등급
-    분포를 구하고 전투당 기대 캔디를 낸다. 리전 진행에 따라 조우 등급이 오르므로 income도 오른다.
+    필드 스폰은 등급을 먼저 전역 표로 굴리고 종은 그 등급 안에서 리전 풀로 고른다(2026-09-29). 그래서
+    풀이 다섯 등급을 다 가지면 모든 리전이 같은 분포이고, 빠진 등급만 가까운 아래 → 위로 옮겨 간다.
+    풀 구성은 코드(RegionDefinitions)에서 읽으므로 풀이 바뀌면 여기도 따라간다.
     """
     roster = F["roster"]          # {id: (rarity, weight)}
+    available = {roster[i][0] for i in ids if i in roster and roster[i][1] > 0}
+    total = sum(F["shares"].values())
+    out = {r: 0.0 for r in RARITIES}
+    for r in RARITIES:
+        to = game_facts.field_rarity_fallback(r, available)
+        if to is not None:
+            out[to] += F["shares"][r] / total
+    return out
+
+
+def region_income_curve() -> list:
+    """[(requiredLevel, E[candy]/전투), ...] 오름차순 — 리전별 기대 캔디.
+
+    리전 등급 분포(region_rarity_shares — 전역 등급표 + 대체)로 전투당 기대 캔디를 낸다. 예전엔 풀의
+    spawnWeight 가중이 곧 등급 분포라 뒤 리전일수록 희귀가 흔해 income이 올랐다(유적 ~7캔디). 지금은
+    희귀도가 리전과 무관해 풀이 다섯 등급을 다 갖는 한 모든 리전의 income이 같다 — 진행이 올리는 건 레벨뿐이다.
+    """
     out = []
     for _rid, req, ids in F["regions"]:
-        tot = 0.0
-        acc = 0.0
-        for iid in ids:
-            if iid in roster:
-                rar, w = roster[iid]
-                if w > 0:
-                    tot += w
-                    acc += w * _candy_of(rar)
-        if tot > 0:
-            out.append((req, acc / tot))
+        shares = region_rarity_shares(ids)
+        if sum(shares.values()) > 0:
+            out.append((req, sum(p * _candy_of(r) for r, p in shares.items())))
     out.sort()
     return out
 
@@ -287,11 +299,17 @@ def main():
     print(f"- 팀 {args.team_size}마리 캔디: **{total_insect_candy(args.target_level)*args.team_size:,}**")
     print()
 
-    print("## 리전별 스폰가중 캔디 income (진행에 따라 상승)")
-    print("| requiredLevel | E[candy]/전투 |")
-    print("|----:|----:|")
-    for req, e in region_income_curve():
-        print(f"| {req} | {e:.2f} |")
+    print("## 리전별 캔디 income (전역 등급표 + 빠진 등급 대체)")
+    shares = F["shares"]
+    tot = sum(shares.values())
+    print("- 전역 등급표(FieldSpawnRules): " + " / ".join(f"{r} {shares[r] / tot * 100:.1f}%" for r in RARITIES))
+    print("| 리전 | requiredLevel | 풀 등급 분포(C/U/R/E/L %) | E[candy]/전투 |")
+    print("|----|----:|----|----:|")
+    for rid, req, ids in sorted(F["regions"], key=lambda t: t[1]):
+        s = region_rarity_shares(ids)
+        dist = "/".join(f"{s[r] * 100:.1f}" for r in RARITIES)
+        e = sum(p * _candy_of(r) for r, p in s.items())
+        print(f"| {rid} | {req} | {dist} | {e:.2f} |")
     print()
 
     print("## 위험 신호 표")
@@ -300,13 +318,13 @@ def main():
 
     print("## 가정 / 한계")
     print("- 판정(신호1)은 **현실 진행**: 곤충 레벨 L의 캔디를 그 시점 리전(requiredLevel<=L 중")
-    print("  최상위)의 스폰가중 기대 캔디로 벌어들인다고 본다. 캔디 비용이 지수라 전체의 84%가")
-    print("  Lv36+에 몰리고, 그 구간은 고레어 엔드리전(예: 유적 ~7캔디/전투)에서 벌린다.")
+    print("  최상위)의 기대 캔디로 벌어들인다고 본다. 희귀도가 리전과 무관해져(전역 등급표) 풀이 다섯")
+    print("  등급을 다 갖는 리전은 income이 같다 — 후반 리전이 고레어로 캔디를 더 주던 가속은 없다.")
     print("- 캔디는 전역 단일 풀(PlayerCandyInventory)이라 종 무관하게 합산된다 — 종별 캔디 아님.")
     print("- 레이드(×3, 예: Epic 30·Legendary 48캔디)·가챠 박스(5~50)·튜토리얼(336)은 별도라")
     print("  현실 전투 수를 더 낮춘다. 현실 수치도 그 의미에서 상한이다.")
-    print("- 리전 income은 InsectSpawner.GetWeightedRandom(무아이템)과 동일하게 spawnWeight로")
-    print("  가중. 레어스폰 아이템/의상 보너스는 미반영(있으면 고레어↑ → income↑).")
+    print("- 리전 income은 FieldSpawnRules 전역 등급표(무아이템)에 풀에 없는 등급의 대체(아래 → 위)를")
+    print("  얹은 분포. 레어스폰 아이템/의상 보너스는 미반영(있으면 희귀 이상↑ → income↑).")
     print("- 곤충별 candyReward는 PlaySceneBootstrap의 등급별 하드코딩을 읽는다"
           "(InsectDatabase .asset의 개체별 편차는 미반영).")
 

@@ -34,6 +34,11 @@ namespace InsectGame.Core
             GameConstants.PrefsKeys.WeeklyContestClaimed,
             GameConstants.PrefsKeys.BlightCleansed,
             GameConstants.PrefsKeys.BadgeMilestonesClaimed,
+            // 따라가는 마을 이야기. 계정 스코프 키가 생긴 뒤에 도입돼 옮겨 올 옛 전역 값이 없으므로
+            // MigrationVersion은 그대로 두고 **삭제 목록**으로서만 여기 있다 — 빠지면 계정 삭제 후
+            // 같은 uid로 재로그인했을 때 옛 계정의 따라가기가 새 게임에 되살아난다.
+            // (로그인 전 순간엔 ScopedKey가 전역 키를 돌려주지만 로컬 편의 상태라 진행과 무관하다.)
+            GameConstants.PrefsKeys.TrackedTale,
             "InsectGame.UnlockedRegions",
             "InsectGame.DefeatedGuardians",
             // 위 5개와 정확히 같은 결함이었다 — `SaveScope.PrefsKey`를 거치면서도 이 목록에

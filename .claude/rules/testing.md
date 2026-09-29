@@ -94,6 +94,26 @@ EditMode 러너를 되살리려면 `Assets/Scripts`·`Assets/Editor`·`Assets/Te
 **정지 화면으로는 애니메이션을 못 본다** — 여러 시각을 찍어 픽셀 차분을 낸다.
 플레이어 idle 호흡을 이 방법으로 확인했다(2초 간격 3장, 차이가 플레이어 영역에만 몰림).
 
+### 필드 전체는 `FieldDesignTour`로 한 번에 돈다
+
+`LiveSceneCapture`는 한 실행에 한 자리다. 지형·건물·NPC 옷처럼 **월드 전체에 걸친 변경**은
+`Assets/Editor/FieldDesignTour.cs`가 실제 PlayScene을 띄워 본 마을·리전 13곳·전초기지·서브에리어 26곳
+(필드 입구 + 내부)·NPC 전원을 한 실행(약 3분, 370장)에 찍는다. 장소마다 `game`(실제 게임 카메라)·
+`wide`(조감)·`eye`(눈높이) 세 구도다 — 게임 카메라는 (0,9,-6) 고각이라 세로로 선 것의 모양이 거의 안 보인다.
+
+```
+"$UNITY_EDITOR_PATH" -batchmode -projectPath "C:/Project/곤충게임" -logFile .claude/cache/tour.log \
+  -executeMethod InsectGame.EditorTools.FieldDesignTour.Run -tourOut .claude/cache/tour \
+  [-tourOnly world,village,regions,outposts,subareas,npcs,sky] [-tourFilter dunes,canopy]
+```
+
+전후를 같은 도구로 찍어야 비교가 된다(조명·시각·구도가 같다). `sky`는 공중·거대 렌더러를 로그로 센다 —
+2026-09-28에 하늘의 회색 원반(납작한 구름)과 리전을 덮던 올리브색 돔(1.5배 확장 전 좌표의 "먼 산")을 이걸로 찾았다.
+NPC는 컬링과 주변 소품을 피해 먼 무대로 같은 프레임 안에 옮겨 찍고 되돌린다.
+
+**NPC가 새까만 실루엣으로 찍히면 역광이 아니라 환경광 결함을 의심할 것.** 이 씬엔 라이팅 데이터가 없어
+Skybox 환경광 프로브가 0이었다 — 역광 면이 완전 검정이 되는 건 그 때문이었고 지금은 Trilight로 고쳤다.
+
 ### 대사가 실제로 뜨는지는 `StoryBeatWalkthrough`로 본다
 
 캡처 도구의 첫 번째 한계(IMGUI 미포착)가 정확히 스토리 대사를 덮는다 — 비트가 발화하면
@@ -126,6 +146,12 @@ EditMode 러너를 되살리려면 `Assets/Scripts`·`Assets/Editor`·`Assets/Te
 |---|---|---|
 | `blight` (기본) | 오염 거점 아크 `bl_*` | `NpcTalk` · `CaptureInsect` · `BattleWin` · `RegionCleansed` |
 | `campaign` | 1막 본편 + 꽃밭 | 위 + **`SubAreaEnter`** · **`GuardianDefeat`** |
+| `town` | 마을 이야기 `town_*` + 지역 의뢰 `s_town_*` + 따라가기 | `NpcTalk` · `CaptureInsect` · `BattleWin` + **퀘스트 통지**(`NotifyCapture`) |
+
+**`town`은 스토리만 보지 않는다** — 이 연작의 결함은 퀘스트·따라가기와의 이음매에서 조용히 나서, 한 편마다
+리전 밖 의뢰 행동이 **안 세어지는지**, 의뢰 완료가 매듭의 `requiredQuestId`를 여는지, 따라가기가 `[의뢰]` →
+`?`·"알리기" → (대기면) 자동 해제로 바뀌는지를 함께 본다. 배치엔 로그인이 없어 퀘스트 세션이 꺼져 있으므로
+세션·선행 퀘스트·리전 해금을 인메모리로 채우고 보고서의 「미리 채운」 칸에 적는다(`quest:`·`region:` 접두).
 
 **선택지가 뜨면 도구가 고른다** — 기본은 첫 항목, `-walkChoice last`면 마지막 항목. 선택 결과는
 `Immediate` leaf라 고르는 순간 큐 맨 앞에서 뜬다(`StoryBible.md` 6장 「선택지 규칙」). 최종장
@@ -155,6 +181,20 @@ EditMode 러너를 되살리려면 `Assets/Scripts`·`Assets/Editor`·`Assets/Te
 검증할 수 없다**(디코더가 없거나 렌더 대상이 없다). 테스트(`StoryVideoLibraryTests`)는 저작(길이
 상한·자막 큐·금칙)만 고정하고, `story_lint` 검사 25가 ID·switch·파일 배치를 본다. 실제 재생·
 건너뛰기·조작 복구는 Android 기기에서 확인한다 — 절차는 `Docs/StoryVideos.md`.
+
+### 반투명·발광이 빌드에서 사는지는 QA 빌드로 잰다 — `-battleScenario materials`
+
+에디터와 배치 캡처에는 셰이더 변형이 전부 있어서 **절대 틀리지 않는다.** 결함은 플레이어 빌드가 Standard의
+`shader_feature`(반투명 `_ALPHABLEND_ON`·발광 `_EMISSION`)를 걸러낼 때만 난다 — 2026-09-29까지 빌드엔 그 변형이 0개라
+물·얼음·유리·안개가 불투명, 등불·발광 소품이 무발광으로 그려졌다. `BattleVisualCaptureBuilder.Build`로 QA 빌드를 만든 뒤:
+
+```
+Builds/Windows/BattleVisualQA/BattleVisualQA.exe -battleCaptureOut <새 빈 폴더> -battleScenario materials   -screen-fullscreen 0 -screen-width 1280 -screen-height 720
+```
+
+줄무늬 벽 앞 구의 (r−b) 편차와 발광 휘도차를 재서 README에 PASS/FAIL을 적는다(안개 Exp2 판 포함, 종료 코드 0/5).
+빌드 로그의 `[ShaderVariants]` 줄이 패스별 변형 수를 키워드별로 센다. 고치는 곳은 `SceneryMaterials.BuildKeepers`
+(Resources 머티리얼) — **Standard를 Always Included에 넣으면 이 방법이 무력해진다**(그 목록은 머티리얼 키워드를 안 본다).
 
 ### 한계 셋 (전부 실측)
 

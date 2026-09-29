@@ -4,6 +4,16 @@ using UnityEngine;
 
 namespace InsectGame.NPC
 {
+    /// <summary>머리 위 의뢰 표식 — 마을 이야기 주민에게만 붙는다(<c>StoryObjectiveTracker</c>가 정한다).</summary>
+    public enum QuestMark
+    {
+        None,
+        /// <summary>말을 걸면 새 이야기가 나온다(<c>!</c>).</summary>
+        New,
+        /// <summary>의뢰를 끝냈으니 알리러 오면 된다(<c>?</c>).</summary>
+        Report,
+    }
+
     /// <summary>
     /// 마을 주민 NPC — Idle(2~6s) ⇄ Wander(앵커 wanderRadius, 속도 1.8) + 대화/연출 상태.
     /// 개별 Update 없음: NpcManager가 TickAI(라운드로빈)/TickMovement(40m 이내 매 프레임)를 호출.
@@ -71,6 +81,80 @@ namespace InsectGame.NPC
         /// <summary>대화 가능 여부 — 이미 대화 중이 아니고 활성 상태일 때.</summary>
         public bool CanTalk => state != State.Talking && isActiveAndEnabled;
 
+        // ── 머리 위 의뢰 표식 ──
+        // 월드 오브젝트라 UITheme(UI 모듈)를 끌어오지 않는다 — 색은 지도·미니맵 배지와 같은 계열
+        // (호박=새 이야기, 민트=보고)로 맞춘 리터럴이다.
+        private const float QuestMarkHeight = 2.35f;
+        // !·? 한 색 — 지도·미니맵에서 ?를 민트로 두었더니 이야기 목표·서브에리어 입구(민트)와 섞였다.
+        // 세 곳(머리 위·지도·미니맵)이 같은 색·같은 기호를 쓰고, 새 이야기와 보고는 기호로 가른다.
+        private static readonly Color QuestMarkColor = new Color(1f, 0.8f, 0.25f);
+        // Camera.main은 호출마다 태그 검색이다 — InsectEntity의 이름표와 같은 이유로 정적 캐시.
+        private static Camera questMarkCamera;
+        private QuestMark questMark = QuestMark.None;
+        private TextMesh questMarkText;
+        // 표식은 **몸이 보일 때만** 보인다. DistanceCulling은 Awake에 몸 렌더러만 캐시해서 나중에 만든
+        // 표식을 모른다 — 그대로 두면 컬링된(보이지 않는) NPC 위에 !만 떠 있고, TickMovement 밖(40m+)에선
+        // 카메라를 향하는 갱신도 멈춰 옆으로 누운 글자가 된다. 그래서 몸 렌더러 하나를 따라 켜고 끈다.
+        private Renderer questMarkRenderer;
+        private Renderer questMarkBodyRenderer;
+
+        /// <summary>
+        /// 머리 위 표식을 바꾼다. 같은 값이면 아무것도 안 한다(트래커가 0.5초마다 부른다).
+        /// 표식은 처음 필요할 때 만든다 — 일반 주민·동행자에게는 끝내 생기지 않는다.
+        /// </summary>
+        public void SetQuestMark(QuestMark mark)
+        {
+            if (mark == questMark) return;
+            questMark = mark;
+
+            if (mark == QuestMark.None)
+            {
+                if (questMarkText != null) questMarkText.gameObject.SetActive(false);
+                return;
+            }
+
+            if (questMarkText == null) questMarkText = CreateQuestMark();
+            questMarkText.text = mark == QuestMark.Report ? "?" : "!";
+            questMarkText.color = QuestMarkColor;
+            questMarkText.gameObject.SetActive(true);
+            SyncQuestMarkVisibility();   // 멀리서(컬링 중) 켜질 수 있다 — 틱을 기다리지 않고 바로 맞춘다
+        }
+
+        private void SyncQuestMarkVisibility()
+        {
+            if (questMarkRenderer == null) return;
+            questMarkRenderer.enabled = questMarkBodyRenderer == null || questMarkBodyRenderer.enabled;
+        }
+
+        private TextMesh CreateQuestMark()
+        {
+            // 표식보다 **먼저** 몸 렌더러를 잡는다 — 뒤에 잡으면 표식 자신이 걸린다.
+            questMarkBodyRenderer = GetComponentInChildren<Renderer>();
+            GameObject go = new GameObject("QuestMark");
+            go.transform.SetParent(transform, false);
+            go.transform.localPosition = new Vector3(0f, QuestMarkHeight, 0f);
+            TextMesh text = go.AddComponent<TextMesh>();
+            text.characterSize = 0.12f;
+            text.fontSize = 96;
+            text.fontStyle = FontStyle.Bold;
+            text.anchor = TextAnchor.MiddleCenter;
+            text.alignment = TextAlignment.Center;
+            questMarkRenderer = go.GetComponent<Renderer>();   // TextMesh가 MeshRenderer를 함께 붙인다
+            return text;
+        }
+
+        // 카메라를 향하고 살짝 떠오르내린다. TickMovement(플레이어 40m 이내)에서만 불리므로
+        // 멀리 있는 표식은 갱신하지 않는다 — 어차피 안 보인다.
+        private void TickQuestMark(float time)
+        {
+            if (questMarkText == null || questMark == QuestMark.None) return;
+            SyncQuestMarkVisibility();
+            if (questMarkCamera == null) questMarkCamera = Camera.main;
+            Transform mt = questMarkText.transform;
+            if (questMarkCamera != null) mt.rotation = questMarkCamera.transform.rotation;
+            mt.localPosition = new Vector3(0f, QuestMarkHeight + Mathf.Sin(time * 3f) * 0.08f, 0f);
+        }
+
         /// <summary>NpcManager가 스폰 직후 호출. 시각 모델은 NpcVisualBuilder.Build로 이미 생성된 상태.</summary>
         public void Initialize(NpcSpawnAnchor anchor, string id, string name, int seed, string storyId = null)
         {
@@ -83,8 +167,34 @@ namespace InsectGame.NPC
             rng = new System.Random(seed);
             animator = new NpcWalkAnimator(transform);
             groundY = transform.position.y;
+            // 고정 배치(wanderRadius 0 — 스토리 NPC·전초기지)는 한 번도 걷지 않아 이 자리 높이가 끝까지 간다
+            StandOnGround();
             state = State.Idle;
             stateEndTime = 0f; // 첫 TickAI에서 즉시 새 Idle 타이머 시작
+        }
+
+        /// <summary>
+        /// NPC 발 높이(월드 y) — 레이가 맞은 콜라이더 윗면(<paramref name="colliderY"/>, <c>groundY</c>)에 둔덕을 얹는다.
+        /// 둔덕(사구·재 더미·초원 언덕 …)은 콜라이더가 없어 레이로 못 보므로 <see cref="FieldGround"/>에 묻는다.
+        ///
+        /// <c>Max(콜라이더, min(콜라이더, 바닥) + 둔덕 높이)</c>인 이유:
+        /// <list type="bullet">
+        ///   <item><b>둔덕이 없으면(LiftAt 0) 콜라이더 그대로</b> — 마을·서브에리어·평지는 옛 높이에서 한 치도 안 바뀐다
+        ///     (플레이어처럼 <c>Max(콜라이더, SurfaceY)</c>로 두면 리전 평면 0.08에 서 있던 NPC가 전부 2cm 오른다).</item>
+        ///   <item>리전 평면(바닥 이하) 위라면 평면 + 둔덕 높이 — 둔덕 윗면을 따라 오르내린다.</item>
+        ///   <item>바닥보다 높은 콜라이더(바위·다리) 위라면 그 윗면과 둔덕 윗면 중 높은 쪽 — 둔덕 위 바위에서 둔덕 높이를
+        ///     한 번 더 얹어 뜨지 않는다(플레이어 접지 <c>PlayerMovement.GroundHeight</c>와 같은 답).</item>
+        /// </list>
+        /// 잡기 아이(<see cref="CatcherKidNpc"/>)도 이 식을 쓴다 — 사구 위 곤충을 쫓아 올라간다.
+        /// </summary>
+        internal static float StandHeight(float colliderY, float x, float z)
+            => Mathf.Max(colliderY, Mathf.Min(colliderY, FieldGround.FloorY) + FieldGround.LiftAt(x, z));
+
+        private void StandOnGround()
+        {
+            Vector3 pos = transform.position;
+            pos.y = StandHeight(groundY, pos.x, pos.z);
+            transform.position = pos;
         }
 
         /// <summary>대화 시작 — 정지 + 플레이어 방향 바라봄. NpcDialogueUI.Show가 호출.</summary>
@@ -174,7 +284,9 @@ namespace InsectGame.NPC
                 groundY = worldPosition.y;
             }
 
-            transform.position = new Vector3(worldPosition.x, groundY, worldPosition.z);
+            // 레이는 둔덕을 못 본다(콜라이더 없음) — 콜라이더 높이에 둔덕을 얹는다(StandHeight). groundY는 콜라이더 값으로
+            // 남겨 둔다: SampleGround의 ±0.75m 클램프가 그걸 기준으로 다음 레이를 받는다.
+            transform.position = new Vector3(worldPosition.x, StandHeight(groundY, worldPosition.x, worldPosition.z), worldPosition.z);
             if (lookAt != null) FaceTowards(lookAt.position);
         }
 
@@ -258,6 +370,7 @@ namespace InsectGame.NPC
         /// <summary>이동/애니 틱 — 플레이어 40m 이내에서만 매 프레임 호출.</summary>
         public void TickMovement(float dt, float time)
         {
+            TickQuestMark(time);
             if (animator == null) return;
 
             bool walking = false;
@@ -300,20 +413,38 @@ namespace InsectGame.NPC
             if (IsBlockedAhead(dir, step)) return MoveResult.Blocked;
 
             Vector3 pos = transform.position + dir * step;
-            pos.y = groundY;
+            pos.y = StandHeight(groundY, pos.x, pos.z);   // groundY(콜라이더)는 0.3초마다, 둔덕은 매 스텝 — 사구를 따라 걷는다
             transform.position = pos;
             RotateTowards(dir, dt);
             return MoveResult.Moving;
         }
 
+        // 물을 피해 다시 뽑는 횟수 — 다 실패하면 제자리(앵커)로 돌아간다.
+        private const int WanderWaterRetries = 6;
+
         private Vector3 PickWanderTarget()
         {
-            float angle = (float)(rng.NextDouble() * Mathf.PI * 2.0);
-            float radius = (float)(rng.NextDouble()) * wanderRadius;
-            return new Vector3(
-                anchorPosition.x + Mathf.Sin(angle) * radius,
-                groundY,
-                anchorPosition.z + Mathf.Cos(angle) * radius);
+            // 연못 호수를 키운 뒤로 물가 주민의 배회 원이 물에 걸친다 — 목적지도, 가는 길도 물이면 다시 뽑는다
+            // (물 판정은 RegionDressingBuilder가 실제로 그린 물이 단일 출처. 곤충 스폰과 같은 판정이다).
+            for (int attempt = 0; attempt < WanderWaterRetries; attempt++)
+            {
+                float angle = (float)(rng.NextDouble() * Mathf.PI * 2.0);
+                float radius = (float)(rng.NextDouble()) * wanderRadius;
+                var target = new Vector3(
+                    anchorPosition.x + Mathf.Sin(angle) * radius,
+                    groundY,
+                    anchorPosition.z + Mathf.Cos(angle) * radius);
+                if (!PathTouchesWater(transform.position, target)) return target;
+            }
+            return new Vector3(anchorPosition.x, groundY, anchorPosition.z);
+        }
+
+        // 곧게 걸어가는 길을 네 토막으로 짚는다 — 배회 반경(8m 안팎)에선 2m 간격이면 웅덩이를 건너뛰지 않는다.
+        private static bool PathTouchesWater(Vector3 from, Vector3 to)
+        {
+            for (int i = 1; i <= 4; i++)
+                if (RegionDressingBuilder.IsOnWater(Vector3.Lerp(from, to, i / 4f), 0.3f)) return true;
+            return false;
         }
 
         private void SampleGround()

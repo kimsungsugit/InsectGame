@@ -700,7 +700,7 @@
       "insectId": "bee_queen",
       "displayName": "여왕벌",
       "description": "수만 마리 벌 가족을 이끄는 벌집의 주인님이에요. 일벌보다 훨씬 크고 늘씬한 몸으로 평생 알 낳는 일에 전념하고, 충직한 일벌들이 사방에서 호위하며 로열젤리를 바친답니다.",
-      "habitatHint": "화창한 초여름 낮, 꽃밭 벌집 근처",
+      "habitatHint": "화창한 초여름 낮, 꽃이 가득한 들판과 정원의 벌집 근처",
       "spritePath": "Sprites/Insects/bee_queen",
       "rewardCoins": 48
     },
@@ -812,7 +812,7 @@
       "insectId": "cricket_stone",
       "displayName": "돌귀뚜라미",
       "description": "돌 틈에 숨어 살며 해 질 녘이면 골짜기에 울음소리를 메아리로 울리는 귀뚜라미예요. 바위산의 찬 공기에도 끄떡없는 강인한 몸을 지녀, 높은 산에서도 씩씩하게 노래한답니다.",
-      "habitatHint": "해 질 녘, 산비탈 돌무더기 틈새",
+      "habitatHint": "해 질 녘, 산비탈이나 무너진 유적의 돌무더기 틈새",
       "spritePath": "Sprites/Insects/cricket_stone",
       "rewardCoins": 7
     },
@@ -820,7 +820,7 @@
       "insectId": "pill_bug_rock",
       "displayName": "바위공벌레",
       "description": "잔돌이 굴러떨어져도 끄떡없는 단단한 갑옷을 두른 산악 공벌레예요. 몸을 말면 진짜 조약돌과 구별이 안 될 만큼 똑같아서, 산새들도 번번이 속아 넘어간답니다.",
-      "habitatHint": "시간을 가리지 않고, 산길 바위 밑과 자갈 틈",
+      "habitatHint": "시간을 가리지 않고, 산길과 무너진 돌 틈의 바위 밑",
       "spritePath": "Sprites/Insects/pill_bug_rock",
       "rewardCoins": 6
     },
@@ -892,7 +892,7 @@
       "insectId": "cicada_ancient",
       "displayName": "태고매미",
       "description": "수십 년, 어쩌면 그보다 훨씬 오래 땅속에서 잠들었다가 깨어난다는 전설의 매미예요. 이 매미의 첫 울음소리를 들은 사람에게는 아주 큰 행운이 찾아온다는 이야기가 산마을에 전해진답니다.",
-      "habitatHint": "산안개 걷히는 새벽, 아주 오래된 거목 줄기",
+      "habitatHint": "안개 걷히는 새벽, 산과 들, 눈길가의 아주 오래된 거목 줄기",
       "spritePath": "Sprites/Insects/cicada_ancient",
       "rewardCoins": 100
     },
@@ -964,7 +964,7 @@
       "insectId": "scarab_pharaoh",
       "displayName": "파라오풍뎅이",
       "description": "먼 옛날 태양을 하늘 저편으로 굴렸다고 전해지는 전설의 성스러운 풍뎅이예요. 등껍질에 태양 문양이 금빛으로 새겨져 있어, 옛 왕들은 이 풍뎅이를 왕관보다 귀한 보물로 모셨답니다.",
-      "habitatHint": "동이 트는 새벽, 제단 위 첫 햇살이 닿는 자리",
+      "habitatHint": "동이 트는 새벽, 제단과 모래언덕에 첫 햇살이 닿는 자리",
       "spritePath": "Sprites/Insects/scarab_pharaoh",
       "rewardCoins": 120
     },
@@ -972,7 +972,7 @@
       "insectId": "butterfly_midnight",
       "displayName": "그믐황후나비",
       "description": "달빛이 제단에 닿는 자정에만 모습을 드러낸다는 밤의 황후예요. 깊은 남색 날개에는 별가루 같은 은빛 점이 흩뿌려져 있어, 날아오르면 밤하늘 한 조각이 움직이는 것처럼 보인답니다.",
-      "habitatHint": "달빛 밝은 자정, 고대 제단 위",
+      "habitatHint": "달빛 밝은 자정, 고대 제단 위나 인적 끊긴 꽃밭과 들판",
       "spritePath": "Sprites/Insects/butterfly_midnight",
       "rewardCoins": 110
     },
@@ -980,7 +980,7 @@
       "insectId": "hornet_emperor",
       "displayName": "황제말벌",
       "description": "폐허의 하늘을 다스리는 말벌들의 황제예요. 날갯소리만으로 다른 곤충들이 몸을 숨길 만큼 위엄이 넘치고, 한 번 정한 영역은 그 어떤 침입자에게도 내주지 않는답니다.",
-      "habitatHint": "구름 낀 낮, 유적 첨탑 꼭대기 하늘",
+      "habitatHint": "구름 낀 낮, 유적 첨탑이나 잿불 골짜기 위 하늘",
       "spritePath": "Sprites/Insects/hornet_emperor",
       "rewardCoins": 105
     },

@@ -59,7 +59,7 @@ RaidBattleController → RaidBattleUI
 | 배틀 1v1 | `InsectBattleController` | 턴제, 스킬 쿨다운, 도주 판정 |
 | 레이드 5v1 | `RaidBattleController` | 보스 스탯 배율, 유나이트 게이지, 주기적 AOE |
 | 포획 | `CaptureController` → `CaptureMinigameController` | 3단계 난이도 미니게임 |
-| 스폰 | `InsectSpawner` | WorldState(시간+날씨) 후보 필터링, 거리 컬링 |
+| 스폰 | `InsectSpawner` → `FieldSpawnRules`·`FieldPopulation` | 리전별 슬롯 기록(리전 이동으로 리롤 안 함) + 시간 기반 재생·수명 순환, 45m 실체화/55m 회수. 희귀도는 전역 등급표, 레벨만 리전 대역 |
 | 세이브 | `PlayerProgressSaveService`, `CloudSaveManager` | 로컬 7개 JSON + Firestore. 규칙은 `rules/save-system.md` |
 | 스탯/IV | `PlayerInsectData` | IV 0~15(HP/ATK/DEF), 등급 S~D |
 
@@ -98,11 +98,11 @@ AutoWire·이벤트·오브젝트 풀 패턴, 금지 사항이 전부 거기 있
 
 | 검사기 | 강제하는 규칙 | 단일 출처 |
 |---|---|---|
-| `quest_lint.py` | questId 중복·prerequisite 무결성·QuestType↔진행 배선 등 11검사 | `rules/quest-system.md` |
+| `quest_lint.py` | questId 중복·prerequisite 무결성·QuestType↔진행 배선·지역 의뢰 정합 등 12검사 | `rules/quest-system.md` |
 | `ui_layout_lint.py` | 패널 y·height 직접 계산 금지 (`UISafeLayout` 경유) | `rules/ui-layout.md` |
 | `subscription_lint.py` | `OnDisable`에서 해지한 구독을 `OnEnable`에서 되살릴 것 | `rules/ui-layout.md` |
 | `data_lint.py` | 곤충·아이템·리전 데이터 정합(ID 유일성, 참조 무결, 풀 배정) | 코드(`InsectDatabase` 등)와 스크립트 자신 |
-| `story_lint.py` | 스토리 비트 트리거·보상·리전키 정합 + 스토리 NPC 4중 등록(앰비언트·소개비트·표시명·외형) + 컷신·영상 ID 실재성 + 대사 화자·줄 연출 토큰 28검사 | 코드(`StoryBeat`)와 스크립트 자신 |
+| `story_lint.py` | 스토리 비트 트리거·보상·리전키 정합 + 스토리 NPC 4중 등록(앰비언트·소개비트·표시명·외형) + 컷신·영상 ID 실재성 + 대사 화자·줄 연출 토큰 + 퀘스트 게이트의 1회 완료형 29검사 | 코드(`StoryBeat`)와 스크립트 자신 |
 | `dex_grant_lint.py` | 곤충을 지급하면 도감에도 올릴 것(`AddCapturedInsect`↔`RegisterCapture`) | 코드(`DexController`)와 스크립트 자신 |
 | `blight_lint.py` | 명부회 아크 — 거점(보스·귀환종·비트·재도전 예외·스폰 하한·퀘스트 달성 가능성)과 「장부」 소모 지점 20검사 | 코드(`RegionData` 거점 필드)와 스크립트 자신 |
 | `singleton_lint.py` | 싱글턴이 `OnDestroy`에서 `Instance`를 비울 것 | 코드(`*Manager.cs`)와 스크립트 자신 |

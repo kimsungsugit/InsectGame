@@ -76,10 +76,12 @@ namespace InsectGame.Capture
         /// <see cref="InsectGame.Battle.BattleCaptureChanceCalculator"/>의 MaximumLevelDelta와
         /// 같은 값이다 — 같은 규칙의 두 구현이고, 전투 쪽에만 있었다.
         ///
-        /// 없을 때 무슨 일이 생겼나: 메인 필드는 리전이 아무리 높아도 **항상 Lv.1부터** 스폰한다
+        /// 없을 때 무슨 일이 생겼나: 당시 메인 필드는 리전이 아무리 높아도 **항상 Lv.1부터** 스폰했다
         /// (InsectSpawner의 지수 분포). 그래서 Lv.40 플레이어가 Lv.2 전설을 만나면
         /// +38×0.02 = +0.76이 붙어 등급 페널티(0.32)와 난이도 페널티(0.40)를 통째로 상쇄했다.
         /// 미니게임이 주 포획 경로인데 고레벨 구간에서 등급·난이도 설계가 통째로 무력화됐다.
+        /// 지금은 필드 레벨이 리전 대역 안에 있지만(FieldSpawnRules.RollFieldLevel) 앞 리전으로 돌아가면
+        /// 똑같이 수십 레벨 차가 난다 — 상한은 여전히 필요하다.
         /// </summary>
         internal const int MaximumLevelDelta = 5;
 

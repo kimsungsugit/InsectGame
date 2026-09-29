@@ -55,6 +55,9 @@ namespace InsectGame.Core
             // 수문장 배지 이정표 보상 수령 상태("4,8") — 클라우드 동기(DTO badgeMilestonesClaimed).
             // 배지 자체는 저장하지 않는다(DefeatedGuardians에서 파생) — GuardianBadges 참조.
             public const string BadgeMilestonesClaimed = "InsectGame.BadgeMilestonesClaimed";
+            // 따라가는 마을 이야기(주민 storyNpcId) — **로컬 전용**(QuestUnseen과 같은 편의 상태).
+            // 기기마다 달라도 진행에 영향이 없고, 가리키던 이야기가 끝나면 트래커가 스스로 지운다.
+            public const string TrackedTale = "InsectGame.TrackedTale";
         }
 
         // ── 플레이어 ──

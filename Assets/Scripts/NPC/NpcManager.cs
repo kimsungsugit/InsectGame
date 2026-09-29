@@ -183,7 +183,7 @@ namespace InsectGame.NPC
             int seed = NpcDialogueDatabase.StableHash(npcId);
 
             GameObject go = CreateNpcObject($"Npc_{npcId}", anchor.position);
-            NpcVisualBuilder.Build(go.transform, NpcVisualBuilder.RandomVillager(seed));
+            NpcVisualBuilder.Build(go.transform, NpcVisualBuilder.RandomVillager(seed, anchor.regionId));   // 리전 복장
 
             VillagerNpc npc = go.AddComponent<VillagerNpc>();
             npc.Initialize(anchor, npcId, NpcDialogueDatabase.GetVillagerName(seed), seed);
@@ -197,7 +197,7 @@ namespace InsectGame.NPC
             int seed = NpcDialogueDatabase.StableHash(npcId);
 
             GameObject go = CreateNpcObject($"Npc_{npcId}", anchor.position);
-            NpcVisualBuilder.Build(go.transform, NpcVisualBuilder.RandomKid(seed));
+            NpcVisualBuilder.Build(go.transform, NpcVisualBuilder.RandomKid(seed, anchor.regionId));
 
             CatcherKidNpc npc = go.AddComponent<CatcherKidNpc>();
             npc.Initialize(this, anchor, npcId, seed);
@@ -233,7 +233,7 @@ namespace InsectGame.NPC
         }
 
         // 스토리 NPC 표시명. **여기에 case가 없으면 그 NPC는 "마을 어르신"으로 뜬다** —
-        // NpcVisualBuilder.StoryNpcAppearance의 외형 switch와 짝이라 둘을 함께 등록해야 한다.
+        // NpcVisualBuilder.StoryNpcFace의 외형 switch와 짝이라 둘을 함께 등록해야 한다.
         private static string StoryNpcDisplayName(string storyId)
         {
             return NpcDialogueDatabase.StorySpeakerName(storyId);
