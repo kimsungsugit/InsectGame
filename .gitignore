@@ -56,6 +56,7 @@ crashlytics-build.properties
 
 # Test results / 배치 실행 로그
 TestResults.xml
+TestResults*.xml
 TestResults/
 # `unity-test.log`(하이픈)만 적어둔 탓에 실제 산출물인 `unity_test.log`·`unity_compile.log`
 # (언더스코어)가 매번 `git add -A`에 딸려 들어왔다. 두 표기를 모두 덮는다.
@@ -112,3 +113,7 @@ KakaoTalk_*.png
 
 # Codex 미러 실행 로그
 /.codex/*.log
+
+# QA 캡처 산출물(배지·전투 가로/세로 촬영 등 — 수백 MB)과 로컬 원본 압축본. 저장소 대상이 아니다.
+/Artifacts/
+/Insect.zip
