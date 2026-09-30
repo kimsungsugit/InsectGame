@@ -563,6 +563,8 @@ namespace InsectGame.Core
             // 스스로 찾을 수 없다 — 렌더러가 생긴 이 시점에 넘긴다.
             // (배선이 없으면 LoginUI가 2D 초상화로 물러나므로 실패해도 회귀는 아니다.)
             loginUI.AutoWire(characterPreview);
+            // 결투 컷인의 "나"도 같은 3D로(2D 도트는 모자·겉옷·도구 대부분을 못 그렸다).
+            battleScreen.AutoWire(characterPreview);
 
             if (buildWorld)
             {
@@ -578,6 +580,8 @@ namespace InsectGame.Core
             questManager.AutoWire(insectCollection, candyInventory, progress, itemInventory,
                 battleController, raidController, dex, trainingMgr, battleTeam, regionMgr);
             cloudSave.RegisterReloadable(questManager);
+            // 조건부 의상(지역 도달·레벨·퀘스트) 해금 — 퀘스트 매니저가 서야 배선할 수 있다.
+            outfitManager.AutoWireUnlockSources(regionMgr, progress, questManager);
 
             // 주간 크기 대결 — 매주 저레어 종 하나를 지정하고 그 종 포획 시 기록이 자동 갱신된다.
             // 기록은 저장하지 않고 player_insects.json의 capturedUnix로 파생하므로 별도 세이브가 없다.
@@ -648,6 +652,7 @@ namespace InsectGame.Core
             gachaBox.AutoWire(database); // PickRandomInsect 결과 검증 + DisplayName 캐싱
 
             InsectGame.UI.CashShopUI cashShopUI = EnsureComponent<InsectGame.UI.CashShopUI>("UI/CashShopUI");
+            cashShopUI.AutoWire(characterPreview);   // 왼쪽 캐릭터 칸 = 지금 장착한 3D
 
             quickBar.AutoWire(outfitUi, cashShopUI);
             quickBar.AutoWire(questUi);

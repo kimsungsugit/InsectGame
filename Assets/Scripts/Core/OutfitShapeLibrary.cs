@@ -26,6 +26,53 @@ namespace InsectGame.Core
     {
         Root,
         HatRoot,
+        /// <summary>
+        /// 몸통(Body). 걷기에서 **몸통만 위아래로 튄다**(PlayerMovement bob ±6cm) — 옷깃·망토·멜빵처럼 몸에 붙은 것은
+        /// 여기 붙어야 함께 움직인다. Body는 크기를 메시에 구운 노드라(스케일 1) 자식 좌표가 찌그러지지 않는다.
+        /// 좌표는 몸통 중심(루트 y 0.77) 기준이다.
+        /// </summary>
+        Body,
+        /// <summary>왼다리 관절(LegLPivot, 루트 (−0.13, 0.48, 0)). 반바지·장화·박차처럼 다리와 함께 흔들려야 하는 것.</summary>
+        LegL,
+        /// <summary>오른다리 관절(LegRPivot).</summary>
+        LegR,
+    }
+
+    /// <summary>상의 소매. Short면 어깨 캡만 상의 색(반소매), Long이면 팔 전체, None(민소매)이면 어깨까지 피부.</summary>
+    public enum SleeveLength { Short, Long, None }
+
+    /// <summary>
+    /// 겉옷이 몸통을 어떻게 덮는가. OpenJacket = 몸통·팔은 겉옷, 앞섶 사이로 상의(셔츠 판)와 옷깃이 보인다.
+    /// Robe = 앞까지 여민 옷이라 상의가 안 보인다. Cape = 몸통은 상의 그대로 두고 등 뒤에 망토만 단다.
+    /// </summary>
+    public enum OuterForm { OpenJacket, Robe, Cape }
+
+    /// <summary>하의 길이. Shorts면 다리 노드를 피부로 칠하고 허벅지 천은 레시피가 단다.</summary>
+    public enum LegForm { Long, Shorts }
+
+    /// <summary>신발 형태. Sandal이면 발 노드를 피부로 칠하고 밑창·끈은 레시피가 단다.</summary>
+    public enum FootForm { Shoe, Sandal }
+
+    /// <summary>
+    /// spawn 파츠의 메시 모양. 기본은 <see cref="Primitive"/>(내장 프리미티브, <see cref="OutfitPart.prim"/>)이라
+    /// 이 필드가 생기기 전의 레시피는 그대로다. 나머지는 <see cref="ProcMeshLibrary"/> 생성기이고 인자는
+    /// <see cref="OutfitPart.shapeArgs"/>에 담는다.
+    /// </summary>
+    public enum PartShape
+    {
+        Primitive,
+        /// <summary>둥근 상자. 크기(scale)를 메시에 **굽고** 노드 스케일은 1로 둔다(모서리 왜곡 방지). args.x = 모서리 반경.</summary>
+        RoundedBox,
+        /// <summary>테이퍼 캡슐(높이 2·반지름 0.5 규약). args.x = 아래 반지름 비율.</summary>
+        Capsule,
+        /// <summary>늘어진 천 — <see cref="ProcMeshLibrary.DrapeShell"/>. args = (감싸는 각도, 밑단 퍼짐, 주름 수, 주름 깊이). 원점 = 윗변 중앙, 아래로 늘어진다.</summary>
+        Drape,
+        /// <summary>고리 — <see cref="ProcMeshLibrary.Torus"/>. args.x = 관 반지름(단위 큰 반지름 0.5 기준).</summary>
+        Torus,
+        /// <summary>보석(팔면체) — <see cref="ProcMeshLibrary.Diamond"/>. 단위 반지름 0.5, 위 0.7 / 아래 0.5.</summary>
+        Gem,
+        /// <summary>잠자리채 머리(세운 테 + 뒤로 늘어진 그물) — <see cref="ProcMeshLibrary.NetHead"/>. 원점 = 테 아래 끝. args = (관 반지름, 주머니 깊이).</summary>
+        NetHead,
     }
 
     /// <summary>
@@ -41,6 +88,18 @@ namespace InsectGame.Core
         public Vector3 euler;
         public PartColorRole role;
         public Color fixedColor; // role == Fixed 일 때만 의미
+
+        /// <summary>메시 모양. 기본 Primitive면 <see cref="prim"/>을 쓴다(2D 카드 투영도 prim을 근사로 쓴다).</summary>
+        public PartShape shape;
+        public Vector4 shapeArgs;
+
+        /// <summary>
+        /// 파츠별 앵커. <see cref="hasAnchor"/>가 false면 레시피 앵커를 따른다 — enum 기본값(Root)과 "지정 안 함"을
+        /// 가르기 위해 플래그를 따로 둔다(모자 레시피의 파츠가 조용히 루트로 떨어지는 걸 막는다).
+        /// 레시피 앵커와 다르면 <c>OP_{슬롯}_{앵커}</c> 컨테이너에 들어간다.
+        /// </summary>
+        public bool hasAnchor;
+        public OutfitAnchor anchor;
 
         public bool IsBind => !string.IsNullOrEmpty(bindName);
     }
@@ -102,6 +161,20 @@ namespace InsectGame.Core
             return i >= 0 && i < SpawnContainerNames.Length && SpawnContainerNames[i] != null
                 ? SpawnContainerNames[i]
                 : SpawnPrefix + slot;
+        }
+
+        /// <summary>파츠가 레시피와 다른 앵커를 지정했을 때의 컨테이너 이름(OP_{슬롯}_{앵커}). 이름도 미리 굽는다.</summary>
+        private static readonly Dictionary<int, string> ExtraContainerNames = new Dictionary<int, string>();
+
+        internal static string SpawnContainerName(OutfitSlot slot, OutfitAnchor anchor)
+        {
+            int key = (int)slot * 64 + (int)anchor;
+            if (!ExtraContainerNames.TryGetValue(key, out string name))
+            {
+                name = SpawnPrefix + slot + "_" + anchor;
+                ExtraContainerNames[key] = name;
+            }
+            return name;
         }
 
         /// <summary>
@@ -195,37 +268,20 @@ namespace InsectGame.Core
         {
             if (root == null) return;
 
-            int needSpawn = CountSpawnParts(recipe);
-            string containerName = SpawnContainerName(slot);
-            Transform container = FindDeep(root, containerName);
+            OutfitAnchor recipeAnchor = recipe != null ? recipe.anchor : OutfitAnchor.Root;
+            string itemId = CountSpawnParts(recipe) > 0 ? ItemIdOf(recipe) : null;
 
-            // 도구처럼 bind만 쓰는 슬롯에 빈 컨테이너를 만들지 않는다 —
-            // 모든 플레이어·마네킹마다 쓸모없는 GameObject가 하나씩 늘어난다.
-            if (needSpawn > 0)
-            {
-                Transform anchor = ResolveAnchor(root, recipe.anchor);
-                if (anchor == null) anchor = root;
-                container = EnsureContainer(container, anchor, SpawnPrefix + slot);
-            }
+            // spawn 파츠는 앵커별 컨테이너로 간다. 기본 컨테이너(OP_{슬롯})는 레시피 앵커에,
+            // 파츠가 앵커를 따로 지정하면 OP_{슬롯}_{앵커}에. **모든 앵커를 매번 훑는다** — 반바지(다리) →
+            // 긴바지(파츠 없음)로 갈아입을 때 다리 컨테이너를 비워야 잔상이 안 남는다.
+            ApplySpawnGroup(root, slot, recipe, primary, secondary, itemId, recipeAnchor, true);
+            for (int a = 0; a < AllAnchors.Length; a++)
+                ApplySpawnGroup(root, slot, recipe, primary, secondary, itemId, AllAnchors[a], false);
 
-            int spawnIndex = 0;
             if (recipe != null && recipe.parts != null)
             {
-                string itemId = needSpawn > 0 ? ItemIdOf(recipe) : null;
                 for (int i = 0; i < recipe.parts.Length; i++)
-                {
-                    OutfitPart p = recipe.parts[i];
-                    Color c = ResolveColor(p, primary, secondary);
-                    if (p.IsBind)
-                    {
-                        ApplyBound(root, p);
-                    }
-                    else
-                    {
-                        ApplySpawned(root, container, spawnIndex, p, c, SurfaceOf(slot, itemId, p.role));
-                        spawnIndex++;
-                    }
-                }
+                    if (recipe.parts[i].IsBind) ApplyBound(root, recipe.parts[i]);
 
                 if (recipe.hideNodes != null)
                 {
@@ -236,8 +292,81 @@ namespace InsectGame.Core
                     }
                 }
             }
+        }
 
-            if (container != null) TrimContainer(container, spawnIndex);
+        private static readonly OutfitAnchor[] AllAnchors = (OutfitAnchor[])System.Enum.GetValues(typeof(OutfitAnchor));
+
+        /// <summary>파츠가 이 컨테이너 몫인가. 기본 컨테이너는 앵커 미지정 + 레시피 앵커와 같은 지정을 함께 받는다.</summary>
+        internal static bool BelongsTo(OutfitPart p, OutfitAnchor recipeAnchor, OutfitAnchor anchor, bool isDefault)
+        {
+            if (p.IsBind) return false;
+            bool own = !p.hasAnchor || p.anchor == recipeAnchor;
+            return isDefault ? own : (!own && p.anchor == anchor);
+        }
+
+        private static void ApplySpawnGroup(Transform root, OutfitSlot slot, OutfitRecipe recipe, Color primary, Color secondary,
+            string itemId, OutfitAnchor anchor, bool isDefault)
+        {
+            OutfitAnchor recipeAnchor = recipe != null ? recipe.anchor : OutfitAnchor.Root;
+            string name = isDefault ? SpawnContainerName(slot) : SpawnContainerName(slot, anchor);
+
+            int need = 0;
+            if (recipe != null && recipe.parts != null)
+                for (int i = 0; i < recipe.parts.Length; i++)
+                    if (BelongsTo(recipe.parts[i], recipeAnchor, anchor, isDefault)) need++;
+
+            Transform container = FindDeep(root, name);
+            // 도구처럼 bind만 쓰는 슬롯에 빈 컨테이너를 만들지 않는다 —
+            // 모든 플레이어·마네킹마다 쓸모없는 GameObject가 하나씩 늘어난다.
+            if (need == 0 && container == null) return;
+            if (need > 0)
+            {
+                Transform parent = ResolveAnchor(root, anchor);
+                if (parent == null) parent = root;
+                container = EnsureContainer(container, parent, name);
+            }
+
+            int spawnIndex = 0;
+            if (need > 0)
+            {
+                for (int i = 0; i < recipe.parts.Length; i++)
+                {
+                    OutfitPart p = recipe.parts[i];
+                    if (!BelongsTo(p, recipeAnchor, anchor, isDefault)) continue;
+                    ApplySpawned(root, container, spawnIndex, p, ResolveColor(p, primary, secondary), SurfaceOf(slot, itemId, p.role));
+                    spawnIndex++;
+                }
+            }
+            TrimContainer(container, spawnIndex);
+        }
+
+        /// <summary>파츠 모양의 메시. <paramref name="bakedSize"/>면 크기가 메시에 구워져 노드 스케일은 1이어야 한다.</summary>
+        internal static Mesh GetPartMesh(OutfitPart p, out bool bakedSize)
+        {
+            bakedSize = false;
+            Vector4 a = p.shapeArgs;
+            switch (p.shape)
+            {
+                case PartShape.RoundedBox:
+                    bakedSize = true;
+                    return ProcMeshLibrary.RoundedBox(p.scale, a.x, 2);
+                case PartShape.Capsule:
+                {
+                    float taper = a.x > 0f ? a.x : 1f;
+                    float rTop = 0.5f, rBottom = 0.5f * taper;
+                    return ProcMeshLibrary.TaperedCapsule(rTop, rBottom, 2f - rTop - rBottom, 8, 10);
+                }
+                case PartShape.Drape:
+                    return ProcMeshLibrary.DrapeShell(a.x > 0f ? a.x : 180f, a.y > 0f ? a.y : 1f, Mathf.RoundToInt(a.z), a.w);
+                case PartShape.Torus:
+                    return ProcMeshLibrary.Torus(a.x > 0f ? a.x : 0.06f, 24, 8);
+                case PartShape.Gem:
+                    return ProcMeshLibrary.Diamond(0.5f, 0.7f, 0.5f);
+                case PartShape.NetHead:
+                    return ProcMeshLibrary.NetHead(a.x > 0f ? a.x : 0.05f, a.y > 0f ? a.y : 0.8f);
+                default:
+                    return GetPrimMesh(p.prim);
+            }
         }
 
         internal static int CountSpawnParts(OutfitRecipe recipe)
@@ -254,6 +383,9 @@ namespace InsectGame.Core
             switch (anchor)
             {
                 case OutfitAnchor.HatRoot: return FindDeep(root, "HatRoot");
+                case OutfitAnchor.Body: return FindDeep(root, "Body");
+                case OutfitAnchor.LegL: return FindDeep(root, "LegLPivot");
+                case OutfitAnchor.LegR: return FindDeep(root, "LegRPivot");
                 default: return root;
             }
         }
@@ -292,10 +424,21 @@ namespace InsectGame.Core
             if (t == null) return;
 
             MeshFilter mf = t.GetComponent<MeshFilter>();
-            if (mf != null) mf.sharedMesh = GetPrimMesh(p.prim);
+            Mesh mesh = GetPartMesh(p, out bool baked);
+            if (mf != null) mf.sharedMesh = mesh;
             t.localPosition = p.pos;
-            t.localScale = p.scale;
+            t.localScale = baked ? Vector3.one : p.scale;
             t.localRotation = Quaternion.Euler(p.euler);
+
+            // 예외 하나: 도구 머리(NetRing)의 **재질**. 빌더는 금속으로 짓는다(총구·렌즈·칼날·오브).
+            // 그런데 잠자리채 그물까지 금속이면 주변을 반사해 그물 안쪽이 새까맣게 보인다 —
+            // 그물 머리일 때만 천, 나머지는 금속으로 되돌린다(색은 여전히 ApplyPartColor 몫이다).
+            if (p.bindName == "NetRing")
+            {
+                MeshRenderer r = t.GetComponent<MeshRenderer>();
+                if (r != null && r.sharedMaterial != null)
+                    CharacterPalette.ApplySurface(r.sharedMaterial, p.shape == PartShape.NetHead ? SurfaceKind.Cloth : SurfaceKind.Metal);
+            }
         }
 
         private static void ApplySpawned(Transform root, Transform container, int index, OutfitPart p, Color c,
@@ -316,9 +459,10 @@ namespace InsectGame.Core
 
             t.gameObject.SetActive(true);
             MeshFilter mf = t.GetComponent<MeshFilter>();
-            if (mf != null) mf.sharedMesh = GetPrimMesh(p.prim);
+            Mesh mesh = GetPartMesh(p, out bool baked);
+            if (mf != null) mf.sharedMesh = mesh;
             t.localPosition = p.pos;
-            t.localScale = p.scale;
+            t.localScale = baked ? Vector3.one : p.scale;
             t.localRotation = Quaternion.Euler(p.euler);
 
             MeshRenderer mr = t.GetComponent<MeshRenderer>();
@@ -478,6 +622,9 @@ namespace InsectGame.Core
 
             // 가죽 — 카탈로그 설명이 가죽인 모자("가죽 모자"), 안대, 뿔테.
             ["hat_cowboy"] = new ItemSurface(SurfaceKind.Leather),
+            ["bot_cowboy"] = new ItemSurface(SurfaceKind.Leather),     // 레시피가 가죽 챕스뿐이다(청바지는 텍스처)
+            ["shoe_crystal"] = new ItemSurface(SurfaceKind.Wet),       // 레시피가 발등 보석뿐이다
+            ["outer_crystal"] = new ItemSurface(SurfaceKind.Wet),      // 레시피가 어깨 결정뿐이다
             ["acc_eyepatch"] = new ItemSurface(SurfaceKind.Leather),
             ["acc_glasses"] = new ItemSurface(SurfaceKind.Leather),
         };
@@ -489,6 +636,66 @@ namespace InsectGame.Core
         /// 부츠·배낭 = 가죽). 덧붙인 파츠가 그 노드와 다르면 한 아이템이 두 재료로 갈라져 보인다.
         /// 도구는 전부 bind라(손잡이 가죽·망 금속은 빌더 몫) 여기 올 일이 없다.
         /// </summary>
+        // ── 몸 전체 형태(스타일) ─────────────────────────────
+        //
+        // 레시피가 "덧붙이는 것"을 정한다면, 스타일은 **기존 노드를 누가 칠하는지**를 정한다 —
+        // 소매 길이(팔을 피부로 둘지 상의 색으로 둘지), 겉옷 형태(몸통을 겉옷이 덮는지·앞이 열렸는지·망토라 안 덮는지),
+        // 반바지(다리를 피부로), 샌들(발을 피부로). 판정은 CharacterOutfitManager.ApplyToCharacter가 한다.
+        // 표에 없는 아이템은 기본값(반소매·열린 자켓·긴 바지·신발)이다.
+
+        private static readonly Dictionary<string, SleeveLength> TopSleeves = new Dictionary<string, SleeveLength>
+        {
+            ["top_lab"] = SleeveLength.Long,
+            ["top_cowboy"] = SleeveLength.Long,      // 조끼 속 체크 셔츠
+            ["top_hero_suit"] = SleeveLength.Long,
+            ["top_ninja"] = SleeveLength.Long,
+            ["top_pirate"] = SleeveLength.Long,
+            ["top_cyber"] = SleeveLength.Long,
+            ["top_military"] = SleeveLength.Long,
+        };
+
+        /// <summary>소매가 상의의 **보조색**인 옷 — 조끼는 소매가 속셔츠(흰색)다.</summary>
+        private static readonly HashSet<string> SleeveUsesSecondary = new HashSet<string> { "top_vest" };
+
+        private static readonly Dictionary<string, OuterForm> OuterForms = new Dictionary<string, OuterForm>
+        {
+            ["outer_legendary"] = OuterForm.Cape,
+            ["outer_wizard"] = OuterForm.Robe,
+        };
+
+        private static readonly Dictionary<string, LegForm> LegForms = new Dictionary<string, LegForm>
+        {
+            ["bot_shorts"] = LegForm.Shorts,
+        };
+
+        private static readonly Dictionary<string, FootForm> FootForms = new Dictionary<string, FootForm>
+        {
+            ["shoe_sandals"] = FootForm.Sandal,
+        };
+
+        public static SleeveLength SleeveOf(string topId) =>
+            topId != null && TopSleeves.TryGetValue(topId, out SleeveLength v) ? v : SleeveLength.Short;
+
+        public static bool SleeveIsSecondary(string topId) => topId != null && SleeveUsesSecondary.Contains(topId);
+
+        public static OuterForm OuterFormOf(string outerId) =>
+            outerId != null && OuterForms.TryGetValue(outerId, out OuterForm v) ? v : OuterForm.OpenJacket;
+
+        public static LegForm LegFormOf(string bottomId) =>
+            bottomId != null && LegForms.TryGetValue(bottomId, out LegForm v) ? v : LegForm.Long;
+
+        public static FootForm FootFormOf(string shoeId) =>
+            shoeId != null && FootForms.TryGetValue(shoeId, out FootForm v) ? v : FootForm.Shoe;
+
+        internal static IEnumerable<string> StyledItemIds()
+        {
+            foreach (string k in TopSleeves.Keys) yield return k;
+            foreach (string k in SleeveUsesSecondary) yield return k;
+            foreach (string k in OuterForms.Keys) yield return k;
+            foreach (string k in LegForms.Keys) yield return k;
+            foreach (string k in FootForms.Keys) yield return k;
+        }
+
         internal static SurfaceKind DefaultSurface(OutfitSlot slot)
         {
             switch (slot)
@@ -593,8 +800,129 @@ namespace InsectGame.Core
             };
         }
 
+        // 고정색은 레시피 표(ExactRecipes)보다 **먼저** 선언한다 — 정적 초기화는 적힌 순서라 뒤에 두면 표가 검정(0,0,0)을 읽는다.
         private static readonly Color Gold = new Color(1f, 0.9f, 0.32f);
         private static readonly Color Bone = new Color(0.95f, 0.94f, 0.9f);
+        private static readonly Color SoleWhite = new Color(0.95f, 0.95f, 0.94f);
+        private static readonly Color Steel = new Color(0.6f, 0.62f, 0.66f);
+
+        /// <summary>spawn 파츠 + 고정색 + 회전.</summary>
+        private static OutfitPart SF(PrimitiveType prim, Vector3 pos, Vector3 scale, Color color, Vector3 euler)
+        {
+            OutfitPart p = SF(prim, pos, scale, color);
+            p.euler = euler;
+            return p;
+        }
+
+        /// <summary>파츠에 모양을 준다(bind 파츠에도 쓴다 — 잠자리채 머리처럼 노드 메시를 통째로 바꿀 때).</summary>
+        private static OutfitPart WithShape(OutfitPart p, PartShape shape, Vector4 args)
+        {
+            p.shape = shape;
+            p.shapeArgs = args;
+            return p;
+        }
+
+        /// <summary>보석(팔면체) — 크리스털 결정·왕관 뾰족 장식.</summary>
+        private static OutfitPart GemPart(Vector3 pos, Vector3 scale, Vector3 euler, PartColorRole role)
+        {
+            return new OutfitPart { prim = PrimitiveType.Sphere, shape = PartShape.Gem, pos = pos, scale = scale, euler = euler, role = role };
+        }
+
+        /// <summary>모양 헬퍼로 만든 파츠에 고정색을 준다.</summary>
+        private static OutfitPart Fixed(OutfitPart p, Color color)
+        {
+            p.role = PartColorRole.Fixed;
+            p.fixedColor = color;
+            return p;
+        }
+
+        // ── 모양·앵커 헬퍼(2026-09-30) ──
+        // prim은 2D 카드 투영(CharacterPortraitRenderer)이 근사로 쓰므로 모양에 가까운 것을 채워 둔다.
+
+        /// <summary>파츠에 앵커를 준다 — 레시피 앵커와 다르면 OP_{슬롯}_{앵커} 컨테이너로 간다.</summary>
+        private static OutfitPart At(OutfitAnchor anchor, OutfitPart p)
+        {
+            p.hasAnchor = true;
+            p.anchor = anchor;
+            return p;
+        }
+
+        /// <summary>둥근 상자 — 크기를 메시에 굽는다(노드 스케일 1).</summary>
+        private static OutfitPart RB(Vector3 pos, Vector3 size, float radius, Vector3 euler, PartColorRole role)
+        {
+            return new OutfitPart
+            {
+                prim = PrimitiveType.Cube, shape = PartShape.RoundedBox, shapeArgs = new Vector4(radius, 0f, 0f, 0f),
+                pos = pos, scale = size, euler = euler, role = role,
+            };
+        }
+
+        /// <summary>테이퍼 캡슐(높이 2·반지름 0.5 규약 × scale). taper = 아래 반지름 비율.</summary>
+        private static OutfitPart Cap(Vector3 pos, Vector3 scale, float taper, Vector3 euler, PartColorRole role)
+        {
+            return new OutfitPart
+            {
+                prim = PrimitiveType.Capsule, shape = PartShape.Capsule, shapeArgs = new Vector4(taper, 0f, 0f, 0f),
+                pos = pos, scale = scale, euler = euler, role = role,
+            };
+        }
+
+        /// <summary>늘어진 천 — 원점 = 윗변 중앙, 뒤(−Z)를 감싸며 아래로. scale = (지름 x, 길이, 지름 z).</summary>
+        private static OutfitPart Drape(Vector3 pos, Vector3 scale, float arcDeg, float flare, int folds, float foldDepth,
+            Vector3 euler, PartColorRole role)
+        {
+            return new OutfitPart
+            {
+                prim = PrimitiveType.Cube, shape = PartShape.Drape, shapeArgs = new Vector4(arcDeg, flare, folds, foldDepth),
+                pos = pos, scale = scale, euler = euler, role = role,
+            };
+        }
+
+        /// <summary>고리(토러스) — scale = (바깥 지름 근사 x, 관 두께 배율 y, 지름 z). tube = 관 반지름(단위 큰 반지름 0.5 기준).</summary>
+        private static OutfitPart Ring(Vector3 pos, Vector3 scale, float tube, Vector3 euler, PartColorRole role)
+        {
+            return new OutfitPart
+            {
+                prim = PrimitiveType.Cylinder, shape = PartShape.Torus, shapeArgs = new Vector4(tube, 0f, 0f, 0f),
+                pos = pos, scale = scale, euler = euler, role = role,
+            };
+        }
+
+        /// <summary>좌우 거울(x·Y회전·Z회전 반전).</summary>
+        internal static OutfitPart Mirror(OutfitPart p)
+        {
+            p.pos.x = -p.pos.x;
+            p.euler.y = -p.euler.y;
+            p.euler.z = -p.euler.z;
+            return p;
+        }
+
+        /// <summary>
+        /// 양다리. <b>오른다리 관절 기준 좌표</b>(다리 중심 x = 0, 바깥쪽 = +X)로 적으면 왼다리는 거울로 만든다.
+        /// 다리 관절 로컬: 무릎 ≈ y −0.14, 발목 ≈ y −0.3, 부츠 중심 (0, −0.36, 0.07).
+        /// </summary>
+        private static OutfitPart[] Legs(params OutfitPart[] rightLeg)
+        {
+            OutfitPart[] all = new OutfitPart[rightLeg.Length * 2];
+            for (int i = 0; i < rightLeg.Length; i++)
+            {
+                all[i * 2] = At(OutfitAnchor.LegR, rightLeg[i]);
+                all[i * 2 + 1] = At(OutfitAnchor.LegL, Mirror(rightLeg[i]));
+            }
+            return all;
+        }
+
+        private static OutfitPart[] Concat(params OutfitPart[][] groups)
+        {
+            List<OutfitPart> all = new List<OutfitPart>();
+            for (int i = 0; i < groups.Length; i++) all.AddRange(groups[i]);
+            return all.ToArray();
+        }
+
+        // 몸통 앞면(몸통 로컬 z). 남 0.19 / 여 0.17 — 레시피는 성별을 모르므로 그 사이에 둔다(여자에선 0.01 뜬다).
+        private const float TorsoFront = 0.18f;
+        // 몸통 밑단(몸통 로컬 y). 몸통 높이 0.46의 절반.
+        private const float TorsoHem = -0.23f;
 
         // ── 도구(Tool) — 현행 ApplyToolShape 9분기의 파리티 이전 ──
         //
@@ -640,7 +968,9 @@ namespace InsectGame.Core
                 parts = new[]
                 {
                     B("NetHandle", PrimitiveType.Cylinder, V(0.29f, 0.65f, 0f),    V(0.04f, 0.25f, 0.04f), V(20f, 0f, -12f),    PartColorRole.Primary),
-                    B("NetRing",   PrimitiveType.Cylinder, V(0.35f, 0.94f, 0.06f), V(0.28f, 0.02f, 0.28f), V(-20f, 0f, 0f),     PartColorRole.Secondary),
+                    // 고리는 토러스(밧줄 고리) — 원기둥 판이면 구멍이 막혀 올가미로 안 읽힌다.
+                    WithShape(B("NetRing", PrimitiveType.Cylinder, V(0.35f, 0.94f, 0.06f), V(0.28f, 0.28f, 0.28f), V(-20f, 0f, 0f), PartColorRole.Secondary),
+                        PartShape.Torus, new Vector4(0.07f, 0f, 0f, 0f)),
                 },
             }},
 
@@ -711,15 +1041,17 @@ namespace InsectGame.Core
                 },
             }},
 
-            // 기본 잠자리채(else). 망 디스크의 X축 -20°는 절대 건드리지 않는다 — 옛 rot(0,0,90)은
-            // 법선이 ±X라 부감 카메라에서 edge-on으로 collapse해 "망이 사라지고 손잡이만 남던" 회귀의 원인.
+            // 기본 잠자리채(else). 머리는 **세운 테 + 뒤로 늘어진 그물**(ProcMeshLibrary.NetHead, 원점 = 테 아래 끝).
+            // 옛 모양은 막힌 원판이라 자루와 합쳐 망치로 보였다(2026-09-30 전수 캡처). 테가 XY 평면이라
+            // 뒤에서 내려다보는 필드 카메라에 정면으로 잡힌다 — 옛 원판이 edge-on으로 사라지던 회귀(rot(0,0,90))와 반대 방향이다.
             new ToolEntry { keys = null, recipe = new OutfitRecipe
             {
                 anchor = OutfitAnchor.Root,
                 parts = new[]
                 {
                     B("NetHandle", PrimitiveType.Cylinder, V(0.29f, 0.74f, 0f), V(0.04f, 0.40f, 0.04f), Vector3.zero, PartColorRole.Primary),
-                    B("NetRing",   PrimitiveType.Cylinder, V(0.29f, 1.14f, 0f), V(0.20f, 0.02f, 0.20f), V(-20f, 0f, 0f),  PartColorRole.Secondary),
+                    WithShape(B("NetRing", PrimitiveType.Cylinder, V(0.29f, 1.14f, 0f), V(0.22f, 0.22f, 0.22f), V(-25f, 0f, 0f), PartColorRole.Secondary),
+                        PartShape.NetHead, new Vector4(0.05f, 0.85f, 0f, 0f)),
                 },
             }},
         };
@@ -732,31 +1064,55 @@ namespace InsectGame.Core
         // y 0.22에서 0.53 / y 0.24에서 0.50 / y 0.28에서 0.37 / y 0.29에서 0.365.
 
         private static readonly string[] HideCap = { "Cap", "CapBrim" };
+
+        /// <summary>
+        /// 머리카락 중 모자 선 위로 솟는 부분(올림머리 스파이크·번)을 담는 <c>PlayerVisualBuilder</c>의 컨테이너.
+        /// 정수리를 덮는 모자는 이것까지 숨긴다. 머리띠·마스크·바이저처럼 정수리가 열린 모자는 <see cref="HideCap"/>만 쓴다
+        /// (<c>OutfitShapeLibraryTests</c>가 "덮는 모자는 숨기고 열린 모자 목록은 명시"를 고정한다).
+        /// 레시피가 없는 모자(기본 캡 계열)는 <c>CharacterOutfitManager</c>가 Cap이 보일 때 숨긴다.
+        /// </summary>
+        public const string HairCrownNode = "HairCrown";
+
+        private static readonly string[] HideCapAndCrown = { "Cap", "CapBrim", HairCrownNode };
         private static readonly string[] HideBackpack = { "Backpack" };
 
         private static readonly Dictionary<string, OutfitRecipe> ExactRecipes = new Dictionary<string, OutfitRecipe>
         {
-            // 밀짚모자: 넓고 얇은 챙 + 낮은 돔 + 띠
+            // 밀짚모자: 머리의 1.5배 넓은 챙 + 낮은 돔 + 띠. 옛 챙(지름 0.68)은 머리(0.70)보다 좁아 띠처럼 보였다.
             ["hat_straw"] = new OutfitRecipe
             {
-                anchor = OutfitAnchor.HatRoot, hideNodes = HideCap,
+                anchor = OutfitAnchor.HatRoot, hideNodes = HideCapAndCrown,
                 parts = new[]
                 {
-                    S(PrimitiveType.Cylinder, V(0f, 0.20f, 0f), V(0.68f, 0.015f, 0.68f), PartColorRole.Primary),
-                    S(PrimitiveType.Cylinder, V(0f, 0.30f, 0f), V(0.36f, 0.10f, 0.36f),  PartColorRole.Primary),
-                    S(PrimitiveType.Cylinder, V(0f, 0.245f, 0f), V(0.54f, 0.02f, 0.54f), PartColorRole.PrimaryDark),
+                    S(PrimitiveType.Cylinder, V(0f, 0.20f, 0f), V(1.04f, 0.016f, 1.04f), PartColorRole.Primary),
+                    S(PrimitiveType.Sphere,   V(0f, 0.27f, 0f), V(0.66f, 0.34f, 0.66f), PartColorRole.Primary),
+                    S(PrimitiveType.Cylinder, V(0f, 0.24f, 0f), V(0.67f, 0.035f, 0.67f), PartColorRole.PrimaryDark),
+                    Ring(V(0f, 0.205f, 0f), V(1.04f, 0.2f, 1.04f), 0.02f, Vector3.zero, PartColorRole.PrimaryDark),
                 },
             },
 
             // 사파리 헬멧: 중간 챙 + 반구 돔 + 정수리 능선
             ["hat_safari"] = new OutfitRecipe
             {
-                anchor = OutfitAnchor.HatRoot, hideNodes = HideCap,
+                anchor = OutfitAnchor.HatRoot, hideNodes = HideCapAndCrown,
                 parts = new[]
                 {
                     S(PrimitiveType.Cylinder, V(0f, 0.19f, 0.01f), V(0.62f, 0.022f, 0.60f), PartColorRole.Primary),
                     S(PrimitiveType.Sphere,   V(0f, 0.22f, 0f),    V(0.76f, 0.46f, 0.76f),  PartColorRole.Primary),
                     S(PrimitiveType.Cube,     V(0f, 0.42f, 0f),    V(0.04f, 0.06f, 0.44f),  PartColorRole.PrimaryDark),
+                },
+            },
+
+            // 프로 탐험가 모자: 앞뒤로 긴 챙 + 앞이 눌린 크라운 + 금색 띠(보조색). 오래 레시피가 없어 캡 색만 바뀌었다.
+            ["hat_explorer_pro"] = new OutfitRecipe
+            {
+                anchor = OutfitAnchor.HatRoot, hideNodes = HideCapAndCrown,
+                parts = new[]
+                {
+                    SR(PrimitiveType.Cylinder, V(0f, 0.2f, 0.02f), V(0.86f, 0.02f, 0.94f), V(-4f, 0f, 0f), PartColorRole.Primary),
+                    S(PrimitiveType.Sphere,    V(0f, 0.3f, 0f),    V(0.62f, 0.4f, 0.62f),  PartColorRole.Primary),
+                    S(PrimitiveType.Cube,      V(0f, 0.44f, 0.04f), V(0.08f, 0.05f, 0.3f), PartColorRole.PrimaryDark),
+                    S(PrimitiveType.Cylinder,  V(0f, 0.25f, 0f),   V(0.63f, 0.045f, 0.63f), PartColorRole.Secondary),
                 },
             },
 
@@ -778,7 +1134,7 @@ namespace InsectGame.Core
             // 장수풍뎅이 투구: 반구 투구 + 테 + 앞으로 뻗은 뿔
             ["hat_beetle"] = new OutfitRecipe
             {
-                anchor = OutfitAnchor.HatRoot, hideNodes = HideCap,
+                anchor = OutfitAnchor.HatRoot, hideNodes = HideCapAndCrown,
                 parts = new[]
                 {
                     S(PrimitiveType.Sphere,   V(0f, 0.18f, -0.01f), V(0.78f, 0.48f, 0.78f), PartColorRole.Primary),
@@ -788,19 +1144,21 @@ namespace InsectGame.Core
                 },
             },
 
-            // 곤충왕 왕관: 띠 + 뾰족 4 + 보석
+            // 곤충왕 왕관: 머리(머리카락) 위에 얹히는 굵은 띠 + 보석 뾰족 장식 5 + 앞 보석
             ["hat_crown"] = new OutfitRecipe
             {
-                anchor = OutfitAnchor.HatRoot, hideNodes = HideCap,
+                anchor = OutfitAnchor.HatRoot, hideNodes = HideCapAndCrown,
                 parts = new[]
                 {
-                    S(PrimitiveType.Cylinder, V(0f, 0.29f, 0f),     V(0.40f, 0.05f, 0.40f),  PartColorRole.Primary),
-                    S(PrimitiveType.Cube,     V(0f, 0.40f, 0.17f),  V(0.07f, 0.15f, 0.05f),  PartColorRole.Primary),
-                    S(PrimitiveType.Cube,     V(0f, 0.40f, -0.17f), V(0.07f, 0.15f, 0.05f),  PartColorRole.Primary),
-                    S(PrimitiveType.Cube,     V(-0.17f, 0.40f, 0f), V(0.05f, 0.15f, 0.07f),  PartColorRole.Primary),
-                    S(PrimitiveType.Cube,     V(0.17f, 0.40f, 0f),  V(0.05f, 0.15f, 0.07f),  PartColorRole.Primary),
-                    S(PrimitiveType.Sphere,   V(0f, 0.30f, 0.20f),  V(0.09f, 0.09f, 0.06f),  PartColorRole.Secondary),
-                    SF(PrimitiveType.Sphere,  V(0f, 0.49f, 0.17f),  V(0.055f, 0.055f, 0.055f), Gold),
+                    S(PrimitiveType.Cylinder, V(0f, 0.31f, 0f), V(0.6f, 0.07f, 0.6f), PartColorRole.Primary),
+                    Ring(V(0f, 0.25f, 0f), V(0.62f, 0.3f, 0.62f), 0.05f, Vector3.zero, PartColorRole.Primary),
+                    GemPart(V(0f, 0.44f, 0.27f),     V(0.1f, 0.2f, 0.1f),  Vector3.zero, PartColorRole.Primary),
+                    GemPart(V(0.26f, 0.43f, 0.08f),  V(0.09f, 0.17f, 0.09f), Vector3.zero, PartColorRole.Primary),
+                    GemPart(V(-0.26f, 0.43f, 0.08f), V(0.09f, 0.17f, 0.09f), Vector3.zero, PartColorRole.Primary),
+                    GemPart(V(0.16f, 0.43f, -0.22f), V(0.09f, 0.17f, 0.09f), Vector3.zero, PartColorRole.Primary),
+                    GemPart(V(-0.16f, 0.43f, -0.22f), V(0.09f, 0.17f, 0.09f), Vector3.zero, PartColorRole.Primary),
+                    S(PrimitiveType.Sphere,   V(0f, 0.31f, 0.3f), V(0.1f, 0.1f, 0.06f), PartColorRole.Secondary),
+                    SF(PrimitiveType.Sphere,  V(0f, 0.55f, 0.27f), V(0.05f, 0.05f, 0.05f), Gold),
                 },
             },
 
@@ -820,16 +1178,18 @@ namespace InsectGame.Core
                 },
             },
 
-            // 카우보이 모자: 앞뒤로 좁은 넓은 챙 + 높은 크라운 + 정수리 홈 + 띠
+            // 카우보이 모자: 넓은 챙(양옆이 말려 올라감) + 높은 크라운 + 정수리 홈 + 띠
             ["hat_cowboy"] = new OutfitRecipe
             {
-                anchor = OutfitAnchor.HatRoot, hideNodes = HideCap,
+                anchor = OutfitAnchor.HatRoot, hideNodes = HideCapAndCrown,
                 parts = new[]
                 {
-                    S(PrimitiveType.Cylinder, V(0f, 0.20f, 0f),  V(0.64f, 0.022f, 0.50f), PartColorRole.Primary),
-                    S(PrimitiveType.Cylinder, V(0f, 0.33f, 0f),  V(0.34f, 0.16f, 0.34f),  PartColorRole.Primary),
-                    S(PrimitiveType.Cube,     V(0f, 0.45f, 0f),  V(0.09f, 0.06f, 0.30f),  PartColorRole.PrimaryDark),
-                    S(PrimitiveType.Cylinder, V(0f, 0.28f, 0f),  V(0.40f, 0.03f, 0.40f),  PartColorRole.Secondary),
+                    S(PrimitiveType.Cylinder, V(0f, 0.20f, 0f),      V(0.62f, 0.02f, 0.92f), PartColorRole.Primary),
+                    SR(PrimitiveType.Cylinder, V(-0.33f, 0.25f, 0f), V(0.32f, 0.02f, 0.78f), V(0f, 0f, -32f), PartColorRole.Primary),
+                    SR(PrimitiveType.Cylinder, V(0.33f, 0.25f, 0f),  V(0.32f, 0.02f, 0.78f), V(0f, 0f, 32f),  PartColorRole.Primary),
+                    S(PrimitiveType.Cylinder, V(0f, 0.34f, 0f),      V(0.52f, 0.15f, 0.56f), PartColorRole.Primary),
+                    S(PrimitiveType.Cube,     V(0f, 0.48f, 0f),      V(0.10f, 0.05f, 0.34f), PartColorRole.PrimaryDark),
+                    S(PrimitiveType.Cylinder, V(0f, 0.25f, 0f),      V(0.54f, 0.035f, 0.58f), PartColorRole.Secondary),
                 },
             },
 
@@ -851,7 +1211,7 @@ namespace InsectGame.Core
             // 닌자 두건: 정수리~뒤통수만 덮는 납작한 구(얼굴 z 0.30은 비워 둔다) + 입가리개 + 이마띠 + 꼬리
             ["hat_ninja"] = new OutfitRecipe
             {
-                anchor = OutfitAnchor.HatRoot, hideNodes = HideCap,
+                anchor = OutfitAnchor.HatRoot, hideNodes = HideCapAndCrown,
                 parts = new[]
                 {
                     S(PrimitiveType.Sphere, V(0f, 0.14f, -0.04f),  V(0.76f, 0.56f, 0.72f), PartColorRole.Primary),
@@ -864,7 +1224,7 @@ namespace InsectGame.Core
             // 해적 삼각모: 넓은 챙 + 낮은 크라운 + 세 방향 접힌 챙 + 해골
             ["hat_pirate"] = new OutfitRecipe
             {
-                anchor = OutfitAnchor.HatRoot, hideNodes = HideCap,
+                anchor = OutfitAnchor.HatRoot, hideNodes = HideCapAndCrown,
                 parts = new[]
                 {
                     S(PrimitiveType.Cylinder, V(0f, 0.24f, 0f),        V(0.60f, 0.025f, 0.54f), PartColorRole.Primary),
@@ -894,7 +1254,7 @@ namespace InsectGame.Core
             // 마법사 모자: 넓은 챙 + 4단으로 좁아지며 앞으로 휘는 원뿔 + 띠 + 별
             ["hat_wizard"] = new OutfitRecipe
             {
-                anchor = OutfitAnchor.HatRoot, hideNodes = HideCap,
+                anchor = OutfitAnchor.HatRoot, hideNodes = HideCapAndCrown,
                 parts = new[]
                 {
                     S(PrimitiveType.Cylinder,  V(0f, 0.22f, 0f),    V(0.66f, 0.02f, 0.66f), PartColorRole.Primary),
@@ -910,7 +1270,7 @@ namespace InsectGame.Core
             // 군용 헬멧: 챙 없는 돔 + 테 + 턱끈 + 위장 밴드
             ["hat_military"] = new OutfitRecipe
             {
-                anchor = OutfitAnchor.HatRoot, hideNodes = HideCap,
+                anchor = OutfitAnchor.HatRoot, hideNodes = HideCapAndCrown,
                 parts = new[]
                 {
                     S(PrimitiveType.Sphere,   V(0f, 0.20f, -0.01f), V(0.78f, 0.50f, 0.80f),  PartColorRole.Primary),
@@ -933,9 +1293,18 @@ namespace InsectGame.Core
                 anchor = OutfitAnchor.Root,
                 parts = new[]
                 {
-                    S(PrimitiveType.Cube, V(-0.072f, 1.20f, 0.21f), V(0.10f, 0.09f, 0.02f), PartColorRole.Primary),
-                    S(PrimitiveType.Cube, V(0.072f, 1.20f, 0.21f),  V(0.10f, 0.09f, 0.02f), PartColorRole.Primary),
-                    S(PrimitiveType.Cube, V(0f, 1.20f, 0.21f),      V(0.05f, 0.02f, 0.02f), PartColorRole.Primary),
+                    // 테(위·아래·바깥·안쪽 막대)만 — 렌즈 자리는 비운다. 예전엔 z 0.21의 속이 찬 판이라
+                    // 눈이 z 0.22~0.25(눈꺼풀 포함)로 앞에 나온 뒤로는 판이 눈 **뒤**에 묻혀 거의 안 보였다.
+                    // 눈 중심 월드 (±0.072, 1.202), 크기 0.09×0.10 → 테는 한 치수 크게, 눈꺼풀(0.249) 앞 z 0.26.
+                    S(PrimitiveType.Cube, V(-0.072f, 1.255f, 0.26f), V(0.115f, 0.014f, 0.012f), PartColorRole.Primary),
+                    S(PrimitiveType.Cube, V(-0.072f, 1.150f, 0.26f), V(0.115f, 0.014f, 0.012f), PartColorRole.Primary),
+                    S(PrimitiveType.Cube, V(-0.128f, 1.202f, 0.26f), V(0.014f, 0.118f, 0.012f), PartColorRole.Primary),
+                    S(PrimitiveType.Cube, V(-0.016f, 1.202f, 0.26f), V(0.014f, 0.118f, 0.012f), PartColorRole.Primary),
+                    S(PrimitiveType.Cube, V(0.072f, 1.255f, 0.26f),  V(0.115f, 0.014f, 0.012f), PartColorRole.Primary),
+                    S(PrimitiveType.Cube, V(0.072f, 1.150f, 0.26f),  V(0.115f, 0.014f, 0.012f), PartColorRole.Primary),
+                    S(PrimitiveType.Cube, V(0.128f, 1.202f, 0.26f),  V(0.014f, 0.118f, 0.012f), PartColorRole.Primary),
+                    S(PrimitiveType.Cube, V(0.016f, 1.202f, 0.26f),  V(0.014f, 0.118f, 0.012f), PartColorRole.Primary),
+                    S(PrimitiveType.Cube, V(0f, 1.215f, 0.262f),     V(0.022f, 0.012f, 0.012f), PartColorRole.Primary),
                 },
             },
 
@@ -945,7 +1314,8 @@ namespace InsectGame.Core
                 anchor = OutfitAnchor.Root,
                 parts = new[]
                 {
-                    S(PrimitiveType.Cube,  V(-0.072f, 1.20f, 0.21f), V(0.11f, 0.10f, 0.02f), PartColorRole.Primary),
+                    // 눈(눈꺼풀 포함 z ≤ 0.25) **앞**에 둔다 — 뒤에 두면 가려야 할 눈이 안대를 뚫고 보인다.
+                    S(PrimitiveType.Cube,  V(-0.072f, 1.20f, 0.258f), V(0.12f, 0.115f, 0.02f), PartColorRole.Primary),
                     SR(PrimitiveType.Cube, V(0f, 1.23f, 0.16f),      V(0.30f, 0.02f, 0.14f), V(0f, 0f, -8f), PartColorRole.PrimaryDark),
                 },
             },
@@ -1104,110 +1474,270 @@ namespace InsectGame.Core
                 },
             },
 
-            // ── 가방(Backpack) — 루트 로컬. Backpack 노드(0, 0.80, -0.22)에 파츠를 덧붙인다 ──
+            // ── 가방(Backpack) — **몸통 로컬**(몸통 중심 = 루트 y 0.77). Backpack 노드가 몸통 자식(0, 0.03, −0.22)이라
+            // 걷기에서 몸통과 함께 튄다 — 레시피도 같은 앵커여야 날개·가시가 가방에서 떨어지지 않는다(2026-09-30 루트 → 몸통).
 
             // 드래곤 배낭: 기본 상자 + 박쥐 날개 + 등뼈 가시
             ["bag_dragon"] = new OutfitRecipe
             {
-                anchor = OutfitAnchor.Root,
+                anchor = OutfitAnchor.Body,
                 parts = new[]
                 {
-                    SR(PrimitiveType.Cube, V(-0.26f, 0.98f, -0.28f), V(0.28f, 0.30f, 0.02f), V(0f, -25f, 28f), PartColorRole.Secondary),
-                    SR(PrimitiveType.Cube, V(0.26f, 0.98f, -0.28f),  V(0.28f, 0.30f, 0.02f), V(0f, 25f, -28f), PartColorRole.Secondary),
-                    SR(PrimitiveType.Cube, V(0f, 0.96f, -0.32f),     V(0.05f, 0.10f, 0.05f), V(20f, 0f, 0f),   PartColorRole.PrimaryDark),
-                    SR(PrimitiveType.Cube, V(0f, 0.84f, -0.32f),     V(0.05f, 0.09f, 0.05f), V(20f, 0f, 0f),   PartColorRole.PrimaryDark),
+                    SR(PrimitiveType.Cube, V(-0.26f, 0.21f, -0.28f), V(0.28f, 0.30f, 0.02f), V(0f, -25f, 28f), PartColorRole.Secondary),
+                    SR(PrimitiveType.Cube, V(0.26f, 0.21f, -0.28f),  V(0.28f, 0.30f, 0.02f), V(0f, 25f, -28f), PartColorRole.Secondary),
+                    SR(PrimitiveType.Cube, V(0f, 0.19f, -0.32f),     V(0.05f, 0.10f, 0.05f), V(20f, 0f, 0f),   PartColorRole.PrimaryDark),
+                    SR(PrimitiveType.Cube, V(0f, 0.07f, -0.32f),     V(0.05f, 0.09f, 0.05f), V(20f, 0f, 0f),   PartColorRole.PrimaryDark),
                 },
             },
 
             // 요정 날개 가방: 기본 상자 + 상하 요정 날개 4장
             ["bag_fairy"] = new OutfitRecipe
             {
-                anchor = OutfitAnchor.Root,
+                anchor = OutfitAnchor.Body,
                 parts = new[]
                 {
-                    SR(PrimitiveType.Cube, V(-0.20f, 1.00f, -0.26f), V(0.24f, 0.30f, 0.015f), V(0f, -20f, 20f), PartColorRole.Secondary),
-                    SR(PrimitiveType.Cube, V(0.20f, 1.00f, -0.26f),  V(0.24f, 0.30f, 0.015f), V(0f, 20f, -20f), PartColorRole.Secondary),
-                    SR(PrimitiveType.Cube, V(-0.16f, 0.78f, -0.26f), V(0.16f, 0.20f, 0.015f), V(0f, -20f, 14f), PartColorRole.Secondary),
-                    SR(PrimitiveType.Cube, V(0.16f, 0.78f, -0.26f),  V(0.16f, 0.20f, 0.015f), V(0f, 20f, -14f), PartColorRole.Secondary),
+                    SR(PrimitiveType.Cube, V(-0.20f, 0.23f, -0.26f), V(0.24f, 0.30f, 0.015f), V(0f, -20f, 20f), PartColorRole.Secondary),
+                    SR(PrimitiveType.Cube, V(0.20f, 0.23f, -0.26f),  V(0.24f, 0.30f, 0.015f), V(0f, 20f, -20f), PartColorRole.Secondary),
+                    SR(PrimitiveType.Cube, V(-0.16f, 0.01f, -0.26f), V(0.16f, 0.20f, 0.015f), V(0f, -20f, 14f), PartColorRole.Secondary),
+                    SR(PrimitiveType.Cube, V(0.16f, 0.01f, -0.26f),  V(0.16f, 0.20f, 0.015f), V(0f, 20f, -14f), PartColorRole.Secondary),
                 },
             },
 
             // 어깨가방: 등 상자를 숨기고 어깨끈 + 옆구리 가방으로 바꾼다
             ["bag_satchel"] = new OutfitRecipe
             {
-                anchor = OutfitAnchor.Root, hideNodes = HideBackpack,
+                anchor = OutfitAnchor.Body, hideNodes = HideBackpack,
                 parts = new[]
                 {
-                    SR(PrimitiveType.Cube, V(0f, 0.90f, 0.20f),     V(0.07f, 0.40f, 0.03f), V(0f, 0f, 24f),  PartColorRole.PrimaryDark),
-                    SR(PrimitiveType.Cube, V(0f, 0.90f, -0.20f),    V(0.07f, 0.40f, 0.03f), V(0f, 0f, -24f), PartColorRole.PrimaryDark),
-                    S(PrimitiveType.Cube,  V(-0.28f, 0.62f, -0.02f), V(0.16f, 0.20f, 0.24f), PartColorRole.Primary),
-                    S(PrimitiveType.Cube,  V(-0.28f, 0.71f, -0.02f), V(0.17f, 0.05f, 0.25f), PartColorRole.PrimaryDark),
+                    SR(PrimitiveType.Cube, V(0f, 0.13f, 0.20f),     V(0.07f, 0.40f, 0.03f), V(0f, 0f, 24f),  PartColorRole.PrimaryDark),
+                    SR(PrimitiveType.Cube, V(0f, 0.13f, -0.20f),    V(0.07f, 0.40f, 0.03f), V(0f, 0f, -24f), PartColorRole.PrimaryDark),
+                    S(PrimitiveType.Cube,  V(-0.28f, -0.15f, -0.02f), V(0.16f, 0.20f, 0.24f), PartColorRole.Primary),
+                    S(PrimitiveType.Cube,  V(-0.28f, -0.06f, -0.02f), V(0.17f, 0.05f, 0.25f), PartColorRole.PrimaryDark),
                 },
             },
 
             // 연구 장비함: 기본 상자 + 잠금쇠 + 시료 탱크 + 손잡이
             ["bag_science"] = new OutfitRecipe
             {
-                anchor = OutfitAnchor.Root,
+                anchor = OutfitAnchor.Body,
                 parts = new[]
                 {
-                    S(PrimitiveType.Cube,     V(0f, 0.90f, -0.31f),    V(0.16f, 0.03f, 0.02f), PartColorRole.Secondary),
-                    S(PrimitiveType.Cube,     V(0f, 0.76f, -0.31f),    V(0.16f, 0.03f, 0.02f), PartColorRole.Secondary),
-                    S(PrimitiveType.Cylinder, V(0.16f, 0.86f, -0.30f), V(0.09f, 0.13f, 0.09f), PartColorRole.Secondary),
-                    S(PrimitiveType.Cube,     V(0f, 1.00f, -0.24f),    V(0.14f, 0.03f, 0.04f), PartColorRole.PrimaryDark),
+                    S(PrimitiveType.Cube,     V(0f, 0.13f, -0.31f),    V(0.16f, 0.03f, 0.02f), PartColorRole.Secondary),
+                    S(PrimitiveType.Cube,     V(0f, -0.01f, -0.31f),    V(0.16f, 0.03f, 0.02f), PartColorRole.Secondary),
+                    S(PrimitiveType.Cylinder, V(0.16f, 0.09f, -0.30f), V(0.09f, 0.13f, 0.09f), PartColorRole.Secondary),
+                    S(PrimitiveType.Cube,     V(0f, 0.23f, -0.24f),    V(0.14f, 0.03f, 0.04f), PartColorRole.PrimaryDark),
                 },
             },
 
-            // ── 겉옷(Outerwear) — 루트 로컬. Body/ArmL/ArmR은 ApplyPartColor가 칠하고 여기선 덧붙인다 ──
+            // ── 상의(Top) — 몸통 로컬. 무늬는 OutfitPatternLibrary(텍스처), 여기는 **실루엣이 바뀌는 것**만 ──
+            // 상의 레시피는 상의가 보일 때만 적용된다(겉옷을 벗었거나 망토일 때) — CharacterOutfitManager 참고.
 
-            // 전설의 망토: 등 뒤로 흐르는 망토 + 어깨 깃 + 밑단
+            // 카우보이 조끼: 조끼 앞자락 밑단의 가죽 술(가운데 속셔츠 부분은 비운다)
+            ["top_cowboy"] = new OutfitRecipe
+            {
+                anchor = OutfitAnchor.Body,
+                parts = new[]
+                {
+                    Cap(V(-0.20f, TorsoHem - 0.03f, TorsoFront + 0.004f), V(0.024f, 0.035f, 0.014f), 0.4f, V(0f, 0f, -4f), PartColorRole.Primary),
+                    Cap(V(-0.16f, TorsoHem - 0.035f, TorsoFront + 0.006f), V(0.024f, 0.04f, 0.014f), 0.4f, Vector3.zero, PartColorRole.Primary),
+                    Cap(V(-0.12f, TorsoHem - 0.03f, TorsoFront + 0.008f), V(0.024f, 0.035f, 0.014f), 0.4f, V(0f, 0f, 4f), PartColorRole.Primary),
+                    Cap(V(0.12f, TorsoHem - 0.03f, TorsoFront + 0.008f), V(0.024f, 0.035f, 0.014f), 0.4f, V(0f, 0f, -4f), PartColorRole.Primary),
+                    Cap(V(0.16f, TorsoHem - 0.035f, TorsoFront + 0.006f), V(0.024f, 0.04f, 0.014f), 0.4f, Vector3.zero, PartColorRole.Primary),
+                    Cap(V(0.20f, TorsoHem - 0.03f, TorsoFront + 0.004f), V(0.024f, 0.035f, 0.014f), 0.4f, V(0f, 0f, 4f), PartColorRole.Primary),
+                },
+            },
+
+            // ── 하의(Bottom) — 다리 관절 로컬(오른다리 기준, Legs가 왼다리를 거울로 만든다) + 몸통 로컬 ──
+            // 무늬(청바지·위장·줄무늬 등)는 텍스처. 여기는 다리 모양이 바뀌는 것만.
+
+            // 반바지: 다리는 피부(LegForm.Shorts), 허벅지만 감싸는 천 + 밑단 접힘
+            ["bot_shorts"] = new OutfitRecipe
+            {
+                anchor = OutfitAnchor.Root,
+                parts = Legs(
+                    Cap(V(0f, -0.03f, 0f), V(0.235f, 0.075f, 0.235f), 0.95f, Vector3.zero, PartColorRole.Primary),
+                    Ring(V(0f, -0.1f, 0f), V(0.245f, 0.3f, 0.245f), 0.06f, Vector3.zero, PartColorRole.PrimaryDark)),
+            },
+
+            // 카고 팬츠: 허벅지 바깥 입체 주머니(덮개 포함)
+            ["bot_cargo"] = new OutfitRecipe
+            {
+                anchor = OutfitAnchor.Root,
+                parts = Legs(
+                    RB(V(0.1f, -0.13f, 0.005f), V(0.03f, 0.1f, 0.1f), 0.008f, Vector3.zero, PartColorRole.Primary),
+                    RB(V(0.106f, -0.085f, 0.005f), V(0.028f, 0.025f, 0.105f), 0.006f, Vector3.zero, PartColorRole.PrimaryDark)),
+            },
+
+            // 멜빵바지: 가슴판 + 어깨끈(앞·어깨 위·등) + 금단추 + 허리 — 몸통 로컬. 자켓을 입으면 앞섶 사이로 보인다.
+            ["bot_overalls"] = new OutfitRecipe
+            {
+                anchor = OutfitAnchor.Body,
+                parts = new[]
+                {
+                    RB(V(0f, -0.02f, TorsoFront + 0.034f), V(0.21f, 0.2f, 0.016f), 0.01f, Vector3.zero, PartColorRole.Primary),
+                    RB(V(0f, 0.065f, TorsoFront + 0.04f), V(0.09f, 0.06f, 0.008f), 0.006f, Vector3.zero, PartColorRole.PrimaryDark),   // 가슴 주머니
+                    RB(V(-0.08f, 0.165f, TorsoFront + 0.03f), V(0.04f, 0.13f, 0.012f), 0.005f, Vector3.zero, PartColorRole.Primary),
+                    RB(V(0.08f, 0.165f, TorsoFront + 0.03f), V(0.04f, 0.13f, 0.012f), 0.005f, Vector3.zero, PartColorRole.Primary),
+                    RB(V(-0.08f, 0.236f, 0f), V(0.04f, 0.012f, 0.4f), 0.005f, Vector3.zero, PartColorRole.Primary),
+                    RB(V(0.08f, 0.236f, 0f), V(0.04f, 0.012f, 0.4f), 0.005f, Vector3.zero, PartColorRole.Primary),
+                    RB(V(-0.07f, 0.06f, -TorsoFront - 0.022f), V(0.04f, 0.33f, 0.012f), 0.005f, V(0f, 0f, 8f), PartColorRole.Primary),
+                    RB(V(0.07f, 0.06f, -TorsoFront - 0.022f), V(0.04f, 0.33f, 0.012f), 0.005f, V(0f, 0f, -8f), PartColorRole.Primary),
+                    RB(V(0f, -0.2f, 0f), V(0.47f, 0.065f, 0.4f), 0.02f, Vector3.zero, PartColorRole.Primary),                          // 허리
+                    SF(PrimitiveType.Sphere, V(-0.08f, 0.1f, TorsoFront + 0.044f), V(0.028f, 0.028f, 0.014f), Gold),
+                    SF(PrimitiveType.Sphere, V(0.08f, 0.1f, TorsoFront + 0.044f), V(0.028f, 0.028f, 0.014f), Gold),
+                },
+            },
+
+            // 카우보이 팬츠: 청바지(텍스처) 위에 앞·바깥을 감싸는 가죽 챕스
+            ["bot_cowboy"] = new OutfitRecipe
+            {
+                anchor = OutfitAnchor.Root,
+                parts = Legs(
+                    Drape(V(0f, 0.05f, 0f), V(0.25f, 0.34f, 0.25f), 170f, 1.06f, 0, 0f, V(0f, 200f, 0f), PartColorRole.Secondary)),
+            },
+
+            // ── 신발(Shoes) — 다리 관절 로컬(오른다리 기준). 부츠 노드 중심 (0, −0.36, 0.07), 크기 0.21×0.15×0.30 ──
+
+            // 운동화: 두툼한 흰 밑창
+            ["shoe_sneakers"] = new OutfitRecipe
+            {
+                anchor = OutfitAnchor.Root,
+                parts = Legs(
+                    Fixed(RB(V(0f, -0.428f, 0.072f), V(0.228f, 0.042f, 0.325f), 0.016f, Vector3.zero, PartColorRole.Fixed), SoleWhite)),
+            },
+
+            // 샌들: 발은 피부(FootForm.Sandal) + 가죽 밑창 + 발등 끈 둘 + 발목 끈
+            ["shoe_sandals"] = new OutfitRecipe
+            {
+                anchor = OutfitAnchor.Root,
+                parts = Legs(
+                    RB(V(0f, -0.43f, 0.07f), V(0.23f, 0.03f, 0.32f), 0.01f, Vector3.zero, PartColorRole.Primary),
+                    RB(V(0f, -0.283f, 0.14f), V(0.225f, 0.022f, 0.045f), 0.008f, Vector3.zero, PartColorRole.PrimaryDark),
+                    RB(V(0f, -0.283f, 0.03f), V(0.225f, 0.022f, 0.045f), 0.008f, Vector3.zero, PartColorRole.PrimaryDark),
+                    Ring(V(0f, -0.27f, 0f), V(0.185f, 0.25f, 0.185f), 0.07f, Vector3.zero, PartColorRole.PrimaryDark)),
+            },
+
+            // 장화: 무릎 아래까지 오는 목 + 입구 테
+            ["shoe_waders"] = new OutfitRecipe
+            {
+                anchor = OutfitAnchor.Root,
+                parts = Legs(
+                    Cap(V(0f, -0.2f, 0f), V(0.235f, 0.12f, 0.235f), 0.95f, Vector3.zero, PartColorRole.Primary),
+                    Ring(V(0f, -0.075f, 0f), V(0.25f, 0.3f, 0.25f), 0.07f, Vector3.zero, PartColorRole.PrimaryDark)),
+            },
+
+            // 로켓 부츠: 뒤꿈치 분사구 + 불꽃 + 바깥 날개
+            ["shoe_rocket"] = new OutfitRecipe
+            {
+                anchor = OutfitAnchor.Root,
+                parts = Legs(
+                    SF(PrimitiveType.Cylinder, V(0f, -0.35f, -0.1f), V(0.1f, 0.03f, 0.1f), Steel, V(90f, 0f, 0f)),
+                    Cap(V(0f, -0.35f, -0.16f), V(0.075f, 0.06f, 0.075f), 0.2f, V(90f, 0f, 0f), PartColorRole.Secondary),
+                    RB(V(0.11f, -0.33f, -0.05f), V(0.014f, 0.09f, 0.09f), 0.004f, V(0f, 0f, -12f), PartColorRole.Secondary)),
+            },
+
+            // 크리스털 구두: 발등 보석
+            ["shoe_crystal"] = new OutfitRecipe
+            {
+                anchor = OutfitAnchor.Root,
+                parts = Legs(
+                    SR(PrimitiveType.Sphere, V(0f, -0.29f, 0.17f), V(0.06f, 0.045f, 0.06f), V(0f, 45f, 0f), PartColorRole.Secondary)),
+            },
+
+            // 카우보이 부츠: 굽 + 뾰족한 앞코 + 박차(고리 + 축)
+            ["shoe_cowboy"] = new OutfitRecipe
+            {
+                anchor = OutfitAnchor.Root,
+                parts = Legs(
+                    RB(V(0f, -0.445f, -0.035f), V(0.12f, 0.05f, 0.1f), 0.008f, Vector3.zero, PartColorRole.PrimaryDark),
+                    Cap(V(0f, -0.385f, 0.2f), V(0.15f, 0.07f, 0.1f), 0.35f, V(-90f, 0f, 0f), PartColorRole.Primary),
+                    SR(PrimitiveType.Cube, V(0f, -0.39f, -0.1f), V(0.012f, 0.012f, 0.04f), Vector3.zero, PartColorRole.Secondary),
+                    Ring(V(0f, -0.39f, -0.125f), V(0.05f, 0.3f, 0.05f), 0.14f, V(0f, 0f, 90f), PartColorRole.Secondary)),
+            },
+
+            // ── 겉옷(Outerwear) — **몸통 로컬**(2026-09-30 루트 → 몸통: 걷기에서 몸통과 함께 튄다).
+            // 몸통·팔·셔츠 판을 누가 칠할지는 겉옷 형태(OuterForm)가 정하고 ApplyToCharacter가 칠한다. 여기선 덧붙인다 ──
+
+            // 전설의 망토(망토 형태 — 몸통은 상의 그대로): 어깨에서 무릎까지 퍼지며 주름진 망토 + 선 깃 + 금 브로치
             ["outer_legendary"] = new OutfitRecipe
             {
-                anchor = OutfitAnchor.Root,
+                anchor = OutfitAnchor.Body,
                 parts = new[]
                 {
-                    SR(PrimitiveType.Cube, V(0f, 0.72f, -0.22f), V(0.50f, 0.60f, 0.03f), V(-6f, 0f, 0f), PartColorRole.Primary),
-                    S(PrimitiveType.Cube,  V(0f, 1.00f, -0.10f), V(0.40f, 0.10f, 0.16f), PartColorRole.Secondary),
-                    S(PrimitiveType.Cube,  V(0f, 0.42f, -0.24f), V(0.52f, 0.08f, 0.04f), PartColorRole.Secondary),
+                    Drape(V(0f, 0.2f, -0.02f), V(0.56f, 0.64f, 0.5f), 200f, 1.4f, 4, 0.025f, Vector3.zero, PartColorRole.Primary),
+                    Drape(V(0f, 0.31f, -0.01f), V(0.38f, 0.11f, 0.34f), 230f, 1.3f, 0, 0f, Vector3.zero, PartColorRole.Secondary),
+                    SF(PrimitiveType.Sphere, V(0f, 0.2f, TorsoFront + 0.02f), V(0.06f, 0.06f, 0.03f), Gold),
+                    SR(PrimitiveType.Cube, V(-0.1f, 0.21f, TorsoFront - 0.03f), V(0.14f, 0.02f, 0.02f), V(0f, 20f, -12f), PartColorRole.Secondary),
+                    SR(PrimitiveType.Cube, V(0.1f, 0.21f, TorsoFront - 0.03f),  V(0.14f, 0.02f, 0.02f), V(0f, -20f, 12f), PartColorRole.Secondary),
                 },
             },
 
-            // 마법사 로브: 발목까지 퍼지는 치맛단 + 등 망토 + 금테
+            // 마법사 로브(로브 형태 — 앞까지 여민다): 발목까지 퍼지는 치마 + 금테 + 목 뒤 두건
             ["outer_wizard"] = new OutfitRecipe
             {
-                anchor = OutfitAnchor.Root,
+                anchor = OutfitAnchor.Body,
                 parts = new[]
                 {
-                    S(PrimitiveType.Cylinder, V(0f, 0.44f, 0f),     V(0.56f, 0.22f, 0.50f), PartColorRole.Primary),
-                    S(PrimitiveType.Cube,     V(0f, 0.74f, -0.21f), V(0.46f, 0.52f, 0.03f), PartColorRole.Primary),
-                    S(PrimitiveType.Cylinder, V(0f, 0.23f, 0f),     V(0.58f, 0.02f, 0.52f), PartColorRole.Secondary),
+                    Drape(V(0f, TorsoHem + 0.03f, 0f), V(0.48f, 0.37f, 0.42f), 360f, 1.38f, 6, 0.012f, Vector3.zero, PartColorRole.Primary),
+                    Ring(V(0f, TorsoHem + 0.03f - 0.37f, 0f), V(0.66f, 0.3f, 0.58f), 0.035f, Vector3.zero, PartColorRole.Secondary),
+                    Drape(V(0f, 0.3f, -0.03f), V(0.42f, 0.2f, 0.4f), 200f, 1.2f, 2, 0.01f, V(-10f, 0f, 0f), PartColorRole.Primary),
+                    Ring(V(0f, 0.25f, 0f), V(0.34f, 0.35f, 0.3f), 0.08f, Vector3.zero, PartColorRole.Secondary),
                 },
             },
 
-            // 그림자 코트: 갈라진 코트 자락 + 세운 깃 + 라펠
+            // 그림자 코트(열린 코트): 정강이까지 내려오는 뒤트임 자락 + 세운 깃
             ["outer_shadow"] = new OutfitRecipe
             {
-                anchor = OutfitAnchor.Root,
+                anchor = OutfitAnchor.Body,
                 parts = new[]
                 {
-                    SR(PrimitiveType.Cube, V(-0.14f, 0.44f, -0.16f), V(0.20f, 0.42f, 0.06f), V(4f, 0f, 3f),   PartColorRole.Primary),
-                    SR(PrimitiveType.Cube, V(0.14f, 0.44f, -0.16f),  V(0.20f, 0.42f, 0.06f), V(4f, 0f, -3f),  PartColorRole.Primary),
-                    S(PrimitiveType.Cube,  V(0f, 1.00f, 0.06f),      V(0.42f, 0.12f, 0.26f), PartColorRole.PrimaryDark),
-                    SR(PrimitiveType.Cube, V(-0.10f, 0.88f, 0.20f),  V(0.10f, 0.26f, 0.03f), V(0f, 0f, 10f),  PartColorRole.PrimaryDark),
-                    SR(PrimitiveType.Cube, V(0.10f, 0.88f, 0.20f),   V(0.10f, 0.26f, 0.03f), V(0f, 0f, -10f), PartColorRole.PrimaryDark),
+                    Drape(V(0f, TorsoHem + 0.03f, 0f), V(0.5f, 0.42f, 0.44f), 290f, 1.18f, 3, 0.01f, Vector3.zero, PartColorRole.Primary),
+                    Drape(V(0f, 0.34f, -0.01f), V(0.36f, 0.14f, 0.33f), 240f, 1.18f, 0, 0f, Vector3.zero, PartColorRole.PrimaryDark),
+                    Ring(V(0f, TorsoHem + 0.03f - 0.42f, 0f), V(0.59f, 0.25f, 0.52f), 0.02f, Vector3.zero, PartColorRole.Secondary),
                 },
             },
 
-            // 연구원 코트: 앞자락 2장 + 뒷자락 + 주머니
+            // 연구원 코트(열린 코트): 무릎까지 내려오는 앞트임 자락(주머니·펜은 텍스처)
             ["outer_labcoat"] = new OutfitRecipe
             {
-                anchor = OutfitAnchor.Root,
+                anchor = OutfitAnchor.Body,
                 parts = new[]
                 {
-                    S(PrimitiveType.Cube, V(-0.13f, 0.66f, 0.20f), V(0.20f, 0.50f, 0.03f), PartColorRole.Primary),
-                    S(PrimitiveType.Cube, V(0.13f, 0.66f, 0.20f),  V(0.20f, 0.50f, 0.03f), PartColorRole.Primary),
-                    S(PrimitiveType.Cube, V(0f, 0.62f, -0.20f),    V(0.46f, 0.54f, 0.03f), PartColorRole.Primary),
-                    S(PrimitiveType.Cube, V(-0.14f, 0.48f, 0.22f), V(0.12f, 0.09f, 0.02f), PartColorRole.PrimaryDark),
+                    Drape(V(0f, TorsoHem + 0.03f, 0f), V(0.5f, 0.3f, 0.44f), 300f, 1.12f, 2, 0.008f, Vector3.zero, PartColorRole.Primary),
+                },
+            },
+
+            // 비옷: 목 뒤로 넘긴 두건 + 무릎 위까지 오는 자락
+            ["outer_raincoat"] = new OutfitRecipe
+            {
+                anchor = OutfitAnchor.Body,
+                parts = new[]
+                {
+                    SR(PrimitiveType.Sphere, V(0f, 0.28f, -0.15f), V(0.36f, 0.24f, 0.24f), V(-15f, 0f, 0f), PartColorRole.Primary),
+                    Drape(V(0f, TorsoHem + 0.03f, 0f), V(0.5f, 0.16f, 0.44f), 300f, 1.12f, 0, 0f, Vector3.zero, PartColorRole.Primary),
+                },
+            },
+
+            // 바람막이: 목을 감싸 세운 깃(토러스)
+            ["outer_windbreaker"] = new OutfitRecipe
+            {
+                anchor = OutfitAnchor.Body,
+                parts = new[]
+                {
+                    Ring(V(0f, 0.25f, 0f), V(0.3f, 0.5f, 0.28f), 0.13f, Vector3.zero, PartColorRole.Primary),
+                },
+            },
+
+            // 크리스털 자켓: 어깨 위로 솟은 결정(보석)
+            ["outer_crystal"] = new OutfitRecipe
+            {
+                anchor = OutfitAnchor.Body,
+                parts = new[]
+                {
+                    GemPart(V(-0.19f, 0.25f, 0.02f), V(0.06f, 0.13f, 0.06f), V(0f, 20f, 18f),  PartColorRole.Secondary),
+                    GemPart(V(-0.23f, 0.22f, -0.05f), V(0.045f, 0.09f, 0.045f), V(10f, 0f, 35f), PartColorRole.Secondary),
+                    GemPart(V(0.19f, 0.25f, 0.02f),  V(0.06f, 0.13f, 0.06f), V(0f, -20f, -18f), PartColorRole.Secondary),
+                    GemPart(V(0.23f, 0.22f, -0.05f), V(0.045f, 0.09f, 0.045f), V(10f, 0f, -35f), PartColorRole.Secondary),
                 },
             },
         };

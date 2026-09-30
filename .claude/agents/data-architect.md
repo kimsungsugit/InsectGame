@@ -44,7 +44,7 @@ tools:
 - `Assets/Scripts/Core/PlayerInsectData.cs` - 개별 곤충 인스턴스 데이터
 - `Assets/Scripts/Core/InsectSizeCalculator.cs` - 개체 크기·무게 계산 ※기준값·배율 튜닝은 game-designer
 - `Assets/Scripts/Core/GameConstants.cs` - 전역 상수
-- `Assets/Scripts/Core/CharacterOutfitData.cs` - 의상 데이터 모델
+- `Assets/Scripts/Core/CharacterOutfitData.cs` - 의상 데이터 모델 ※`OutfitPart` 스키마(OutfitShapeLibrary.cs)는 2026-09-30에 `shape`/`shapeArgs`·`hasAnchor`/`anchor`가 늘었다 — 전부 기본값이 기존 동작(Primitive·레시피 앵커)이라 세이브·기존 레시피에 영향 없음
 - `Assets/Scripts/Data/StarterInsectCatalog.cs` - 첫 파트너 곤충 선택지 + PlayerPrefs 오버라이드 ※ResolveChoice의 화이트리스트는 조작 방어다(빼면 임의 곤충을 1레벨에 받는다). 지급은 여전히 ch1_intro 비트가 한다
 - `Assets/Scripts/Data/CharacterAppearanceConfig.cs` - 캐릭터 외형 SO(색 팔레트·프리셋). 선택적 오버라이드이며 에셋이 없는 게 정상 경로 — 코드 폴백을 반드시 유지
 - `Assets/Scripts/Core/CharacterPresetLibrary.cs` - 생성 화면 프리셋의 단일 출처(코드 기본값 + SO 오버라이드) ※인덱스는 Character.OutfitPreset으로 저장되므로 순서 불변

@@ -164,6 +164,17 @@ namespace InsectGame.Tests
             Assert.Greater(seen.Count, 1,
                 "모든 프리셋의 외형 해시가 같다 — 어느 것을 골라도 3D 프리뷰가 안 바뀐다");
         }
+
+        /// <summary>입력란을 비우고 진행하면 빈 이름이 저장되던 결함 — 기본 이름으로 물러난다.</summary>
+        [Test]
+        public void SanitizeCharacterName_BlankFallsBackToDefault_ElseTrimmed()
+        {
+            string fallback = LoginUI.SanitizeCharacterName(null);
+            Assert.IsFalse(string.IsNullOrWhiteSpace(fallback));
+            Assert.AreEqual(fallback, LoginUI.SanitizeCharacterName(""));
+            Assert.AreEqual(fallback, LoginUI.SanitizeCharacterName("   "));
+            Assert.AreEqual("나비", LoginUI.SanitizeCharacterName("  나비 "));
+        }
     }
 }
 #endif

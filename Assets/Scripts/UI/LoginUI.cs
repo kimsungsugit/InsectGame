@@ -39,7 +39,8 @@ namespace InsectGame.UI
         // 캐릭터 생성
         private CreateStep createStep = CreateStep.Preset;
         private int selectedStarter;
-        private string characterName = "탐험가";
+        private const string DefaultCharacterName = "탐험가";
+        private string characterName = DefaultCharacterName;
         private int selectedSkinColor;  // 0~3
         private int selectedHairStyle;  // 0~3
         private int selectedOutfit;     // 0~2
@@ -704,9 +705,11 @@ namespace InsectGame.UI
         /// <summary>세부 조정 오른쪽 열의 5행 높이 — 이 값이 그 단계의 세로를 정한다.</summary>
         internal static float CustomizeRowsHeight(bool mobile)
         {
-            float rowH = mobile ? 58f : 45f;
-            return 5f * (rowH + 12f);
+            return 5f * (CustomizeRowH(mobile) + 12f);
         }
+
+        /// <summary>세부 조정 한 행의 높이. 데스크톱 45 → 50(2026-09-30) — 색 견본을 누르기 좋게. 짧은 화면 검사는 여전히 통과한다.</summary>
+        internal static float CustomizeRowH(bool mobile) => mobile ? 58f : 50f;
 
         /// <summary>
         /// 이 단계가 실제로 차지하는 총 세로. 패널 높이를 넘으면 하단 버튼이 밖으로 밀린다.
@@ -729,8 +732,10 @@ namespace InsectGame.UI
         /// <summary>스타터 곤충 카드 높이. 이름 + 설명 두 줄이 들어간다.</summary>
         internal const float StarterCardHeight = 210f;
 
-        private const float PreviewH = 300f;
-        private const float PreviewW = 200f;
+        // 프리뷰 상한 300×200 → 400×266(2026-09-30). 고른 얼굴·머리가 알아볼 크기로 보이게.
+        // 하한(MinPreviewH)과 짧은 화면 검사는 그대로라 버튼이 밀리지 않는다(CharacterCreateFlowTests).
+        private const float PreviewH = 400f;
+        private const float PreviewW = 266f;
 
         /// <summary>프리뷰 최소 높이. 이보다 작으면 3D를 보여주는 의미가 없다.</summary>
         internal const float MinPreviewH = 96f;
@@ -784,8 +789,9 @@ namespace InsectGame.UI
             DrawLivePreview(px + pw * 0.5f - previewW * 0.5f, cy, previewW, previewH);
             cy += previewH + 24f;
 
-            GUI.Label(new Rect(cx, cy, 75f, 30f), "이름:", labelStyle);   // 오른쪽 필드가 cx+82f — 넓히면 겹친다
-            characterName = GUI.TextField(new Rect(cx + 82f, cy, fieldW - 82f, 35f), characterName, 12, fieldStyle);
+            GUI.Label(new Rect(cx, cy + 7f, 75f, 30f), "이름:", labelStyle);   // 오른쪽 필드가 cx+82f — 넓히면 겹친다
+            // 35 → 44: 25pt 글자가 35px 칸에서 아래가 잘렸다(검수 빌드 캡처). 행 간격 50 안이라 아래가 밀리지 않는다.
+            characterName = GUI.TextField(new Rect(cx + 82f, cy, fieldW - 82f, 44f), characterName, 12, fieldStyle);
             cy += 50f;
 
             // 프리셋은 개수가 5개라 한 줄에 넣으면 라벨이 잘린다 — 두 줄로 나눈다.
@@ -818,7 +824,7 @@ namespace InsectGame.UI
                 int index = from + i;
                 float bx = x + i * (btnW + 8f);
                 GUIStyle style = (index == selectedOutfit) ? radioSelectedStyle : radioStyle;
-                if (GUI.Button(new Rect(bx, y, btnW, h), names[index], style))
+                if (FitButton(new Rect(bx, y, btnW, h), names[index], style))
                 {
                     ApplyPreset(index);
                 }
@@ -866,23 +872,24 @@ namespace InsectGame.UI
             float colX = cx + previewW + 24f;
             float colW = fieldW - previewW - 24f;
             float labelW = 96f;
-            float rowH = mobile ? 58f : 45f;
+            float rowH = CustomizeRowH(mobile);
             float ry = cy;
 
             selectedGender = DrawLabeledRadio(colX, ry, colW, labelW, rowH, "성별",
                 GenderLabels, selectedGender);
             ry += rowH + 12f;
 
-            selectedSkinColor = DrawLabeledRadio(colX, ry, colW, labelW, rowH, "피부색",
-                SkinLabels, selectedSkinColor);
+            // 색은 글자가 아니라 **색 견본**으로 고른다 — "어두운/진한", "보라/파랑" 글자만으로는 결과를 짐작하기 어려웠다.
+            selectedSkinColor = DrawLabeledSwatches(colX, ry, colW, labelW, rowH, "피부색",
+                InsectGame.Core.CharacterPalette.SkinCount, true, selectedSkinColor);
             ry += rowH + 12f;
 
             selectedHairStyle = DrawLabeledRadio(colX, ry, colW, labelW, rowH, "머리",
                 HairStyleLabels, selectedHairStyle);
             ry += rowH + 12f;
 
-            selectedHairColor = DrawLabeledRadio(colX, ry, colW, labelW, rowH, "머리색",
-                HairColorLabels, selectedHairColor);
+            selectedHairColor = DrawLabeledSwatches(colX, ry, colW, labelW, rowH, "머리색",
+                InsectGame.Core.CharacterPalette.HairCount, false, selectedHairColor);
             ry += rowH + 12f;
 
             selectedFaceType = DrawLabeledRadio(colX, ry, colW, labelW, rowH, "표정",
@@ -959,10 +966,33 @@ namespace InsectGame.UI
 
         // 라디오 라벨은 static으로 둔다 — OnGUI에서 매 프레임 배열을 새로 만들지 않기 위해서다.
         private static readonly string[] GenderLabels = { "남자", "여자" };
-        private static readonly string[] SkinLabels = { "밝은", "보통", "어두운", "진한" };
         private static readonly string[] HairStyleLabels = { "짧은", "중간", "긴", "올림" };
-        private static readonly string[] HairColorLabels = { "검정", "갈색", "금발", "빨강", "보라", "파랑" };
         private static readonly string[] FaceLabels = { "미소", "활짝", "차분", "무표정" };
+
+        /// <summary>
+        /// 라벨 + 색 견본 한 줄. 견본은 팔레트(<c>CharacterPalette</c>)에서 바로 칠한다 — 3D 캐릭터가 쓰는 바로 그 색이다.
+        /// 고른 것은 바깥 테두리(호박색)로 표시한다.
+        /// </summary>
+        private int DrawLabeledSwatches(float x, float y, float totalW, float labelW, float rowH,
+            string label, int count, bool skin, int selected)
+        {
+            GUI.Label(new Rect(x, y + (rowH - 30f) * 0.5f, labelW, 30f), label, sectionLabelStyle);
+            if (count <= 0) return selected;
+            float areaW = totalW - labelW;
+            float gap = 10f;
+            float size = Mathf.Min(rowH, (areaW - gap * (count - 1)) / count);
+            UITheme theme = UITheme.Instance;
+            for (int i = 0; i < count; i++)
+            {
+                Rect r = new Rect(x + labelW + i * (size + gap), y + (rowH - size) * 0.5f, size, size);
+                Color c = skin ? InsectGame.Core.CharacterPalette.Skin(i) : InsectGame.Core.CharacterPalette.Hair(i);
+                if (i == selected)
+                    UISurface.Rounded(new Rect(r.x - 4f, r.y - 4f, r.width + 8f, r.height + 8f), theme.accentAmber);
+                UISurface.Rounded(r, c);
+                if (GUI.Button(r, GUIContent.none, GUIStyle.none)) selected = i;
+            }
+            return selected;
+        }
 
         /// <summary>라벨 + 라디오를 한 줄에. 세로로 나누면 행마다 35px가 더 든다.</summary>
         private int DrawLabeledRadio(float x, float y, float totalW, float labelW, float rowH,
@@ -1048,9 +1078,32 @@ namespace InsectGame.UI
             }
             else if (e.type == EventType.MouseDrag && draggingPreview)
             {
-                previewYaw += e.delta.x * 0.5f;
+                // 오른쪽으로 끌면 캐릭터 앞면이 오른쪽으로 돈다 — 의상 창(CharacterOutfitUI)과 같은 방향.
+                // 예전엔 두 화면이 반대로 돌았다.
+                previewYaw -= e.delta.x * 0.5f;
                 e.Use();
             }
+        }
+
+        private static readonly GUIContent fitProbe = new GUIContent();
+
+        /// <summary>
+        /// 버튼 라벨이 폭을 넘으면 글자를 줄여 그린다(끝나면 원래 크기로). 세로 화면에서 프리셋 버튼 셋이 한 줄에
+        /// 서면 "초원의 탐험가"가 "초원의 탐험기"처럼 잘려 보였다(검수 빌드 720×1280 캡처).
+        /// </summary>
+        private static bool FitButton(Rect r, string text, GUIStyle style)
+        {
+            int original = style.fontSize;
+            fitProbe.text = text;
+            int size = original;
+            while (size > 16 && style.CalcSize(fitProbe).x > r.width - 8f)
+            {
+                size -= 2;
+                style.fontSize = size;
+            }
+            bool clicked = GUI.Button(r, text, style);
+            style.fontSize = original;
+            return clicked;
         }
 
         /// <param name="rowH">0이면 기존 기본 높이를 쓴다(다른 화면의 호출부가 그대로 돌게).</param>
@@ -1062,7 +1115,7 @@ namespace InsectGame.UI
             {
                 float bx = x + i * (btnW + 8f);
                 GUIStyle style = (i == selected) ? radioSelectedStyle : radioStyle;
-                if (GUI.Button(new Rect(bx, y, btnW, h), labels[i], style))
+                if (FitButton(new Rect(bx, y, btnW, h), labels[i], style))
                 {
                     selected = i;
                 }
@@ -1225,8 +1278,19 @@ namespace InsectGame.UI
 
         // ── 캐릭터 데이터 저장 ──
 
+        /// <summary>
+        /// 저장할 이름. 입력란을 비우거나 공백만 넣고 진행하면 **빈 이름이 저장됐다** — HUD·대사창이
+        /// 이름 자리를 빈칸으로 그리고, 클라우드 복원은 빈 값을 "없음"으로 보고 건너뛰어 기기마다 달라진다.
+        /// </summary>
+        internal static string SanitizeCharacterName(string name)
+        {
+            string trimmed = name != null ? name.Trim() : "";
+            return trimmed.Length > 0 ? trimmed : DefaultCharacterName;
+        }
+
         private void SaveCharacterCreation()
         {
+            characterName = SanitizeCharacterName(characterName);
             PlayerPrefs.SetString(CharNameKey, characterName);
             PlayerPrefs.SetInt(CharSkinKey, selectedSkinColor);
             PlayerPrefs.SetInt(CharHairKey, selectedHairStyle);

@@ -44,6 +44,8 @@ tools:
 - `Assets/Scripts/NPC/DuelBanter.cs` - 대결 상대의 연출 대사(칭호·도발·전투 중 한마디·결과 한마디)와 순간 판정 ※그리기는 ui-dev(`BattleScreenUI.Duel`)
 - `Assets/Scripts/NPC/NpcRivalDuels.cs` - 라온 라이벌 단계 표(열림·닫힘 비트·리전·상대 곤충·레벨·첫 승리 보상)와 단계 선택 ※대결 진입·종료 처리는 `NpcDuelController`
 - `Assets/Scripts/Core/GuardianBadges.cs` - 수문장 배지 표(리전·이름·새김글)와 4·8·13 이정표 보상 아이템·수량 ※그림은 `Tools/Badges/guardian_badges.py`
+- `Assets/Scripts/Core/OutfitUnlockRules.cs` - 조건부 의상 해금 판정(지역 도달·레벨·퀘스트 토큰) 순수부 ※소유 부여 배선은 `CharacterOutfitManager.EvaluateUnlocks`, 문구는 `CharacterOutfitUI.DescribeUnlockCondition`(ui-dev)
+- `Assets/Tests/EditMode/OutfitUnlockRulesTests.cs` - 해금 판정식 + 카탈로그 조건의 도달 가능성(리전·퀘스트 실재·만렙 이하·비매품)
 - `Assets/Scripts/Core/GuardianBadgeService.cs` - 새 배지 알림(첫 격파만)과 이정표 보상 지급·수령 기록 ※수령 기록 직렬화·클라우드 필드는 data-architect와 함께 본다
 - `Assets/Editor/StoryBeatWalkthrough.cs` - 스토리 비트 실발화 걸음(배치모드) ※`LiveSceneCapture`(visual-dev)와 같은 배치 도구지만 검증 대상이 3D가 아니라 **저작**이다
 

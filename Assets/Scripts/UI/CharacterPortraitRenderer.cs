@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using InsectGame.Core;
 using UnityEngine;
 
@@ -46,20 +47,24 @@ namespace InsectGame.UI
         public static void Draw(float cx, float cy, float scale,
             int gender, int skinColorIdx, int hairColorIdx, int hairStyle, int faceType,
             Color topColor, Color bottomColor, Color shoeColor, Color hatColor,
-            float swayX = 0f, bool drawDefaultPack = true)
+            float swayX = 0f, bool drawDefaultPack = true, bool drawNet = false)
         {
             DrawWithColors(cx, cy, scale, gender, GetSkinColor(skinColorIdx), GetHairColor(hairColorIdx),
-                hairStyle, faceType, topColor, bottomColor, shoeColor, hatColor, swayX, drawDefaultPack);
+                hairStyle, faceType, topColor, bottomColor, shoeColor, hatColor, swayX, drawDefaultPack, drawNet);
         }
 
         /// <summary>
         /// 피부·머리를 팔레트 번호가 아니라 <b>색으로</b> 받는 판. 플레이어 팔레트(<c>CharacterPalette</c>)에 없는 색
         /// — 월드 NPC의 백발 같은 — 을 초상에 그대로 옮길 때 쓴다(<c>NpcDialogueUI</c>의 월드 파생 초상).
         /// </summary>
+        /// <param name="drawNet">
+        /// 기본 잠자리채를 그릴까. 예전엔 **항상** 그렸다 — 장착 도구를 따로 그리는 <see cref="DrawWithOutfit"/>에서는
+        /// 도구 없음을 골라도 잠자리채가 보이고 다른 도구와 겹쳤으며, NPC 대사 초상의 어른들까지 전부 잠자리채를 들었다.
+        /// </param>
         public static void DrawWithColors(float cx, float cy, float scale,
             int gender, Color skin, Color hair, int hairStyle, int faceType,
             Color topColor, Color bottomColor, Color shoeColor, Color hatColor,
-            float swayX = 0f, bool drawDefaultPack = true)
+            float swayX = 0f, bool drawDefaultPack = true, bool drawNet = false)
         {
             // 호출부의 색(패널 페이드 알파 등)을 잡아 둔다 — 파츠는 여기에 곱해 그린다.
             ambientColor = GUI.color;
@@ -157,14 +162,9 @@ namespace InsectGame.UI
             float noseW = headW * 0.07f;
             DrawCol(noseCol, cx - noseW * 0.5f + swayX, headY + headH * 0.60f, noseW, headH * 0.08f);
 
-            // 입 (표정별, headW/headH 비례 위치 — 얼굴 하단 1/4)
-            Color mouthCol = new Color(0.85f, 0.4f, 0.35f);
-            float mouthW = headW * (0.18f + faceType * 0.05f);
-            float mouthH = (faceType == 1) ? headH * 0.07f : headH * 0.05f;
-            float mouthY = headY + headH * 0.74f;
-            DrawCol(mouthCol, cx - mouthW * 0.5f + swayX, mouthY, mouthW, mouthH);
-            if (faceType == 0 || faceType == 1)
-                DrawCol(new Color(1f, 0.7f, 0.7f, 0.5f), cx - mouthW * 0.3f + swayX, mouthY + mouthH, mouthW * 0.6f, headH * 0.035f);
+            // 입 — 3D(PlayerVisualBuilder.MouthShape)와 **같은 모양·크기 순서**다: 미소(곡선) · 활짝(벌린 입 + 혀) ·
+            // 차분(작은 곡선) · 무표정(일자). 예전 2D는 폭이 표정 번호에 비례해 무표정이 가장 컸다(3D와 반대).
+            DrawMouth2D(cx + swayX, headY + headH * 0.74f, headW, headH, faceType);
 
             // 볼터치 + 속눈썹 (여자) — headW/headH 비례
             if (gender == 1)
@@ -196,7 +196,12 @@ namespace InsectGame.UI
                 DrawCol(hatDark, headX + 1f * s, headY - headH * 0.20f, headW - 2f * s, headH * 0.22f);
             }
 
-            // === 채집봉 (오른쪽 어깨 너머) ===
+            // === 채집봉 (오른쪽 어깨 너머) — 부를 때 고른다(drawNet) ===
+            if (!drawNet)
+            {
+                GUI.color = ambientColor;
+                return;
+            }
             Color netCol = new Color(0.2f, 0.12f, 0.06f);
             float netX = cx + bodyW * 0.5f + armW + 2f * s + swayX;
             float netTop = headY - 8f * s;
@@ -210,6 +215,44 @@ namespace InsectGame.UI
             DrawCol(ringCol, netX + 8f * s, netTop - 4f * s, 2.5f * s, ringH);
 
             GUI.color = ambientColor;   // 흰색이 아니라 호출부의 색으로 되돌린다
+        }
+
+        internal enum Mouth2D { Smile, Open, Line }
+
+        /// <summary>표정 → 2D 입(모양, 폭 비율, 높이 비율). 3D 표와 순서를 맞춘다 — 테스트가 대조한다.</summary>
+        internal static void MouthShape2D(int faceType, out Mouth2D kind, out float widthK, out float heightK)
+        {
+            switch (faceType)
+            {
+                case 1: kind = Mouth2D.Open; widthK = 0.24f; heightK = 0.1f; break;    // 활짝
+                case 2: kind = Mouth2D.Smile; widthK = 0.15f; heightK = 0.045f; break; // 차분
+                case 3: kind = Mouth2D.Line; widthK = 0.13f; heightK = 0.025f; break;  // 무표정
+                default: kind = Mouth2D.Smile; widthK = 0.22f; heightK = 0.06f; break; // 미소
+            }
+        }
+
+        private static void DrawMouth2D(float cx, float top, float headW, float headH, int faceType)
+        {
+            MouthShape2D(faceType, out Mouth2D kind, out float wk, out float hk);
+            float w = headW * wk, h = headH * hk;
+            Color line = new Color(0.55f, 0.22f, 0.2f);
+            switch (kind)
+            {
+                case Mouth2D.Open:
+                    DrawCol(new Color(0.6f, 0.18f, 0.18f), cx - w * 0.5f, top, w, h);
+                    DrawCol(new Color(0.96f, 0.55f, 0.55f), cx - w * 0.3f, top + h * 0.55f, w * 0.6f, h * 0.45f);
+                    break;
+                case Mouth2D.Line:
+                    DrawCol(line, cx - w * 0.5f, top + h, w, h);
+                    break;
+                default:
+                    // 곡선을 세 토막으로 — 가운데가 낮고 양끝이 올라간다.
+                    float t = Mathf.Max(1f, h * 0.45f);
+                    DrawCol(line, cx - w * 0.2f, top + h, w * 0.4f, t);
+                    DrawCol(line, cx - w * 0.5f, top + h * 0.35f, w * 0.32f, t);
+                    DrawCol(line, cx + w * 0.18f, top + h * 0.35f, w * 0.32f, t);
+                    break;
+            }
         }
 
         private static void DrawHair(float headX, float headY, float headW, float headH, float s, int gender, int style, Color hair)
@@ -266,13 +309,9 @@ namespace InsectGame.UI
         public static void DrawForCreation(float cx, float cy, float scale,
             int gender, int skinColorIdx, int hairColorIdx, int hairStyle, int faceType, int outfitIdx)
         {
-            Color topCol = PresetTopColors[Mathf.Clamp(outfitIdx, 0, PresetTopColors.Length - 1)];
-            Color bottomCol = new Color(0.18f, 0.22f, 0.28f);
-            Color shoeCol = new Color(0.2f, 0.12f, 0.06f);
-            Color hatCol = new Color(0f, 0f, 0f, 0f);
-
+            PresetColors(outfitIdx, out Color topCol, out Color bottomCol, out Color shoeCol, out Color hatCol, out bool net);
             Draw(cx, cy, scale, gender, skinColorIdx, hairColorIdx, hairStyle, faceType,
-                topCol, bottomCol, shoeCol, hatCol);
+                topCol, bottomCol, shoeCol, hatCol, 0f, true, net);
         }
 
         // OutfitChanged 이벤트 기반 캐시 — 매 OnGUI 호출 시 PlayerPrefs 5회 + GetEquipped 8회를
@@ -646,14 +685,44 @@ namespace InsectGame.UI
         /// 값은 각 프리셋이 입는 겉옷(없으면 상의)의 primaryColor를 따른다:
         /// 탐험가·밤의 채집가·직접 만들기는 outer_jacket, 관찰자는 top_shirt, 아이는 top_polo.
         /// </summary>
-        internal static readonly Color[] PresetTopColors =
+        private static Dictionary<string, OutfitItem> catalogById;
+
+        /// <summary>
+        /// 생성 화면 2D 폴백의 색 — 프리셋이 **실제로 입히는 아이템**에서 뽑는다. 예전엔 대표색 배열을 따로 적어
+        /// 자켓 색이 실제 탐험가 자켓과 달랐고(0.20,0.40,0.85 ↔ 0.16,0.32,0.72) 하의·신발·모자는 무시됐다.
+        /// 몸통은 겉옷을 입으면 겉옷, 벗으면 상의(ApplyToCharacter와 같은 규칙).
+        /// </summary>
+        internal static void PresetColors(int outfitIdx, out Color body, out Color bottom, out Color shoe, out Color hat, out bool net)
         {
-            new Color(0.20f, 0.40f, 0.85f),   // 초원의 탐험가 — outer_jacket
-            new Color(0.98f, 0.96f, 0.92f),   // 숲의 관찰자 — outer_none → top_shirt
-            new Color(0.53f, 0.81f, 0.98f),   // 들판의 아이 — outer_none → top_polo
-            new Color(0.20f, 0.40f, 0.85f),   // 밤의 채집가 — outer_jacket
-            new Color(0.20f, 0.40f, 0.85f),   // 직접 만들기 — outer_jacket
-        };
+            if (catalogById == null)
+            {
+                catalogById = new Dictionary<string, OutfitItem>();
+                foreach (OutfitItem it in CharacterOutfitManager.BuildCatalog()) catalogById[it.itemId] = it;
+            }
+            body = new Color(0.98f, 0.96f, 0.92f);
+            bottom = new Color(0.18f, 0.22f, 0.28f);
+            shoe = new Color(0.2f, 0.12f, 0.06f);
+            hat = new Color(0f, 0f, 0f, 0f);
+            net = false;
+            Color top = body, outer = new Color(0f, 0f, 0f, 0f);
+
+            string[] ids = CharacterPresetLibrary.Get(outfitIdx).OutfitItemIds;
+            if (ids == null) return;
+            foreach (string id in ids)
+            {
+                if (!catalogById.TryGetValue(id, out OutfitItem it)) continue;
+                switch (it.slot)
+                {
+                    case OutfitSlot.Top: top = it.primaryColor; break;
+                    case OutfitSlot.Outerwear: outer = it.primaryColor; break;
+                    case OutfitSlot.Bottom: bottom = it.primaryColor; break;
+                    case OutfitSlot.Shoes: shoe = it.primaryColor; break;
+                    case OutfitSlot.Hat: hat = it.primaryColor; break;
+                    case OutfitSlot.Tool: net = id == "tool_net"; break;
+                }
+            }
+            body = outer.a > 0.01f ? outer : top;
+        }
 
         public static Color GetSkinColor(int idx)
         {
@@ -694,6 +763,21 @@ namespace InsectGame.UI
         /// 옛 GetSlotSymbol은 "^" "T" 같은 텍스트라 어떤 아이템인지 알 수 없었음.
         /// 호출자는 색 배경 + 테두리만 그린 뒤 이 메서드로 형태 오버레이.
         /// </summary>
+        /// <summary>그 슬롯의 레시피가 아이템 모양 전체인가(모자·가방·도구·악세서리). 나머지는 몸 노드를 칠하고 일부만 덧붙인다.</summary>
+        internal static bool RecipeIsWholeItem(OutfitSlot slot)
+        {
+            switch (slot)
+            {
+                case OutfitSlot.Hat:
+                case OutfitSlot.Backpack:
+                case OutfitSlot.Tool:
+                case OutfitSlot.Accessory:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
         public static void DrawItemPreview(Rect r, OutfitSlot slot, string itemId, Color primary, Color secondary)
         {
             if (primary.a < 0.01f)
@@ -711,7 +795,10 @@ namespace InsectGame.UI
             // 형태의 단일 출처는 OutfitShapeLibrary다 — 레시피가 있으면 그 3D 파츠를 정사영해 그린다.
             // 그래야 카드 그림과 실제 착용 모습이 어긋나지 않는다(예전엔 카드에만 목도리 분기가 있어
             // "카드는 목도리, 캐릭터는 가슴 큐브"였다). 레시피가 없는 아이템은 아래 슬롯별 폴백.
-            if (OutfitShapeLibrary.TryGet(slot, id, out OutfitRecipe recipe))
+            //
+            // 단, 레시피가 **아이템 전체**인 슬롯에서만이다. 상의·하의·겉옷·신발 레시피는 몸에 **덧붙이는 부분**
+            // (반바지 천·운동화 밑창·챕스·술 장식)뿐이라 그것만 그리면 운동화 카드에 밑창 한 장이 뜬다(2026-09-30).
+            if (RecipeIsWholeItem(slot) && OutfitShapeLibrary.TryGet(slot, id, out OutfitRecipe recipe))
             {
                 DrawRecipePreview(r, recipe, primary, secondary);
                 GUI.color = prevCol;

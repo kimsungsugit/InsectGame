@@ -25,6 +25,9 @@ namespace InsectGame.Core
 
         private const int PreviewW = 512;
         private const int PreviewH = 768;   // 캐릭터는 세로로 길다
+
+        /// <summary>미리보기 텍스처의 세로/가로 비 — 그리는 쪽이 그림이 실제로 차지할 높이를 셀 때 쓴다.</summary>
+        public const float PreviewHeightPerWidth = PreviewH / (float)PreviewW;
         private const int ThumbSize = 160;  // 카드 프리뷰 영역이 가상좌표 100px
         private const int ThumbCacheMax = 24;   // 24 × 160² × 4B ≈ 2.5MB. 한 슬롯 최대 16장 + 탭 전환 여유
 
@@ -48,6 +51,10 @@ namespace InsectGame.Core
         private RenderTexture currentRT;
         private OutfitLoadout requestLoadout;
         private float requestAngle;
+        private bool requestCloseUp;
+        private bool shownCloseUp;
+        // 현재 장착 조합 — 상점·결투 컷인이 "지금 내 모습"을 그릴 때 쓰는 재사용 버퍼(OnGUI마다 새로 만들지 않는다).
+        private readonly OutfitLoadout equippedLoadout = new OutfitLoadout();
         private int shownLoadoutHash = int.MinValue;
         private float shownAngle = float.NaN;
         /// <summary>마네킹이 <b>지금 입고 있는</b> 조합. RT에 찍힌 것(<see cref="shownLoadoutHash"/>)과는 별개다.</summary>
@@ -109,10 +116,31 @@ namespace InsectGame.Core
         /// </summary>
         public Texture GetPreview(OutfitLoadout loadout, float yAngle)
         {
+            return GetPreview(loadout, yAngle, false);
+        }
+
+        /// <param name="closeUp">상반신(머리 + 몸통)만 크게 — 모자·얼굴·상의 무늬를 볼 때. 전신과 바뀌면 다시 찍는다.</param>
+        public Texture GetPreview(OutfitLoadout loadout, float yAngle, bool closeUp)
+        {
             requestLoadout = loadout;
             requestAngle = yAngle;
+            requestCloseUp = closeUp;
             return currentRT;
         }
+
+        /// <summary>
+        /// **지금 장착한 모습** 그대로의 캐릭터. 상점의 캐릭터 칸·결투 컷인의 "나"가 쓴다 — 예전엔 둘 다 2D 도트였고
+        /// 2D는 모자 11종·겉옷 형태·도구 대부분을 그리지 못해 필드 캐릭터와 다른 사람이었다.
+        /// 큰 패널 RT 하나를 공유하므로 **한 번에 한 화면만** 쓴다(모달이 겹치지 않는 자리에서만 부를 것).
+        /// </summary>
+        public Texture GetEquippedPreview(float yAngle)
+        {
+            equippedLoadout.CopyFrom(CharacterOutfitManager.Instance);
+            return GetPreview(equippedLoadout, yAngle, false);
+        }
+
+        /// <summary>상반신 확대의 초점 노드 — 머리(모자·머리카락 포함)와 몸통(셔츠 판·옷깃·가방 포함).</summary>
+        internal static readonly string[] CloseUpFocus = { "HeadPivot", "Body" };
 
         /// <summary>
         /// 카드 썸네일. 캐시에 있으면 즉시, 없으면 렌더 큐에 넣고 null(호출부는 2D 폴백을 그린다).
@@ -164,8 +192,31 @@ namespace InsectGame.Core
         /// </summary>
         public void SetAppearanceOverride(AppearanceSpec? spec)
         {
+            // 생성 화면은 이걸 OnGUI 패스마다 부른다. 값이 같으면 아무것도 하지 않는다 —
+            // 매번 dirty를 세우면 렌더 판정이 늘 참이 돼 멈춰 있어도 매 프레임 다시 찍는다.
+            if (!OverrideChanged(appearanceOverride, spec)) return;
             appearanceOverride = spec;
-            appearanceDirty = true;   // EnsureMannequin이 다시 판정하게
+            appearanceDirty = true;   // EnsureMannequin이 다시 판정하고, Update가 다시 찍게
+        }
+
+        /// <summary>두 오버라이드가 다른 마네킹을 짓게 하는가. null(=PlayerPrefs)과 값은 늘 다르다.</summary>
+        internal static bool OverrideChanged(AppearanceSpec? current, AppearanceSpec? next)
+        {
+            if (current.HasValue != next.HasValue) return true;
+            return current.HasValue && current.Value.Hash() != next.Value.Hash();
+        }
+
+        /// <summary>
+        /// 큰 패널을 다시 찍어야 하는가.
+        ///
+        /// <paramref name="appearanceDirty"/>가 오래 빠져 있었다 — 생성 화면에서 성별·머리·피부·표정을
+        /// 바꾸면 오버라이드는 갱신되는데, 이 판정이 로드아웃과 각도만 봐서 <b>드래그하기 전까지 그림이
+        /// 그대로</b>였다(세부 조정 5개 항목은 로드아웃을 안 바꾼다).
+        /// </summary>
+        internal static bool NeedsPanelRender(int loadoutHash, int shownHash, float angle, float shownAngle,
+            bool appearanceDirty)
+        {
+            return appearanceDirty || loadoutHash != shownHash || !Mathf.Approximately(shownAngle, angle);
         }
 
         // ── 렌더 루프 ──
@@ -176,7 +227,8 @@ namespace InsectGame.Core
             if (requestLoadout != null)
             {
                 int h = requestLoadout.Hash();
-                if (h != shownLoadoutHash || !Mathf.Approximately(shownAngle, requestAngle))
+                if (NeedsPanelRender(h, shownLoadoutHash, requestAngle, shownAngle, appearanceDirty)
+                    || requestCloseUp != shownCloseUp)
                 {
                     EnsureRig();
                     EnsureMannequin();
@@ -187,8 +239,12 @@ namespace InsectGame.Core
                         // 재배치라 그때마다 마네킹 계층을 여러 번 훑는다(OutfitShapeLibrary.FindDeep).
                         // 마네킹이 이미 그 옷을 입고 있으면 카메라만 다시 찍으면 된다.
                         if (appliedLoadoutHash != h) ApplyLoadout(requestLoadout);
+                        // 큰 패널도 바뀔 때만 찍어 그 한 장이 남는다 — 깜빡이는 도중이면 감은 눈이 굳는다.
+                        // 썸네일과 같은 처방(찍기 직전 눈을 뜬 상태로).
+                        ResetFace();
                         if (currentRT == null) currentRT = CreateRT(PreviewW, PreviewH);
-                        RenderMannequin(currentRT, requestAngle, null);
+                        RenderMannequin(currentRT, requestAngle, requestCloseUp ? CloseUpFocus : null);
+                        shownCloseUp = requestCloseUp;
                         shownLoadoutHash = h;
                         shownAngle = requestAngle;
                     }
@@ -215,14 +271,12 @@ namespace InsectGame.Core
             ThumbId key = new ThumbId(slot, itemId);
             if (thumbs.ContainsKey(key)) { Touch(key); return; }
 
-            soloLoadout.Clear();
-            soloLoadout.Set(slot, itemId);
+            BuildThumbLoadout(soloLoadout, slot, itemId);
             ApplyLoadout(soloLoadout);
 
             // 썸네일은 한 장씩 구워져 캐시에 남는다 — 하필 눈을 감은 프레임에 찍히면 그 카드는
             // 계속 감은 눈으로 보인다. 굽기 직전에 눈을 뜬 상태로 되돌린다.
-            CharacterFaceAnimator face = mannequin.GetComponent<CharacterFaceAnimator>();
-            if (face != null) face.ResetToNeutral();
+            ResetFace();
 
             RenderTexture rt = CreateRT(ThumbSize, ThumbSize);
             RenderMannequin(rt, ThumbAngleFor(slot), FocusNodesFor(slot));
@@ -235,6 +289,28 @@ namespace InsectGame.Core
             // 마네킹이 방금 중립 조합을 입었기 때문이다.
             shownLoadoutHash = int.MinValue;
         }
+
+        private void ResetFace()
+        {
+            CharacterFaceAnimator face = mannequin != null ? mannequin.GetComponent<CharacterFaceAnimator>() : null;
+            if (face != null) face.ResetToNeutral();
+        }
+
+        /// <summary>
+        /// 카드 썸네일이 입힐 중립 조합 — 그 아이템 하나만.
+        ///
+        /// <b>상의만 예외로 겉옷을 벗긴다.</b> 겉옷 슬롯이 비면(null) 몸통·팔이 기본 자켓 색으로 칠해지고
+        /// 상의는 가슴의 좁은 패널로만 보여서, 상의 카드 14장이 전부 "파란 자켓"으로 구워졌다.
+        /// <c>outer_none</c>이면 몸통이 상의 색을 받는다(<c>CharacterOutfitManager.ApplyToCharacter</c>).
+        /// </summary>
+        internal static void BuildThumbLoadout(OutfitLoadout target, OutfitSlot slot, string itemId)
+        {
+            target.Clear();
+            target.Set(slot, itemId);
+            if (slot == OutfitSlot.Top) target.Set(OutfitSlot.Outerwear, OuterNoneId);
+        }
+
+        internal const string OuterNoneId = "outer_none";
 
         /// <summary>
         /// LRU 갱신 — key를 가장 최근으로 옮긴다. 키 타입이 문자열에서 구조체로 바뀌면서 제네릭이 됐다
@@ -337,7 +413,14 @@ namespace InsectGame.Core
             int h = spec.Hash();
             if (mannequin != null && mannequinLookHash == h) return;
 
-            if (mannequin != null) Destroy(mannequin);
+            if (mannequin != null)
+            {
+                // **먼저 끈다.** Destroy는 프레임 끝이라 그대로 두면 이 프레임에 옛 마네킹과 새 마네킹이 같은 자리에서
+                // 함께 찍히고, 그 한 장이 다음 변경까지 화면에 남는다 — 생성 화면에서 머리를 바꾸면 옛 머리가 겹쳐 보였다
+                // (2026-09-30 검수 빌드 캡처에서 발견. PlayerVisualBuilder.RebuildFromPrefs와 같은 처방).
+                mannequin.SetActive(false);
+                Destroy(mannequin);
+            }
             ReleaseThumbs();   // 외형이 바뀌면 구운 썸네일이 전부 낡는다
 
             GameObject go = new GameObject("OutfitMannequin");

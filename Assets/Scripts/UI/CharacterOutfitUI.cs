@@ -77,10 +77,18 @@ namespace InsectGame.UI
         private readonly OutfitLoadout previewLoadout = new OutfitLoadout();
         private OutfitItem tryOnItem;        // 호버 중인 카드. 실장착은 건드리지 않는다
         private bool hoverFoundThisPass;
+        // 슬롯별로 **클릭(탭)해서 고른** 카드 — 입어보기가 호버에만 의존하면 터치 기기에서 아예 안 됐다.
+        // 슬롯마다 따로 담아 두어 여러 벌을 한꺼번에 맞춰 볼 수 있다. 창을 열 때 비운다.
+        private readonly Dictionary<OutfitSlot, OutfitItem> trySelections = new Dictionary<OutfitSlot, OutfitItem>();
+        private bool previewCloseUp;
 
-        // 호버 툴팁 (ScrollView 밖에서 렌더링)
-        private OutfitItem hoveredItemForTooltip;
-        private Rect hoveredCardScreenRect;
+        internal enum ItemFilter { All, Owned, NotOwned }
+        private ItemFilter filter = ItemFilter.All;
+        private static readonly string[] FilterLabels = { "전체", "보유", "미보유" };
+        private readonly List<OutfitItem> visibleItems = new List<OutfitItem>();
+        private OutfitSlot visibleSlot = (OutfitSlot)(-1);
+        private ItemFilter visibleFilter;
+        private int visibleVersion = -1;
 
         public bool IsOpen => isOpen;
 
@@ -106,6 +114,10 @@ namespace InsectGame.UI
         private GUIStyle setActiveStyle;
         private GUIStyle infoStyleCache;
         private GUIStyle infoNameStyleCache;
+        private GUIStyle detailNameStyle;
+        private GUIStyle detailDescStyle;
+        private GUIStyle detailBonusStyle;
+        private GUIStyle detailSetStyle;
         private bool stylesInitialized;
 
         // 매 OnGUI 프레임 FindFirstObjectByType 회귀 차단 — 첫 조회 1회만.
@@ -116,7 +128,15 @@ namespace InsectGame.UI
         public void Toggle()
         {
             isOpen = !isOpen;
-            if (isOpen) scrollPos = Vector2.zero;
+            if (isOpen)
+            {
+                scrollPos = Vector2.zero;
+                // 지난번에 돌려 둔 각도·입어보기가 남아 있으면 "내 옷이 이상하다"로 보인다 — 열 때마다 정면·실장착으로.
+                previewYaw = CharacterModelPreviewRenderer.FrontYaw;
+                previewCloseUp = false;
+                trySelections.Clear();
+                tryOnItem = null;
+            }
             // 외형(성별·머리·얼굴)은 캐릭터 생성 화면에서만 바뀌므로 이 모달 밖에서만 변한다.
             // 여기서 한 번 표시해 주면 렌더러가 매 프레임 PlayerPrefs를 두드리지 않아도 된다.
             if (modelPreview != null) modelPreview.InvalidatePreview();
@@ -160,24 +180,25 @@ namespace InsectGame.UI
         // ── 캐릭터 미리보기 ──
 
         /// <summary>
-        /// 3D 마네킹이 준비돼 있으면 그것을, 아직이면 2D 도트 폴백을 그린다.
-        /// 드래그로 돌릴 수 있고, 카드에 마우스를 올리면 사기 전에 입어볼 수 있다(실장착 불변).
+        /// 3D 마네킹이 준비돼 있으면 그것을, 아직이면 2D 도트 폴백을 그린다. 드래그로 돌리고,
+        /// 오른쪽 위 버튼으로 정면 복귀·상반신 확대·입어보기 되돌리기를 한다. 아래는 상세 패널.
         /// </summary>
         private void DrawCharacterPreview(Rect area, bool mobile)
         {
             UITheme theme = UITheme.Instance;
             UISurface.Card(area, theme.surfaceBase, theme.surfaceBorder);
 
-            float infoH = mobile ? 42f : 84f;
-            Rect stage = new Rect(area.x + 8f, area.y + 8f,
-                area.width - 16f, Mathf.Max(1f, area.height - 16f - infoH));
+            // 아래 상세(이름·설명·보너스 전체·세트). 예전엔 "현재 모자: 이름" 한 줄이라 설명과 보너스 상세는
+            // **이미 가진** 아이템의 호버 툴팁에서만 보였다 — 사기 전에 무엇이 좋은지 알 수 없었다.
+            float stageH = PreviewStageHeight(area.width, area.height, mobile);
+            float infoH = area.height - 16f - stageH;
+            Rect stage = new Rect(area.x + 8f, area.y + 8f, area.width - 16f, stageH);
 
             Texture preview = null;
             if (modelPreview != null)
             {
                 SyncPreviewLoadout();
-                HandlePreviewDrag(stage);
-                preview = modelPreview.GetPreview(previewLoadout, previewYaw);
+                preview = modelPreview.GetPreview(previewLoadout, previewYaw, previewCloseUp);
             }
 
             if (preview != null)
@@ -193,36 +214,349 @@ namespace InsectGame.UI
                     stage.center.x, stage.y + stage.height * 0.5f, charScale, swayX);
             }
 
-            // 지금 보고 있는 슬롯이 무엇을 입고 있는지. 이름 길이는 데이터가 정하고 상자는 고정이라
-            // LabelFit으로 줄여 맞춘다(GUI.Label을 쓰면 text_fit_lint가 막는다).
-            OutfitItem shown = ResolvePreviewItem(selectedSlot);
-            string curName = shown != null ? shown.displayName : "(없음)";
-            float infoY = area.yMax - infoH - 4f;
+            // 버튼을 **드래그 처리보다 먼저** — 버튼이 MouseDown을 쓰면(Use) 드래그가 시작되지 않는다.
+            // 그림(텍스처)은 이미 위에서 그렸으니 버튼이 그 위에 얹힌다.
+            if (modelPreview != null) DrawPreviewControls(stage, mobile);
+            if (modelPreview != null) HandlePreviewDrag(stage);
+
+            Rect detail = new Rect(area.x + 16f, area.yMax - infoH, area.width - 32f, infoH - 8f);
+            float used = DrawItemDetail(detail, mobile);
+
+            // 모바일엔 탭 아래 세트 목록 칸이 없다(탭이 상단 4열이다). 상세 아래가 남으면 거기에 둔다.
             if (mobile)
-            {
-                UIHelper.LabelFit(new Rect(area.x + 16f, infoY, area.width - 32f, 38f),
-                    $"{slotLabels[(int)selectedSlot]}: {curName}", infoNameStyleCache);
-            }
-            else
-            {
-                GUI.Label(new Rect(area.x + 16f, infoY, area.width - 32f, 32f),
-                    $"현재 {slotLabels[(int)selectedSlot]}:", infoStyleCache);
-                UIHelper.LabelFit(new Rect(area.x + 16f, infoY + 32f, area.width - 32f, 36f),
-                    curName, infoNameStyleCache);
-            }
+                DrawActiveSets(detail.x, used + 12f, detail.width, detail.yMax);
         }
 
-        /// <summary>실장착을 복사한 뒤 호버 중인 아이템만 덮어쓴다 — 이게 입어보기(try-on)다.</summary>
+        /// <summary>
+        /// 미리보기 칸에서 그림(stage)이 차지할 높이. 그림은 텍스처 비율(2:3)까지만 키운다 — 세로 화면처럼
+        /// 칸이 길면 그 이상은 위아래 여백일 뿐이라 남는 높이를 상세에 준다(설명·입은 세트 진행이 들어간다).
+        /// 상세는 최소 <c>150</c>(모바일)·<c>200</c>(데스크톱)을 보장한다.
+        /// </summary>
+        internal static float PreviewStageHeight(float areaW, float areaH, bool mobile)
+        {
+            float infoMinH = mobile ? 150f : 200f;
+            float stageMaxH = (areaW - 16f) * CharacterModelPreviewRenderer.PreviewHeightPerWidth;
+            return Mathf.Clamp(areaH - 16f - infoMinH, 1f, Mathf.Max(1f, stageMaxH));
+        }
+
+        /// <summary>정면 복귀 · 전신/상반신 · 입어보기 되돌리기.</summary>
+        private void DrawPreviewControls(Rect stage, bool mobile)
+        {
+            UITheme theme = UITheme.Instance;
+            float bw = mobile ? 132f : 120f, bh = mobile ? 54f : 42f, gap = 8f;   // "원래대로" 네 글자가 안 잘리는 폭
+            float bx = stage.xMax - bw - 6f;
+            float by = stage.y + 6f;
+
+            if (UISurface.Button(new Rect(bx, by, bw, bh), "정면", theme.surfaceRaised, tabNormalStyle))
+                previewYaw = CharacterModelPreviewRenderer.FrontYaw;
+            by += bh + gap;
+            if (UISurface.Button(new Rect(bx, by, bw, bh), previewCloseUp ? "전신" : "확대", theme.surfaceRaised, tabNormalStyle, previewCloseUp))
+                previewCloseUp = !previewCloseUp;
+            by += bh + gap;
+            if (HasTryOn() && UISurface.Button(new Rect(bx, by, bw, bh), "원래대로", theme.accentCoral, tabNormalStyle))
+                trySelections.Clear();
+        }
+
+        /// <summary>
+        /// 실장착을 복사한 뒤 슬롯별로 **고른 카드**(입어보기)를 덮고, 마지막으로 호버 중인 카드를 덮는다.
+        /// 슬롯마다 따로 고를 수 있어 "이 모자에 이 상의" 같은 조합을 사기 전에 맞춰 볼 수 있다.
+        /// 호버만 있던 예전 방식은 터치 기기에서 입어보기가 아예 안 됐다.
+        /// </summary>
         private void SyncPreviewLoadout()
         {
             previewLoadout.CopyFrom(outfitManager);
+            foreach (KeyValuePair<OutfitSlot, OutfitItem> pick in trySelections)
+                if (pick.Value != null) previewLoadout.Set(pick.Key, pick.Value.itemId);
             if (tryOnItem != null) previewLoadout.Set(tryOnItem.slot, tryOnItem.itemId);
         }
 
-        private OutfitItem ResolvePreviewItem(OutfitSlot slot)
+        /// <summary>입어보기가 실장착과 하나라도 다른가(되돌리기 버튼 표시용).</summary>
+        private bool HasTryOn()
         {
-            if (tryOnItem != null && tryOnItem.slot == slot) return tryOnItem;
-            return outfitManager.GetEquipped(slot);
+            foreach (KeyValuePair<OutfitSlot, OutfitItem> pick in trySelections)
+                if (pick.Value != null && !outfitManager.IsEquipped(pick.Value.itemId)) return true;
+            return false;
+        }
+
+        /// <summary>상세 패널이 보여 줄 아이템 — 호버 > 이 슬롯에서 고른 카드 > 이 슬롯의 실장착.</summary>
+        private OutfitItem DetailItem()
+        {
+            if (tryOnItem != null && tryOnItem.slot == selectedSlot) return tryOnItem;
+            if (trySelections.TryGetValue(selectedSlot, out OutfitItem picked) && picked != null) return picked;
+            return outfitManager.GetEquipped(selectedSlot);
+        }
+
+        /// <summary>
+        /// 입고 있는 세트의 진행(별·발동 보너스). <paramref name="maxY"/>를 넘는 항목은 그리지 않는다 —
+        /// 데스크톱 탭 열은 세트가 셋이면 아래 보너스 요약 줄에 겹쳤다.
+        /// </summary>
+        private void DrawActiveSets(float x, float setY, float w, float maxY)
+        {
+            if (bonusProvider == null) return;
+            ActiveSetInfo[] activeSets = bonusProvider.GetActiveSets();
+            foreach (ActiveSetInfo setInfo in activeSets)
+            {
+                bool active = setInfo.isPartialActive || setInfo.isFullActive;
+                GUIStyle sStyle = active ? setActiveStyle : setStyle;
+                // 발동하면 보너스 줄이 붙어 3줄, 아니면 2줄 — 한글 줄높이 ≈ fontSize × 1.35 (16px이면 68·46)
+                float setH = sStyle.fontSize * 1.35f * (active ? 3 : 2) + 3f;
+                if (setY + setH > maxY) break;
+
+                Color prevColor = sStyle.normal.textColor;
+                if (active) sStyle.normal.textColor = setInfo.set.setColor;
+
+                string setLabel = ActiveSetLabel(setInfo);
+                Rect setRect = new Rect(x, setY, w, setH);
+
+                // 세트 완성 글로우
+                if (setCompleteFlashTimer > 0f && active)
+                {
+                    float glowAlpha = Mathf.Clamp01(setCompleteFlashTimer / 1f) * 0.6f;
+                    UIHelper.DrawRarityGlow(setRect, setInfo.set.setColor, glowAlpha, Time.time);
+                }
+
+                GUI.Label(setRect, setLabel, sStyle);
+                sStyle.normal.textColor = prevColor;
+                setY += setH + 4;
+            }
+        }
+
+        private readonly Dictionary<(string, int), string> activeSetLabelCache = new Dictionary<(string, int), string>();
+
+        /// <summary>
+        /// "이름 (n/총)\n별\n발동 보너스" — 입은 벌 수와 발동 단계로만 바뀌므로 그 둘로 캐시한다
+        /// (예전엔 OnGUI 패스마다 세트당 문자열 3~4개를 이어 붙였다).
+        /// </summary>
+        private string ActiveSetLabel(ActiveSetInfo setInfo)
+        {
+            int stage = setInfo.isFullActive ? 2 : setInfo.isPartialActive ? 1 : 0;
+            (string, int) key = (setInfo.set.setId, setInfo.equippedCount * 4 + stage);
+            if (activeSetLabelCache.TryGetValue(key, out string label)) return label;
+
+            int total = setInfo.set.requiredItemIds.Length;
+            label = $"{setInfo.set.displayName} ({setInfo.equippedCount}/{total})\n{StarsFor(setInfo.equippedCount, total)}";
+            if (setInfo.isFullActive) label += "\n" + setInfo.set.fullBonus.GetPrimaryBonusText();
+            else if (setInfo.isPartialActive) label += "\n" + setInfo.set.partialBonus.GetPrimaryBonusText();
+            activeSetLabelCache[key] = label;
+            return label;
+        }
+
+        private string measuredDescId;
+        private float measuredDescW = -1f, measuredDescH;
+
+        /// <summary>상세 설명이 줄바꿈 후 차지할 높이 — 아이템·폭이 같으면 다시 재지 않는다.</summary>
+        private float DescriptionHeight(OutfitItem item, float width)
+        {
+            if (item.itemId != measuredDescId || !Mathf.Approximately(width, measuredDescW))
+            {
+                measuredDescId = item.itemId;
+                measuredDescW = width;
+                measuredDescH = UIHelper.MeasureWrappedHeight(detailDescStyle, item.description, width);
+            }
+            return measuredDescH;
+        }
+
+        /// <returns>그린 내용의 아래 끝 y — 남는 자리에 세트 진행을 이어 그린다.</returns>
+        private float DrawItemDetail(Rect r, bool mobile)
+        {
+            UITheme theme = UITheme.Instance;
+            OutfitItem item = DetailItem();
+            if (item == null)
+            {
+                GUI.Label(new Rect(r.x, r.y, r.width, 36f), "아이템을 골라 보세요", detailDescStyle);
+                return r.y + 36f;
+            }
+
+            bool owned = outfitManager.IsOwned(item.itemId);
+            bool equipped = outfitManager.IsEquipped(item.itemId);
+
+            // 1줄: 이름 + 상태 칩
+            float chipW = mobile ? 150f : 132f;
+            float nameH = 40f;
+            UIHelper.LabelFit(new Rect(r.x, r.y, r.width - chipW - 8f, nameH), item.displayName, detailNameStyle);
+            string status = StatusTextFor(item, owned, equipped);
+            if (!string.IsNullOrEmpty(status))
+            {
+                Color chipBg = equipped ? theme.accentAmber : owned ? theme.accentMint
+                    : item.gemPrice > 0 ? new Color(0.45f, 0.3f, 0.75f) : theme.surfaceRaised;
+                Color chipFg = equipped || owned ? theme.surfaceBase : theme.textPrimary;
+                UISurface.Chip(new Rect(r.xMax - chipW, r.y + 5f, chipW, 30f), status, chipBg, chipFg);
+            }
+            float y = r.y + nameH + 2f;
+
+            // 2줄: 설명 — 칸이 좁으면(가로 모바일) 세트/획득 줄을 우선하고 설명은 뺀다.
+            // 세로 화면처럼 칸이 길면 설명을 세 줄까지 준다(데스크톱은 두 줄 52 그대로).
+            const float bonusAndSetH = 34f + 32f;
+            float descMax = Mathf.Min(r.yMax - y - bonusAndSetH - 2f, mobile ? 110f : 52f);
+            if (descMax >= 50f)
+            {
+                // 데스크톱은 두 줄 칸 고정(예전 그대로). 모바일 긴 칸은 글 높이만큼만 — 한 줄 설명 밑이 비지 않게.
+                float descH = mobile ? Mathf.Clamp(DescriptionHeight(item, r.width), 28f, descMax) : descMax;
+                UIHelper.LabelFit(new Rect(r.x, y, r.width, descH), item.description, detailDescStyle);
+                y += descH + 2f;
+            }
+
+            // 3줄: 보너스 전체
+            UIHelper.LabelFit(new Rect(r.x, y, r.width, 32f), FullBonusTextFor(item), detailBonusStyle);
+            y += 34f;
+
+            // 4줄: 세트 진행 또는 획득 방법
+            OutfitSetDefinition set = SetOf(item.itemId);
+            if (set != null)
+            {
+                Color prev = detailSetStyle.normal.textColor;
+                detailSetStyle.normal.textColor = Color.Lerp(set.setColor, Color.white, 0.35f);
+                UIHelper.LabelFit(new Rect(r.x, y, r.width, 32f), SetLineFor(set), detailSetStyle);
+                detailSetStyle.normal.textColor = prev;
+                y += 34f;
+            }
+            else if (!owned && item.price <= 0 && item.gemPrice <= 0 && !string.IsNullOrEmpty(item.unlockCondition))
+            {
+                UIHelper.LabelFit(new Rect(r.x, y, r.width, 32f), DescribeUnlockCondition(item.unlockCondition), detailSetStyle);
+                y += 34f;
+            }
+            return y;
+        }
+
+        private readonly Dictionary<string, string> statusTextCache = new Dictionary<string, string>();
+        private readonly Dictionary<string, string> fullBonusCache = new Dictionary<string, string>();
+        private readonly Dictionary<string, string> setLineCache = new Dictionary<string, string>();
+        private int setLineVersion = -1;
+
+        private string StatusTextFor(OutfitItem item, bool owned, bool equipped)
+        {
+            if (equipped) return "장착중";
+            if (owned) return "보유";
+            if (!string.IsNullOrEmpty(item.unlockCondition) && item.price <= 0 && item.gemPrice <= 0) return "잠김";
+            if (!statusTextCache.TryGetValue(item.itemId, out string text))
+            {
+                text = PriceLabel(item);
+                statusTextCache[item.itemId] = text;
+            }
+            return text;
+        }
+
+        private readonly Dictionary<string, string> priceLabelCache = new Dictionary<string, string>();
+
+        /// <summary>
+        /// 가격 표기 — "보석 800" / "코인 300". 🪙·💎 이모지는 스탠드얼론 기본 폰트에 없어 **□로 깨졌다**
+        /// (2026-09-30 검수 빌드 캡처). 카드마다·패스마다 보간 문자열을 만들지 않게 캐시한다.
+        /// </summary>
+        private string PriceLabel(OutfitItem item)
+        {
+            if (!priceLabelCache.TryGetValue(item.itemId, out string text))
+            {
+                text = item.gemPrice > 0 ? $"보석 {item.gemPrice}" : item.price > 0 ? $"코인 {item.price}" : "";
+                priceLabelCache[item.itemId] = text;
+            }
+            return text;
+        }
+
+        private string footerText;
+        private int footerCoins = -1, footerGems = -1;
+
+        private string FooterText(int coins, int gems)
+        {
+            if (coins != footerCoins || gems != footerGems || footerText == null)
+            {
+                footerCoins = coins;
+                footerGems = gems;
+                footerText = $"보유 코인 {coins}  ·  보석 {gems}";
+            }
+            return footerText;
+        }
+
+        private string FullBonusTextFor(OutfitItem item)
+        {
+            if (!fullBonusCache.TryGetValue(item.itemId, out string text))
+            {
+                text = FullBonusText(item.statBonus);
+                fullBonusCache[item.itemId] = text;
+            }
+            return text;
+        }
+
+        /// <summary>"포획 +2% · 경험치 +1%" — 카드의 대표 1개와 달리 전부. 없으면 "보너스 없음".</summary>
+        internal static string FullBonusText(OutfitStatBonus b)
+        {
+            System.Text.StringBuilder sb = new System.Text.StringBuilder();
+            void Add(string label, float v)
+            {
+                if (v <= 0f) return;
+                if (sb.Length > 0) sb.Append(" · ");
+                sb.Append(label).Append(" +").Append(Mathf.RoundToInt(v * 100f)).Append('%');
+            }
+            Add("포획", b.captureChanceBonus);
+            Add("ATK", b.atkBonus);
+            Add("DEF", b.defBonus);
+            Add("이속", b.moveSpeedBonus);
+            Add("경험치", b.expMultiplier);
+            Add("캔디", b.candyMultiplier);
+            Add("레어", b.rareSpawnBonus);
+            return sb.Length > 0 ? sb.ToString() : "보너스 없음";
+        }
+
+        /// <summary>"◆ 서부의 총잡이 세트 2/6 보유 · 3벌부터 포획 +3%". 소유가 바뀌면 다시 만든다.</summary>
+        private string SetLineFor(OutfitSetDefinition set)
+        {
+            if (setLineVersion != outfitManager.OwnershipVersion)
+            {
+                setLineCache.Clear();
+                setLineVersion = outfitManager.OwnershipVersion;
+            }
+            if (setLineCache.TryGetValue(set.setId, out string text)) return text;
+
+            int owned = 0;
+            for (int i = 0; i < set.requiredItemIds.Length; i++)
+                if (outfitManager.IsOwned(set.requiredItemIds[i])) owned++;
+            text = $"◆ {set.displayName} 세트 {owned}/{set.requiredItemIds.Length} 보유 · {set.partialThreshold}벌부터 {set.partialBonus.GetPrimaryBonusText()}";
+            setLineCache[set.setId] = text;
+            return text;
+        }
+
+        private static Dictionary<string, OutfitSetDefinition> setByItem;
+
+        /// <summary>
+        /// 아이템이 속한 세트(없으면 null). 예전 카드의 세트 점은 **이미 한 벌 이상 입은** 세트에만 찍혀서,
+        /// 시작하지 않은 세트는 어떤 옷이 한 벌인지 알 수 없었다.
+        /// </summary>
+        internal static OutfitSetDefinition SetOf(string itemId)
+        {
+            if (string.IsNullOrEmpty(itemId)) return null;
+            if (setByItem == null)
+            {
+                setByItem = new Dictionary<string, OutfitSetDefinition>();
+                foreach (OutfitSetDefinition s in OutfitSetCatalog.GetAllSets())
+                    foreach (string id in s.requiredItemIds)
+                        if (!setByItem.ContainsKey(id)) setByItem[id] = s;
+            }
+            return setByItem.TryGetValue(itemId, out OutfitSetDefinition set) ? set : null;
+        }
+
+        /// <summary>필터를 거친 이 슬롯의 목록. 슬롯·필터·소유 버전이 같으면 재사용한다(OnGUI마다 거르지 않는다).</summary>
+        private List<OutfitItem> VisibleItems()
+        {
+            int ver = outfitManager.OwnershipVersion;
+            if (visibleSlot == selectedSlot && visibleFilter == filter && visibleVersion == ver) return visibleItems;
+            visibleSlot = selectedSlot;
+            visibleFilter = filter;
+            visibleVersion = ver;
+            visibleItems.Clear();
+            foreach (OutfitItem item in outfitManager.GetItemsForSlot(selectedSlot))
+            {
+                if (PassesFilter(filter, outfitManager.IsOwned(item.itemId))) visibleItems.Add(item);
+            }
+            return visibleItems;
+        }
+
+        internal static bool PassesFilter(ItemFilter f, bool owned)
+        {
+            switch (f)
+            {
+                case ItemFilter.Owned: return owned;
+                case ItemFilter.NotOwned: return !owned;
+                default: return true;
+            }
         }
 
         private void HandlePreviewDrag(Rect stage)
@@ -337,7 +671,8 @@ namespace InsectGame.UI
             bonusStyle.alignment = TextAnchor.MiddleCenter;
 
             setStyle = new GUIStyle(GUI.skin.label);
-            setStyle.fontSize = 13;
+            // 13은 검수 빌드 캡처에서 읽히지 않았다. 모바일은 미리보기 칸(폭 ~430)에 그려서 더 크게 둔다.
+            setStyle.fontSize = UIScale.IsMobileLayout ? 20 : 16;
             setStyle.normal.textColor = new Color(0.6f, 0.6f, 0.7f);
             setStyle.alignment = TextAnchor.MiddleLeft;
             setStyle.wordWrap = true;
@@ -353,6 +688,17 @@ namespace InsectGame.UI
             infoNameStyleCache = new GUIStyle(infoStyleCache)
             { fontSize = 24, fontStyle = FontStyle.Bold };
             infoNameStyleCache.normal.textColor = Color.white;
+
+            // 상세 패널 — 한글 줄높이 ≈ fontSize × 1.35에 맞춘 상자(40·52·32)다.
+            UITheme theme = UITheme.Instance;
+            detailNameStyle = new GUIStyle(GUI.skin.label) { fontSize = 26, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
+            detailNameStyle.normal.textColor = theme.textPrimary;
+            detailDescStyle = new GUIStyle(GUI.skin.label) { fontSize = 18, alignment = TextAnchor.UpperLeft, wordWrap = true };
+            detailDescStyle.normal.textColor = theme.textSecondary;
+            detailBonusStyle = new GUIStyle(GUI.skin.label) { fontSize = 19, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
+            detailBonusStyle.normal.textColor = theme.accentMint;
+            detailSetStyle = new GUIStyle(GUI.skin.label) { fontSize = 18, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
+            detailSetStyle.normal.textColor = theme.accentAmber;
         }
 
         private void OnGUI()
@@ -382,9 +728,12 @@ namespace InsectGame.UI
                 previewRotate += Time.deltaTime * 30f;
 
             // 데스크톱은 미리보기를 가운데 크게 두고 아이템을 양옆에 나눠 거는 3분할이라 폭이 더 든다
-            // (탭 + 좌 카드열 + 미리보기 + 우 카드열). 모바일 세로는 기존 1열 스택 그대로다.
+            // (탭 + 좌 카드열 + 미리보기 + 우 카드열).
+            // 모바일은 높이도 길게 청한다(하네스가 안전 영역으로 자른다) — 820 고정이던 때 세로 화면(1920)에서
+            // 창이 가운데 43%만 쓰고 위아래가 비었다(2026-09-30 검수 캡처). 캐시샵과 같은 1560이다.
             Rect panelRect = UISafeLayout.CenteredPanel(
-                UIScale.IsMobileLayout ? 1200f : 1560f, 820f);
+                UIScale.IsMobileLayout ? 1200f : 1560f,
+                UIScale.IsMobileLayout ? 1560f : 820f);
             float panelW = panelRect.width;
             float panelH = panelRect.height;
             bool mobile = UIScale.IsMobileLayout;
@@ -401,6 +750,27 @@ namespace InsectGame.UI
                 return s;
             });
             GUI.Label(new Rect(x + 24, y + 14, 540, 50), "캐릭터 꾸미기", bigTitle);
+
+            // 필터(전체·보유·미보유) — 제목 줄 오른쪽. 그리드 위에 줄을 새로 내면 카드가 한 줄 줄어든다.
+            {
+                UITheme theme = UITheme.Instance;
+                float chipW = mobile ? 150f : 120f, chipH = mobile ? 52f : 42f;
+                // 닫기 버튼 왼쪽에서 끝나게 — 세로 화면은 패널이 1032로 줄어 고정 x+560이면 "미보유"가 X에 깔렸다(검수 캡처).
+                float chipsW = FilterLabels.Length * chipW + (FilterLabels.Length - 1) * 8f;
+                float closeW = mobile ? 58f : 44f;
+                float chipX = Mathf.Min(x + 600f, x + panelW - closeW - 24f - chipsW);
+                for (int f = 0; f < FilterLabels.Length; f++)
+                {
+                    Rect fr = new Rect(chipX + f * (chipW + 8f), y + (mobile ? 12f : 16f), chipW, chipH);
+                    bool on = (int)filter == f;
+                    if (UISurface.Button(fr, FilterLabels[f], on ? theme.accentMint : theme.surfaceRaised, tabNormalStyle, on))
+                    {
+                        filter = (ItemFilter)f;
+                        scrollPos = Vector2.zero;
+                        directScroll.Reset();
+                    }
+                }
+            }
 
             // 닫기 버튼
             float closeSize = mobile ? 58f : 44f;
@@ -441,9 +811,10 @@ namespace InsectGame.UI
             float charAreaX = gridX + sideW;
             float charAreaY = mobile ? tabY + tabBlockH + 8f : y + 70f;
             float charAreaW = previewW;
-            // 세로는 화면이 길어 미리보기가 끝없이 늘어난다 — 상한을 둬 아래 카드가 계속 보이게 한다.
+            // 모바일도 카드 열과 같은 높이다(옛 720 상한은 카드가 미리보기 **아래**에 오던 때의 것 — 지금은 옆이다).
+            // 그림은 텍스처 비율까지만 커지고 남는 높이는 상세·세트 진행이 받는다(DrawCharacterPreview).
             float charAreaH = mobile
-                ? Mathf.Min(720f, Mathf.Max(1f, panelH - (charAreaY - y) - 84f))
+                ? Mathf.Max(1f, panelH - (charAreaY - y) - 84f)
                 : panelH - 90f;
 
             Rect charArea = new Rect(charAreaX, charAreaY, charAreaW, charAreaH);
@@ -464,48 +835,13 @@ namespace InsectGame.UI
                     scrollPos = Vector2.zero;
                     directScroll.Reset();
                 }
+                if (outfitManager.HasNewInSlot(slots[i]))
+                    UISurface.Chip(new Rect(tabRect.xMax - 22f, tabRect.y + 4f, 18f, 18f), "", UITheme.Instance.accentMint, UITheme.Instance.accentMint);
             }
 
-            // ── 세트 정보 패널 ──
-            if (bonusProvider != null && !mobile)
-            {
-                float setY = tabY + slots.Length * (tabH + tabGap) + 8;
-                ActiveSetInfo[] activeSets = bonusProvider.GetActiveSets();
-                foreach (ActiveSetInfo setInfo in activeSets)
-                {
-                    bool active = setInfo.isPartialActive || setInfo.isFullActive;
-                    GUIStyle sStyle = active ? setActiveStyle : setStyle;
-                    Color prevColor = sStyle.normal.textColor;
-                    if (active) sStyle.normal.textColor = setInfo.set.setColor;
-
-                    int total = setInfo.set.requiredItemIds.Length;
-                    string stars = StarsFor(setInfo.equippedCount, total);
-
-                    string setLabel = $"{setInfo.set.displayName} ({setInfo.equippedCount}/{total})\n{stars}";
-                    if (setInfo.isFullActive)
-                    {
-                        setLabel += "\n" + setInfo.set.fullBonus.GetPrimaryBonusText();
-                    }
-                    else if (setInfo.isPartialActive)
-                    {
-                        setLabel += "\n" + setInfo.set.partialBonus.GetPrimaryBonusText();
-                    }
-
-                    float setH = active ? 52 : 36;
-                    Rect setRect = new Rect(tabX, setY, tabW, setH);
-
-                    // 세트 완성 글로우
-                    if (setCompleteFlashTimer > 0f && active)
-                    {
-                        float glowAlpha = Mathf.Clamp01(setCompleteFlashTimer / 1f) * 0.6f;
-                        UIHelper.DrawRarityGlow(setRect, setInfo.set.setColor, glowAlpha, Time.time);
-                    }
-
-                    GUI.Label(setRect, setLabel, sStyle);
-                    sStyle.normal.textColor = prevColor;
-                    setY += setH + 4;
-                }
-            }
+            // ── 세트 정보 패널 (데스크톱: 탭 아래 / 모바일: 미리보기 칸의 상세 아래 — DrawCharacterPreview) ──
+            if (!mobile)
+                DrawActiveSets(tabX, tabY + slots.Length * (tabH + tabGap) + 8, tabW, y + panelH - 84f);
 
             // ── 아이템 그리드 ──
             // 스크롤뷰가 미리보기까지 덮는 폭을 갖되 **가운데 구간엔 카드를 두지 않는다** —
@@ -515,7 +851,7 @@ namespace InsectGame.UI
             float gridY = mobile ? charAreaY : y + 70f;
             float gridH = Mathf.Max(1f, mobile ? panelH - (gridY - y) - 84f : panelH - 150f);
 
-            OutfitItem[] items = outfitManager.GetItemsForSlot(selectedSlot);
+            List<OutfitItem> items = VisibleItems();
 
             // 세로는 한쪽 폭이 ~296px뿐이라 카드를 데스크톱보다 조금만 크게 잡는다(한 열).
             float cardW = mobile ? 230f : 200f;
@@ -523,7 +859,7 @@ namespace InsectGame.UI
             float cardGap = 14f;
             // 한쪽 열 수를 세고 카드를 좌·우로 번갈아 채운다(세로·가로 공통).
             int cols = Mathf.Max(1, Mathf.FloorToInt((sideW - 10) / (cardW + cardGap)));
-            int perSide = Mathf.CeilToInt(items.Length / 2f);
+            int perSide = Mathf.CeilToInt(items.Count / 2f);
             int rows = Mathf.CeilToInt((float)perSide / cols);
             float contentH = rows * (cardH + cardGap) + 10;
 
@@ -542,7 +878,7 @@ namespace InsectGame.UI
                 GUIStyle.none,
                 GUIStyle.none);
 
-            for (int i = 0; i < items.Length; i++)
+            for (int i = 0; i < items.Count; i++)
             {
                 OutfitItem item = items[i];
                 // 짝수는 왼쪽, 홀수는 오른쪽 — 미리보기를 사이에 두고 감싼다.
@@ -572,8 +908,7 @@ namespace InsectGame.UI
                 {
                     GUI.DrawTexture(cardRect, UIHelper.GetCachedTex(new Color(1f, 1f, 1f, 0.08f)));
                     UIHelper.DrawBorder(cardRect, new Color(0.7f, 0.8f, 1f, 0.5f), 1);
-                    hoveredItemForTooltip = item;
-                    hoveredCardScreenRect = new Rect(gridX + cx - scrollPos.x, gridY + cy - scrollPos.y, cardW, cardH);
+                    outfitManager.MarkSeen(item.itemId);
                     // 입어보기 — 미보유 아이템도 포함한다. "사기 전에 어떻게 보이나"가 핵심이다.
                     // 미리보기는 이 값을 다음 패스에서 읽으므로 한 프레임 늦는데, 체감되지 않는다.
                     tryOnItem = item;
@@ -584,6 +919,15 @@ namespace InsectGame.UI
                 if (equipped)
                 {
                     UIHelper.DrawBorder(cardRect, new Color(1f, 0.84f, 0f, 1f), 2);
+                }
+                // 입어보기로 고른 카드 — 장착 테두리(금색)와 구별되는 민트
+                if (!equipped && trySelections.TryGetValue(item.slot, out OutfitItem picked) && picked == item)
+                {
+                    UIHelper.DrawBorder(cardRect, UITheme.Instance.accentMint, 3);
+                }
+                if (outfitManager.IsNew(item.itemId))
+                {
+                    UISurface.Chip(new Rect(cx + cardW - 64f, cy + 6f, 58f, 26f), "NEW", UITheme.Instance.accentMint, UITheme.Instance.surfaceBase);
                 }
 
                 // 장착 플래시 오버레이
@@ -647,22 +991,12 @@ namespace InsectGame.UI
                     GUI.Label(bonusRect, bonusText, bigBonus);
                 }
 
-                // 세트 도트 표시
-                if (bonusProvider != null)
+                // 세트 표시 — **모든** 세트 옷에. 예전엔 이미 한 벌 이상 입은 세트에만 찍혀 시작하지 않은 세트의
+                // 구성품을 알 수 없었고, 카드마다 세트 목록 전체를 두 겹으로 훑었다(OnGUI 패스마다).
+                OutfitSetDefinition cardSet = SetOf(item.itemId);
+                if (cardSet != null)
                 {
-                    ActiveSetInfo[] activeSets = bonusProvider.GetActiveSets();
-                    foreach (ActiveSetInfo setInfo in activeSets)
-                    {
-                        foreach (string reqId in setInfo.set.requiredItemIds)
-                        {
-                            if (reqId == item.itemId)
-                            {
-                                Rect dotRect = new Rect(cx + 4, cy + 4, 10, 10);
-                                GUI.DrawTexture(dotRect, UIHelper.GetCachedTex(setInfo.set.setColor));
-                                break;
-                            }
-                        }
-                    }
+                    UISurface.Flat(new Rect(cx + 6f, cy + 6f, 8f, 26f), cardSet.setColor);
                 }
 
                 // 버튼 영역
@@ -681,12 +1015,7 @@ namespace InsectGame.UI
                     {
                         if (GUI.Button(btnRect, "장착", buttonStyle))
                         {
-                            outfitManager.Equip(item.itemId);
-                            equipFlashTimer = 0.4f;
-                            lastEquippedId = item.itemId;
-                            if (InsectGame.Core.AudioManager.Instance != null)
-                                InsectGame.Core.AudioManager.Instance.PlaySFX(InsectGame.Core.SfxType.Equip);
-                            CheckSetCompletion();
+                            EquipWithFeedback(item);
                         }
                     }
                 }
@@ -699,11 +1028,11 @@ namespace InsectGame.UI
                         bool canAfford = currentGems >= item.gemPrice;
                         GUI.backgroundColor = canAfford ? new Color(0.3f, 0.2f, 0.6f) : new Color(0.3f, 0.3f, 0.3f);
                         GUI.enabled = canAfford;
-                        if (GUI.Button(btnRect, $"💎{item.gemPrice}", buttonStyle))
+                        if (GUI.Button(btnRect, PriceLabel(item), buttonStyle))
                         {
                             if (outfitManager.TryPurchaseWithGems(item.itemId))
                             {
-                                outfitManager.Equip(item.itemId);
+                                EquipWithFeedback(item);
                             }
                         }
                         GUI.enabled = true;
@@ -723,14 +1052,19 @@ namespace InsectGame.UI
                     }
                     else if (item.price > 0)
                     {
-                        // 캔디 구매
-                        if (GUI.Button(btnRect, $"🍬{item.price}", buttonStyle))
+                        // 코인 구매. 라벨이 오래 🍬(캔디)였는데 TryPurchase가 실제로 빼는 건 **코인**이다
+                        // (CharacterOutfitManager.TryPurchase → wallet.SpendCoins). 잔액이 모자라도 눌려서
+                        // 아무 반응 없이 끝났다 — 보석 버튼처럼 비활성화한다.
+                        bool canAfford = CanAffordCoins(item.price);
+                        GUI.enabled = canAfford;
+                        if (GUI.Button(btnRect, PriceLabel(item), buttonStyle))
                         {
                             if (outfitManager.TryPurchase(item.itemId))
                             {
-                                outfitManager.Equip(item.itemId);
+                                EquipWithFeedback(item);
                             }
                         }
+                        GUI.enabled = true;
                     }
                     else if (!string.IsNullOrEmpty(item.unlockCondition))
                     {
@@ -754,49 +1088,20 @@ namespace InsectGame.UI
                         UIHelper.LabelFit(hintRect, DescribeUnlockCondition(item.unlockCondition), hintStyle);
                     }
                 }
+
+                // 카드 본문을 누르면 그 슬롯의 입어보기로 고른다(터치 기기의 유일한 입어보기 경로).
+                // 장착/구매 버튼은 **먼저** 그렸으므로 그 버튼 위를 누르면 그쪽이 이벤트를 가져간다.
+                if (GUI.Button(cardRect, GUIContent.none, GUIStyle.none))
+                {
+                    trySelections[item.slot] = item;
+                    outfitManager.MarkSeen(item.itemId);
+                }
             }
 
             GUI.EndScrollView();
 
             // 카드에서 마우스가 벗어나면 입어보기를 풀고 실장착으로 돌아간다.
             if (Event.current.type == EventType.Repaint && !hoverFoundThisPass) tryOnItem = null;
-
-            // ── 호버 툴팁 (ScrollView 밖에서 렌더) ──
-            if (hoveredItemForTooltip != null && hoveredItemForTooltip.statBonus.HasAnyBonus()
-                && outfitManager.IsOwned(hoveredItemForTooltip.itemId))
-            {
-                var b = hoveredItemForTooltip.statBonus;
-                string tip = "";
-                if (b.captureChanceBonus > 0f) tip += $"포획 +{b.captureChanceBonus * 100f:0}%\n";
-                if (b.atkBonus > 0f) tip += $"ATK +{b.atkBonus * 100f:0}%\n";
-                if (b.defBonus > 0f) tip += $"DEF +{b.defBonus * 100f:0}%\n";
-                if (b.moveSpeedBonus > 0f) tip += $"이속 +{b.moveSpeedBonus * 100f:0}%\n";
-                if (b.expMultiplier > 0f) tip += $"경험치 +{b.expMultiplier * 100f:0}%\n";
-                if (b.candyMultiplier > 0f) tip += $"캔디 +{b.candyMultiplier * 100f:0}%\n";
-                if (b.rareSpawnBonus > 0f) tip += $"레어 +{b.rareSpawnBonus * 100f:0}%\n";
-                tip = tip.TrimEnd('\n');
-
-                int lineCount = tip.Split('\n').Length;
-                float tipH = lineCount * 17 + 8;
-                Rect tipRect = new Rect(
-                    hoveredCardScreenRect.x,
-                    hoveredCardScreenRect.y - tipH - 4,
-                    hoveredCardScreenRect.width,
-                    tipH);
-                GUI.DrawTexture(tipRect, UIHelper.GetCachedTex(new Color(0.05f, 0.07f, 0.15f, 0.92f)));
-                GUIStyle tipStyle = UIHelper.CachedStyle("outfit_tip", () =>
-                {
-                    GUIStyle s = new GUIStyle(GUI.skin.label);
-                    s.fontSize = 12;
-                    s.normal.textColor = new Color(0.7f, 0.95f, 0.7f);
-                    s.alignment = TextAnchor.MiddleCenter;
-                    s.wordWrap = true;
-                    s.padding = new RectOffset(4, 4, 4, 4);
-                    return s;
-                });
-                GUI.Label(tipRect, tip, tipStyle);
-            }
-            hoveredItemForTooltip = null;
 
             // ── 하단 보너스 요약 + 코인 표시 ──
             if (bonusProvider != null)
@@ -828,17 +1133,47 @@ namespace InsectGame.UI
             }
 
             Rect coinRect = new Rect(x + 24, y + panelH - 44, 820, 36);
-            if (walletCache == null)
-                walletCache = outfitManager.GetComponent<PlayerCurrencyWallet>() ??
-                    FindFirstObjectByType<PlayerCurrencyWallet>();
-            int coinCount = (walletCache != null) ? walletCache.Coins : 0;
+            PlayerCurrencyWallet footerWallet = ResolveWallet();
+            int coinCount = (footerWallet != null) ? footerWallet.Coins : 0;
             int gemCount = CashShopManager.Instance != null ? CashShopManager.Instance.Gems : 0;
-            GUI.Label(coinRect, $"보유 코인: 🪙{coinCount}    보석: 💎{gemCount}", coinStyle);
+            GUI.Label(coinRect, FooterText(coinCount, gemCount), coinStyle);
 
             // GUI.color 복원
             GUI.color = Color.white;
 
             UIScale.End();
+        }
+
+        /// <summary>
+        /// 장착 + 피드백(번쩍임·효과음·세트 완성 판정). 구매 직후 자동 장착도 여기로 온다 —
+        /// 예전엔 구매 경로만 <c>Equip</c>을 직접 불러 연출이 없었고, 세트 기억값(<see cref="prevSetStates"/>)이
+        /// 낡아서 <b>다음</b> 장착에 엉뚱하게 "세트 완성"이 울렸다.
+        /// </summary>
+        private void EquipWithFeedback(OutfitItem item)
+        {
+            if (item == null) return;
+            outfitManager.Equip(item.itemId);
+            trySelections.Remove(item.slot);
+            equipFlashTimer = 0.4f;
+            lastEquippedId = item.itemId;
+            if (InsectGame.Core.AudioManager.Instance != null)
+                InsectGame.Core.AudioManager.Instance.PlaySFX(InsectGame.Core.SfxType.Equip);
+            CheckSetCompletion();
+        }
+
+        private PlayerCurrencyWallet ResolveWallet()
+        {
+            if (walletCache == null && outfitManager != null)
+                walletCache = outfitManager.GetComponent<PlayerCurrencyWallet>() ??
+                    FindFirstObjectByType<PlayerCurrencyWallet>();
+            return walletCache;
+        }
+
+        private bool CanAffordCoins(int price)
+        {
+            if (AuthManager.Instance != null && AuthManager.Instance.MasterPrivilegesActive) return true;
+            PlayerCurrencyWallet w = ResolveWallet();
+            return w != null && w.Coins >= price;
         }
 
         private void CheckSetCompletion()
@@ -862,22 +1197,6 @@ namespace InsectGame.UI
             }
         }
 
-        private static string GetSlotSymbol(OutfitSlot slot)
-        {
-            switch (slot)
-            {
-                case OutfitSlot.Hat: return "^";
-                case OutfitSlot.Top: return "T";
-                case OutfitSlot.Bottom: return "II";
-                case OutfitSlot.Outerwear: return "W";
-                case OutfitSlot.Shoes: return "U";
-                case OutfitSlot.Backpack: return "B";
-                case OutfitSlot.Tool: return "+";
-                case OutfitSlot.Accessory: return "*";
-                default: return "?";
-            }
-        }
-
         // ── 해금 조건 문구 ──
 
         // regionId → 표시명. RegionDefinitions에서 1회만 파생한다(이름을 여기 박으면 낡는다).
@@ -890,30 +1209,46 @@ namespace InsectGame.UI
         /// 카드에 노출됐다. 알 수 없는 형식은 토큰을 그대로 돌려주므로, 새 조건 형식을 추가해도
         /// 화면이 비지는 않는다(대신 여기 분기를 늘려 문장을 붙일 것).
         ///
-        /// <b>해금 판정은 여기서 하지 않는다.</b> 현재 저장소에 <c>unlockCondition</c>을 평가해
-        /// 소유를 부여하는 코드가 없어 조건부 의상 4벌은 획득 불가 상태다 — 그 배선은 해금 시점을
-        /// 정하는 게임 디자인 결정이라 별건이다. 이 메서드는 표시만 고친다.
+        /// <b>해금 판정은 여기서 하지 않는다</b> — <see cref="OutfitUnlockRules"/>가 하고
+        /// <c>CharacterOutfitManager.EvaluateUnlocks</c>가 소유를 준다. 형식을 늘리면 두 곳을 함께 고친다.
         /// </summary>
         internal static string DescribeUnlockCondition(string condition)
         {
             if (string.IsNullOrEmpty(condition)) return "";
+            // 잠긴 카드마다·OnGUI 패스마다 불린다 — 보간 문자열을 매번 만들지 않는다.
+            if (UnlockTextCache.TryGetValue(condition, out string cached)) return cached;
 
-            if (condition.StartsWith("region_"))
+            string text;
+            bool cacheable = true;
+            if (condition.StartsWith(OutfitUnlockRules.RegionPrefix))
             {
-                string regionId = condition.Substring("region_".Length);
-                return $"{RegionDisplayName(regionId)} 도달 시 해금";
+                string regionId = condition.Substring(OutfitUnlockRules.RegionPrefix.Length);
+                text = $"{RegionDisplayName(regionId)} 도달 시 해금";
             }
-            if (condition.StartsWith("level_"))
+            else if (condition.StartsWith(OutfitUnlockRules.LevelPrefix))
             {
-                string lv = condition.Substring("level_".Length);
-                return int.TryParse(lv, out int n) ? $"Lv.{n} 달성 시 해금" : condition;
+                text = OutfitUnlockRules.TryParseLevel(condition, out int n) ? $"Lv.{n} 달성 시 해금" : condition;
             }
-            if (condition.StartsWith("quest_"))
+            else if (condition.StartsWith(OutfitUnlockRules.QuestPrefix))
             {
-                return "특정 퀘스트 완료 시 해금";
+                // 어느 퀘스트인지 말해 준다. 퀘스트 매니저가 아직 없으면(테스트·부팅 직후) 일반 문구로
+                // 물러나고 캐시하지 않는다 — 한 번 굳으면 제목이 영영 안 뜬다.
+                string questId = condition.Substring(OutfitUnlockRules.QuestPrefix.Length);
+                string title = TutorialQuestManager.Instance != null
+                    ? TutorialQuestManager.Instance.GetQuestTitle(questId) : null;
+                if (string.IsNullOrEmpty(title)) { text = "특정 퀘스트 완료 시 해금"; cacheable = false; }
+                else text = $"'{title}' 완료 시 해금";
             }
-            return condition;   // 미지의 형식 — 토큰이라도 보여 준다
+            else
+            {
+                text = condition;   // 미지의 형식 — 토큰이라도 보여 준다
+            }
+
+            if (cacheable) UnlockTextCache[condition] = text;
+            return text;
         }
+
+        private static readonly Dictionary<string, string> UnlockTextCache = new Dictionary<string, string>();
 
         private static string RegionDisplayName(string regionId)
         {

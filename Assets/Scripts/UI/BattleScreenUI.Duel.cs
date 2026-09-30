@@ -36,6 +36,33 @@ namespace InsectGame.UI
         private string bubbleText;
         private float bubbleShownAt = -99f;
 
+        // 컷인의 "나" — 3D 마네킹(의상 창과 같은 렌더러). 없으면 2D 도트.
+        private CharacterModelPreviewRenderer characterPreview;
+
+        /// <summary>
+        /// 결투 컷인의 "나"를 지금 장착한 3D로 그린다. 2D 도트는 모자·겉옷·도구 대부분을 못 그려
+        /// 공들여 맞춘 옷이 대결 장면에서 사라졌다. 모놀리스 본체를 키우지 않게 이 partial에 둔다.
+        /// </summary>
+        public void AutoWire(CharacterModelPreviewRenderer preview)
+        {
+            if (characterPreview == null) characterPreview = preview;
+        }
+
+        /// <summary>컷인 속 내 모습 — 오른쪽(상대)을 3/4으로 바라본다. 발끝을 feet에 맞춘다.</summary>
+        private void DrawMyCutInFigure(float centerX, float feet, float scale)
+        {
+            // 2D 기준: 몸 가운데 = feet − 74.5 × scale, 키 ≈ 2 × 74.5 × scale.
+            float h = 2f * 74.5f * scale;
+            Texture me = characterPreview != null ? characterPreview.GetEquippedPreview(140f) : null;
+            if (me != null)
+            {
+                float w = h / CharacterModelPreviewRenderer.PreviewHeightPerWidth;
+                GUI.DrawTexture(new Rect(centerX - w * 0.5f, feet - h, w, h), me, ScaleMode.ScaleToFit, true);
+                return;
+            }
+            CharacterPortraitRenderer.DrawWithOutfit(centerX, feet - 74.5f * scale, scale);
+        }
+
         private bool duelStylesReady;
         private GUIStyle cutInNameStyle;
         private GUIStyle cutInTitleStyle;
@@ -176,7 +203,7 @@ namespace InsectGame.UI
 
             // ── 나 ──
             float px = figX - offset;
-            if (!guardian) CharacterPortraitRenderer.DrawWithOutfit(px, feet - 74.5f * 2.5f, 2.5f);
+            if (!guardian) DrawMyCutInFigure(px, feet, 2.5f);
             // 그림이 없으면 글자 묶음을 바깥쪽으로 벌린다 — 가운데로 모으면 긴 수문장 이름이 VS에 붙는다.
             Rect myText = portrait
                 ? new Rect(40f - offset, band.y + 36f, cx - 80f, 150f)

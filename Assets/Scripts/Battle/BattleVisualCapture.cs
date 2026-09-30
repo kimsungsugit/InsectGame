@@ -103,6 +103,13 @@ namespace InsectGame.Battle
                 yield return BadgeVisualCapture.Run(output, camera);
                 yield break;
             }
+            if (scenario == "outfit")
+            {
+                // 의상 창·캐릭터 생성 화면 — IMGUI라 배치 캡처로는 창이 안 보인다(OutfitVisualCapture 주석).
+                follower.enabled = false;
+                yield return InsectGame.UI.OutfitVisualCapture.Run(output, camera);
+                yield break;
+            }
             BattleArenaController arena = new GameObject("QAArena").AddComponent<BattleArenaController>();
             if (scenario == "raid" || scenario == "raid-unite")
             {

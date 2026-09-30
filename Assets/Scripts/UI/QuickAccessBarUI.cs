@@ -183,6 +183,9 @@ namespace InsectGame.UI
             // 받을 이정표 보상이 있으면 점을 찍는다 — 옛 세이브는 케이스의 [받기]가 유일한 수령 경로다.
             if (id == Destination.Badges && badgeCaseUI != null && badgeCaseUI.ClaimableCount > 0)
                 UISurface.Chip(new Rect(rect.xMax - 36f, rect.y + 2f, 34f, 26f), "!", UITheme.Instance.accentAmber, UITheme.Instance.surfaceBase);
+            // 조건을 채워 새로 얻은 의상 — 예전엔 소유 목록에만 조용히 붙어 아무도 몰랐다(CharacterOutfitManager.IsNew).
+            if (id == Destination.Outfit && CharacterOutfitManager.Instance != null && CharacterOutfitManager.Instance.HasAnyNew)
+                UISurface.Chip(new Rect(rect.xMax - 50f, rect.y + 2f, 48f, 26f), "NEW", UITheme.Instance.accentMint, UITheme.Instance.surfaceBase);
         }
 
         private IModalUI Target(Destination id)

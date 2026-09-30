@@ -25,7 +25,7 @@ namespace InsectGame.Tests
         [TestCase("tool_wand", "NetRing", PrimitiveType.Sphere, 0.37f, 1.10f, 0.05f, 0.10f, 0.10f, 0.10f, 0f, 0f, 0f)]
         // 올가미 — 고리의 X축 -20°는 edge-on collapse 방지값이라 특히 중요하다
         [TestCase("tool_lasso", "NetHandle", PrimitiveType.Cylinder, 0.29f, 0.65f, 0f, 0.04f, 0.25f, 0.04f, 20f, 0f, -12f)]
-        [TestCase("tool_lasso", "NetRing", PrimitiveType.Cylinder, 0.35f, 0.94f, 0.06f, 0.28f, 0.02f, 0.28f, -20f, 0f, 0f)]
+        [TestCase("tool_lasso", "NetRing", PrimitiveType.Cylinder, 0.35f, 0.94f, 0.06f, 0.28f, 0.28f, 0.28f, -20f, 0f, 0f)]   // 2026-09-30 토러스 고리(스케일 균일)
         // 수리검
         [TestCase("tool_shuriken", "NetHandle", PrimitiveType.Cube, 0.29f, 0.52f, 0.10f, 0.18f, 0.02f, 0.05f, 0f, 45f, 0f)]
         [TestCase("tool_shuriken", "NetRing", PrimitiveType.Cube, 0.29f, 0.52f, 0.10f, 0.05f, 0.02f, 0.18f, 0f, 45f, 0f)]
@@ -43,7 +43,7 @@ namespace InsectGame.Tests
         [TestCase("tool_camera", "NetRing", PrimitiveType.Cylinder, 0.29f, 0.57f, 0.26f, 0.07f, 0.07f, 0.06f, 90f, 0f, 0f)]
         // 기본 잠자리채(else) — PlayerVisualBuilder의 NetHandle/NetRing 초기 좌표와도 일치해야 한다
         [TestCase("tool_net", "NetHandle", PrimitiveType.Cylinder, 0.29f, 0.74f, 0f, 0.04f, 0.40f, 0.04f, 0f, 0f, 0f)]
-        [TestCase("tool_net", "NetRing", PrimitiveType.Cylinder, 0.29f, 1.14f, 0f, 0.20f, 0.02f, 0.20f, -20f, 0f, 0f)]
+        [TestCase("tool_net", "NetRing", PrimitiveType.Cylinder, 0.29f, 1.14f, 0f, 0.22f, 0.22f, 0.22f, -25f, 0f, 0f)]   // 2026-09-30 세운 테 + 그물(NetHead)
         public void ToolRecipe_Branch_MatchesLegacyTransform(
             string itemId, string bindName, PrimitiveType prim,
             float px, float py, float pz, float sx, float sy, float sz, float ex, float ey, float ez)

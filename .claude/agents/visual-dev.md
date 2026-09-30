@@ -60,12 +60,15 @@ OnGUI의 Rect 좌표와 레이아웃은 **ui-dev 영역**입니다. 여기서는
 - `Assets/Scripts/Core/FieldGround.cs` - 필드 둔덕(사구·재 더미·이끼 둔덕)의 윗면 높이 조회(`SurfaceY`·`LiftAt`) — 둔덕엔 콜라이더가 없어 곤충 스폰·플레이어 접지가 이걸로 올라탄다 ※`RegionTerrainBuilder.PlaceMound`/`RegisterDome`가 등록, 빌드 시작·OnDestroy에서 비운다
 
 ### 캐릭터/의상 비주얼
-- `Assets/Editor/OutfitRenderProbe.cs` - 의상을 입힌 마네킹을 3D 리그로 직접 촬영해 spawn/bind 파츠가 실제로 그려지는지 확인 ※IMGUI를 안 거치므로 배치모드로 돈다
+- `Assets/Editor/OutfitRenderProbe.cs` - 의상을 입힌 마네킹을 3D 리그로 직접 촬영해 spawn/bind 파츠가 실제로 그려지는지 확인 ※IMGUI를 안 거치므로 배치모드로 돈다. `-outfitAll`(카탈로그 전량 × 앞/뒤)·`-outfitLooks`(성별×머리·얼굴·피부·머리색)는 판정 없는 전후 비교용 갤러리
 - `Assets/Scripts/Core/CharacterFaceAnimator.cs` - 눈 깜빡임·표정 전환 ※걷기(PlayerMovement.AnimateWalk)와 직교한 별도 컴포넌트로 유지할 것. 눈 스케일은 base에 대입(곱셈 누적 금지)
 - `Assets/Scripts/Core/ProcMeshLibrary.cs` - 캐릭터용 프로시저럴 메시 생성기(Disc/LowSphere/RoundedBox/TaperedCapsule/Diamond) + 프로세스 수명 정적 캐시 ※bind 가능 노드(Cap·NetHandle 등)에는 쓰지 말 것 — ApplyBound가 sharedMesh·localScale을 덮어쓴다
 - `Assets/Scripts/Core/CharacterPalette.cs` - 피부·머리 색 팔레트와 부위별 PBR 재질(SurfaceKind)의 단일 출처. 3D 캐릭터·마네킹·2D 초상·NPC가 전부 여기를 읽는다 ※인덱스 순서는 세이브가 가리키므로 바꾸지 말 것
 - `Assets/Scripts/Core/CharacterOutfitManager.cs` - 의상 관리
-- `Assets/Scripts/Core/OutfitShapeLibrary.cs` - 의상 파츠 레시피(itemId → OutfitPart[]) 형태의 단일 출처 ※스키마·앵커 확장은 data-architect 공유. spawn 파츠 재질은 슬롯 기본(천·가죽) + `SurfaceOverrides`(금속·유리·가죽 아이템, 색 역할 단위) — `OutfitPart`에 필드를 늘리지 않는다
+- `Assets/Scripts/Core/OutfitShapeLibrary.cs` - 의상 파츠 레시피(itemId → OutfitPart[]) 형태의 단일 출처 ※스키마·앵커 확장은 data-architect 공유. spawn 파츠 재질은 슬롯 기본(천·가죽) + `SurfaceOverrides`(금속·유리·가죽 아이템, 색 역할 단위). 2026-09-30: 파츠별 앵커(`hasAnchor`/`anchor` — Body·LegL·LegR, `OP_{슬롯}_{앵커}` 컨테이너)와 메시 모양(`PartShape` — 둥근 상자·캡슐·늘어진 천·토러스·보석·잠자리채 머리)을 더했다. 몸 노드를 누가 칠할지는 스타일 표(소매·겉옷 형태·반바지·샌들)가 정한다
+- `Assets/Scripts/Core/OutfitPatternLibrary.cs` - 의상 **표면 무늬**(줄무늬·별·거미줄·위장 등) 절차 텍스처의 단일 출처 ※형태는 OutfitShapeLibrary, 무늬는 여기. 표면별(몸통·셔츠 판·소매·다리·신발) UV 규약과 앞/뒤 아틀라스는 `ProcMeshLibrary.FaceUv`·캡슐 UV와 짝이다
+- `Assets/Tests/EditMode/OutfitPatternLibraryTests.cs` - 무늬 표의 키·슬롯·표면 정합, 결정성, 상의 무늬 상호 구별, 아틀라스 앞/뒤 분리
+- `Assets/Tests/EditMode/CharacterBodyTests.cs` - 캐릭터 본체 계약(어깨 관절 원점·손 쉬는 자리·HairCrown·모자 속 정수리 덮개·표정별 입·얼굴 부품 표면 앞·정점 예산·몸통 부착물)
 - `Assets/Tests/EditMode/OutfitPartSurfaceTests.cs` - 의상 파츠 재질 예외 표의 키 실재·예외 역할 실재·역참조·슬롯 기본 무광 검증
 - `Assets/Scripts/Core/CharacterModelPreviewRenderer.cs` - 의상 미리보기용 3D 마네킹 리그·썸네일 렌더 ※화면 배치는 ui-dev
 - `Assets/Scripts/Core/OutfitBonusProvider.cs` - 의상 보너스
@@ -91,6 +94,7 @@ OnGUI의 Rect 좌표와 레이아웃은 **ui-dev 영역**입니다. 여기서는
 - `Assets/Editor/FieldDesignTour.cs` - 실제 PlayScene으로 마을·리전·전초기지·서브에리어·NPC 전원을 한 번에 도는 전후 비교 캡처(`-tourOnly`·`-tourFilter`) ※IMGUI 제외
 - `Assets/Scripts/UI/WorldMapVisualCapture.cs` - 저장과 분리된 실제 지도/미니맵 IMGUI 촬영 fixture
 - `Assets/Scripts/Story/StoryDialogueCapture.cs` - 저장과 분리된 실제 대화 IMGUI 촬영 fixture
+- `Assets/Scripts/UI/OutfitVisualCapture.cs` - 의상 창·캐시샵·캐릭터 생성 화면의 실제 IMGUI 촬영 fixture(`-battleScenario outfit`) ※의상 소유·장착 PlayerPrefs는 스냅샷으로 복원, 입어보기·필터·확대는 창 상태를 리플렉션으로 주입
 - `Assets/Scripts/UI/BadgeVisualCapture.cs` - 저장과 분리된 실제 배지 획득 연출·배지 케이스 IMGUI 촬영 fixture(`-battleScenario badge`)
 - `Assets/Editor/BlightSiteDebugMenu.cs` - 오염 거점 육안 확인용 에디터 메뉴(이동·정화·초기화)
 

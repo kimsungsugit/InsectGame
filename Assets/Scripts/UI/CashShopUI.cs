@@ -33,6 +33,18 @@ namespace InsectGame.UI
         // OnGUI 매 호출마다 FindFirstObjectByType 비용 회피용 캐시
         private OutfitBonusProvider cachedBonusProvider;
         private PlayerCurrencyWallet cachedWallet;
+
+        // 왼쪽 캐릭터 칸 — 의상 창과 같은 3D 마네킹. 없으면(배선 실패) 2D 도트로 물러난다.
+        private CharacterModelPreviewRenderer characterPreview;
+
+        /// <summary>
+        /// 3D 프리뷰 렌더러를 받는다. 예전엔 2D 도트 캐릭터였는데, 2D는 모자 11종·겉옷 형태·도구 대부분을
+        /// 못 그려 **방금 산 옷이 상점 캐릭터에 안 보였다**(필드 캐릭터와 다른 사람).
+        /// </summary>
+        public void AutoWire(CharacterModelPreviewRenderer preview)
+        {
+            if (characterPreview == null) characterPreview = preview;
+        }
         private InsectDatabase cachedInsectDb;
 
         // 가챠 영역 OnGUI 매 호출 new GUIStyle 11개 회귀 제거용 캐시 (DexScreenUI/BattleTeamUI 패턴).
@@ -68,7 +80,7 @@ namespace InsectGame.UI
             public string title;    // 이름(굵게)
             public string sub;      // 수량 배지 — 없으면 null
             public string desc;     // 설명
-            public string price;    // 💎 보석가 — 실결제 카드엔 없다(null, 아래 주석 참조)
+            public string price;    // 보석가 — 실결제 카드엔 없다(null, 아래 주석 참조)
         }
 
         private readonly Dictionary<string, CardText> cardTextCache = new Dictionary<string, CardText>();
@@ -108,7 +120,7 @@ namespace InsectGame.UI
             t.sub = item.rewardCount > 1 ? $"<size=23>x{item.rewardCount}</size>" : null;
             t.desc = $"<size={(cardTextMobile ? 20 : 15)}>{item.description}</size>";
             // 보석가는 품목 데이터라 불변 — 실결제 가격과 달리 캐시해도 안전하다.
-            t.price = $"<size=26><b>💎 {item.gemPrice}</b></size>";
+            t.price = $"<size=26><b>보석 {item.gemPrice}</b></size>";
             cardTextCache[item.itemId] = t;
             return t;
         }
@@ -120,9 +132,33 @@ namespace InsectGame.UI
             t.title = $"<size=31><b>{title}</b></size>";
             t.sub = null;
             t.desc = null;   // 확률표는 gachaRateTextCache가 따로 든다(공시 정합성 때문에 출처가 다르다)
-            t.price = $"<size=28><b>💎 {price}</b></size>";
+            t.price = $"<size=28><b>보석 {price}</b></size>";
             cardTextCache[boxId] = t;
             return t;
+        }
+
+        // 재화 라벨 — 💎·🪙 이모지는 스탠드얼론·기기 기본 폰트에 없어 □로 깨졌다(2026-09-30 검수 빌드 캡처).
+        // 다른 화면(`PlayerCurrencyUIController`·의상 창)과 같은 "보석 N"·"코인 N" 표기로 맞추고,
+        // 값이 바뀔 때만 문자열을 새로 만든다(OnGUI 패스마다 보간하지 않게).
+        private int gemsLabelValue = -1, coinsLabelValue = -1, headerGemsValue = -1;
+        private string gemsLabel, coinsLabel, headerGemsLabel;
+
+        private string GemsLabel(int gems)
+        {
+            if (gems != gemsLabelValue || gemsLabel == null) { gemsLabelValue = gems; gemsLabel = $"보석 {gems}"; }
+            return gemsLabel;
+        }
+
+        private string CoinsLabel(int coins)
+        {
+            if (coins != coinsLabelValue || coinsLabel == null) { coinsLabelValue = coins; coinsLabel = $"코인 {coins}"; }
+            return coinsLabel;
+        }
+
+        private string HeaderGemsLabel(int gems)
+        {
+            if (gems != headerGemsValue || headerGemsLabel == null) { headerGemsValue = gems; headerGemsLabel = $"보석 {gems}"; }
+            return headerGemsLabel;
         }
 
         private static Color GachaPriceAffordCol => UITheme.Instance.accentMint;
@@ -178,7 +214,8 @@ namespace InsectGame.UI
             bonusLineStyle = new GUIStyle(GUI.skin.label) { fontSize = 17, alignment = TextAnchor.MiddleLeft, wordWrap = true };
             bonusLineStyle.normal.textColor = BonusGreenLightCol;
             headerTitleStyle = new GUIStyle(GUI.skin.label) { richText = true, normal = { textColor = Color.cyan } };
-            headerGemsStyle = new GUIStyle(GUI.skin.label) { richText = true, normal = { textColor = GachaPriceAffordCol } };
+            // 크기는 스타일에 둔다 — <size> 리치텍스트는 GUILayout이 폭을 기본 글자 크기로 재서 "보석 0"의 숫자가 잘렸다.
+            headerGemsStyle = new GUIStyle(GUI.skin.label) { fontSize = 28, fontStyle = FontStyle.Bold, normal = { textColor = GachaPriceAffordCol } };
             tabStyle = new GUIStyle(GUI.skin.button) { fontSize = mobile ? 28 : 26, fontStyle = FontStyle.Bold };
             feedbackStyle = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter, richText = true, normal = { textColor = Color.green } };
             infoGrayStyle = new GUIStyle(GUI.skin.label) { fontSize = mobile ? 20 : 16, alignment = TextAnchor.MiddleCenter, normal = { textColor = Color.gray } };
@@ -331,14 +368,25 @@ namespace InsectGame.UI
                 UISurface.Card(charArea, CharAreaBgCol, UITheme.Instance.surfaceBorder);
                 GUI.color = Color.white;
 
-                float charCx = charArea.x + charAreaW * 0.5f;
-                float charCy = charArea.y + charAreaH * 0.40f;
-                float charScale = 2.2f;
-                float swayX = Mathf.Sin(previewRotate * Mathf.Deg2Rad) * 12f * charScale;
-                CharacterPortraitRenderer.DrawWithOutfit(charCx, charCy, charScale, swayX);
-
                 // 재화 정보 (캐릭터 아래) — 폰트 확대에 맞춰 시작 오프셋/행 높이 확대.
                 float infoY = charArea.y + charAreaH - 220f;
+
+                // 지금 장착한 모습 그대로의 3D. 각도는 고정 — 흔들면 매 프레임 카메라를 다시 찍는다.
+                Texture me = characterPreview != null
+                    ? characterPreview.GetEquippedPreview(CharacterModelPreviewRenderer.FrontYaw - 20f) : null;
+                if (me != null)
+                {
+                    Rect stage = new Rect(charArea.x + 10f, charArea.y + 10f, charAreaW - 20f, Mathf.Max(1f, infoY - charArea.y - 20f));
+                    GUI.DrawTexture(stage, me, ScaleMode.ScaleToFit, true);
+                }
+                else
+                {
+                    float charCx = charArea.x + charAreaW * 0.5f;
+                    float charCy = charArea.y + charAreaH * 0.40f;
+                    float charScale = 2.2f;
+                    float swayX = Mathf.Sin(previewRotate * Mathf.Deg2Rad) * 12f * charScale;
+                    CharacterPortraitRenderer.DrawWithOutfit(charCx, charCy, charScale, swayX);
+                }
                 int gemsLeft = CashShopManager.Instance != null ? CashShopManager.Instance.Gems : 0;
                 int coinsLeft = 0;
                 if (cachedWallet == null) cachedWallet = FindFirstObjectByType<PlayerCurrencyWallet>();
@@ -348,9 +396,9 @@ namespace InsectGame.UI
 
                 // resStyle.normal.textColor는 gems/coins 라인마다 동적 갱신.
                 resStyle.normal.textColor = GachaPriceAffordCol;
-                GUI.Label(new Rect(charArea.x + 16, infoY + 38, charAreaW - 32, 36), $"💎 {gemsLeft}", resStyle);
+                GUI.Label(new Rect(charArea.x + 16, infoY + 38, charAreaW - 32, 36), GemsLabel(gemsLeft), resStyle);
                 resStyle.normal.textColor = CoinGoldCol;
-                GUI.Label(new Rect(charArea.x + 16, infoY + 78, charAreaW - 32, 36), $"🪙 {coinsLeft}", resStyle);
+                GUI.Label(new Rect(charArea.x + 16, infoY + 78, charAreaW - 32, 36), CoinsLabel(coinsLeft), resStyle);
 
                 // 장비 보너스 요약
                 if (cachedBonusProvider == null) cachedBonusProvider = FindFirstObjectByType<OutfitBonusProvider>();
@@ -386,7 +434,7 @@ namespace InsectGame.UI
             GUILayout.Label("<size=39><b>  보석 상점</b></size>", headerTitleStyle);
             GUILayout.FlexibleSpace();
             int gems = CashShopManager.Instance != null ? CashShopManager.Instance.Gems : 0;
-            GUILayout.Label($"<size=28><b>💎 {gems}</b></size>", headerGemsStyle);
+            GUILayout.Label(HeaderGemsLabel(gems), headerGemsStyle);
             GUILayout.Space(14);
             if (GUILayout.Button("X", GUILayout.Width(mobile ? 62 : 52), GUILayout.Height(mobile ? 60 : 48)))
                 Toggle();

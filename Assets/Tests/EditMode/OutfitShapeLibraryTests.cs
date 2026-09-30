@@ -197,6 +197,139 @@ namespace InsectGame.Tests
             }
         }
 
+        /// <summary>
+        /// 정수리가 **열린** 모자(머리띠·마스크·바이저·꽃관). 여기 없는 모자 레시피는 전부 올림머리(HairCrown)를
+        /// 숨겨야 한다 — 안 숨기면 스파이크·번이 헬멧·챙을 뚫고 나온다. 새 모자를 만들면 둘 중 하나를 **고르게** 한다.
+        /// </summary>
+        private static readonly HashSet<string> OpenTopHats = new HashSet<string>
+        {
+            "hat_flower", "hat_butterfly_wing", "hat_hero_mask", "hat_cyber_visor",
+        };
+
+        [Test]
+        public void HatRecipes_EitherHideTheHairCrownOrAreListedOpenTop()
+        {
+            Dictionary<string, OutfitSlot> slots = CatalogSlots();
+            int hats = 0;
+            foreach (string id in OutfitShapeLibrary.ExactRecipeIds())
+            {
+                if (!slots.TryGetValue(id, out OutfitSlot slot) || slot != OutfitSlot.Hat) continue;
+                hats++;
+                Assert.IsTrue(OutfitShapeLibrary.TryGet(OutfitSlot.Hat, id, out OutfitRecipe r));
+                bool hides = r.hideNodes != null && System.Array.IndexOf(r.hideNodes, OutfitShapeLibrary.HairCrownNode) >= 0;
+                if (OpenTopHats.Contains(id))
+                    Assert.IsFalse(hides, id + ": 정수리가 열린 모자인데 올림머리를 숨긴다");
+                else
+                    Assert.IsTrue(hides, id + ": 정수리를 덮는 모자인데 올림머리(HairCrown)를 안 숨긴다 — 머리가 모자를 뚫는다");
+            }
+            Assert.Greater(hats, OpenTopHats.Count, "모자 레시피가 사라졌다");
+        }
+
+        // ── 몸 전체 형태(스타일) 표 ──
+
+        /// <summary>
+        /// 스타일 표의 키는 실재하는 아이템이고, **그 표가 다루는 슬롯**이어야 한다. 오타면 반바지가 긴바지로,
+        /// 망토가 자켓으로 조용히 돌아간다(예외 없음).
+        /// </summary>
+        [Test]
+        public void StyleTables_NameRealItemsOfTheRightSlot()
+        {
+            Dictionary<string, OutfitSlot> slots = CatalogSlots();
+            foreach (string id in OutfitShapeLibrary.StyledItemIds())
+                Assert.IsTrue(slots.ContainsKey(id), $"스타일 표의 '{id}'가 카탈로그에 없다");
+
+            foreach (KeyValuePair<string, OutfitSlot> e in slots)
+            {
+                string id = e.Key;
+                if (OutfitShapeLibrary.SleeveOf(id) != SleeveLength.Short || OutfitShapeLibrary.SleeveIsSecondary(id))
+                    Assert.AreEqual(OutfitSlot.Top, e.Value, id + ": 소매 표는 상의 전용");
+                if (OutfitShapeLibrary.OuterFormOf(id) != OuterForm.OpenJacket)
+                    Assert.AreEqual(OutfitSlot.Outerwear, e.Value, id + ": 겉옷 형태 표는 겉옷 전용");
+                if (OutfitShapeLibrary.LegFormOf(id) != LegForm.Long)
+                    Assert.AreEqual(OutfitSlot.Bottom, e.Value, id + ": 하의 길이 표는 하의 전용");
+                if (OutfitShapeLibrary.FootFormOf(id) != FootForm.Shoe)
+                    Assert.AreEqual(OutfitSlot.Shoes, e.Value, id + ": 신발 형태 표는 신발 전용");
+            }
+        }
+
+        /// <summary>
+        /// 반바지·샌들은 다리·발을 피부로 칠하므로 **덧붙일 천·밑창 레시피가 반드시 있어야** 한다 —
+        /// 없으면 맨다리·맨발로 걷는다.
+        /// </summary>
+        [Test]
+        public void SkinRevealingForms_HaveTheirClothRecipes()
+        {
+            foreach (KeyValuePair<string, OutfitSlot> e in CatalogSlots())
+            {
+                if (OutfitShapeLibrary.LegFormOf(e.Key) == LegForm.Shorts)
+                    Assert.IsTrue(OutfitShapeLibrary.TryGet(OutfitSlot.Bottom, e.Key, out _), e.Key + ": 반바지인데 천 레시피가 없다");
+                if (OutfitShapeLibrary.FootFormOf(e.Key) == FootForm.Sandal)
+                    Assert.IsTrue(OutfitShapeLibrary.TryGet(OutfitSlot.Shoes, e.Key, out _), e.Key + ": 샌들인데 밑창 레시피가 없다");
+            }
+        }
+
+        // ── 파츠별 앵커 ──
+
+        [Test]
+        public void BelongsTo_SplitsDefaultAndExplicitAnchors()
+        {
+            OutfitPart plain = new OutfitPart { prim = PrimitiveType.Cube };
+            OutfitPart sameAsRecipe = new OutfitPart { prim = PrimitiveType.Cube, hasAnchor = true, anchor = OutfitAnchor.Body };
+            OutfitPart onLeg = new OutfitPart { prim = PrimitiveType.Cube, hasAnchor = true, anchor = OutfitAnchor.LegL };
+            OutfitPart bind = new OutfitPart { bindName = "NetRing" };
+
+            Assert.IsTrue(OutfitShapeLibrary.BelongsTo(plain, OutfitAnchor.Body, OutfitAnchor.Body, true));
+            Assert.IsTrue(OutfitShapeLibrary.BelongsTo(sameAsRecipe, OutfitAnchor.Body, OutfitAnchor.Body, true), "레시피 앵커와 같은 지정은 기본 컨테이너로");
+            Assert.IsFalse(OutfitShapeLibrary.BelongsTo(sameAsRecipe, OutfitAnchor.Body, OutfitAnchor.Body, false), "같은 파츠가 두 번 만들어지면 안 된다");
+            Assert.IsTrue(OutfitShapeLibrary.BelongsTo(onLeg, OutfitAnchor.Body, OutfitAnchor.LegL, false));
+            Assert.IsFalse(OutfitShapeLibrary.BelongsTo(onLeg, OutfitAnchor.Body, OutfitAnchor.LegR, false));
+            Assert.IsFalse(OutfitShapeLibrary.BelongsTo(onLeg, OutfitAnchor.Body, OutfitAnchor.Body, true));
+            Assert.IsFalse(OutfitShapeLibrary.BelongsTo(bind, OutfitAnchor.Root, OutfitAnchor.Root, true), "bind는 컨테이너에 들어가지 않는다");
+        }
+
+        [Test]
+        public void Mirror_FlipsXAndSideRotations()
+        {
+            OutfitPart p = new OutfitPart { pos = new Vector3(0.1f, -0.2f, 0.05f), euler = new Vector3(10f, 20f, -30f) };
+            OutfitPart m = OutfitShapeLibrary.Mirror(p);
+            Assert.AreEqual(new Vector3(-0.1f, -0.2f, 0.05f), m.pos);
+            Assert.AreEqual(new Vector3(10f, -20f, 30f), m.euler);
+        }
+
+        /// <summary>
+        /// 다리에 다는 파츠는 **다리 관절 아래**에 가야 걸을 때 함께 흔들린다. 반바지를 가짜 계층에 입혀
+        /// 양다리 컨테이너가 각 관절 아래 생기고, 왼다리 파츠가 거울 좌표인지 본다.
+        /// </summary>
+        [Test]
+        public void LegParts_SpawnUnderEachLegPivot_Mirrored()
+        {
+            GameObject root = new GameObject("AnchorProbe");
+            try
+            {
+                GameObject body = new GameObject("Body"); body.transform.SetParent(root.transform, false);
+                GameObject legL = new GameObject("LegLPivot"); legL.transform.SetParent(root.transform, false);
+                GameObject legR = new GameObject("LegRPivot"); legR.transform.SetParent(root.transform, false);
+
+                Assert.IsTrue(OutfitShapeLibrary.TryGet(OutfitSlot.Bottom, "bot_cargo", out OutfitRecipe cargo));
+                OutfitShapeLibrary.Apply(root.transform, OutfitSlot.Bottom, cargo, Color.yellow, Color.white);
+
+                Transform cL = legL.transform.Find(OutfitShapeLibrary.SpawnContainerName(OutfitSlot.Bottom, OutfitAnchor.LegL));
+                Transform cR = legR.transform.Find(OutfitShapeLibrary.SpawnContainerName(OutfitSlot.Bottom, OutfitAnchor.LegR));
+                Assert.IsNotNull(cL, "왼다리 관절 아래 컨테이너가 없다");
+                Assert.IsNotNull(cR, "오른다리 관절 아래 컨테이너가 없다");
+                Assert.AreEqual(cR.childCount, cL.childCount);
+                Assert.Greater(cR.childCount, 0);
+                Assert.AreEqual(-cR.GetChild(0).localPosition.x, cL.GetChild(0).localPosition.x, 1e-5f, "왼다리가 거울 좌표가 아니다");
+                Assert.Greater(cR.GetChild(0).localPosition.x, 0f, "오른다리 기준 좌표는 바깥이 +X다");
+                Assert.IsNull(root.transform.Find(OutfitShapeLibrary.SpawnContainerName(OutfitSlot.Bottom)),
+                    "다리 파츠만 있는 레시피가 루트에 빈 컨테이너를 만들었다");
+            }
+            finally
+            {
+                Object.DestroyImmediate(root);
+            }
+        }
+
         [Test]
         public void HatRecipes_AnchorToHatRoot()
         {
