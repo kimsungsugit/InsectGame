@@ -202,6 +202,15 @@ namespace InsectGame.UI
 
         private readonly string[] tabNames = { "보석 충전", "아이템 상점", "랜덤 상자" };
 
+        // ── 데스크톱 폭 ──
+        // 패널 1200이던 때 오른쪽 콘텐츠(패널 − 캐릭터 칸)가 812뿐이라 상자 세 장(최소 960)이 안 들어가
+        // 골드 상자가 오른쪽에 잘리고 가로 스크롤이 생겼다(2026-09-30 검수 캡처). 1400이면 콘텐츠 1012 —
+        // 세로 스크롤바를 빼고도 960이 들어간다. 모바일은 화면 폭으로 clamp된다. 셋의 관계는 테스트가 고정한다.
+        internal const float DesktopPanelWidth = 1400f;
+        internal const float DesktopCharColumnWidth = 388f;   // 캐릭터 칸 340 + 좌 여백 16 + 사이 32
+        internal const float DesktopBoxTabMinWidth = 960f;    // 상자 300×3 + 간격 15×3 + 상자 여백
+        internal const float DesktopCardTabMinWidth = 840f;   // 카드 260×3 + 간격
+
         private void InitMainStyles()
         {
             if (mainStylesReady) return;
@@ -348,7 +357,9 @@ namespace InsectGame.UI
 
             // 모바일 세로는 긴 화면(1920+)을 더 활용해 확대된 카드의 스크롤을 줄임. 데스크톱은 기존 유지.
             // 세이프에어리어 + 세로 마진은 하네스가 뺀다.
-            Rect panelRect = UISafeLayout.CenteredPanel(1200f, UIScale.IsMobileLayout ? 1560f : 820f);
+            Rect panelRect = UISafeLayout.CenteredPanel(
+                UIScale.IsMobileLayout ? 1200f : DesktopPanelWidth,
+                UIScale.IsMobileLayout ? 1560f : 820f);
             float panelW = panelRect.width;
             float panelH = panelRect.height;
             float px = panelRect.x;
@@ -424,8 +435,8 @@ namespace InsectGame.UI
             }
 
             // 우측 콘텐츠 영역
-            float rightX = showingGachaResult || mobile ? px : px + 372f;
-            float rightW = showingGachaResult || mobile ? panelW : panelW - 388f;
+            float rightX = showingGachaResult || mobile ? px : px + DesktopCharColumnWidth - 16f;
+            float rightW = showingGachaResult || mobile ? panelW : panelW - DesktopCharColumnWidth;
             Rect contentArea = new Rect(rightX, py, rightW, panelH);
             GUILayout.BeginArea(contentArea);
 
@@ -549,7 +560,7 @@ namespace InsectGame.UI
             // 안 주면 레이아웃이 카드를 뷰포트에 욱여넣어 **찌그러뜨린다**(상자가 안 보인다는 증상).
             // 옛 `GUI.BeginScrollView` 경로는 contentWidth를 960/840으로 직접 줘서 가로 스크롤이
             // 생겼는데, 레이아웃 스크롤뷰로 바꾸며 그 지정이 빠진 것이 회귀였다.
-            float minContentW = UIScale.IsMobileLayout ? 0f : (tab == 2 ? 960f : 840f);
+            float minContentW = UIScale.IsMobileLayout ? 0f : (tab == 2 ? DesktopBoxTabMinWidth : DesktopCardTabMinWidth);
             if (minContentW > 0f) GUILayout.BeginVertical(GUILayout.MinWidth(minContentW));
             else GUILayout.BeginVertical();
 

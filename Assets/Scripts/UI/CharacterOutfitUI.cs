@@ -107,6 +107,7 @@ namespace InsectGame.UI
         private GUIStyle titleStyle;
         private GUIStyle labelStyle;
         private GUIStyle coinStyle;
+        private GUIStyle coinRightStyle;      // 데스크톱: 오른쪽 카드 열 아래에 오른쪽 정렬
         private GUIStyle buttonStyle;
         private GUIStyle closeStyle;
         private GUIStyle bonusStyle;
@@ -455,6 +456,73 @@ namespace InsectGame.UI
         private string footerText;
         private int footerCoins = -1, footerGems = -1;
 
+        private static GUIStyle BuildSummaryStyle()
+        {
+            GUIStyle s = new GUIStyle(GUI.skin.label);
+            s.fontSize = 19;
+            s.fontStyle = FontStyle.Bold;
+            s.normal.textColor = new Color(0.4f, 0.9f, 0.4f);
+            s.alignment = TextAnchor.MiddleLeft;
+            return s;
+        }
+
+        private static readonly GUIContent summaryProbe = new GUIContent();
+        private string summaryLinesSource, summaryLines;
+        private float summaryLinesWidth = -1f;
+
+        /// <summary>
+        /// 데스크톱 요약 줄은 미리보기 왼쪽 폭(~540)이라 보너스가 많으면 넘친다. 줄바꿈을 IMGUI에 맡기면
+        /// 한글 사이 아무 데서나 끊겨 "캔디 / +2%"처럼 항목이 갈렸다(검수 캡처) — 항목 경계(공백)에서
+        /// 가운데에 가장 가까운 곳을 골라 직접 두 줄로 나눈다. 한 줄에 들어가면 그대로 둔다.
+        /// </summary>
+        private string SummaryForWidth(string summary, GUIStyle style, float width)
+        {
+            if (ReferenceEquals(summary, summaryLinesSource) && Mathf.Approximately(width, summaryLinesWidth))
+                return summaryLines;
+            summaryLinesSource = summary;
+            summaryLinesWidth = width;
+            summaryProbe.text = summary;
+            summaryLines = style.CalcSize(summaryProbe).x <= width ? summary : SplitAtMiddleSpace(summary);
+            return summaryLines;
+        }
+
+        /// <summary>가운데에 가장 가까운 공백 하나를 줄바꿈으로 — 공백이 없으면 그대로.</summary>
+        internal static string SplitAtMiddleSpace(string text)
+        {
+            int mid = text.Length / 2, best = -1;
+            for (int i = 0; i < text.Length; i++)
+                if (text[i] == ' ' && (best < 0 || Mathf.Abs(i - mid) < Mathf.Abs(best - mid))) best = i;
+            return best > 0 ? text.Substring(0, best) + "\n" + text.Substring(best + 1) : text;
+        }
+
+        private string equippedSummary;
+        private OutfitStatBonus equippedSummaryFor;
+
+        /// <summary>
+        /// 하단 "장비 보너스: 포획+2% …" — 장착이 바뀔 때만 다시 만든다(예전엔 OnGUI 패스마다 7번 이어 붙였다).
+        /// </summary>
+        internal string EquippedSummaryText(OutfitStatBonus total)
+        {
+            if (equippedSummary != null && SameBonus(total, equippedSummaryFor)) return equippedSummary;
+            equippedSummaryFor = total;
+            string summary = "장비 보너스:";
+            if (total.captureChanceBonus > 0f) summary += $" 포획+{total.captureChanceBonus * 100f:0}%";
+            if (total.atkBonus > 0f) summary += $" ATK+{total.atkBonus * 100f:0}%";
+            if (total.defBonus > 0f) summary += $" DEF+{total.defBonus * 100f:0}%";
+            if (total.moveSpeedBonus > 0f) summary += $" 이속+{total.moveSpeedBonus * 100f:0}%";
+            if (total.expMultiplier > 0f) summary += $" 경험치+{total.expMultiplier * 100f:0}%";
+            if (total.candyMultiplier > 0f) summary += $" 캔디+{total.candyMultiplier * 100f:0}%";
+            if (total.rareSpawnBonus > 0f) summary += $" 레어+{total.rareSpawnBonus * 100f:0}%";
+            equippedSummary = summary;
+            return summary;
+        }
+
+        // 구조체 기본 Equals는 박싱(할당)이라 필드를 직접 비교한다.
+        private static bool SameBonus(OutfitStatBonus a, OutfitStatBonus b) =>
+            a.captureChanceBonus == b.captureChanceBonus && a.atkBonus == b.atkBonus && a.defBonus == b.defBonus
+            && a.moveSpeedBonus == b.moveSpeedBonus && a.expMultiplier == b.expMultiplier
+            && a.candyMultiplier == b.candyMultiplier && a.rareSpawnBonus == b.rareSpawnBonus;
+
         private string FooterText(int coins, int gems)
         {
             if (coins != footerCoins || gems != footerGems || footerText == null)
@@ -652,6 +720,7 @@ namespace InsectGame.UI
             coinStyle.fontStyle = FontStyle.Bold;
             coinStyle.normal.textColor = new Color(1f, 0.84f, 0f, 1f);
             coinStyle.alignment = TextAnchor.MiddleLeft;
+            coinRightStyle = new GUIStyle(coinStyle) { alignment = TextAnchor.MiddleRight };
 
             buttonStyle = new GUIStyle(GUI.skin.button);
             buttonStyle.normal.background = btnTex;
@@ -811,10 +880,17 @@ namespace InsectGame.UI
             float charAreaX = gridX + sideW;
             float charAreaY = mobile ? tabY + tabBlockH + 8f : y + 70f;
             float charAreaW = previewW;
+
+            // ── 하단 띠(보너스 요약 −76 · 재화 −44) ── 카드는 이 위에서 **여백을 두고** 끝난다.
+            // 예전 데스크톱 그리드는 요약 줄 4px 위에서 끝나 잘린 카드 모서리가 글자에 붙었다(2026-09-30 검수 캡처).
+            const float FooterBandH = 96f;
+            float contentBottom = y + panelH - FooterBandH;
+
             // 모바일도 카드 열과 같은 높이다(옛 720 상한은 카드가 미리보기 **아래**에 오던 때의 것 — 지금은 옆이다).
             // 그림은 텍스처 비율까지만 커지고 남는 높이는 상세·세트 진행이 받는다(DrawCharacterPreview).
+            // 데스크톱 미리보기는 패널 바닥까지 간다 — 하단 띠는 미리보기 **왼쪽**에만 그린다(아래 요약 폭).
             float charAreaH = mobile
-                ? Mathf.Max(1f, panelH - (charAreaY - y) - 84f)
+                ? Mathf.Max(1f, contentBottom - charAreaY)
                 : panelH - 90f;
 
             Rect charArea = new Rect(charAreaX, charAreaY, charAreaW, charAreaH);
@@ -841,15 +917,15 @@ namespace InsectGame.UI
 
             // ── 세트 정보 패널 (데스크톱: 탭 아래 / 모바일: 미리보기 칸의 상세 아래 — DrawCharacterPreview) ──
             if (!mobile)
-                DrawActiveSets(tabX, tabY + slots.Length * (tabH + tabGap) + 8, tabW, y + panelH - 84f);
+                DrawActiveSets(tabX, tabY + slots.Length * (tabH + tabGap) + 8, tabW, contentBottom);
 
             // ── 아이템 그리드 ──
             // 스크롤뷰가 미리보기까지 덮는 폭을 갖되 **가운데 구간엔 카드를 두지 않는다** —
             // 그래야 좌우 카드가 한 스크롤을 공유한다(스크롤뷰를 둘로 쪼개면 따로 논다).
             // 그리드는 미리보기와 **같은 줄에서** 시작한다: 세로에서도 카드가 미리보기 옆에 선다.
-            // 하단은 보너스 요약(-76)·재화(-44) 라벨과 겹치지 않게 84px 여백을 남긴다.
+            // 하단은 contentBottom(하단 띠 위 여백)에서 끝난다.
             float gridY = mobile ? charAreaY : y + 70f;
-            float gridH = Mathf.Max(1f, mobile ? panelH - (gridY - y) - 84f : panelH - 150f);
+            float gridH = Mathf.Max(1f, contentBottom - gridY);
 
             List<OutfitItem> items = VisibleItems();
 
@@ -1104,39 +1180,33 @@ namespace InsectGame.UI
             if (Event.current.type == EventType.Repaint && !hoverFoundThisPass) tryOnItem = null;
 
             // ── 하단 보너스 요약 + 코인 표시 ──
+            // 데스크톱은 미리보기가 바닥까지 가므로 하단 띠가 미리보기 양옆으로 갈린다: 왼쪽(탭 열 + 왼쪽 카드 열)에
+            // 요약을 두 줄까지, 오른쪽 카드 열 아래에 재화를 둔다. 예전엔 둘 다 패널 폭으로 잡혀 보너스가 많으면
+            // 요약 줄이 미리보기 칸 위로 뻗었다. 길이는 보너스 개수가 정하니 LabelFit으로 줄여 맞춘다.
+            float footerW = mobile ? panelW - 48f : Mathf.Max(1f, charArea.x - (x + 24f) - 16f);
             if (bonusProvider != null)
             {
                 OutfitStatBonus total = bonusProvider.GetTotalBonus();
                 if (total.HasAnyBonus())
                 {
-                    string summary = "장비 보너스:";
-                    if (total.captureChanceBonus > 0f) summary += $" 포획+{total.captureChanceBonus * 100f:0}%";
-                    if (total.atkBonus > 0f) summary += $" ATK+{total.atkBonus * 100f:0}%";
-                    if (total.defBonus > 0f) summary += $" DEF+{total.defBonus * 100f:0}%";
-                    if (total.moveSpeedBonus > 0f) summary += $" 이속+{total.moveSpeedBonus * 100f:0}%";
-                    if (total.expMultiplier > 0f) summary += $" 경험치+{total.expMultiplier * 100f:0}%";
-                    if (total.candyMultiplier > 0f) summary += $" 캔디+{total.candyMultiplier * 100f:0}%";
-                    if (total.rareSpawnBonus > 0f) summary += $" 레어+{total.rareSpawnBonus * 100f:0}%";
-
-                    Rect summaryRect = new Rect(x + 24, y + panelH - 76, panelW - 48, 30);
-                    GUIStyle summaryStyle = UIHelper.CachedStyle("outfit_summary", () =>
-                    {
-                        GUIStyle s = new GUIStyle(GUI.skin.label);
-                        s.fontSize = 19;
-                        s.fontStyle = FontStyle.Bold;
-                        s.normal.textColor = new Color(0.4f, 0.9f, 0.4f);
-                        s.alignment = TextAnchor.MiddleLeft;
-                        return s;
-                    });
-                    GUI.Label(summaryRect, summary, summaryStyle);
+                    string summary = EquippedSummaryText(total);
+                    Rect summaryRect = mobile
+                        ? new Rect(x + 24, y + panelH - 76, footerW, 30)
+                        : new Rect(x + 24, y + panelH - 86, footerW, 72);
+                    GUIStyle summaryStyle = UIHelper.CachedStyle("outfit_summary", BuildSummaryStyle);
+                    if (!mobile) summary = SummaryForWidth(summary, summaryStyle, footerW);
+                    UIHelper.LabelFit(summaryRect, summary, summaryStyle);
                 }
             }
 
-            Rect coinRect = new Rect(x + 24, y + panelH - 44, 820, 36);
+            float coinX = charArea.xMax + 16f;
+            Rect coinRect = mobile
+                ? new Rect(x + 24, y + panelH - 44, footerW, 36)
+                : new Rect(coinX, y + panelH - 68, Mathf.Max(1f, x + panelW - 24f - coinX), 36);
             PlayerCurrencyWallet footerWallet = ResolveWallet();
             int coinCount = (footerWallet != null) ? footerWallet.Coins : 0;
             int gemCount = CashShopManager.Instance != null ? CashShopManager.Instance.Gems : 0;
-            GUI.Label(coinRect, FooterText(coinCount, gemCount), coinStyle);
+            UIHelper.LabelFit(coinRect, FooterText(coinCount, gemCount), mobile ? coinStyle : coinRightStyle);
 
             // GUI.color 복원
             GUI.color = Color.white;

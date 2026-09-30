@@ -123,6 +123,62 @@ namespace InsectGame.Tests
         }
 
         /// <summary>
+        /// 데스크톱 캐시샵의 오른쪽 콘텐츠(패널 − 캐릭터 칸 − 세로 스크롤바)에 상자 세 장이 들어가야 한다.
+        /// 패널 1200이던 때 812뿐이라 골드 상자가 잘리고 가로 스크롤이 생겼다(2026-09-30 검수 캡처).
+        /// </summary>
+        [Test]
+        public void CashShopDesktop_ThreeCardsFitWithoutSideScroll()
+        {
+            const float VerticalScrollbar = 20f;
+            float content = CashShopUI.DesktopPanelWidth - CashShopUI.DesktopCharColumnWidth - VerticalScrollbar;
+            Assert.GreaterOrEqual(content, CashShopUI.DesktopBoxTabMinWidth, "상자 세 장이 안 들어간다");
+            Assert.GreaterOrEqual(content, CashShopUI.DesktopCardTabMinWidth, "아이템 카드 세 장이 안 들어간다");
+            Assert.LessOrEqual(CashShopUI.DesktopPanelWidth, UIScale.ReferenceWidth - 48f, "패널이 데스크톱 화면보다 넓다");
+        }
+
+        /// <summary>하단 "장비 보너스" 줄은 모든 보너스를 적고, 장착이 같으면 문자열을 다시 만들지 않는다.</summary>
+        [Test]
+        public void EquippedSummary_ListsBonuses_AndIsCachedUntilChanged()
+        {
+            GameObject go = new GameObject("OutfitUITest");
+            try
+            {
+                CharacterOutfitUI ui = go.AddComponent<CharacterOutfitUI>();
+                OutfitStatBonus a = new OutfitStatBonus { captureChanceBonus = 0.02f, rareSpawnBonus = 0.05f };
+                string first = ui.EquippedSummaryText(a);
+                StringAssert.Contains("포획+2%", first);
+                StringAssert.Contains("레어+5%", first);
+                Assert.AreSame(first, ui.EquippedSummaryText(a), "같은 보너스인데 문자열을 다시 만들었다");
+
+                OutfitStatBonus b = a;
+                b.defBonus = 0.01f;
+                string second = ui.EquippedSummaryText(b);
+                StringAssert.Contains("DEF+1%", second, "보너스가 바뀌었는데 옛 문자열이 남았다");
+            }
+            finally
+            {
+                Object.DestroyImmediate(go);
+            }
+        }
+
+        /// <summary>
+        /// 넘치는 요약 줄은 항목 경계(공백)에서 나눈다 — IMGUI 줄바꿈은 한글 사이 아무 데서나 끊어
+        /// "캔디 / +2%"처럼 항목을 갈랐다(검수 캡처).
+        /// </summary>
+        [Test]
+        public void SplitAtMiddleSpace_BreaksBetweenEntries()
+        {
+            string text = "장비 보너스: 포획+2% ATK+2% DEF+2% 이속+5% 캔디+2%";
+            string split = CharacterOutfitUI.SplitAtMiddleSpace(text);
+            string[] lines = split.Split('\n');
+            Assert.AreEqual(2, lines.Length);
+            foreach (string entry in new[] { "포획+2%", "ATK+2%", "DEF+2%", "이속+5%", "캔디+2%" })
+                Assert.IsTrue(lines[0].Contains(entry) || lines[1].Contains(entry), $"'{entry}'가 두 줄에 갈렸다");
+            Assert.AreEqual(text, split.Replace('\n', ' '), "공백 하나만 줄바꿈으로 바뀌어야 한다");
+            Assert.AreEqual("공백없음", CharacterOutfitUI.SplitAtMiddleSpace("공백없음"));
+        }
+
+        /// <summary>
         /// 재화·가격 라벨에 보조 평면 이모지(💎·🪙 등)를 쓰지 않는다 — 스탠드얼론·기기 기본 폰트에 없어 □로 깨졌다
         /// (2026-09-30 검수 빌드 캡처). 주석의 이모지는 괜찮다.
         /// </summary>
