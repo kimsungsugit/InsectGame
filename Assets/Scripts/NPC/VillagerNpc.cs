@@ -4,7 +4,10 @@ using UnityEngine;
 
 namespace InsectGame.NPC
 {
-    /// <summary>머리 위 의뢰 표식 — 마을 이야기 주민에게만 붙는다(<c>StoryObjectiveTracker</c>가 정한다).</summary>
+    /// <summary>
+    /// 머리 위 표식 — 마을 이야기 주민과, 본편이 지금 가리키는 <b>한 사람</b>에게 붙는다
+    /// (<c>StoryObjectiveTracker</c>가 정한다).
+    /// </summary>
     public enum QuestMark
     {
         None,
@@ -12,6 +15,8 @@ namespace InsectGame.NPC
         New,
         /// <summary>의뢰를 끝냈으니 알리러 오면 된다(<c>?</c>).</summary>
         Report,
+        /// <summary>본편이 지금 이 사람에게 말을 걸라고 한다(<c>!</c>, 민트) — 한 번에 한 명뿐이다.</summary>
+        Main,
     }
 
     /// <summary>
@@ -88,6 +93,12 @@ namespace InsectGame.NPC
         // !·? 한 색 — 지도·미니맵에서 ?를 민트로 두었더니 이야기 목표·서브에리어 입구(민트)와 섞였다.
         // 세 곳(머리 위·지도·미니맵)이 같은 색·같은 기호를 쓰고, 새 이야기와 보고는 기호로 가른다.
         private static readonly Color QuestMarkColor = new Color(1f, 0.8f, 0.25f);
+        // 본편 표식은 지도의 이야기 목표 마커와 같은 민트 계열이다. 지도 토큰(#4FC98A) 그대로면 초원 풀색과
+        // 붙어 버려서 흰 쪽으로 많이 띄웠고, 의뢰 표식보다 크다 — "지금 가야 할 한 사람"이 여러 !들 사이에서
+        // 먼저 보여야 한다.
+        private static readonly Color MainQuestMarkColor = new Color(0.72f, 1f, 0.86f);
+        private const float QuestMarkSize = 0.12f;
+        private const float MainQuestMarkSize = 0.16f;
         // Camera.main은 호출마다 태그 검색이다 — InsectEntity의 이름표와 같은 이유로 정적 캐시.
         private static Camera questMarkCamera;
         private QuestMark questMark = QuestMark.None;
@@ -114,8 +125,10 @@ namespace InsectGame.NPC
             }
 
             if (questMarkText == null) questMarkText = CreateQuestMark();
+            bool main = mark == QuestMark.Main;
             questMarkText.text = mark == QuestMark.Report ? "?" : "!";
-            questMarkText.color = QuestMarkColor;
+            questMarkText.color = main ? MainQuestMarkColor : QuestMarkColor;
+            questMarkText.characterSize = main ? MainQuestMarkSize : QuestMarkSize;
             questMarkText.gameObject.SetActive(true);
             SyncQuestMarkVisibility();   // 멀리서(컬링 중) 켜질 수 있다 — 틱을 기다리지 않고 바로 맞춘다
         }
@@ -134,7 +147,7 @@ namespace InsectGame.NPC
             go.transform.SetParent(transform, false);
             go.transform.localPosition = new Vector3(0f, QuestMarkHeight, 0f);
             TextMesh text = go.AddComponent<TextMesh>();
-            text.characterSize = 0.12f;
+            text.characterSize = QuestMarkSize;
             text.fontSize = 96;
             text.fontStyle = FontStyle.Bold;
             text.anchor = TextAnchor.MiddleCenter;

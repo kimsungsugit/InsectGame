@@ -53,6 +53,10 @@ namespace InsectGame.UI
             Set(tracker, "targetPosition", npc.transform.position);
             Set(tracker, "playerTransform", player.transform);
             Set(tracker, "targetNpc", npc);
+            Set(tracker, "targetRegionId", "meadow");
+            // 실제 게임에선 Refresh가 정한다(트래커를 꺼 둔 fixture라 직접 넣는다) — 지도·미니맵의 본편 ! 배지.
+            Set(tracker, "mainMarkNpc", npc);
+            npc.SetQuestMark(QuestMark.Main);
             Set(tracker, "label", "마을 어르신에게 말 걸기");
             var map = new GameObject("MapQAWorldMap").AddComponent<RegionMapUI>();
             Set(map, "regionManager", manager);

@@ -87,6 +87,28 @@ namespace InsectGame.Story
                 if (taleMarkers[i].Npc == npc) return taleMarkers[i].Mark;
             return QuestMark.None;
         }
+
+        // ── 본편 표식 ──
+        // 본편이 "이 사람에게 말 걸기"를 가리킬 때 그 개체 <b>하나</b>에만 단다. 동행자는 리전마다 서 있어서
+        // storyNpcId로 달면 같은 사람의 표식이 열 개씩 뜬다(2026-09-28 결정) — 그래서 목표 행이 고르는 것과
+        // 같은 한 개체(현재 리전 우선 → 최근접)에만 붙인다. 의뢰를 따라가는 중에도 남는다 — 목표 행이
+        // 의뢰로 넘어가도 "본편은 저기서 이어진다"가 머리 위·지도에 보여야 돌아올 수 있다.
+        private VillagerNpc mainMarkNpc;
+
+        /// <summary>본편이 지금 말을 걸라고 가리키는 개체. 본편 목표가 대화가 아니면 null.</summary>
+        public VillagerNpc MainMarkNpc => mainMarkNpc;
+
+        /// <summary>
+        /// 이 주민에게 그릴 표식 — 마을 의뢰(<c>!</c>·<c>?</c>)가 먼저고, 없으면 본편 대상인지 본다.
+        /// 미니맵처럼 "무슨 표식이든 그리기만" 하는 쪽이 쓴다. 눌러서 따라가는 쪽은 <see cref="TaleMarkOf"/>.
+        /// </summary>
+        public QuestMark QuestMarkOf(VillagerNpc npc)
+        {
+            QuestMark tale = TaleMarkOf(npc);
+            if (tale != QuestMark.None) return tale;
+            return npc != null && npc == mainMarkNpc ? QuestMark.Main : QuestMark.None;
+        }
+
         /// <summary>지금 목표 행이 의뢰 따라가기인가(HUD가 ✕ 해제 버튼을 붙인다).</summary>
         public bool IsTrackingTale => trackedObjective;
 
@@ -102,6 +124,8 @@ namespace InsectGame.Story
         /// <summary>갈 곳이 정해진 목표인가 — false면 자동 주행 버튼을 띄우지 않는다.</summary>
         public bool HasWorldTarget => hasWorldTarget;
         public Vector3 TargetPosition => targetPosition;
+        /// <summary>목표가 있는 리전 ID(없으면 빈 문자열). 지도가 마커를 누르면 그 리전을 고른다.</summary>
+        public string TargetRegionId => targetRegionId;
         public bool IsRunning => playerMovement != null && playerMovement.IsAutoRunning;
         /// <summary>
         /// 걸어서 갈 수 있는 목표인가 — 아니면 지도(텔레포트) 경로로 보낸다.
@@ -219,7 +243,7 @@ namespace InsectGame.Story
         private void Refresh()
         {
             EnsureTrackedTaleLoaded();
-            RefreshTaleMarkers();
+            RefreshQuestMarks();
             if (TryResolveTrackedTale()) return;   // false면 trackedObjective도 이미 내려가 있다
 
             hasObjective = storyDirector != null && storyDirector.TryGetCurrentObjective(out objective);
@@ -475,7 +499,7 @@ namespace InsectGame.Story
         /// 동행자에게는 붙이지 않는다 — 세라·라온은 리전마다 서 있어 지도에 같은 사람의 표식이
         /// 열 개씩 뜬다(사용자 결정 2026-09-28). 대상은 저작 데이터의 town 챕터 주민뿐이다.
         /// </summary>
-        private void RefreshTaleMarkers()
+        private void RefreshTaleMarkers(VillagerNpc mainTarget)
         {
             taleMarkers.Clear();
             if (storyDirector == null || npcManager == null) return;
@@ -490,12 +514,43 @@ namespace InsectGame.Story
                 if (npc == null || !ContainsId(taleIds, npc.StoryNpcId)) continue;
 
                 TaleStepKind step = storyDirector.GetTaleStep(npc.StoryNpcId, out _);
-                QuestMark mark = step == TaleStepKind.Talk ? QuestMark.New
-                    : step == TaleStepKind.Report ? QuestMark.Report
-                    : QuestMark.None;
+                QuestMark mark = StoryTaleResolver.MarkFor(step, npc == mainTarget);
                 npc.SetQuestMark(mark);
-                if (mark != QuestMark.None) taleMarkers.Add(new TaleMarker(npc, mark));
+                if (mark == QuestMark.New || mark == QuestMark.Report) taleMarkers.Add(new TaleMarker(npc, mark));
             }
+        }
+
+        /// <summary>
+        /// 머리 위·지도·미니맵 표식을 한 번에 정한다. 본편 대상을 <b>먼저</b> 고르고 마을 주민 루프에 넘긴다 —
+        /// 따로 달면 본편 대상이 마을 주민일 때 두 판정이 0.5초마다 표식을 껐다 켠다.
+        /// </summary>
+        private void RefreshQuestMarks()
+        {
+            VillagerNpc main = ResolveMainTalkNpc();
+            RefreshTaleMarkers(main);
+
+            // 마을 주민이 아닌 본편 대상(어르신·동행자)은 위 루프가 건드리지 않는다 — 여기서 달고 뗀다.
+            if (mainMarkNpc != null && mainMarkNpc != main && !IsTaleNpc(mainMarkNpc))
+                mainMarkNpc.SetQuestMark(QuestMark.None);
+            if (main != null && !IsTaleNpc(main)) main.SetQuestMark(QuestMark.Main);
+            mainMarkNpc = main;
+        }
+
+        // 본편이 지금 말을 걸라고 하는 개체. 따라가기와 무관하게 본편 목표를 직접 묻는다 —
+        // objective 필드는 따라가는 동안 갱신되지 않는다(Refresh가 먼저 돌아 나간다).
+        private VillagerNpc ResolveMainTalkNpc()
+        {
+            if (storyDirector == null || npcManager == null) return null;
+            if (!storyDirector.TryGetCurrentObjective(out StoryObjective main)) return null;
+            if (main.Kind != StoryObjectiveKind.TalkToNpc) return null;
+            return FindNearestStoryNpc(main.TargetId);
+        }
+
+        private bool IsTaleNpc(VillagerNpc npc)
+        {
+            if (npc == null || storyDirector == null) return false;
+            IReadOnlyList<string> taleIds = storyDirector.TaleNpcIds;
+            return taleIds != null && ContainsId(taleIds, npc.StoryNpcId);
         }
 
         private static bool ContainsId(IReadOnlyList<string> ids, string id)
@@ -542,7 +597,23 @@ namespace InsectGame.Story
         private void ResolveNpcTarget()
         {
             hasWorldTarget = false;
-            if (npcManager == null || string.IsNullOrEmpty(objective.TargetId)) { ResolveFreeform(); return; }
+            VillagerNpc best = FindNearestStoryNpc(objective.TargetId);
+            if (best == null) { ResolveFreeform(); return; }
+
+            SetLabel(objective.TriggerType == StoryDirector.TriggerDuelWin
+                ? $"{best.DisplayName}에게 대결 신청"
+                : $"{best.DisplayName}에게 말 걸기");
+            targetPosition = best.transform.position;
+            targetRegionId = best.RegionId ?? string.Empty;
+            targetNpc = best;
+            hasWorldTarget = true;
+        }
+
+        // 목표 행과 본편 표식이 **같은 개체**를 골라야 한다 — 따로 고르면 "저기로 가라"는 줄과
+        // 머리 위 !가 서로 다른 리전의 같은 사람을 가리킨다.
+        private VillagerNpc FindNearestStoryNpc(string storyNpcId)
+        {
+            if (npcManager == null || string.IsNullOrEmpty(storyNpcId)) return null;
 
             string currentRegion = regionManager != null && regionManager.CurrentRegion != null
                 ? regionManager.CurrentRegion.regionId : null;
@@ -555,7 +626,7 @@ namespace InsectGame.Story
             for (int i = 0; i < list.Count; i++)
             {
                 VillagerNpc npc = list[i];
-                if (npc == null || npc.StoryNpcId != objective.TargetId) continue;
+                if (npc == null || npc.StoryNpcId != storyNpcId) continue;
 
                 bool inRegion = currentRegion != null && npc.RegionId == currentRegion;
                 float dist = playerTransform != null
@@ -570,16 +641,7 @@ namespace InsectGame.Story
                     bestDist = dist;
                 }
             }
-
-            if (best == null) { ResolveFreeform(); return; }
-
-            SetLabel(objective.TriggerType == StoryDirector.TriggerDuelWin
-                ? $"{best.DisplayName}에게 대결 신청"
-                : $"{best.DisplayName}에게 말 걸기");
-            targetPosition = best.transform.position;
-            targetRegionId = best.RegionId ?? string.Empty;
-            targetNpc = best;
-            hasWorldTarget = true;
+            return best;
         }
 
         private void ResolveRegionTarget()

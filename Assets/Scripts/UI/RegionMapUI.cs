@@ -299,7 +299,7 @@ namespace InsectGame.UI
         }
 
         // ─── 월드→지도 좌표 변환(종횡비 보존 fit) 캐시 ───
-        private float wmMinX, wmMinZ, wmW, wmH, wmOx, wmOy, wmDrawW, wmDrawH;
+        private float wmMinX, wmMinZ, wmW, wmH, wmOx, wmOy, wmDrawW, wmDrawH, wmScale;
 
         private Vector2 WorldToMap(float wx, float wz)
         {
@@ -307,6 +307,9 @@ namespace InsectGame.UI
             float nz = (wz - wmMinZ) / wmH;
             return new Vector2(wmOx + nx * wmDrawW, wmOy + (1f - nz) * wmDrawH);
         }
+
+        // 리전 원의 지도 반경(px). 원 그리기와 목표 마커 배치가 같은 값을 써야 한다.
+        private float RegionMapRadius(RegionData region) => Mathf.Clamp(region.radius * wmScale, 30f, 130f);
 
         private void DrawWorldMap(Rect area)
         {
@@ -346,7 +349,7 @@ namespace InsectGame.UI
             wmDrawW = wmW * fit; wmDrawH = wmH * fit;
             wmOx = area.x + (area.width - wmDrawW) * 0.5f;
             wmOy = area.y + (area.height - wmDrawH) * 0.5f;
-            float worldToPx = fit;
+            wmScale = fit;
 
             // 0) 의뢰 주민 배지 탭 → 따라가기. **리전·서브에리어 버튼보다 먼저** 처리한다 —
             //    IMGUI는 먼저 호출된 GUI.Button이 MouseDown을 가져가는데, 배지는 리전 원 안에 있어
@@ -367,7 +370,7 @@ namespace InsectGame.UI
                 bool accessible = regionManager.IsRegionAccessible(r);
                 bool current = regionManager.CurrentRegion == r;
                 Vector2 c = WorldToMap(r.centerPosition.x, r.centerPosition.z);
-                float cr = Mathf.Clamp(r.radius * worldToPx, 30f, 130f);
+                float cr = RegionMapRadius(r);
 
                 Color theme = r.themeColor;
                 Color fill = accessible ? theme : Desaturate(theme, 0.7f);
@@ -480,6 +483,8 @@ namespace InsectGame.UI
 
             // 3b) 스토리 목표 마커 — "지금 어디로 가야 하는가". 수문장(주황)·레이드(보라)와
             //     색으로 구분되게 민트다. 레이드 뒤, 플레이어 앞에 그려 플레이어를 가리지 않는다.
+            //     맥동은 주민 배지 **밑에** 깐다 — 위에 얹으면 따라가는 주민의 !·? 글자가 흐려진다.
+            DrawStoryObjectiveHalo(area);
             DrawNpcMarkers(area);
             DrawStoryObjectiveMarker(area);
 
@@ -532,6 +537,19 @@ namespace InsectGame.UI
                     continue;
                 }
 
+                // 본편 대상. 평소엔 목표 마커가 같은 자리에 같은 배지를 그리므로(그쪽은 지도 밖이면 테두리에
+                // 붙여 준다) 여기서는 건너뛴다. 의뢰를 따라가는 중에만 여기서 그린다 — 목표 마커가 의뢰로
+                // 옮겨 가도 "본편은 저기"가 지도에 남고, 누르면 본편으로 돌아온다.
+                if (objectiveTracker != null && npc == objectiveTracker.MainMarkNpc)
+                {
+                    if (objectiveTracker.IsTrackingTale)
+                    {
+                        DrawQuestBadge(marker, UITheme.Instance.accentMint, "!", false);
+                        DrawBadgeName(marker, npc.DisplayName, area);
+                    }
+                    continue;
+                }
+
                 GUI.color = UITheme.Instance.accentAmber;
                 GUI.DrawTexture(new Rect(marker.x - 5f, marker.y - 5f, 10f, 10f), discTex);
                 GUI.color = Color.white;
@@ -545,6 +563,8 @@ namespace InsectGame.UI
         // 반경은 손가락이 닿게 잡는다 — 지도 점(10px)과 같은 크기면 모바일에서 누를 수가 없다.
         private const float TaleBadgeRadius = 13f;
         private const float TaleBadgeHotPad = 8f;
+        // 내 위치 점(반경 8) + 진행방향 점(18px 앞, 반경 5)이 차지하는 자리 바깥까지.
+        private const float PlayerMarkerClearance = 14f;
 
         /// <summary>
         /// 지도에서 의뢰 주민 배지를 누르면 그 이야기를 따라간다. 지도는 닫지 않는다 — 목표 마커(민트)가
@@ -570,67 +590,170 @@ namespace InsectGame.UI
                 e.Use();
                 return;
             }
+
+            // 본편 표식 — 의뢰를 따라가던 중에만 따로 서 있다. 누르면 본편으로 돌아온다.
+            InsectGame.NPC.VillagerNpc main = objectiveTracker.MainMarkNpc;
+            if (main != null && objectiveTracker.IsTrackingTale && main.gameObject.activeInHierarchy)
+            {
+                Vector2 m = WorldToMap(main.transform.position.x, main.transform.position.z);
+                if (area.Contains(m) && new Rect(m.x - hot, m.y - hot, hot * 2f, hot * 2f).Contains(e.mousePosition))
+                {
+                    if (!string.IsNullOrEmpty(main.RegionId)) selectedRegionId = main.RegionId;
+                    objectiveTracker.StopTrackingTale();
+                    e.Use();
+                    return;
+                }
+            }
+
+            // 목표 마커 — 그 리전을 골라 [이동]이 바로 보이게 한다. 마커가 리전 원 위쪽 가장자리나
+            // 지도 테두리에 붙어 있으면 그 밑의 리전 버튼은 다른 리전(또는 빈 땅)이다.
+            if (TryGetObjectiveMarker(area, out Vector2 om, out _)
+                && !string.IsNullOrEmpty(objectiveTracker.TargetRegionId)
+                && new Rect(om.x - hot, om.y - hot, hot * 2f, hot * 2f).Contains(e.mousePosition))
+            {
+                selectedRegionId = objectiveTracker.TargetRegionId;
+                e.Use();
+            }
         }
 
         private void DrawTaleBadge(Vector2 m, InsectGame.NPC.VillagerNpc npc, InsectGame.NPC.QuestMark mark, Rect area)
         {
-            UITheme t = UITheme.Instance;
-            bool report = mark == InsectGame.NPC.QuestMark.Report;
             // !·? 모두 호박색 — 민트는 이야기 목표 마커와 서브에리어 자리라, ?를 민트로 두면 셋이 한 색이 됐다.
             // 새 이야기와 보고는 기호로 가른다(머리 위 표식·미니맵과 같은 규칙).
-            Color col = t.accentAmber;
-            bool tracked = objectiveTracker != null && objectiveTracker.IsTaleTracked(npc.StoryNpcId);
-
             // 따라가는 주민은 흰 테두리로 한 번 더 두른다 — 여러 배지 중 어느 것을 골랐는지 보이게.
-            float r = TaleBadgeRadius;
-            GUI.color = tracked ? Color.white : new Color(t.surfaceShadow.r, t.surfaceShadow.g, t.surfaceShadow.b, 0.55f);
-            GUI.DrawTexture(new Rect(m.x - r - 3f, m.y - r - 3f, (r + 3f) * 2f, (r + 3f) * 2f), discTex);
-            GUI.color = col;
-            GUI.DrawTexture(new Rect(m.x - r, m.y - r, r * 2f, r * 2f), discTex);
-            GUI.color = Color.white;
-            GUI.Label(new Rect(m.x - r, m.y - r, r * 2f, r * 2f), report ? "?" : "!", taleBadgeStyle);
+            bool tracked = objectiveTracker != null && objectiveTracker.IsTaleTracked(npc.StoryNpcId);
+            DrawQuestBadge(m, UITheme.Instance.accentAmber,
+                mark == InsectGame.NPC.QuestMark.Report ? "?" : "!", tracked);
 
             // 이름은 누르기 전에도 보인다 — 배지만으로는 누구의 의뢰인지 모른다. 다른 점과 달리 개수가 적다(주민 7명).
-            float lw = 150f;
-            UIHelper.LabelFit(new Rect(Mathf.Clamp(m.x - lw * 0.5f, area.x, area.xMax - lw),
-                Mathf.Clamp(m.y + r + 2f, area.y, area.yMax - 24f), lw, 24f), npc.DisplayName, subNameStyle);
+            DrawBadgeName(m, npc.DisplayName, area);
         }
 
-        private void DrawStoryObjectiveMarker(Rect area)
+        /// <summary>!·? 원 배지 하나. 마을 의뢰(호박)와 본편 목표(민트)가 같은 모양을 쓰고 색으로 갈린다.</summary>
+        private void DrawQuestBadge(Vector2 m, Color color, string glyph, bool ringed)
         {
+            UITheme t = UITheme.Instance;
+            float r = TaleBadgeRadius;
+            GUI.color = ringed ? Color.white : new Color(t.surfaceShadow.r, t.surfaceShadow.g, t.surfaceShadow.b, 0.55f);
+            GUI.DrawTexture(new Rect(m.x - r - 3f, m.y - r - 3f, (r + 3f) * 2f, (r + 3f) * 2f), discTex);
+            GUI.color = color;
+            GUI.DrawTexture(new Rect(m.x - r, m.y - r, r * 2f, r * 2f), discTex);
+            GUI.color = Color.white;
+            GUI.Label(new Rect(m.x - r, m.y - r, r * 2f, r * 2f), glyph, taleBadgeStyle);
+        }
+
+        private void DrawBadgeName(Vector2 m, string name, Rect area)
+        {
+            const float lw = 150f;
+            UIHelper.LabelFit(new Rect(Mathf.Clamp(m.x - lw * 0.5f, area.x, area.xMax - lw),
+                Mathf.Clamp(m.y + TaleBadgeRadius + 2f, area.y, area.yMax - 24f), lw, 24f), name, subNameStyle);
+        }
+
+        // 목표 라벨 폭 캐시 — 트래커가 값이 같으면 같은 문자열 참조를 유지하므로 참조 비교로 적중을 가린다.
+        private string objectiveLabelMeasured;
+        private float objectiveLabelTextWidth;
+
+        /// <summary>
+        /// 목표 마커가 지도에 놓일 자리. 그리기(맥동·배지·라벨)와 탭 판정이 같은 자리를 써야 해서 한곳에 둔다.
+        /// </summary>
+        /// <param name="onNpcBadge">그 자리에 주민 배지가 이미 그려진다 — 배지를 겹쳐 그리지 않는다.</param>
+        private bool TryGetObjectiveMarker(Rect area, out Vector2 marker, out bool onNpcBadge)
+        {
+            marker = Vector2.zero;
+            onNpcBadge = false;
             if (objectiveTracker == null || !objectiveTracker.HasObjective
-                || !objectiveTracker.HasWorldTarget) return;
+                || !objectiveTracker.HasWorldTarget) return false;
 
             Vector3 wp = objectiveTracker.TargetPosition;
-            Vector2 mc = WorldToMap(wp.x, wp.z);
+            Vector2 raw = WorldToMap(wp.x, wp.z);
+
+            // 리전 중심을 가리키는 목표(리전 진입·"그 리전에서 포획")는 원의 위쪽으로 올린다 —
+            // 중심에는 리전 이름이 있어 배지가 그 글자를 덮는다.
+            RegionData region = regionManager != null && !string.IsNullOrEmpty(objectiveTracker.TargetRegionId)
+                ? regionManager.GetRegionById(objectiveTracker.TargetRegionId) : null;
+            if (region != null && (region.centerPosition - wp).sqrMagnitude < 0.01f)
+                raw.y -= RegionMapRadius(region) * 0.62f;
+
+            // 따라가는 의뢰 주민은 자기 배지(호박색 !·?)가 이미 그 자리에 있다.
+            InsectGame.NPC.VillagerNpc npc = objectiveTracker.TargetNpc;
+            onNpcBadge = npc != null && area.Contains(raw)
+                && objectiveTracker.TaleMarkOf(npc) != InsectGame.NPC.QuestMark.None;
+
+            // 목표가 바로 옆이면(첫 목표인 어르신이 9m 앞이다) 지도 축척에서는 내 위치 점과 한 자리라
+            // 배지가 그 밑에 깔린다. 방향은 살린 채 한 걸음 떼어 놓는다. 주민 배지 위에 얹는 맥동은
+            // 그 배지를 따라가야 하므로 옮기지 않는다.
+            Transform pl = GetPlayer();
+            if (pl != null && !onNpcBadge)
+            {
+                Vector3 pp = MapMarkerProjection.OverworldPlayerPosition(pl.position,
+                    regionManager != null ? regionManager.CurrentSubArea : null);
+                raw = MapMarkerProjection.KeepClear(raw, WorldToMap(pp.x, pp.z), TaleBadgeRadius + PlayerMarkerClearance);
+            }
+
             // **지도 경계는 리전 원들로만 잡는다** — 서브에리어도 NPC도 그 밖에 있을 수 있고,
-            // 지도는 Group으로 클립되지 않아 나가면 정보 패널 위에 민트 점이 떠 버린다.
+            // 지도는 Group으로 클립되지 않아 나가면 정보 패널 위에 배지가 떠 버린다.
             // 나침반처럼 테두리에 붙인다(방향은 남고, 라벨이 바로 옆에 붙어 뭔지는 읽힌다).
-            mc.x = Mathf.Clamp(mc.x, area.x + 10f, area.xMax - 10f);
-            mc.y = Mathf.Clamp(mc.y, area.y + 10f, area.yMax - 10f);
-            Color mint = UITheme.Instance.accentMint;
+            float inset = TaleBadgeRadius + 5f;
+            marker = new Vector2(Mathf.Clamp(raw.x, area.x + inset, area.xMax - inset),
+                Mathf.Clamp(raw.y, area.y + inset, area.yMax - inset));
+            return true;
+        }
+
+        // 본편은 민트, 따라가는 의뢰는 호박 — 배지·맥동·라벨이 한 색으로 묶인다.
+        private Color ObjectiveColor()
+        {
+            UITheme t = UITheme.Instance;
+            return objectiveTracker.IsTrackingTale ? t.accentAmber : t.accentMint;
+        }
+
+        private void DrawStoryObjectiveHalo(Rect area)
+        {
+            if (!TryGetObjectiveMarker(area, out Vector2 mc, out _)) return;
 
             // 맥동은 레이드 마커와 같은 관용구 — 두 마커가 서로 다른 박자로 뛰면 산만해진다.
+            Color col = ObjectiveColor();
             float pulse = 0.7f + Mathf.Sin(Time.time * 4f) * 0.3f;
-            GUI.color = new Color(mint.r, mint.g, mint.b, 0.28f * pulse);
-            GUI.DrawTexture(new Rect(mc.x - 17f, mc.y - 17f, 34f, 34f), discTex);
-            GUI.color = new Color(mint.r, mint.g, mint.b, pulse);
-            GUI.DrawTexture(new Rect(mc.x - 8f, mc.y - 8f, 16f, 16f), discTex);
+            float hr = TaleBadgeRadius + 4f + 7f * pulse;
+            GUI.color = new Color(col.r, col.g, col.b, 0.36f * pulse);
+            GUI.DrawTexture(new Rect(mc.x - hr, mc.y - hr, hr * 2f, hr * 2f), discTex);
             GUI.color = Color.white;
-            GUI.DrawTexture(new Rect(mc.x - 3f, mc.y - 3f, 6f, 6f), discTex);
+        }
 
-            // 라벨을 지도 영역 안으로 가둔다. 목표가 지도 가장자리에 있으면 280px 라벨이
-            // 패널 제목이나 정보 패널 위로 삐져나간다(지도는 Group으로 클립되지 않는다).
-            // 위쪽에 자리가 없으면 마커 아래로 내린다.
-            float lw = Mathf.Min(280f, area.width);
+        /// <summary>
+        /// 지금 가야 할 곳의 <c>!</c> 배지와 목표 문구. 예전엔 16px 민트 점이었고 문구는 <b>마우스를 올려야</b>
+        /// 떴다 — 모바일에는 호버가 없어 "점이 뭔지"를 알 길이 없었다. 지도에서 가장 중요한 한 줄이라 늘 띄운다.
+        /// </summary>
+        private void DrawStoryObjectiveMarker(Rect area)
+        {
+            if (!TryGetObjectiveMarker(area, out Vector2 mc, out bool onNpcBadge)) return;
+
+            Color col = ObjectiveColor();
+            if (!onNpcBadge) DrawQuestBadge(mc, col, "!", true);
+
+            string text = objectiveTracker.Label;
+            if (string.IsNullOrEmpty(text)) return;
+            if (!ReferenceEquals(objectiveLabelMeasured, text))
+            {
+                objectiveLabelMeasured = text;
+                objectiveLabelTextWidth = objectiveStyle.CalcSize(new GUIContent(text)).x;
+            }
+
+            // 라벨을 지도 영역 안으로 가둔다(지도는 Group으로 클립되지 않는다). 위쪽에 자리가 없으면 아래로 —
+            // 아래엔 주민 이름이 붙으므로 그 한 줄(26px)만큼 더 내린다.
+            const float lh = 30f;
+            float lw = Mathf.Min(objectiveLabelTextWidth + 28f, Mathf.Min(360f, area.width));
             float lx = Mathf.Clamp(mc.x - lw * 0.5f, area.x, area.xMax - lw);
-            float ly = mc.y - 36f >= area.y ? mc.y - 36f : mc.y + 14f;
-            ly = Mathf.Clamp(ly, area.y, area.yMax - 24f);
+            float gap = TaleBadgeRadius + 8f;
+            float ly = mc.y - gap - lh >= area.y ? mc.y - gap - lh : mc.y + gap + (onNpcBadge ? 26f : 0f);
+            ly = Mathf.Clamp(ly, area.y, area.yMax - lh);
 
-            // Label()이 wordWrap을 전역으로 꺼 두어 긴 목표명은 가로로 잘린다 — LabelFit이
-            // 폭까지 보고 폰트를 줄인다(rules/ui-layout.md).
-            if (new Rect(mc.x - 17f, mc.y - 17f, 34f, 34f).Contains(Event.current.mousePosition))
-                UIHelper.LabelFit(new Rect(lx, ly, lw, 24f), objectiveTracker.Label, objectiveStyle);
+            // 리전 원·이름 위에 얹히므로 바탕을 깐다. Label()이 wordWrap을 꺼 두어 긴 목표명은 가로로
+            // 잘린다 — LabelFit이 폭까지 보고 폰트를 줄인다(rules/ui-layout.md).
+            UITheme t = UITheme.Instance;
+            Rect pill = new Rect(lx, ly, lw, lh);
+            UISurface.Rounded(pill, new Color(t.surfaceBase.r, t.surfaceBase.g, t.surfaceBase.b, 0.92f), UITheme.Radius.Chip);
+            objectiveStyle.normal.textColor = col;
+            UIHelper.LabelFit(new Rect(lx + 10f, ly, lw - 20f, lh), text, objectiveStyle);
             GUI.color = Color.white;
         }
 
@@ -665,7 +788,7 @@ namespace InsectGame.UI
                 DrawLegendRow(ix, ref ly, iw, new Color(0.7f, 0.3f, 0.95f), "레이드 보스", legendPitch);
                 DrawLegendRow(ix, ref ly, iw, new Color(0.4f, 0.85f, 1f), "내 위치", legendPitch);
                 DrawLegendRow(ix, ref ly, iw, new Color(0.5f, 0.7f, 0.4f), "서브에리어 (소형 원, 눌러 이동)", legendPitch);
-                DrawLegendRow(ix, ref ly, iw, UITheme.Instance.accentMint, "이야기 목표 (민트, 맥동)", legendPitch);
+                DrawLegendRow(ix, ref ly, iw, UITheme.Instance.accentMint, "본편 목표 (민트 !, 맥동)", legendPitch);
                 DrawLegendRow(ix, ref ly, iw, UITheme.Instance.accentAmber, "마을 의뢰 (!·? 눌러 따라가기)", legendPitch);
 
                 // 목표 문구 자체는 여기 두지 않는다 — 마커 바로 위에 이미 붙어 있고(지도),
@@ -1065,6 +1188,21 @@ namespace InsectGame.UI
         internal static Vector3 OverworldPlayerPosition(Vector3 playerPosition, SubAreaData currentSubArea)
         {
             return currentSubArea != null ? currentSubArea.centerPosition : playerPosition;
+        }
+
+        /// <summary>
+        /// <paramref name="marker"/>가 <paramref name="obstacle"/>에서 <paramref name="minGap"/>보다 가까우면
+        /// 같은 방향으로 그만큼 밀어낸다(방향은 "어느 쪽으로 가면 되는가"라 지킨다). 정확히 겹치면 위로.
+        /// </summary>
+        internal static Vector2 KeepClear(Vector2 marker, Vector2 obstacle, float minGap)
+        {
+            if (minGap <= 0f) return marker;
+            Vector2 delta = marker - obstacle;
+            float sqr = delta.sqrMagnitude;
+            if (sqr >= minGap * minGap) return marker;
+            // GUI 좌표는 아래가 +y다 — 위는 (0, -1).
+            Vector2 direction = sqr > 0.0001f ? delta / Mathf.Sqrt(sqr) : new Vector2(0f, -1f);
+            return obstacle + direction * minGap;
         }
 
         internal static bool TryRadarOffset(Vector3 origin, Vector3 target, float worldRadius,

@@ -496,6 +496,17 @@ namespace InsectGame.Story
         }
 
         /// <summary>
+        /// 마을 주민 한 명에게 달 표식. <b>의뢰가 본편을 이긴다</b> — 말을 걸면 어차피 둘 중 하나가 나오고,
+        /// 의뢰 표식은 눌러서 따라갈 수 있어 잃으면 안 된다. 할 의뢰가 없는 주민이 본편 대상이면 본편 표식이다.
+        /// </summary>
+        public static InsectGame.NPC.QuestMark MarkFor(TaleStepKind step, bool isMainTarget)
+        {
+            if (step == TaleStepKind.Talk) return InsectGame.NPC.QuestMark.New;
+            if (step == TaleStepKind.Report) return InsectGame.NPC.QuestMark.Report;
+            return isMainTarget ? InsectGame.NPC.QuestMark.Main : InsectGame.NPC.QuestMark.None;
+        }
+
+        /// <summary>
         /// 마을 이야기 주민 목록 — <see cref="TownChapterId"/> 챕터의 <c>NpcTalk</c> 대상.
         /// 인물 목록을 코드에 박지 않는다(주민을 늘려도 여기는 그대로다). 순서는 처음 등장한 비트의
         /// <c>order</c> 순이라 저작 순서(초원 → 연못 → …)와 같다.

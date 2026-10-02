@@ -341,6 +341,27 @@ namespace InsectGame.Tests
             }
         }
 
+        // ── 표식 판정 ──
+        // 의뢰 표식은 눌러서 따라가는 손잡이다 — 본편 대상이 됐다고 민트 !로 덮이면 그 주민의 의뢰가
+        // 지도에서 사라진다. 할 의뢰가 없는 주민일 때만 본편 표식이 붙는다.
+
+        [TestCase(TaleStepKind.Talk, false, QuestMark.New)]
+        [TestCase(TaleStepKind.Talk, true, QuestMark.New)]
+        [TestCase(TaleStepKind.Report, false, QuestMark.Report)]
+        [TestCase(TaleStepKind.Report, true, QuestMark.Report)]
+        [TestCase(TaleStepKind.Errand, true, QuestMark.Main)]
+        [TestCase(TaleStepKind.Waiting, true, QuestMark.Main)]
+        [TestCase(TaleStepKind.Done, true, QuestMark.Main)]
+        [TestCase(TaleStepKind.None, true, QuestMark.Main)]
+        [TestCase(TaleStepKind.Errand, false, QuestMark.None)]
+        [TestCase(TaleStepKind.Waiting, false, QuestMark.None)]
+        [TestCase(TaleStepKind.Done, false, QuestMark.None)]
+        public void MarkFor_TaleMarkWinsOverMain_MainOnlyWhenNoTaleToTell(
+            TaleStepKind step, bool isMainTarget, QuestMark expected)
+        {
+            Assert.AreEqual(expected, StoryTaleResolver.MarkFor(step, isMainTarget));
+        }
+
         private static HashSet<string> PortraitCandidates()
         {
             var ids = new HashSet<string>(StoryTaleResolver.CollectTaleNpcIds(StoryService.AllBeats()));

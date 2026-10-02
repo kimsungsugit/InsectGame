@@ -227,9 +227,9 @@ namespace InsectGame.UI
                 foreach (var npc in npcManager.StoryNpcs)
                 {
                     if (npc == null || !npc.gameObject.activeInHierarchy) continue;
-                    // 의뢰 주민은 네모 대신 !/? 원 — 지도 배지·머리 위 표식과 같은 기호다.
+                    // 의뢰 주민·본편 대상은 네모 대신 !/? 원 — 지도 배지·머리 위 표식과 같은 기호다.
                     InsectGame.NPC.QuestMark mark = objectiveTracker != null
-                        ? objectiveTracker.TaleMarkOf(npc) : InsectGame.NPC.QuestMark.None;
+                        ? objectiveTracker.QuestMarkOf(npc) : InsectGame.NPC.QuestMark.None;
                     if (mark != InsectGame.NPC.QuestMark.None) DrawTaleMark(npc.transform.position, cx, cy, mapRadius, mark);
                     else DrawLandmark(npc.transform.position, cx, cy, mapRadius, UITheme.Instance.accentAmber);
                 }
@@ -256,9 +256,12 @@ namespace InsectGame.UI
         {
             if (!MapMarkerProjection.TryRadarOffset(player.position, position, worldRadius, mapRadius, out Vector2 offset)) return;
             bool report = mark == InsectGame.NPC.QuestMark.Report;
-            Rect r = new Rect(cx + offset.x - 9f, cy + offset.y - 9f, 18f, 18f);
-            // !·? 모두 호박색 — 민트는 서브에리어 입구와 목표 쐐기 색이다(지도 배지와 같은 규칙).
-            GUI.color = UITheme.Instance.accentAmber;
+            // 본편 대상은 한 단 크고 민트다 — 여러 의뢰 사이에서 "지금 갈 사람"이 먼저 보이게(지도 배지와 같은 색).
+            bool main = mark == InsectGame.NPC.QuestMark.Main;
+            float half = main ? 11f : 9f;
+            Rect r = new Rect(cx + offset.x - half, cy + offset.y - half, half * 2f, half * 2f);
+            // 의뢰는 !·? 모두 호박색이고 기호로 가른다(지도 배지와 같은 규칙).
+            GUI.color = main ? UITheme.Instance.accentMint : UITheme.Instance.accentAmber;
             GUI.DrawTexture(r, dotTex);
             GUI.color = Color.white;
             GUI.Label(r, report ? "?" : "!", taleMarkStyle);
@@ -274,6 +277,12 @@ namespace InsectGame.UI
 
             // 월드 +Z가 미니맵 위쪽이므로 화면 벡터는 (x, -z)다.
             float dist = objectiveTracker.DistanceToTarget;
+
+            // 반경 안의 표식 달린 주민이면 쐐기를 겹치지 않는다 — 그 자리에 이미 !·?가 있다.
+            InsectGame.NPC.VillagerNpc targetNpc = objectiveTracker.TargetNpc;
+            if (dist <= worldRadius && targetNpc != null
+                && objectiveTracker.QuestMarkOf(targetNpc) != InsectGame.NPC.QuestMark.None) return;
+
             float mapped = Mathf.Min(dist, worldRadius) / worldRadius * mapRadius;
             float wx = cx + dir.x * mapped;
             float wy = cy - dir.z * mapped;
