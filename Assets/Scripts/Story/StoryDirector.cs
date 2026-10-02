@@ -104,6 +104,14 @@ namespace InsectGame.Story
         }
 
         // 보상 인벤토리 주입(캔디/아이템). 곤충/EXP는 위 AutoWire의 collection/progress 재사용.
+        // 이야기 보상을 받았다는 소식을 넣는 곳. 없으면 예전처럼 말없이 지급한다(지급 자체는 그대로다).
+        private FieldMomentFeed momentFeed;
+
+        public void AutoWire(FieldMomentFeed feed)
+        {
+            if (momentFeed == null) momentFeed = feed;
+        }
+
         public void AutoWire(PlayerCandyInventory candy, PlayerItemInventory items)
         {
             if (candyInventory == null) candyInventory = candy;
@@ -659,8 +667,15 @@ namespace InsectGame.Story
             // **여기서 바로 쏘지 않는다.** 전투·레이드 안에서 잡은 것이면 곧 결과 화면이 뜨는데,
             // 그걸 알려 주는 신호(BattleEnded/RaidEnded)는 **같은 프레임 뒤에** 온다.
             // 지금 쏘면 대사창이 획득 EXP·캔디 패널 위로 열린다 — `BattleWin`을 미루는 그 이유다.
+            if (grantingStarter) return;   // 첫 파트너는 받은 것이지 잡은 것이 아니다 — 아래 GrantReward 참조
             frameCaptures.Add(insect != null ? insect.insectId : null);
         }
+
+        // 첫 파트너를 건네는 동안만 선다. 그 지급이 `CaptureInsect`를 울리면 어르신의 "첫 포획 축하"
+        // (`ch1_first_capture` — "훌륭해! 이 초원에서 곤충을 거둬 왔구나")가 **아무것도 잡기 전에** 뜬다.
+        // 정작 처음 잡았을 때는 그 대사가 이미 지나가 라온이 대신 나온다(2026-10-02 걸음 보고서에서 확인).
+        // 다른 스토리 보상 곤충은 그대로 `CaptureInsect`를 울린다 — 그쪽은 그 발화에 기대는 비트가 있다(`ch12_sign`).
+        private bool grantingStarter;
 
         /// <summary>
         /// 포획을 <b>프레임 끝에</b> 판정한다. 여기까지 오면 같은 프레임의 전투 종료가
@@ -1163,6 +1178,8 @@ namespace InsectGame.Story
         private void GrantReward(StoryReward reward, string beatId)
         {
             if (reward == null) return;
+            // 실제로 건넨 곤충의 이름 — 첫 파트너는 고른 종으로 바뀌므로 보상 데이터의 이름과 다르다.
+            string grantedInsectName = null;
 
             if (reward.rewardCandy > 0)
             {
@@ -1201,7 +1218,11 @@ namespace InsectGame.Story
                         Debug.LogWarning($"[Story] 첫 파트너 '{insectId}'가 DB에 없어 비트 보상 '{reward.rewardInsectId}'로 대체한다");
                         insectId = reward.rewardInsectId;
                     }
-                    insectCollection.AddCapturedInsect(insectId, Mathf.Max(1, reward.rewardInsectLevel));
+                    grantingStarter = beatId == StarterInsectCatalog.StarterBeatId;
+                    try { insectCollection.AddCapturedInsect(insectId, Mathf.Max(1, reward.rewardInsectLevel)); }
+                    finally { grantingStarter = false; }
+                    InsectData granted = insectCollection.GetInsectData(insectId);
+                    grantedInsectName = granted != null ? granted.displayName : insectId;
 
                     // 도감 등록은 지급과 한 쌍이다(`TutorialQuestManager`와 같은 형태). 빠뜨리면
                     // 준 곤충이 도감에 없어 100% 완주가 막히는데, **여기선 자기 발등도 찍는다** —
@@ -1218,6 +1239,13 @@ namespace InsectGame.Story
             }
 
             // unlockQuestId: 스토리→퀘스트 역주입은 설계상 배제(단방향 관찰). 여기서 처리하지 않는다.
+
+            // 받은 것을 알린다 — 예전엔 대사가 닫히면 캔디·그물·파트너가 말없이 들어와 있었다.
+            if (momentFeed != null)
+            {
+                string text = StoryRewardText.Format(reward, momentFeed.ItemName, grantedInsectName);
+                if (!string.IsNullOrEmpty(text)) momentFeed.Push(FieldMomentKind.Reward, "보상을 받았습니다", text);
+            }
         }
 
         // --- 저장/로드 (SaveScope 계정별 격리, DexSaveService 패턴) ---

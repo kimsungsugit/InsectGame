@@ -19,7 +19,8 @@ namespace InsectGame.UI
             // q_approach("곤충에게 다가가 E 키로 포획해보세요!")는 사용자 요청으로 제거 — 그 강제 배너/프리즈 미표시.
             // 퀘스트 진행 자체는 TutorialQuestManager가 처리하므로 안내만 빠지고 흐름은 유지된다.
             { "q_battle", "야생 곤충에게 B 키로 배틀을 걸어보세요!" },
-            { "q_team", "T 키로 배틀 팀을 편성하세요!" },
+            // q_team(팀 편성)은 「둘러보기」 서브 과제로 옮겨졌다 — 서브는 활성화 이벤트가 없어 강제 가이드에
+            // 걸리지도 않고, 걸려서도 안 된다(안 해도 되는 일로 화면을 막지 않는다).
         };
 
         private string activeGuidedQuestId;   // 현재 가이드 중인 questId (없으면 null)

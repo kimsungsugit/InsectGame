@@ -185,9 +185,16 @@ namespace InsectGame.Core
 
         private void Initialize()
         {
-            // **배열 순서가 곧 첫 퀘스트다.** ActivateNextQuest가 배열을 위에서부터 훑어
-            // 첫 미완료·prereq충족 스토리 퀘스트를 고르는데, q_collection/q_dex는 prereq가
-            // 아예 없어서 순서만이 그 둘보다 먼저 오게 하는 유일한 장치다.
+            // **배열 순서가 곧 스토리 순서다.** ActivateNextQuest가 배열을 위에서부터 훑어
+            // 첫 미완료·prereq충족 스토리 퀘스트를 고른다.
+            //
+            // **수문장까지의 스토리 체인은 "하는 일"만 남겼다**(2026-10-02): 이동 → 어르신 → 포획 1 →
+            // 포획 3 → 레벨업 → 전투 1 → 전투 3 → 희귀 포획 → 수문장. 창을 한 번 열면 끝나는 과제
+            // (컬렉션·도감·스킬 장착·아이템·훈련·팀 편성)는 **자리는 그대로 두고 category만 Side로** 바꿨다 —
+            // 예전엔 수문장 전 14개 중 7개가 그런 과제였고 첫 전투가 9번째였다. 이제 순서 없이 아무 때나
+            // 하면 보상을 받고, 안 해도 진행이 막히지 않는다. 배열 자리를 안 옮긴 것은 소급 완료
+            // (BackfillSkippedStoryQuests)가 "배열 순서 = 완료 순서"에 기대기 때문이다 — 남은 스토리
+            // 퀘스트의 순서는 예전 그대로라 기존 세이브가 아무것도 건너뛰지 않는다.
             //
             // q_move가 맨 앞인 이유: 예전엔 q_approach(첫 포획)가 첫 퀘스트라, 처음 켠 사람이
             // **움직이는 법을 배우기 전에** 곤충을 잡으라는 지시를 받았다.
@@ -226,18 +233,20 @@ namespace InsectGame.Core
                 },
                 new TutorialQuest
                 {
-                    questId = "q_collection", title = "컬렉션 확인",
+                    questId = "q_collection", title = "[둘러보기] 컬렉션 확인",
                     description = "C키로 보유 곤충을 확인해보세요",
                     hint = "C키를 눌러 컬렉션 화면을 열어보세요",
                     type = QuestType.ViewCollection, targetCount = 1,
+                    category = QuestCategory.Side, prerequisiteQuestId = "q_approach",
                     rewardExp = 5
                 },
                 new TutorialQuest
                 {
-                    questId = "q_dex", title = "도감 열기",
+                    questId = "q_dex", title = "[둘러보기] 도감 열기",
                     description = "D키로 도감을 열어 발견한 곤충을 확인하세요",
                     hint = "D키를 눌러 도감 화면을 열어보세요",
                     type = QuestType.OpenDex, targetCount = 1,
+                    category = QuestCategory.Side, prerequisiteQuestId = "q_approach",
                     rewardExp = 5
                 },
                 new TutorialQuest
@@ -260,11 +269,11 @@ namespace InsectGame.Core
                 },
                 new TutorialQuest
                 {
-                    questId = "q_equip", title = "스킬 장착",
+                    questId = "q_equip", title = "[둘러보기] 스킬 장착",
                     description = "훈련 메뉴에서 곤충에게 스킬을 장착하세요",
                     hint = "훈련 메뉴를 열고 스킬 장착 탭을 확인하세요",
                     type = QuestType.EquipSkill, targetCount = 1,
-                    prerequisiteQuestId = "q_levelup",
+                    category = QuestCategory.Side, prerequisiteQuestId = "q_levelup",
                     rewardExp = 10
                 },
                 new TutorialQuest
@@ -273,36 +282,36 @@ namespace InsectGame.Core
                     description = "야생 곤충과 전투해서 승리하세요",
                     hint = "야생 곤충에게 다가가 전투를 시작하세요",
                     type = QuestType.Battle, targetCount = 1,
-                    prerequisiteQuestId = "q_equip",
+                    prerequisiteQuestId = "q_levelup",
                     rewardCandy = 10, rewardExp = 20,
                     rewardItemId = "exp_boost", rewardItemCount = 1
                 },
                 new TutorialQuest
                 {
-                    questId = "q_item", title = "아이템 활용",
+                    questId = "q_item", title = "[둘러보기] 아이템 활용",
                     description = "아이템을 사용해보세요 (채집망 등)",
                     hint = "[I] 가방에서 아이템 사용 (채집망은 곤충 앞에서)",
                     type = QuestType.UseItem, targetCount = 1,
-                    prerequisiteQuestId = "q_battle",
+                    category = QuestCategory.Side, prerequisiteQuestId = "q_battle",
                     rewardCandy = 5,
                     rewardItemId = "net_silver", rewardItemCount = 2
                 },
                 new TutorialQuest
                 {
-                    questId = "q_training", title = "훈련 시작!",
+                    questId = "q_training", title = "[둘러보기] 훈련 시작!",
                     description = "훈련 메뉴에서 곤충을 훈련시키세요",
                     hint = "훈련 메뉴를 열고 훈련 방법을 선택하세요",
                     type = QuestType.Training, targetCount = 1,
-                    prerequisiteQuestId = "q_battle",
+                    category = QuestCategory.Side, prerequisiteQuestId = "q_battle",
                     rewardExp = 15
                 },
                 new TutorialQuest
                 {
-                    questId = "q_team", title = "팀 편성",
+                    questId = "q_team", title = "[둘러보기] 팀 편성",
                     description = "전투 팀에 곤충을 배치하세요",
                     hint = "팀 편성 화면에서 슬롯에 곤충을 배치하세요",
                     type = QuestType.SetTeam, targetCount = 1,
-                    prerequisiteQuestId = "q_training",
+                    category = QuestCategory.Side, prerequisiteQuestId = "q_battle",
                     rewardCandy = 10
                 },
                 new TutorialQuest
@@ -311,7 +320,7 @@ namespace InsectGame.Core
                     description = "전투에서 3번 승리하세요",
                     hint = "야생 곤충들과 전투를 반복하세요",
                     type = QuestType.Battle, targetCount = 3,
-                    prerequisiteQuestId = "q_team",
+                    prerequisiteQuestId = "q_battle",
                     rewardCandy = 15, rewardExp = 30
                 },
                 new TutorialQuest
@@ -404,8 +413,8 @@ namespace InsectGame.Core
                     rewardCandy = 60, rewardExp = 120,
                     rewardItemId = "net_gold", rewardItemCount = 1
                 },
-                // **목표는 1이지 2가 아니다.** NotifyAction은 **활성 퀘스트 하나만** 올리는데
-                // (`:699`), 첫 정화는 그 앞의 q_blight_first가 이미 소비한다.
+                // **목표는 1이지 2가 아니다.** 정화는 **활성 퀘스트 하나만** 올리는데(미리 세기 대상이
+                // 아니다 — `TutorialQuestOrder.IsBankable`), 첫 정화는 그 앞의 q_blight_first가 이미 소비한다.
                 // **체인 합계가 거점 수를 넘으면 뒤 퀘스트가 영영 완료되지 않는다** — 거점이
                 // 둘이던 시절 1 + 2를 적어 실제로 죽어 있었다. 지금은 셋이지만 합계는 그대로
                 // 1 + 1로 둔다: 거점이 다시 줄어도 안전하고, 어차피 "하나 더"가 이 퀘스트의
@@ -935,6 +944,9 @@ namespace InsectGame.Core
         public void NotifyAction(QuestType type, int count = 1)
         {
             if (!tutorialSessionStarted) return;
+            // 활성 퀘스트보다 **먼저** 미리 센다 — 아래에서 활성 퀘스트가 완료되면 곧바로 다음 퀘스트가
+            // 활성화되는데, 그때 이번 행동이 이미 들어 있어야 한다(전투 1 → 전투 3이 1/3에서 시작한다).
+            BankUpcomingStoryProgress(type, InsectRarity.Common, count);
             if (ActiveQuest != null && ActiveQuest.type == type)
                 IncrementProgress(activeQuestId, count);
             ProgressSideQuests(type, count);   // 서브 퀘스트(다중 활성)도 함께 진행
@@ -955,6 +967,8 @@ namespace InsectGame.Core
         public void NotifyCapture(InsectRarity rarity)
         {
             if (!tutorialSessionStarted) return;
+
+            BankUpcomingStoryProgress(QuestType.Capture, rarity, 1);   // NotifyAction과 같은 이유로 먼저
 
             if (ActiveQuest != null)
             {
@@ -1071,6 +1085,54 @@ namespace InsectGame.Core
         }
 
         // --- 진행 추적 ---
+
+        // 미리 세기 대상 수집 버퍼 — 포획·전투마다 불리므로 호출마다 리스트를 새로 만들지 않는다.
+        private readonly List<TutorialQuest> bankTargets = new List<TutorialQuest>();
+
+        /// <summary>
+        /// <b>아직 차례가 안 온 스토리 퀘스트의 진행을 미리 센다.</b> 예전엔 활성 퀘스트만 세어서, 다른
+        /// 퀘스트를 하는 동안 잡은 곤충·이긴 전투는 버려지고 차례가 오면 처음부터 다시 해야 했다
+        /// ("3마리 포획" 직전에 잡은 세 마리가 0으로 돌아갔다). 지금은 "총 N번"으로 센다.
+        ///
+        /// 조용히 올린다 — 진행 이벤트를 쏘면 아직 안 뜬 퀘스트의 진행 알림이 뜬다. 차례가 왔을 때
+        /// 이미 목표를 채웠으면 <see cref="ReconcileBankedProgress"/>가 그 자리에서 완료한다.
+        /// </summary>
+        private void BankUpcomingStoryProgress(QuestType action, InsectRarity rarity, int count)
+        {
+            if (count <= 0) return;
+            TutorialQuestOrder.CollectBankTargets(allQuests, completedQuests.Contains, activeQuestId,
+                action, rarity, bankTargets);
+            if (bankTargets.Count == 0) return;
+
+            for (int i = 0; i < bankTargets.Count; i++)
+            {
+                string id = bankTargets[i].questId;
+                questProgress.TryGetValue(id, out int current);
+                questProgress[id] = current + count;
+            }
+            SaveProgress();
+        }
+
+        // 활성 퀘스트가 이미 목표를 채웠으면(미리 세기·클라우드 병합) 그 자리에서 완료한다.
+        // 반환: 완료했으면 true(호출부가 QuestActivated 중복 발화를 피하게 — 수문장 정합과 같은 약속).
+        private bool ReconcileBankedProgress()
+        {
+            if (ActiveQuest == null || completedQuests.Contains(ActiveQuest.questId)) return false;
+            if (!questProgress.TryGetValue(ActiveQuest.questId, out int progress)
+                || progress < ActiveQuest.targetCount) return false;
+            CompleteQuest(ActiveQuest.questId);
+            return true;
+        }
+
+        // 활성화 직후의 정합 둘 — 이미 끝난 수문장, 미리 채워 둔 진행.
+        private bool ReconcileActiveQuest() => ReconcileActiveGuardianQuest() || ReconcileBankedProgress();
+
+        // 저장된 활성 퀘스트를 그대로 쓸 수 없는가 — 없거나, 끝났거나, **스토리가 아니다**.
+        // 마지막은 「둘러보기」 과제를 Side로 옮기면서 생겼다: 그 과제가 활성인 채 저장된 세이브는
+        // 다음 스토리 퀘스트로 넘겨야 한다(그 과제는 서브 목록에서 그대로 진행된다).
+        private bool ActiveQuestNeedsReselect()
+            => ActiveQuest == null || completedQuests.Contains(activeQuestId)
+               || ActiveQuest.category != QuestCategory.Story;
 
         private void IncrementProgress(string questId, int amount = 1)
         {
@@ -1329,8 +1391,9 @@ namespace InsectGame.Core
                 activeQuestId = quest.questId;
                 ActiveQuest = quest;
                 SaveProgress();
-                // 이미 충족된 DefeatGuardian이면 자동완료(CompleteQuest가 다음 퀘스트를 활성화).
-                if (ReconcileActiveGuardianQuest()) return;
+                // 이미 충족된 퀘스트면 자동완료(CompleteQuest가 다음 퀘스트를 활성화) —
+                // 먼저 깬 수문장, 미리 세어 둔 포획·전투.
+                if (ReconcileActiveQuest()) return;
                 QuestActivated?.Invoke(quest);
                 return;
             }
@@ -1371,9 +1434,9 @@ namespace InsectGame.Core
 
             if (!tutorialSessionStarted) return;
 
-            if (ActiveQuest == null || completedQuests.Contains(activeQuestId))
+            if (ActiveQuestNeedsReselect())
                 ActivateNextQuest();
-            else if (!ReconcileActiveGuardianQuest()) // 스톨된 가디언 퀘스트면 자동완료
+            else if (!ReconcileActiveQuest()) // 스톨된 가디언·이미 채운 퀘스트면 자동완료
                 QuestActivated?.Invoke(ActiveQuest);
         }
 
@@ -1385,11 +1448,11 @@ namespace InsectGame.Core
             LoadProgress();
             ActiveQuest = GetQuest(activeQuestId);
 
-            if (ActiveQuest == null || completedQuests.Contains(activeQuestId))
+            if (ActiveQuestNeedsReselect())
             {
                 ActivateNextQuest();
             }
-            else if (!ReconcileActiveGuardianQuest()) // 스톨된 가디언 퀘스트면 자동완료
+            else if (!ReconcileActiveQuest()) // 스톨된 가디언·이미 채운 퀘스트면 자동완료
             {
                 QuestActivated?.Invoke(ActiveQuest);
             }

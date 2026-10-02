@@ -626,6 +626,21 @@ namespace InsectGame.Core
             battleScreen.AutoWire(storyDirector);
             raidBattleUi.AutoWire(storyDirector);
 
+            // 필드 소식 — 레벨업·이야기 보상·라온과의 내기·첫 색다른 조우. 넣는 쪽(World/)과 그리는 쪽(UI/)이
+            // 대기열 하나(FieldMomentFeed)로만 이어진다. 마을/NPC 블록 밖에 둔다 — 그쪽이 예외로 건너뛰어도
+            // 보상 알림은 살아 있어야 한다.
+            FieldMomentFeed momentFeed = EnsureComponent<FieldMomentFeed>("World/FieldMomentFeed");
+            momentFeed.AutoWire(itemDatabase);
+            storyDirector.AutoWire(momentFeed);
+            InsectGame.Story.RivalRaceController rivalRace =
+                EnsureComponent<InsectGame.Story.RivalRaceController>("World/RivalRaceController");
+            rivalRace.AutoWire(storyDirector, insectCollection, candyInventory, itemInventory, playerMov, momentFeed);
+            FirstShinyEncounter firstShiny = EnsureComponent<FirstShinyEncounter>("World/FirstShinyEncounter");
+            firstShiny.AutoWire(spawner, questManager, regionMgr, playerMov, player.transform, momentFeed);
+            InsectGame.UI.FieldMomentsUI momentsUi =
+                EnsureComponent<InsectGame.UI.FieldMomentsUI>("UI/FieldMomentsUI");
+            momentsUi.AutoWire(momentFeed, progress, rivalRace, playerMov);
+
             // 수문장 배지 — 배지는 격파 기록에서 파생하고(저장 없음), 이정표 보상 수령 상태만 계정 스코프로 둔다.
             // 클라우드 재로드는 RegionManager 뒤에 등록돼야 한다(여기는 이미 뒤다).
             GuardianBadgeService badgeService = EnsureComponent<GuardianBadgeService>("World/GuardianBadgeService");

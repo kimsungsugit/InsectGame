@@ -29,6 +29,8 @@ namespace InsectGame.UI
         private int capturedIvHp, capturedIvAtk, capturedIvDef;
         private float capturedIvPct;
         private string capturedInstanceId;
+        // 이 종을 처음 잡았는가 — 초상 모서리에 「NEW」를 붙인다(도감에 새 칸이 찼다는 표시).
+        private bool capturedNewSpecies;
 
         private struct Star
         {
@@ -126,6 +128,7 @@ namespace InsectGame.UI
                 // ②레벨 차를 지급 뒤(방금 오른) 캐릭터 레벨로 재서, 화면 숫자와 받은 EXP가 갈린다.
                 candyReward = captureController != null ? captureController.LastCandyReward : 0;
                 expReward = captureController != null ? captureController.LastExpReward : 0;
+                capturedNewSpecies = success && captureController != null && captureController.LastCaptureWasNewSpecies;
 
                 if (success && insectCollection != null)
                 {
@@ -148,6 +151,7 @@ namespace InsectGame.UI
                 insectName = "???";
                 successTitleName = insectName;
                 insectId = "";
+                capturedNewSpecies = false;
                 capturedInstanceId = null;
                 insectRarity = InsectRarity.Common;
                 insectLevel = 1;
@@ -202,6 +206,29 @@ namespace InsectGame.UI
 
         private static Color WithAlpha(Color c, float a) => new Color(c.r, c.g, c.b, c.a * a);
 
+        // 팝업이 뜬 직후의 누름은 닫기로 치지 않는다 — 미니게임의 마지막 조작(던지기 탭, 누르고 있던 손)이
+        // 결과를 보기도 전에 닫아 버린다.
+        private const float DismissGuardSeconds = 0.5f;
+        private const float FadeOutSeconds = 0.5f;
+
+        /// <summary>
+        /// 카드를 누르면 바로 닫는다. 예전엔 4.5초를 그냥 기다려야 했다 — 포획은 수백 번 반복하는데
+        /// 매번 그만큼 화면 가운데가 가려졌다.
+        ///
+        /// 필드 위에 뜨는 <b>비모달</b> 카드라 자리를 등록한다. 안 하면 닫으려고 누른 탭이 월드
+        /// 클릭-이동으로 새어 캐릭터가 카드 밑으로 걸어간다(rules/ui-layout.md).
+        /// </summary>
+        private void HandleDismiss(Rect card)
+        {
+            FieldHudInput.RegisterBlockingRect(card);
+            Event e = Event.current;
+            if (e == null || e.type != EventType.MouseDown || e.button != 0) return;
+            if (animTime < DismissGuardSeconds || popupTimer <= FadeOutSeconds) return;
+            if (!card.Contains(e.mousePosition)) return;
+            popupTimer = FadeOutSeconds;   // 남은 시간을 사라지는 구간으로 당긴다
+            e.Use();
+        }
+
         /// <summary>
         /// 팝업의 세로 자리 — 화면 가운데를 기본으로 하되 상단 가운데의 리전 배너(<c>KeyGuideHUD</c>,
         /// ContentTop부터 80)를 가리지 않게 그 아래로 내린다. 예전엔 38% 지점 중심이라 720p에서
@@ -228,6 +255,7 @@ namespace InsectGame.UI
             Color rarityCol = t.GetInsectRarityColor(insectRarity);
             Rect panelRect = new Rect(px, py, panelW, panelH);
             int rarityTier = (int)insectRarity;
+            HandleDismiss(panelRect);
 
             // 필드 HUD·포획 창과 같은 카드 — 알파는 GUI.color로 곱한다(UISurface가 호출부 알파를 살린다).
             GUI.color = new Color(1f, 1f, 1f, alpha);
@@ -276,6 +304,17 @@ namespace InsectGame.UI
                 InsectVisual.Draw(frame.center.x, frame.center.y, 208f, insectData, insectShiny, alpha);
             else
                 DrawTypedInsectPortrait(frame.center.x, frame.center.y, insectId, insectRarity, alpha);
+
+            // 처음 잡은 종 — 초상 오른쪽 위에 걸친다. 살짝 맥동해 "도감에 새로 올랐다"가 먼저 눈에 든다.
+            if (capturedNewSpecies)
+            {
+                float pop = 1f + Mathf.Sin(animTime * 6f) * 0.04f;
+                float chipW = 104f * pop, chipH = 38f * pop;
+                GUI.color = new Color(1f, 1f, 1f, alpha);
+                UISurface.Chip(new Rect(frame.xMax - chipW * 0.62f, frame.y - chipH * 0.4f, chipW, chipH),
+                    "NEW", t.accentCoral, t.textPrimary);
+                GUI.color = Color.white;
+            }
 
             nameStyleCache.normal.textColor = WithAlpha(rarityCol, alpha);
             UIHelper.LabelFit(new Rect(px + 24f, py + 306f, panelW - 48f, 56f),
@@ -333,6 +372,7 @@ namespace InsectGame.UI
             float cx = UIScale.VirtualSafeLeft
                 + (UIScale.VirtualScreenWidth - UIScale.VirtualSafeLeft - UIScale.VirtualSafeRight) / 2f;
             Rect card = new Rect(cx - w / 2f, PopupTop(h) + 120f, w, h);
+            HandleDismiss(card);
 
             GUI.color = new Color(1f, 1f, 1f, alpha);
             UISurface.Card(card, t.surfaceCard, Color.Lerp(t.surfaceBorder, t.accentCoral, 0.6f));

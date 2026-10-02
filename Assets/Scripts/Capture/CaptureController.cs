@@ -40,6 +40,12 @@ namespace InsectGame.Capture
         public int LastExpReward { get; private set; }
         public int LastCandyReward { get; private set; }
 
+        /// <summary>
+        /// 직전 포획이 <b>그 종의 첫 포획</b>이었는가 — 팝업이 「NEW」를 붙인다. 도감 등록 <b>전에</b> 재야 한다:
+        /// 등록 뒤에 물으면 방금 올린 기록 때문에 늘 "이미 잡은 종"이다.
+        /// </summary>
+        public bool LastCaptureWasNewSpecies { get; private set; }
+
         /// <summary>포획 공식이 쓰는 캐릭터 레벨 — 포획 선택 화면이 레벨 차 경고를 같은 값으로 판단한다.</summary>
         public int TrainerLevel => playerProgress != null ? playerProgress.Level : 1;
 
@@ -52,6 +58,7 @@ namespace InsectGame.Capture
 
             LastExpReward = 0;
             LastCandyReward = 0;
+            LastCaptureWasNewSpecies = false;
             // 확률과 EXP가 같은 레벨 차를 보도록 지급 전에 고정한다(GainXp가 레벨을 올린다).
             int trainerLevel = TrainerLevel;
             float chance = CalculateSuccessChance(target.Data, target.Level, timing01, extraBonus);
@@ -62,6 +69,8 @@ namespace InsectGame.Capture
                 dexController.RegisterEncounter(target.Data.insectId);
                 if (success)
                 {
+                    LastCaptureWasNewSpecies = !dexController.TryGetRecord(target.Data.insectId, out Dex.DexRecord record)
+                        || record == null || record.capturedCount <= 0;
                     dexController.RegisterCapture(target.Data.insectId);
                 }
             }

@@ -113,6 +113,46 @@ namespace InsectGame.Story
         public string unlockQuestId;
     }
 
+    /// <summary>
+    /// 이야기 보상을 한 줄로 — "캔디 +5 · 은빛 채집망 ×2 · 하늘소 Lv.6". <b>순수 함수</b>다.
+    /// 포함 조건은 <c>StoryDirector.GrantReward</c>의 지급 조건과 같아야 한다 — 어긋나면 "받았는데 안 뜨거나
+    /// 뜨는데 안 준" 소식이 된다(퀘스트 쪽 <c>QuestRewardFormatter</c>가 같은 이유로 있다).
+    /// </summary>
+    public static class StoryRewardText
+    {
+        /// <param name="itemName">아이템 ID → 표시명. null이거나 빈 값을 주면 ID를 그대로 쓴다.</param>
+        /// <param name="grantedInsectName">
+        /// <b>실제로 준</b> 곤충의 표시명. 첫 파트너는 플레이어가 고른 종으로 바뀌므로 보상 데이터의 이름
+        /// ("첫 파트너")이 아니라 지급부가 넘겨준 이름을 쓴다. 곤충을 못 줬으면(컬렉션 없음) null.
+        /// </param>
+        public static string Format(StoryReward reward, System.Func<string, string> itemName, string grantedInsectName)
+        {
+            if (reward == null) return string.Empty;
+            var text = new System.Text.StringBuilder();
+
+            if (reward.rewardCandy > 0) Append(text, "캔디 +" + reward.rewardCandy);
+            if (reward.rewardExp > 0) Append(text, "경험치 +" + reward.rewardExp);
+            if (!string.IsNullOrEmpty(reward.rewardItemId) && reward.rewardItemCount > 0)
+            {
+                string name = itemName != null ? itemName(reward.rewardItemId) : null;
+                if (string.IsNullOrEmpty(name)) name = reward.rewardItemId;
+                Append(text, name + " ×" + reward.rewardItemCount);
+            }
+            if (!string.IsNullOrEmpty(reward.rewardInsectId) && !string.IsNullOrEmpty(grantedInsectName))
+            {
+                int level = UnityEngine.Mathf.Max(1, reward.rewardInsectLevel);
+                Append(text, level > 1 ? grantedInsectName + " Lv." + level : grantedInsectName);
+            }
+            return text.ToString();
+        }
+
+        private static void Append(System.Text.StringBuilder text, string part)
+        {
+            if (text.Length > 0) text.Append(" · ");
+            text.Append(part);
+        }
+    }
+
     // JsonUtility 래퍼 — 루트 { "beats": [ ... ] } (InsectLoreList와 동형).
     [System.Serializable]
     public class StoryList

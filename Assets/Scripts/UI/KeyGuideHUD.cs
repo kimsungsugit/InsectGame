@@ -110,7 +110,7 @@ namespace InsectGame.UI
             y += lineH + 2;
 
             DrawKeyRow(x, ref y, lineH, "WASD", "이동", keyStyle, descStyle);
-            DrawKeyRow(x, ref y, lineH, "E", inMinigame ? "타이밍 확인" : "포획", keyStyle, descStyle);
+            DrawKeyRow(x, ref y, lineH, "E", inMinigame ? "미니게임 조작" : "포획", keyStyle, descStyle);
 
             if (inMinigame)
                 DrawKeyRow(x, ref y, lineH, "ESC", "포획 취소", keyStyle, descStyle);

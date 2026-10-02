@@ -15,7 +15,8 @@ tools:
 ## 담당 파일
 - `Assets/Scripts/Capture/CaptureController.cs` - 포획률 계산 핵심
 - `Assets/Scripts/Capture/CaptureChanceCalculator.cs` - 포획 성공 확률 순수 계산
-- `Assets/Scripts/Capture/CaptureMinigameController.cs` - 3단계 타이밍 미니게임
+- `Assets/Scripts/Capture/CaptureMinigameController.cs` - 포획 미니게임 껍데기 (게임 고르기 · 조작 수집 · 그리기 · 포획 판정 연결)
+- `Assets/Scripts/Capture/CaptureMinigame.cs` - 미니게임 3종의 순수 규칙 (살금살금·가두기·던지기, 결과 0~3점, 포획마다 무작위)
 - `Assets/Scripts/Capture/CaptureMinigameProbability.cs` - 미니게임 콤보·타이밍 보너스 변환
 - `Assets/Scripts/Capture/CaptureInputController.cs` - 포획 입력
 - `Assets/Scripts/Capture/CaptureProximityTrigger.cs` - 근접 감지 (8m 반경)
@@ -25,6 +26,7 @@ tools:
 - `Assets/Scripts/Capture/CaptureTriggerOptionsUI.cs` - 트리거 설정 UI
 - `Assets/Scripts/Spawning/InsectSpawner.cs` - 필드 개체군 (리전별 슬롯 기록 · 시간 기반 재생 · 45m 실체화/55m 회수 · 서브에리어 슬롯)
 - `Assets/Scripts/Spawning/FieldSpawnRules.cs` - 필드 스폰 순수 규칙 (전역 등급표 · 등급 대체 · 레어 부스트 · 레벨 · 슬롯 수 · 재생/수명)
+- `Assets/Scripts/Spawning/FirstShinyEncounter.cs` - 도입부 확정 조우 (세 번째 포획 앞에서 근처 개체 하나를 색다르게 — 계정당 1회)
 - `Assets/Scripts/Spawning/FieldPopulation.cs` - 슬롯 기록부 + 상태 전이 (게임플레이 퇴장 vs 거리 회수)
 - `Assets/Scripts/Spawning/FleePath.cs` - 도주 방향·거리 순수 판정 (벽 관통 방지)
 - `Assets/Scripts/Spawning/SpawnPoint.cs` - 리전/서브에리어 스폰 표 (풀 · 레벨 대역) — 자리는 정하지 않음

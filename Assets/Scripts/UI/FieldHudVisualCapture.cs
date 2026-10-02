@@ -189,12 +189,60 @@ namespace InsectGame.UI
             var popup = new GameObject("FieldHudQAPopup").AddComponent<CapturePopupUI>();
             popup.AutoWire(collection);
             typeof(CapturePopupUI).GetMethod("OnCaptureResolved", Private).Invoke(popup, new object[] { target, true });
+            Set(popup, "capturedNewSpecies", true);   // 그 종의 첫 포획 — 초상 모서리의 NEW
             yield return Wait(0.9f);
             shots++; yield return Capture(output, "09-capture-success");
             typeof(CapturePopupUI).GetMethod("OnCaptureResolved", Private).Invoke(popup, new object[] { target, false });
             yield return Wait(0.9f);
             shots++; yield return Capture(output, "10-capture-fail");
             Object.Destroy(popup.gameObject);
+            yield return Wait(0.3f);
+
+            // ── 포획 미니게임 3종 — 판을 원하는 순간에 세워 놓고 찍는다(조작은 가짜 입력으로 미리 돌린다) ──
+            var minigame = new GameObject("FieldHudQAMinigame").AddComponent<InsectGame.Capture.CaptureMinigameController>();
+            var board = new Vector2(InsectGame.Capture.CaptureMinigame.BoardWidth, InsectGame.Capture.CaptureMinigame.BoardHeight);
+            minigame.StartForCapture(target, InsectGame.Capture.CaptureMinigameKind.Sneak, 1.1f, true, Vector2.zero);
+            yield return Wait(0.6f);
+            shots++; yield return Capture(output, "19-minigame-sneak");
+            minigame.EndCapture();
+            minigame.StartForCapture(target, InsectGame.Capture.CaptureMinigameKind.Sneak, 9f, false, Vector2.zero, true);
+            yield return Wait(0.6f);
+            shots++; yield return Capture(output, "20-minigame-sneak-look");
+            minigame.EndCapture();
+            minigame.StartForCapture(target, InsectGame.Capture.CaptureMinigameKind.Track, 1.4f, true, board * 0.5f);
+            yield return Wait(0.6f);
+            shots++; yield return Capture(output, "21-minigame-track");
+            minigame.EndCapture();
+            minigame.StartForCapture(target, InsectGame.Capture.CaptureMinigameKind.Toss, 0.3f, true, new Vector2(board.x * 0.62f, board.y * 0.36f));
+            yield return Wait(0.6f);
+            shots++; yield return Capture(output, "22-minigame-toss");
+            minigame.EndCapture();
+            Object.Destroy(minigame.gameObject);
+            yield return Wait(0.3f);
+
+            // ── 필드 소식 — 라온과의 내기 점수판 + 소식 카드(레벨업·보상·색다른 조우) ──
+            // 내기 컨트롤러는 꺼 둔 채 상태만 넣는다(Update가 돌면 PlayerPrefs를 읽고 시계가 흐른다).
+            var race = new GameObject("FieldHudQARace").AddComponent<InsectGame.Story.RivalRaceController>();
+            race.enabled = false;
+            Set(race, "active", true);
+            Set(race, "<PlayerCount>k__BackingField", 2);
+            Set(race, "<RivalCount>k__BackingField", 1);
+            var moments = new GameObject("FieldHudQAMoments").AddComponent<FieldMomentsUI>();
+            moments.AutoWire(null, null, race, null);
+            moments.ShowForCapture(new FieldMoment(FieldMomentKind.LevelUp, "레벨 업!  Lv.13",
+                "이제 Lv.18 곤충까지 레벨 차 페널티 없이 잡을 수 있습니다"), 0.45f);
+            yield return Wait(0.2f);
+            shots++; yield return Capture(output, "23-moment-levelup-race");
+            moments.ShowForCapture(new FieldMoment(FieldMomentKind.Reward, "보상을 받았습니다",
+                "캔디 +5 · 은빛 채집망 ×2 · 호수 잠자리 Lv.6"), 1.2f);
+            yield return Wait(0.2f);
+            shots++; yield return Capture(output, "24-moment-reward");
+            moments.ShowForCapture(new FieldMoment(FieldMomentKind.Rival, "라온과의 내기에서 이겼습니다!",
+                "라온: \"…졌다. 다음엔 안 봐줘!\"   캔디 +15 · 은빛 채집망 ×2"), 1.2f);
+            yield return Wait(0.2f);
+            shots++; yield return Capture(output, "25-moment-rival");
+            Object.Destroy(moments.gameObject);
+            Object.Destroy(race.gameObject);
             yield return Wait(0.3f);
 
             teamUi.Toggle();

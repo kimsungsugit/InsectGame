@@ -58,7 +58,7 @@ RaidBattleController → RaidBattleUI
 |---|---|---|
 | 배틀 1v1 | `InsectBattleController` | 턴제, 스킬 쿨다운, 도주 판정 |
 | 레이드 5v1 | `RaidBattleController` | 보스 스탯 배율, 유나이트 게이지, 주기적 AOE |
-| 포획 | `CaptureController` → `CaptureMinigameController` | 3단계 난이도 미니게임 |
+| 포획 | `CaptureController` → `CaptureMinigameController` | 미니게임 3종(살금살금·가두기·던지기)이 포획마다 무작위. 규칙은 `CaptureMinigame`(순수), 결과는 0~3점 |
 | 스폰 | `InsectSpawner` → `FieldSpawnRules`·`FieldPopulation` | 리전별 슬롯 기록(리전 이동으로 리롤 안 함) + 시간 기반 재생·수명 순환, 45m 실체화/55m 회수. 희귀도는 전역 등급표, 레벨만 리전 대역 |
 | 세이브 | `PlayerProgressSaveService`, `CloudSaveManager` | 로컬 7개 JSON + Firestore. 규칙은 `rules/save-system.md` |
 | 스탯/IV | `PlayerInsectData` | IV 0~15(HP/ATK/DEF), 등급 S~D |
@@ -69,7 +69,7 @@ RaidBattleController → RaidBattleUI
 MainMenu → PlayScene
   ├→ 필드 탐험 (PlayerMovement + HUD)
   ├→ CaptureChoiceUI (곤충 접근 시)
-  │   ├→ [E] 미니게임 포획
+  │   ├→ [E] 미니게임 포획 (지난번 채집망으로 바로 — 버튼 아래 줄에서 바꾼다)
   │   ├→ [B] 1v1 배틀
   │   └→ [R] 레이드 (Epic/Legendary만)
   ├→ DexScreenUI (도감)

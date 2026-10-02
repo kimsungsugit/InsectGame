@@ -909,6 +909,47 @@ namespace InsectGame.Spawning
         }
 
         /// <summary>
+        /// 플레이어 가까이 서 있는 필드 곤충 하나를 <b>색다른 개체로 바꾼다</b>(첫 색다른 조우 연출 —
+        /// <see cref="FirstShinyEncounter"/>). 새로 스폰하지 않는다: 슬롯 수·등급표·리전 풀을 건드리지 않고
+        /// 이미 서 있는 개체의 기록에 색다름만 적은 뒤 몸을 다시 세운다(색은 몸을 세울 때 입힌다).
+        ///
+        /// 미니게임으로 잡을 수 있는 등급만 고른다 — 영웅·전설은 레이드로만 잡혀서 첫 조우로는 닿지 않는다.
+        /// 수문장·지워진 개체·이미 색다른 개체·누군가와 엮인 개체(포획·전투 중)는 건너뛴다.
+        /// </summary>
+        /// <returns>바뀐 개체. 조건에 맞는 곤충이 근처에 없으면 null — 호출부가 조금 뒤에 다시 부른다.</returns>
+        public InsectEntity TryMakeNearbyShiny(Vector3 playerPos, float minDistance, float maxDistance)
+        {
+            FieldSlot best = null;
+            float bestDistance = maxDistance;
+            for (int k = 0; k < regionInfos.Count; k++)
+            {
+                List<FieldSlot> slots = population.SlotsOf(regionInfos[k].RegionId);
+                for (int i = 0; i < slots.Count; i++)
+                {
+                    FieldSlot slot = slots[i];
+                    if (!slot.IsAlive || !slot.IsMaterialized || slot.IsSubArea || slot.Shiny || slot.Erased) continue;
+                    InsectData data = slot.Data;
+                    if (data == null || data.rarity >= InsectRarity.Epic) continue;
+                    InsectEntity e = slot.Entity;
+                    if (e.IsGuardian || IsBusy(e)) continue;
+
+                    float d = PlanarDistance(e.transform.position, playerPos);
+                    if (d < minDistance || d > bestDistance) continue;
+                    best = slot;
+                    bestDistance = d;
+                }
+            }
+            if (best == null) return null;
+
+            best.Shiny = true;
+            // 지금 서 있는 자리에서 다시 선다 — 기록된 자리(스폰 지점)로 되돌리면 눈앞에서 순간이동한다.
+            best.Position = best.Entity.transform.position;
+            string homeRegionId = best.Key;
+            RecallSlot(best);
+            return Materialize(best, homeRegionId) ? best.Entity : null;
+        }
+
+        /// <summary>
         /// 몸만 풀로 돌린다 — <b>개체는 그대로 남는다</b>(<see cref="FieldPopulation.MarkRecalled"/>).
         /// 게임플레이 퇴장 콜백(<see cref="DespawnEntity"/>)을 거치지 않으므로 자리가 비지 않는다.
         /// </summary>

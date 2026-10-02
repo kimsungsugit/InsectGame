@@ -97,6 +97,179 @@ namespace InsectGame.Tests
             Assert.AreEqual(0, TutorialQuestOrder.CollectBackfillTargets(Chain, null).Count);
         }
 
+        // ── 미리 세기 ──
+        //
+        // 예전엔 활성 퀘스트만 진행을 셌다. 도감을 여는 퀘스트 중에 잡은 세 마리는 "3마리 포획"에
+        // 들어가지 않아 차례가 오면 다시 잡아야 했다. 지금은 아직 차례가 안 온 스토리 퀘스트에도 센다.
+
+        private static TutorialQuest Typed(string id, QuestType type, int target = 1,
+            QuestCategory category = QuestCategory.Story)
+        {
+            return new TutorialQuest { questId = id, type = type, targetCount = target, category = category };
+        }
+
+        private static readonly TutorialQuest[] BankChain =
+        {
+            Typed("q_approach", QuestType.Capture),
+            Typed("q_dex", QuestType.OpenDex, 1, QuestCategory.Side),
+            Typed("q_capture3", QuestType.Capture, 3),
+            Typed("q_levelup", QuestType.LevelUp),
+            Typed("q_battle", QuestType.Battle),
+            Typed("q_battle3", QuestType.Battle, 3),
+            Typed("q_capture_rare", QuestType.CaptureRare),
+            Typed("q_blight_first", QuestType.CleanseBlight),
+            Typed("q_blight_both", QuestType.CleanseBlight),
+            Typed("s_capture_wild", QuestType.Capture, 5, QuestCategory.Side),
+        };
+
+        private static List<string> BankIds(string active, QuestType action,
+            InsectGame.Data.InsectRarity rarity, params string[] done)
+        {
+            var into = new List<TutorialQuest>();
+            TutorialQuestOrder.CollectBankTargets(BankChain, Done(done), active, action, rarity, into);
+            return into.ConvertAll(q => q.questId);
+        }
+
+        [Test]
+        public void CollectBankTargets_Capture_CountsTowardEveryUpcomingCaptureQuest_ButNotTheActiveOne()
+        {
+            // 활성 퀘스트는 원래 경로가 올린다 — 여기서도 세면 한 번 잡고 두 번 올라간다.
+            List<string> ids = BankIds("q_approach", QuestType.Capture, InsectGame.Data.InsectRarity.Common);
+            CollectionAssert.AreEqual(new[] { "q_capture3" }, ids);
+        }
+
+        [Test]
+        public void CollectBankTargets_UncommonCapture_AlsoCountsTowardRareCaptureQuest()
+        {
+            List<string> ids = BankIds("q_approach", QuestType.Capture, InsectGame.Data.InsectRarity.Uncommon);
+            CollectionAssert.AreEqual(new[] { "q_capture3", "q_capture_rare" }, ids);
+        }
+
+        [Test]
+        public void CollectBankTargets_CompletedAndSideQuests_AreSkipped()
+        {
+            // 서브(s_capture_wild)는 자기 경로로 세므로 대상이 아니고, 끝난 퀘스트는 더 올릴 것이 없다.
+            List<string> ids = BankIds("q_levelup", QuestType.Capture, InsectGame.Data.InsectRarity.Common,
+                "q_approach", "q_capture3");
+            Assert.AreEqual(0, ids.Count);
+        }
+
+        [Test]
+        public void CollectBankTargets_BattleWhileDoingSomethingElse_IsKeptForLater()
+        {
+            List<string> ids = BankIds("q_capture3", QuestType.Battle, InsectGame.Data.InsectRarity.Common, "q_approach");
+            CollectionAssert.AreEqual(new[] { "q_battle", "q_battle3" }, ids);
+        }
+
+        [Test]
+        public void CollectBankTargets_BlightCleanse_IsNeverBanked()
+        {
+            // 「하나 무너뜨리기」와 「하나 더」가 이어져 있다 — 미리 세면 첫 정화 하나가 둘을 한꺼번에 깬다.
+            Assert.IsFalse(TutorialQuestOrder.IsBankable(QuestType.CleanseBlight));
+            Assert.AreEqual(0, BankIds(null, QuestType.CleanseBlight, InsectGame.Data.InsectRarity.Common).Count);
+        }
+
+        [TestCase(QuestType.Movement)]
+        [TestCase(QuestType.VisitRegion)]
+        [TestCase(QuestType.VisitSubArea)]
+        [TestCase(QuestType.TalkToElder)]
+        [TestCase(QuestType.DefeatGuardian)]
+        [TestCase(QuestType.SetTeam)]
+        public void IsBankable_MomentBoundGoals_AreNot(QuestType type)
+        {
+            // 그 퀘스트가 가리키는 순간의 행동이어야 하는 것들 — 초원에 들어간 것이 "연못에 가 보세요"를 깨면 안 된다.
+            Assert.IsFalse(TutorialQuestOrder.IsBankable(type));
+        }
+
+        [Test]
+        public void CountsToward_CaptureRarity_MatchesOnlyThatRarity()
+        {
+            var pack = new TutorialQuest
+            {
+                questId = "pack", type = QuestType.CaptureRarity,
+                requiredRarity = InsectGame.Data.InsectRarity.Rare
+            };
+            Assert.IsTrue(TutorialQuestOrder.CountsToward(pack, QuestType.Capture, InsectGame.Data.InsectRarity.Rare));
+            Assert.IsFalse(TutorialQuestOrder.CountsToward(pack, QuestType.Capture, InsectGame.Data.InsectRarity.Epic));
+        }
+
+        [Test]
+        public void CollectBankTargets_NullInput_IsSafe()
+        {
+            var into = new List<TutorialQuest> { Typed("stale", QuestType.Capture) };
+            TutorialQuestOrder.CollectBankTargets(null, Done(), null, QuestType.Capture,
+                InsectGame.Data.InsectRarity.Common, into);
+            Assert.AreEqual(0, into.Count, "이전 호출의 대상이 남으면 엉뚱한 퀘스트가 올라간다");
+        }
+
+        // ── 실제 스토리 체인 ──
+        //
+        // 수문장 전까지는 "하는 일"만 남긴다. 창을 한 번 열면 끝나는 과제가 체인에 다시 끼면 첫 전투가
+        // 뒤로 밀린다(예전엔 9번째였다). 순서 자체도 고정한다 — 남은 퀘스트의 **상대 순서**가 바뀌면
+        // 소급 완료가 기존 세이브에서 아직 할 차례인 퀘스트를 보상 없이 삼킨다.
+
+        private static TutorialQuest[] RealQuests()
+        {
+            var host = new UnityEngine.GameObject("QuestOrderProbe");
+            try
+            {
+                var mgr = host.AddComponent<TutorialQuestManager>();
+                typeof(TutorialQuestManager).GetMethod("Initialize",
+                    System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).Invoke(mgr, null);
+                return mgr.GetAllQuests();
+            }
+            finally { UnityEngine.Object.DestroyImmediate(host); }
+        }
+
+        [Test]
+        public void RealChain_UpToFirstGuardian_IsActionsOnly_InTheOldRelativeOrder()
+        {
+            var story = new List<string>();
+            foreach (TutorialQuest q in RealQuests())
+            {
+                if (q.category != QuestCategory.Story) continue;
+                story.Add(q.questId);
+                if (q.questId == "q_guardian1") break;
+            }
+
+            CollectionAssert.AreEqual(new[]
+            {
+                "q_move", "q_talk_elder", "q_approach", "q_capture3", "q_levelup",
+                "q_battle", "q_battle3", "q_capture_rare", "q_guardian1",
+            }, story);
+        }
+
+        [TestCase("q_collection")]
+        [TestCase("q_dex")]
+        [TestCase("q_equip")]
+        [TestCase("q_item")]
+        [TestCase("q_training")]
+        [TestCase("q_team")]
+        public void RealChain_LookAroundChores_AreOptionalOneShotSideQuests(string questId)
+        {
+            TutorialQuest quest = System.Array.Find(RealQuests(), q => q.questId == questId);
+
+            Assert.IsNotNull(quest, "ID를 지우면 그 퀘스트를 깬 세이브의 완료 기록이 떠돈다");
+            Assert.AreEqual(QuestCategory.Side, quest.category);
+            Assert.IsFalse(quest.repeatable);
+            Assert.IsFalse(string.IsNullOrEmpty(quest.prerequisiteQuestId),
+                "선행이 없으면 첫 포획도 하기 전에 서브 목록이 과제로 찬다");
+        }
+
+        [Test]
+        public void RealChain_EveryStoryPrerequisite_IsAStoryQuest()
+        {
+            // 스토리가 서브(둘러보기) 과제를 선행으로 물면 그 과제를 안 한 사람의 본편이 멈춘다.
+            TutorialQuest[] quests = RealQuests();
+            foreach (TutorialQuest q in quests)
+            {
+                if (q.category != QuestCategory.Story || string.IsNullOrEmpty(q.prerequisiteQuestId)) continue;
+                TutorialQuest prereq = System.Array.Find(quests, p => p.questId == q.prerequisiteQuestId);
+                Assert.IsNotNull(prereq, $"{q.questId}: 선행 {q.prerequisiteQuestId} 없음");
+                Assert.AreEqual(QuestCategory.Story, prereq.category, $"{q.questId}의 선행 {prereq.questId}가 서브다");
+            }
+        }
+
         // ── 이동 퀘스트 진행 규칙 ──
         //
         // 옛 판정은 `한 프레임 이동량 > 1m` 하나였다. 플레이어 속도는 8m/s(의상 보정 최대 ×2)라

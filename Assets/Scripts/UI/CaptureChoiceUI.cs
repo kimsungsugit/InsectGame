@@ -47,6 +47,9 @@ namespace InsectGame.UI
             targetInsect = target;
             target.SetEngaged(true); // 포획 상호작용 중 — 곤충 도주 방지
             isOpen = true;
+            openedFrame = Time.frameCount;
+            openKeyHeld = Input.GetKey(KeyCode.E);
+            EnsureLastNetLoaded();   // 창을 열 때 한 번 — 그리는 쪽(OnGUI 패스마다)에서 키 문자열을 만들지 않는다
             selectedTeamSlot = -1;
             showTeamSelect = false;
             showItemSelect = false;
@@ -80,9 +83,23 @@ namespace InsectGame.UI
             HandleInputUpdate();
         }
 
+        // 이 창을 연 프레임. 필드에서 [E]로 곤충에게 말을 걸면 **그 같은 누름**이 이 창의 [E](미니게임 포획)로도
+        // 읽힌다 — 예전엔 채집망 선택 창이 한 겹 더 있어 티가 안 났지만, 이제 [E]가 곧바로 채집망을 쓰고
+        // 미니게임을 열므로 포획/배틀을 고를 틈도 없이 넘어가 버린다. 연 직후의 키는 받지 않는다.
+        private int openedFrame = -1;
+        // 창을 연 [E]를 아직 누르고 있는가. IMGUI는 누르고 있는 키의 KeyDown을 되풀이해 보내므로(키 반복)
+        // 프레임 수만으로는 못 막는다 — 손을 뗄 때까지 [E]는 받지 않는다.
+        private bool openKeyHeld;
+
         private void HandleInput(KeyCode key)
         {
             if (!isOpen) return;
+            if (Time.frameCount <= openedFrame + 1) return;
+            if (openKeyHeld)
+            {
+                if (Input.GetKey(KeyCode.E)) { if (key == KeyCode.E) return; }
+                else openKeyHeld = false;
+            }
 
             if (showTeamSelect)
             {
@@ -102,7 +119,7 @@ namespace InsectGame.UI
                 {
                     // 버튼과 같은 조건 — 수문장 포획은 키로도 우회할 수 없다(잡히면 리전 영구 잠김).
                     if (HasAnyCaptureItem() && !isGuardian)
-                        showItemSelect = true;
+                        BeginQuickCapture();
                 }
                 if (!isRaid && (key == KeyCode.B || key == KeyCode.Alpha2))
                 {
@@ -165,7 +182,7 @@ namespace InsectGame.UI
         // 한 번만 만들고 동적인 것(글자색)만 매번 바꾼다(BattleScreenUI·BattleTeamUI와 같은 패턴).
         private GUIStyle titleStyle, subStyle, nameStyle, buttonStyle, cancelStyle, hintStyle;
         private GUIStyle raidHintStyle, raidDescStyle, itemNameStyle, itemDescStyle, countStyle;
-        private GUIStyle slotNumStyle, slotNameStyle, slotInfoStyle;
+        private GUIStyle slotNumStyle, slotNameStyle, slotInfoStyle, netRowStyle;
         private bool stylesReady;
 
         private void InitStyles()
@@ -182,6 +199,8 @@ namespace InsectGame.UI
             buttonStyle = new GUIStyle(GUI.skin.label) { fontSize = 32, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, richText = true };
             buttonStyle.normal.textColor = t.textPrimary;
             cancelStyle = new GUIStyle(buttonStyle) { fontSize = 26 };
+            netRowStyle = new GUIStyle(GUI.skin.label) { fontSize = 24, alignment = TextAnchor.MiddleCenter };
+            netRowStyle.normal.textColor = t.textSecondary;
             hintStyle = new GUIStyle(GUI.skin.label) { fontSize = 24, alignment = TextAnchor.MiddleCenter, wordWrap = true };
             raidHintStyle = new GUIStyle(GUI.skin.label) { fontSize = 28, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             raidHintStyle.normal.textColor = t.accentCoral;
@@ -228,7 +247,9 @@ namespace InsectGame.UI
             bool levelWarn = !isRaid && !targetInsect.IsGuardian
                              && TrainerLevelGap.IsCaptureRestricted(trainerLevel, targetInsect.Level);
             const float levelWarnH = 44f;
-            Rect panel = UISafeLayout.CenteredPanel(820f, isRaid ? 730f : 620f + (levelWarn ? levelWarnH : 0f));
+            // 포획 버튼 아래의 채집망 한 줄(NetRowH)만큼 일반 창이 길다 — 레이드 창에는 그 줄이 없다.
+            Rect panel = UISafeLayout.CenteredPanel(820f,
+                isRaid ? 730f : 620f + NetRowH + 8f + (levelWarn ? levelWarnH : 0f));
             float panelW = panel.width;
             float panelH = panel.height;
             float px = panel.x;
@@ -332,7 +353,7 @@ namespace InsectGame.UI
                 if (UISurface.Button(new Rect(leftX, btnY, btnW, btnH), WithKey("미니게임 포획", "E"),
                         canCapture ? t.btnPrimary : t.btnDisabled, buttonStyle))
                 {
-                    showItemSelect = true;
+                    BeginQuickCapture();
                 }
                 GUI.enabled = true;
 
@@ -342,6 +363,21 @@ namespace InsectGame.UI
                     // 고정 상자에 리터럴을 그리므로 LabelFit — 수문장 문구가 더 길어 잘릴 수 있다.
                     UIHelper.LabelFit(new Rect(leftX, btnY + btnH + 6f, btnW, 32f),
                         isGuardian ? "수문장은 쓰러뜨려야 한다" : "포획 아이템 없음!", hintStyle);
+                }
+                else
+                {
+                    // 이번에 쓸 채집망 — 누르면 고르는 창이 뜬다. 예전엔 포획할 때마다 그 창을 거쳤다.
+                    CaptureItemData quick = ResolveQuickNet();
+                    if (quick != null)
+                    {
+                        Rect netRow = new Rect(leftX, btnY + btnH + 8f, btnW, NetRowH);
+                        if (UISurface.Button(netRow, string.Empty, t.surfaceRaised, netRowStyle))
+                            showItemSelect = true;
+                        Rect swatch = new Rect(netRow.x + 14f, netRow.y + (NetRowH - 24f) * 0.5f, 24f, 24f);
+                        UISurface.Rounded(swatch, quick.themeColor, UITheme.Radius.Chip);
+                        UIHelper.LabelFit(new Rect(swatch.xMax + 8f, netRow.y, netRow.xMax - swatch.xMax - 20f, NetRowH),
+                            NetRowLabel(quick), netRowStyle);
+                    }
                 }
 
                 bool hasTeam = teamManager != null && teamManager.HasAnyInsect();
@@ -453,15 +489,7 @@ namespace InsectGame.UI
                 if (UISurface.Button(new Rect(row.xMax - 170f, row.y + 62f, 150f, 68f), "사용",
                         hasItem ? t.btnPrimary : t.btnDisabled, buttonStyle))
                 {
-                    if (itemInventory != null && itemInventory.UseItem(item.itemId, 1))
-                    {
-                        InsectEntity savedTarget = targetInsect;
-                        Hide();
-                        if (minigame != null && savedTarget != null)
-                            minigame.StartMinigame(savedTarget,
-                                item.speedMultiplier, item.zoneSizeMultiplier,
-                                item.timeLimitMultiplier, item.captureBonus);
-                    }
+                    StartCaptureWith(item);
                 }
                 GUI.enabled = true;
             }
@@ -487,9 +515,76 @@ namespace InsectGame.UI
             }
             if (keyIndex < 0 || keyIndex >= captureItems.Length) return;
 
-            CaptureItemData item = captureItems[keyIndex];
+            StartCaptureWith(captureItems[keyIndex]);
+        }
+
+        // ── 채집망 바로 쓰기 ──
+        // 포획은 수백 번 반복하는 동작인데 매번 「채집망 선택」 창을 거쳤다(선택 → 그물 → 미니게임 → 결과).
+        // 지난번에 쓴 채집망을 기억해 버튼 하나로 미니게임까지 간다. 바꾸고 싶으면 버튼 아래 줄을 누른다.
+
+        private const float NetRowH = 52f;
+
+        private string lastNetItemId;
+        private string lastNetPrefsKey;
+        // 채집망 줄 문구 캐시 — OnGUI 패스마다 이어 붙이지 않는다(종류·개수가 바뀔 때만 다시 만든다).
+        private string netRowLabel;
+        private string netRowLabelItemId;
+        private int netRowLabelCount = -1;
+        private System.Func<string, int> netCountProbe;
+
+        // 계정마다 따로 기억한다. 로그인이 이 화면보다 늦게 끝나므로 키가 바뀔 때마다 다시 읽는다.
+        private void EnsureLastNetLoaded()
+        {
+            string key = AuthManager.ScopedKey(GameConstants.PrefsKeys.LastCaptureNet);
+            if (key == lastNetPrefsKey) return;
+            lastNetPrefsKey = key;
+            lastNetItemId = PlayerPrefs.GetString(key, string.Empty);
+        }
+
+        /// <summary>
+        /// 이번 포획에 쓸 채집망 — 지난번에 쓴 것이 남아 있으면 그것, 아니면 가진 것 중 맨 앞.
+        /// 목록은 흔한 것부터 적혀 있어(기본 → 은빛 → 황금), 귀한 채집망을 말없이 써 버리지 않는다.
+        /// </summary>
+        private CaptureItemData ResolveQuickNet()
+        {
+            if (captureItems == null || itemInventory == null) return null;
+            // 대리자는 한 번만 묶는다 — 이 함수는 OnGUI 패스마다 불린다.
+            if (netCountProbe == null) netCountProbe = itemInventory.GetCount;
+            return CaptureNetChoice.Resolve(captureItems, lastNetItemId, netCountProbe);
+        }
+
+        private void BeginQuickCapture()
+        {
+            CaptureItemData net = ResolveQuickNet();
+            if (net != null) StartCaptureWith(net);
+        }
+
+        private string NetRowLabel(CaptureItemData net)
+        {
+            int count = itemInventory != null ? itemInventory.GetCount(net.itemId) : 0;
+            if (netRowLabel == null || netRowLabelItemId != net.itemId || netRowLabelCount != count)
+            {
+                netRowLabelItemId = net.itemId;
+                netRowLabelCount = count;
+                netRowLabel = $"{net.displayName} ×{count}  ·  바꾸기";
+            }
+            return netRowLabel;
+        }
+
+        /// <summary>채집망 하나를 쓰고 미니게임을 연다 — 버튼·숫자 키·바로 쓰기 세 경로의 단일 진입점.</summary>
+        private void StartCaptureWith(CaptureItemData item)
+        {
+            if (item == null || itemInventory == null) return;
             if (itemInventory.GetCount(item.itemId) <= 0) return;
             if (!itemInventory.UseItem(item.itemId, 1)) return;
+
+            EnsureLastNetLoaded();
+            if (lastNetItemId != item.itemId)
+            {
+                lastNetItemId = item.itemId;
+                PlayerPrefs.SetString(lastNetPrefsKey, lastNetItemId);
+                PlayerPrefs.Save();
+            }
 
             InsectEntity savedTarget = targetInsect;
             Hide();
@@ -708,6 +803,30 @@ namespace InsectGame.UI
         public void AutoWire(PlayerMovement pm)
         {
             if (playerMovement == null) playerMovement = pm;
+        }
+    }
+
+    /// <summary>
+    /// 「바로 쓸 채집망」 고르기의 <b>순수</b> 판정. 화면(IMGUI)과 떼어 테스트로 고정한다 —
+    /// 틀리면 귀한 채집망이 말없이 소모된다.
+    /// </summary>
+    public static class CaptureNetChoice
+    {
+        /// <param name="items">채집망 목록. 흔한 것부터 적혀 있다는 것이 전제다.</param>
+        /// <param name="lastUsedId">지난번에 쓴 채집망. 없거나 다 떨어졌으면 목록 맨 앞의 가진 것으로 물러난다.</param>
+        public static CaptureItemData Resolve(CaptureItemData[] items, string lastUsedId, System.Func<string, int> countOf)
+        {
+            if (items == null || countOf == null) return null;
+
+            CaptureItemData firstOwned = null;
+            for (int i = 0; i < items.Length; i++)
+            {
+                CaptureItemData item = items[i];
+                if (item == null || countOf(item.itemId) <= 0) continue;
+                if (item.itemId == lastUsedId) return item;
+                if (firstOwned == null) firstOwned = item;
+            }
+            return firstOwned;
         }
     }
 }

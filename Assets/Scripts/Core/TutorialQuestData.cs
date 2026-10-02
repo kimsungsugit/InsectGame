@@ -202,5 +202,72 @@ namespace InsectGame.Core
             }
             return targets;
         }
+
+        /// <summary>
+        /// <b>미리 세는 목표인가.</b> 포획·전투·레이드·레벨업처럼 "몇 번 했는가"를 세는 것만이다.
+        ///
+        /// 넣으면 안 되는 것이 있다:
+        /// <list type="bullet">
+        /// <item><c>CleanseBlight</c> — 「하나 무너뜨리기」와 「하나 더」가 이어져 있다. 미리 세면 첫 정화 하나가
+        /// 둘을 한꺼번에 깬다.</item>
+        /// <item><c>VisitRegion</c>·<c>VisitSubArea</c>·<c>Movement</c> — 그 퀘스트가 가리키는 순간의 행동이어야 한다
+        /// (초원에 들어간 것이 "연못에 가 보세요"를 깨면 안 된다).</item>
+        /// <item><c>TalkToElder</c>·<c>DefeatGuardian</c> — 스토리 비트와 맞물려 따로 정합한다.</item>
+        /// </list>
+        /// </summary>
+        public static bool IsBankable(QuestType type)
+        {
+            switch (type)
+            {
+                case QuestType.Capture:
+                case QuestType.CaptureRare:
+                case QuestType.CaptureRarity:
+                case QuestType.Battle:
+                case QuestType.RaidBattle:
+                case QuestType.LevelUp:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        /// <summary>
+        /// 이번 행동이 이 퀘스트의 진행으로 세어지는가. 포획은 <paramref name="action"/>을
+        /// <c>Capture</c>로 넘기고 등급으로 가른다(<c>NotifyCapture</c>의 활성 퀘스트 판정과 같은 규칙).
+        /// </summary>
+        public static bool CountsToward(TutorialQuest quest, QuestType action, InsectGame.Data.InsectRarity rarity)
+        {
+            if (quest == null || !IsBankable(quest.type)) return false;
+            if (action != QuestType.Capture) return quest.type == action;
+
+            switch (quest.type)
+            {
+                case QuestType.Capture: return true;
+                case QuestType.CaptureRare: return rarity >= InsectGame.Data.InsectRarity.Uncommon;
+                case QuestType.CaptureRarity: return rarity == quest.requiredRarity;
+                default: return false;
+            }
+        }
+
+        /// <summary>
+        /// 이번 행동을 <b>미리 세어 둘</b> 스토리 퀘스트 — 아직 안 끝났고 지금 활성도 아닌 것.
+        /// 활성 퀘스트는 원래 경로(<c>IncrementProgress</c>)가 올리므로 여기서 빼야 두 번 세지 않는다.
+        /// 서브 퀘스트는 대상이 아니다(다중 활성이라 자기 경로로 센다).
+        /// </summary>
+        public static void CollectBankTargets(TutorialQuest[] quests, System.Func<string, bool> isCompleted,
+            string activeQuestId, QuestType action, InsectGame.Data.InsectRarity rarity, List<TutorialQuest> into)
+        {
+            if (into == null) return;
+            into.Clear();
+            if (quests == null || isCompleted == null) return;
+
+            for (int i = 0; i < quests.Length; i++)
+            {
+                TutorialQuest q = quests[i];
+                if (q == null || q.category != QuestCategory.Story) continue;
+                if (q.questId == activeQuestId || isCompleted(q.questId)) continue;
+                if (CountsToward(q, action, rarity)) into.Add(q);
+            }
+        }
     }
 }

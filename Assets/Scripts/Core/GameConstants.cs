@@ -60,6 +60,14 @@ namespace InsectGame.Core
             // 따라가는 마을 이야기(주민 storyNpcId) — **로컬 전용**(QuestUnseen과 같은 편의 상태).
             // 기기마다 달라도 진행에 영향이 없고, 가리키던 이야기가 끝나면 트래커가 스스로 지운다.
             public const string TrackedTale = "InsectGame.TrackedTale";
+            // 마지막으로 쓴 채집망 itemId — **로컬 전용** 편의 상태. 포획 선택 창이 이걸로 바로 미니게임을 연다.
+            // 그 채집망이 떨어졌으면 가진 것 중 맨 앞(가장 흔한 것)으로 물러난다.
+            public const string LastCaptureNet = "InsectGame.LastCaptureNet";
+            // 라온과의 포획 내기 상태("active"/"done") — **로컬 전용**. 한 계정에 한 번뿐인 짧은 내기라
+            // 점수는 저장하지 않는다(도중에 닫으면 0:0에서 다시 붙는다).
+            public const string RivalRace = "InsectGame.RivalRace";
+            // 첫 색다른 조우를 이미 줬는가("1") — **로컬 전용**. 한 번만 일어나야 하는 연출이다.
+            public const string FirstShinyGiven = "InsectGame.FirstShinyGiven";
         }
 
         // ── 플레이어 ──
