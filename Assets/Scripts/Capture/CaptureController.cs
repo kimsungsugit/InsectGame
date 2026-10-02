@@ -33,6 +33,16 @@ namespace InsectGame.Capture
 
         public event Action<InsectEntity, bool> CaptureResolved;
 
+        /// <summary>
+        /// 직전 포획에서 실제로 지급한 EXP·캔디(부스터 포함, 실패면 0). <see cref="CaptureResolved"/> 전에 채운다 —
+        /// 팝업이 공식을 다시 돌리면 지급 뒤 캐릭터 레벨로 레벨 차를 재서 지급값과 갈린다.
+        /// </summary>
+        public int LastExpReward { get; private set; }
+        public int LastCandyReward { get; private set; }
+
+        /// <summary>포획 공식이 쓰는 캐릭터 레벨 — 포획 선택 화면이 레벨 차 경고를 같은 값으로 판단한다.</summary>
+        public int TrainerLevel => playerProgress != null ? playerProgress.Level : 1;
+
         public void AttemptCapture(InsectEntity target, float timing01, float extraBonus = 0f)
         {
             if (target == null || target.Data == null)
@@ -40,6 +50,10 @@ namespace InsectGame.Capture
                 return;
             }
 
+            LastExpReward = 0;
+            LastCandyReward = 0;
+            // 확률과 EXP가 같은 레벨 차를 보도록 지급 전에 고정한다(GainXp가 레벨을 올린다).
+            int trainerLevel = TrainerLevel;
             float chance = CalculateSuccessChance(target.Data, target.Level, timing01, extraBonus);
             bool success = UnityEngine.Random.value <= chance;
 
@@ -56,10 +70,11 @@ namespace InsectGame.Capture
             {
                 if (playerProgress != null)
                 {
-                    int exp = InsectRewardCalculator.GetExpReward(target.Data);
+                    int exp = InsectRewardCalculator.GetExpReward(target.Data, target.Level, trainerLevel);
                     float expMultiplier = (itemEffects != null ? itemEffects.GetExpMultiplier() : 1f)
                                         * (outfitBonus != null ? outfitBonus.GetExpMultiplier() : 1f);
-                    playerProgress.GainXp(Mathf.RoundToInt(exp * expMultiplier));
+                    LastExpReward = Mathf.RoundToInt(exp * expMultiplier);
+                    playerProgress.GainXp(LastExpReward);
                 }
 
                 if (candyInventory != null)
@@ -67,7 +82,8 @@ namespace InsectGame.Capture
                     int candy = InsectRewardCalculator.GetCandyReward(target.Data);
                     float candyMultiplier = (itemEffects != null ? itemEffects.GetCandyMultiplier() : 1f)
                                            * (outfitBonus != null ? outfitBonus.GetCandyMultiplier() : 1f);
-                    candyInventory.AddCandy(Mathf.RoundToInt(candy * candyMultiplier));
+                    LastCandyReward = Mathf.RoundToInt(candy * candyMultiplier);
+                    candyInventory.AddCandy(LastCandyReward);
                 }
                 // 필드에서 본 이로치(색다른 곤충)를 그대로 저장 — 옛 2-인자 호출은 isShiny=false라
                 // 미니게임 포획 시 색다른 개체가 일반 개체로 유실됐음(배틀/레이드 경로는 정상 전달).
@@ -102,7 +118,7 @@ namespace InsectGame.Capture
             float timing01,
             float minigameBonus)
         {
-            int playerLevel = playerProgress != null ? playerProgress.Level : 1;
+            int playerLevel = TrainerLevel;
             float activeItemBonus = itemEffects != null ? itemEffects.GetCaptureChanceBonus() : 0f;
             float equippedOutfitBonus = outfitBonus != null ? outfitBonus.GetCaptureChanceBonus() : 0f;
             CaptureChanceTuning tuning = new CaptureChanceTuning(

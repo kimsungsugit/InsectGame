@@ -866,8 +866,10 @@ namespace InsectGame.Battle
                                     * (outfitBonus != null ? outfitBonus.GetCandyMultiplier() : 1f);
                 float duelExpMul = (itemEffects != null ? itemEffects.GetExpMultiplier() : 1f)
                                   * (outfitBonus != null ? outfitBonus.GetExpMultiplier() : 1f);
+                int duelTrainerLevel = playerProgress != null ? playerProgress.Level : playerStats.Level;
                 lastCandyReward = Mathf.RoundToInt(InsectRewardCalculator.GetCandyReward(duelData) * duelCandyMul);
-                lastExpReward = Mathf.RoundToInt(InsectRewardCalculator.GetExpReward(duelData) * duelExpMul);
+                lastExpReward = Mathf.RoundToInt(
+                    InsectRewardCalculator.GetExpReward(duelData, enemyStats.Level, duelTrainerLevel) * duelExpMul);
                 candyInventory?.AddCandy(lastCandyReward);
                 playerProgress?.GainXp(lastExpReward);
                 wallet?.AddCoins(BattleVictoryCoins);
@@ -888,6 +890,7 @@ namespace InsectGame.Battle
                 int itemCount = InsectRewardCalculator.GetItemRewardCount(enemyData);
                 string itemId = enemyData.itemRewardId;
                 // 같은 승리에서 지급하는 XP가 이번 포획 확률을 바꾸지 않도록 보상 지급 전에 고정한다.
+                // EXP의 레벨 차도 이 값으로 잰다(지급 뒤 레벨로 재면 레벨업 직후 EXP가 줄어든다).
                 int capturePlayerLevel = playerProgress != null
                     ? playerProgress.Level
                     : playerStats.Level;
@@ -898,7 +901,8 @@ namespace InsectGame.Battle
                 float expMultiplier = (itemEffects != null ? itemEffects.GetExpMultiplier() : 1f)
                                      * (outfitBonus != null ? outfitBonus.GetExpMultiplier() : 1f);
                 int candy = Mathf.RoundToInt(InsectRewardCalculator.GetCandyReward(enemyData) * candyMultiplier);
-                int exp = Mathf.RoundToInt(InsectRewardCalculator.GetExpReward(enemyData) * expMultiplier);
+                int exp = Mathf.RoundToInt(
+                    InsectRewardCalculator.GetExpReward(enemyData, enemyLevel, capturePlayerLevel) * expMultiplier);
 
                 candyInventory?.AddCandy(candy);
                 playerProgress?.GainXp(exp);

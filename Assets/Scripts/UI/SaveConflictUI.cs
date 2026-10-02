@@ -66,6 +66,8 @@ namespace InsectGame.UI
                 GameConstants.SaveFiles.PlayerItems,
                 GameConstants.SaveFiles.BattleTeam,
                 GameConstants.SaveFiles.DexSave,
+                // 섬만 꾸미고 닫은 세션도 "로컬에 더 새 진행이 있다"로 잡혀야 한다.
+                GameConstants.SaveFiles.Island,
             };
 
             long newest = 0;

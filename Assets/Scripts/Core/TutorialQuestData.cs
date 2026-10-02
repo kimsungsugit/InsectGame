@@ -33,6 +33,19 @@ namespace InsectGame.Core
         // 명부회 오염 거점 정화 — RegionBlightManager.RegionCleansed가 알린다.
         // 이벤트 기반이라 구독 등록이 급소다(q_team 전례).
         CleanseBlight,
+        // ── 나의 섬 ── 전부 IslandManager가 행동이 성립한 지점에서 Notify___로 직접 알린다(이벤트 구독이 아니다).
+        // 내 섬에 들어감.
+        VisitIsland,
+        // 보유 곤충을 섬에 풀어놓음.
+        ReleaseOnIsland,
+        // 보관함의 물건을 섬에 놓음(옮기기·돌리기는 세지 않는다).
+        PlaceIslandObject,
+        // 쌓인 수확물을 받음.
+        HarvestIsland,
+        // 섬 상점에서 물건을 삼.
+        IslandPurchase,
+        // 다른 사람의 섬을 구경함.
+        VisitFriendIsland,
     }
 
     // 퀘스트 분류 — Story(선형 메인 체인) vs Side(다중 활성, 일부 반복 상승).
@@ -58,6 +71,12 @@ namespace InsectGame.Core
         public string rewardInsectId;
         public string rewardInsectDisplayName;
         public int rewardInsectLevel = 1;
+        // 코인 보상 — 섬 퀘스트가 쓴다(가구 값이 코인이다). 다이아는 보상으로 줄 수 없다:
+        // 서버 규칙이 클라이언트의 다이아 증가를 거부해 세이브 업로드 전체가 막힌다.
+        public int rewardCoins = 0;
+        // 섬 물건 보상(IslandCatalog의 id) — 섬 보관함으로 들어간다.
+        public string rewardIslandObjectId;
+        public int rewardIslandObjectCount = 0;
         public string prerequisiteQuestId;
         // 분류: 기본 Story(기존 선형 체인 그대로). Side는 다중 활성 + 반복 상승 지원.
         public QuestCategory category = QuestCategory.Story;

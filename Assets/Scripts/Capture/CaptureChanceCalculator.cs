@@ -1,3 +1,4 @@
+using InsectGame.Core;
 using InsectGame.Data;
 using UnityEngine;
 
@@ -82,6 +83,9 @@ namespace InsectGame.Capture
         /// 미니게임이 주 포획 경로인데 고레벨 구간에서 등급·난이도 설계가 통째로 무력화됐다.
         /// 지금은 필드 레벨이 리전 대역 안에 있지만(FieldSpawnRules.RollFieldLevel) 앞 리전으로 돌아가면
         /// 똑같이 수십 레벨 차가 난다 — 상한은 여전히 필요하다.
+        ///
+        /// 반대쪽(곤충이 높을 때)은 이 상한 너머를 <see cref="TrainerLevelGap.CaptureMultiplier"/>가
+        /// 이어받는다(<c>GameConstants.TrainerLevel.CaptureGraceLevels</c>가 이 값과 같다).
         /// </summary>
         internal const int MaximumLevelDelta = 5;
 
@@ -114,7 +118,10 @@ namespace InsectGame.Capture
                 chance += tuning.PerfectTimingBonus;
 
             chance += Mathf.Max(0f, minigameBonus);
-            return Mathf.Clamp01(chance);
+
+            // 레벨 차 제한은 **맨 마지막에 곱한다.** 위 덧셈 보정은 ±5에서 잘리고 최저 보장과 보너스가
+            // 그 뒤에 얹혀서, 예전엔 20레벨 높은 전설도 퍼펙트 미니게임이면 34%였다(일반은 66%).
+            return Mathf.Clamp01(chance) * TrainerLevelGap.CaptureMultiplier(playerLevel, insectLevel);
         }
 
         /// <summary>

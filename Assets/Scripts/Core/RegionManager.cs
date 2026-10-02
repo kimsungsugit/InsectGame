@@ -176,6 +176,32 @@ namespace InsectGame.Core
             SubAreaChanged?.Invoke(currentSubArea);
         }
 
+        /// <summary>
+        /// <b>위치와 무관하게</b> 분리 구역(나의 섬)으로 들어간다 — <see cref="SubAreaData.detached"/>인 구역 전용.
+        ///
+        /// 섬을 서브에리어 상태로 태우는 이유: "분리된 공간에 있다"는 판정이 전부
+        /// <see cref="CurrentSubArea"/> != null에 걸려 있다(플레이어 접지·끼임 복구, 스포너 필드 틱, 미니맵·지도, 환경광).
+        /// 섬을 별개 상태로 두면 그 전부를 따로 고쳐야 하고, 리전 판정이 멈추지 않아 섬을 오갈 때마다
+        /// <see cref="RegionChanged"/>가 다시 울린다(방문 퀘스트·스토리 트리거·BGM이 왕복마다 재발화한다).
+        ///
+        /// 들어가는 순간 sticky를 켠다 — 섬 좌표에는 리전이 없어 Update의 위치 판정이 리전을 null로 바꾸기 때문이다.
+        /// 나올 때는 <see cref="ForceExitSubArea"/>.
+        /// </summary>
+        public bool EnterDetachedSubArea(SubAreaData area)
+        {
+            if (area == null || !area.detached || currentSubArea != null) return false;
+            subAreaSticky = true;
+            // 근접 진입 대상이 남아 있으면 섬 위에서도 "○○ 들어가기" 버튼과 [E] 진입이 살아 있다.
+            if (nearbySubArea != null)
+            {
+                nearbySubArea = null;
+                SubAreaProximityChanged?.Invoke(null);
+            }
+            currentSubArea = area;
+            SubAreaChanged?.Invoke(currentSubArea);
+            return true;
+        }
+
         // --- 지역 잠금 시스템 ---
 
         public bool IsRegionAccessible(RegionData region)

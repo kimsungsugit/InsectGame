@@ -9,7 +9,9 @@ namespace InsectGame.Core
         ItemShop,
         Training,
         Gacha,
-        Hospital
+        Hospital,
+        /// <summary>본 마을 나루터 — 섬 나들목 창(내 섬 가기·방문)을 연다.</summary>
+        IslandDock
     }
 
     /// <summary>

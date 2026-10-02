@@ -70,6 +70,7 @@ namespace InsectGame.Tests
         [TestCase(QuickAccessBarUI.Destination.Story, KeyCode.J)]
         [TestCase(QuickAccessBarUI.Destination.Inventory, KeyCode.I)]
         [TestCase(QuickAccessBarUI.Destination.Badges, KeyCode.K)]
+        [TestCase(QuickAccessBarUI.Destination.Island, KeyCode.H)]
         public void Hotkey_ExistingDestination_PreservesBinding(QuickAccessBarUI.Destination id, KeyCode expected)
         {
             Assert.AreEqual(expected, QuickAccessBarUI.GetHotkey(id));
@@ -80,7 +81,7 @@ namespace InsectGame.Tests
         public void Destinations_Menu_HasUniqueCompleteRoutes()
         {
             var ids = new HashSet<QuickAccessBarUI.Destination>(QuickAccessBarUI.Destinations);
-            Assert.AreEqual(13, ids.Count);
+            Assert.AreEqual(14, ids.Count);
             foreach (QuickAccessBarUI.Destination id in System.Enum.GetValues(typeof(QuickAccessBarUI.Destination)))
                 if (id != QuickAccessBarUI.Destination.Menu) Assert.IsTrue(ids.Contains(id));
         }

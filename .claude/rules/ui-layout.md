@@ -24,6 +24,7 @@ UISurface.Card(new Rect(px, py, pw, ph), SomeBgCol, UITheme.Instance.surfaceBord
 | `Card(rect)` | 테마 기본색 카드 |
 | `Rounded(rect, color[, radius])` | 헤더 바, 배지 바탕 |
 | `Flat(rect, color)` | **얇은 것** — 구분선·진행바·액센트 스트라이프 |
+| `Meter(rect, ratio, fill)` | HP·경험치·IV 막대(트랙 + 채움, 둘 다 각진 채). 색은 `UITheme.GetHpColor(ratio)` 등 |
 | `Button(rect, label, bg, style[, selected])` | 호버 반응이 필요한 버튼 |
 | `Chip(rect, text, bg, textColor)` | 등급·속성·보상 배지 |
 | `StatRow(rect, label, value, lc, vc)` | 라벨/값 한 줄 |

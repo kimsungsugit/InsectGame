@@ -36,6 +36,7 @@ namespace InsectGame.UI
         private CameraFollower cameraFollower;                   // 첫 조우 시네마틱 줌
         private HospitalUI hospital;                             // 병원 치료 UI
         private NpcDuelController duelController;                // 곤충잡이 아이 대결
+        private IslandVisitUI islandVisit;                       // 나루터 → 섬 나들목 창
 
         private readonly List<InteractionPointDef> points = new List<InteractionPointDef>();
 
@@ -76,6 +77,11 @@ namespace InsectGame.UI
         public void AutoWire(HospitalUI hospitalUi)
         {
             if (hospital == null) hospital = hospitalUi;
+        }
+
+        public void AutoWire(IslandVisitUI islandVisitUi)
+        {
+            if (islandVisit == null) islandVisit = islandVisitUi;
         }
 
         public void AutoWire(NpcDialogueUI dialogueUi)
@@ -370,6 +376,9 @@ namespace InsectGame.UI
                     case InteractionKind.Hospital:
                         if (hospital != null) hospital.Toggle();
                         break;
+                    case InteractionKind.IslandDock:
+                        if (islandVisit != null) islandVisit.Toggle();
+                        break;
                 }
             }
 
@@ -513,6 +522,7 @@ namespace InsectGame.UI
                 case InteractionKind.Gacha: return "상자";
                 case InteractionKind.Training: return "훈련";
                 case InteractionKind.Hospital: return "병원";
+                case InteractionKind.IslandDock: return "내 섬";
                 default: return "확인";
             }
         }

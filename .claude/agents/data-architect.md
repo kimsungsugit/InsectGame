@@ -76,6 +76,17 @@ tools:
 - `Assets/Scripts/Story/StoryProgressData.cs` - 스토리 진행 세이브 모델
 - `Assets/Scripts/Story/CutsceneData.cs` - 컷신 샷 데이터 모델 + 타임라인 순수부(CutsceneTimeline)
 
+### 나의 섬 (세이브·데이터)
+- `Assets/Scripts/Core/IslandData.cs` - 섬 데이터 모델(물건 정의·`IslandSave`·공개용 `IslandSnapshot`) ※수치는 game-designer(`IslandCatalog`)
+- `Assets/Scripts/Core/IslandManager.cs` - 섬 상태·세이브(island.json)·구매·배치·방목·수확·가이드 진행 + 세이브 자가 복구(`IslandSaveRules`) ※가격·생산 수치는 game-designer, 퀘스트 통지 호출부 포함
+- `Assets/Scripts/Core/IslandGrid.cs` - 섬 격자 순수 규칙(차지 칸·경계·겹침·도착 칸 보호·빈 칸)
+- `Assets/Scripts/Core/IslandShareClient.cs` - 섬 공개·방문·좋아요 서버 통신(`socialPvpApi` 액션) + 받은 스냅샷 정리 ※서버는 `functions/island.js`
+- `Assets/Scripts/Core/FirestoreDocParser.cs` - Firestore REST 문서 필드 파서(공백 없는 형식·들여쓰기 형식 둘 다) — `CloudSaveManager` 복원이 쓴다
+- `Assets/Tests/EditMode/IslandGridTests.cs` - 격자 규칙(경계·도착 칸·겹침·옮기기·확장 후 좌표 유효)
+- `Assets/Tests/EditMode/IslandManagerTests.cs` - 섬 상태 흐름(변경 전 정산·수확 소수점 보존·상한·방목 슬롯·유령 id 정리·안내 첫 선물 1회·스냅샷에 instanceId 없음)
+- `Assets/Tests/EditMode/IslandSaveRulesTests.cs` - 섬 세이브 호환(빈 JSON·자가 복구·모르는 id 보존)·방문 스냅샷 정리·안내 단계
+- `Assets/Tests/EditMode/FirestoreDocParserTests.cs` - 클라우드 문서 파서(두 형식·이스케이프·블롭 안 동명 키)
+
 ## 세이브 파일 구조
 | 파일 | 내용 | 서비스 |
 |------|------|--------|

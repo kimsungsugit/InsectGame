@@ -110,6 +110,19 @@ namespace InsectGame.Battle
                 yield return InsectGame.UI.OutfitVisualCapture.Run(output, camera);
                 yield break;
             }
+            if (scenario == "field-ui")
+            {
+                // 필드 HUD·포획 선택·배틀팀 — IMGUI라 배치 캡처로는 안 보인다(FieldHudVisualCapture 주석).
+                follower.enabled = false;
+                yield return InsectGame.UI.FieldHudVisualCapture.Run(output, camera);
+                yield break;
+            }
+            if (scenario == "island-ui")
+            {
+                // 나의 섬 — HUD·꾸미기·상점·곤충·방문·가이드. 꾸미기 화면이 카메라를 직접 옮기므로 팔로워를 끄지 않는다.
+                yield return InsectGame.UI.IslandVisualCapture.Run(output, camera);
+                yield break;
+            }
             BattleArenaController arena = new GameObject("QAArena").AddComponent<BattleArenaController>();
             if (scenario == "raid" || scenario == "raid-unite")
             {

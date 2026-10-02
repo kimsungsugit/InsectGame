@@ -1,5 +1,6 @@
 #if UNITY_EDITOR
 using InsectGame.Battle;
+using InsectGame.Core;
 using InsectGame.Data;
 using InsectGame.UI;
 using NUnit.Framework;
@@ -121,11 +122,12 @@ namespace InsectGame.Tests
         [Test]
         public void Calculate_ExtremeInputs_ClampToConfiguredBounds()
         {
+            // 최저 보장은 레벨 유예(+5) 안에서의 보장이다 — 그 너머는 아래 테스트가 본다.
             float minimum = Calculate(
                 InsectRarity.Legendary,
                 1f,
-                1,
-                99);
+                10,
+                10 + GameConstants.TrainerLevel.CaptureGraceLevels);
             float maximum = Calculate(
                 InsectRarity.Common,
                 0f,
@@ -142,6 +144,35 @@ namespace InsectGame.Tests
                 BattleCaptureChanceCalculator.MaximumSuccessChance,
                 maximum,
                 0.0001f);
+        }
+
+        [Test]
+        public void Calculate_InsectFarAboveTrainer_GoesBelowMinimumGuarantee()
+        {
+            // 예전엔 Lv.1 캐릭터가 Lv.99 곤충을 이겨도 최저 10%가 보장됐다.
+            // .90 - 레벨 상한 .15 = .75 → 레벨 차 +98은 배율 하한(×0.05) → .0375
+            float chance = Calculate(InsectRarity.Common, 0f, 1, 99);
+
+            Assert.Less(chance, BattleCaptureChanceCalculator.MinimumSuccessChance);
+            Assert.AreEqual(0.75f * GameConstants.TrainerLevel.MinCaptureMultiplier, chance, 0.0001f);
+        }
+
+        [Test]
+        public void Calculate_AnyGap_AppliesSharedTrainerLevelGapMultiplier()
+        {
+            // 미니게임 경로와 같은 TrainerLevelGap 배율을 쓴다 — 경로마다 따로 적으면 한쪽만 고쳐진다.
+            // Common·난이도 0은 .90에서 덧셈 보정(최대 -.15)만 빠져 clamp에 닿지 않는다.
+            for (int gap = 0; gap <= 20; gap++)
+            {
+                int trainer = 30 - gap;
+                float unscaled = BattleCaptureChanceCalculator.BaseSuccessChance
+                                 + BattleCaptureChanceCalculator.GetLevelModifier(trainer, 30);
+                Assert.AreEqual(
+                    unscaled * TrainerLevelGap.CaptureMultiplier(trainer, 30),
+                    Calculate(InsectRarity.Common, 0f, trainer, 30),
+                    0.0001f,
+                    $"레벨 차 +{gap}");
+            }
         }
 
         [Test]

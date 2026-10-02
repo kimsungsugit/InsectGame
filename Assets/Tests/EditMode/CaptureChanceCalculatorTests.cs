@@ -96,13 +96,16 @@ namespace InsectGame.Tests
         [Test]
         public void Calculate_CoreBelowFloor_PositiveBonusesAreNotSwallowed()
         {
+            // 레벨 차는 유예(+5) 안에 둔다 — 이 테스트는 floor 위에 보너스가 얹히는지를 보고,
+            // 그 너머의 레벨 제한 배율은 Calculate_InsectFarAboveTrainer_*가 본다.
+            // 코어: .60 - .32 - .40 - .15 = -.27 → floor .04
             float noBonus = Calculate(
-                InsectRarity.Legendary, 1f, 1, 50, comboHits: 0);
+                InsectRarity.Legendary, 1f, 1, 6, comboHits: 0);
             float itemBonus = Calculate(
-                InsectRarity.Legendary, 1f, 1, 50, comboHits: 0,
+                InsectRarity.Legendary, 1f, 1, 6, comboHits: 0,
                 activeItemBonus: 0.10f);
             float oneHit = Calculate(
-                InsectRarity.Legendary, 1f, 1, 50, comboHits: 1);
+                InsectRarity.Legendary, 1f, 1, 6, comboHits: 1);
 
             Assert.AreEqual(0.04f, noBonus, 0.0001f);
             Assert.AreEqual(0.14f, itemBonus, 0.0001f);
@@ -181,6 +184,51 @@ namespace InsectGame.Tests
             Assert.Less(chance, 1f, "레벨 우위만으로 전설 포획이 보장되면 안 된다");
             // base 0.60 - 등급 0.32 - 난이도 0.328 + 상한 0.10 = 0.052
             Assert.AreEqual(0.052f, chance, 0.0001f);
+        }
+
+        [Test]
+        public void Calculate_InsectFarAboveTrainer_PerfectMinigameCannotCatch()
+        {
+            // 예전엔 덧셈 보정이 ±5에서 잘리고 최저 보장(.30) 위에 퍼펙트 보너스(+.30)가 얹혀
+            // 캐릭터보다 15레벨 높은 일반 곤충이 66%로 잡혔다.
+            float chance = Calculate(
+                InsectRarity.Common, captureDifficulty: 0.22f,
+                playerLevel: 10, insectLevel: 25, comboHits: 3,
+                activeItemBonus: 0.10f, outfitBonus: 0.05f);
+
+            Assert.LessOrEqual(chance, 0.05f, "레벨 차 +15는 보너스를 다 얹어도 사실상 포획 불가여야 한다");
+            Assert.Greater(chance, 0f, "불가능이 아니라 극히 낮은 확률이다");
+        }
+
+        [Test]
+        public void Calculate_PastGrace_ChanceStrictlyDecreasesUntilMinimum()
+        {
+            int grace = GameConstants.TrainerLevel.CaptureGraceLevels;
+            float previous = Calculate(InsectRarity.Legendary, 0.82f, 20, 20 + grace, comboHits: 3);
+            for (int gap = grace + 1; gap <= grace + 9; gap++)
+            {
+                float current = Calculate(InsectRarity.Legendary, 0.82f, 20, 20 + gap, comboHits: 3);
+                Assert.Less(current, previous, $"레벨 차 +{gap}에서 확률이 줄지 않았다");
+                previous = current;
+            }
+        }
+
+        [Test]
+        public void Calculate_WithinGrace_UnaffectedByLevelGapMultiplier()
+        {
+            // 유예 안(+5까지)은 옛 공식 그대로 — 정상 진행의 포획률을 바꾸지 않는다.
+            int grace = GameConstants.TrainerLevel.CaptureGraceLevels;
+            float chance = Calculate(InsectRarity.Rare, 0.50f, 20, 20 + grace, comboHits: 2);
+            // base .60 - 등급 .16 - 난이도 .20 - 레벨 .15 = .09 → 하한 .14 + 타이밍 .15 + 콤보 .10 = .39
+            Assert.AreEqual(0.39f, chance, 0.0001f);
+        }
+
+        [Test]
+        public void CaptureGraceLevels_MatchesAdditiveLevelCap()
+        {
+            // 둘이 어긋나면 +5와 유예 사이에 확률이 평평한 구간이 생긴다(예전엔 +5 너머 전부가 그랬다).
+            Assert.AreEqual(CaptureChanceCalculator.MaximumLevelDelta,
+                GameConstants.TrainerLevel.CaptureGraceLevels);
         }
 
         /// <summary>

@@ -16,7 +16,9 @@ tools:
 게임 시스템 기획, 밸런스 설계, 신규 기능 사양서 작성을 담당합니다.
 
 ## 담당 파일 (게임 시스템 매니저)
-- `Assets/Scripts/Core/TrainingManager.cs` - 훈련 시스템
+- `Assets/Scripts/Core/TrainingManager.cs` - 훈련 시스템(기술 습득·성장 훈련 레벨/능력치)
+- `Assets/Scripts/Core/TrainingPricing.cs` - 훈련 가격 정본(기술 가치·회당 비용·능력치 +1 비용)
+- `Assets/Scripts/Core/TrainerLevelGap.cs` - 캐릭터↔곤충 레벨 차 정본(포획 레벨 제한 배율·캐릭터 EXP 레벨 배율) ※포획 공식 적용부는 capture-dev(`CaptureChanceCalculator`)·battle-dev(`BattleCaptureChanceCalculator`)
 - `Assets/Scripts/Core/TutorialQuestManager.cs` - 튜토리얼/퀘스트
 - `Assets/Scripts/Core/TutorialQuestData.cs` - 퀘스트 데이터
 - `Assets/Scripts/Core/WeeklyContestSchedule.cs` - 주간 크기 대결 일정·대상 종·등급 임계
@@ -46,6 +48,13 @@ tools:
 - `Assets/Scripts/Core/GuardianBadges.cs` - 수문장 배지 표(리전·이름·새김글)와 4·8·13 이정표 보상 아이템·수량 ※그림은 `Tools/Badges/guardian_badges.py`
 - `Assets/Scripts/Core/OutfitUnlockRules.cs` - 조건부 의상 해금 판정(지역 도달·레벨·퀘스트 토큰) 순수부 ※소유 부여 배선은 `CharacterOutfitManager.EvaluateUnlocks`, 문구는 `CharacterOutfitUI.DescribeUnlockCondition`(ui-dev)
 - `Assets/Tests/EditMode/OutfitUnlockRulesTests.cs` - 해금 판정식 + 카탈로그 조건의 도달 가능성(리전·퀘스트 실재·만렙 이하·비매품)
+- `Assets/Tests/EditMode/TrainingPricingTests.cs` - 훈련 가격(피해기 옛 가격 유지·상태기 효과 가치·능력치 +1 비용 대역·등급 경계)
+- `Assets/Tests/EditMode/TrainerLevelGapTests.cs` - 레벨 차 규칙(포획 배율 유예·하한, EXP 레벨·차 배율, 높은 곤충일수록 EXP 단조 증가)
+- `Assets/Scripts/Core/IslandCatalog.cs` - 나의 섬 물건 카탈로그(28종 가격·차지 칸·쾌적도·효과) + 섬·곤충 자리 확장가 ※모델은 visual-dev(`IslandObjectBuilder`), 데이터 모델은 data-architect(`IslandData`)
+- `Assets/Scripts/Core/IslandYield.cs` - 섬 생산 공식 정본(섬 등급 배율·쾌적도·설비·친밀도·누적 상한·정산) — 계수는 `GameConstants.Island`
+- `Assets/Scripts/Core/IslandGuideSteps.cs` - 섬 첫 방문 안내의 단계 판정·문구와 도움말 항목 ※배너·도움말 창 그리기는 ui-dev(`IslandGuideUI`)
+- `Assets/Tests/EditMode/IslandYieldTests.cs` - 섬 수입 대역(기본 섬 ≤ 활동 수입 20%, 풀 확장 ≤ 1.25배)·효과 중복 금지·쾌적도 체감·친밀도 경계·정산(상한·시계 되돌림)
+- `Assets/Tests/EditMode/IslandCatalogTests.cs` - 카탈로그 정합(id 유일·가격 하나·모델 switch 누락·확장가·퀘스트 보상 섬 물건 실재)
 - `Assets/Scripts/Core/GuardianBadgeService.cs` - 새 배지 알림(첫 격파만)과 이정표 보상 지급·수령 기록 ※수령 기록 직렬화·클라우드 필드는 data-architect와 함께 본다
 - `Assets/Editor/StoryBeatWalkthrough.cs` - 스토리 비트 실발화 걸음(배치모드) ※`LiveSceneCapture`(visual-dev)와 같은 배치 도구지만 검증 대상이 3D가 아니라 **저작**이다
 

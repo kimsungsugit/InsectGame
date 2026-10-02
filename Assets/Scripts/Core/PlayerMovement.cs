@@ -749,7 +749,14 @@ namespace InsectGame.Core
         {
             bool inSubArea = regionManager != null && regionManager.CurrentSubArea != null;
             Vector3 target;
-            if (inSubArea)
+            if (inSubArea && regionManager.CurrentSubArea.detached)
+            {
+                // 분리 구역(나의 섬) — 방이 (2000,·,2000)에 없다. 그 구역이 정해 둔 도착 자리 부근으로 보낸다
+                // (섬은 centerPosition에 도착 칸을 적어 두고, 그 칸은 물건을 놓을 수 없게 보호돼 있다).
+                Vector3 arrival = regionManager.CurrentSubArea.centerPosition;
+                target = FindClearSpot(arrival + new Vector3(0f, 0.5f, 0f), arrival);
+            }
+            else if (inSubArea)
             {
                 // SubArea 안 — Origin 부근 spiral 탐색
                 Vector3 origin = new Vector3(2000f, 0f, 2000f);

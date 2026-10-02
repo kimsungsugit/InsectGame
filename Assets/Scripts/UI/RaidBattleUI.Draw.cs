@@ -2930,19 +2930,7 @@ namespace InsectGame.UI
                 }
             }
         }
-        private Color GetSkillColor(SkillEffectType type)
-        {
-            switch (type)
-            {
-                case SkillEffectType.Damage: return new Color(0.9f, 0.35f, 0.3f);
-                case SkillEffectType.BuffAttack: return new Color(0.3f, 0.8f, 0.4f);
-                case SkillEffectType.DebuffAttack: return new Color(0.7f, 0.4f, 0.9f);
-                case SkillEffectType.Heal: return new Color(0.35f, 0.92f, 0.62f);
-                case SkillEffectType.DefenseBuff: return new Color(0.35f, 0.68f, 1f);
-                case SkillEffectType.Stun: return new Color(1f, 0.86f, 0.25f);
-                case SkillEffectType.PoisonDot: return new Color(0.68f, 0.35f, 0.88f);
-                default: return Color.gray;
-            }
-        }
+        // 팔레트는 UITheme이 단일 출처다(1v1 배틀·훈련소와 같은 표).
+        private Color GetSkillColor(SkillEffectType type) => UITheme.Instance.GetSkillColor(type);
     }
 }

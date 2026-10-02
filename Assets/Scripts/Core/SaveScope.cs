@@ -91,6 +91,9 @@ namespace InsectGame.Core
             GameConstants.SaveFiles.BattleTeam,
             GameConstants.SaveFiles.DexSave,
             GameConstants.SaveFiles.StoryProgress,
+            // 섬은 계정 스코프 경로가 생긴 뒤에 도입돼 옮겨 올 전역 파일이 없다 — MigrationVersion은 그대로 두고
+            // **삭제 목록**으로서 여기 있다. 빠지면 계정을 지우고 같은 uid로 다시 로그인했을 때 옛 섬이 되살아난다.
+            GameConstants.SaveFiles.Island,
         };
 
         private const string LocalOwnerKey = "InsectGame.LocalOwnerUid";

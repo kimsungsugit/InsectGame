@@ -38,6 +38,7 @@ namespace InsectGame.Tests
             Assert.IsFalse(string.IsNullOrEmpty(GameConstants.SaveFiles.BattleTeam));
             Assert.IsFalse(string.IsNullOrEmpty(GameConstants.SaveFiles.DexSave));
             Assert.IsFalse(string.IsNullOrEmpty(GameConstants.SaveFiles.StoryProgress));
+            Assert.IsFalse(string.IsNullOrEmpty(GameConstants.SaveFiles.Island));
         }
 
         [Test]
@@ -48,6 +49,7 @@ namespace InsectGame.Tests
             Assert.IsTrue(GameConstants.SaveFiles.BattleTeam.EndsWith(".json"));
             Assert.IsTrue(GameConstants.SaveFiles.DexSave.EndsWith(".json"));
             Assert.IsTrue(GameConstants.SaveFiles.StoryProgress.EndsWith(".json"));
+            Assert.IsTrue(GameConstants.SaveFiles.Island.EndsWith(".json"));
         }
 
         [Test]

@@ -8,6 +8,8 @@ namespace InsectGame.Core
         Exp,
         Item,
         Insect,
+        Coin,
+        IslandObject,
     }
 
     public struct QuestRewardEntry
@@ -101,6 +103,30 @@ namespace InsectGame.Core
                     Amount = 1,
                 });
             }
+
+            if (HasCoins(quest))
+            {
+                into.Add(new QuestRewardEntry
+                {
+                    Kind = QuestRewardKind.Coin,
+                    Label = "코인 " + quest.rewardCoins,
+                    Amount = quest.rewardCoins,
+                });
+            }
+
+            // 섬 물건은 카탈로그에 있는 것만 — GrantRewards도 모르는 id는 지급하지 않는다(IslandManager.GrantObject).
+            if (HasIslandObject(quest))
+            {
+                string name = IslandCatalog.Get(quest.rewardIslandObjectId).displayName;
+                into.Add(new QuestRewardEntry
+                {
+                    Kind = QuestRewardKind.IslandObject,
+                    Label = quest.rewardIslandObjectCount > 1
+                        ? "섬 물건 " + name + " ×" + quest.rewardIslandObjectCount
+                        : "섬 물건 " + name,
+                    Amount = quest.rewardIslandObjectCount,
+                });
+            }
         }
 
         // ── 포함 조건 (GrantRewards와 1:1) ──
@@ -116,6 +142,11 @@ namespace InsectGame.Core
 
         private static bool HasInsect(TutorialQuest quest) =>
             !string.IsNullOrEmpty(quest.rewardInsectId);
+
+        private static bool HasCoins(TutorialQuest quest) => quest.rewardCoins > 0;
+
+        internal static bool HasIslandObject(TutorialQuest quest) =>
+            quest.rewardIslandObjectCount > 0 && IslandCatalog.Get(quest.rewardIslandObjectId) != null;
 
         /// <summary>보상 한 줄 요약 — "캔디 5 + 경험치 10 + 황금 채집망 ×1". 없으면 빈 문자열.</summary>
         public static string Format(TutorialQuest quest, System.Func<string, string> itemNameResolver)
@@ -135,7 +166,8 @@ namespace InsectGame.Core
         public static bool HasAny(TutorialQuest quest)
         {
             if (quest == null) return false;
-            return HasCandy(quest) || HasExp(quest) || HasItem(quest) || HasInsect(quest);
+            return HasCandy(quest) || HasExp(quest) || HasItem(quest) || HasInsect(quest)
+                   || HasCoins(quest) || HasIslandObject(quest);
         }
     }
 }

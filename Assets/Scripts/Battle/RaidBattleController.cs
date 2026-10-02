@@ -801,7 +801,9 @@ namespace InsectGame.Battle
         {
             InsectData bd = BossStats.Data;
             int candyBase = InsectRewardCalculator.GetCandyReward(bd);
-            int expBase = InsectRewardCalculator.GetExpReward(bd);
+            // 보스 레벨·캐릭터와의 레벨 차를 반영한 EXP(1v1·포획과 같은 공식) — 캐릭터 레벨은 지급 전 값.
+            int trainerLevel = playerProgress != null ? playerProgress.Level : 1;
+            int expBase = InsectRewardCalculator.GetExpReward(bd, BossStats.Level, trainerLevel);
             // EXP/캔디 부스터(아이템·아웃핏) 배율 — 포획 경로(CaptureController)와 동일 항목만 적용.
             // 레이드 ×3 보너스 위에 부스터를 곱하고, 표기/지급이 같도록 곱한 최종값을 저장.
             float candyMultiplier = (itemEffects != null ? itemEffects.GetCandyMultiplier() : 1f)

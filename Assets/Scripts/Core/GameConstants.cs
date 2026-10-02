@@ -25,6 +25,8 @@ namespace InsectGame.Core
             public const string BattleTeam = "battle_team.json";
             public const string DexSave = "dex_save.json";
             public const string StoryProgress = "story_progress.json";
+            // 나의 섬 — 보관함·배치·방목·누적 수확. 클라우드는 GameSaveData.islandData 블롭.
+            public const string Island = "island.json";
         }
 
         // ── PlayerPrefs 키 ──
@@ -82,6 +84,131 @@ namespace InsectGame.Core
             public const int FallbackMaxLevel = 80;
             public const int FallbackBaseCandyCost = 4;
             public const int FallbackCandyCostGrowth = 2;
+        }
+
+        // ── 캐릭터(트레이너) 레벨 차 ──
+        // 공식은 TrainerLevelGap이 단일 출처이고 여기는 그 계수다. 실측 근거는 rules/balance.md
+        // 「포획 기준점」·「캐릭터 EXP 기준점」. 레벨 차는 늘 <c>곤충 레벨 − 캐릭터 레벨</c>이다(양수 = 곤충이 높다).
+        public static class TrainerLevel
+        {
+            /// <summary>
+            /// 포획 제한이 시작되는 레벨 차. 이 차까지는 포획 공식의 덧셈 보정(-3%/Lv, ±5 clamp)만 걸린다.
+            /// 그 상한(<c>MaximumLevelDelta</c>)과 같은 값이라야 +5 너머가 평평하지 않다 — 예전엔
+            /// +5와 +20이 같은 확률이라 20레벨 높은 전설도 퍼펙트 미니게임이면 34%로 잡혔다.
+            /// </summary>
+            public const int CaptureGraceLevels = 5;
+
+            /// <summary>유예를 넘긴 1레벨마다 최종 포획 확률에서 깎는 비율 — +10이면 ×0.5, +14면 ×0.1.</summary>
+            public const float CaptureDropPerLevel = 0.10f;
+
+            /// <summary>포획 배율의 하한 — +15 이상은 아이템·미니게임 보너스를 다 얹어도 2~3%다.</summary>
+            public const float MinCaptureMultiplier = 0.05f;
+
+            /// <summary>
+            /// 곤충 레벨 1당 EXP 증가 — <c>1 + (Lv − 1) × 이 값</c>(Lv21 ×2, Lv61 ×4). 캐릭터 레벨업 필요량이
+            /// 선형(50 + 15×(Lv−1))이라 같은 레벨 사냥의 레벨당 조우 수가 후반까지 20~27회로 거의 일정하다.
+            /// 이게 없던 때는 등급만 봐서 Lv60 일반 곤충도 Lv1과 같은 5였고, 레벨당 조우가 Lv5 13회 → Lv60 107회로 불었다.
+            /// </summary>
+            public const float ExpPerInsectLevel = 0.05f;
+
+            /// <summary>곤충이 캐릭터보다 높을 때 1레벨당 EXP 가산 — 최대 <see cref="ExpHigherCapLevels"/>레벨까지(×2.0).</summary>
+            public const float ExpHigherBonusPerLevel = 0.10f;
+            public const int ExpHigherCapLevels = 10;
+
+            /// <summary>
+            /// 곤충이 캐릭터보다 낮을 때 1레벨당 EXP 감산 — 하한 <see cref="ExpLowerMinFactor"/>(−8레벨부터).
+            /// 약한 곤충 반복 사냥으로 캐릭터만 앞서 나가지 않게 하는 조절기다. 0.05/×0.5로는 사냥량 3배에서
+            /// 캐릭터가 리전보다 20레벨 넘게 앞섰다(progression_sim 「캐릭터 EXP」 절).
+            /// </summary>
+            public const float ExpLowerPenaltyPerLevel = 0.10f;
+            public const float ExpLowerMinFactor = 0.2f;
+        }
+
+        // ── 훈련 비용 ──
+        // 공식은 TrainingPricing이 단일 출처이고 여기는 그 계수다. 실측 근거는 rules/balance.md 「훈련 기준점」.
+        public static class Training
+        {
+            /// <summary>
+            /// 상태기(공격 상승·하락, 방어 상승)를 위력으로 환산하는 기준 위력 — <c>effectValue × 지속턴 × 이 값</c>.
+            /// 그 턴 동안 중위권 기술(위력 30 안팎)을 칠 때마다 얹히는 몫이다. 이게 없던 때는 상태기의 위력 칸(1)이
+            /// 가격이 되어 <b>광폭화(공격 +60%)가 26캔디 1회</b>로 끝나고 파멸의 독침은 216캔디였다.
+            /// </summary>
+            public const float StatusRefPower = 30f;
+
+            /// <summary>회복기 환산 — <c>회복 비율(MaxHp 대비) × 이 값</c>. 30% 회복 ≈ 위력 30.</summary>
+            public const float HealRefPower = 100f;
+
+            /// <summary>기절기 환산 — 상대 행동 1회를 지운다 ≈ 기준 위력 1타.</summary>
+            public const float StunRefPower = 30f;
+
+            /// <summary>필요 훈련 횟수 = 1 + 가치 / 이 값(최대 <see cref="MaxSessions"/>). 옛 <c>1 + power / 12</c>와 같은 눈금이다.</summary>
+            public const int SessionValueStep = 12;
+            public const int MaxSessions = 5;
+
+            /// <summary>회당 최소 캔디. 옛 범용기 공식의 하한과 같다.</summary>
+            public const int MinSessionCost = 5;
+
+            /// <summary>
+            /// 능력치(개체값) +1의 기준 비용과 복리 — <c>이 값 × 성장률^현재 개체값 × 등급 배율</c>.
+            /// 평균 일반 개체(5/5/5)를 S급(14/14/13)으로: 약 2,900캔디(전투 ~950회) — Lv1→50 레벨업 전부(2,548)보다 조금 크다.
+            /// </summary>
+            public const int StatBaseCost = 20;
+            public const float StatCostGrowth = 1.2f;
+        }
+
+        // ── 나의 섬 ──
+        // 공식은 IslandYield·IslandGrid가 단일 출처이고 여기는 그 계수다. 근거는 rules/balance.md 「섬 기준점」.
+        public static class Island
+        {
+            /// <summary>섬이 타는 합성 서브에리어의 id — <c>RegionManager.EnterDetachedSubArea</c>로만 들어간다.</summary>
+            public const string SubAreaId = "player_island";
+
+            /// <summary>섬을 열어 주는 스토리 퀘스트. 풀어놓을 곤충이 생긴 시점이다.</summary>
+            public const string UnlockQuestId = "q_capture3";
+
+            /// <summary>격자 한 칸의 한 변(m).</summary>
+            public const float CellSize = 1.5f;
+
+            /// <summary>섬 한 변의 칸 수 = <c>BaseGridSize + sizeLevel × GridSizeStep</c>. 늘 짝수다(중심이 칸 경계).</summary>
+            public const int BaseGridSize = 10;
+            public const int GridSizeStep = 4;
+            public const int MaxSizeLevel = 3;
+
+            public const int BaseInsectSlots = 3;
+            public const int MaxInsectSlots = 10;
+
+            /// <summary>
+            /// 방목 곤충 1마리의 시간당 캔디(일반 등급 기준). 기본 섬(일반 3마리)이 하루 18 —
+            /// 평소 활동 수입(economy_sim 기준 하루 약 156)의 12%다. 섬만 돌려도 되는 게임이 되면 안 된다.
+            /// </summary>
+            public const float CandyPerInsectHour = 0.25f;
+
+            /// <summary>방목 곤충 1마리의 시간당 코인. 등급을 보지 않는다 — 코인은 꾸미기 재화라 수집 깊이와 묶지 않는다.</summary>
+            public const float CoinPerInsectHour = 0.15f;
+
+            /// <summary>수확 없이 쌓이는 시간의 상한(시간). 설비(창고·바구니)가 <see cref="MaxCapHours"/>까지 늘린다.</summary>
+            public const float BaseCapHours = 8f;
+            public const float MaxCapHours = 16f;
+
+            /// <summary>쾌적도가 주는 생산 보너스의 상한과, 그 상한에 닿는 쾌적도.</summary>
+            public const float MaxComfortBonus = 0.30f;
+            public const int ComfortForMaxBonus = 100;
+
+            /// <summary>친밀도 하트 수와 하트 하나당 생산 보너스(5단계 = +20%).</summary>
+            public const int MaxBondLevel = 5;
+            public const float BondBonusPerLevel = 0.04f;
+
+            /// <summary>
+            /// 친밀도 단계 경계(누적 방목 시간) = <c>이 값 × L × (L+1) / 2</c> — 6·18·36·60·90시간.
+            /// 상한 8시간짜리 섬을 꼬박꼬박 수확해도 다섯 하트까지 나흘 넘게 걸린다.
+            /// </summary>
+            public const float BondHoursUnit = 6f;
+
+            /// <summary>
+            /// 기기 시계가 이만큼 넘게 뒤로 갔으면 마지막 정산 시각을 지금으로 당긴다(초).
+            /// 그보다 작게 되돌린 건 정산 시각을 그대로 둔다 — 시계를 앞뒤로 흔들어 상한분을 반복해 받는 걸 막는다.
+            /// </summary>
+            public const long ClockRollbackResetSeconds = 7L * 24L * 3600L;
         }
 
         // ── 전투 ──

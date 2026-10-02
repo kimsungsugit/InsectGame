@@ -7,7 +7,7 @@ namespace InsectGame.UI
     /// <summary>Field shortcuts and an exclusive, keyboard-accessible destination menu.</summary>
     public class QuickAccessBarUI : MonoBehaviour, IModalUI
     {
-        public enum Destination { Dex, Team, Training, Collection, Quest, Map, Outfit, Shop, Pvp, Story, Inventory, Settings, Badges, Menu }
+        public enum Destination { Dex, Team, Training, Collection, Quest, Map, Outfit, Shop, Pvp, Story, Inventory, Settings, Badges, Island, Menu }
         [SerializeField] private DexScreenUI dexScreen;
         [SerializeField] private BattleTeamUI battleTeamUI;
         [SerializeField] private TrainingUI trainingUI;
@@ -21,6 +21,7 @@ namespace InsectGame.UI
         [SerializeField] private BadgeCaseUI badgeCaseUI;
         [SerializeField] private InventoryUI inventoryScreen;
         [SerializeField] private AccountSettingsUI settingsUI;
+        [SerializeField] private IslandVisitUI islandUI;
         [SerializeField] private BattleScreenUI battleScreen;
         [SerializeField] private RaidBattleUI raidScreen;
         [SerializeField] private PlayerMovement playerMovement;
@@ -36,7 +37,7 @@ namespace InsectGame.UI
             Destination.Dex, Destination.Collection, Destination.Team, Destination.Inventory,
             Destination.Quest, Destination.Map, Destination.Menu
         };
-        private static readonly Destination[] destinations = { Destination.Dex, Destination.Collection, Destination.Team, Destination.Training, Destination.Inventory, Destination.Quest, Destination.Story, Destination.Badges, Destination.Map, Destination.Outfit, Destination.Shop, Destination.Pvp, Destination.Settings };
+        private static readonly Destination[] destinations = { Destination.Dex, Destination.Collection, Destination.Team, Destination.Training, Destination.Inventory, Destination.Quest, Destination.Story, Destination.Badges, Destination.Map, Destination.Island, Destination.Outfit, Destination.Shop, Destination.Pvp, Destination.Settings };
         public static System.Collections.Generic.IReadOnlyList<Destination> Shortcuts => System.Array.AsReadOnly(shortcuts);
         public static System.Collections.Generic.IReadOnlyList<Destination> Destinations => System.Array.AsReadOnly(destinations);
 
@@ -56,6 +57,7 @@ namespace InsectGame.UI
                 case Destination.Story: return KeyCode.J;
                 case Destination.Inventory: return KeyCode.I;
                 case Destination.Badges: return KeyCode.K;
+                case Destination.Island: return KeyCode.H;
                 default: return KeyCode.None;
             }
         }
@@ -77,6 +79,7 @@ namespace InsectGame.UI
                 case Destination.Inventory: return "가방";
                 case Destination.Settings: return "설정 · 계정";
                 case Destination.Badges: return "배지";
+                case Destination.Island: return "내 섬";
                 default: return "메뉴";
             }
         }
@@ -120,17 +123,33 @@ namespace InsectGame.UI
             UIScale.End();
         }
 
+        /// <summary>
+        /// 필드 단축 바의 자리(가상 좌표). 그리기와 <b>같은 계산</b>을 리전 배너(<see cref="KeyGuideHUD"/>)가
+        /// 읽어 피해 간다 — 세로 화면에서 배너가 화면 중앙에 놓여 우상단 바 밑으로 파고들었다.
+        /// 데스크톱 폭 1200은 "보유 곤충 [C]"가 칸 안에 드는 값이다(1130일 때 "[C"에서 잘렸다).
+        /// </summary>
+        public static Rect ShortcutBarRect
+        {
+            get
+            {
+                bool mobile = UIScale.IsMobileLayout;
+                int columns = mobile ? 2 : shortcuts.Length;
+                int rows = (shortcuts.Length + columns - 1) / columns;
+                float gap = mobile ? 8f : 6f;
+                float buttonHeight = mobile ? 68f : BarButtonHeight;
+                float desiredHeight = 16f + rows * buttonHeight + (rows - 1) * gap;
+                return mobile ? UISafeLayout.TopPanel(324f, desiredHeight, UISafeLayout.HAlign.Right)
+                    : UISafeLayout.BottomPanel(1200f, desiredHeight);
+            }
+        }
+
         private void DrawShortcuts()
         {
             bool mobile = UIScale.IsMobileLayout;
             int columns = mobile ? 2 : shortcuts.Length;
-            int rows = (shortcuts.Length + columns - 1) / columns;
             float gap = mobile ? 8f : 6f;
             float buttonHeight = mobile ? 68f : BarButtonHeight;
-            float desiredWidth = mobile ? 324f : 1130f;
-            float desiredHeight = 16f + rows * buttonHeight + (rows - 1) * gap;
-            Rect bar = mobile ? UISafeLayout.TopPanel(desiredWidth, desiredHeight, UISafeLayout.HAlign.Right)
-                : UISafeLayout.BottomPanel(desiredWidth, desiredHeight);
+            Rect bar = ShortcutBarRect;
             FieldHudInput.RegisterBlockingRect(bar);
             UISurface.Card(bar);
             float cellWidth = (bar.width - 16f - (columns - 1) * gap) / columns;
@@ -170,7 +189,7 @@ namespace InsectGame.UI
         {
             KeyCode key = GetHotkey(id);
             string label = Label(id);
-            if (!UIScale.IsMobileLayout && key != KeyCode.None) label += $"  <size=16>[{key}]</size>";
+            if (!UIScale.IsMobileLayout && key != KeyCode.None) label += $" <size=16>[{key}]</size>";
             bool enabled = GUI.enabled;
             GUI.enabled = enabled && (id == Destination.Menu || Target(id) != null);
             if (UISurface.Button(rect, label, UITheme.Instance.surfaceRaised, buttonStyle)) TryNavigate(id);
@@ -186,6 +205,9 @@ namespace InsectGame.UI
             // 조건을 채워 새로 얻은 의상 — 예전엔 소유 목록에만 조용히 붙어 아무도 몰랐다(CharacterOutfitManager.IsNew).
             if (id == Destination.Outfit && CharacterOutfitManager.Instance != null && CharacterOutfitManager.Instance.HasAnyNew)
                 UISurface.Chip(new Rect(rect.xMax - 50f, rect.y + 2f, 48f, 26f), "NEW", UITheme.Instance.accentMint, UITheme.Instance.surfaceBase);
+            // 섬이 열렸는데 아직 안 가 봤거나, 수확물이 가득 찼다 — 섬은 필드에서 안 보이는 곳이라 여기서 알려야 한다.
+            if (id == Destination.Island && islandUI != null && islandUI.NeedsAttention)
+                UISurface.Chip(new Rect(rect.xMax - 36f, rect.y + 2f, 34f, 26f), "!", UITheme.Instance.accentAmber, UITheme.Instance.surfaceBase);
         }
 
         private IModalUI Target(Destination id)
@@ -205,6 +227,7 @@ namespace InsectGame.UI
                 case Destination.Badges: return badgeCaseUI;
                 case Destination.Inventory: return inventoryScreen;
                 case Destination.Settings: return settingsUI;
+                case Destination.Island: return islandUI;
                 default: return null;
             }
         }
@@ -240,6 +263,7 @@ namespace InsectGame.UI
                 case Destination.Badges: badgeCaseUI.Toggle(); break;
                 case Destination.Inventory: inventoryScreen.Toggle(); break;
                 case Destination.Settings: settingsUI.OpenSettings(); break;
+                case Destination.Island: islandUI.Toggle(); break;
             }
             return true;
         }
@@ -286,6 +310,11 @@ namespace InsectGame.UI
         public void AutoWire(InventoryUI inventory)
         {
             if (inventoryScreen == null) inventoryScreen = inventory;
+        }
+
+        public void AutoWire(IslandVisitUI island)
+        {
+            if (islandUI == null) islandUI = island;
         }
 
         // 전투/포획/미니게임 중 입력 가드용 신호 주입.

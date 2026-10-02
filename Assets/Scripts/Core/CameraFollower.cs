@@ -154,6 +154,44 @@ namespace InsectGame.Core
             baselineValid = false;
         }
 
+        /// <summary>
+        /// 팔로우 오프셋을 잠깐 바꿔 쓴다 — 섬 꾸미기처럼 더 높은 부감이 필요한 화면용.
+        /// 끝나면 반드시 <see cref="ClearOffsetOverride"/>로 되돌릴 것(오프셋은 저장되지 않는 런타임 상태다).
+        /// </summary>
+        public void SetOffsetOverride(Vector3 overrideOffset)
+        {
+            offset = overrideOffset;
+            offsetOverridden = true;
+            baselineValid = false;
+        }
+
+        public void ClearOffsetOverride()
+        {
+            offset = NormalOffset;
+            offsetOverridden = false;
+            baselineValid = false;
+        }
+
+        /// <summary>
+        /// 대상이 먼 곳으로 순간이동했을 때 카메라도 <b>그 자리에서 바로</b> 따라붙인다.
+        /// <see cref="ResetBaseline"/>만으로는 부족하다 — 그건 보간의 출발점을 "지금 카메라 자리"로 되돌릴 뿐이라,
+        /// 수 km 떨어진 섬으로 옮기면 카메라가 옛 자리에서 1~2초 동안 날아온다(그동안 섬이 먼 점으로 보인다).
+        /// </summary>
+        public void SnapToTarget()
+        {
+            if (target == null) return;
+            Vector3 position = target.position + offset + target.forward * lookAheadDistance;
+            transform.position = position;
+            transform.rotation = Quaternion.LookRotation(target.position + Vector3.up * 0.85f - position, Vector3.up);
+            baselinePos = position;
+            baselineValid = true;
+        }
+
+        // 오프셋을 덮어쓴 동안은 차폐 보정을 끈다. 덮어쓰는 쪽(섬 꾸미기)은 카메라 대상을 플레이어가 아닌
+        // 보이지 않는 초점으로 바꾸는데, 그러면 "대상 자신은 차폐가 아니다" 예외에서 플레이어가 빠진다 —
+        // 초점이 플레이어 자리에서 출발하므로 플레이어 캡슐이 곧바로 차폐로 잡혀 카메라가 3.5m까지 끌려 들어온다.
+        private bool offsetOverridden;
+
         public bool InBattleMode => battleMode;
 
         /// <summary>
@@ -292,7 +330,7 @@ namespace InsectGame.Core
                     Vector3 lookTarget = target.position + Vector3.up * 0.85f;
                     // 카메라 시야 차단 보정 — 나무/벽/기둥 등 정적 scenery가 카메라-플레이어
                     // 사이를 가리면 카메라를 플레이어 쪽으로 당겨 시야 확보.
-                    desiredPosition = ResolveObstruction(lookTarget, desiredPosition);
+                    if (!offsetOverridden) desiredPosition = ResolveObstruction(lookTarget, desiredPosition);
 
                     // 시네마틱 포커스(첫 조우 등) — focusPoint 쪽으로 잠깐 줌인 후 복귀(0→1→0 벨 이즈).
                     // ReleaseFocus() 호출(모달 조기 닫힘) 시엔 현재 amt에서 짧게 이즈아웃.

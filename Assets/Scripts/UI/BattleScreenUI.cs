@@ -3175,24 +3175,9 @@ namespace InsectGame.UI
         // DrawSwapSelect 헤더 펄스 색 — alpha만 동적, RGB는 static
         private static readonly Color SwapHeaderBase = new Color(1f, 0.4f, 0.3f);
 
-        private Color GetSkillColor(SkillEffectType type)
-        {
-            switch (type)
-            {
-                case SkillEffectType.Damage: return new Color(0.9f, 0.35f, 0.3f);
-                case SkillEffectType.BuffAttack: return new Color(0.3f, 0.8f, 0.4f);
-                case SkillEffectType.DebuffAttack: return new Color(0.7f, 0.4f, 0.9f);
-                // 아래 4종은 d3d90cf가 SkillEffectType에 추가했는데 여기만 빠져 전부 회색으로 떨어졌다.
-                // 같은 커밋이 라벨 switch 2개(SkillTypeLabel/SkillPowerLabel)는 7종 전부 채웠고,
-                // 레이드(`RaidBattleUI.Draw.GetSkillColor`)도 7종을 갖고 있다 — 1v1 색만 3종에 멈춰 있었다.
-                // 값은 그 레이드 팔레트와 맞춘다(같은 스킬이 화면마다 다른 색이면 그게 더 나쁘다).
-                case SkillEffectType.Heal: return new Color(0.35f, 0.92f, 0.62f);
-                case SkillEffectType.DefenseBuff: return new Color(0.35f, 0.68f, 1f);
-                case SkillEffectType.Stun: return new Color(1f, 0.86f, 0.25f);
-                case SkillEffectType.PoisonDot: return new Color(0.68f, 0.35f, 0.88f);
-                default: return Color.gray;
-            }
-        }
+        // 팔레트는 UITheme이 단일 출처다. 여기 사본이 있을 땐 d3d90cf가 추가한 4종(회복·기절·독·방어)이
+        // 이 화면에서만 빠져 회색으로 떨어졌다 — 레이드·훈련소와 같은 표를 읽는다.
+        private Color GetSkillColor(SkillEffectType type) => UITheme.Instance.GetSkillColor(type);
 
         public void AutoWire(InsectBattleController bc, CameraFollower cam, PlayerMovement pm = null)
         {

@@ -657,6 +657,35 @@ namespace InsectGame.Core
             quickBar.AutoWire(outfitUi, cashShopUI);
             quickBar.AutoWire(questUi);
 
+            // 나의 섬 — 상태·규칙(IslandManager) → 월드(IslandWorld) → 화면 여섯 개.
+            // 병원 UI와 같은 이유로 **buildWorld·try 밖**에 둔다: 마을 빌더가 예외를 던져도 탐험 메뉴의 [내 섬]은 살아 있어야 한다.
+            // 클라우드 재로드는 곤충 컬렉션 뒤에 등록돼야 한다(방목 목록이 instanceId로 그쪽을 본다 — 이미 위에서 등록됐다).
+            IslandManager islandManager = EnsureComponent<IslandManager>("World/IslandManager");
+            islandManager.AutoWire(insectCollection, wallet, candyInventory, database);
+            cloudSave.RegisterReloadable(islandManager);
+            // 섬 퀘스트의 코인·섬 물건 보상 지급처. 진행 통지는 IslandManager가 Notify___로 직접 한다.
+            questManager.AutoWire(wallet, islandManager);
+
+            IslandWorldBuilder islandWorld = EnsureComponent<IslandWorldBuilder>("World/IslandWorld");
+            islandWorld.AutoWire(regionMgr, islandManager, camFollower, playerMov, database);
+            IslandShareClient islandShare = EnsureComponent<IslandShareClient>("World/IslandShare");
+            islandShare.AutoWire(islandManager);
+
+            InsectGame.UI.IslandEditUI islandEditUi = EnsureComponent<InsectGame.UI.IslandEditUI>("UI/IslandEdit");
+            islandEditUi.AutoWire(islandManager, islandWorld, islandShare);
+            InsectGame.UI.IslandShopUI islandShopUi = EnsureComponent<InsectGame.UI.IslandShopUI>("UI/IslandShop");
+            islandShopUi.AutoWire(islandManager, wallet);
+            InsectGame.UI.IslandInsectUI islandInsectUi = EnsureComponent<InsectGame.UI.IslandInsectUI>("UI/IslandInsects");
+            islandInsectUi.AutoWire(islandManager, insectCollection);
+            InsectGame.UI.IslandGuideUI islandGuideUi = EnsureComponent<InsectGame.UI.IslandGuideUI>("UI/IslandGuide");
+            islandGuideUi.AutoWire(islandManager, islandWorld, islandEditUi);
+            InsectGame.UI.IslandHudUI islandHudUi = EnsureComponent<InsectGame.UI.IslandHudUI>("UI/IslandHud");
+            islandHudUi.AutoWire(islandManager, islandWorld, playerMov, islandShare);
+            InsectGame.UI.IslandVisitUI islandVisitUi = EnsureComponent<InsectGame.UI.IslandVisitUI>("UI/IslandVisit");
+            islandVisitUi.AutoWire(islandManager, islandWorld, islandShare, socialPvp, islandHudUi);
+            islandHudUi.AutoWire(islandEditUi, islandShopUi, islandInsectUi, islandVisitUi, islandGuideUi);
+            quickBar.AutoWire(islandVisitUi);
+
             // 마스터 계정이면 보석 99999 지급 ("특권 없이" 모드에서는 주지 않는다)
             if (AuthManager.Instance != null && AuthManager.Instance.MasterPrivilegesActive)
             {
@@ -693,6 +722,12 @@ namespace InsectGame.Core
                 {
                     worldInteract.RegisterPoints(villageResult.interactions);
                 }
+
+                // 본 마을 나루터 — 탐험 메뉴의 [내 섬]과 같은 창을 여는 두 번째 입구.
+                worldInteract.AutoWire(islandVisitUi);
+                InteractionPointDef islandDock = islandWorld.BuildVillageDock(regionDefs);
+                if (islandDock != null)
+                    worldInteract.RegisterPoints(new List<InteractionPointDef> { islandDock });
 
                 // [E] 삼자 충돌 해소 — 서브에리어 진입은 포획·상호작용에 양보한다(전용 버튼이 있다).
                 subAreaWorld.AutoWire(worldInteract, inputController);
@@ -3012,12 +3047,12 @@ namespace InsectGame.Core
             foreach (InsectSkill skill in skills)
             {
                 if (skill == null) continue;
-                // **요구 레벨을 비용에 태운다.** 옛 `power / 2`만 쓰면 위력을 낮춘 이번 재배치에서
-                // 비용까지 함께 싸져(파멸의 독침 37 → 20) 상위기가 오히려 접근하기 쉬워진다.
+                // 회당 비용 = 가치/2 + 요구 레벨(TrainingPricing이 정본). **요구 레벨을 태우는 이유**: `power / 2`만
+                // 쓰면 위력을 낮춘 재배치에서 비용까지 싸져(파멸의 독침 37 → 20) 상위기가 더 쉬워진다.
+                // 가치는 상태기도 효과 크기로 센다 — 위력 칸(1)으로 셌을 땐 광폭화가 26캔디 1회였다.
                 // 누적 훈련이 회차마다 이 값을 받으므로 총비용은 여기에 필요 횟수를 곱한 만큼이다.
                 // 기술 디스크 방식은 이 값을 **읽지 않는다** — GetTrainingCost가 method.candyCost만 돌려준다.
-                // 스킬 단가(여기)와 방식 단가(디스크) 두 출처가 공존하는 건 의도다.
-                skill.trainingCost = Mathf.Max(5, skill.power / 2 + skill.requiredLevel);
+                skill.trainingCost = TrainingPricing.SessionCost(skill, skill.requiredLevel);
                 skill.description = "훈련을 통해 익힐 수 있는 범용 기술";
 
                 switch (skill.skillId)
@@ -3475,8 +3510,15 @@ namespace InsectGame.Core
             return learnset.ToArray();
         }
 
+        /// <summary>
+        /// learnset 한 칸. <b>교체 훈련 단가를 여기서 굽는다</b> — 종족기의 해금 레벨은 learnset에만 있어서
+        /// (범용기의 <c>requiredLevel</c> 자리) 기술을 만드는 시점엔 모른다. 같은 기술(속성×단계 캐시)은
+        /// 어느 종에서나 같은 레벨에 열리므로 덮어써도 값이 같다. 옛 손 상수(연타 4·집중 8·특성 12·
+        /// 폭발/붕괴 14·폭풍 22·전용기 35/50)는 효과를 안 봐서 회복·기절 특성기가 연타보다 쌌다.
+        /// </summary>
         private InsectLearnableSkill CreateLearnableSkill(InsectSkill skill, int level)
         {
+            if (skill != null) skill.trainingCost = TrainingPricing.SessionCost(skill, level);
             return new InsectLearnableSkill
             {
                 skillId = skill != null ? skill.skillId : string.Empty,
@@ -3584,7 +3626,6 @@ namespace InsectGame.Core
 
             InsectSkill skill = CreateTypedSkillInternal(
                 cacheKey, displayName, element, effectType, power, 2, effectValue, 3);
-            skill.trainingCost = 12;
             skill.description = "곤충의 생태와 신체 특징을 살린 종족 기술";
             generatedSkillCache[cacheKey] = skill;
             return skill;
@@ -3666,7 +3707,6 @@ namespace InsectGame.Core
             InsectSkill signature = CreateTypedSkillInternal(
                 skillId, name, element, SkillEffectType.Damage, power, cooldown, 0.2f, 2);
             signature.isSignatureSkill = true;
-            signature.trainingCost = data != null && data.rarity == InsectRarity.Legendary ? 50 : 35;
             signature.description = "이 종만 사용할 수 있는 전용 필살기";
             generatedSkillCache[skillId] = signature;
             return signature;
@@ -3716,31 +3756,25 @@ namespace InsectGame.Core
             {
                 case "jab":
                     skill = CreateTypedSkillInternal($"{element.ToString().ToLowerInvariant()}_jab", $"{label} 연타", element, SkillEffectType.Damage, 12, 0, 0.2f, 2);
-                    skill.trainingCost = 4;
                     return skill;
                 case "boost":
                     if (UsesBuffSkill(element))
                         skill = CreateTypedSkillInternal($"{element.ToString().ToLowerInvariant()}_boost", $"{label} 집중", element, SkillEffectType.BuffAttack, 1, 3, 0.3f, 3);
                     else
                         skill = CreateTypedSkillInternal($"{element.ToString().ToLowerInvariant()}_boost", $"{label} 압박", element, SkillEffectType.DebuffAttack, 1, 3, 0.25f, 3);
-                    skill.trainingCost = 8;
                     return skill;
                 case "burst":
                     skill = CreateTypedSkillInternal($"{element.ToString().ToLowerInvariant()}_burst", $"{label} 폭발", element, SkillEffectType.Damage, 26, 2, 0.2f, 2);
-                    skill.trainingCost = 14;
                     return skill;
                 case "break":
                     skill = CreateTypedSkillInternal($"{element.ToString().ToLowerInvariant()}_break", $"{label} 붕괴", element, SkillEffectType.DebuffAttack, 1, 3, 0.3f, 2);
-                    skill.trainingCost = 14;
                     return skill;
                 case "storm":
                     skill = CreateTypedSkillInternal($"{element.ToString().ToLowerInvariant()}_storm", $"{label} 폭풍", element, SkillEffectType.Damage, 42, 4, 0.2f, 2);
-                    skill.trainingCost = 22;
                     skill.accuracy = 0.9f;   // 고위력 스킬은 명중 트레이드오프
                     return skill;
                 default:
                     skill = CreateTypedSkillInternal($"{element.ToString().ToLowerInvariant()}_nova", $"{label} 노바", element, SkillEffectType.Damage, 52, 5, 0.2f, 2);
-                    skill.trainingCost = 28;
                     skill.accuracy = 0.85f;  // 최고위력 스킬은 더 낮은 명중
                     return skill;
             }

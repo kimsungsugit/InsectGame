@@ -46,6 +46,9 @@ tools:
 - `Assets/Scripts/NPC/CatcherKidNpc.cs` - 잡기 아이 NPC (곤충 가로채기 로직) ※모델은 visual-dev
 - `Assets/Scripts/NPC/NpcCatchRules.cs` - NPC 곤충 가로채기 규칙
 - `Assets/Scripts/NPC/VillagerNpc.cs` - 마을 주민 NPC 개체/상호작용 ※모델은 visual-dev
+- `Assets/Scripts/Core/IslandWorldBuilder.cs` - 나의 섬 드나들기(분리 서브에리어 진입·이탈·복귀 좌표), 밟는 땅·경계·물건 차단 콜라이더, 방목 곤충 세우기, 꾸미기 미리보기·카메라, 본 마을 나루터 ※모양은 visual-dev(`IslandTerrainBuilder`·`IslandObjectBuilder`)
+- `Assets/Scripts/Core/IslandInsectWalker.cs` - 섬 방목 곤충의 배회(빈 칸 사이 이동, 건물 통과 금지)
+- `Assets/Tests/EditMode/IslandIntegrationTests.cs` - 실제 PlayScene에서 섬 진입·이동·구경·퇴장(서브에리어 빌더 비개입, sticky 해제, 끼임 복구 좌표, 복귀 자리)
 
 ## 핵심 공식
 

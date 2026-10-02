@@ -930,7 +930,7 @@ namespace InsectGame.UI
             string key = data.insectId ?? data.displayName ?? string.Empty;
             if (dexInfoCache.TryGetValue(key, out string cached)) return cached;
 
-            string line = $"{data.rarity}  |  CP {PlayerInsectCombatPower.CalculateBasePreview(data, data.minLevel)}";
+            string line = $"{data.rarity.Korean()}  |  CP {PlayerInsectCombatPower.CalculateBasePreview(data, data.minLevel)}";
             dexInfoCache[key] = line;
             return line;
         }

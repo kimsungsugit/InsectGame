@@ -16,6 +16,10 @@ namespace InsectGame.UI
         private bool wasSuccess;
         private string insectName;
         private string insectId;
+        // 3D 초상용 — 도감·포획 창과 같은 InsectVisual 경로로 그린다(없으면 2D 초상 폴백).
+        private InsectData insectData;
+        private bool insectShiny;
+        private string successTitleName;   // "★ 이름" — OnGUI 패스마다 이어 붙이지 않게 결과 시점에 한 번 만든다
         private InsectRarity insectRarity;
         private int insectLevel;
         private int candyReward;
@@ -48,42 +52,36 @@ namespace InsectGame.UI
         private GUIStyle ivVsStyleCache;
         private bool popupStylesReady;
 
-        private static readonly Color SubGrayBase = new Color(0.8f, 0.8f, 0.8f);
-        private static readonly Color GradeTitleGrayBase = new Color(0.6f, 0.6f, 0.6f);
-        private static readonly Color RewardCandyBase = new Color(1f, 0.5f, 0.8f);
-        private static readonly Color RewardExpBase = new Color(0.4f, 0.8f, 1f);
-        private static readonly Color FailMsgBase = new Color(1f, 0.35f, 0.3f);
-        private static readonly Color FailSubBase = new Color(0.7f, 0.7f, 0.7f);
-        private static readonly Color IvLblBase = new Color(0.55f, 0.55f, 0.55f);
 
         private void InitPopupStyles()
         {
             if (popupStylesReady) return;
             popupStylesReady = true;
 
+            // 크기는 가상 좌표계(UIScale) 기준 — 다른 화면과 같은 눈금이다.
             headerStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 28, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            nameStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 34, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            subStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 22, alignment = TextAnchor.MiddleCenter };
-            gradeTitleStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 19, alignment = TextAnchor.MiddleLeft };
-            gradeLblStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 48, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
-            pctLblStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 24, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
-            rewardLabelStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 20, alignment = TextAnchor.MiddleCenter };
-            rewardValStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 24, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            failStyleCache = new GUIStyle(GUI.skin.label)
             { fontSize = 40, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            nameStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 44, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            subStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 26, alignment = TextAnchor.MiddleCenter };
+            gradeTitleStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 20, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
+            gradeLblStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 56, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
+            pctLblStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 28, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
+            rewardLabelStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 22, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
+            rewardValStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 30, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            failStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = 48, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             failSubStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 22, alignment = TextAnchor.MiddleCenter };
-            ivLblStyleCache = new GUIStyle(GUI.skin.label) { fontSize = 19 };
+            { fontSize = 26, alignment = TextAnchor.MiddleCenter };
+            ivLblStyleCache = new GUIStyle(GUI.skin.label) { fontSize = 20, fontStyle = FontStyle.Bold };
             ivVsStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 19, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleRight };
+            { fontSize = 22, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleRight };
         }
 
         private void OnEnable()
@@ -117,12 +115,17 @@ namespace InsectGame.UI
 
             if (target != null && target.Data != null)
             {
+                insectData = target.Data;
+                insectShiny = target.IsShiny;
                 insectName = target.Data.displayName;
+                successTitleName = insectShiny ? "★ " + insectName : insectName;
                 insectId = target.Data.insectId;
                 insectRarity = target.Data.rarity;
                 insectLevel = target.Level;
-                candyReward = InsectRewardCalculator.GetCandyReward(target.Data);
-                expReward = InsectRewardCalculator.GetExpReward(target.Data);
+                // 공식을 다시 돌리지 않고 **실제 지급값**을 읽는다. 다시 돌리면 ①EXP 부스터가 빠지고
+                // ②레벨 차를 지급 뒤(방금 오른) 캐릭터 레벨로 재서, 화면 숫자와 받은 EXP가 갈린다.
+                candyReward = captureController != null ? captureController.LastCandyReward : 0;
+                expReward = captureController != null ? captureController.LastExpReward : 0;
 
                 if (success && insectCollection != null)
                 {
@@ -140,7 +143,10 @@ namespace InsectGame.UI
             }
             else
             {
+                insectData = null;
+                insectShiny = false;
                 insectName = "???";
+                successTitleName = insectName;
                 insectId = "";
                 capturedInstanceId = null;
                 insectRarity = InsectRarity.Common;
@@ -183,36 +189,51 @@ namespace InsectGame.UI
 
             float alpha = popupTimer < 0.5f ? popupTimer / 0.5f : Mathf.Clamp01(animTime / 0.3f);
 
+            // 가상 좌표계 — 예전엔 이 팝업만 픽셀 좌표(Screen.width)로 그려 해상도마다 크기가 달랐다
+            // (720p 창에선 화면의 3/4을 덮고, 1080×2400 폰에선 절반 폭에 글자가 작았다).
+            UIScale.Begin();
             if (wasSuccess)
                 DrawSuccessPopup(alpha);
             else
                 DrawFailPopup(alpha);
+            GUI.color = Color.white;
+            UIScale.End();
+        }
+
+        private static Color WithAlpha(Color c, float a) => new Color(c.r, c.g, c.b, c.a * a);
+
+        /// <summary>
+        /// 팝업의 세로 자리 — 화면 가운데를 기본으로 하되 상단 가운데의 리전 배너(<c>KeyGuideHUD</c>,
+        /// ContentTop부터 80)를 가리지 않게 그 아래로 내린다. 예전엔 38% 지점 중심이라 720p에서
+        /// 팝업 윗부분이 배너 밑에 깔려 "포획 성공!" 제목이 가려졌다.
+        /// </summary>
+        private static float PopupTop(float panelH)
+        {
+            float minTop = UISafeLayout.ContentTop + 100f;
+            float maxTop = Mathf.Max(minTop, UISafeLayout.ContentBottom - panelH);
+            return Mathf.Clamp(UISafeLayout.CenteredY(panelH), minTop, maxTop);
         }
 
         private void DrawSuccessPopup(float alpha)
         {
-            float cx = Screen.width / 2f;
-            float cy = Screen.height * 0.38f;
-            float panelW = 560f;
-            float panelH = UISafeLayout.Px.ClampHeight(540f);
+            UITheme t = UITheme.Instance;
+            float panelW = 640f;
+            float panelH = UISafeLayout.ClampHeight(640f);
+            float cx = UIScale.VirtualSafeLeft
+                + (UIScale.VirtualScreenWidth - UIScale.VirtualSafeLeft - UIScale.VirtualSafeRight) / 2f;
             float px = cx - panelW / 2f;
-            // 화면 38% 지점 중심 — 단 세이프에어리어 + 세로 마진 밖으로는 나가지 않는다.
-            float py = Mathf.Clamp(
-                cy - panelH / 2f,
-                UISafeLayout.Px.ContentTop,
-                Mathf.Max(UISafeLayout.Px.ContentTop, UISafeLayout.Px.ContentBottom - panelH));
-
             float slideIn = Mathf.Clamp01(animTime / 0.25f);
-            py += (1f - slideIn) * 30f;
+            float py = PopupTop(panelH) + (1f - slideIn) * 30f;
 
-            Color rarityCol = UITheme.Instance.GetInsectRarityColor(insectRarity);
-
-            GUI.color = new Color(0.03f, 0.05f, 0.1f, 0.94f * alpha);
-            GUI.DrawTexture(new Rect(px, py, panelW, panelH), Texture2D.whiteTexture);
-            GUI.color = Color.white;
-
+            Color rarityCol = t.GetInsectRarityColor(insectRarity);
             Rect panelRect = new Rect(px, py, panelW, panelH);
             int rarityTier = (int)insectRarity;
+
+            // 필드 HUD·포획 창과 같은 카드 — 알파는 GUI.color로 곱한다(UISurface가 호출부 알파를 살린다).
+            GUI.color = new Color(1f, 1f, 1f, alpha);
+            UISurface.Card(panelRect, t.surfaceCard, Color.Lerp(t.surfaceBorder, rarityCol, 0.6f));
+            UISurface.Flat(new Rect(px + UITheme.Radius.Card, py + 3f, panelW - UITheme.Radius.Card * 2f, 4f), rarityCol);
+            GUI.color = Color.white;
 
             // Epic/Legendary 글로우
             if (rarityTier >= 3)
@@ -220,90 +241,109 @@ namespace InsectGame.UI
                 float glowIntensity = rarityTier >= 4 ? 0.8f : 0.5f;
                 UIHelper.DrawRarityGlow(panelRect, rarityCol, glowIntensity * alpha, animTime);
             }
-
             UIHelper.DrawRarityBorder(panelRect, rarityTier, animTime);
 
+            Rect frame = new Rect(cx - 110f, py + 78f, 220f, 220f);
+            float starCy = frame.center.y;
+
+            // 반짝이 — 둥근 점(예전엔 흰 사각 텍스처라 네모 조각이 흩날렸다).
             if (stars != null)
             {
+                Texture2D disc = UIShapes.Disc;
                 foreach (Star s in stars)
                 {
                     float d = s.dist + animTime * s.speed;
                     float rad = s.angle * Mathf.Deg2Rad + animTime * 0.5f;
-                    float sx = cx + Mathf.Cos(rad) * d;
-                    float sy = cy - 30 + Mathf.Sin(rad) * d * 0.6f;
-                    float starAlpha = Mathf.Clamp01(1f - d / 220f) * alpha;
-                    GUI.color = new Color(rarityCol.r, rarityCol.g, rarityCol.b, starAlpha);
-                    float sz = s.size * (1f + Mathf.Sin(animTime * 5f + s.angle) * 0.3f);
-                    GUI.DrawTexture(new Rect(sx - sz / 2, sy - sz / 2, sz, sz), Texture2D.whiteTexture);
+                    float sx = cx + Mathf.Cos(rad) * d * 1.3f;
+                    float sy = starCy + Mathf.Sin(rad) * d * 0.8f;
+                    float starAlpha = Mathf.Clamp01(1f - d / 260f) * alpha;
+                    GUI.color = WithAlpha(rarityCol, starAlpha);
+                    float sz = s.size * 1.2f * (1f + Mathf.Sin(animTime * 5f + s.angle) * 0.3f);
+                    GUI.DrawTexture(new Rect(sx - sz / 2, sy - sz / 2, sz, sz), disc);
                 }
+                GUI.color = Color.white;
             }
 
-            headerStyleCache.normal.textColor = new Color(1, 1, 1, alpha);
+            headerStyleCache.normal.textColor = WithAlpha(t.textPrimary, alpha);
+            GUI.Label(new Rect(px, py + 18f, panelW, 52f), "포획 성공!", headerStyleCache);
+
+            // 초상 — 도감·포획 창·배틀팀과 같은 3D 썸네일(InsectVisual). 이 팝업만 2D 도형 초상을 그려
+            // 같은 곤충이 잡기 직전엔 3D, 잡은 순간엔 평면으로 보였다.
+            GUI.color = new Color(1f, 1f, 1f, alpha);
+            UISurface.Rounded(frame, Color.Lerp(t.surfaceBase, rarityCol, 0.16f));
             GUI.color = Color.white;
-            GUI.Label(new Rect(px, py + 14, panelW, 36), "포획 성공!", headerStyleCache);
+            if (insectData != null)
+                InsectVisual.Draw(frame.center.x, frame.center.y, 208f, insectData, insectShiny, alpha);
+            else
+                DrawTypedInsectPortrait(frame.center.x, frame.center.y, insectId, insectRarity, alpha);
 
-            DrawTypedInsectPortrait(cx, py + 105, insectId, insectRarity, alpha);
+            nameStyleCache.normal.textColor = WithAlpha(rarityCol, alpha);
+            UIHelper.LabelFit(new Rect(px + 24f, py + 306f, panelW - 48f, 56f),
+                successTitleName, nameStyleCache);
 
-            nameStyleCache.normal.textColor = new Color(rarityCol.r, rarityCol.g, rarityCol.b, alpha);
-            GUI.Label(new Rect(px, py + 175, panelW, 40), insectName, nameStyleCache);
+            subStyleCache.normal.textColor = WithAlpha(t.textSecondary, alpha);
+            GUI.Label(new Rect(px, py + 360f, panelW, 36f),
+                $"Lv.{insectLevel}  ·  {insectRarity.Korean()}", subStyleCache);
 
-            subStyleCache.normal.textColor = new Color(SubGrayBase.r, SubGrayBase.g, SubGrayBase.b, alpha);
-            GUI.Label(new Rect(px, py + 216, panelW, 28),
-                $"Lv.{insectLevel}  |  {insectRarity}", subStyleCache);
-
+            // ── 개체값 감정 ──
             Color gc = GetGradeColor(capturedGrade);
-            float gradeBoxY = py + 256;
-
-            GUI.color = new Color(0.1f, 0.12f, 0.18f, 0.8f * alpha);
-            GUI.DrawTexture(new Rect(px + 30, gradeBoxY, panelW - 60, 120), Texture2D.whiteTexture);
-            GUI.color = new Color(gc.r, gc.g, gc.b, 0.6f * alpha);
-            GUI.DrawTexture(new Rect(px + 30, gradeBoxY, 5, 120), Texture2D.whiteTexture);
+            Rect gradeBox = new Rect(px + 32f, py + 408f, panelW - 64f, 128f);
+            GUI.color = new Color(1f, 1f, 1f, alpha);
+            UISurface.Rounded(gradeBox, t.surfaceRaised);
+            UISurface.Flat(new Rect(gradeBox.x + 4f, gradeBox.y + UITheme.Radius.Card, 5f,
+                gradeBox.height - UITheme.Radius.Card * 2f), gc);
             GUI.color = Color.white;
 
-            gradeTitleStyleCache.normal.textColor = new Color(GradeTitleGrayBase.r, GradeTitleGrayBase.g, GradeTitleGrayBase.b, alpha);
-            UIHelper.LabelFit(new Rect(px + 44, gradeBoxY + 6, 120, 22), "개체값 감정", gradeTitleStyleCache);
+            gradeTitleStyleCache.normal.textColor = WithAlpha(t.textMuted, alpha);
+            UIHelper.LabelFit(new Rect(gradeBox.x + 22f, gradeBox.y + 8f, 180f, 30f), "개체값 감정", gradeTitleStyleCache);
 
-            gradeLblStyleCache.normal.textColor = new Color(gc.r, gc.g, gc.b, alpha);
-            GUI.Label(new Rect(px + 44, gradeBoxY + 26, 65, 56), GetGradeLabel(capturedGrade), gradeLblStyleCache);
+            gradeLblStyleCache.normal.textColor = WithAlpha(gc, alpha);
+            GUI.Label(new Rect(gradeBox.x + 22f, gradeBox.y + 36f, 76f, 72f), GetGradeLabel(capturedGrade), gradeLblStyleCache);
 
-            pctLblStyleCache.normal.textColor = new Color(gc.r, gc.g, gc.b, alpha * 0.8f);
-            GUI.Label(new Rect(px + 102, gradeBoxY + 38, 100, 30), $"{capturedIvPct * 100:0}%", pctLblStyleCache);
+            pctLblStyleCache.normal.textColor = WithAlpha(gc, alpha * 0.85f);
+            GUI.Label(new Rect(gradeBox.x + 98f, gradeBox.y + 52f, 110f, 40f), $"{capturedIvPct * 100:0}%", pctLblStyleCache);
 
-            float ivX = px + 210;
-            float ivW = panelW - 260;
-            DrawMiniIVBar(ivX, gradeBoxY + 22, ivW, "HP", capturedIvHp, alpha);
-            DrawMiniIVBar(ivX, gradeBoxY + 52, ivW, "ATK", capturedIvAtk, alpha);
-            DrawMiniIVBar(ivX, gradeBoxY + 82, ivW, "DEF", capturedIvDef, alpha);
+            float ivX = gradeBox.x + 226f;
+            float ivW = gradeBox.xMax - 20f - ivX;
+            DrawMiniIVBar(ivX, gradeBox.y + 14f, ivW, "HP", capturedIvHp, alpha);
+            DrawMiniIVBar(ivX, gradeBox.y + 50f, ivW, "ATK", capturedIvAtk, alpha);
+            DrawMiniIVBar(ivX, gradeBox.y + 86f, ivW, "DEF", capturedIvDef, alpha);
 
-            float rewardY = gradeBoxY + 132;
-            GUI.color = new Color(0.15f, 0.17f, 0.25f, 0.7f * alpha);
-            GUI.DrawTexture(new Rect(px + 36, rewardY, panelW - 72, 68), Texture2D.whiteTexture);
-
-            rewardLabelStyleCache.normal.textColor = new Color(GradeTitleGrayBase.r, GradeTitleGrayBase.g, GradeTitleGrayBase.b, alpha);
+            // ── 보상 ──
+            Rect rewardBox = new Rect(px + 32f, py + 548f, panelW - 64f, 72f);
+            GUI.color = new Color(1f, 1f, 1f, alpha);
+            UISurface.Rounded(rewardBox, t.surfaceBase);
             GUI.color = Color.white;
-            UIHelper.LabelFit(new Rect(px, rewardY + 4, panelW, 22), "보상", rewardLabelStyleCache);
 
-            rewardValStyleCache.normal.textColor = new Color(RewardCandyBase.r, RewardCandyBase.g, RewardCandyBase.b, alpha);
-            GUI.Label(new Rect(px, rewardY + 32, panelW / 2f, 30), $"+{candyReward} 캔디", rewardValStyleCache);
+            rewardLabelStyleCache.normal.textColor = WithAlpha(t.textMuted, alpha);
+            GUI.Label(new Rect(rewardBox.x + 20f, rewardBox.y, 90f, rewardBox.height), "보상", rewardLabelStyleCache);
 
-            rewardValStyleCache.normal.textColor = new Color(RewardExpBase.r, RewardExpBase.g, RewardExpBase.b, alpha);
-            GUI.Label(new Rect(px + panelW / 2f, rewardY + 32, panelW / 2f, 30), $"+{expReward} XP", rewardValStyleCache);
+            float valW = (rewardBox.width - 110f) / 2f;
+            rewardValStyleCache.normal.textColor = WithAlpha(t.accentCoral, alpha);
+            GUI.Label(new Rect(rewardBox.x + 110f, rewardBox.y, valW, rewardBox.height), $"+{candyReward} 캔디", rewardValStyleCache);
+            rewardValStyleCache.normal.textColor = WithAlpha(t.accentMint, alpha);
+            GUI.Label(new Rect(rewardBox.x + 110f + valW, rewardBox.y, valW, rewardBox.height), $"+{expReward} 경험치", rewardValStyleCache);
         }
 
         private void DrawFailPopup(float alpha)
         {
-            float cx = Screen.width / 2f;
-            float cy = Screen.height * 0.35f;
+            UITheme t = UITheme.Instance;
+            float w = 560f;
+            float h = 150f;
+            float cx = UIScale.VirtualSafeLeft
+                + (UIScale.VirtualScreenWidth - UIScale.VirtualSafeLeft - UIScale.VirtualSafeRight) / 2f;
+            Rect card = new Rect(cx - w / 2f, PopupTop(h) + 120f, w, h);
 
-            GUI.color = new Color(0, 0, 0, 0.6f * alpha);
-            GUI.DrawTexture(new Rect(cx - 240, cy - 20, 480, 120), Texture2D.whiteTexture);
+            GUI.color = new Color(1f, 1f, 1f, alpha);
+            UISurface.Card(card, t.surfaceCard, Color.Lerp(t.surfaceBorder, t.accentCoral, 0.6f));
+            UISurface.Flat(new Rect(card.x + UITheme.Radius.Card, card.y + 3f, card.width - UITheme.Radius.Card * 2f, 4f), t.accentCoral);
             GUI.color = Color.white;
 
-            failStyleCache.normal.textColor = new Color(FailMsgBase.r, FailMsgBase.g, FailMsgBase.b, alpha);
-            GUI.Label(new Rect(cx - 240, cy - 10, 480, 55), "도망갔다...", failStyleCache);
+            failStyleCache.normal.textColor = WithAlpha(t.accentCoral, alpha);
+            GUI.Label(new Rect(card.x, card.y + 14f, w, 64f), "도망갔다...", failStyleCache);
 
-            failSubStyleCache.normal.textColor = new Color(FailSubBase.r, FailSubBase.g, FailSubBase.b, alpha);
-            GUI.Label(new Rect(cx - 240, cy + 45, 480, 32), $"{insectName}(이)가 도망쳤습니다!", failSubStyleCache);
+            failSubStyleCache.normal.textColor = WithAlpha(t.textSecondary, alpha);
+            UIHelper.LabelFit(new Rect(card.x + 20f, card.y + 82f, w - 40f, 42f), $"{insectName}(이)가 도망쳤습니다!", failSubStyleCache);
         }
 
         public static void DrawTypedInsectPortrait(float cx, float cy, string id, InsectRarity rarity, float alpha)
@@ -980,24 +1020,25 @@ namespace InsectGame.UI
 
         private void DrawMiniIVBar(float x, float y, float w, string label, int iv, float alpha)
         {
-            ivLblStyleCache.normal.textColor = new Color(IvLblBase.r, IvLblBase.g, IvLblBase.b, alpha);
-            GUI.Label(new Rect(x, y, 50, 22), label, ivLblStyleCache);
+            UITheme t = UITheme.Instance;
+            ivLblStyleCache.normal.textColor = new Color(t.textSecondary.r, t.textSecondary.g, t.textSecondary.b, alpha);
+            GUI.Label(new Rect(x, y, 56, 28), label, ivLblStyleCache);
 
-            float barX = x + 52;
-            float barW = w - 90;
+            float barX = x + 58;
+            float barW = w - 100;
             float barH = 14f;
 
-            GUI.color = new Color(0.15f, 0.15f, 0.2f, alpha);
-            UIShapes.Part(new Rect(barX, y + 4, barW, barH), GUI.color);
+            GUI.color = new Color(t.surfaceBase.r, t.surfaceBase.g, t.surfaceBase.b, alpha);
+            UIShapes.Part(new Rect(barX, y + 7, barW, barH), GUI.color);
 
             float ratio = iv / (float)PlayerInsectData.MaxIV;
             Color bc = GetIVBarColor(iv);
             GUI.color = new Color(bc.r, bc.g, bc.b, alpha);
-            UIShapes.Part(new Rect(barX, y + 4, barW * ratio, barH), GUI.color);
+            UIShapes.Part(new Rect(barX, y + 7, barW * ratio, barH), GUI.color);
             GUI.color = Color.white;
 
             ivVsStyleCache.normal.textColor = new Color(bc.r, bc.g, bc.b, alpha);
-            UIHelper.LabelFit(new Rect(barX + barW + 6, y, 34, 22), $"{iv}", ivVsStyleCache);
+            UIHelper.LabelFit(new Rect(barX + barW + 6, y, 36, 28), $"{iv}", ivVsStyleCache);
         }
 
         public static void DrawInsectPortrait(float cx, float cy, InsectRarity rarity, float alpha)

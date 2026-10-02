@@ -200,6 +200,14 @@ Builds/Windows/BattleVisualQA/BattleVisualQA.exe -battleCaptureOut <새 빈 폴�
 
 - **IMGUI는 안 잡힌다.** `OnGUI`는 카메라를 거치지 않는다 — 상점·대화창·배틀 UI·HUD는
   이 도구로 검증할 수 없다. 필요하면 스탠드얼론 빌드에서 `ScreenCapture`를 써야 한다.
+  이미 그렇게 찍는 검수 시나리오가 있다(`BattleVisualCaptureBuilder.Build` → `BattleVisualQA.exe
+  -battleCaptureOut <빈 폴더> -battleScenario <이름>`, 데스크톱 1280×720과 세로 720×1280 둘 다 찍을 것):
+  `insect-ui`(도감·보유 곤충·퀵바), `field-ui`(필드 HUD·포획 선택/채집망/출전/성공·실패 팝업·배틀팀·훈련소 —
+  훈련소는 실제 부트스트랩 생성 함수로 방식·기술을 만들어 **가격이 실값**이다),
+  `outfit`(의상 창·캐시샵·캐릭터 생성), `island-ui`(나의 섬 — HUD·꾸미기·상점·곤충·방문·가이드. 진짜 `IslandWorldBuilder`가
+  섬을 짓는다), `badge`, `map`, `story`. 전부 저장을 부르지 않는 메모리 fixture다.
+  **검수 빌드는 실제 게임과 같은 저장 폴더를 쓴다** — fixture가 재화를 건드리는 동작(구매·수확)을 부르면 이 PC의 진짜
+  세이브를 덮는다. 지갑·캔디는 차감 즉시 파일에 쓰므로 부르지 않고, 섬 매니저는 `PersistenceEnabled`를 끈다.
 - **`ScreenCapture.CaptureScreenshot`은 배치모드에서 조용히 실패한다**(게임뷰가 없다).
   그래서 이 도구는 카메라 → `RenderTexture` → `ReadPixels` 경로를 쓴다.
 - **Unity 에디터를 열어두면 이 도구가 못 돈다.** 프로젝트가 `Temp/UnityLockfile`로 잠겨

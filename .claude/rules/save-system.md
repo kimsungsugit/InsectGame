@@ -17,6 +17,8 @@ description: 로컬 7개 JSON·Firestore 세이브 구조와 필드 추가·마�
 - player_items.json (아이템)
 - battle_team.json (5슬롯 팀)
 - dex_save.json (도감 기록)
+- story_progress.json (스토리 진행)
+- island.json (나의 섬 — 보관함·배치·방목·누적 수확·가이드 진행. 아래 「섬」 참조)
 
 ## 퀘스트 세이브 (PlayerPrefs — JSON 아님)
 
@@ -42,6 +44,23 @@ questSideProgress/questSideRepeat)와 직렬화/파싱/업로드/복원 4곳을 
 - 자동저장: 120초 간격
 - Bearer 토큰: AuthManager.Instance.IdToken
 - 에러 처리: 404=신규유저, 401=인증실패, 기타=경고후 계속
+
+## 섬 (island.json)
+
+`IslandManager`가 쓰고 클라우드엔 블롭 하나(`GameSaveData.islandData`)로 올라간다 — 곤충 블롭과 같은 방식이라
+`IslandSave`에 필드를 늘릴 때 DTO 4점 변경이 필요 없다.
+- **컴팩트 JSON**(`ToJson(save, false)`)으로 쓴다. 이 파일이 통째로 Firestore 문서의 문자열 필드가 되고, 문서 한도(1MiB)를
+  곤충 블롭과 나눠 쓴다.
+- 좌표는 **섬 중심 기준**이라 섬을 넓혀도 기존 배치가 그대로 유효하다(마이그레이션 없음).
+- 구세이브(파일 없음·빈 블롭)는 필드 기본값만으로 기본 섬이 된다. 손상·구버전·신버전 혼용은 `IslandSaveRules.Sanitize`가
+  고친다 — 놓인 수가 보유 수를 넘으면 **보유 수를 올리고**(놓인 물건을 지우지 않는다), 모르는 물건 id는 **보존한다**.
+- 충돌은 세이브 단위 last-write-wins다(블롭 내부 병합 없음).
+
+## Firestore 문서 파서
+
+`CloudSaveManager`의 복원은 `FirestoreDocParser`로 필드를 꺼낸다. **공백 없는 형식과 줄바꿈·들여쓰기된 형식을 둘 다 읽는다.**
+예전 구현은 `"키":{"stringValue":"`라는 공백 없는 마커를 통째로 찾아서, 응답이 들여쓰기돼 오면 한 필드도 못 찾고
+전부 기본값(레벨 0·캔디 0·빈 문자열)으로 복원했다. 필드를 늘릴 때 마커 문자열을 손으로 만들지 말 것.
 
 ## 수정 규칙
 - 새 세이브 필드 추가 시 기본값 필수

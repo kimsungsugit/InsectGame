@@ -60,6 +60,7 @@ namespace InsectGame.UI
         private InsectGame.Story.StoryObjectiveTracker objectiveTracker;
 
         private GUIStyle labelStyle;
+        private GUIStyle legendStyle;
         private GUIStyle wedgeStyle;
         private GUIStyle taleMarkStyle;   // 의뢰 주민 원 안의 !/?
         private Texture2D dotTex;
@@ -87,7 +88,8 @@ namespace InsectGame.UI
             ready = true;
             labelStyle = new GUIStyle(GUI.skin.label)
             { fontSize = 16, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            labelStyle.normal.textColor = new Color(0.7f, 0.85f, 1f);
+            labelStyle.normal.textColor = UITheme.Instance.textSecondary;
+            legendStyle = new GUIStyle(labelStyle) { alignment = TextAnchor.MiddleLeft };
             wedgeStyle = new GUIStyle(GUI.skin.label)
             { fontSize = 22, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             wedgeStyle.normal.textColor = UITheme.Instance.accentAmber;
@@ -166,8 +168,7 @@ namespace InsectGame.UI
             if (regionManager == null || regionManager.CurrentSubArea == null)
             {
                 DrawObjectiveWedge(cx, cy, mapRadius);
-                UIHelper.LabelFit(new Rect(x + 8f, y + size - 30f, size - 16f, 24f),
-                    "노랑 주민·의뢰 · 민트 입구", labelStyle);
+                DrawLegend(x, y + size - 32f, size);
             }
             else
                 UIHelper.LabelFit(new Rect(x + 8f, y + size - 30f, size - 16f, 24f),
@@ -187,6 +188,28 @@ namespace InsectGame.UI
 
             GUI.color = Color.white;
             UIScale.End();
+        }
+
+        /// <summary>
+        /// 범례 — 색 점 + 짧은 말. 예전엔 "노랑 주민·의뢰 · 민트 입구"를 한 줄 글자로 넣어
+        /// 204px 상자에 맞추느라 LabelFit이 글자를 읽을 수 없는 크기까지 줄였다(세로 화면 캡처에서
+        /// 자모가 뭉개져 보였다). 색 이름을 글로 쓰는 대신 그 색 점을 직접 보여 준다.
+        /// </summary>
+        private void DrawLegend(float x, float y, float size)
+        {
+            UITheme t = UITheme.Instance;
+            const float dot = 12f;
+            float itemW = (size - 24f) * 0.5f;
+            float lx = x + 12f;
+            GUI.color = t.accentAmber;
+            GUI.DrawTexture(new Rect(lx, y + 6f, dot, dot), dotTex);
+            GUI.color = Color.white;
+            UIHelper.LabelFit(new Rect(lx + dot + 4f, y, itemW - dot - 8f, 24f), "주민·의뢰", legendStyle);
+            lx += itemW;
+            GUI.color = t.accentMint;
+            GUI.DrawTexture(new Rect(lx, y + 6f, dot, dot), dotTex);
+            GUI.color = Color.white;
+            UIHelper.LabelFit(new Rect(lx + dot + 4f, y, itemW - dot - 8f, 24f), "입구", legendStyle);
         }
 
         /// <summary>

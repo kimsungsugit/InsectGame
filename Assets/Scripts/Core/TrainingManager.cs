@@ -184,7 +184,8 @@ namespace InsectGame.Core
         }
 
         /// <summary>
-        /// 이 기술을 익히는 데 필요한 훈련 횟수. 위력이 셀수록 오래 걸린다.
+        /// 이 기술을 익히는 데 필요한 훈련 횟수. 기술의 <b>가치</b>(<see cref="TrainingPricing.SkillValue"/>)가
+        /// 클수록 오래 걸린다 — 위력 칸이 1인 상태기도 효과 크기로 센다.
         ///
         /// <b>기술 디스크는 예외로 1회다</b> — 디스크는 사서 얻는 물건이라 "즉시 습득"이
         /// 그 값어치이고, 누적 훈련과 대비돼야 둘 다 존재 이유가 생긴다.
@@ -193,7 +194,7 @@ namespace InsectGame.Core
         {
             if (skill == null) return 1;
             if (method != null && method.methodId == DiscMethodId) return 1;
-            return Mathf.Clamp(1 + skill.power / 12, 1, 5);
+            return TrainingPricing.RequiredSessions(skill);
         }
 
         public int GetRequiredSessions(TrainingMethod method, string skillId)
@@ -285,6 +286,101 @@ namespace InsectGame.Core
             // 퀘스트가 멈춘 것처럼 보인다.
             TutorialQuestManager.Instance?.NotifyTraining();
             return true;
+        }
+
+        // ── 성장 훈련: 레벨 · 능력치(개체값) ─────────────────────────────────────
+        //
+        // 기술만 가르치던 훈련소에 레벨업과 개체값 훈련을 더한다. 등급(S~D)은 개체값 합에서 파생되므로
+        // (PlayerInsectData.Grade) 능력치를 올리면 등급이 저절로 오른다 — 따로 올리는 경로를 두지 않는다.
+
+        /// <summary>
+        /// 레벨업 1회 비용. <b>보유 곤충 창과 같은 정본</b>(<c>GetCandyCostForLevel</c>)을 읽는다 —
+        /// 두 곳 값이 갈리면 싼 쪽만 쓰인다. 만렙이거나 배선이 없으면 0.
+        /// </summary>
+        public int GetLevelUpCost(PlayerInsectData insect)
+        {
+            if (insect == null || collection == null || IsMaxLevel(insect)) return 0;
+            return collection.GetCandyCostForLevel(insect.insectId, insect.level);
+        }
+
+        public bool IsMaxLevel(PlayerInsectData insect)
+        {
+            if (insect == null || collection == null) return true;
+            return insect.level >= collection.GetMaxLevel(insect.insectId);
+        }
+
+        public bool CanTrainLevel(PlayerInsectData insect)
+        {
+            if (insect == null || candyInventory == null || IsMaxLevel(insect)) return false;
+            return candyInventory.Candies >= GetLevelUpCost(insect);
+        }
+
+        /// <summary>
+        /// 레벨업. 결제·레벨·기술 자동 습득·세이브는 <c>TryLevelUpWithCandy</c>가 전부 한다(보유 곤충 창과 같은 함수).
+        /// 여기는 그 뒤의 통지만 더한다 — 레벨업 퀘스트와 훈련 퀘스트 둘 다 이 행동으로 진행된다.
+        /// </summary>
+        public bool TrainLevel(PlayerInsectData insect)
+        {
+            if (!CanTrainLevel(insect)) return false;
+            if (!collection.TryLevelUpWithCandy(insect)) return false;
+
+            TrainingCompleted?.Invoke();
+            TutorialQuestManager.Instance?.NotifyLevelUp();
+            TutorialQuestManager.Instance?.NotifyTraining();
+            return true;
+        }
+
+        /// <summary>
+        /// 능력치 +1 비용. 이미 15면 0. 등급 배율은 종 데이터에서 읽고, 데이터를 못 찾으면 일반으로 본다
+        /// (테스트처럼 컬렉션이 없는 경우 포함).
+        /// </summary>
+        public int GetStatTrainingCost(PlayerInsectData insect, GrowthStat stat)
+        {
+            if (insect == null) return 0;
+            return TrainingPricing.StatCost(insect.GetIv(stat), RarityOf(insect));
+        }
+
+        public bool CanTrainStat(PlayerInsectData insect, GrowthStat stat)
+        {
+            if (insect == null || candyInventory == null) return false;
+            if (insect.GetIv(stat) >= PlayerInsectData.MaxIV) return false;
+            return candyInventory.Candies >= GetStatTrainingCost(insect, stat);
+        }
+
+        /// <summary>
+        /// 능력치 훈련 1회 — 캔디를 내고 개체값을 1 올린다. 누적 훈련이 아니라 <b>한 번에 +1</b>이다:
+        /// 비용이 이미 가파르게 오르므로 횟수까지 나누면 같은 값을 두 번 받는 셈이 된다.
+        /// </summary>
+        public bool TrainStat(PlayerInsectData insect, GrowthStat stat)
+        {
+            LastStatGradeBefore = insect != null ? insect.Grade : IVGrade.D;
+            if (!CanTrainStat(insect, stat)) return false;
+
+            int cost = GetStatTrainingCost(insect, stat);
+            if (!candyInventory.SpendCandy(cost)) return false;
+            if (!insect.RaiseIv(stat))
+            {
+                candyInventory.AddCandy(cost);   // CanTrainStat 뒤라 도달하지 않지만, 캔디만 사라지는 길은 막는다
+                return false;
+            }
+
+            if (collection != null)
+            {
+                collection.NotifyInsectChanged(insect);
+                collection.ForceSave();
+            }
+            TrainingCompleted?.Invoke();
+            TutorialQuestManager.Instance?.NotifyTraining();
+            return true;
+        }
+
+        /// <summary>직전 <see cref="TrainStat"/> 전의 등급 — UI가 "등급 상승!"을 가르는 데 쓴다.</summary>
+        public IVGrade LastStatGradeBefore { get; private set; }
+
+        private InsectRarity RarityOf(PlayerInsectData insect)
+        {
+            InsectData data = collection != null && insect != null ? collection.GetInsectData(insect.insectId) : null;
+            return data != null ? data.rarity : InsectRarity.Common;
         }
 
         /// <summary>직전 <see cref="TrainSkill"/>이 실제 습득까지 갔는가. UI 문구가 쓴다.</summary>

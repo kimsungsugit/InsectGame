@@ -862,17 +862,7 @@ namespace InsectGame.Dex
             return height;
         }
 
-        private string GetRarityLabel(InsectRarity rarity)
-        {
-            switch (rarity)
-            {
-                case InsectRarity.Uncommon: return "고급";
-                case InsectRarity.Rare: return "희귀";
-                case InsectRarity.Epic: return "영웅";
-                case InsectRarity.Legendary: return "전설";
-                default: return "일반";
-            }
-        }
+        private static string GetRarityLabel(InsectRarity rarity) => rarity.Korean();
 
         private void DrawElementBadges(
             Rect area,
@@ -1143,9 +1133,10 @@ namespace InsectGame.Dex
             if (!string.IsNullOrEmpty(ins.habitatHint))
             {
                 py += 10;
-                GUI.Label(new Rect(infoBoxX + 16, py, 90, 40), "서식지", habitatLabelCache);
+                // 라벨 폭 128 — 90일 때 32pt "서식지"의 마지막 글자가 잘려 "서식"으로 보였다(데스크톱·세로 둘 다).
+                UIHelper.LabelFit(new Rect(infoBoxX + 16, py, 128, 44), "서식지", habitatLabelCache);
                 // 값 라벨 높이 확대(40→84) + wordWrap으로 긴 서식지 설명이 여러 줄로 온전히 표시.
-                GUI.Label(new Rect(infoBoxX + 110, py, lw - 110, 84), ins.habitatHint, habitatValCache);
+                GUI.Label(new Rect(infoBoxX + 150, py, lw - 150, 84), ins.habitatHint, habitatValCache);
                 py += 92;
             }
 
@@ -1248,23 +1239,24 @@ namespace InsectGame.Dex
             {
                 // 보유 곤충은 전부 포획 완료라 감쇠가 없다 — 여기 있던 `ic`도 그리드 타일과 같은
                 // "계산만 하고 못 넘기는 색"이었고, 이쪽은 넘길 곳조차 없어 그냥 죽은 지역 변수였다.
-                DrawRoundedRect(new Rect(x + 20f, y + 40f, 74f, 94f), DetailUnknownBg);
-                InsectVisual.Draw(x + 57f, y + h / 2f + 4, 78f, data, pid != null && pid.isShiny, 1f);
+                // 틀을 키운다 — 74×94에 78px 모델이라 곤충이 카드 안에서 성냥갑만 했다(2026-09-30 검수 캡처).
+                DrawRoundedRect(new Rect(x + 22f, y + (h - 112f) / 2f, 96f, 112f), Color.Lerp(DetailUnknownBg, rc, 0.14f));
+                InsectVisual.Draw(x + 70f, y + h / 2f, 100f, data, pid != null && pid.isShiny, 1f);
             }
 
             string name = data != null ? data.displayName : pid.insectId;
             ownedNameCache.normal.textColor = rc;
             // 이름 폭은 우측 등급 컬럼(x+w-90) 앞까지로 제한 — 겹침 방지.
             // 좁아진 그 폭에 데이터가 정하는 이름을 넣으므로 LabelFit으로 줄여 맞춘다(ui-layout.md).
-            UIHelper.LabelFit(new Rect(x + 108, y + 12, w - 204, 52), name, ownedNameCache);
+            UIHelper.LabelFit(new Rect(x + 130, y + 12, w - 226, 52), name, ownedNameCache);
 
             string rStr = data != null ? GetRarityLabel(data.rarity) : "?";
             // IV%는 우하단(x+w-90, y+82)과 아래 IV 상세줄에 이미 표시되므로 중간줄에선 생략 —
             // 폰트 확대(→34) + 좁은 폭(w-176≈269px)에 "Lv | 등급 | IV%"를 넣으면 뒤가 잘리던 회귀 차단.
-            GUI.Label(new Rect(x + 108, y + 70, w - 204, LineH(ownedInfoCache)),
+            GUI.Label(new Rect(x + 130, y + 70, w - 226, LineH(ownedInfoCache)),
                 $"Lv.{pid.level}  |  {rStr}", ownedInfoCache);
 
-            UIHelper.LabelFit(new Rect(x + 108, y + 126, Mathf.Max(1f, w - 286f), LineH(ownedStCache)),
+            UIHelper.LabelFit(new Rect(x + 130, y + 126, Mathf.Max(1f, w - 308f), LineH(ownedStCache)),
                 $"IV {pid.ivHp}/{pid.ivAtk}/{pid.ivDef}", ownedStCache);
 
             Color gc = UITheme.Instance.GetGradeColor(pid.Grade);

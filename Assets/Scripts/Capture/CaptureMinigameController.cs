@@ -308,7 +308,7 @@ namespace InsectGame.Capture
             string targetName = currentTarget != null
                 ? currentTarget.DisplayNameForPlayer : "???";
             string rarityName = currentTarget != null && currentTarget.Data != null
-                ? currentTarget.Data.rarity.ToString() : "";
+                ? currentTarget.Data.rarity.Korean() : "";
 
             InitMinigameStyles();
             titleStyleCache.normal.textColor = GetRarityGUIColor();

@@ -360,6 +360,10 @@ namespace InsectGame.Core
 
         private void OnSubAreaChanged(SubAreaData subArea)
         {
+            // 분리 구역(나의 섬)은 여기서 짓지 않는다 — 그 구역의 주인(IslandWorldBuilder)이 짓고 드나듦도 맡는다.
+            // isInSubArea가 false로 남으므로 25m 자동 이탈·퇴장 버튼·F2도 섬에서는 돌지 않는다.
+            if (subArea != null && subArea.detached) return;
+
             if (subArea != null && !isInSubArea)
             {
                 EnterSubArea(subArea);

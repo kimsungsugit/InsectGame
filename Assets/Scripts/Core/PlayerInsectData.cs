@@ -48,22 +48,68 @@ namespace InsectGame.Core
 
         public float IVPercent => (ivHp + ivAtk + ivDef) / (MaxIV * 3f);
 
-        public IVGrade Grade
+        public int IvSum => ivHp + ivAtk + ivDef;
+
+        public IVGrade Grade => GradeForSum(IvSum);
+
+        /// <summary>개체값 합(0~45)의 등급. 경계(90/70/50/30%)의 단일 출처 — 훈련 화면의 "다음 등급까지"도 여기서 센다.</summary>
+        public static IVGrade GradeForSum(int ivSum)
         {
-            get
-            {
-                float pct = IVPercent;
-                if (pct >= 0.9f) return IVGrade.S;
-                if (pct >= 0.7f) return IVGrade.A;
-                if (pct >= 0.5f) return IVGrade.B;
-                if (pct >= 0.3f) return IVGrade.C;
-                return IVGrade.D;
-            }
+            float pct = ivSum / (MaxIV * 3f);
+            if (pct >= 0.9f) return IVGrade.S;
+            if (pct >= 0.7f) return IVGrade.A;
+            if (pct >= 0.5f) return IVGrade.B;
+            if (pct >= 0.3f) return IVGrade.C;
+            return IVGrade.D;
         }
+
+        /// <summary>그 등급이 되는 최소 개체값 합(S 41 · A 32 · B 23 · C 14 · D 0).</summary>
+        public static int MinIvSumFor(IVGrade grade)
+        {
+            for (int sum = 0; sum <= MaxIV * 3; sum++)
+                if (GradeForSum(sum) >= grade) return sum;
+            return MaxIV * 3;
+        }
+
+        /// <summary>HP 개체값 1당 최대 HP. 능력치 훈련이 HP를 올릴 때 현재 HP도 이만큼 함께 올린다.</summary>
+        public const int HpPerIv = 2;
 
         public int GetTotalHp(int baseHp)
         {
-            return baseHp + ivHp * 2 + level * GameConstants.Battle.HpPerLevel;
+            return baseHp + ivHp * HpPerIv + level * GameConstants.Battle.HpPerLevel;
+        }
+
+        /// <summary>훈련소 「성장 훈련」이 다루는 개체값 하나를 읽는다.</summary>
+        public int GetIv(GrowthStat stat)
+        {
+            switch (stat)
+            {
+                case GrowthStat.Attack: return ivAtk;
+                case GrowthStat.Defense: return ivDef;
+                default: return ivHp;
+            }
+        }
+
+        /// <summary>
+        /// 개체값 하나를 1 올린다(최대 <see cref="MaxIV"/>). 올렸으면 true. 비용은 호출부
+        /// (<c>TrainingManager.TrainStat</c>)가 받는다 — 여기는 값만 다룬다.
+        ///
+        /// HP를 올리면 최대 HP가 <see cref="HpPerIv"/>만큼 늘므로 <b>현재 HP도 같이 올린다</b>. 안 그러면
+        /// 풀피 곤충이 훈련 직후 "부상"으로 떠 병원에 가야 한다. 기절(0)과 미초기화(-1)는 그대로 둔다.
+        /// </summary>
+        public bool RaiseIv(GrowthStat stat)
+        {
+            if (GetIv(stat) >= MaxIV) return false;
+            switch (stat)
+            {
+                case GrowthStat.Attack: ivAtk++; break;
+                case GrowthStat.Defense: ivDef++; break;
+                default:
+                    ivHp++;
+                    if (currentHp > 0) currentHp += HpPerIv;
+                    break;
+            }
+            return true;
         }
 
         /// <summary>전투 시작 시 시드할 현재 HP. currentHp 미초기화(-1)면 풀피(maxHp).</summary>
@@ -83,14 +129,18 @@ namespace InsectGame.Core
             else currentHp = UnityEngine.Mathf.Clamp(currentHp, 0, maxHp);
         }
 
+        /// <summary>레벨당 공격·방어 증가분. 훈련 화면이 "레벨업하면 무엇이 오르나"를 이 값으로 적는다.</summary>
+        public const int AtkPerLevel = 2;
+        public const int DefPerLevel = 1;
+
         public int GetTotalAtk(int baseAtk)
         {
-            return baseAtk + ivAtk + level * 2;
+            return baseAtk + ivAtk + level * AtkPerLevel;
         }
 
         public int GetTotalDef(int baseDef)
         {
-            return baseDef + ivDef + level;
+            return baseDef + ivDef + level * DefPerLevel;
         }
 
         public static PlayerInsectData CreateWithIV(string insectId, int level, Data.InsectRarity rarity = Data.InsectRarity.Common)

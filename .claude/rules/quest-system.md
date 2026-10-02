@@ -26,7 +26,9 @@ description: 퀘스트 데이터 정의 위치·추가 절차·Notify 배선 규
    어느 시스템에서 발생하는지 찾아 그곳에서 `TutorialQuestManager.Instance.Notify___()`를 부른다.
 4. **이벤트 기반이면** `SubscribeEvents`/`UnsubscribeEvents`에 핸들러 등록 +
    핸들러가 `NotifyAction(QuestType.X)` 호출
-5. 캔디/EXP/아이템/곤충 외 **새 보상 종류**면 데이터 모델 필드 + `CompleteQuest` 로직
+5. 캔디/EXP/아이템/곤충/코인/섬 물건 외 **새 보상 종류**면 데이터 모델 필드 + 지급(`GrantRewards`) +
+   표시(`QuestRewardFormatter`) — 지급과 표시가 **같은 술어**를 써야 "보이는데 안 주는" 어긋남이 없다.
+   **다이아는 보상으로 줄 수 없다**(서버 규칙이 클라이언트의 다이아 증가를 거부한다 — `rules/island.md`).
 
 ### q_team 회귀 — 실제로 겪은 사고
 

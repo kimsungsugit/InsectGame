@@ -312,21 +312,106 @@ def trainer_xp_curve() -> dict:
     return {"base": base, "growth": growth, "floor": floor, "max": maxlv, "kind": "linear"}
 
 
-def insect_candy_curve() -> dict:
-    """곤충 레벨업 캔디 비용 곡선. 출처: InsectLevelCurve.GetCandyCost.
+def trainer_level_gap() -> dict:
+    """캐릭터 레벨 ↔ 곤충 레벨 차 계수. 출처: GameConstants.TrainerLevel(공식은 TrainerLevelGap).
 
-    지수: baseCandyCost * growth^(level-1). 곤충은 이 캔디 경로로만 큰다
-    (TryLevelUpWithCandy). 곤충 XP 곡선(GetXpToNextLevel, 20*1.12^)은 배선만 돼 있고
-    게임플레이가 곤충에 XP를 주지 않아 미사용이다 — 진행 경로로 쓰면 안 된다.
+    EXP = base × 등급배율 × (1 + (곤충Lv−1)·exp_per_level) × 차 배율
+      차 배율: 곤충이 높으면 1 + min(차, higher_cap)·higher_step, 낮으면 max(lower_min, 1 + 차·lower_step)
+    포획 = 최종 확률 × max(capture_min, 1 − (차 − grace)·capture_drop)  (차 > grace일 때만)
+    2026-10-01 전엔 EXP가 등급만 봐서 이 계수가 없었다 — Lv60 일반 곤충도 Lv1과 같은 5였다.
     """
+    src = _read("game_constants")
+    block = _need(re.search(r"class\s+TrainerLevel\s*\{(.*?)\n\s{8}\}", src, re.DOTALL),
+                  "TrainerLevel 블록", "game_constants").group(1)
+
+    def num(name: str, kind=float):
+        pat = r"\b" + name + r"\s*=\s*([\d.]+)f?;"
+        return kind(_need(re.search(pat, block), name, "game_constants").group(1))
+
+    return {
+        "grace": num("CaptureGraceLevels", int),
+        "capture_drop": num("CaptureDropPerLevel"),
+        "capture_min": num("MinCaptureMultiplier"),
+        "exp_per_level": num("ExpPerInsectLevel"),
+        "higher_step": num("ExpHigherBonusPerLevel"),
+        "higher_cap": num("ExpHigherCapLevels", int),
+        "lower_step": num("ExpLowerPenaltyPerLevel"),
+        "lower_min": num("ExpLowerMinFactor"),
+    }
+
+
+def _level_curve_wired() -> bool:
+    """InsectLevelCurve가 **실제로 배선되는가** — `levelCurve`/`defaultCurve`에 값을 넣는 코드가 있는가.
+
+    `PlayerInsectCollection`은 곡선이 null이면 GameConstants.Leveling의 폴백(선형)으로 캔디를 뺀다.
+    곡선 에셋이 프로젝트에 없고 InsectData·컬렉션이 전부 런타임 생성이라, 대입하는 코드가 없으면 SO의
+    지수식은 **죽은 코드**다. 2026-09-30까지 이 추출기는 그 죽은 식(4×1.125^)을 읽어 진행 판정을 냈다 —
+    Lv50 한 레벨이 실제 102캔디인데 1,284로 계산했다.
+    """
+    rx = re.compile(r"\b(?:levelCurve|defaultCurve)\s*=(?!=)")
+    for root, _dirs, files in os.walk("Assets/Scripts"):
+        for name in files:
+            if not name.endswith(".cs"):
+                continue
+            with open(os.path.join(root, name), encoding="utf-8", errors="replace") as f:
+                if rx.search(strip_cs(f.read())):
+                    return True
+    return False
+
+
+def insect_candy_curve() -> dict:
+    """곤충 레벨업 캔디 비용 곡선 — **실제로 캔디를 빼는 식**.
+
+    곤충은 캔디로만 큰다(TryLevelUpWithCandy → GetCandyCostForLevel). 곡선 SO가 배선되지 않았으면
+    (`_level_curve_wired`) 컬렉션의 폴백 선형식 `base + (lv-1)*step`(GameConstants.Leveling)이 정본이고,
+    배선됐으면 InsectLevelCurve.GetCandyCost의 지수식이다. 곤충 XP 곡선(GetXpToNextLevel)은
+    게임플레이가 곤충에 XP를 주지 않아 미사용이다 — 진행 경로로 쓰면 안 된다.
+    반환: {"kind": "linear", "base", "step", "max"} 또는 {"kind": "exponential", "base", "growth", "max"}.
+    """
+    if not _level_curve_wired():
+        src = _read("game_constants")
+        block = _need(re.search(r"class\s+Leveling\s*\{(.*?)\n\s{8}\}", src, re.DOTALL),
+                      "Leveling 블록", "game_constants").group(1)
+        base = int(_need(re.search(r"FallbackBaseCandyCost\s*=\s*(\d+)", block),
+                         "FallbackBaseCandyCost", "game_constants").group(1))
+        step = int(_need(re.search(r"FallbackCandyCostGrowth\s*=\s*(\d+)", block),
+                         "FallbackCandyCostGrowth", "game_constants").group(1))
+        maxlv = int(_need(re.search(r"FallbackMaxLevel\s*=\s*(\d+)", block),
+                          "FallbackMaxLevel", "game_constants").group(1))
+        return {"base": base, "step": step, "max": maxlv, "kind": "linear"}
+
     src = _read("insect_curve")
     base = int(_need(re.search(r"baseCandyCost\s*=\s*(\d+)", src), "baseCandyCost", "insect_curve").group(1))
-    # GetCandyCost 본체의 Mathf.Pow(1.14f, level - 1)
     body = _need(re.search(r"GetCandyCost\s*\([^)]*\)\s*\{(.*?)\n\s{8}\}", src, re.DOTALL),
                  "GetCandyCost() 본체", "insect_curve").group(1)
     growth = float(_need(re.search(r"Pow\(\s*([\d.]+)f", body), "GetCandyCost의 성장률", "insect_curve").group(1))
     maxlv = int(_need(re.search(r"maxLevel\s*=\s*(\d+)", src), "maxLevel", "insect_curve").group(1))
     return {"base": base, "growth": growth, "max": maxlv, "kind": "exponential"}
+
+
+def candy_cost_at(curve: dict, level: int) -> int:
+    """곡선 dict(`insect_candy_curve`)로 Lv→Lv+1 캔디. 두 시뮬(progression·gacha)이 같은 식을 쓴다."""
+    if curve["kind"] == "linear":
+        return max(1, curve["base"] + (level - 1) * curve["step"])
+    return max(1, round(curve["base"] * (curve["growth"] ** (level - 1))))
+
+
+def curve_label(curve: dict) -> str:
+    if curve["kind"] == "linear":
+        return f"선형 {curve['base']}+{curve['step']}*(lv-1)"
+    return f"지수 {curve['base']}*{curve['growth']}^(lv-1)"
+
+
+def training_stat_cost() -> dict:
+    """능력치(개체값) 훈련 계수. 출처: GameConstants.Training(StatBaseCost·StatCostGrowth).
+    공식은 TrainingPricing.StatCost = base × growth^iv × 등급배율(rarity_multipliers)."""
+    src = _read("game_constants")
+    block = _need(re.search(r"class\s+Training\s*\{(.*?)\n\s{8}\}", src, re.DOTALL),
+                  "Training 블록", "game_constants").group(1)
+    base = int(_need(re.search(r"StatBaseCost\s*=\s*(\d+)", block), "StatBaseCost", "game_constants").group(1))
+    growth = float(_need(re.search(r"StatCostGrowth\s*=\s*([\d.]+)f", block),
+                         "StatCostGrowth", "game_constants").group(1))
+    return {"base": base, "growth": growth, "max_iv": 15}
 
 
 def battle_rewards_by_rarity() -> dict:

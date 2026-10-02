@@ -19,6 +19,9 @@ namespace InsectGame.Core
         private BattleTeamManager battleTeamManager;
         private RegionManager regionManager;
         private WeeklyContestManager weeklyContest;
+        // 섬 퀘스트 보상(코인·섬 물건) 지급처. 없으면 그 보상만 경고 후 건너뛴다(다른 보상은 그대로 나간다).
+        private PlayerCurrencyWallet currencyWallet;
+        private IslandManager islandManager;
 
         private TutorialQuest[] allQuests;
         private Dictionary<string, int> questProgress = new Dictionary<string, int>();
@@ -135,6 +138,13 @@ namespace InsectGame.Core
             if (blight != null) blight.RegionCleansed -= OnRegionCleansed;
             blight = blightManager;
             if (blight != null) blight.RegionCleansed += OnRegionCleansed;
+        }
+
+        /// <summary>섬 퀘스트 보상(코인·섬 물건) 지급처. 진행 통지는 IslandManager가 Notify___로 직접 한다.</summary>
+        public void AutoWire(PlayerCurrencyWallet wallet, IslandManager island)
+        {
+            if (currencyWallet == null) currencyWallet = wallet;
+            if (islandManager == null) islandManager = island;
         }
 
         /// <summary>이번 주 대결 대상 종 — TutorialQuestUI가 퀘스트 문구를 덮어쓸 때 쓴다.</summary>
@@ -668,6 +678,85 @@ namespace InsectGame.Core
                     rewardCandy = 65, rewardExp = 130,
                     rewardItemId = "full_restore", rewardItemCount = 3
                 },
+
+                // --- 나의 섬 — 하나씩 따라 하면 섬의 기본 조작을 전부 한 번씩 해 보게 된다(Docs/IslandDesign.md) ---
+                // 선행이 q_capture3인 이유: 섬 자체가 그 퀘스트로 열린다(GameConstants.Island.UnlockQuestId).
+                new TutorialQuest
+                {
+                    questId = "s_island_arrive", title = "나의 섬",
+                    description = "나만의 섬이 생겼습니다. 탐험 메뉴의 [내 섬]이나 본 마을 나루터로 섬에 들어가 보세요.",
+                    hint = "탐험 메뉴에서 [내 섬]을 누르세요",
+                    type = QuestType.VisitIsland, targetCount = 1,
+                    category = QuestCategory.Side,
+                    prerequisiteQuestId = "q_capture3",
+                    rewardExp = 20, rewardCoins = 100,
+                    rewardIslandObjectId = "f_lantern", rewardIslandObjectCount = 1
+                },
+                new TutorialQuest
+                {
+                    questId = "s_island_place", title = "꾸미기 시작",
+                    description = "섬에서 [꾸미기]를 눌러 보관함의 물건 3개를 섬에 놓아 보세요.",
+                    hint = "섬의 [꾸미기] — 물건을 고르고 칸을 누른 뒤 [놓기]",
+                    type = QuestType.PlaceIslandObject, targetCount = 3,
+                    category = QuestCategory.Side,
+                    prerequisiteQuestId = "s_island_arrive",
+                    rewardCoins = 80,
+                    rewardIslandObjectId = "t_flowerbed", rewardIslandObjectCount = 1
+                },
+                new TutorialQuest
+                {
+                    questId = "s_island_release", title = "첫 손님",
+                    description = "섬에서 [곤충]을 눌러 보유 곤충 2마리를 풀어놓으세요. 풀어놓아도 전투에는 그대로 쓸 수 있습니다.",
+                    hint = "섬의 [곤충] — 풀어놓을 곤충을 고르세요",
+                    type = QuestType.ReleaseOnIsland, targetCount = 2,
+                    category = QuestCategory.Side,
+                    prerequisiteQuestId = "s_island_arrive",
+                    rewardCandy = 20,
+                    rewardIslandObjectId = "o_feeder", rewardIslandObjectCount = 1
+                },
+                new TutorialQuest
+                {
+                    questId = "s_island_harvest", title = "첫 수확",
+                    description = "곤충이 섬에 머무는 동안 캔디와 코인이 쌓입니다. 섬에서 [수확]을 눌러 받아 보세요.",
+                    hint = "섬의 [수확] — 쌓인 양이 1 이상이면 받을 수 있습니다",
+                    type = QuestType.HarvestIsland, targetCount = 1,
+                    category = QuestCategory.Side,
+                    prerequisiteQuestId = "s_island_release",
+                    rewardCandy = 25, rewardExp = 30
+                },
+                new TutorialQuest
+                {
+                    questId = "s_island_shop", title = "섬 상점",
+                    description = "섬 [상점]에서 마음에 드는 물건을 하나 사 보세요.",
+                    hint = "섬의 [상점] — 건물·가구·지형지물·도구",
+                    type = QuestType.IslandPurchase, targetCount = 1,
+                    category = QuestCategory.Side,
+                    prerequisiteQuestId = "s_island_harvest",
+                    rewardCoins = 120
+                },
+                new TutorialQuest
+                {
+                    questId = "s_island_visit", title = "이웃 섬 구경",
+                    description = "섬 [방문]에서 친구나 섬 코드로 다른 사람의 섬을 구경해 보세요.",
+                    hint = "섬의 [방문] — 친구 목록 또는 섬 코드 8자리",
+                    type = QuestType.VisitFriendIsland, targetCount = 1,
+                    category = QuestCategory.Side,
+                    prerequisiteQuestId = "s_island_arrive",
+                    rewardCandy = 30,
+                    rewardIslandObjectId = "f_sign", rewardIslandObjectCount = 1
+                },
+                new TutorialQuest
+                {
+                    // 보상을 낮게 둔다 — 수확은 한두 시간마다 할 수 있어, 후하게 주면 섬이 만드는 코인보다
+                    // 이 퀘스트가 주는 코인이 커진다(목표가 3씩 늘어 회당 몫은 점점 줄어든다).
+                    questId = "s_island_keeper", title = "섬지기",
+                    description = "섬 수확물을 꾸준히 받으세요. 달성할수록 다음 목표가 늘어납니다.",
+                    hint = "섬의 [수확]을 틈틈이 눌러 주세요",
+                    type = QuestType.HarvestIsland, targetCount = 4, targetIncrement = 3,
+                    category = QuestCategory.Side, repeatable = true,
+                    prerequisiteQuestId = "s_island_harvest",
+                    rewardCandy = 10, rewardCoins = 15
+                },
             };
         }
 
@@ -802,7 +891,8 @@ namespace InsectGame.Core
 
         private void OnSubAreaChanged(SubAreaData subArea)
         {
-            if (subArea != null)
+            // 섬은 서브에리어 상태를 빌려 탈 뿐 "숨겨진 장소"가 아니다 — 세면 q_subarea가 섬 방문으로 깨진다.
+            if (subArea != null && !subArea.detached)
             {
                 NotifyAction(QuestType.VisitSubArea);
             }
@@ -942,6 +1032,44 @@ namespace InsectGame.Core
             NotifyAction(QuestType.SizeContest);
         }
 
+        // ── 나의 섬 ── IslandManager가 행동이 성립한 지점에서 부른다.
+
+        /// <summary>내 섬에 들어갔다.</summary>
+        public void NotifyIslandVisited()
+        {
+            NotifyAction(QuestType.VisitIsland);
+        }
+
+        /// <summary>곤충을 섬에 풀어놓았다.</summary>
+        public void NotifyIslandInsectReleased()
+        {
+            NotifyAction(QuestType.ReleaseOnIsland);
+        }
+
+        /// <summary>보관함의 물건을 섬에 놓았다.</summary>
+        public void NotifyIslandObjectPlaced()
+        {
+            NotifyAction(QuestType.PlaceIslandObject);
+        }
+
+        /// <summary>섬 수확물을 받았다.</summary>
+        public void NotifyIslandHarvested()
+        {
+            NotifyAction(QuestType.HarvestIsland);
+        }
+
+        /// <summary>섬 상점에서 물건을 샀다.</summary>
+        public void NotifyIslandPurchase()
+        {
+            NotifyAction(QuestType.IslandPurchase);
+        }
+
+        /// <summary>다른 사람의 섬을 구경했다.</summary>
+        public void NotifyFriendIslandVisited()
+        {
+            NotifyAction(QuestType.VisitFriendIsland);
+        }
+
         // --- 진행 추적 ---
 
         private void IncrementProgress(string questId, int amount = 1)
@@ -1018,6 +1146,19 @@ namespace InsectGame.Core
             {
                 if (itemInventory != null) itemInventory.AddItem(quest.rewardItemId, quest.rewardItemCount);
                 else Debug.LogWarning($"[Quest] itemInventory null — 아이템 보상 손실: {quest.questId} {quest.rewardItemId}x{quest.rewardItemCount}");
+            }
+
+            if (quest.rewardCoins > 0)
+            {
+                if (currencyWallet != null) currencyWallet.AddCoins(quest.rewardCoins);
+                else Debug.LogWarning($"[Quest] currencyWallet null — 코인 보상 손실: {quest.questId} (+{quest.rewardCoins})");
+            }
+
+            // 포함 조건은 QuestRewardFormatter와 같은 술어를 쓴다 — 한쪽만 바뀌면 "보이는데 안 주는" 어긋남이 생긴다.
+            if (QuestRewardFormatter.HasIslandObject(quest))
+            {
+                if (islandManager != null) islandManager.GrantObject(quest.rewardIslandObjectId, quest.rewardIslandObjectCount);
+                else Debug.LogWarning($"[Quest] islandManager null — 섬 물건 보상 손실: {quest.questId} {quest.rewardIslandObjectId}x{quest.rewardIslandObjectCount}");
             }
 
             if (!string.IsNullOrEmpty(quest.rewardInsectId))

@@ -67,10 +67,11 @@ def _load_facts():
 # 가챠 EV 가중치 = 게임 내 실제 보상 배율 — 박스 1회 가치를 보상 가치 기준으로 환산.
 BOX_DEFS, EXCLUSIVE_POOL_SIZE, RARITY_MULT, FIELD_SHINY_PCT, GACHA_SHINY_PCT = _load_facts()
 
-# Lv30 캔디 비용 (progression_sim과 일치)
-# 코드가 단일 출처다 — 예전엔 `int(4 * (1.14 ** 29))`를 여기 박아 두어 곡선이 12.5%로 바뀐 뒤에도 178을 썼다.
+# Lv30 캔디 비용 (progression_sim과 같은 식 — game_facts.candy_cost_at)
+# 코드가 단일 출처다 — 예전엔 `int(4 * (1.14 ** 29))`를 여기 박아 두어 곡선이 12.5%로 바뀐 뒤에도 178을 썼고,
+# 그 뒤엔 배선되지 않은 지수식(122)을 읽었다. 실제로 빠지는 값은 폴백 선형식이다(Lv30 = 62).
 _CURVE = game_facts.insect_candy_curve()
-LV30_CANDY_COST = int(_CURVE["base"] * (_CURVE["growth"] ** 29))
+LV30_CANDY_COST = game_facts.candy_cost_at(_CURVE, 30)
 
 
 def draw_rarity(box: str, rng: random.Random) -> str:

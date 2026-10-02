@@ -272,6 +272,13 @@ namespace InsectGame.Core
         {
             switch (subArea.subAreaId)
             {
+                // 나의 섬 — 탁 트인 바다 위의 한낮. 카메라 배경이 곧 하늘이고(서브에리어는 SolidColor로 그린다)
+                // 안개색을 그 하늘과 맞춰 먼바다가 수평선으로 녹아들게 한다.
+                case GameConstants.Island.SubAreaId:
+                    // 환경광을 낮게 둔다 — 서브에리어는 평면(Flat) 환경광이라 그 값이 그대로 색에 더해진다.
+                    // 0.6대로 두면 햇빛(1.1 × 0.79)과 합쳐 물건 색의 1.6배가 나와 잔디·모래가 파스텔로 날아간다.
+                    return Profile(new Color(1f, 0.97f, 0.88f), 1.1f, Quaternion.Euler(52f, 35f, 0f), new Color(0.40f, 0.44f, 0.50f),
+                        new Color(0.66f, 0.84f, 0.95f), 0.006f, new Color(0.56f, 0.80f, 0.96f));
                 case "dunes_pit":
                     return Profile(new Color(1f, 0.93f, 0.78f), 1.25f, Quaternion.Euler(55f, 30f, 0f), new Color(0.55f, 0.50f, 0.42f),
                         new Color(0.86f, 0.78f, 0.62f), 0.012f, new Color(0.72f, 0.64f, 0.50f));

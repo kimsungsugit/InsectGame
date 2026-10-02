@@ -58,6 +58,10 @@ OnGUI의 Rect 좌표와 레이아웃은 **ui-dev 영역**입니다. 여기서는
 - `Assets/Scripts/Core/SubAreaWorldBuilder.Themes.cs` - 같은 environmentType을 공유하는 서브에리어의 subAreaId별 변주(동굴 7테마·개미귀신 구덩이·빈칸·가장 높은 가지 등) ※방 크기는 원래 빌더와 같게(story_lint 21)
 - `Assets/Scripts/Core/SceneryMaterials.cs` - 월드 소품 머티리얼의 단일 출처 — 셰이더 폴백(`LitShader`·`Create`), 무광·발광 마감, 반투명(`MakeFade`), 배처 캐시 키(`SceneryMaterialKey`: 색+표면 종류) ※부위별 광택을 따로 주는 곳(곤충 키틴·플레이어 옷·의상 spawn 파츠 — `CharacterPalette.ApplySurface`)은 `Create` 대신 `LitShader`만 빌린다. 오염 거점(`BlightVfx.Mat`)·전투 아레나(`CreateSafeMaterial`)는 2026-09-29 광택 통일로 `Create`(무광)를 쓰고, 금속·물처럼 광택이 제 질감인 스킬 파츠만 `CreateSheenMaterial`로 가른다. 전투 이펙트 반투명·가산은 `BattleArenaController.CreateFxMaterial`(FX 셰이더)이 따로 맡는다. **Standard의 반투명·발광 변형은 `BuildKeepers`(Resources 머티리얼 4벌)가 빌드에 남긴다** — 그게 없던 시절 플레이어 빌드에서 반투명이 불투명, 발광이 무발광으로 그려졌다(2026-09-29 QA 빌드 실측). **Standard를 Always Included Shaders에 다시 넣지 말 것** — 그 목록의 셰이더는 머티리얼 키워드를 안 봐서 이 방법이 무력해진다. 런타임에 새 Standard 키워드 조합을 켜면 `BuildKeepers`에 한 줄 추가 후 `ShaderVariantKeepers.Ensure`
 - `Assets/Scripts/Core/FieldGround.cs` - 필드 둔덕(사구·재 더미·이끼 둔덕)의 윗면 높이 조회(`SurfaceY`·`LiftAt`) — 둔덕엔 콜라이더가 없어 곤충 스폰·플레이어 접지가 이걸로 올라탄다 ※`RegionTerrainBuilder.PlaceMound`/`RegisterDome`가 등록, 빌드 시작·OnDestroy에서 비운다
+- `Assets/Scripts/Core/IslandObjectBuilder.cs` - 섬 물건 28종 프로시저럴 모델(카탈로그 id ↔ switch, 차지 칸 안에 들어와야 함)
+- `Assets/Scripts/Core/IslandTerrainBuilder.cs` - 섬 땅·모래톱·바다·나루터 모양(콜라이더 없음 — 접지·경계는 IslandWorldBuilder)
+- `Assets/Editor/IslandModelCapture.cs` - 섬 지형·물건 배치모드 캡처 도구
+- `Assets/Scripts/Core/IslandMaterialCache.cs` - 섬 머티리얼 캐시(같은 색 = 같은 머티리얼, 불투명·반투명·발광) — 섬의 유일한 머티리얼 생성 경로
 
 ### 캐릭터/의상 비주얼
 - `Assets/Editor/OutfitRenderProbe.cs` - 의상을 입힌 마네킹을 3D 리그로 직접 촬영해 spawn/bind 파츠가 실제로 그려지는지 확인 ※IMGUI를 안 거치므로 배치모드로 돈다. `-outfitAll`(카탈로그 전량 × 앞/뒤)·`-outfitLooks`(성별×머리·얼굴·피부·머리색)는 판정 없는 전후 비교용 갤러리

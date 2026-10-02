@@ -31,6 +31,7 @@ tools:
 - `Assets/Scripts/UI/TrainingUI.cs` - 훈련 UI
 - `Assets/Scripts/UI/CollectionUI.cs` - 보유 곤충 UI
 - `Assets/Scripts/UI/InsectDetailVisualCapture.cs` - 도감·보유 개체 상세와 퀵바 실제 IMGUI 검수용 저장 비접촉 fixture
+- `Assets/Scripts/UI/FieldHudVisualCapture.cs` - 필드 HUD·포획 선택/성공 팝업·배틀팀 실제 IMGUI 검수용 저장 비접촉 fixture(`-battleScenario field-ui`)
 - `Assets/Scripts/UI/BattleTeamUI.cs` - 팀 편성 UI ※배틀 로직은 battle-dev
 - `Assets/Scripts/UI/HospitalUI.cs` - 병원 치료·아이템 대상 선택 UI
 - `Assets/Scripts/UI/InventoryUI.cs` - 가방(보유 아이템 목록·사용) UI
@@ -88,6 +89,16 @@ tools:
 - `Assets/Scripts/UI/StoryDialogueStaging.cs` - 스토리 대사 무대 규칙(좌우 배치·타자 속도·줄 연출 fx) 순수 계산 ※어느 줄에 어떤 fx를 붙일지는 game-designer
 - `Assets/Scripts/Core/QuestRewardFormatter.cs` - 퀘스트 보상 표시 문자열 조립 (배너·목록 공용) ※보상 수치 자체는 game-designer
 
+### 나의 섬 화면
+- `Assets/Scripts/UI/IslandHudUI.cs` - 섬 위 버튼 줄(꾸미기·상점·곤충·수확·방문·도움말·나가기 / 남의 섬: 좋아요·돌아가기) — 비모달이라 `FieldHudInput` 등록 필수
+- `Assets/Scripts/UI/IslandEditUI.cs` - 섬 꾸미기(보관함 트레이, 칸 탭 = 자리 고르기, 끌기 = 화면 옮기기, 돌리기·놓기·넣기) — 모달
+- `Assets/Scripts/UI/IslandShopUI.cs` - 섬 상점(건물·가구·지형지물·도구·확장 5탭) ※가격은 game-designer(`IslandCatalog`)
+- `Assets/Scripts/UI/IslandInsectUI.cs` - 섬 곤충 창(풀어놓기·거두기, 친밀도·시간당 생산 표시)
+- `Assets/Scripts/UI/IslandVisitUI.cs` - 섬 나들목(내 섬 가기·나가기, 섬 코드·공개 설정, 친구·코드로 방문) — 퀵바 [내 섬]과 본 마을 나루터가 연다
+- `Assets/Scripts/UI/IslandGuideUI.cs` - 섬 안내 코치 배너(꾸미기 모달 위에서도 뜬다) + 도움말 창 ※단계 판정·문구는 game-designer(`IslandGuideSteps`)
+- `Assets/Scripts/UI/IslandUiKit.cs` - 섬 화면 공용 스타일·결과 문구
+- `Assets/Scripts/UI/IslandVisualCapture.cs` - 섬 화면 실제 IMGUI 검수용 저장 비접촉 fixture(`-battleScenario island-ui`)
+
 ### Editor
 - `Assets/Editor/PlayUIPrefabGenerator.cs` - UI 프리팹 자동 생성
 
@@ -97,6 +108,7 @@ tools:
 - `Assets/Tests/EditMode/NpcDialogueContinuityTests.cs` - 줄별 화자, 전투 후 재대화, 모달 재진입 회귀
 - `Assets/Tests/EditMode/DuelHudLayoutTests.cs` - 전투 진영 배치, 버튼 중첩, 기술 대상 표시
 - `Assets/Tests/EditMode/ExplorationNavigationTests.cs` - 메뉴 경로, 단축키 보존, 모달 전환 회귀
+- `Assets/Tests/EditMode/UIParityTests.cs` - 등급 한글 표기·HP 색 기준의 단일 출처(화면 간 표기 혼재 회귀)
 
 ## 화면 흐름
 ```
