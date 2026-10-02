@@ -62,6 +62,7 @@ RaidBattleController → RaidBattleUI
 | 스폰 | `InsectSpawner` → `FieldSpawnRules`·`FieldPopulation` | 리전별 슬롯 기록(리전 이동으로 리롤 안 함) + 시간 기반 재생·수명 순환, 45m 실체화/55m 회수. 희귀도는 전역 등급표, 레벨만 리전 대역 |
 | 세이브 | `PlayerProgressSaveService`, `CloudSaveManager` | 로컬 7개 JSON + Firestore. 규칙은 `rules/save-system.md` |
 | 스탯/IV | `PlayerInsectData` | IV 0~15(HP/ATK/DEF), 등급 S~D |
+| 첫 시작 연출 | `DreamPrologueDirector` | 「챔피언의 꿈」 — 신규 계정 1회(설정에서 다시보기). 챔피언전(샌드박스 전투) → 꾸며진 섬 걷기 → 깨어남. **꿈 밖 기록을 건드리지 않는 약속**을 `DreamPrologueState.Active`로 지킨다. 규칙은 `rules/dream-prologue.md` |
 | 나의 섬 | `IslandManager` → `IslandWorldBuilder` | 개인 섬 하우징. 칸 배치·방목 시간 보상·스냅샷 방문. **분리 서브에리어**로 탄다. 규칙은 `rules/island.md` |
 
 ### UI 흐름
@@ -91,6 +92,7 @@ AutoWire·이벤트·오브젝트 풀 패턴, 금지 사항이 전부 거기 있
 `rules/save-system.md`(세이브 필드 추가),
 `rules/scriptable-objects.md`(SO 생성),
 `rules/quest-system.md`(퀘스트 추가 시 다지점 등록 — 빠뜨리면 영구 정지),
+`rules/dream-prologue.md`(첫 시작 연출 — 표지를 읽어야 하는 자리, 샌드박스 전투),
 `rules/island.md`(나의 섬 — `detached` 서브에리어를 걸러야 하는 자리, 물건 추가 3곳, 다이아 환급 금지),
 `rules/testing.md`(테스트 필수 기준),
 `rules/agent-coordination.md`(공유 파일 수정 경계).

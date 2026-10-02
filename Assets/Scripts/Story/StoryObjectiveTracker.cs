@@ -578,6 +578,7 @@ namespace InsectGame.Story
         private void TryAutoStartFirstObjective()
         {
             if (firstObjectiveAutoStarted) return;
+            if (DreamPrologueState.Active) return;   // 꿈속에서 본 마을 어르신을 향해 달려가면 안 된다
             if (!hasObjective || !hasWorldTarget) return;
             if (storyDirector == null || storyDirector.SeenCount > 0) return;
             if (playerMovement == null || playerMovement.IsFrozen || playerMovement.IsAutoRunning) return;

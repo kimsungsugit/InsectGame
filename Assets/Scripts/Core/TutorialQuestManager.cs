@@ -913,6 +913,8 @@ namespace InsectGame.Core
         {
             if (!tutorialSessionStarted) return;
             if (ActiveQuest == null) return;
+            // 섬을 걸어 다니는 것은 "첫 걸음"이 아니다 — 꿈이 끝나 걸을 수 있게 된 뒤부터 센다.
+            if (DreamPrologueState.Active) { movementQuestId = null; return; }
 
             // 이동 퀘스트가 아닐 땐 위치 추적 자체가 불필요 — Find/거리계산 스킵.
             if (ActiveQuest.type != QuestType.Movement) return;
@@ -944,6 +946,8 @@ namespace InsectGame.Core
         public void NotifyAction(QuestType type, int count = 1)
         {
             if (!tutorialSessionStarted) return;
+            // 꿈속의 걸음·전투·곤충은 퀘스트에 들어가지 않는다 — 챔피언전 승리가 "첫 전투!"를 깨면 안 된다.
+            if (DreamPrologueState.Active) return;
             // 활성 퀘스트보다 **먼저** 미리 센다 — 아래에서 활성 퀘스트가 완료되면 곧바로 다음 퀘스트가
             // 활성화되는데, 그때 이번 행동이 이미 들어 있어야 한다(전투 1 → 전투 3이 1/3에서 시작한다).
             BankUpcomingStoryProgress(type, InsectRarity.Common, count);
@@ -967,6 +971,7 @@ namespace InsectGame.Core
         public void NotifyCapture(InsectRarity rarity)
         {
             if (!tutorialSessionStarted) return;
+            if (DreamPrologueState.Active) return;   // NotifyAction과 같은 이유
 
             BankUpcomingStoryProgress(QuestType.Capture, rarity, 1);   // NotifyAction과 같은 이유로 먼저
 

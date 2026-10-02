@@ -65,6 +65,7 @@ tools:
 - `Assets/Scripts/UI/WorldInteractionController.cs` - 월드 오브젝트 상호작용 프롬프트
 - `Assets/Scripts/UI/MinimapUI.cs` - 미니맵 HUD
 - `Assets/Scripts/UI/FieldMomentsUI.cs` - 필드 소식 카드 + 라온 내기 점수판 (비모달 — FieldMomentFeed에서 꺼내 그린다)
+- `Assets/Scripts/UI/DreamVisualCapture.cs` - 「챔피언의 꿈」 섬·도입·깨어남 화면 검수 장면 (`-battleScenario dream-island`)
 - `Assets/Scripts/UI/SafeArea.cs` - `Screen.safeArea` 픽셀 인셋 (프레임당 1회 캐시). `UISafeLayout`의 입력원
 - `Assets/Scripts/UI/SafeAreaPanel.cs` - uGUI RectTransform 세이프에어리어 적용 컴포넌트
 - `Assets/Scripts/UI/VirtualJoystickUI.cs` - 모바일 가상 조이스틱 ※`ui_layout_lint` 면제 대상(조작 영역이라 마진을 주면 좁아진다)

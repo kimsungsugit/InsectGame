@@ -43,6 +43,10 @@ tools:
 - `Assets/Scripts/Story/StoryObjective.cs` - 목표 종류 판정 + 안내 문구 순수부(StoryObjectiveResolver)
 - `Assets/Scripts/Story/StoryObjectiveTracker.cs` - 목표 → 월드 좌표·자동 주행 해석
 - `Assets/Scripts/Story/RivalRaceController.cs` - 라온과의 포획 내기 (시간표·보상은 `RivalRaceRules`, `ch1_rival_intro` 뒤 1회)
+- `Assets/Scripts/Story/DreamPrologueDirector.cs` - 「챔피언의 꿈」 프롤로그 지휘 (챔피언전 → 챔피언의 섬 → 깨어남, 신규 계정 1회·설정 다시보기) ※화면 그리기는 ui-dev
+- `Assets/Scripts/Core/DreamPrologueData.cs` - 꿈의 저작 데이터 (챔피언 팀·적·꾸며진 섬 배치·기술 고르기)
+- `Assets/Scripts/Core/DreamPrologueState.cs` - 꿈 진행 표지(`Active`)와 시작 조건 순수 판정
+- `Assets/Scripts/Battle/SandboxBattleRules.cs` - 샌드박스 전투의 피해 배율·상하한·길이 (battle-dev와 같은 파일을 보나 수치는 여기가 단일 출처)
 - `Assets/Scripts/Core/FieldMomentFeed.cs` - 필드 소식 대기열 (레벨업·이야기 보상·내기·색다른 조우 — 넣는 쪽과 그리는 쪽을 잇는다)
 - `Assets/Scripts/NPC/NpcBossDuels.cs` - 명부회 간부 고정 상대·레벨·보상 표 ※isFinal의 BGM 분기는 battle-dev
 - `Assets/Scripts/NPC/DuelBanter.cs` - 대결 상대의 연출 대사(칭호·도발·전투 중 한마디·결과 한마디)와 순간 판정 ※그리기는 ui-dev(`BattleScreenUI.Duel`)

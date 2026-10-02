@@ -359,6 +359,8 @@ namespace InsectGame.Story
             // **종 ID를 지금 읽어 큐에 싣는다.** 발화는 결과 화면이 닫힌 뒤로 미뤄지는데, 그때
             // 컨트롤러를 다시 물으면 이미 다음 전투가 시작됐을 수 있다(필드에서 연달아 붙는다).
             // 무param 비트는 이 값을 보지 않으므로 기존 저작은 그대로다.
+            // 꿈속의 챔피언전은 이야기의 전투가 아니다 — BattleWin을 쏘면 1막의 "첫 전투" 비트가 꿈에서 열린다.
+            if (battleController != null && battleController.IsSandbox) return;
             if (playerWon)
                 DeferTrigger(TriggerBattleWin, battleController != null ? battleController.EnemyInsectId : null);
         }

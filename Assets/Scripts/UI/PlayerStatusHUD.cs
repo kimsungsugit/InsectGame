@@ -174,7 +174,7 @@ namespace InsectGame.UI
             //      직접 히트테스트하고 `evt.Use()`로 소비한다. IMGUI는 z-order로 히트테스트를
             //      가르지 않으므로, 모달의 좌상단 컨트롤을 누른 탭을 **이쪽이 먼저 먹고**
             //      상태 패널만 접혔다 펴진다(모바일 기본은 닫힘이라 그 자리에 탭이 서 있다).
-            if (ModalUIRegistry.IsAnyOpen()) return;
+            if (ModalUIRegistry.IsAnyOpen() || DreamPrologueState.Active) return;
 
             UIScale.Begin();
             DrawSubAreaAlert();

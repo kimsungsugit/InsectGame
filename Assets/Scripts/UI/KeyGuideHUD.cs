@@ -78,7 +78,7 @@ namespace InsectGame.UI
             // 모달이 열려 있으면 HUD를 숨긴다. depth를 안 거는 전체화면 모달(CollectionUI,
             // TrainingUI, RegionMapUI 등)과 렌더 순서가 미정의라 패널 위로 튀어나올 수 있다.
             // UIScale.Begin() 전에 return해야 Begin/End 균형이 유지된다(MinimapUI:52 관례).
-            if (ModalUIRegistry.IsAnyOpen()) return;
+            if (ModalUIRegistry.IsAnyOpen() || DreamPrologueState.Active) return;
 
             UIScale.Begin();
             InitStyles();

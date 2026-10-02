@@ -71,7 +71,7 @@ namespace InsectGame.UI
 
         private void OnGUI()
         {
-            if (world == null || island == null || !world.IsOnIsland) return;
+            if (world == null || island == null || !world.IsOnIsland || world.DreamMode) return;
             if (ModalUIRegistry.IsAnyOpen()) return;
             if (playerMovement != null && playerMovement.IsFrozen) return;
 

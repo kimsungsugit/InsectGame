@@ -117,6 +117,12 @@ namespace InsectGame.Battle
                 yield return InsectGame.UI.FieldHudVisualCapture.Run(output, camera);
                 yield break;
             }
+            if (scenario == "dream-island")
+            {
+                // 「챔피언의 꿈」 — 꾸며진 섬·도입 카드·안내·깨어남 자막. 전투는 dream-battle이 찍는다.
+                yield return InsectGame.UI.DreamVisualCapture.Run(output, camera);
+                yield break;
+            }
             if (scenario == "island-ui")
             {
                 // 나의 섬 — HUD·꾸미기·상점·곤충·방문·가이드. 꾸미기 화면이 카메라를 직접 옮기므로 팔로워를 끄지 않는다.
@@ -134,8 +140,13 @@ namespace InsectGame.Battle
             controller.AutoWire(arena);
             ui.AutoWire(controller, follower, null);
             ui.AutoWire(arena);
-            InsectData player = Fixture("rhinoceros_beetle", "장수풍뎅이");
-            InsectData enemy = Fixture("mantis", "사마귀");
+            bool dreamBattle = scenario == "dream-battle";
+            InsectData player = dreamBattle
+                ? Fixture(InsectGame.Core.DreamPrologueData.AceInsectId, "헤라클레스 천공각")
+                : Fixture("rhinoceros_beetle", "장수풍뎅이");
+            InsectData enemy = dreamBattle
+                ? Fixture(InsectGame.Core.DreamPrologueData.ChallengerInsectId, "태고의 비천룡")
+                : Fixture("mantis", "사마귀");
             // 속성 임팩트 검수 — 같은 스킬의 속성만 매 턴 바꿔 10종을 차례로 쓴다. 한쪽이 먼저 쓰러지지
             // 않게 양쪽 HP를 크게 잡고 재사용 대기를 없앤다(연출만 보는 픽스처, 밸런스와 무관).
             InsectElement[] elementCycle = (InsectElement[])Enum.GetValues(typeof(InsectElement));
@@ -149,7 +160,17 @@ namespace InsectGame.Battle
             controller.SetRandomSeed(8173);
             if (scenario == "escape") controller.SetRandomSource(new EscapeSequence());
             controller.BattleUpdated += (p, e) => { playerStats = p; enemyStats = e; };
-            controller.StartDuel(player, 15, enemy, 15, null, null, first);
+            if (dreamBattle)
+            {
+                // 진짜 지휘자가 샌드박스 전투를 연다 — 안내 문구·결과 화면·도망 버튼 숨김을 실제 코드로 본다.
+                var dreamDb = ScriptableObject.CreateInstance<InsectDatabase>();
+                dreamDb.insects.Add(player);
+                dreamDb.insects.Add(enemy);
+                var dreamDirector = new GameObject("QADreamDirector").AddComponent<InsectGame.Story.DreamPrologueDirector>();
+                dreamDirector.AutoWire(null, null, null, null, null, controller, ui, dreamDb, null);
+                if (!dreamDirector.StartBattleForCapture()) { Debug.LogError("[QA] dream battle did not start"); Application.Quit(3); yield break; }
+            }
+            else controller.StartDuel(player, 15, enemy, 15, null, null, first);
             // 연출 검수 — 간부전(컷인·장부·전투 중 한마디·결과 한마디)과 수문장전(곤충끼리 서는 컷인).
             // 수문장 표식은 StartBattle(월드 개체)에서만 서므로 리플렉션으로 세운다 — 적 픽스처가 초원 수호자와 같은 사마귀다.
             if (scenario == "boss") { controller.SetDuelOpponent("ledger_grip"); controller.ArmLedger(6); }

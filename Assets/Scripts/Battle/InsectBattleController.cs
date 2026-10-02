@@ -141,6 +141,18 @@ namespace InsectGame.Battle
         private bool enemyShinyAtStart; // 시작 시점 스냅샷 — 도주/풀 재사용된 라이브 참조로 보상 오등록 방지
         private bool duelMode;          // NPC 대결 — 포획 롤·야생 아이템 드랍 없음(StartDuel 참조)
 
+        // ── 샌드박스(「챔피언의 꿈」) ──
+        // 보상·도감·HP 저장·퀘스트·스토리 어느 것도 건드리지 않는 연출용 전투. 구독자가 많은 BattleEnded는
+        // 그대로 쏘되(결과 화면이 그 신호로 뜬다) 퀘스트·스토리 쪽 핸들러가 이 표지를 보고 건너뛴다.
+        private bool sandbox;
+        private int sandboxPlayerActions;
+
+        /// <summary>
+        /// 이번(또는 마지막) 전투가 샌드박스인가. <b>BattleEnded 시점에도 유효하다</b> — 다음 전투를 시작할 때까지
+        /// 값을 지키므로 핸들러가 "방금 끝난 전투"를 물을 수 있다(<see cref="EnemyInsectId"/>와 같은 이유).
+        /// </summary>
+        public bool IsSandbox => sandbox;
+
         // ── 「장부」 압박(명부회 보스전 전용) ─────────────────────────────
         // 규칙과 상수는 LedgerPressure(순수부)가 들고, 임계는 NpcBossDuels 표가 든다.
         // 여기는 그 둘을 잇는 **상태**만 갖는다.
@@ -228,6 +240,41 @@ namespace InsectGame.Battle
             return true;
         }
 
+        /// <summary>
+        /// 샌드박스 전투 — 월드 개체 없이 데이터만으로 붙고, 규칙은 <see cref="SandboxBattleRules"/>가 정한다.
+        /// 보상·도감·HP 저장을 하지 않고 <see cref="DuelEnded"/>도 쏘지 않는다. 내 곤충(<paramref name="playerPid"/>)은
+        /// 컬렉션에 없는 메모리 개체여도 된다.
+        /// </summary>
+        public bool StartSandbox(InsectData playerInsect, int playerLevel, InsectData enemyInsect, int enemyLevel,
+            InsectSkill[] equippedSkills, Core.PlayerInsectData playerPid,
+            Action<InsectBattleStats, InsectBattleStats> onStarted = null)
+        {
+            if (playerInsect == null || enemyInsect == null) return false;
+
+            BeginBattleCommon(playerInsect, playerLevel, enemyInsect, enemyLevel, equippedSkills, playerPid);
+            enemyEntity = null;
+            enemyShinyAtStart = false;
+            EnemyGuardianRegionId = string.Empty;
+            duelMode = false;
+            sandbox = true;
+            sandboxPlayerActions = 0;
+            onStarted?.Invoke(playerStats, enemyStats);
+            BattleUpdated?.Invoke(playerStats, enemyStats);
+            return true;
+        }
+
+        /// <summary>
+        /// 샌드박스 전투를 이긴 것으로 끝낸다(건너뛰기). 정상 종료와 같은 길(<see cref="CheckEnd"/>)을 타므로
+        /// 결과 화면·정리가 평소대로 돈다. 샌드박스가 아니거나 이미 끝났으면 아무것도 하지 않는다.
+        /// </summary>
+        public void ForceSandboxVictory()
+        {
+            if (!sandbox || battleEnded || enemyStats == null) return;
+            enemyStats.ApplyDamage(Mathf.Max(1, enemyStats.CurrentHp));
+            BattleUpdated?.Invoke(playerStats, enemyStats);
+            CheckEnd();
+        }
+
         // StartBattle/StartDuel이 공유하는 초기화 — 야생/듀얼 차이는 호출부가 뒤에 덮는다.
         private void BeginBattleCommon(InsectData playerInsect, int playerLevel,
             InsectData enemyInsect, int enemyLevel, InsectSkill[] equippedSkills, Core.PlayerInsectData playerPid)
@@ -268,6 +315,8 @@ namespace InsectGame.Battle
             lastCaptureChance = 0f;
             battleEnded = false;
             DidEscape = false;
+            sandbox = false;   // StartSandbox가 공통 초기화 뒤에 다시 세운다 — 야생·대결이 이전 샌드박스 표지를 물려받지 않게
+            sandboxPlayerActions = 0;
             BeginResolvedRound();
             // onStarted/BattleUpdated는 호출부가 야생/듀얼 고유 필드(enemyEntity 등)를 채운 뒤에 울린다 —
             // BattleScreenUI.OnBattleUpdated가 GetEnemyEntity()를 읽어 아레나 위치를 잡기 때문이다.
@@ -346,6 +395,7 @@ namespace InsectGame.Battle
             else
             {
                 PlayerActedThisRound = true;
+                if (sandbox) sandboxPlayerActions++;
                 InsectSkill[] skills = GetPlayerSkills();
                 InsectSkill skill = skills != null && skillIndex < skills.Length ? skills[skillIndex] : GetSkill(playerStats.Data, skillIndex);
                 ApplySkill(playerStats, enemyStats, skill, true);
@@ -391,6 +441,7 @@ namespace InsectGame.Battle
             else
             {
                 PlayerActedThisRound = true;
+                if (sandbox) sandboxPlayerActions++;
                 int damage = Mathf.Max(1, Mathf.RoundToInt(playerStats.Attack * 0.7f));
                 ApplyDirectDamage(enemyStats, playerStats, damage);
                 TryPlayHitFlash(false);
@@ -420,6 +471,7 @@ namespace InsectGame.Battle
                 return false;
             }
             if (battleEnded) return false; // 종료 후 액션 차단
+            if (sandbox) return false;     // 챔피언전에서는 도망치지 않는다(화면도 도망 버튼을 그리지 않는다)
 
             BeginResolvedRound();
             int levelDiff = playerStats.Level - enemyStats.Level;
@@ -612,9 +664,25 @@ namespace InsectGame.Battle
         // Ordinary wild encounters only. Stored stats, duel, guardian and raid balance stay intact.
         private void ApplyDirectDamage(InsectBattleStats defender, InsectBattleStats attacker, int amount)
         {
+            if (sandbox)
+            {
+                ApplySandboxDamage(defender, attacker, amount);
+                return;
+            }
             float pacing = !duelMode && string.IsNullOrEmpty(EnemyGuardianRegionId)
                 ? GameConstants.Battle.WildDamageMultiplier : 1f;
             defender.ApplyDamage(Mathf.Max(1, Mathf.RoundToInt(amount * pacing)), attacker.Attack, defender.Defense);
+        }
+
+        // 샌드박스 피해 — 공식이 낸 값(방어 비율 반영)에 SandboxBattleRules의 배율·상하한을 건다.
+        private void ApplySandboxDamage(InsectBattleStats defender, InsectBattleStats attacker, int amount)
+        {
+            int resolved = defender.ResolveDamage(amount, attacker.Attack, defender.Defense);
+            bool attackerIsPlayer = ReferenceEquals(attacker, playerStats);
+            int final = attackerIsPlayer
+                ? SandboxBattleRules.PlayerDamage(resolved, defender.CurrentHp, sandboxPlayerActions)
+                : SandboxBattleRules.EnemyDamage(resolved, defender.CurrentHp, defender.MaxHp);
+            if (final > 0) defender.ApplyDamage(final);
         }
 
         private int GetDamage(InsectBattleStats attacker, int baseDamage)
@@ -735,6 +803,7 @@ namespace InsectGame.Battle
         // 현재 활성 플레이어 곤충의 남은 HP·감염을 영구 저장(전투 종료/교체 시).
         private void PersistActivePlayer()
         {
+            if (sandbox) return;   // 꿈속의 HP는 저장하지 않는다 — 메모리 개체이기도 하다
             if (playerCollection == null || playerStats == null || playerStats.PlayerData == null) return;
             playerCollection.SetAfterBattle(playerStats.PlayerData, playerStats.CurrentHp, playerPoisoned, playerParalyzed);
         }
@@ -856,6 +925,9 @@ namespace InsectGame.Battle
             }
             if (battleEnded) return; // 이미 종료 — 보상/이벤트 중복 차단
 
+            // 독 같은 지속 피해는 ApplyDirectDamage를 거치지 않는다 — 샌드박스는 여기서 하한으로 되돌린다.
+            if (sandbox) playerStats.RaiseHpTo(SandboxBattleRules.HpFloor(playerStats.MaxHp));
+
             bool playerWon = enemyStats.CurrentHp <= 0 && playerStats.CurrentHp > 0;
             if (playerWon && duelMode)
             {
@@ -970,6 +1042,11 @@ namespace InsectGame.Battle
 
                 TryPlayFaint(false);
                 enemyEntity.Despawn();
+            }
+            else if (playerWon && sandbox)
+            {
+                // 보상도 정리할 월드 개체도 없다 — 쓰러지는 연출만.
+                TryPlayFaint(false);
             }
 
             if (enemyStats.CurrentHp <= 0)

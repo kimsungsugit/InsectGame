@@ -95,6 +95,15 @@ namespace InsectGame.Battle
 
         public void ApplyDamage(int amount, int attackerAtk = 0, int defenderDef = 0)
         {
+            CurrentHp = Mathf.Max(0, CurrentHp - Mathf.Max(1, ResolveDamage(amount, attackerAtk, defenderDef)));
+        }
+
+        /// <summary>
+        /// 공격력 대 방어력 비율까지 반영한 <b>실제로 깎일 피해</b> — <see cref="ApplyDamage"/>가 쓰는 계산 그대로다.
+        /// 샌드박스 전투가 이 값에 배율·상한을 걸어야 해서 떼어 냈다(두 곳이 따로 계산하면 어긋난다).
+        /// </summary>
+        public int ResolveDamage(int amount, int attackerAtk = 0, int defenderDef = 0)
+        {
             int finalDamage = amount;
             if (attackerAtk > 0 && defenderDef > 0)
             {
@@ -104,7 +113,13 @@ namespace InsectGame.Battle
                 finalDamage = Mathf.RoundToInt(amount * Mathf.Clamp(ratio,
                     GameConstants.Battle.MinAtkDefRatio, GameConstants.Battle.MaxAtkDefRatio));
             }
-            CurrentHp = Mathf.Max(0, CurrentHp - Mathf.Max(1, finalDamage));
+            return finalDamage;
+        }
+
+        /// <summary>HP가 <paramref name="floor"/>보다 낮으면 그 값까지 올린다(샌드박스 전투의 하한 — 독 같은 지속 피해를 막는다).</summary>
+        public void RaiseHpTo(int floor)
+        {
+            if (CurrentHp < floor) CurrentHp = Mathf.Min(MaxHp, Mathf.Max(1, floor));
         }
     }
 }

@@ -86,6 +86,50 @@ namespace InsectGame.Core
         public event Action ModeChanged;
 
         public IslandMode Mode => mode;
+
+        /// <summary>
+        /// 「챔피언의 꿈」이 섬을 쓰는 중인가. 켜면 섬 HUD가 숨고 방문 통지(퀘스트)가 가지 않는다 —
+        /// 꿈속의 섬은 누구의 섬도 아니고 이 계정의 어떤 기록도 바꾸지 않는다.
+        /// </summary>
+        public bool DreamMode { get; set; }
+
+        /// <summary>섬 격자 칸(차지 칸 기준)의 월드 중심. 프롤로그가 목표 지점을 잡는 데 쓴다.</summary>
+        public static Vector3 CellWorldCenter(int x, int z, int width, int depth)
+        {
+            return Origin + IslandGrid.FootprintCenter(x, z, width, depth);
+        }
+
+        /// <summary>
+        /// 지금 섬을 돌아다니는 곤충 중 <paramref name="from"/>에서 가장 가까운 것. 섬에 곤충이 없으면 false.
+        /// 위치는 매 호출 읽는다 — 곤충은 걸어 다니므로 한 번 읽어 둔 좌표를 가리키면 엉뚱한 곳을 가리킨다.
+        /// </summary>
+        public bool TryGetNearestInsect(Vector3 from, out Vector3 position, out InsectData data, out int level)
+        {
+            position = Vector3.zero;
+            data = null;
+            level = 1;
+            if (insectsRoot == null) return false;
+
+            float best = float.MaxValue;
+            bool found = false;
+            for (int i = 0; i < insectsRoot.transform.childCount; i++)
+            {
+                Transform child = insectsRoot.transform.GetChild(i);
+                if (child == null || !child.gameObject.activeInHierarchy) continue;
+                InsectEntity entity = child.GetComponent<InsectEntity>();
+                if (entity == null || entity.Data == null) continue;
+                Vector3 delta = child.position - from;
+                delta.y = 0f;
+                float d = delta.sqrMagnitude;
+                if (d >= best) continue;
+                best = d;
+                position = child.position;
+                data = entity.Data;
+                level = entity.Level;
+                found = true;
+            }
+            return found;
+        }
         public bool IsOnIsland => mode != IslandMode.None;
         public bool IsVisiting => mode == IslandMode.Visit;
         public IslandSnapshot VisitSnapshot => visitSnapshot;
@@ -314,7 +358,7 @@ namespace InsectGame.Core
             }
 
             if (mode == IslandMode.Own) island.NotifyEnteredOwnIsland();
-            else island.NotifyVisitedFriendIsland();
+            else if (!DreamMode) island.NotifyVisitedFriendIsland();
 
             ModeChanged?.Invoke();
             return true;

@@ -113,7 +113,7 @@ namespace InsectGame.UI
             if (e.type == EventType.KeyDown)
                 foreach (Destination id in destinations)
                     if (GetHotkey(id) != KeyCode.None && e.keyCode == GetHotkey(id) && TryNavigate(id)) { e.Use(); break; }
-            if (!menuOpen && ModalUIRegistry.IsAnyOpen()) return;
+            if (!menuOpen && (ModalUIRegistry.IsAnyOpen() || DreamPrologueState.Active)) return;
             UIScale.Begin();
             if (buttonStyle == null)
                 buttonStyle = new GUIStyle(GUI.skin.button) { fontSize = 24, fontStyle = FontStyle.Bold, richText = true };

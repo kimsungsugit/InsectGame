@@ -777,6 +777,7 @@ namespace InsectGame.UI
         private void TryEscape()
         {
             if (phase != Phase.PlayerTurn || battleController == null) return;
+            if (battleController.IsSandbox) return;   // 챔피언전은 도망칠 수 없다 — 턴도 문구도 소모하지 않는다
             attackDuration = 1.8f;
             SnapshotHp();
             bool escaped = battleController.TryEscape();
@@ -1988,8 +1989,14 @@ namespace InsectGame.UI
                 }
             }
             basicAtkRect = DuelHudLayout.UtilityCard(panel, portrait, false);
-            escapeRect = DuelHudLayout.UtilityCard(panel, portrait, true);
             DrawUtilityAction(basicAtkRect, mobile ? "기본 공격" : "[F] 기본 공격", "매 턴 사용 가능", false);
+            // 챔피언전(샌드박스)에서는 도망가지 않는다 — 그리지 않으면 누를 수도 없다(escapeRect 폭 0이 입력 판정을 끈다).
+            if (battleController != null && battleController.IsSandbox)
+            {
+                escapeRect = new Rect(0, 0, 0, 0);
+                return;
+            }
+            escapeRect = DuelHudLayout.UtilityCard(panel, portrait, true);
             DrawUtilityAction(escapeRect, mobile ? "도망가기" : "[ESC] 도망가기", "확률에 따라 성공", true);
         }
 
@@ -2919,13 +2926,21 @@ namespace InsectGame.UI
             Rect panel = UISafeLayout.CenteredPanel(680f, 320f);
             UISurface.Card(panel, theme.surfaceBase, theme.surfaceBorder);
             bool escaped = battleController != null && battleController.DidEscape;
+            bool sandbox = battleController != null && battleController.IsSandbox;
             Color accent = lastWon || escaped ? theme.accentMint : theme.accentCoral;
             UISurface.Flat(new Rect(panel.x + 16f, panel.y + 3f, panel.width - 32f, 4f), accent);
             victoryStyleCache.fontSize = 42;
             victoryStyleCache.normal.textColor = accent;
             UIHelper.LabelFit(new Rect(panel.x + 24f, panel.y + 26f, panel.width - 48f, 62f),
-                escaped ? "무사히 이탈" : lastWon ? "전투 승리" : "다음 탐험을 준비해요", victoryStyleCache);
+                sandbox ? "챔피언 승리!" : escaped ? "무사히 이탈" : lastWon ? "전투 승리" : "다음 탐험을 준비해요", victoryStyleCache);
             rewardStyleCache.normal.textColor = theme.textSecondary;
+            if (sandbox)
+            {
+                // 꿈속의 승리라 받는 것이 없다 — 0을 늘어놓는 보상 칸 대신 한 줄.
+                UIHelper.LabelFit(new Rect(panel.x + 32f, panel.y + 124f, panel.width - 64f, 90f),
+                    "관중석에서 함성이 쏟아진다", rewardStyleCache);
+                return;
+            }
             if (lastWon && battleController != null)
             {
                 string capture = GetCaptureResultMessage(battleController.GetLastCaptureAttempted(), battleController.GetLastCaptureSucceeded());

@@ -120,7 +120,7 @@ namespace InsectGame.UI
         {
             if (player == null) return;
             // 전체화면 모달(도감/배틀/포획선택 등)이 열려 있으면 숨김 — 필드 탐험 중에만.
-            if (ModalUIRegistry.IsAnyOpen()) return;
+            if (ModalUIRegistry.IsAnyOpen() || InsectGame.Core.DreamPrologueState.Active) return;
             // 좌상단 상태 패널이 펼쳐져 있으면 그 아래에 완전히 덮인다 — 그리지 않는다.
             if (LeftStackOccluded) return;
 

@@ -17,6 +17,7 @@ tools:
 ### Battle 모듈 (전체)
 - `Assets/Scripts/Battle/InsectBattleController.cs` - 1v1 턴제 배틀 로직
 - `Assets/Scripts/Battle/BattleCaptureChanceCalculator.cs` - 1v1 승리 후 포획 확률·롤 판정
+- `Assets/Scripts/Battle/SandboxBattleRules.cs` - 샌드박스(챔피언의 꿈) 전투 규칙 — 피해 배율·HP 하한·3~4턴 길이. 컨트롤러 쪽 `StartSandbox`/`IsSandbox`가 이걸 건다
 - `Assets/Scripts/Battle/InsectBattleStats.cs` - 스탯 계산/데미지 적용
 - `Assets/Scripts/Battle/InsectBattleUIController.cs` - 배틀 UI 브릿지
 - `Assets/Scripts/Battle/RaidBattleController.cs` - 5v1 레이드

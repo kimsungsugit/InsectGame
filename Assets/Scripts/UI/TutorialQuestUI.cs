@@ -442,6 +442,9 @@ namespace InsectGame.UI
 
         private void OnGUI()
         {
+            // 「챔피언의 꿈」 동안은 퀘스트 칩·목표 행·알림을 모두 숨긴다 — 꿈 밖의 진행이 꿈속에 비치면 안 된다.
+            if (InsectGame.Core.DreamPrologueState.Active) return;
+
             // 형제 HUD(PlayerStatusHUD 등)와 동일한 가상 캔버스(1920x1080 / 1080x1920)에서 그려
             // 고DPI 기기에서도 폰트·패널 크기가 일관되게 보이도록 한다. 내부 좌표는 모두 가상 단위.
             UIScale.Begin();

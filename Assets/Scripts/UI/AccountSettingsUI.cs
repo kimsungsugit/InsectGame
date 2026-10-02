@@ -20,10 +20,16 @@ namespace InsectGame.UI
         private bool confirmLogout;
         private bool processing;
         private IOpeningReplayService openingReplayService;
+        private InsectGame.Story.DreamPrologueDirector dreamPrologue;
 
         public void AutoWire(IOpeningReplayService replayService)
         {
             openingReplayService = replayService;
+        }
+
+        public void AutoWire(InsectGame.Story.DreamPrologueDirector prologue)
+        {
+            dreamPrologue = prologue;
         }
 
         public void OpenSettings()
@@ -133,6 +139,8 @@ namespace InsectGame.UI
                 DrawMessage();
                 return;
             }
+            // 「챔피언의 꿈」 동안은 설정 버튼도 숨긴다 — 꿈속에서 열면 이동이 묶이고 꿈 밖 메뉴가 비친다.
+            if (!open && InsectGame.Core.DreamPrologueState.Active) return;
             EnsureStyles();
             if (open) DrawPanel();
             else DrawOpenButton();
@@ -165,7 +173,7 @@ namespace InsectGame.UI
             GUI.DrawTexture(new Rect(0, 0, screenWidth, screenHeight), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
-            Rect panel = UISafeLayout.CenteredPanel(660f, (confirmDelete || confirmLogout) ? 440f : 676f);
+            Rect panel = UISafeLayout.CenteredPanel(660f, (confirmDelete || confirmLogout) ? 440f : 744f);
             float pw = panel.width;
             float ph = panel.height;
             float px = panel.x;
@@ -197,6 +205,21 @@ namespace InsectGame.UI
                     bool started = ReplayOpening();
                     GUI.enabled = wasEnabled;
                     if (started) return;
+                }
+                GUI.enabled = wasEnabled;
+                y += 68f;
+
+                GUI.enabled = wasEnabled && dreamPrologue != null && dreamPrologue.CanReplayIgnoring(typeof(AccountSettingsUI));
+                if (GUI.Button(new Rect(cx, y, cw, 56f), "챔피언의 꿈 다시 보기", btnGrayStyle))
+                {
+                    GUI.enabled = wasEnabled;
+                    SetOpen(false);   // 설정이 닫혀야 꿈이 시작할 수 있다(모달이 떠 있으면 조건이 막힌다)
+                    if (dreamPrologue.TryReplay()) return;
+                    SetOpen(true);
+                    message = "지금은 다시 볼 수 없습니다. 잠시 후 다시 시도해주세요.";
+                    messageError = true;
+                    messageTimer = 4f;
+                    return;
                 }
                 GUI.enabled = wasEnabled;
                 y += 68f;

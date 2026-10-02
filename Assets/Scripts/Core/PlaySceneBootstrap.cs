@@ -701,6 +701,14 @@ namespace InsectGame.Core
             islandHudUi.AutoWire(islandEditUi, islandShopUi, islandInsectUi, islandVisitUi, islandGuideUi);
             quickBar.AutoWire(islandVisitUi);
 
+            // 「챔피언의 꿈」 프롤로그 — 새 계정이 처음 필드에 서면 한 번 도는 연출(설정에서 다시 볼 수 있다).
+            // 섬·전투·퀘스트·소식 대기열이 다 만들어진 뒤여야 하고, World/ 아래에 둔다(UI 루트는 오프닝 다시보기가 끈다).
+            InsectGame.Story.DreamPrologueDirector dreamPrologue =
+                EnsureComponent<InsectGame.Story.DreamPrologueDirector>("World/DreamPrologueDirector");
+            dreamPrologue.AutoWire(questManager, playerMov, player.transform, regionMgr, islandWorld,
+                battleController, battleScreen, database, momentFeed);
+            accountSettingsUi.AutoWire(dreamPrologue);
+
             // 마스터 계정이면 보석 99999 지급 ("특권 없이" 모드에서는 주지 않는다)
             if (AuthManager.Instance != null && AuthManager.Instance.MasterPrivilegesActive)
             {
