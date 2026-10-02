@@ -550,13 +550,13 @@ namespace InsectGame.Battle
             {
                 case SkillEffectType.BuffAttack:
                     if (AddEffect(isPlayer, skill.effectValue, skill.effectDurationTurns, EffectKind.AtkBuff))
-                        TryPlayEffectText("공격력 상승!", new Color(1f, 0.8f, 0.3f));
+                        TryPlayEffectText(SidedText(isPlayer, "공격력 상승!"), new Color(1f, 0.8f, 0.3f));
                     else
                         TryPlayEffectText("이미 최대치!", new Color(0.7f, 0.7f, 0.75f));
                     break;
                 case SkillEffectType.DebuffAttack:
                     if (AddEffect(!isPlayer, -skill.effectValue, skill.effectDurationTurns, EffectKind.AtkBuff))
-                        TryPlayEffectText("공격력 하락!", new Color(0.6f, 0.4f, 0.9f));
+                        TryPlayEffectText(SidedText(!isPlayer, "공격력 하락!"), new Color(0.6f, 0.4f, 0.9f));
                     else
                         TryPlayEffectText("이미 최대치!", new Color(0.7f, 0.7f, 0.75f));
                     break;
@@ -564,7 +564,7 @@ namespace InsectGame.Battle
                 {
                     int healAmt = Mathf.Max(1, Mathf.RoundToInt(attacker.MaxHp * Mathf.Clamp01(skill.effectValue)));
                     attacker.Heal(healAmt);
-                    TryPlayEffectText($"HP +{healAmt}!", new Color(0.4f, 1f, 0.5f));
+                    TryPlayEffectText(SidedText(isPlayer, $"HP +{healAmt}!"), new Color(0.4f, 1f, 0.5f));
                     break;
                 }
                 case SkillEffectType.PoisonDot:
@@ -573,18 +573,18 @@ namespace InsectGame.Battle
                     AddEffect(!isPlayer, skill.power, skill.effectDurationTurns, EffectKind.Dot);
                     if (defenderIsPlayer) playerPoisoned = true;
                     TryPlayHitFlash(defenderIsPlayer);
-                    TryPlayEffectText("중독!", new Color(0.6f, 0.9f, 0.3f));
+                    TryPlayEffectText(SidedText(defenderIsPlayer, "중독!"), new Color(0.6f, 0.9f, 0.3f));
                     break;
                 case SkillEffectType.Stun:
                     if (!LandsHit(skill)) { TryPlayEffectText("빗나갔다!", new Color(0.7f, 0.7f, 0.75f)); break; }
                     // 대상 다음 행동 1회 스킵(별도 카운터). 플레이어 피격 시 지속 마비(전투 후 유지).
                     if (defenderIsPlayer) { playerStunTurns = 1; playerParalyzed = true; } else enemyStunTurns = 1;
                     TryPlayHitFlash(defenderIsPlayer);
-                    TryPlayEffectText("기절!", new Color(1f, 0.9f, 0.3f));
+                    TryPlayEffectText(SidedText(defenderIsPlayer, "기절!"), new Color(1f, 0.9f, 0.3f));
                     break;
                 case SkillEffectType.DefenseBuff:
                     if (AddEffect(isPlayer, skill.effectValue, skill.effectDurationTurns, EffectKind.DefBuff))
-                        TryPlayEffectText("방어력 상승!", new Color(0.4f, 0.7f, 1f));
+                        TryPlayEffectText(SidedText(isPlayer, "방어력 상승!"), new Color(0.4f, 0.7f, 1f));
                     else
                         TryPlayEffectText("이미 최대치!", new Color(0.7f, 0.7f, 0.75f));
                     break;
@@ -1067,6 +1067,14 @@ namespace InsectGame.Battle
                 StartCoroutine(Arena.PlayFaintCoroutine(model));
             }
         }
+
+        /// <summary>
+        /// 상태 변화 문구에 <b>누구에게 걸렸는지</b>를 붙인다 — 내 곤충이면 그대로, 상대 곤충이면 앞에 "상대".
+        /// 문구는 화면 가운데 위쪽에 한 줄로 떠서(<c>BattleEffectTextOverlay</c>) 자리로는 편을 알 수 없다.
+        /// "공격력 상승!"만 뜨면 상대가 자기에게 건 버프도 내 것으로 읽힌다.
+        /// </summary>
+        internal static string SidedText(bool targetIsPlayer, string text)
+            => targetIsPlayer ? text : "상대 " + text;
 
         private void TryPlayEffectText(string text, Color color)
         {

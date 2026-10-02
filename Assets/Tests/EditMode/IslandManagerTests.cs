@@ -258,6 +258,43 @@ namespace InsectGame.Tests
         }
 
         [Test]
+        public void Guide_EndReplay_ClosesOnlyTheReplay_NeverTheFirstRun()
+        {
+            // 첫 안내에서 배너를 닫는 건 화면에서 치우는 것뿐이다 — 단계가 넘어가면 안 된다.
+            island.NotifyEnteredOwnIsland();
+            island.ReportEditOpened();
+            Assert.AreEqual(IslandGuideStep.PlaceFirst, island.GuideStep);
+            island.EndGuideReplay();
+            Assert.IsTrue(island.GuideActive, "첫 안내가 닫기로 끝나 버렸다");
+            Assert.AreEqual(IslandGuideStep.PlaceFirst, island.GuideStep);
+
+            // 다시 보기는 중간에 그만둘 수 있고, 수확 선물을 다시 넣지 않는다.
+            StartWithGuideDone();
+            island.RestartGuide();
+            island.AdvanceGuideReplay();
+            Assert.IsTrue(island.GuideIsReplay);
+            island.EndGuideReplay();
+            Assert.IsFalse(island.GuideActive);
+            Assert.IsFalse(island.GuideIsReplay);
+            Assert.IsFalse(island.Harvest(out _, out _), "다시 보기를 닫았더니 수확 선물이 들어갔다");
+        }
+
+        [Test]
+        public void GuideBanner_HidesItselfAfterItsTime_ButNotDuringReplay()
+        {
+            Assert.Greater(InsectGame.UI.IslandGuideUI.CoachRemaining(0f, false), 0f);
+            Assert.LessOrEqual(InsectGame.UI.IslandGuideUI.CoachRemaining(InsectGame.UI.IslandGuideUI.CoachSeconds, false), 0f);
+            // 다시 보기는 [다음]으로 직접 넘긴다 — 읽는 도중에 사라지면 안 된다.
+            Assert.Greater(InsectGame.UI.IslandGuideUI.CoachRemaining(999f, true), 0f);
+
+            // 마지막 1초 동안만 옅어진다.
+            Assert.AreEqual(1f, InsectGame.UI.IslandGuideUI.CoachAlpha(InsectGame.UI.IslandGuideUI.CoachSeconds), 0.0001f);
+            Assert.AreEqual(1f, InsectGame.UI.IslandGuideUI.CoachAlpha(InsectGame.UI.IslandGuideUI.CoachFadeSeconds), 0.0001f);
+            Assert.AreEqual(0.5f, InsectGame.UI.IslandGuideUI.CoachAlpha(InsectGame.UI.IslandGuideUI.CoachFadeSeconds * 0.5f), 0.0001f);
+            Assert.AreEqual(0f, InsectGame.UI.IslandGuideUI.CoachAlpha(0f), 0.0001f);
+        }
+
+        [Test]
         public void Snapshot_CarriesLayoutAndSpecies_ButNoInstanceIds()
         {
             StartWithGuideDone();

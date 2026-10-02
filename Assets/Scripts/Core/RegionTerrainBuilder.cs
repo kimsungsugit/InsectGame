@@ -132,7 +132,8 @@ namespace InsectGame.Core
         /// 하나는 가챠 오두막 한가운데(1.0m)에 박혔다. 초원 기둥 14개도 반대로 습지 바닥 위를 가로질렀다.
         /// 양쪽을 다 빼면 두 링이 교차점에서 만나 합집합의 바깥 테두리 하나가 된다.
         ///
-        /// <b>기둥은 통행을 막지 않는다</b>(6° 간격이라 기둥 사이가 리전에 따라 4.7~8m 빈다) — 잠긴 리전을 막는 것은
+        /// <b>기둥은 통행을 막지 않는다</b>(6° 간격이라 기둥 사이가 리전에 따라 4.7~8m 빈다. 난간이 막는 초원은 예외다 —
+        /// <see cref="HasSolidRail"/>, 겹친 쪽 끝은 <see cref="CloseFenceEnd"/>가 이 원까지 잇는다) — 잠긴 리전을 막는 것은
         /// <c>PlayerMovement.IsBlockedPosition</c>의 원 판정(<c>RegionData.ContainsPoint</c>)이라 기둥을 빼도 진입 차단은 그대로다.
         /// 겹친 자리의 경계는 위에 깔리는 리전 바닥(평면 높이가 순번 × 1mm라 습지가 초원 위)의 색 경계로 읽힌다 —
         /// 그 색 경계가 곧 습지 잠금 원이다.
@@ -164,26 +165,34 @@ namespace InsectGame.Core
             const int segments = 60; // 6° 간격 (60 × 6 = 360°)
 
             // 빈 자리를 먼저 정한다 — 난간은 양 끝 기둥이 다 설 때만 잇는다(통로 쪽·다른 리전 쪽 모두)
+            const float stepDeg = 360f / segments;
             var open = new bool[segments];
+            var gatewayOpen = new bool[segments];
             var posts = new Vector3[segments];
             for (int s = 0; s < segments; s++)
             {
-                float angDeg = (360f / segments) * s;
-                float rad = angDeg * Mathf.Deg2Rad;
-                posts[s] = r.centerPosition + new Vector3(Mathf.Cos(rad) * fenceR, 0f, Mathf.Sin(rad) * fenceR);
-                open[s] = IsInGateway(angDeg, gateways) || IsInsideOtherRegionFence(routeRegions, r, posts[s]);
+                float angDeg = stepDeg * s;
+                posts[s] = FenceRingPoint(r, fenceR, angDeg);
+                gatewayOpen[s] = IsInGateway(angDeg, gateways);
+                open[s] = gatewayOpen[s] || IsInsideOtherRegionFence(routeRegions, r, posts[s]);
             }
 
+            bool solid = HasSolidRail(r.regionId);
             for (int s = 0; s < segments; s++)
             {
                 if (open[s]) continue;
-                float angDeg = (360f / segments) * s;
+                float angDeg = stepDeg * s;
                 BuildFencePost(posts[s], angDeg, fenceMat, r.regionId);
 
                 // 다음 기둥까지 잇는 난간 — 통로(gateway)나 다른 리전 쪽으로 빈 자리로는 잇지 않는다
                 int next = (s + 1) % segments;
-                if (open[next]) continue;
-                BuildFenceRail(posts[s], posts[next], r.regionId, s);
+                int prev = (s + segments - 1) % segments;
+                if (!open[next]) BuildFenceRail(posts[s], posts[next], r.regionId, s);
+
+                // 막힌 울타리는 겹친 리전 쪽 끝을 그 리전의 원까지 잇는다(통로 쪽은 비워 둔다)
+                if (!solid) continue;
+                if (open[next] && !gatewayOpen[next]) CloseFenceEnd(r, fenceR, angDeg, stepDeg, fenceMat, s);
+                if (open[prev] && !gatewayOpen[prev]) CloseFenceEnd(r, fenceR, angDeg, -stepDeg, fenceMat, s);
             }
             // 기존 marker를 도로 옆 양면 이정표로 재사용한다. 지역당 하나만 만든다.
             for (int g = 0; g < gateways.Count; g++)
@@ -194,6 +203,61 @@ namespace InsectGame.Core
                 BuildGatewaySign(r, gateway, outward, g);
             }
         }
+
+        private static Vector3 FenceRingPoint(RegionData r, float fenceR, float angDeg)
+        {
+            float rad = angDeg * Mathf.Deg2Rad;
+            return r.centerPosition + new Vector3(Mathf.Cos(rad) * fenceR, 0f, Mathf.Sin(rad) * fenceR);
+        }
+
+        /// <summary>
+        /// 난간이 <b>통행을 막는</b> 리전인가. 초원은 목장 울타리(기둥 + 가로대 두 줄)로 빈틈없이 둘러 그려지므로 그림대로 막는다 —
+        /// 나가는 길은 통로(길·이정표) 하나다. 다른 리전의 경계는 듬성듬성 선 바위·둔덕·말뚝이라 사이로 다니고,
+        /// 빈 골짜기는 끊긴 철사 울타리(버려진 목장)라 그대로 둔다.
+        /// </summary>
+        internal static bool HasSolidRail(string regionId) => regionId == "meadow";
+
+        /// <summary>다른 리전의 <b>원 안</b>인가(<c>RegionData.ContainsPoint</c> — 잠긴 리전을 막는 판정과 같은 원).</summary>
+        private static bool IsInsideOtherRegion(RegionData[] regions, RegionData self, Vector3 pos)
+        {
+            if (regions == null) return false;
+            foreach (RegionData o in regions)
+                if (o != null && o != self && o.ContainsPoint(pos)) return true;
+            return false;
+        }
+
+        /// <summary>
+        /// 울타리가 겹친 리전 앞에서 끊기는 자리를 <b>그 리전의 원까지</b> 잇는다(끝 기둥 + 난간).
+        ///
+        /// 겹친 리전 쪽 기둥은 그 리전의 울타리 줄(반경 − 1m) 안에 들면 빠진다(<see cref="IsInsideOtherRegionFence"/>).
+        /// 그런데 기둥이 6° 간격(초원에서 7.7m)이라 마지막 기둥과 그 리전의 원 사이가 최대 한 칸 빈다 — 초원·습지에서
+        /// 3.6m였고, 습지가 잠긴 동안에도 그 틈으로 울타리 밖에 나갈 수 있었다. 원 안으로 조금 더 들어가서 끝낸다:
+        /// 원 안쪽은 잠겨 있으면 원 판정이 막고, 열려 있으면 그 리전으로 넘어가는 자리다.
+        /// </summary>
+        private void CloseFenceEnd(RegionData r, float fenceR, float fromDeg, float stepDeg, Material mat, int index)
+        {
+            Vector3 from = FenceRingPoint(r, fenceR, fromDeg);
+            if (IsInsideOtherRegion(routeRegions, r, from)) return;   // 기둥이 이미 그 리전 원 안이다
+
+            // fromDeg(원 밖) ~ fromDeg + stepDeg(그 리전의 울타리 줄 안 = 원 안) 사이에서 원에 들어서는 각도를 찾는다
+            float lo = 0f, hi = 1f;
+            for (int i = 0; i < 12; i++)
+            {
+                float mid = (lo + hi) * 0.5f;
+                if (IsInsideOtherRegion(routeRegions, r, FenceRingPoint(r, fenceR, fromDeg + stepDeg * mid))) hi = mid;
+                else lo = mid;
+            }
+            float marginDeg = FenceEndOverlap / fenceR * Mathf.Rad2Deg;
+            float endDeg = fromDeg + stepDeg * Mathf.Min(1f, hi + marginDeg / Mathf.Abs(stepDeg));
+            Vector3 to = FenceRingPoint(r, fenceR, endDeg);
+            if ((to - from).sqrMagnitude < 0.25f) return;
+
+            BuildFencePost(to, endDeg, mat, r.regionId);
+            BuildFenceRail(from, to, r.regionId, index);
+        }
+
+        /// <summary>울타리 끝이 겹친 리전의 원 안으로 들어가는 길이(m). 플레이어 검사 구(반경 0.4m)보다 길어야 틈이 안 남는다.</summary>
+        private const float FenceEndOverlap = 0.8f;
 
         private void BuildGatewaySign(RegionData region, Vector3 gateway, Vector3 outward, int index)
         {
@@ -521,6 +585,34 @@ namespace InsectGame.Core
                 float y = rails == 1 ? height - 0.12f : height * (0.5f + 0.5f * k);
                 Deco(PrimitiveType.Cube, (from + to) * 0.5f + Vector3.up * y, rot, new Vector3(thick, thick, len), color);
             }
+            if (HasSolidRail(regionId)) AddRailBlocker((from + to) * 0.5f, rot, len);
+        }
+
+        private Transform railBlockerRoot;
+
+        /// <summary>난간 차단 콜라이더의 두께(m). 보이는 가로대(0.11m)보다 조금 두껍게 — 기둥(0.24m)보다는 얇다.</summary>
+        private const float RailBlockerThickness = 0.2f;
+
+        /// <summary>
+        /// 난간 한 칸의 통행 차단. 보이는 가로대는 합친 메시(<see cref="Deco"/>)라 콜라이더가 없어서, 눈에는 막힌 울타리인데
+        /// 기둥 사이(초원 약 7.7m)를 그대로 걸어 나갔다. 바닥부터 <see cref="FenceColliderTopY"/>까지 얇은 벽을 세운다 —
+        /// 기둥 콜라이더와 같은 높이라 <c>PlayerMovement.IsBlockedPosition</c>의 검사 구(발 위 1.0~1.8m)에 온전히 걸린다.
+        ///
+        /// <b>레이어는 Ignore Raycast(2)다.</b> 겹침 검사(<c>OverlapSphere</c>)는 기본이 전 레이어라 이 벽을 보지만,
+        /// 레이·구 캐스트는 기본이 이 레이어를 건너뛴다 — 보이지 않는 벽이 카메라 차폐(<c>CameraFollower.ResolveObstruction</c>,
+        /// 남쪽 울타리 앞에 서면 카메라가 3.5m로 당겨졌을 것이다)·탭 이동·곤충 탭·접지 레이에 끼어들지 않는다.
+        /// </summary>
+        private void AddRailBlocker(Vector3 middle, Quaternion rotation, float length)
+        {
+            if (railBlockerRoot == null)
+            {
+                railBlockerRoot = new GameObject("FenceRailBlockers").transform;
+                railBlockerRoot.SetParent(transform, false);
+            }
+            var blocker = new GameObject("FenceRailBlocker") { layer = 2 };
+            blocker.transform.SetParent(railBlockerRoot, false);
+            blocker.transform.SetPositionAndRotation(middle + Vector3.up * (FenceColliderTopY * 0.5f), rotation);
+            blocker.AddComponent<BoxCollider>().size = new Vector3(RailBlockerThickness, FenceColliderTopY, length);
         }
 
         // ── 울타리 장식 배치(합친 메시) ──

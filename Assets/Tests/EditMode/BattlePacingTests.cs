@@ -168,6 +168,30 @@ namespace InsectGame.Tests
             Assert.Greater(battle.PlayerHpAfterPlayerAction, battle.PlayerHpAfterEnemyAction);
         }
 
+        // 상대가 자기에게 건 버프는 상대 것이다 — 상태 줄(DrawHpBox)이 targetIsPlayer로 편을 가르고,
+        // 가운데 문구는 자리로 편을 알 수 없으니 "상대"를 붙인다.
+        [Test]
+        public void EnemySelfBuff_BelongsToTheEnemy_AndSaysSo()
+        {
+            var battle = CreateBattle(2, 15, 30);
+            var buff = ScriptableObject.CreateInstance<InsectSkill>();
+            objects.Add(buff);
+            buff.effectType = SkillEffectType.BuffAttack;
+            buff.effectValue = 0.3f;
+            buff.effectDurationTurns = 3;
+            typeof(InsectBattleController).GetMethod("ApplySkill", BindingFlags.NonPublic | BindingFlags.Instance)
+                .Invoke(battle, new object[] { enemy, player, buff, false });
+
+            InsectBattleController.EffectSnapshot[] effects = battle.GetActiveEffects();
+            Assert.AreEqual(1, effects.Length);
+            Assert.IsFalse(effects[0].targetIsPlayer, "상대의 자기 버프가 내 곤충에 걸렸다");
+            Assert.AreEqual(InsectBattleController.EffectKind.AtkBuff, effects[0].kind);
+            Assert.Greater(effects[0].value, 0f);
+
+            Assert.AreEqual("공격력 상승!", InsectBattleController.SidedText(true, "공격력 상승!"));
+            Assert.AreEqual("상대 공격력 상승!", InsectBattleController.SidedText(false, "공격력 상승!"));
+        }
+
         [Test]
         public void PlayerStun_SkipsAnimationAndDoesNotSpendSkillCooldown()
         {

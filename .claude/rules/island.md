@@ -62,6 +62,10 @@
 방문·좋아요는 Cloud Function `socialPvpApi`의 액션(`publishIsland`·`getIsland`·`likeIsland`·`getMyIsland`·`deleteIsland`)이고
 저장은 `islands/{uid}`다. 규격은 `Docs/SocialPvp.md` 「섬 공유」. 타인 문서는 규칙상 클라이언트가 직접 못 읽는다.
 
+**운영에는 `socialPvpApi`가 배포돼 있지 않다**(2026-10-02 확인 — 함수 0건, 주소 404. 같은 날 배포하지 않기로 정했다).
+"방문이 안 된다"·"`s_island_visit`이 안 깨진다"는 보고는 버그가 아니라 이 상태다. 섬만 따로 켤 수 없다 —
+배포하면 친구·PvP·월드 채널이 함께 켜진다(`Docs/SocialPvp.md` 「배포」).
+
 - 받은 스냅샷은 **남이 만든 데이터**다 — `IslandSaveRules.SanitizeSnapshot`이 모르는 물건·경계 밖·겹침을 버린다.
 - 올리는 건 `BuildSnapshot`의 축약본뿐이다(instanceId·재화 없음).
 - 계정 삭제는 Auth 계정을 지우기 **전에** `deleteIsland`를 부른다(`AuthManager.DeleteAccountCoroutine`) — 지운 뒤엔 토큰이 없다.
@@ -74,6 +78,10 @@
   그 위에 뜨는 안내 배너는 자기 자리를 `FieldHudInput`에 등록하고, 꾸미기 화면이 그걸 보고 탭을 양보한다
   (OnGUI 호출 순서가 정해져 있지 않아 먼저 도는 쪽이 탭을 먹는다).
 - 섬 화면은 이벤트를 구독하지 않고 상태를 읽는다 — UI 루트가 꺼졌다 켜질 때 구독이 사라지는 계열(subscription_lint)을 피한다.
+- 안내 배너(`IslandGuideUI`)는 ✕나 12초 경과로 사라진다. **닫는 것은 표시만이다** — 단계는 실제 행동으로만 넘어가고
+  (다시 보기만 ✕가 끝낸다: `EndGuideReplay`), 다음 단계·섬 재진입 때 다시 뜬다. 모바일 필드에서는 화면 가운데 줄(캐릭터 발 아래)에
+  놓는다 — 좌상단은 미니맵·퀘스트 칩 자리라 그리기 순서가 정해지지 않은 IMGUI에서 배너가 그 밑에 깔렸다(2026-10-02).
+  **검수 fixture에 없는 HUD와의 겹침은 캡처로 안 보인다** — `island-ui`의 안내 장면에 진짜 미니맵과 퀘스트 칩 자리 대역을 함께 띄우는 이유다.
 
 ## 검증
 

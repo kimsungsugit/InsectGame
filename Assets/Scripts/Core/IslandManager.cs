@@ -835,6 +835,16 @@ namespace InsectGame.Core
             ApplyGuideStep(before, (IslandGuideStep)Mathf.Min((int)IslandGuideStep.Done, (int)before + 1));
         }
 
+        /// <summary>
+        /// 다시 보기를 중간에 그만둔다(안내 배너의 ✕). 첫 안내에서는 아무것도 하지 않는다 — 그쪽 단계는 실제 행동으로만
+        /// 넘어가고, 배너를 닫는 건 화면에서 치우는 것뿐이다.
+        /// </summary>
+        public void EndGuideReplay()
+        {
+            if (save.guideDone || !guideReplay) return;
+            ApplyGuideStep((IslandGuideStep)save.guideStep, IslandGuideStep.Done);
+        }
+
         public bool GuideIsReplay => guideReplay;
 
         private void ApplyGuideStep(IslandGuideStep before, IslandGuideStep after)

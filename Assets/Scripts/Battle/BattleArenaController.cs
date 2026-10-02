@@ -705,8 +705,11 @@ namespace InsectGame.Battle
                         if (!isActive || arenaRoot == null || attacker == null || target == null) yield break;
                         if (support)
                         {
-                            if (self) PlayBuffEffect(isPlayerAttacking, element);
-                            else PlayDebuffEffect(!isPlayerAttacking, element);
+                            // 버프·회복은 쓴 쪽(제자리 = start), 약화는 맞는 쪽(destination)에 띄운다. 자리는 이 코루틴이
+                            // 이미 고른 시전자·대상에서 받는다 — 예전엔 진영 bool로 모델을 다시 골랐는데 상대 쪽 분기도
+                            // playerModel이라, 상대가 자기에게 건 버프가 내 곤충 위에 떴다(2026-10-02 기기 보고).
+                            if (self) PlayBuffEffect(start, element);
+                            else PlayDebuffEffect(destination);
                         }
                         else
                         {
@@ -1572,11 +1575,9 @@ namespace InsectGame.Battle
 
         // --- Buff / Debuff Effects ---
 
-        private void PlayBuffEffect(bool onPlayer, InsectElement element)
+        private void PlayBuffEffect(Vector3 position, InsectElement element)
         {
-            GameObject target = onPlayer ? (teamModels != null && selectedTeamIndex >= 0 && selectedTeamIndex < teamModels.Length ? teamModels[selectedTeamIndex] : playerModel) : playerModel;
-            if (target == null) return;
-            StartCoroutine(BuffEffectCoroutine(target.transform.position, GetElementColor3D(element)));
+            StartCoroutine(BuffEffectCoroutine(position, GetElementColor3D(element)));
         }
 
         private IEnumerator BuffEffectCoroutine(Vector3 pos, Color color)
@@ -1629,11 +1630,9 @@ namespace InsectGame.Battle
                 AudioManager.Instance.PlaySFX(SfxType.BuffApply);
         }
 
-        private void PlayDebuffEffect(bool onTarget, InsectElement element)
+        private void PlayDebuffEffect(Vector3 position)
         {
-            GameObject target = onTarget ? (bossModel ?? enemyModel) : playerModel;
-            if (target == null) return;
-            StartCoroutine(DebuffEffectCoroutine(target.transform.position));
+            StartCoroutine(DebuffEffectCoroutine(position));
         }
 
         private IEnumerator DebuffEffectCoroutine(Vector3 pos)

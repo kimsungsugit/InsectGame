@@ -259,7 +259,12 @@ namespace InsectGame.Core
 
             busy = false;
             if (response == null || !response.success)
-                LastError = ToUserMessage(response != null ? response.error : null, transportError);
+            {
+                // 404는 함수 주소 자체가 없다는 뜻이다 — 서버가 아직 배포되지 않았다(연결 실패와 구분해서 알린다).
+                LastError = status == 404
+                    ? "섬 공유 서버가 아직 준비되지 않았습니다."
+                    : ToUserMessage(response != null ? response.error : null, transportError);
+            }
 
             onComplete?.Invoke(response);
             StateChanged?.Invoke();

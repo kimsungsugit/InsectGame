@@ -143,6 +143,11 @@ namespace InsectGame.UI
             hud.AutoWire(editUi, shopUi, insectUi, visitUi, guideUi);
             var quick = new GameObject("IslandQAQuickBar").AddComponent<QuickAccessBarUI>();
             quick.AutoWire(visitUi);
+            // 좌측 스택 — 진짜 미니맵과, 퀘스트 칩·목표 행이 차지하는 자리의 대역(안내 배너가 여기에 깔렸었다).
+            var minimap = new GameObject("IslandQAMinimap").AddComponent<MinimapUI>();
+            minimap.AutoWire(regionManager);
+            var questStandIn = new GameObject("IslandQAQuestStandIn").AddComponent<IslandQaQuestChipStandIn>();
+            questStandIn.enabled = false;
 
             if (!world.EnterOwnIsland())
             {
@@ -200,18 +205,27 @@ namespace InsectGame.UI
             visitUi.CloseModal();
 
             // ── 안내 — 첫 단계 배너, 꾸미기 화면 위의 배너, 도움말 ──
+            questStandIn.enabled = true;
             save.guideDone = false;
             save.guideStep = (int)IslandGuideStep.OpenEdit;
             yield return Wait(0.6f);
             shots++; yield return Capture(output, "12-guide-first");
+            // 시간이 지나면 스스로 사라진다 — 단계는 그대로다(행동으로만 넘어간다).
+            yield return Wait(IslandGuideUI.CoachSeconds + 0.6f);
+            shots++; yield return Capture(output, "12b-guide-autohidden");
+            bool stillActive = island.GuideActive && island.GuideStep == IslandGuideStep.OpenEdit;
+            // 다음 단계에 가면 다시 뜬다(꾸미기 화면 위).
             save.guideStep = (int)IslandGuideStep.PlaceFirst;
+            questStandIn.enabled = false;
             editUi.Open();
             yield return Wait(1.0f);
             shots++; yield return Capture(output, "13-guide-over-edit");
             editUi.CloseModal();
+            questStandIn.enabled = true;
             save.guideStep = (int)IslandGuideStep.Finish;
             yield return Wait(0.8f);
             shots++; yield return Capture(output, "14-guide-finish");
+            questStandIn.enabled = false;
             save.guideDone = true;
             guideUi.OpenHelp();
             yield return Wait(0.8f);
@@ -254,7 +268,9 @@ namespace InsectGame.UI
                 $"(mobile layout={UIScale.IsMobileLayout}).\n" +
                 "In-memory island save (IslandManager.PersistenceEnabled=false); wallet/candy on an inactive host and no " +
                 "purchase/harvest calls, so nothing is written to disk.\n" +
-                "Own island: size level 1 (14x14), 14 objects, 4 released insects, ~5h accrued. Visit: snapshot fixture.\n");
+                "Own island: size level 1 (14x14), 14 objects, 4 released insects, ~5h accrued. Visit: snapshot fixture.\n" +
+                "Guide shots: real MinimapUI + a stand-in for the quest chip/objective rows (TutorialQuestUI needs a login session).\n" +
+                $"Guide banner auto-hide: step kept after {IslandGuideUI.CoachSeconds:0}s = {(stillActive ? "PASS" : "FAIL")}\n");
             Application.Quit(shots > 0 ? 0 : 3);
         }
 
@@ -315,6 +331,40 @@ namespace InsectGame.UI
             Texture2D shot = ScreenCapture.CaptureScreenshotAsTexture();
             File.WriteAllBytes(Path.Combine(output, name + ".png"), shot.EncodeToPNG());
             Object.Destroy(shot);
+        }
+    }
+
+    /// <summary>
+    /// 검수 전용 — 퀘스트 칩과 목표 행이 차지하는 <b>자리</b>만 그린다(진짜 <see cref="TutorialQuestUI"/>는 로그인 세션이 있어야
+    /// 칩을 그린다). 좌표는 그쪽과 같은 출처(<see cref="MinimapUI.LeftX"/>·<see cref="MinimapUI.StackBelowY"/>, 폭 500/400)에서 받는다.
+    /// 섬 안내 배너가 이 자리와 겹치는지 눈으로 보려는 것이다.
+    /// </summary>
+    internal class IslandQaQuestChipStandIn : MonoBehaviour
+    {
+        private void OnGUI()
+        {
+            if (ModalUIRegistry.IsAnyOpen()) return;
+            UIScale.Begin();
+            UITheme t = UITheme.Instance;
+            bool mobile = UIScale.IsMobileLayout;
+            float w = mobile ? Mathf.Min(500f, UISafeLayout.ContentWidth) : 400f;
+            const float chipH = 96f;
+            const float rowH = 64f;
+            float y = mobile ? MinimapUI.StackBelowY : UISafeLayout.BottomY(chipH);
+            Rect chip = new Rect(MinimapUI.LeftX, y, w, chipH);
+            UISurface.HudCard(chip);
+            IslandUiKit.Label(new Rect(chip.x + 14f, chip.y + 8f, chip.width - 28f, 40f), "퀘스트 칩 자리(검수용)",
+                IslandUiKit.Body, t.accentAmber);
+            IslandUiKit.Label(new Rect(chip.x + 14f, chip.y + 50f, chip.width - 28f, 36f), "진행 0 / 3",
+                IslandUiKit.Small, t.textSecondary);
+            if (mobile)
+            {
+                Rect row = new Rect(chip.x, chip.yMax + UITheme.Space.XS, w, rowH);
+                UISurface.HudCard(row);
+                IslandUiKit.Label(new Rect(row.x + 14f, row.y + 8f, row.width - 28f, rowH - 16f), "목표 행 자리(검수용)",
+                    IslandUiKit.Small, t.textSecondary);
+            }
+            UIScale.End();
         }
     }
 }

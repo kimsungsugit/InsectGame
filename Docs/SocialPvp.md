@@ -21,6 +21,15 @@
 
 ## 배포
 
+**2026-10-02 기준 운영 프로젝트(`insect-exploration-8f0ca`)에는 배포된 함수가 하나도 없다** —
+`firebase functions:list`가 0건이고 `socialPvpApi` 주소는 404다(`verifyGooglePlayPurchase`도 미배포).
+그래서 아래 명령은 "액션 추가"가 아니라 **온라인 기능 전체의 첫 운영 배포**다:
+- 친구·랭크 PvP·5인 월드 채널·섬 공유가 **함께** 켜진다. 이미 설치된 클라이언트도 로그인하면 이 서버를 쓰기 시작한다.
+- Cloud Functions 배포는 종량제(Blaze) 요금제가 필요하다. 월드 채널은 접속자마다 초당 1회, PvP는 2.5초마다 호출한다.
+- 단위·에뮬레이터 테스트는 통과했지만 운영에서 돌아간 적은 없다.
+
+같은 날 사용자가 **배포하지 않기로** 정했다. 다시 배포를 검토할 때 이 절부터 읽을 것.
+
 Firebase CLI 로그인 후 프로젝트 루트에서 실행한다.
 
 ```powershell
@@ -144,8 +153,9 @@ islands/{uid}/likes/{likerUid}
 
 ### 배포 (사용자가 직접 실행)
 
-섬 액션은 기존 함수 `socialPvpApi`에 들어 있고 `islands` 규칙은 `firestore.rules`에 있으므로 명령은 위 「배포」와 같다.
-**코드만 작성된 상태이며 배포는 사용자가 직접 실행한다.** 프로젝트 루트에서:
+섬 액션은 함수 `socialPvpApi`에 들어 있고 `islands` 규칙은 `firestore.rules`에 있으므로 명령은 위 「배포」와 같다.
+**코드만 작성된 상태다.** `socialPvpApi` 자체가 운영에 올라간 적이 없으므로(위 「배포」 머리말) 섬만 따로 켤 수는 없다 —
+섬 공유를 켜면 친구·PvP·월드가 함께 켜진다. 프로젝트 루트에서:
 
 ```powershell
 npx --yes firebase-tools@15.22.1 login
@@ -153,4 +163,5 @@ npx --yes firebase-tools@15.22.1 deploy --only functions:socialPvpApi,firestore:
 ```
 
 배포 전 확인: `cd functions; npm test`(단위)와 `./Tools/Test-SocialPvpEmulator.ps1`(에뮬레이터 통합, 결과에 `"islandShare": "passed"`).
-배포 전에는 운영 서버가 섬 액션을 몰라 `unknown_action`(400)으로 답한다.
+배포 전에는 함수 주소 자체가 없어 **404**가 온다(클라이언트는 "섬 공유 서버가 아직 준비되지 않았습니다"로 보여 준다).
+`unknown_action`(400)은 섬 액션을 모르는 **옛 버전의 함수**가 올라가 있을 때만 나온다.
