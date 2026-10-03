@@ -521,6 +521,30 @@ def quest_types_enum() -> list:
     ]
 
 
+# 조건부 퀘스트(QuestType.CaptureTrait / BattleFeat)가 읽는 TutorialQuest 조건 필드.
+# 판정은 QuestTraitRules(C#)가 한다 — 여기는 "저작이 그 판정에 닿는가"만 본다.
+TRAIT_CAPTURE_FIELDS = ("minSizeMm", "maxSizeMm", "minSizeRatio", "maxSizeRatio", "requireShiny")
+TRAIT_BATTLE_FIELDS = ("minLevelEdge", "maxTurns", "minHpPercent", "resetOnLoss")
+TRAIT_SHARED_FIELDS = ("requiredElement", "minRarity")
+_TRAIT_FIELDS = TRAIT_CAPTURE_FIELDS + TRAIT_BATTLE_FIELDS + TRAIT_SHARED_FIELDS
+# 기본값을 일부러 적어 둔 것은 조건이 아니다(C# 필드 기본값과 같은 값).
+_TRAIT_DEFAULTS = {"0", "0f", "0.0f", "false", "InsectElement.None", "InsectRarity.Common"}
+
+
+def _trait_fields(block: str) -> dict:
+    """퀘스트 블록에서 **채워진** 조건 필드만 {필드: 값 문자열}로."""
+    out = {}
+    for name in _TRAIT_FIELDS:
+        m = re.search(rf"\b{name}\s*=\s*([^,\n]+)", block)
+        if not m:
+            continue
+        val = m.group(1).strip()
+        if val in _TRAIT_DEFAULTS:
+            continue
+        out[name] = val
+    return out
+
+
 def quest_defs() -> list:
     """[{questId, type, prereq, reward_insect, reward_item, reward_item_count, target}, ...]
 
@@ -559,6 +583,8 @@ def quest_defs() -> list:
             "target_increment": i("targetIncrement") or 0,
             # 지역 의뢰(Side 전용) — 비면 None(어디서든 센다).
             "region": s("requiredRegionId"),
+            # 조건부 퀘스트 조건 — 채운 필드만. 조건부 타입이 아니어도 담아 둔다(엉뚱한 타입에 쓴 것을 검사 13이 잡는다).
+            "trait_fields": _trait_fields(block),
         })
     if not out:
         raise ExtractorBroken("allQuests 배열에서 퀘스트를 하나도 못 읽었다 — 구조가 바뀌었는가?")

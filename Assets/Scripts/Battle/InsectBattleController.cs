@@ -141,6 +141,11 @@ namespace InsectGame.Battle
         private bool enemyShinyAtStart; // 시작 시점 스냅샷 — 도주/풀 재사용된 라이브 참조로 보상 오등록 방지
         private bool duelMode;          // NPC 대결 — 포획 롤·야생 아이템 드랍 없음(StartDuel 참조)
 
+        // 이번 전투에서 내가 행동해 **차례가 넘어간** 횟수 — 조건부 퀘스트(BattleFeat "N번 안에 이기기")의 입력.
+        // 스턴으로 건너뛴 차례도 센다(턴은 흘렀다). 입력이 거절돼 차례가 안 넘어간 호출은 세지 않는다.
+        // 샌드박스의 sandboxPlayerActions와 다른 수다 — 그쪽은 실제로 친 행동만 세어 피해 배율에 쓴다.
+        private int playerActionCount;
+
         // ── 샌드박스(「챔피언의 꿈」) ──
         // 보상·도감·HP 저장·퀘스트·스토리 어느 것도 건드리지 않는 연출용 전투. 구독자가 많은 BattleEnded는
         // 그대로 쏘되(결과 화면이 그 신호로 뜬다) 퀘스트·스토리 쪽 핸들러가 이 표지를 보고 건너뛴다.
@@ -152,6 +157,24 @@ namespace InsectGame.Battle
         /// 값을 지키므로 핸들러가 "방금 끝난 전투"를 물을 수 있다(<see cref="EnemyInsectId"/>와 같은 이유).
         /// </summary>
         public bool IsSandbox => sandbox;
+
+        // ── 낮·밤·날씨 보정(BattleEnvironment) ──
+        // 야생 실외 전투에서만 건다(수문장·대결·샌드박스·실내 서브에리어 제외 — 규칙은 BattleEnvironment.Applies).
+        // 전투를 시작한 순간의 하늘로 끝까지 싸운다 — 교체로 들어온 곤충도 같은 하늘로 잰다(상대 표지는 시작 때 정해져 그대로다).
+        private WorldStateProvider worldStateProvider;
+        private RegionManager regionManager;
+        private bool environmentActive;
+        private WorldState environmentState;
+
+        /// <summary>
+        /// 이번 전투에서 <b>내 곤충</b>이 받는 낮·밤·날씨 보정(전투 화면 칩). 영향이 없거나 보정이 안 걸리는 전투면
+        /// <see cref="BattleEnvironmentNote.None"/>. <c>onStarted</c>/<see cref="BattleUpdated"/>보다 먼저 채워지고,
+        /// 교체(<see cref="SwapPlayerInsect"/>)하면 새 곤충 것으로 바뀐다.
+        /// </summary>
+        public BattleEnvironmentNote PlayerEnvironment { get; private set; } = BattleEnvironmentNote.None;
+
+        /// <summary>이번 전투에서 <b>상대 곤충</b>이 받는 낮·밤·날씨 보정. 규칙은 <see cref="PlayerEnvironment"/>와 같다.</summary>
+        public BattleEnvironmentNote EnemyEnvironment { get; private set; } = BattleEnvironmentNote.None;
 
         // ── 「장부」 압박(명부회 보스전 전용) ─────────────────────────────
         // 규칙과 상수는 LedgerPressure(순수부)가 들고, 임계는 NpcBossDuels 표가 든다.
@@ -214,6 +237,8 @@ namespace InsectGame.Battle
             enemyShinyAtStart = enemy.IsShiny;
             EnemyGuardianRegionId = enemy.GuardianRegionId;  // 같은 이유의 스냅샷
             duelMode = false;
+            // 낮·밤·날씨 보정 — onStarted/BattleUpdated보다 먼저 걸어야 화면이 첫 프레임부터 칩과 보정된 능력치를 본다.
+            ApplyWildEnvironment();
             onStarted?.Invoke(playerStats, enemyStats);
             BattleUpdated?.Invoke(playerStats, enemyStats);
         }
@@ -317,9 +342,72 @@ namespace InsectGame.Battle
             DidEscape = false;
             sandbox = false;   // StartSandbox가 공통 초기화 뒤에 다시 세운다 — 야생·대결이 이전 샌드박스 표지를 물려받지 않게
             sandboxPlayerActions = 0;
+            playerActionCount = 0;   // 이전 전투의 횟수를 물려받으면 "N번 안에 이기기"가 조용히 어긋난다
+            // 낮·밤·날씨 보정도 sandbox 표지와 같은 이유로 여기서 끈다 — 야생 전투 뒤 대결·꿈 챔피언전이 이전 칩을 물려받지 않게.
+            // 야생 전투만 StartBattle이 공통 초기화 뒤에 다시 건다(ApplyWildEnvironment).
+            environmentActive = false;
+            environmentState = default;
+            PlayerEnvironment = BattleEnvironmentNote.None;
+            EnemyEnvironment = BattleEnvironmentNote.None;
             BeginResolvedRound();
             // onStarted/BattleUpdated는 호출부가 야생/듀얼 고유 필드(enemyEntity 등)를 채운 뒤에 울린다 —
             // BattleScreenUI.OnBattleUpdated가 GetEnemyEntity()를 읽어 아레나 위치를 잡기 때문이다.
+        }
+
+        /// <summary>
+        /// 야생 전투에 낮·밤·날씨 보정을 건다 — <see cref="StartBattle"/>이 듀얼·수문장 표지를 세운 <b>뒤</b>,
+        /// 시작 신호를 쏘기 <b>전</b>에 부른다. 적과 내 곤충이 각자의 성향으로 ATK·DEF를 보정받는다(HP는 그대로).
+        /// 시계·날씨를 모르면(제공자 없음) 걸지 않는다.
+        /// </summary>
+        private void ApplyWildEnvironment()
+        {
+            RegionManager regions = Regions;
+            SubAreaData subArea = regions != null ? regions.CurrentSubArea : null;
+            bool guardian = !string.IsNullOrEmpty(EnemyGuardianRegionId);
+            if (!BattleEnvironment.Applies(duelMode, sandbox, guardian, BattleEnvironment.IsIndoor(subArea))) return;
+
+            WorldStateProvider provider = WorldStateSource;
+            if (provider == null) return;
+
+            RegionData region = regions != null ? regions.CurrentRegion : null;
+            environmentState = provider.GetWorldState(BattleEnvironment.WeatherRegionId(region, subArea));
+            environmentActive = true;
+
+            EnemyEnvironment = BattleEnvironment.NoteFor(enemyStats.Data, environmentState);
+            enemyStats.ApplyEnvironment(EnemyEnvironment.Multiplier);
+            ApplyPlayerEnvironment();
+        }
+
+        // 지금 싸우는 내 곤충에 이번 전투의 하늘을 건다 — 시작과 교체가 같이 쓴다. 보정이 안 걸리는 전투면 표지만 비운다.
+        private void ApplyPlayerEnvironment()
+        {
+            if (!environmentActive || playerStats == null)
+            {
+                PlayerEnvironment = BattleEnvironmentNote.None;
+                return;
+            }
+
+            PlayerEnvironment = BattleEnvironment.NoteFor(playerStats.Data, environmentState);
+            playerStats.ApplyEnvironment(PlayerEnvironment.Multiplier);
+        }
+
+        // AutoWire가 안 됐으면(부트스트랩 순서·테스트) 씬에서 찾는다. 전투 시작 때만 불려 비용은 무시할 만하다.
+        private WorldStateProvider WorldStateSource
+        {
+            get
+            {
+                if (worldStateProvider == null) worldStateProvider = FindFirstObjectByType<WorldStateProvider>();
+                return worldStateProvider;
+            }
+        }
+
+        private RegionManager Regions
+        {
+            get
+            {
+                if (regionManager == null) regionManager = FindFirstObjectByType<RegionManager>();
+                return regionManager;
+            }
         }
 
         /// <summary>
@@ -385,6 +473,8 @@ namespace InsectGame.Battle
             }
 
             BeginResolvedRound();
+            // 쿨다운 거절(위 return)을 지난 입력만 센다. 기절로 건너뛰는 차례와 마무리 일격(적 차례 없음)도 한 번이다.
+            playerActionCount++;
 
             // 기절 상태면 이번 행동 스킵(스킬 소모 없음) — 적은 그대로 반격.
             if (playerStunTurns > 0)
@@ -432,6 +522,7 @@ namespace InsectGame.Battle
             }
             if (battleEnded) return; // 종료 후 액션 차단
             BeginResolvedRound();
+            playerActionCount++;   // UseSkill과 같은 이유 — 기절한 차례도 한 번
 
             if (playerStunTurns > 0)
             {
@@ -474,8 +565,7 @@ namespace InsectGame.Battle
             if (sandbox) return false;     // 챔피언전에서는 도망치지 않는다(화면도 도망 버튼을 그리지 않는다)
 
             BeginResolvedRound();
-            int levelDiff = playerStats.Level - enemyStats.Level;
-            float escapeChance = Mathf.Clamp(0.5f + levelDiff * 0.05f, 0.1f, 0.9f);
+            float escapeChance = BattleEscapeRules.Chance(playerStats.Level, enemyStats.Level);
             bool escaped = randomSource.Next01() < escapeChance;
 
             if (escaped)
@@ -494,6 +584,7 @@ namespace InsectGame.Battle
                 return true;
             }
 
+            playerActionCount++;   // 도주 성공은 위에서 끝났다 — 실패해 적 차례가 오는 경우만 한 번
             NoteLedgerAction(LedgerPressure.EscapeKey);
             UseEnemyTurn();
             SnapshotEnemyAction();
@@ -1030,7 +1121,9 @@ namespace InsectGame.Battle
                             lastCaptureSucceeded = true;
                             dexController?.RegisterCapture(enemyData.insectId);
                             // 전투는 CaptureController/CaptureResolved를 우회하므로 성공한 실제 포획만 직접 알린다.
-                            TutorialQuestManager.Instance?.NotifyCapture(enemyData.rarity);
+                            // 조건부 퀘스트(크기·속성·이로치)는 저장된 개체(captured)의 값을 읽는다 — 지어낸 값이 아니다.
+                            TutorialQuestManager.Instance?.NotifyCapture(
+                                CaptureFacts.From(enemyData, captured, enemyShinyAtStart));
                         }
                     }
                 }
@@ -1054,6 +1147,24 @@ namespace InsectGame.Battle
                 PersistActivePlayer();   // 승리 — 활성 곤충의 남은 HP·감염 영구 저장(전체치료 없음)
                 battleEnded = true;
                 lastPlayerWon = playerWon;
+                // 조건부 퀘스트(BattleFeat) — 야생·수문장·NPC 대결 승리가 모두 지나는 이 한 지점에서, 보상이 끝난 뒤
+                // BattleEnded 전에 직접 알린다(NotifyCapture와 같은 이유: 구독자 예외에 진행이 삼켜지면 안 된다).
+                // 내 곤충은 교체됐을 수 있어 **끝났을 때 싸우던** playerStats의 레벨·HP를 읽는다. 꿈속(샌드박스) 전투는 알리지 않는다.
+                // 통지가 던져도 전투 종료는 계속돼야 한다 — battleEnded는 이미 켜졌는데 BattleEnded가 안 울리면 결과 화면이
+                // 멈춘다. 진행은 매니저가 이벤트보다 먼저 저장하므로 예외를 삼켜도 잃는 것이 없다.
+                if (playerWon && !sandbox)
+                {
+                    try
+                    {
+                        TutorialQuestManager.Instance?.NotifyBattleFeat(BattleFacts.From(
+                            enemyStats.Data, enemyStats.Level, playerStats.Level,
+                            playerActionCount, playerStats.CurrentHp, playerStats.MaxHp));
+                    }
+                    catch (System.Exception e)
+                    {
+                        Debug.LogWarning($"[Battle] 조건부 퀘스트 통지 예외 — 전투 종료는 계속한다: {e.Message}");
+                    }
+                }
                 BattleEnded?.Invoke(playerWon);
                 if (duelMode) DuelEnded?.Invoke(playerWon);
             }
@@ -1203,6 +1314,18 @@ namespace InsectGame.Battle
             if (arena == null) arena = a;
         }
 
+        /// <summary>
+        /// 낮·밤·날씨 보정이 읽을 시계·날씨(<paramref name="provider"/>)와 지금 리전·서브에리어(<paramref name="regions"/>).
+        /// null로 넘기면 씬에서 찾는다(<c>FindFirstObjectByType</c>) — 그때도 없으면 전투 시작 때 다시 찾고, 끝내 없으면 보정을 걸지 않는다.
+        /// </summary>
+        public void AutoWire(WorldStateProvider provider, RegionManager regions)
+        {
+            if (worldStateProvider == null)
+                worldStateProvider = provider != null ? provider : FindFirstObjectByType<WorldStateProvider>();
+            if (regionManager == null)
+                regionManager = regions != null ? regions : FindFirstObjectByType<RegionManager>();
+        }
+
         private OutfitBonusProvider outfitBonus;
 
         public void AutoWire(OutfitBonusProvider bonus)
@@ -1224,6 +1347,9 @@ namespace InsectGame.Battle
             PersistActivePlayer();   // 교체 전 이전 곤충의 남은 HP·감염 저장(기절이면 0 그대로)
 
             playerStats = new InsectBattleStats(newInsect, newLevel, playerPid);
+            // 들어온 곤충도 이번 전투의 하늘로 잰다(야생에서만 — 대결·샌드박스는 environmentActive가 꺼져 있다).
+            // 아래 BattleUpdated보다 먼저라 화면이 새 곤충의 칩을 곧바로 본다.
+            ApplyPlayerEnvironment();
             BeginResolvedRound();
             playerOverrideSkills = ResolvePlayerSkills(newInsect, equippedSkills, playerPid);
             int skillCount = playerOverrideSkills != null ? playerOverrideSkills.Length : (newInsect.skills != null ? newInsect.skills.Length : 0);

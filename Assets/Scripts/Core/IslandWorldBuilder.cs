@@ -22,7 +22,7 @@ namespace InsectGame.Core
     /// 모양은 <see cref="IslandTerrainBuilder"/>·<see cref="IslandObjectBuilder"/>가 짓고(콜라이더 없음),
     /// 여기는 <b>밟는 땅·경계 벽·물건 차단</b> 콜라이더와 방목 곤충, 꾸미기 화면이 쓰는 미리보기를 맡는다.
     /// </summary>
-    public class IslandWorldBuilder : MonoBehaviour
+    public partial class IslandWorldBuilder : MonoBehaviour
     {
         /// <summary>
         /// 섬 중심(월드). 서브에리어 방(2000,·,2000)·배틀 아레나(1000,·,1000)·프리뷰 리그(·,-5000,·)와 겹치지 않고,
@@ -132,6 +132,9 @@ namespace InsectGame.Core
         }
         public bool IsOnIsland => mode != IslandMode.None;
         public bool IsVisiting => mode == IslandMode.Visit;
+
+        /// <summary>꾸미기 화면이 열려 있는가(<see cref="BeginEditCamera"/>~<see cref="EndEditCamera"/>). 손님 곤충이 그동안 들어서지 않는다.</summary>
+        public bool IsEditing => editCameraActive;
         public IslandSnapshot VisitSnapshot => visitSnapshot;
 
         public int CurrentSizeLevel =>
@@ -359,6 +362,7 @@ namespace InsectGame.Core
 
             if (mode == IslandMode.Own) island.NotifyEnteredOwnIsland();
             else if (!DreamMode) island.NotifyVisitedFriendIsland();
+            OnIslandEnteredForGuests();   // 손님 기록 정리(떠나 있는 동안 끝난 손님은 이미 떠났다) — IslandWorldBuilder.Guests.cs
 
             ModeChanged?.Invoke();
             return true;
@@ -423,6 +427,9 @@ namespace InsectGame.Core
             float limit = IslandGrid.HalfExtent(CurrentSizeLevel) + 3f;
             if (p.y < Origin.y - 3f || Mathf.Abs(p.x - Origin.x) > limit || Mathf.Abs(p.z - Origin.z) > limit)
                 TeleportPlayer(islandArea.centerPosition + Vector3.up * 0.5f, Quaternion.identity);
+
+            TickWorldMood();   // 방목 곤충의 시간·날씨 기분
+            TickGuests();      // 손님 곤충 — IslandWorldBuilder.Guests.cs
         }
 
         // ── 월드 짓기 ──
@@ -453,6 +460,7 @@ namespace InsectGame.Core
 
         private void DestroyWorld()
         {
+            RecallAllGuestBodies();   // 손님 몸은 root 밖(풀)에 있다 — 섬을 허물 때 같이 거둔다. 기록은 남는다.
             HideGhost();
             objectInstances.Clear();
             hiddenObjectIndex = -1;
@@ -554,6 +562,7 @@ namespace InsectGame.Core
             }
             RebuildObjects();
             RebuildInsects();   // 빈 칸이 달라졌다 — 곤충이 새 건물을 뚫고 다니지 않게
+            RevalidateGuestCells();   // 손님이 선 칸에 물건이 놓였다 — 그 몸은 거두고 다른 빈 칸에 다시 선다
             SetLayerRecursively(root, SubAreaWorldBuilder.GetSubAreaEnvLayer());
             Physics.SyncTransforms();
         }
@@ -650,7 +659,9 @@ namespace InsectGame.Core
             // 위치를 잡은 뒤에 짓는다 — BuildForBattle이 지금 자리를 기준점으로 삼는다.
             InsectEntity entity = go.AddComponent<InsectEntity>();
             entity.BuildForBattle(data, Mathf.Max(1, level), shiny);
-            go.AddComponent<IslandInsectWalker>().Initialize(Origin, freeCells, freeCellSet, index * 31 + 7);
+            IslandInsectWalker walker = go.AddComponent<IslandInsectWalker>();
+            walker.Initialize(Origin, freeCells, freeCellSet, index * 31 + 7);
+            if (moodStateKnown) walker.ApplyWorld(moodState);   // 다시 세운 곤충도 지금 시간·날씨의 기분으로
         }
 
         // 곤충 모델은 조각마다 자기 머티리얼 인스턴스를 든다(InsectEntity.ApplyColorRaw). GameObject만 지우면

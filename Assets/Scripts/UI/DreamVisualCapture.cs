@@ -85,6 +85,23 @@ namespace InsectGame.UI
             var director = new GameObject("DreamQADirector").AddComponent<DreamPrologueDirector>();
             director.AutoWire(null, movement, player.transform, regionManager, world, null, null, database, null);
 
+            // 도입 영상 — 진짜 영상을 실시간으로 틀고 영상 시각에 맞춰 찍는다(IMGUI 위에 영상이 덮이는지·가로세로 크롭).
+            // 디코더가 없는 환경이면 영상 대신 카드로 넘어가므로 그 경우엔 건너뛴다(README에 적는다).
+            director.ShowForCapture("opening-video", 0f);
+            float[] videoShots = { 1.2f, 2.6f, 3.5f, 4.8f, 6.15f, 6.5f };
+            string[] videoNames = { "tunnel", "flash", "reveal", "duelists", "faceoff", "after" };
+            bool videoPlayed = false;
+            for (int i = 0; i < videoShots.Length; i++)
+            {
+                float giveUp = Time.realtimeSinceStartup + 8f;
+                while (!director.IntroReachedCardForCapture && director.IntroClockForCapture < videoShots[i]
+                       && Time.realtimeSinceStartup < giveUp)
+                    yield return null;
+                if (director.IntroClockForCapture < 0f) break;   // 영상이 못 떴다(디코더 없음) 또는 이미 끝났다
+                videoPlayed = true;
+                shots++; yield return Capture(output, $"00-video-{i + 1}-{videoNames[i]}");
+            }
+
             // 도입 카드
             director.ShowForCapture("opening", 1.4f);
             yield return Wait(0.3f);
@@ -129,6 +146,7 @@ namespace InsectGame.UI
 
             director.EndCapture();
             File.WriteAllText(Path.Combine(output, "README.txt"),
+                (videoPlayed ? "Intro video: played for real (00-video-*).\n" : "Intro video: did NOT play here (no decoder?) — card only.\n") +
                 $"Actual standalone IMGUI over the real IslandWorldBuilder + DreamPrologueDirector. {shots} shots at " +
                 $"{Screen.width}x{Screen.height} (mobile layout={UIScale.IsMobileLayout}).\n" +
                 "Island: DreamPrologueData.BuildIslandSnapshot via EnterVisit (DreamMode on). In-memory fixture; nothing is saved.\n" +

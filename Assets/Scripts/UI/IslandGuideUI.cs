@@ -98,6 +98,8 @@ namespace InsectGame.UI
                 coachDismissed = false;
             }
             if (coachDismissed) return;
+            // 가운데 무대에 선 카드(퀘스트 완료·섬 토스트 등)와 겹치면 비켜선다 — 그리지 않으므로 표시 시간도 흐르지 않는다.
+            if (HudStage.OccupiedOver(CoachRect(HudFrame.Current, top != null))) return;
 
             float remaining = CoachRemaining(coachShown, replay);
             bool repaint = Event.current != null && Event.current.type == EventType.Repaint;
@@ -143,21 +145,20 @@ namespace InsectGame.UI
         /// OnGUI 그리기 순서가 정해져 있지 않아 안내가 그 밑에 깔렸다(2026-10-02 기기 보고).
         /// 꾸미기 화면 위에서는 다른 HUD가 전부 숨으므로 그 화면의 상단 바 아래에 둔다(가운데는 칸을 고르는 자리다).
         /// </summary>
-        private static Rect CoachRect(bool overEdit, out float h)
+        public static Rect CoachRect(HudFrame f, bool overEdit)
         {
-            bool mobile = UIScale.IsMobileLayout;
+            bool mobile = f.Mobile;
             if (mobile && !overEdit)
             {
-                bool portrait = UIScale.IsPortrait;
-                h = portrait ? 210f : 170f;
-                float w = Mathf.Min(portrait ? 900f : 760f, UISafeLayout.ContentWidth);
-                float y = Mathf.Clamp(UIScale.VirtualScreenHeight * (portrait ? 0.59f : 0.64f),
-                    UISafeLayout.ContentTop, UISafeLayout.ContentBottom - h);
-                return new Rect(UISafeLayout.ContentLeft + (UISafeLayout.ContentWidth - w) * 0.5f, y, w, h);
+                bool portrait = f.Portrait;
+                float mh = portrait ? 210f : 170f;
+                float w = Mathf.Min(portrait ? 900f : 760f, f.ContentWidth);
+                float y = Mathf.Clamp(f.Height * (portrait ? 0.59f : 0.64f), f.ContentTop, f.ContentBottom - mh);
+                return new Rect(f.ContentLeft + (f.ContentWidth - w) * 0.5f, y, w, mh);
             }
 
-            h = mobile ? 200f : 148f;
-            Rect banner = UISafeLayout.TopPanel(Mathf.Min(mobile ? 900f : 860f, UISafeLayout.ContentWidth), h);
+            float h = mobile ? 200f : 148f;
+            Rect banner = f.TopPanel(Mathf.Min(mobile ? 900f : 860f, f.ContentWidth), h);
             // 꾸미기 화면에서는 그 화면의 상단 바·안내 문구 아래로 내린다.
             banner.y += overEdit ? 160f : 150f;
             return banner;
@@ -168,7 +169,9 @@ namespace InsectGame.UI
             UITheme t = UITheme.Instance;
             bool needsButton = replay || step == IslandGuideStep.Finish;
 
-            Rect banner = CoachRect(overEdit, out float h);
+            Rect banner = CoachRect(HudFrame.Current, overEdit);
+            float h = banner.height;
+            HudPresence.Mark(HudPresenceItem.IslandGuide);   // 코치 배너(GuidedTutorialController)가 같은 자리를 비켜 준다
             // 배너 위 탭이 클릭-이동(필드)이나 칸 고르기(꾸미기)로 새지 않게.
             FieldHudInput.RegisterBlockingRect(banner);
 

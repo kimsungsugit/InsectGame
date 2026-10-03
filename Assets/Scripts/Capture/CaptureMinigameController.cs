@@ -124,6 +124,8 @@ namespace InsectGame.Capture
         {
             if (resultTimer > 0f)
             {
+                // 결과 글자는 가운데 무대(HudStage)의 첫 고정 칸에 선다 — 서 있는 동안 포획 결과 카드 등이 차례를 기다린다.
+                InsectGame.UI.HudStage.Request(InsectGame.UI.HudStageItem.MinigameResult);
                 resultTimer -= Time.deltaTime;
                 if (resultTimer <= 0f) resultMessage = null;
             }
@@ -561,8 +563,12 @@ namespace InsectGame.Capture
         {
             UITheme t = UITheme.Instance;
             float alpha = Mathf.Clamp01(resultTimer / 0.3f);
-            float cx = UIScale.VirtualScreenWidth / 2f;
-            float baseY = UIScale.VirtualScreenHeight * 0.18f;
+            InsectGame.UI.HudFrame frame = InsectGame.UI.HudFrame.Current;
+            InsectGame.UI.HudStage.Request(InsectGame.UI.HudStageItem.MinigameResult, InsectGame.UI.HudStage.Place(frame,
+                InsectGame.UI.HudStageItem.MinigameResult, InsectGame.UI.HudStage.MinigameSlotWidth, InsectGame.UI.HudStage.MinigameSlotHeight));
+            Rect label = ResultLabelRect(frame);
+            float cx = label.center.x;
+            float baseY = label.y;
 
             float progress = 1f - (resultTimer / ResultSeconds);
             float bounce = 1f + Mathf.Sin(progress * Mathf.PI) * 0.12f;
@@ -575,7 +581,22 @@ namespace InsectGame.Capture
             }
 
             resultStyle.normal.textColor = new Color(col.r, col.g, col.b, alpha);
-            UIHelper.LabelFit(new Rect(cx - 220f, baseY, 440f, 72f), resultMessage, resultStyle);
+            UIHelper.LabelFit(label, resultMessage, resultStyle);
+        }
+
+        public const float ResultLabelWidth = 440f;
+        public const float ResultLabelHeight = 72f;
+
+        /// <summary>
+        /// 결과 글자(PERFECT! 등)의 자리 — 가운데 무대의 첫 고정 칸 한가운데. 둘레로 퍼지는 빛(최대 448×224)이 칸 안에 든다.
+        /// 예전엔 화면 높이 18% 가운데라 리전 배너·내기 점수판과 세로 화면의 단축 바를 덮었다.
+        /// </summary>
+        public static Rect ResultLabelRect(InsectGame.UI.HudFrame f)
+        {
+            Rect slot = InsectGame.UI.HudStage.Place(f, InsectGame.UI.HudStageItem.MinigameResult,
+                InsectGame.UI.HudStage.MinigameSlotWidth, InsectGame.UI.HudStage.MinigameSlotHeight);
+            float w = Mathf.Min(ResultLabelWidth, slot.width);
+            return new Rect(slot.center.x - w * 0.5f, slot.center.y - ResultLabelHeight * 0.5f, w, ResultLabelHeight);
         }
 
         public void AutoWire(CaptureController controller)

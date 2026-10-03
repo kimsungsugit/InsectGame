@@ -114,6 +114,44 @@ namespace InsectGame.EditorTools
         private static bool Wants(string group) => only.Count == 0 || only.Contains(group);
         private static bool Passes(string regionId) => filter.Count == 0 || filter.Contains(regionId);
 
+        /// <summary>
+        /// 시계·날씨를 정오·맑음으로 붙잡는다. 게임 시계는 새벽 6시에 시작해 돌고(하루 12분) 날씨도 스스로 바뀌므로, 3분짜리 투어 370장이
+        /// 서로 다른 조명으로 찍힌다 — 전후 비교는 같은 조건이어야 한다. <c>-tourHour 0~24</c>·<c>-tourWeather clear|rain|fog|wind|snow</c>로
+        /// 다른 조건을 고를 수 있다(<c>natural</c>이면 게임 그대로).
+        /// </summary>
+        private static void PinSky()
+        {
+            string hourArg = Arg("-tourHour");
+            string weatherArg = Arg("-tourWeather");
+            var provider = UnityEngine.Object.FindFirstObjectByType<InsectGame.Core.WorldStateProvider>();
+            if (provider == null)
+            {
+                Log("시각·날씨 공급자를 못 찾아 하늘을 고정하지 못했다");
+                return;
+            }
+
+            if (!string.Equals(hourArg, "natural", StringComparison.OrdinalIgnoreCase) && provider.Clock != null)
+            {
+                float hour = 12f;
+                if (!string.IsNullOrEmpty(hourArg)) float.TryParse(hourArg, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out hour);
+                provider.Clock.SetTime01(hour / 24f, true);
+            }
+
+            if (!string.Equals(weatherArg, "natural", StringComparison.OrdinalIgnoreCase) && provider.Weather != null)
+            {
+                InsectGame.Core.WeatherType weather = InsectGame.Core.WeatherType.Clear;
+                switch ((weatherArg ?? "").Trim().ToLowerInvariant())
+                {
+                    case "rain": weather = InsectGame.Core.WeatherType.Rain; break;
+                    case "fog": weather = InsectGame.Core.WeatherType.Fog; break;
+                    case "wind": weather = InsectGame.Core.WeatherType.Wind; break;
+                    case "snow": weather = InsectGame.Core.WeatherType.Snow; break;
+                }
+                provider.Weather.SetWeather(weather, true, true);
+            }
+            Log($"하늘 고정 — hour={hourArg ?? "12"} weather={weatherArg ?? "clear"}");
+        }
+
         private static void Tick()
         {
             float now = Time.realtimeSinceStartup;
@@ -129,6 +167,7 @@ namespace InsectGame.EditorTools
             {
                 if (steps == null)
                 {
+                    PinSky();
                     steps = BuildSteps();
                     Log($"단계 {steps.Count}개");
                 }

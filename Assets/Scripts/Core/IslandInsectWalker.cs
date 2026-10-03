@@ -1,4 +1,6 @@
 using System.Collections.Generic;
+using InsectGame.Data;
+using InsectGame.Spawning;
 using UnityEngine;
 
 namespace InsectGame.Core
@@ -9,6 +11,9 @@ namespace InsectGame.Core
     /// 모델은 <c>InsectEntity.BuildForBattle</c>로 짓는다 — 그 경로는 배회·도주 AI가 꺼져 있고 포획 대상도
     /// 아니다(야생 스폰 경로로 지으면 섬 위에서 플레이어를 보고 달아나고 잡기 버튼이 뜬다).
     /// 그래서 몸을 옮기는 일은 이 컴포넌트가 맡는다. 날갯짓은 InsectEntity가 그대로 돌린다.
+    ///
+    /// <b>시간·날씨를 탄다</b>(<see cref="IslandInsectMood"/>) — 야행성은 밤에 활발하고 낮엔 대부분 쉰다(오래 쉬고 느리고,
+    /// 나는 종은 땅에 낮게 내려앉는다). 주행성은 반대다. 월드 빌더가 상태가 바뀔 때 <see cref="ApplyWorld"/>로 알려 준다.
     /// </summary>
     public class IslandInsectWalker : MonoBehaviour
     {
@@ -18,6 +23,8 @@ namespace InsectGame.Core
         private const float FlyHeight = 0.9f;
         private const int PickAttempts = 6;
         private const int WanderCells = 4;
+        /// <summary>나는 높이가 기분을 따라 바뀌는 속도(m/s) — 상태가 바뀐 순간 툭 떨어지지 않고 내려앉는다.</summary>
+        private const float HoverChangeSpeed = 0.5f;
 
         private Vector3 islandOrigin;
         private IReadOnlyList<Vector2Int> freeCells;
@@ -28,6 +35,12 @@ namespace InsectGame.Core
         private float speed;
         private bool flies;
         private float bobPhase;
+        private InsectHabit habit = InsectHabit.Neutral;
+        private IslandInsectMood.Mood mood = IslandInsectMood.Neutral;
+        private float hover = FlyHeight;
+
+        /// <summary>지금 기분(테스트·검수가 읽는다).</summary>
+        public IslandInsectMood.Mood CurrentMood => mood;
 
         /// <summary>
         /// <paramref name="cells"/>는 지금 섬의 빈 칸(월드 빌더가 배치가 바뀔 때마다 다시 넘긴다).
@@ -39,12 +52,26 @@ namespace InsectGame.Core
             freeCells = cells;
             freeSet = cellSet;
             flies = transform.Find("WingL") != null;
+            InsectEntity entity = GetComponent<InsectEntity>();
+            habit = entity != null ? InsectHabits.For(entity.Data) : InsectHabit.Neutral;
+            mood = IslandInsectMood.Neutral;
             // 같은 프레임에 세워진 곤충들이 같은 박자로 움직이지 않게 개체마다 어긋나게 둔다.
             var rng = new System.Random(seed);
             speed = 0.55f + (float)rng.NextDouble() * 0.5f;
             restTimer = (float)rng.NextDouble() * 2.5f;
             bobPhase = (float)rng.NextDouble() * Mathf.PI * 2f;
             moving = false;
+            hover = FlyHeight;
+        }
+
+        /// <summary>
+        /// 지금 섬의 시간대·날씨를 알려 준다 — 기분을 다시 정한다. 쉬는 중이면 남은 쉬기를 새 기분의 범위로 가둔다
+        /// (밤이 됐는데 낮에 잡은 12초 쉬기를 다 채우지 않게). 나는 높이는 <see cref="Update"/>가 천천히 따라간다.
+        /// </summary>
+        public void ApplyWorld(WorldState state)
+        {
+            mood = IslandInsectMood.For(habit, state);
+            if (!moving) restTimer = Mathf.Min(restTimer, mood.RestMax);
         }
 
         private void Update()
@@ -53,8 +80,9 @@ namespace InsectGame.Core
             float dt = Time.deltaTime;
 
             Vector3 pos = transform.position;
+            if (flies) hover = Mathf.MoveTowards(hover, FlyHeight * mood.HoverMultiplier, HoverChangeSpeed * dt);
             float baseY = islandOrigin.y + GroundOffset * transform.localScale.y
-                          + (flies ? FlyHeight + Mathf.Sin(Time.time * 1.7f + bobPhase) * 0.12f : 0f);
+                          + (flies ? hover + Mathf.Sin(Time.time * 1.7f + bobPhase) * 0.12f * mood.HoverMultiplier : 0f);
 
             if (!moving)
             {
@@ -71,12 +99,12 @@ namespace InsectGame.Core
             if (dist < 0.08f)
             {
                 moving = false;
-                restTimer = Random.Range(1.2f, 4.5f);
+                restTimer = Random.Range(mood.RestMin, mood.RestMax);
             }
             else
             {
                 Vector3 dir = to / dist;
-                pos += dir * Mathf.Min(dist, speed * dt);
+                pos += dir * Mathf.Min(dist, speed * mood.SpeedMultiplier * dt);
                 Quaternion look = Quaternion.LookRotation(dir, Vector3.up);
                 transform.rotation = Quaternion.RotateTowards(transform.rotation, look, 240f * dt);
             }

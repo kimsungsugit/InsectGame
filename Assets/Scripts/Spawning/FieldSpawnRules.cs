@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using InsectGame.Core;
 using InsectGame.Data;
 using UnityEngine;
 
@@ -156,6 +157,88 @@ namespace InsectGame.Spawning
         {
             int n = Mathf.RoundToInt(Mathf.Max(0f, usableArea) / SquareMetersPerInsect);
             return Mathf.Clamp(n, MinRegionSlots, MaxRegionSlots);
+        }
+
+        // ── 시간·날씨에 따른 개체 수 ──
+
+        /// <summary>밤이면 리전 슬롯이 이만큼 늘어난다 — 어둠 속에서 더 많은 곤충이 움직인다(사용자 요청).</summary>
+        public const int NightBonusSlots = 1;
+
+        /// <summary>비·안개면 리전 슬롯이 이만큼 늘어난다 — 습한 날 곤충이 더 나온다. 눈·센바람·맑음은 늘리지 않는다.</summary>
+        public const int WetWeatherBonusSlots = 1;
+
+        /// <summary>보너스의 상한 — 밤이면서 비·안개여도 둘이다("한두 개 정도 더").</summary>
+        public const int MaxBonusSlots = 2;
+
+        /// <summary>
+        /// 이 상태(<b>그 리전에서 보이는</b> 날씨 — <c>WorldStateProvider.GetWorldState(regionId)</c>)에서 리전 슬롯에 더하는 수.
+        /// 밤 +1, 비·안개 +1, 합 최대 <see cref="MaxBonusSlots"/>. 오염 상한과 합치는 순서는 <c>InsectSpawner.RegionCap</c>이 정한다
+        /// (보너스를 더한 뒤 오염 감소를 곱하므로 황폐한 땅은 보너스도 같이 줄어든다).
+        /// </summary>
+        public static int BonusSlots(WorldState state)
+        {
+            int bonus = 0;
+            if (state.IsNight) bonus += NightBonusSlots;
+            if (state.Weather == WeatherType.Rain || state.Weather == WeatherType.Fog) bonus += WetWeatherBonusSlots;
+            return Mathf.Clamp(bonus, 0, MaxBonusSlots);
+        }
+
+        // ── 시간대 전환 갈아입기 ──
+
+        /// <summary>
+        /// 시간대가 바뀌었을 때, 새 시간대에 어울리지 않는 개체(잠들 시간의 종)의 남은 수명을 이 범위(초)로 당긴다.
+        /// 그 뒤의 교체는 평소 순환 그대로다 — 플레이어 <see cref="RotateMinPlayerDistance"/> 안이면 기다리고, 스토리 포획 목표종은 면제다.
+        /// 한꺼번에 바꾸지 않고 5~60초에 흩어 필드가 한순간에 갈아엎이지 않게 한다.
+        /// </summary>
+        public const float PhaseSwapDelayMin = 5f;
+        public const float PhaseSwapDelayMax = 60f;
+
+        internal static float RollPhaseSwapDelay(float roll01)
+            => Mathf.Lerp(PhaseSwapDelayMin, PhaseSwapDelayMax, Mathf.Clamp01(roll01));
+
+        // ── 종 고르기 — 성향 배수 ──
+
+        /// <summary><c>InsectDatabase.PickWeighted</c>와 같은 가중 하한 — 가챠 전용(0)이 섞여도 0으로 나누지 않는다.</summary>
+        public const float MinSpawnWeight = 0.01f;
+
+        /// <summary>
+        /// 가중 선택 — <c>InsectDatabase.PickWeighted</c>와 같되 후보마다 <paramref name="multipliers"/>(시간·날씨 성향 배수,
+        /// <see cref="InsectHabits.SpawnWeightMultiplier"/>)를 곱한다. <c>InsectData.spawnWeight</c>는 건드리지 않는다.
+        /// 배수 목록이 null이거나 짧으면 모자란 쪽은 ×1이다. 배수가 전부 1이면 <c>InsectDatabase.PickWeighted</c>와 같은 답이다
+        /// (테스트가 훑어서 고정한다 — 두 곳의 가중식이 갈라지지 않게).
+        ///
+        /// 등급은 이미 정해진 뒤다 — 이 함수는 <b>한 등급의 후보 안</b>에서만 부른다. 그래서 배수가 등급 분포를 못 건드린다.
+        /// </summary>
+        internal static InsectData PickWeighted(IReadOnlyList<InsectData> candidates, IReadOnlyList<float> multipliers,
+            float roll01)
+        {
+            if (candidates == null || candidates.Count == 0) return null;
+
+            float total = 0f;
+            for (int i = 0; i < candidates.Count; i++)
+            {
+                if (candidates[i] == null) continue;
+                total += CandidateWeight(candidates[i], multipliers, i);
+            }
+
+            float roll = Mathf.Clamp01(roll01) * total;
+            float cumulative = 0f;
+            InsectData last = null;
+            for (int i = 0; i < candidates.Count; i++)
+            {
+                InsectData data = candidates[i];
+                if (data == null) continue;
+                last = data;
+                cumulative += CandidateWeight(data, multipliers, i);
+                if (roll <= cumulative) return data;
+            }
+            return last;
+        }
+
+        private static float CandidateWeight(InsectData data, IReadOnlyList<float> multipliers, int index)
+        {
+            float multiplier = multipliers != null && index < multipliers.Count ? multipliers[index] : 1f;
+            return Mathf.Max(MinSpawnWeight, data.spawnWeight) * multiplier;
         }
 
         // ── 실체화 · 재생 · 순환 ──

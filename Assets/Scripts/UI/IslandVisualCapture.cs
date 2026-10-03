@@ -148,6 +148,18 @@ namespace InsectGame.UI
             minimap.AutoWire(regionManager);
             var questStandIn = new GameObject("IslandQAQuestStandIn").AddComponent<IslandQaQuestChipStandIn>();
             questStandIn.enabled = false;
+            // 시각·날씨 칩 — 섬에서도 보이고 모바일에서는 섬 HUD 판을 피해 따로 선다(WorldClockRules.IslandMobileChip).
+            // 밤 22시대·비로 붙잡는다. 칩을 붙이기 전에 걸어 두어 첫 장에 변화 알림이 뜨지 않게 한다(FieldHudVisualCapture와 같다).
+            var skyHolder = new GameObject("IslandQASky");
+            var clock = skyHolder.AddComponent<GameClock>();
+            var weather = skyHolder.AddComponent<WeatherSystem>();
+            var worldState = skyHolder.AddComponent<WorldStateProvider>();
+            worldState.AutoWire(clock, weather);
+            clock.SetTime01(22.2f / 24f, true);
+            weather.SetWeather(WeatherType.Rain, true, true);
+            var clockHud = new GameObject("IslandQAClock").AddComponent<WorldClockHUD>();
+            clockHud.AutoWire(worldState, regionManager, movement);
+            clockHud.AutoWire(world);
 
             if (!world.EnterOwnIsland())
             {
@@ -160,6 +172,14 @@ namespace InsectGame.UI
 
             yield return Wait(2.0f);
             shots++; yield return Capture(output, "01-island-hud");
+
+            // 수확 토스트(가운데 무대)와 날씨 변화 알림(시각 칩 아래)이 함께 선 모습 — 수확을 부르면 지갑이 디스크에 쓰므로 토스트만 띄운다.
+            hud.ShowToast("수확!  캔디 +8 · 코인 +4");
+            weather.SetWeather(WeatherType.Fog, true, true);
+            yield return Wait(0.8f);
+            shots++; yield return Capture(output, "01b-island-toast-notice");
+            Set(hud, "toastRemaining", 0f);
+            yield return Wait(3.2f);   // 알림(3초)이 걷힌 뒤 다음 장면
 
             // ── 꾸미기 ──
             editUi.Open();
@@ -336,7 +356,7 @@ namespace InsectGame.UI
 
     /// <summary>
     /// 검수 전용 — 퀘스트 칩과 목표 행이 차지하는 <b>자리</b>만 그린다(진짜 <see cref="TutorialQuestUI"/>는 로그인 세션이 있어야
-    /// 칩을 그린다). 좌표는 그쪽과 같은 출처(<see cref="MinimapUI.LeftX"/>·<see cref="MinimapUI.StackBelowY"/>, 폭 500/400)에서 받는다.
+    /// 칩을 그린다). 좌표는 그쪽과 같은 순수 계산(<see cref="QuestChipLayout"/>)에서 받는다.
     /// 섬 안내 배너가 이 자리와 겹치는지 눈으로 보려는 것이다.
     /// </summary>
     internal class IslandQaQuestChipStandIn : MonoBehaviour
@@ -347,23 +367,25 @@ namespace InsectGame.UI
             UIScale.Begin();
             UITheme t = UITheme.Instance;
             bool mobile = UIScale.IsMobileLayout;
-            float w = mobile ? Mathf.Min(500f, UISafeLayout.ContentWidth) : 400f;
             const float chipH = 96f;
             const float rowH = 64f;
-            float y = mobile ? MinimapUI.StackBelowY : UISafeLayout.BottomY(chipH);
-            Rect chip = new Rect(MinimapUI.LeftX, y, w, chipH);
+            // 진짜 칩과 같은 순수 계산(QuestChipLayout) — 데스크톱은 단축 바 왼쪽 끝까지만, 목표 행 자리를 비우고 바닥에서 위로.
+            Rect bar = QuickAccessBarUI.ShortcutBarRect;
+            QuestStackPlace place = QuestChipLayout.PlaceFor(mobile, UIScale.IsPortrait);
+            float w = QuestChipLayout.Width(place, UIScale.VirtualScreenWidth, UIScale.VirtualSafeLeft, UIScale.VirtualSafeRight,
+                MinimapUI.LeftX, bar);
+            Rect chip = QuestChipLayout.Chip(place, QuestChipLayout.Left(place, MinimapUI.LeftX), w, chipH, rowH,
+                QuestChipLayout.MobileTop(place, UISafeLayout.ContentTop),
+                QuestChipLayout.DesktopBottom(MinimapUI.LeftX, bar, UISafeLayout.ContentBottom));
             UISurface.HudCard(chip);
             IslandUiKit.Label(new Rect(chip.x + 14f, chip.y + 8f, chip.width - 28f, 40f), "퀘스트 칩 자리(검수용)",
                 IslandUiKit.Body, t.accentAmber);
             IslandUiKit.Label(new Rect(chip.x + 14f, chip.y + 50f, chip.width - 28f, 36f), "진행 0 / 3",
                 IslandUiKit.Small, t.textSecondary);
-            if (mobile)
-            {
-                Rect row = new Rect(chip.x, chip.yMax + UITheme.Space.XS, w, rowH);
-                UISurface.HudCard(row);
-                IslandUiKit.Label(new Rect(row.x + 14f, row.y + 8f, row.width - 28f, rowH - 16f), "목표 행 자리(검수용)",
-                    IslandUiKit.Small, t.textSecondary);
-            }
+            Rect row = QuestChipLayout.Row(chip, w, rowH);
+            UISurface.HudCard(row);
+            IslandUiKit.Label(new Rect(row.x + 14f, row.y + 8f, row.width - 28f, rowH - 16f), "목표 행 자리(검수용)",
+                IslandUiKit.Small, t.textSecondary);
             UIScale.End();
         }
     }

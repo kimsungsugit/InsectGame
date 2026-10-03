@@ -159,12 +159,28 @@ namespace InsectGame.UI
             choice.AutoWire(null, null, null, team, collection, null, null, dex, null, items, null);
             choice.SetCaptureItems(CaptureItems());
 
+            // 시각·날씨 칩(우측 열 맨 아래) — 밤 22시대·비로 붙잡는다. 칩을 붙이기 전에 걸어 두어 첫 장에 변화 알림이 뜨지 않게 한다
+            // (rules/world-environment.md 「HUD」). 아래에서 눈으로 바꿔 알림도 한 장 찍는다.
+            var skyHolder = new GameObject("FieldHudQASky");
+            var clock = skyHolder.AddComponent<GameClock>();
+            var weather = skyHolder.AddComponent<WeatherSystem>();
+            var worldState = skyHolder.AddComponent<WorldStateProvider>();
+            worldState.AutoWire(clock, weather);
+            clock.SetTime01(22.2f / 24f, true);
+            weather.SetWeather(WeatherType.Rain, true, true);
+            var clockHud = new GameObject("FieldHudQAClock").AddComponent<WorldClockHUD>();
+            clockHud.AutoWire(worldState, regionManager, null);
+
             yield return Wait(1.6f);
             shots++; yield return Capture(output, "01-field-hud");
 
             Set(hud, "expanded", false);
             yield return Wait(0.6f);
             shots++; yield return Capture(output, "02-field-hud-collapsed");
+
+            weather.SetWeather(WeatherType.Snow, true, true);
+            yield return Wait(0.8f);
+            shots++; yield return Capture(output, "02b-clock-weather-notice");
 
             choice.ShowChoice(target);
             yield return Wait(0.8f);
@@ -184,6 +200,23 @@ namespace InsectGame.UI
             shots++; yield return Capture(output, "06-capture-raid");
             choice.Hide();
             yield return Wait(0.3f);
+
+            // 「습격!」 창 — 저녁·밤에 깨어난 습격형이 닿으면 뜬다(rules/world-environment.md 「습격」). 1v1 대상이어야 열린다
+            // (레이드 대상은 5칸 팀이 필요한데 이 팀은 4칸이다). 도망 실패 상태도 찍는다 — 자동으로 싸움에 넘어가는 분기는
+            // 전투 컨트롤러가 없는 이 픽스처에서 막아 둔다(ambushAutoFought).
+            if (choice.ShowAmbush(target, "밤이 되자 사나워졌다"))
+            {
+                yield return Wait(0.9f);   // 창이 뜬 뒤 0.45초는 입력을 받지 않는다 — 그 뒤 모습
+                shots++; yield return Capture(output, "06b-ambush");
+                Set(choice, "ambushAutoFought", true);
+                Set(choice, "ambushEscapeTried", true);
+                Set(choice, "ambushEscapeFailed", true);
+                yield return Wait(0.3f);
+                shots++; yield return Capture(output, "06c-ambush-escape-failed");
+                choice.Hide();
+                yield return Wait(0.3f);
+            }
+            else Debug.LogError("[QA] ambush window did not open — CanFight refused the fixture team");
 
             // 포획 성공 팝업 — 필드 흐름의 마지막 화면. 결과 이벤트 핸들러를 직접 불러 같은 상태를 만든다.
             var popup = new GameObject("FieldHudQAPopup").AddComponent<CapturePopupUI>();

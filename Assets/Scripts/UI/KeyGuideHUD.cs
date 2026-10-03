@@ -163,20 +163,10 @@ namespace InsectGame.UI
             }
 
             bool mobile = UIScale.IsMobileLayout;
-            float w = mobile ? 430f : 520f;
-            float h = mobile ? 68f : 80f;
-            // 진짜 화면 중앙이 아니라 '세이프 에어리어 중앙'으로 — 가로 비대칭 노치 보정.
-            float left = UIScale.VirtualSafeLeft;
-            float right = UIScale.VirtualScreenWidth - UIScale.VirtualSafeRight;
-            if (mobile)
-            {
-                // 세로 화면은 좌상단 상태 탭과 우상단 단축 바 사이에 둔다. 화면 중앙에 두면
-                // 단축 바(폭 324) 밑으로 20px 넘게 파고들었다(2026-09-30 검수 캡처).
-                left = PlayerStatusHUD.CollapsedTabRight + UITheme.Space.S;
-                right = QuickAccessBarUI.ShortcutBarRect.x - UITheme.Space.S;
-                w = Mathf.Min(w, Mathf.Max(1f, right - left));
-            }
-            Rect banner = new Rect(left + (right - left - w) / 2f, UISafeLayout.ContentTop, w, h);
+            HudFrame frame = HudFrame.Current;
+            Rect banner = RegionBannerRect(frame);
+            // 상태 패널을 펼치면(그 안에 리전 칸이 있다) 겹치는 배너는 비켜선다 — 세로 화면에서 패널(폭 480)이 배너 자리를 덮는다.
+            if (MinimapUI.LeftStackOccluded && banner.Overlaps(PlayerStatusHUD.PanelRect(frame))) return;
 
             // 미니맵·상태 패널과 같은 HUD 카드 + 리전 색 밑줄(얇아서 각진 채, 반경만큼 물린다).
             UISurface.HudCard(banner);
@@ -190,15 +180,47 @@ namespace InsectGame.UI
             UIHelper.LabelFit(new Rect(banner.x + 16f, banner.y, banner.width - 32f, banner.height - 8f), regionName, hintStyle);
         }
 
+        public const float CaptureItemsWidth = 440f;
+        public const float CaptureItemsHeight = 226f;
+
+        /// <summary>
+        /// 위쪽 가운데 리전 배너의 자리 — 순수 계산. 진짜 화면 중앙이 아니라 '세이프 에어리어 중앙'(가로 비대칭 노치 보정).
+        /// 모바일은 좌상단 상태 탭과 우상단 단축 바 사이에 둔다 — 화면 중앙에 두면 세로 화면에서 단축 바(폭 324) 밑으로 20px 넘게
+        /// 파고들었다(2026-09-30 검수 캡처).
+        /// </summary>
+        public static Rect RegionBannerRect(HudFrame f)
+        {
+            if (!f.Mobile)
+            {
+                float l = f.SafeLeft;
+                float r = f.Width - f.SafeRight;
+                return new Rect(l + (r - l - 520f) * 0.5f, f.ContentTop, 520f, 80f);
+            }
+            float left = PlayerStatusHUD.TabRect(f).xMax + UITheme.Space.S;
+            float right = QuickAccessBarUI.ShortcutBarRectFor(f).x - UITheme.Space.S;
+            float w = Mathf.Min(430f, Mathf.Max(1f, right - left));
+            return new Rect(left + (right - left - w) * 0.5f, f.ContentTop, w, 68f);
+        }
+
+        /// <summary>우상단 포획 아이템 패널(데스크톱 전용)의 자리 — 순수 계산.</summary>
+        public static Rect CaptureItemsRectFor(HudFrame f)
+        {
+            return new Rect(f.Width - f.SafeRight - CaptureItemsWidth - 20f, f.ContentTop, CaptureItemsWidth, CaptureItemsHeight);
+        }
+
+        /// <summary>
+        /// 우상단 포획 아이템 패널의 자리(가상 좌표, 데스크톱 전용). 그 아래에 붙는 HUD(<see cref="WorldClockHUD"/>)가
+        /// 읽어 한 열로 선다 — 크기를 베껴 두면 패널을 키울 때 조용히 겹친다(<see cref="MinimapUI.StackBelowY"/>와 같은 이유).
+        /// </summary>
+        public static Rect CaptureItemsRect => CaptureItemsRectFor(HudFrame.Current);
+
         private void DrawCaptureItems()
         {
             if (itemInventory == null) return;
             UITheme t = UITheme.Instance;
 
-            float w = 440f;
-            float h = 226f;
-            Rect panel = new Rect(UIScale.VirtualScreenWidth - UIScale.VirtualSafeRight - w - 20f,
-                UISafeLayout.ContentTop, w, h);
+            Rect panel = CaptureItemsRect;
+            float w = panel.width;
 
             UISurface.HudCard(panel);
             UISurface.Flat(new Rect(panel.x + UITheme.Radius.Card, panel.y + 3f,

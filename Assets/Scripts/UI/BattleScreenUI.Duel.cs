@@ -281,7 +281,7 @@ namespace InsectGame.UI
             UIHelper.LabelFit(new Rect(r.x, r.y + 122f, r.width, 40f), sub, cutInSubStyle);
         }
 
-        /// <summary>전투 중 한마디 — 상대 HP 카드 바로 아래(장부 게이지가 있으면 그 아래)에 잠깐 뜬다.</summary>
+        /// <summary>전투 중 한마디 — 상대 HP 카드 바로 아래(장부 게이지·낮밤날씨 칩이 있으면 그 아래)에 잠깐 뜬다.</summary>
         private void DrawDuelBubble()
         {
             if (!hasDuelLines || string.IsNullOrEmpty(bubbleText) || resultShown) return;
@@ -291,9 +291,10 @@ namespace InsectGame.UI
             EnsureDuelStyles();
 
             Rect card = DuelHudLayout.HpCard(UISafeLayout.Content, false);
-            float top = card.yMax + UITheme.Space.S;
-            if (battleController != null && LedgerPressure.IsActive(battleController.LedgerThreshold))
-                top += 26f + UITheme.Space.S;
+            bool ledger = battleController != null && LedgerPressure.IsActive(battleController.LedgerThreshold);
+            // 대결은 보정이 없어 칩이 서지 않는다 — 그래도 쌓는 순서는 한 곳(BattleHudStack)에서 정한다.
+            bool environmentChip = battleController != null && battleController.EnemyEnvironment.HasEffect;
+            float top = BattleHudStack.BubbleTop(card, ledger, environmentChip);
             DrawSpeechCard(new Rect(card.x, top, card.width, 122f), duelLines, bubbleText, age,
                 Mathf.Clamp01(age / 0.15f) * Mathf.Clamp01((BubbleSeconds - age) / 0.35f));
         }

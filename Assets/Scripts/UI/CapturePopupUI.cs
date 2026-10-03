@@ -180,14 +180,23 @@ namespace InsectGame.UI
         {
             if (popupTimer > 0f)
             {
+                // 카드는 가운데 무대(HudStage)에 선다 — 미니게임 결과 글자처럼 앞 칸이 서 있거나 꿈 동안은 기다리고,
+                // 기다리는 동안은 시간도 멈춘다(못 보고 지나가지 않게).
+                if (!CanShow()) return;
                 popupTimer -= Time.deltaTime;
                 animTime += Time.deltaTime;
             }
         }
 
+        private static bool CanShow()
+        {
+            return !DreamPrologueState.Active && HudStage.Request(HudStageItem.CaptureResult);
+        }
+
         private void OnGUI()
         {
             if (popupTimer <= 0f) return;
+            if (!CanShow()) return;
 
             InitPopupStyles();
 
@@ -229,33 +238,64 @@ namespace InsectGame.UI
             e.Use();
         }
 
+        /// <summary>성공 카드의 설계 크기 — 안의 배치가 전부 이 640×640 기준 절대 좌표다. 무대가 작으면 통째로 줄인다.</summary>
+        public const float SuccessSize = 640f;
+        public const float FailWidth = 560f;
+        public const float FailHeight = 150f;
+
         /// <summary>
-        /// 팝업의 세로 자리 — 화면 가운데를 기본으로 하되 상단 가운데의 리전 배너(<c>KeyGuideHUD</c>,
-        /// ContentTop부터 80)를 가리지 않게 그 아래로 내린다. 예전엔 38% 지점 중심이라 720p에서
-        /// 팝업 윗부분이 배너 밑에 깔려 "포획 성공!" 제목이 가려졌다.
+        /// 포획 성공 카드의 자리 — 가운데 무대(<see cref="HudStage.Area"/>)의 차례 항목, 정사각형을 무대에 맞춰 줄인다.
+        /// 예전엔 화면 가운데(ContentTop+100 아래)라 퀘스트 완료 알림·소식 카드·대화 버튼과 한 자리였고, 720p에서는 높이만
+        /// 잘려(ClampHeight) 아래 보상 줄이 카드 밖으로 나갔다.
         /// </summary>
-        private static float PopupTop(float panelH)
+        public static Rect SuccessRect(HudFrame f)
         {
-            float minTop = UISafeLayout.ContentTop + 100f;
-            float maxTop = Mathf.Max(minTop, UISafeLayout.ContentBottom - panelH);
-            return Mathf.Clamp(UISafeLayout.CenteredY(panelH), minTop, maxTop);
+            Rect area = HudStage.Area(f);
+            float k = HudStage.FitScale(area, SuccessSize, SuccessSize);
+            return HudStage.Place(area, HudStageItem.CaptureResult, SuccessSize * k, SuccessSize * k);
+        }
+
+        /// <summary>포획 실패 카드의 자리 — 가운데 무대의 차례 항목.</summary>
+        public static Rect FailRect(HudFrame f)
+        {
+            return HudStage.Place(f, HudStageItem.CaptureResult, FailWidth, FailHeight);
         }
 
         private void DrawSuccessPopup(float alpha)
         {
+            // 무대 안의 자리를 받아, 카드는 늘 640×640 설계 좌표로 그리고 행렬로 줄인다(나타날 때 94%→100%로 살짝 커진다 —
+            // 예전처럼 위에서 미끄러지면 무대 밖으로 나간다).
+            Rect outer = SuccessRect(HudFrame.Current);
+            HudStage.Request(HudStageItem.CaptureResult, outer);   // 무대 안의 가운데 것들이 겹치면 비켜서게 자리를 알린다
+            HandleDismiss(outer);
+            float pop = 0.94f + 0.06f * Mathf.Clamp01(animTime / 0.25f);
+            float k = outer.width / SuccessSize * pop;
+            Matrix4x4 saved = GUI.matrix;
+            GUI.matrix = saved * Matrix4x4.TRS(
+                new Vector3(outer.center.x - SuccessSize * 0.5f * k, outer.center.y - SuccessSize * 0.5f * k, 0f),
+                Quaternion.identity, new Vector3(k, k, 1f));
+            try
+            {
+                DrawSuccessCard(alpha);
+            }
+            finally
+            {
+                GUI.matrix = saved;
+            }
+        }
+
+        private void DrawSuccessCard(float alpha)
+        {
             UITheme t = UITheme.Instance;
-            float panelW = 640f;
-            float panelH = UISafeLayout.ClampHeight(640f);
-            float cx = UIScale.VirtualSafeLeft
-                + (UIScale.VirtualScreenWidth - UIScale.VirtualSafeLeft - UIScale.VirtualSafeRight) / 2f;
-            float px = cx - panelW / 2f;
-            float slideIn = Mathf.Clamp01(animTime / 0.25f);
-            float py = PopupTop(panelH) + (1f - slideIn) * 30f;
+            const float panelW = SuccessSize;
+            const float panelH = SuccessSize;
+            const float px = 0f;
+            const float py = 0f;
+            const float cx = SuccessSize * 0.5f;
 
             Color rarityCol = t.GetInsectRarityColor(insectRarity);
             Rect panelRect = new Rect(px, py, panelW, panelH);
             int rarityTier = (int)insectRarity;
-            HandleDismiss(panelRect);
 
             // 필드 HUD·포획 창과 같은 카드 — 알파는 GUI.color로 곱한다(UISurface가 호출부 알파를 살린다).
             GUI.color = new Color(1f, 1f, 1f, alpha);
@@ -367,11 +407,9 @@ namespace InsectGame.UI
         private void DrawFailPopup(float alpha)
         {
             UITheme t = UITheme.Instance;
-            float w = 560f;
-            float h = 150f;
-            float cx = UIScale.VirtualSafeLeft
-                + (UIScale.VirtualScreenWidth - UIScale.VirtualSafeLeft - UIScale.VirtualSafeRight) / 2f;
-            Rect card = new Rect(cx - w / 2f, PopupTop(h) + 120f, w, h);
+            Rect card = FailRect(HudFrame.Current);
+            HudStage.Request(HudStageItem.CaptureResult, card);
+            float w = card.width;
             HandleDismiss(card);
 
             GUI.color = new Color(1f, 1f, 1f, alpha);
@@ -380,7 +418,7 @@ namespace InsectGame.UI
             GUI.color = Color.white;
 
             failStyleCache.normal.textColor = WithAlpha(t.accentCoral, alpha);
-            GUI.Label(new Rect(card.x, card.y + 14f, w, 64f), "도망갔다...", failStyleCache);
+            UIHelper.LabelFit(new Rect(card.x, card.y + 14f, w, 64f), "도망갔다...", failStyleCache);
 
             failSubStyleCache.normal.textColor = WithAlpha(t.textSecondary, alpha);
             UIHelper.LabelFit(new Rect(card.x + 20f, card.y + 82f, w - 40f, 42f), $"{insectName}(이)가 도망쳤습니다!", failSubStyleCache);

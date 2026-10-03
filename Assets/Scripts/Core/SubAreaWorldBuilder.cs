@@ -179,7 +179,12 @@ namespace InsectGame.Core
 
         private void Update()
         {
-            if (notifyTimer > 0f) notifyTimer -= Time.deltaTime;
+            if (notifyTimer > 0f)
+            {
+                notifyTimer -= Time.deltaTime;
+                // 출입 토스트는 가운데 무대(HudStage)의 고정 칸에 선다 — 서 있는 동안 차례 카드들이 기다린다.
+                HudStage.Request(HudStageItem.PlaceToast);
+            }
 
             // 모달/배틀/미니게임/포획 모달(frozen) 중에는 수동 진입·퇴장 입력을 막는다.
             // CaptureInputController와 동일 신호 — 같은 [E]가 포획과 SubArea 진입에 동시 발화하던 충돌 차단.
@@ -257,17 +262,17 @@ namespace InsectGame.Core
                 { fontSize = 28, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             }
 
-            // 진입/퇴장 토스트 (3초 페이드)
+            // 토스트와 버튼은 다른 HUD와 같은 가상 캔버스(1920×1080 / 1080×1920)에 그린다 — 자리를 HudStage·GateRect가
+            // 가상 좌표로 정하고, 겹침 전수 검사(HudOverlapSweepTests)가 그 좌표를 본다.
+            UIScale.Begin();
+            HudFrame frame = HudFrame.Current;
+
+            // 진입/퇴장 토스트 (3초 페이드) — 가운데 무대의 고정 칸(ToastRect).
             if (notifyTimer > 0f && !string.IsNullOrEmpty(notifyText))
             {
                 float alpha = Mathf.Clamp01(notifyTimer / 3f);
-                float w = 560f;
-                float h = 56f;
-                // 픽셀 좌표계다(`UIScale.Begin()`을 쓰지 않는다). 고정 90px은 노치·상단 인셋이
-                // 있는 기기에서 토스트를 그 아래로 밀어 넣는다 — 인셋이 0인 데스크톱에서는
-                // 90이 그대로 이기고, 인셋이 있으면 그만큼 내려간다(rules/ui-layout.md의 Px 파사드).
-                float toastY = Mathf.Max(90f, UISafeLayout.Px.ContentTop);
-                Rect r = new Rect((Screen.width - w) * 0.5f, toastY, w, h);
+                Rect r = ToastRect(frame);
+                HudStage.Request(HudStageItem.PlaceToast, r);
                 Color bg = NotifyBgCol;
                 bg.a = 0.78f * alpha;
                 GUI.color = bg;
@@ -276,7 +281,7 @@ namespace InsectGame.Core
                 textCol.a = alpha;
                 notifyStyleCache.normal.textColor = textCol;
                 GUI.color = Color.white;
-                GUI.Label(r, notifyText, notifyStyleCache);
+                UIHelper.LabelFit(r, notifyText, notifyStyleCache);
             }
 
             // 진입/퇴장 버튼은 모달/배틀/미니게임/포획 모달(frozen) 중에는 그리지도 입력받지도 않는다.
@@ -286,8 +291,9 @@ namespace InsectGame.Core
                 // 진입과 퇴장은 같은 고정 위치의 큰 버튼으로 제공한다.
                 if (isInSubArea)
                 {
-                    Rect r = GetEntryExitButtonRect();
+                    Rect r = GateRect(frame);
                     BlockFieldClicks(r);
+                    HudPresence.Mark(HudPresenceItem.Gate);   // 겹치는 안내 배너가 비켜 준다
                     GUI.backgroundColor = NotifyExitCol;
                     if (GUI.Button(r, "메인 월드로 나가기", GetEntryExitButtonStyle()))
                         RequestExit();
@@ -297,8 +303,9 @@ namespace InsectGame.Core
                 else if (regionManager != null && regionManager.NearbySubArea != null)
                 {
                     SubAreaData sub = regionManager.NearbySubArea;
-                    Rect r = GetEntryExitButtonRect();
+                    Rect r = GateRect(frame);
                     BlockFieldClicks(r);
+                    HudPresence.Mark(HudPresenceItem.Gate);
                     GUI.backgroundColor = NotifyEnterCol;
                     if (GUI.Button(r, GetEnterLabel(sub), GetEntryExitButtonStyle()))
                     {
@@ -308,6 +315,7 @@ namespace InsectGame.Core
                 }
             }
             GUI.color = Color.white;
+            UIScale.End();
         }
 
         /// <summary>
@@ -319,25 +327,42 @@ namespace InsectGame.Core
         /// (rules/ui-layout.md — 같은 결함을 QuickAccessBarUI·WorldFieldMultiplayerUI·
         /// TutorialQuestUI에서 이미 고쳤다. 이 화면의 버튼이 그중 가장 크다: 620×100).
         ///
-        /// <b>이 화면은 픽셀 좌표로 그린다</b>(`UIScale.Begin()`을 쓰지 않는다) — 등록은
-        /// 가상 좌표를 받으므로 `UIScale.Scale`로 나눠 넘긴다.
+        /// 이 화면은 가상 캔버스(`UIScale.Begin()`)에 그리므로 Rect를 그대로 넘긴다.
         /// </summary>
-        private static void BlockFieldClicks(Rect pixelRect)
+        private static void BlockFieldClicks(Rect virtualRect)
         {
-            float s = UIScale.Scale;
-            if (s <= 0f) return;
-            FieldHudInput.RegisterBlockingRect(
-                new Rect(pixelRect.x / s, pixelRect.y / s, pixelRect.width / s, pixelRect.height / s));
+            FieldHudInput.RegisterBlockingRect(virtualRect);
         }
 
-        private Rect GetEntryExitButtonRect()
+        public const float GateMaxWidth = 620f;
+        public const float GateHeight = 100f;
+        public const float ToastWidth = 560f;
+        public const float ToastHeight = 56f;
+
+        /// <summary>
+        /// 동굴 입구·나가기 버튼의 자리(가상 좌표) — <b>순수 계산</b>. 겹침 전수 검사와 가운데 무대(<see cref="HudStage.Area"/>)가 읽는다.
+        /// <b>데스크톱</b>: 아래 단축 바 바로 위 가운데(예전엔 화면 맨 아래라 단축 바를 덮었다).
+        /// <b>가로 모바일</b>: 아래 가운데 — 단축 바가 오른쪽 위라 비어 있고, 왼쪽 조이스틱 안내 원보다 오른쪽이다.
+        /// <b>세로 모바일</b>: 잡기 버튼 위 습격 경고 글자 바로 위 가운데 — 맨 아래 가운데는 720×1280에서 조이스틱 안내 원을 덮었다.
+        /// </summary>
+        public static Rect GateRect(HudFrame f)
         {
-            float availableWidth = Screen.width - SafeArea.Left - SafeArea.Right - 40f;
-            float w = Mathf.Min(620f, availableWidth);
-            float h = 100f;
-            float x = (Screen.width - w) * 0.5f;
-            float y = UISafeLayout.Px.BottomY(h);
-            return new Rect(x, y, w, h);
+            float w = Mathf.Min(GateMaxWidth, f.ContentWidth);
+            float x = f.ContentLeft + (f.ContentWidth - w) * 0.5f;
+            float y;
+            if (!f.Mobile)
+                y = QuickAccessBarUI.ShortcutBarRectFor(f).y - UITheme.Space.S - GateHeight;
+            else if (!f.Portrait)
+                y = f.ContentBottom - GateHeight;
+            else
+                y = InsectGame.Capture.CatchButtonLayout.WarnRect(f).y - UITheme.Space.S - GateHeight;
+            return new Rect(x, y, w, GateHeight);
+        }
+
+        /// <summary>출입 토스트의 자리 — 가운데 무대의 고정 칸(<see cref="HudStageItem.PlaceToast"/>).</summary>
+        public static Rect ToastRect(HudFrame f)
+        {
+            return HudStage.Place(f, HudStageItem.PlaceToast, ToastWidth, ToastHeight);
         }
 
         private GUIStyle GetEntryExitButtonStyle()

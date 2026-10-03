@@ -1,5 +1,6 @@
 #if UNITY_EDITOR
 using System.Collections.Generic;
+using InsectGame.Core;
 using InsectGame.Data;
 using InsectGame.Spawning;
 using NUnit.Framework;
@@ -332,6 +333,161 @@ namespace InsectGame.Tests
             Assert.AreEqual("y", FieldSpawnRules.PickStoryTarget(wanted, cand, new HashSet<string>(), 0f, 0.9f));
             Assert.AreEqual("y", FieldSpawnRules.PickStoryTarget(wanted, cand, new HashSet<string> { "x" }, 0f, 0.1f),
                 "살아 있는 쪽을 빼고 고른다");
+        }
+
+        // ── 시간·날씨 보너스 슬롯 ──
+
+        private static WorldState State(DayPhase phase, WeatherType weather)
+            => new WorldState { DayPhase = phase, Weather = weather, Hour24 = 12 };
+
+        [Test]
+        public void BonusSlots_Table_NightOne_WetOne_BothTwo_CappedAtTwo()
+        {
+            Assert.AreEqual(0, FieldSpawnRules.BonusSlots(State(DayPhase.Day, WeatherType.Clear)));
+            Assert.AreEqual(0, FieldSpawnRules.BonusSlots(State(DayPhase.Morning, WeatherType.Clear)));
+            Assert.AreEqual(0, FieldSpawnRules.BonusSlots(State(DayPhase.Evening, WeatherType.Clear)), "저녁은 밤이 아니다");
+            Assert.AreEqual(1, FieldSpawnRules.BonusSlots(State(DayPhase.Night, WeatherType.Clear)), "밤 +1");
+            Assert.AreEqual(1, FieldSpawnRules.BonusSlots(State(DayPhase.Day, WeatherType.Rain)), "비 +1");
+            Assert.AreEqual(1, FieldSpawnRules.BonusSlots(State(DayPhase.Day, WeatherType.Fog)), "안개 +1");
+            Assert.AreEqual(2, FieldSpawnRules.BonusSlots(State(DayPhase.Night, WeatherType.Rain)), "밤 + 비 = +2");
+            Assert.AreEqual(2, FieldSpawnRules.BonusSlots(State(DayPhase.Night, WeatherType.Fog)), "밤 + 안개 = +2");
+            Assert.AreEqual(0, FieldSpawnRules.BonusSlots(State(DayPhase.Day, WeatherType.Wind)), "센바람은 늘리지 않는다");
+            Assert.AreEqual(0, FieldSpawnRules.BonusSlots(State(DayPhase.Day, WeatherType.Snow)), "눈은 늘리지 않는다");
+            Assert.AreEqual(1, FieldSpawnRules.BonusSlots(State(DayPhase.Night, WeatherType.Snow)), "밤의 눈은 밤 몫만");
+
+            Assert.AreEqual(2, FieldSpawnRules.MaxBonusSlots, "사용자 요청 — 한두 개 정도 더");
+            foreach (DayPhase p in System.Enum.GetValues(typeof(DayPhase)))
+                foreach (WeatherType w in System.Enum.GetValues(typeof(WeatherType)))
+                {
+                    int bonus = FieldSpawnRules.BonusSlots(State(p, w));
+                    Assert.GreaterOrEqual(bonus, 0);
+                    Assert.LessOrEqual(bonus, FieldSpawnRules.MaxBonusSlots, $"{p}/{w}");
+                }
+        }
+
+        /// <summary>
+        /// 스포너 <c>RegionCap</c>은 보너스를 <b>먼저 더하고</b> 오염 감소를 그 합에 얹는다 — 같은 합성을 순수 함수로 재현한다.
+        /// 거꾸로(오염 상한 + 보너스)면 황폐한 땅이 밤·비에 줄인 몫을 도로 채운다.
+        /// </summary>
+        [Test]
+        public void BonusAddedBeforeBlightScaling_NeverBeatsAHealthyRegion_NorLiftsTheFloor()
+        {
+            for (int baseSlots = FieldSpawnRules.MinRegionSlots; baseSlots <= FieldSpawnRules.MaxRegionSlots; baseSlots++)
+                for (int bonus = 0; bonus <= FieldSpawnRules.MaxBonusSlots; bonus++)
+                {
+                    int blighted = BlightPolicy.MaxActiveFor(true, baseSlots + bonus);
+                    string at = $"기본 {baseSlots} 보너스 {bonus}";
+                    Assert.LessOrEqual(blighted, BlightPolicy.MaxActiveFor(true, baseSlots) + 1, $"{at}: 보너스가 오염 감소를 되돌린다");
+                    Assert.Less(blighted, baseSlots + bonus, $"{at}: 오염 리전이 같은 상태의 멀쩡한 리전만큼 많다");
+                    Assert.GreaterOrEqual(blighted, BlightPolicy.MinActive, $"{at}: 하한 아래로 내려갔다");
+                    Assert.AreEqual(baseSlots + bonus, BlightPolicy.MaxActiveFor(false, baseSlots + bonus), $"{at}: 멀쩡한 리전은 그대로");
+                }
+        }
+
+        // ── 성향 배수를 곱한 종 고르기 ──
+
+        [Test]
+        public void PickWeighted_AllMultipliersOne_MatchesTheDatabaseFormula()
+        {
+            // 두 곳의 가중식(0.01 하한 포함)이 갈라지지 않게 — 배수가 전부 1이면 InsectDatabase.PickWeighted와 같은 개체를 고른다.
+            var pool = new List<InsectData>
+            {
+                Insect("a", InsectRarity.Common, 3f), Insect("b", InsectRarity.Common, 1f),
+                Insect("c", InsectRarity.Common, 0f), Insect("d", InsectRarity.Common, 0.4f)
+            };
+            var ones = new List<float> { 1f, 1f, 1f, 1f };
+            for (int i = 0; i < Sweep; i++)
+            {
+                float roll = (i + 0.5f) / Sweep;
+                Assert.AreSame(InsectDatabase.PickWeighted(pool, roll), FieldSpawnRules.PickWeighted(pool, ones, roll), $"roll {roll}");
+                Assert.AreSame(InsectDatabase.PickWeighted(pool, roll), FieldSpawnRules.PickWeighted(pool, null, roll), "배수 없음은 ×1");
+            }
+        }
+
+        [Test]
+        public void PickWeighted_Multiplier_ShiftsOnlyTheRelativeOdds()
+        {
+            var pool = new List<InsectData> { Insect("heavy", InsectRarity.Common, 3f), Insect("light", InsectRarity.Common, 1f) };
+
+            // 3 : 1 이던 것이 3 : (1×3) = 1 : 1이 된다.
+            int heavy = 0;
+            var even = new List<float> { 1f, 3f };
+            for (int i = 0; i < Sweep; i++)
+                if (FieldSpawnRules.PickWeighted(pool, even, (i + 0.5f) / Sweep).insectId == "heavy") heavy++;
+            Assert.AreEqual(0.5f, heavy / (float)Sweep, 0.001f);
+
+            heavy = 0;
+            var damped = new List<float> { 1f, 0.2f };
+            for (int i = 0; i < Sweep; i++)
+                if (FieldSpawnRules.PickWeighted(pool, damped, (i + 0.5f) / Sweep).insectId == "heavy") heavy++;
+            Assert.AreEqual(3f / 3.2f, heavy / (float)Sweep, 0.001f);
+
+            Assert.AreEqual(3f, pool[0].spawnWeight, "spawnWeight 자체를 바꾸면 안 된다 — 배수는 고를 때만 곱한다");
+        }
+
+        [Test]
+        public void PickWeighted_NonEmptyPool_AlwaysPicksSomething_EvenAtTheSmallestMultiplier()
+        {
+            var pool = new List<InsectData> { Insect("x", InsectRarity.Rare, 0.2f), Insect("y", InsectRarity.Rare, 0.2f) };
+            var tiny = new List<float> { InsectHabits.MinSpawnMultiplier, InsectHabits.MinSpawnMultiplier };
+            for (int i = 0; i <= 100; i++) Assert.IsNotNull(FieldSpawnRules.PickWeighted(pool, tiny, i / 100f));
+            Assert.IsNull(FieldSpawnRules.PickWeighted(new List<InsectData>(), tiny, 0.5f));
+            Assert.IsNull(FieldSpawnRules.PickWeighted(null, tiny, 0.5f));
+        }
+
+        /// <summary>
+        /// 급소 — 성향 배수가 아무리 극단적이어도(하한·상한을 번갈아) <b>등급 분포는 그대로</b>다. 배수는 한 등급 후보 안에서만
+        /// 곱해지고 등급은 그 앞에서 전역 표로 굴려지기 때문이다. 순서가 바뀌면(배수를 먼저 곱해 풀 전체에서 고르면) 야행성이 많은
+        /// 밤에 등급 분포가 움직인다.
+        /// </summary>
+        [Test]
+        public void RarityDistribution_IsUnmovedByExtremeHabitMultipliers()
+        {
+            var pool = new List<InsectData>();
+            for (int i = 0; i < 10; i++) pool.Add(Insect("c" + i, InsectRarity.Common, 5f));
+            pool.Add(Insect("u", InsectRarity.Uncommon, 0.5f));
+            pool.Add(Insect("r", InsectRarity.Rare, 0.3f));
+            pool.Add(Insect("e", InsectRarity.Epic, 0.1f));
+            pool.Add(Insect("l", InsectRarity.Legendary, 0.05f));
+
+            var available = new bool[FieldSpawnRules.RarityCount];
+            foreach (InsectData d in pool) available[(int)d.rarity] = true;
+            float[] expect = FieldSpawnRules.EffectiveShares(1f, available);
+
+            var counts = new float[FieldSpawnRules.RarityCount];
+            var sub = new List<InsectData>();
+            var mult = new List<float>();
+            for (int i = 0; i < Sweep; i++)
+            {
+                float roll = (i + 0.5f) / Sweep;
+                int rarity = FieldSpawnRules.PickRarity(roll, 1f, available);
+                sub.Clear();
+                mult.Clear();
+                foreach (InsectData d in pool)
+                {
+                    if ((int)d.rarity != rarity) continue;
+                    sub.Add(d);
+                    mult.Add(sub.Count % 2 == 0 ? InsectHabits.MinSpawnMultiplier : InsectHabits.MaxSpawnMultiplier);
+                }
+                counts[(int)FieldSpawnRules.PickWeighted(sub, mult, Mathf.Repeat(roll * 7.31f, 1f)).rarity] += 1f / Sweep;
+            }
+            for (int r = 0; r < FieldSpawnRules.RarityCount; r++)
+                Assert.AreEqual(expect[r], counts[r], 0.002f, $"{(InsectRarity)r}");
+        }
+
+        [Test]
+        public void PhaseSwapDelay_StaysInsideFiveToSixtySeconds()
+        {
+            Assert.AreEqual(5f, FieldSpawnRules.PhaseSwapDelayMin);
+            Assert.AreEqual(60f, FieldSpawnRules.PhaseSwapDelayMax);
+            Assert.AreEqual(FieldSpawnRules.PhaseSwapDelayMin, FieldSpawnRules.RollPhaseSwapDelay(0f), 1e-5f);
+            Assert.AreEqual(FieldSpawnRules.PhaseSwapDelayMax, FieldSpawnRules.RollPhaseSwapDelay(1f), 1e-5f);
+            for (int i = 0; i <= 100; i++)
+            {
+                float d = FieldSpawnRules.RollPhaseSwapDelay(i / 100f);
+                Assert.GreaterOrEqual(d, 5f);
+                Assert.LessOrEqual(d, 60f);
+            }
         }
     }
 }

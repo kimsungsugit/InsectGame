@@ -210,6 +210,22 @@ namespace InsectGame.Spawning
             => slot.State == FieldSlotState.Alive && now >= slot.ExpiresAt;
 
         /// <summary>
+        /// 시간대가 바뀌어 이 개체가 새 시간대에 어울리지 않는다 — 수명이 다하는 시각을 <c>now + delay</c>로 <b>당긴다</b>
+        /// (이미 그보다 일찍 만료라면 그대로). 개체를 지우거나 바꾸지는 않는다: 실제 교체는 평소 순환(<see cref="CanRotate"/>)이
+        /// 하므로 플레이어 25m 안의 몸은 그대로 서 있다가 멀어진 뒤에 바뀐다. 서브에리어 슬롯은 수명이 없어(전용종은 시간대와 무관)
+        /// 건드리지 않는다.
+        /// </summary>
+        /// <returns>만료를 당겼으면 true.</returns>
+        public static bool PullExpiryForward(FieldSlot slot, float now, float delay)
+        {
+            if (slot == null || !slot.IsAlive || slot.IsSubArea) return false;
+            float at = now + Mathf.Max(0f, delay);
+            if (slot.ExpiresAt <= at) return false;
+            slot.ExpiresAt = at;
+            return true;
+        }
+
+        /// <summary>
         /// 수명이 다한 개체를 지금 새 개체로 바꿔도 되는가. 몸이 없으면(멀리 있으면) 언제든, 몸이 있으면
         /// 플레이어가 <see cref="FieldSpawnRules.RotateMinPlayerDistance"/> 밖이고 포획·경계·도주 중이 아닐 때만.
         /// </summary>

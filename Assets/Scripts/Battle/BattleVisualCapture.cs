@@ -177,6 +177,15 @@ namespace InsectGame.Battle
             if (scenario == "rival") controller.SetDuelOpponent("rival_final");
             if (scenario == "guardian")
                 typeof(InsectBattleController).GetProperty("EnemyGuardianRegionId").SetValue(controller, "meadow");
+            // 낮·밤·날씨 보정 칩 — 보정은 야생 전투(StartBattle, 월드 개체)에서만 걸리고 이 픽스처는 대결로 열므로 노트를 리플렉션으로 세운다.
+            // 유리(민트)·불리(코랄)를 한 장면에 둘 다 띄우고, 가장 긴 문구(BattleEnvironment 테스트의 20자 상한)를 내 쪽에 둔다.
+            if (scenario == "weather")
+            {
+                typeof(InsectBattleController).GetProperty("PlayerEnvironment").SetValue(controller,
+                    new BattleEnvironmentNote { Multiplier = 1.1f, Reason = "아침 · 주행성 · 맑은 날을 좋아함" });
+                typeof(InsectBattleController).GetProperty("EnemyEnvironment").SetValue(controller,
+                    new BattleEnvironmentNote { Multiplier = 0.9f, Reason = "비 · 비를 싫어함" });
+            }
             FieldInfo phaseField = typeof(BattleScreenUI).GetField("phase", PrivateInstance);
             FieldInfo shownPlayer = typeof(BattleScreenUI).GetField("displayPlayerHp", PrivateInstance);
             FieldInfo shownEnemy = typeof(BattleScreenUI).GetField("displayEnemyHp", PrivateInstance);

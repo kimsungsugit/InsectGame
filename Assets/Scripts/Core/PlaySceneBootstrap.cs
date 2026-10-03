@@ -465,6 +465,14 @@ namespace InsectGame.Core
 
             SubAreaEnvironment subAreaEnv = EnsureComponent<SubAreaEnvironment>("World/SubAreaEnvironment");
             subAreaEnv.AutoWire(regionMgr);
+            // 낮밤·날씨 하늘 보정 — 메인 필드와 나의 섬에서만 걸린다(시계·날씨는 위 World 단계에서 만들어졌다).
+            subAreaEnv.AutoWire(worldState);
+            WeatherEffects weatherFx = EnsureComponent<WeatherEffects>("World/WeatherEffects");
+            weatherFx.AutoWire(worldState, regionMgr);
+            // 야생 전투의 낮·밤·날씨 보정 — 리전 기준 날씨를 읽으므로 RegionManager가 생긴 여기서 잇는다.
+            battleController.AutoWire(worldState, regionMgr);
+            // 습격 판정 — 깨어 있는 습격형이 다가와 닿으면 「습격!」 창을 연다(rules/world-environment.md 「습격」).
+            inputController.AutoWire(worldState, regionMgr);
 
             SubAreaWorldBuilder subAreaWorld = EnsureComponent<SubAreaWorldBuilder>("World/SubAreaWorld");
             subAreaWorld.AutoWire(regionMgr, camFollower);
@@ -537,6 +545,10 @@ namespace InsectGame.Core
             // 좌상단 소형 미니맵(플레이어 중심 레이더, 곤충 위치) — 곤충 탐색은 자기 충족형이고,
             // 메인퀘스트 목표 쐐기만 아래쪽 StoryObjectiveTracker에서 주입받는다.
             InsectGame.UI.MinimapUI minimapUi = EnsureComponent<InsectGame.UI.MinimapUI>("UI/Minimap");
+
+            // 우측 열 맨 아래의 시각·날씨 칩과 변화 알림 — 시계·날씨는 위 World 단계에서 이미 만들어져 있다.
+            InsectGame.UI.WorldClockHUD clockHud = EnsureComponent<InsectGame.UI.WorldClockHUD>("UI/WorldClockHUD");
+            clockHud.AutoWire(worldState, regionMgr, playerMov);
 
             CharacterOutfitManager outfitManager = EnsureComponent<CharacterOutfitManager>("World/CharacterOutfit");
             outfitManager.AutoWire(wallet);
@@ -683,6 +695,9 @@ namespace InsectGame.Core
 
             IslandWorldBuilder islandWorld = EnsureComponent<IslandWorldBuilder>("World/IslandWorld");
             islandWorld.AutoWire(regionMgr, islandManager, camFollower, playerMov, database);
+            clockHud.AutoWire(islandWorld);   // 섬에서의 시계 칩 자리 — 섬 HUD 열을 피한다
+            // 밤·비·안개에 찾아오는 손님 곤충과 방목 곤충의 시간·날씨 행동(rules/island.md 「손님 곤충」)
+            islandWorld.AutoWire(spawner, worldState);
             IslandShareClient islandShare = EnsureComponent<IslandShareClient>("World/IslandShare");
             islandShare.AutoWire(islandManager);
 

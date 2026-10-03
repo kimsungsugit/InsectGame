@@ -96,7 +96,10 @@ namespace InsectGame.Capture
                 }
                 // 필드에서 본 이로치(색다른 곤충)를 그대로 저장 — 옛 2-인자 호출은 isShiny=false라
                 // 미니게임 포획 시 색다른 개체가 일반 개체로 유실됐음(배틀/레이드 경로는 정상 전달).
-                insectCollection?.AddCapturedInsect(target.Data.insectId, target.Level, target.IsShiny);
+                // 반환된 개체는 조건부 퀘스트(몸길이·이로치)가 실제 저장된 값을 보도록 통지에 넘긴다.
+                // 컬렉션이 없으면 null — 그래도 통지는 간다(CaptureFacts.From이 크기를 중간값으로 둔다).
+                PlayerInsectData captured = insectCollection?.AddCapturedInsect(
+                    target.Data.insectId, target.Level, target.IsShiny);
 
                 // **퀘스트 통지는 이벤트가 아니라 여기서 한다.** 예전엔 `CaptureFeedbackController`
                 // (효과음·팝업을 담당하는 연출 컴포넌트) 안에 있었는데, 그건 `CaptureResolved`의
@@ -105,7 +108,7 @@ namespace InsectGame.Capture
                 // 포획 퀘스트 진행이 경고 한 줄만 남기고 영구 유실된다.
                 // 진행에 필수인 통지는 연출과 같은 배를 타면 안 된다(`InsectBattleController`가
                 // 전투 경로에서 이미 같은 이유로 직접 부른다).
-                TutorialQuestManager.Instance?.NotifyCapture(target.Data.rarity);
+                TutorialQuestManager.Instance?.NotifyCapture(CaptureFacts.From(target.Data, captured, target.IsShiny));
             }
 
             // **지급이 끝난 뒤에 알린다.** 예전엔 이 호출이 맨 앞이라, 팝업이

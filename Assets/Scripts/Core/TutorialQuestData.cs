@@ -46,6 +46,12 @@ namespace InsectGame.Core
         IslandPurchase,
         // 다른 사람의 섬을 구경함.
         VisitFriendIsland,
+        // 조건부 포획 — 몸길이·속성·이로치처럼 잡은 개체의 성질이 TutorialQuest의 조건 필드와 맞아야 센다.
+        // 판정은 QuestTraitRules(순수). 포획 지점이 CaptureFacts를 실어 NotifyCapture(CaptureFacts)로 알린다.
+        CaptureTrait,
+        // 조건부 전투 승리 — 상대 등급·속성·레벨 차·내 행동 수·남은 HP가 조건과 맞아야 센다.
+        // 전투 컨트롤러가 승리 지점에서 BattleFacts를 실어 NotifyBattleFeat로 알린다. resetOnLoss면 연승.
+        BattleFeat,
     }
 
     // 퀘스트 분류 — Story(선형 메인 체인) vs Side(다중 활성, 일부 반복 상승).
@@ -92,6 +98,30 @@ namespace InsectGame.Core
         // 비우면(기본 null) 기존 서브 퀘스트 그대로 어디서든 센다. 마을 이야기(Story.json의 town
         // 챕터)의 매듭 비트가 requiredQuestId로 이 퀘스트의 완료를 관찰한다 — 퀘스트는 스토리를 모른다.
         public string requiredRegionId;
+
+        // ── 조건부 퀘스트(QuestType.CaptureTrait / BattleFeat) 전용 조건 — Side 전용 ──
+        // 0·None·false·Common이 "조건 없음"이다(기본값이라 이 필드를 안 쓰는 기존 퀘스트는 영향이 없다).
+        // 여러 개를 채우면 **전부** 맞아야 센다 — 판정은 QuestTraitRules가 한다.
+        // 몸길이(mm): 개체의 몸길이가 이 범위 안일 때만. 소수 첫째 자리로 맞춰 본다(화면에 보이는 값과 같게).
+        public float minSizeMm = 0f;
+        public float maxSizeMm = 0f;
+        // 종 기준 대비 크기 배율(0.75~1.25): 같은 종 평균보다 얼마나 큰가·작은가. 종마다 평균이 달라 몸길이와 따로 둔다.
+        public float minSizeRatio = 0f;
+        public float maxSizeRatio = 0f;
+        // 잡은(CaptureTrait) 또는 맞선(BattleFeat) 곤충의 속성 — 주속성이나 부속성 어느 한쪽이면 된다.
+        public InsectGame.Data.InsectElement requiredElement = InsectGame.Data.InsectElement.None;
+        // CaptureTrait: 이로치(색다른 곤충)만.
+        public bool requireShiny = false;
+        // 잡은·맞선 곤충의 등급이 이 이상일 때만. 기본 Common은 모든 등급이라 "조건 없음"이다.
+        public InsectGame.Data.InsectRarity minRarity = InsectGame.Data.InsectRarity.Common;
+        // BattleFeat: (상대 레벨 − 내 곤충 레벨)이 이 이상. 0이면 조건 없음.
+        public int minLevelEdge = 0;
+        // BattleFeat: 이긴 전투에서 내가 행동한 횟수가 이 이하. 0이면 조건 없음.
+        public int maxTurns = 0;
+        // BattleFeat: 전투가 끝났을 때 내 곤충의 남은 HP가 이 퍼센트 이상. 0이면 조건 없음.
+        public int minHpPercent = 0;
+        // BattleFeat: 지거나 도망치면 진행을 0으로 되돌린다(연승). 조건이 안 맞는 승리는 건드리지 않는다.
+        public bool resetOnLoss = false;
     }
 
     /// <summary>

@@ -261,7 +261,7 @@ namespace InsectGame.Core
                 new TutorialQuest
                 {
                     questId = "q_levelup", title = "첫 레벨업!",
-                    description = "컬렉션에서 캔디로 곤충을 레벨업하세요",
+                    description = "컬렉션에서 캔디를 먹여 곤충을 키워 보세요 — 강해진 친구는 더 험한 곳도 함께 갑니다",
                     hint = "컬렉션에서 곤충을 선택하고 레벨업 버튼을 누르세요",
                     type = QuestType.LevelUp, targetCount = 1,
                     prerequisiteQuestId = "q_capture3",
@@ -326,7 +326,7 @@ namespace InsectGame.Core
                 new TutorialQuest
                 {
                     questId = "q_capture_rare", title = "희귀종 발견!",
-                    description = "Uncommon 이상 등급 곤충을 포획하세요",
+                    description = "고급(Uncommon) 이상 등급 곤충을 포획하세요",
                     hint = "특별한 색상이나 효과를 가진 곤충을 찾아보세요",
                     type = QuestType.CaptureRare, targetCount = 1,
                     prerequisiteQuestId = "q_battle3",
@@ -354,7 +354,7 @@ namespace InsectGame.Core
                 new TutorialQuest
                 {
                     questId = "q_subarea", title = "숨겨진 장소",
-                    description = "서브구역(동굴, 갈대밭 등)을 탐험하세요",
+                    description = "동굴이나 갈대밭 같은 숨은 장소에 들어가 보세요 — 도감의 빈칸은 대개 그런 곳에 숨어 있습니다",
                     hint = "연못 주변의 특별한 장소를 찾아보세요",
                     type = QuestType.VisitSubArea, targetCount = 1,
                     prerequisiteQuestId = "q_visit_pond",
@@ -363,7 +363,7 @@ namespace InsectGame.Core
                 new TutorialQuest
                 {
                     questId = "q_raid", title = "레이드 도전!",
-                    description = "Epic 이상 곤충에게 레이드 전투를 시도하세요",
+                    description = "영웅(Epic) 이상 곤충에게 레이드를 걸어 보세요 — 팀 다섯이 함께 싸웁니다",
                     hint = "강력한 보스 곤충을 찾아 레이드를 시작하세요",
                     type = QuestType.RaidBattle, targetCount = 1,
                     prerequisiteQuestId = "q_subarea",
@@ -372,7 +372,7 @@ namespace InsectGame.Core
                 new TutorialQuest
                 {
                     questId = "q_capture10", title = "곤충 박사",
-                    description = "총 10마리의 곤충을 포획하세요",
+                    description = "곤충을 총 10마리 포획하세요 — 기록이 늘수록 세상이 덜 조용해집니다",
                     hint = "다양한 지역을 탐험하며 곤충을 모으세요",
                     type = QuestType.Capture, targetCount = 10,
                     prerequisiteQuestId = "q_raid",
@@ -392,7 +392,7 @@ namespace InsectGame.Core
                 new TutorialQuest
                 {
                     questId = "q_complete", title = "모험의 시작",
-                    description = "축하합니다! 이제 자유롭게 모험하세요!",
+                    description = "어르신께 배울 건 다 배웠습니다. 이제 사라짐의 뿌리를 찾아 자유롭게 떠나세요",
                     hint = "월드를 자유롭게 탐험하세요",
                     type = QuestType.Movement, targetCount = 1,
                     prerequisiteQuestId = "q_battle10",
@@ -444,8 +444,8 @@ namespace InsectGame.Core
                 new TutorialQuest
                 {
                     questId = "s_battle_win", title = "전투 단련",
-                    description = "배틀에서 승리하세요. 반복할수록 목표가 상승합니다.",
-                    hint = "야생 곤충에게 배틀을 걸어 이기세요",
+                    description = "전투에서 승리하세요. 달성할수록 다음 목표가 늘어납니다.",
+                    hint = "야생 곤충에게 전투를 걸어 이기세요",
                     type = QuestType.Battle, targetCount = 3, targetIncrement = 3,
                     category = QuestCategory.Side, repeatable = true,
                     prerequisiteQuestId = "q_battle",
@@ -454,8 +454,8 @@ namespace InsectGame.Core
                 new TutorialQuest
                 {
                     questId = "s_raid_win", title = "레이드 도전자",
-                    description = "레이드에서 승리하세요. 반복할수록 목표가 상승합니다.",
-                    hint = "Epic/Legendary 곤충에게 레이드를 도전하세요",
+                    description = "레이드에서 승리하세요. 달성할수록 다음 목표가 늘어납니다.",
+                    hint = "영웅·전설 곤충에게 레이드를 걸어 보세요",
                     type = QuestType.RaidBattle, targetCount = 1, targetIncrement = 1,
                     category = QuestCategory.Side, repeatable = true,
                     prerequisiteQuestId = "q_raid",
@@ -465,7 +465,7 @@ namespace InsectGame.Core
                 new TutorialQuest
                 {
                     questId = "s_npc_duel", title = "동네 최강자",
-                    description = "곤충잡이 아이와의 대결에서 승리하세요. 반복할수록 목표가 상승합니다.",
+                    description = "곤충잡이 아이와의 대결에서 승리하세요. 달성할수록 다음 목표가 늘어납니다.",
                     hint = "필드를 돌아다니는 아이에게 [E]로 대결을 신청하세요",
                     type = QuestType.NpcDuel, targetCount = 3, targetIncrement = 2,
                     category = QuestCategory.Side, repeatable = true,
@@ -490,7 +490,7 @@ namespace InsectGame.Core
                 new TutorialQuest
                 {
                     questId = "s_pack_common", title = "일반 곤충 채집단",
-                    description = "일반(Common) 등급 곤충을 포획하세요. 반복할수록 목표가 상승합니다.",
+                    description = "일반(Common) 등급 곤충을 포획하세요. 달성할수록 다음 목표가 늘어납니다.",
                     hint = "어느 리전에서나 흔하게 만날 수 있습니다",
                     type = QuestType.CaptureRarity, requiredRarity = InsectRarity.Common,
                     targetCount = 8, targetIncrement = 6,
@@ -502,7 +502,7 @@ namespace InsectGame.Core
                 new TutorialQuest
                 {
                     questId = "s_pack_uncommon", title = "고급 곤충 채집단",
-                    description = "고급(Uncommon) 등급 곤충을 포획하세요. 반복할수록 목표가 상승합니다.",
+                    description = "고급(Uncommon) 등급 곤충을 포획하세요. 달성할수록 다음 목표가 늘어납니다.",
                     hint = "은빛 채집망을 쓰면 성공률이 오릅니다",
                     type = QuestType.CaptureRarity, requiredRarity = InsectRarity.Uncommon,
                     targetCount = 5, targetIncrement = 4,
@@ -514,7 +514,7 @@ namespace InsectGame.Core
                 new TutorialQuest
                 {
                     questId = "s_pack_rare", title = "희귀 곤충 채집단",
-                    description = "희귀(Rare) 등급 곤충을 포획하세요. 반복할수록 목표가 상승합니다.",
+                    description = "희귀(Rare) 등급 곤충을 포획하세요. 달성할수록 다음 목표가 늘어납니다.",
                     hint = "황금 채집망과 포박의 그물을 함께 쓰세요",
                     type = QuestType.CaptureRarity, requiredRarity = InsectRarity.Rare,
                     targetCount = 3, targetIncrement = 2,
@@ -526,7 +526,7 @@ namespace InsectGame.Core
                 new TutorialQuest
                 {
                     questId = "s_pack_epic", title = "영웅 곤충 채집단",
-                    description = "영웅(Epic) 등급 곤충을 포획하세요. 반복할수록 목표가 상승합니다.",
+                    description = "영웅(Epic) 등급 곤충을 포획하세요. 달성할수록 다음 목표가 늘어납니다.",
                     hint = "레이드로 약화시킨 뒤 포획하면 수월합니다",
                     type = QuestType.CaptureRarity, requiredRarity = InsectRarity.Epic,
                     targetCount = 2, targetIncrement = 1,
@@ -538,7 +538,7 @@ namespace InsectGame.Core
                 new TutorialQuest
                 {
                     questId = "s_pack_legendary", title = "전설 곤충 채집단",
-                    description = "전설(Legendary) 등급 곤충을 포획하세요. 반복할수록 목표가 상승합니다.",
+                    description = "전설(Legendary) 등급 곤충을 포획하세요. 달성할수록 다음 목표가 늘어납니다.",
                     hint = "최고 난도입니다 — 포획 보정 아이템을 모두 준비하세요",
                     type = QuestType.CaptureRarity, requiredRarity = InsectRarity.Legendary,
                     targetCount = 1, targetIncrement = 1,
@@ -546,6 +546,392 @@ namespace InsectGame.Core
                     prerequisiteQuestId = "q_capture10",
                     rewardCandy = 120, rewardExp = 100,
                     rewardItemId = "spirit_blessing", rewardItemCount = 1
+                },
+
+                // --- 조건부 포획 — QuestType.CaptureTrait (크기·속성·이로치) ---
+                // 전부 서브라 동시에 진행되고, **한 번의 포획이 맞는 조건 전부를 함께 올린다**
+                // (큰 물 곤충 한 마리가 "듬직한 이웃"·"물가의 손님"·"영웅 곤충 채집단"을 같이 채운다).
+                // 몸길이 기준은 실제 분포에서 잡았다. 종 기준(ApplySizeProfile: 등급 기준 × 종 해시 0.7~1.3)에 개체 편차
+                // 0.75~1.25가 곱해진다. 필드 포획 한 번당 40mm 이상 약 11% · 60mm 이상 약 2.6% · 80mm 이상 약 0.4% ·
+                // 20mm 이하 약 25% · 16mm 이하 약 7.5%(등급표 60/25/11/3.5/0.5%, 종 균등 가정). 기준을 바꾸면
+                // QuestTraitTests의 도달 가능성 검사가 실제 곤충 DB로 다시 잰다.
+                new TutorialQuest
+                {
+                    questId = "s_size_big40", title = "듬직한 이웃",
+                    description = "몸길이 40mm 이상인 곤충을 포획하세요. 달성할수록 다음 목표가 늘어납니다.",
+                    hint = "보유 곤충 창에서 몸길이를 볼 수 있습니다 — 희귀 이상에 큰 개체가 많습니다",
+                    type = QuestType.CaptureTrait, minSizeMm = 40f,
+                    targetCount = 3, targetIncrement = 2,
+                    category = QuestCategory.Side, repeatable = true,
+                    prerequisiteQuestId = "q_capture3",
+                    rewardCandy = 30, rewardExp = 24,
+                    rewardItemId = "net_silver", rewardItemCount = 2
+                },
+                new TutorialQuest
+                {
+                    questId = "s_size_big60", title = "거대 곤충 사냥꾼",
+                    description = "몸길이 60mm 이상인 거대한 곤충을 포획하세요. 달성할수록 다음 목표가 늘어납니다.",
+                    hint = "영웅·전설 곤충이나, 큰 개체로 태어난 희귀 곤충을 노리세요",
+                    type = QuestType.CaptureTrait, minSizeMm = 60f,
+                    targetCount = 1, targetIncrement = 1,
+                    category = QuestCategory.Side, repeatable = true,
+                    prerequisiteQuestId = "q_capture10",
+                    rewardCandy = 40, rewardExp = 32,
+                    rewardItemId = "net_gold", rewardItemCount = 1
+                },
+                new TutorialQuest
+                {
+                    questId = "s_size_big80", title = "초대형 곤충",
+                    description = "몸길이 80mm 이상인 초대형 곤충을 포획하세요. 영웅·전설 곤충의 큰 개체만 닿습니다.",
+                    hint = "오래 걸리는 목표입니다 — 다른 퀘스트를 하며 천천히 노리세요",
+                    type = QuestType.CaptureTrait, minSizeMm = 80f, targetCount = 1,
+                    category = QuestCategory.Side,
+                    prerequisiteQuestId = "q_capture10",
+                    rewardCandy = 120, rewardExp = 100,
+                    rewardItemId = "spirit_blessing", rewardItemCount = 1
+                },
+                new TutorialQuest
+                {
+                    questId = "s_size_small20", title = "작은 손님",
+                    description = "몸길이 20mm 이하인 작은 곤충을 포획하세요. 달성할수록 다음 목표가 늘어납니다.",
+                    hint = "일반·고급 곤충 중에 작은 개체가 많습니다",
+                    type = QuestType.CaptureTrait, maxSizeMm = 20f,
+                    targetCount = 4, targetIncrement = 3,
+                    category = QuestCategory.Side, repeatable = true,
+                    prerequisiteQuestId = "q_capture3",
+                    rewardCandy = 15, rewardExp = 10,
+                    rewardItemId = "net_basic", rewardItemCount = 3
+                },
+                new TutorialQuest
+                {
+                    questId = "s_size_small16", title = "콩알 곤충",
+                    description = "몸길이 16mm 이하인 콩알만 한 곤충을 포획하세요. 달성할수록 다음 목표가 늘어납니다.",
+                    hint = "일반 곤충 중에서도 아주 작게 태어난 개체만 해당됩니다",
+                    type = QuestType.CaptureTrait, maxSizeMm = 16f,
+                    targetCount = 2, targetIncrement = 1,
+                    category = QuestCategory.Side, repeatable = true,
+                    prerequisiteQuestId = "q_capture3",
+                    rewardCandy = 25, rewardExp = 20,
+                    rewardItemId = "net_silver", rewardItemCount = 1
+                },
+                new TutorialQuest
+                {
+                    questId = "s_size_ratio_big", title = "대물",
+                    description = "같은 종 평균보다 20% 이상 큰 개체를 포획하세요. 달성할수록 다음 목표가 늘어납니다.",
+                    hint = "종마다 평균 크기가 다릅니다 — 같은 종을 여러 마리 잡아 견주어 보세요",
+                    type = QuestType.CaptureTrait, minSizeRatio = 1.2f,
+                    targetCount = 3, targetIncrement = 2,
+                    category = QuestCategory.Side, repeatable = true,
+                    prerequisiteQuestId = "q_capture3",
+                    rewardCandy = 35, rewardExp = 28,
+                    rewardItemId = "net_silver", rewardItemCount = 2
+                },
+                new TutorialQuest
+                {
+                    questId = "s_size_ratio_small", title = "꼬마 개체",
+                    description = "같은 종 평균보다 20% 이상 작은 개체를 포획하세요. 달성할수록 다음 목표가 늘어납니다.",
+                    hint = "종마다 평균 크기가 다릅니다 — 같은 종을 여러 마리 잡아 견주어 보세요",
+                    type = QuestType.CaptureTrait, maxSizeRatio = 0.8f,
+                    targetCount = 3, targetIncrement = 2,
+                    category = QuestCategory.Side, repeatable = true,
+                    prerequisiteQuestId = "q_capture3",
+                    rewardCandy = 30, rewardExp = 24,
+                    rewardItemId = "net_basic", rewardItemCount = 4
+                },
+                new TutorialQuest
+                {
+                    questId = "s_size_band", title = "알맞은 크기",
+                    description = "몸길이가 25~30mm인 곤충을 포획하세요. 너무 크거나 작으면 안 됩니다. 달성할수록 다음 목표가 늘어납니다.",
+                    hint = "고급 곤충에 가장 많이 해당됩니다",
+                    type = QuestType.CaptureTrait, minSizeMm = 25f, maxSizeMm = 30f,
+                    targetCount = 5, targetIncrement = 3,
+                    category = QuestCategory.Side, repeatable = true,
+                    prerequisiteQuestId = "q_capture3",
+                    rewardCandy = 20, rewardExp = 15,
+                    rewardItemId = "wound_salve", rewardItemCount = 2
+                },
+                new TutorialQuest
+                {
+                    questId = "s_trait_shiny", title = "색다른 손님",
+                    description = "빛깔이 다른 색다른 곤충을 포획하세요. 필드에서 반짝이는 개체를 찾아보세요.",
+                    hint = "근처에 나타나면 알림이 뜹니다 — 놓치지 마세요",
+                    type = QuestType.CaptureTrait, requireShiny = true, targetCount = 1,
+                    category = QuestCategory.Side,
+                    prerequisiteQuestId = "q_capture3",
+                    rewardCandy = 80, rewardExp = 60,
+                    rewardItemId = "net_gold", rewardItemCount = 2
+                },
+                new TutorialQuest
+                {
+                    questId = "s_trait_water", title = "물가의 손님",
+                    description = "물 속성 곤충을 포획하세요. 달성할수록 다음 목표가 늘어납니다.",
+                    hint = "연못에 물 속성 곤충이 많습니다",
+                    type = QuestType.CaptureTrait, requiredElement = InsectElement.Water,
+                    targetCount = 4, targetIncrement = 3,
+                    category = QuestCategory.Side, repeatable = true,
+                    prerequisiteQuestId = "q_capture3",
+                    rewardCandy = 20, rewardExp = 16,
+                    rewardItemId = "net_silver", rewardItemCount = 1
+                },
+                new TutorialQuest
+                {
+                    questId = "s_trait_light", title = "빛을 품은 곤충",
+                    description = "빛 속성 곤충을 포획하세요. 달성할수록 다음 목표가 늘어납니다.",
+                    hint = "반딧불이처럼 빛을 내는 곤충이 대표적입니다",
+                    type = QuestType.CaptureTrait, requiredElement = InsectElement.Light,
+                    targetCount = 3, targetIncrement = 2,
+                    category = QuestCategory.Side, repeatable = true,
+                    prerequisiteQuestId = "q_capture10",
+                    rewardCandy = 30, rewardExp = 24,
+                    rewardItemId = "net_silver", rewardItemCount = 2
+                },
+                new TutorialQuest
+                {
+                    questId = "s_trait_dark", title = "어둠에 사는 곤충",
+                    description = "어둠 속성 곤충을 포획하세요. 달성할수록 다음 목표가 늘어납니다.",
+                    hint = "밤에 활동하는 곤충과 고대 유적의 곤충이 어둠 속성입니다",
+                    type = QuestType.CaptureTrait, requiredElement = InsectElement.Dark,
+                    targetCount = 3, targetIncrement = 2,
+                    category = QuestCategory.Side, repeatable = true,
+                    prerequisiteQuestId = "q_capture10",
+                    rewardCandy = 30, rewardExp = 24,
+                    rewardItemId = "net_silver", rewardItemCount = 2
+                },
+
+                // --- 조건부 전투 — QuestType.BattleFeat (상대 등급·속성·레벨 차·내 행동 수·남은 HP·연승) ---
+                // 1v1 전투 승리만 센다(레이드는 별개 컨트롤러라 안 센다). 야생·수문장·곤충잡이 아이 대결을 모두 센다.
+                // 한 번의 승리가 맞는 조건 전부를 함께 올린다 — "속전속결"과 "깔끔한 승리"는 같은 전투로 같이 찬다.
+                new TutorialQuest
+                {
+                    questId = "s_feat_elite", title = "강적 사냥꾼",
+                    description = "희귀(Rare) 이상 곤충과 싸워 이기세요. 달성할수록 다음 목표가 늘어납니다.",
+                    hint = "희귀 이상 곤충에게 [B]로 전투를 거세요",
+                    type = QuestType.BattleFeat, minRarity = InsectRarity.Rare,
+                    targetCount = 3, targetIncrement = 2,
+                    category = QuestCategory.Side, repeatable = true,
+                    prerequisiteQuestId = "q_battle",
+                    rewardCandy = 40, rewardExp = 30,
+                    rewardItemId = "wound_salve_great", rewardItemCount = 1
+                },
+                new TutorialQuest
+                {
+                    questId = "s_feat_epic", title = "영웅 사냥꾼",
+                    description = "영웅(Epic) 이상 곤충과 싸워 이기세요. 달성할수록 다음 목표가 늘어납니다.",
+                    hint = "[B] 전투만 셉니다 — 레이드 승리는 해당되지 않습니다",
+                    type = QuestType.BattleFeat, minRarity = InsectRarity.Epic,
+                    targetCount = 1, targetIncrement = 1,
+                    category = QuestCategory.Side, repeatable = true,
+                    prerequisiteQuestId = "q_battle10",
+                    rewardCandy = 60, rewardExp = 50,
+                    rewardItemId = "full_restore", rewardItemCount = 1
+                },
+                new TutorialQuest
+                {
+                    questId = "s_feat_upset", title = "하극상",
+                    description = "내 곤충보다 레벨이 3 이상 높은 곤충과 싸워 이기세요. 달성할수록 다음 목표가 늘어납니다.",
+                    hint = "상대 레벨에서 싸우는 내 곤충의 레벨을 뺀 값으로 셉니다 — 낮은 레벨 곤충으로 도전하세요",
+                    type = QuestType.BattleFeat, minLevelEdge = 3,
+                    targetCount = 2, targetIncrement = 1,
+                    category = QuestCategory.Side, repeatable = true,
+                    prerequisiteQuestId = "q_battle",
+                    rewardCandy = 30, rewardExp = 25,
+                    rewardItemId = "antidote", rewardItemCount = 2
+                },
+                new TutorialQuest
+                {
+                    questId = "s_feat_swift", title = "속전속결",
+                    description = "내 행동 3번 이내에 전투를 이기세요. 달성할수록 다음 목표가 늘어납니다.",
+                    hint = "강한 기술로 몰아치세요 — 기본 공격과 기절로 건너뛴 차례도 행동으로 셉니다",
+                    type = QuestType.BattleFeat, maxTurns = 3,
+                    targetCount = 3, targetIncrement = 2,
+                    category = QuestCategory.Side, repeatable = true,
+                    prerequisiteQuestId = "q_battle",
+                    rewardCandy = 25, rewardExp = 20,
+                    rewardItemId = "wound_salve", rewardItemCount = 3
+                },
+                new TutorialQuest
+                {
+                    questId = "s_feat_clean", title = "깔끔한 승리",
+                    description = "내 곤충의 HP를 70% 이상 남기고 전투를 이기세요. 달성할수록 다음 목표가 늘어납니다.",
+                    hint = "상성이 유리하면 피해를 덜 입습니다",
+                    type = QuestType.BattleFeat, minHpPercent = 70,
+                    targetCount = 3, targetIncrement = 2,
+                    category = QuestCategory.Side, repeatable = true,
+                    prerequisiteQuestId = "q_battle",
+                    rewardCandy = 25, rewardExp = 20,
+                    rewardItemId = "antidote", rewardItemCount = 2
+                },
+                new TutorialQuest
+                {
+                    questId = "s_feat_streak", title = "연승 가도",
+                    description = "전투를 연달아 5번 이기세요. 지거나 도망치면 처음부터 다시 셉니다. 달성할수록 다음 목표가 늘어납니다.",
+                    hint = "컨디션이 좋을 때 도전하세요 — 남은 HP는 병원이나 치료 아이템으로 채울 수 있습니다",
+                    type = QuestType.BattleFeat, resetOnLoss = true,
+                    targetCount = 5, targetIncrement = 2,
+                    category = QuestCategory.Side, repeatable = true,
+                    prerequisiteQuestId = "q_battle3",
+                    rewardCandy = 40, rewardExp = 30,
+                    rewardItemId = "full_restore", rewardItemCount = 1
+                },
+                new TutorialQuest
+                {
+                    questId = "s_feat_ace", title = "일격필살",
+                    description = "희귀(Rare) 이상 곤충을 내 행동 3번 이내에 쓰러뜨리세요. 달성할수록 다음 목표가 늘어납니다.",
+                    hint = "유리한 상성과 가장 센 기술로 마무리하세요",
+                    type = QuestType.BattleFeat, minRarity = InsectRarity.Rare, maxTurns = 3,
+                    targetCount = 1, targetIncrement = 1,
+                    category = QuestCategory.Side, repeatable = true,
+                    prerequisiteQuestId = "q_battle10",
+                    rewardCandy = 50, rewardExp = 40,
+                    rewardItemId = "wound_salve_great", rewardItemCount = 2
+                },
+                new TutorialQuest
+                {
+                    questId = "s_feat_wind", title = "바람 사냥꾼",
+                    description = "바람 속성 곤충과 싸워 이기세요. 달성할수록 다음 목표가 늘어납니다.",
+                    hint = "바람은 전기·강철 속성 기술에 약합니다",
+                    type = QuestType.BattleFeat, requiredElement = InsectElement.Wind,
+                    targetCount = 3, targetIncrement = 2,
+                    category = QuestCategory.Side, repeatable = true,
+                    prerequisiteQuestId = "q_battle",
+                    rewardCandy = 25, rewardExp = 20,
+                    rewardItemId = "wound_salve", rewardItemCount = 2
+                },
+
+                // --- 외전 — 본편 옆을 나란히 가는 연작(한 편씩 차례로 열린다) ---
+                // 서브·1회·선행 사슬이다. 본편이나 다른 외전, 위의 반복 서브와 **동시에** 진행된다. 같은 행동이 여러 칸에
+                // 함께 차지 않도록 맞는 퀘스트를 먼저 다 모은 뒤 올린다(NotifyCapture/NotifyBattleFeat) — 한 번의 포획이
+                // 앞 편을 끝내고 뒤 편까지 채우지 않는다.
+                // 글은 짧은 쪽지다. **라온의 말은 직접 하는 말이 아니라 남겨 둔 도전장이다** — 라온이 전력에서 빠지는
+                // 구간(ch10~ch12)에 이 목록을 여는 사람에게 그의 목소리가 새로 들리지 않게 한다. 세라의 연작은
+                // 숲에서 합류한 뒤에야 열리도록 q_blight_first 뒤에 둔다.
+                // 어휘: 주인공 쪽은 「거둬들이다」를 쓰지 않는다 — 만나다·맞이하다·기록하다.
+
+                // 외전 ① 어르신의 낡은 일기 — 크기와 맞섬. 어르신은 처음부터 곁에 있는 사람이라 q_capture3 뒤에 연다.
+                new TutorialQuest
+                {
+                    questId = "s_tale_diary1", title = "[외전] 일기 1쪽 · 작은 손님",
+                    description = "어르신의 낡은 일기 1쪽 — '처음엔 제일 작은 손님부터 맞았다.' 몸길이 20mm 이하 곤충을 3마리 포획하세요.",
+                    hint = "일반·고급 곤충 중에 작은 개체가 많습니다",
+                    type = QuestType.CaptureTrait, maxSizeMm = 20f, targetCount = 3,
+                    category = QuestCategory.Side,
+                    prerequisiteQuestId = "q_capture3",
+                    rewardCandy = 15, rewardExp = 12,
+                    rewardItemId = "net_basic", rewardItemCount = 2
+                },
+                new TutorialQuest
+                {
+                    questId = "s_tale_diary2", title = "[외전] 일기 2쪽 · 덩치 큰 이웃",
+                    description = "일기 2쪽 — '작은 손님 다음은 덩치 큰 이웃이었다.' 몸길이 40mm 이상 곤충을 2마리 포획하세요.",
+                    hint = "희귀 이상에 큰 개체가 많습니다",
+                    type = QuestType.CaptureTrait, minSizeMm = 40f, targetCount = 2,
+                    category = QuestCategory.Side,
+                    prerequisiteQuestId = "s_tale_diary1",
+                    rewardCandy = 25, rewardExp = 20,
+                    rewardItemId = "net_silver", rewardItemCount = 1
+                },
+                new TutorialQuest
+                {
+                    questId = "s_tale_diary3", title = "[외전] 일기 3쪽 · 맞서 본 날",
+                    description = "일기 3쪽 — '나보다 센 녀석 앞에서 다리가 떨렸다.' 내 곤충보다 레벨이 2 이상 높은 곤충과 싸워 이기세요.",
+                    hint = "상대 레벨에서 싸우는 내 곤충의 레벨을 뺀 값으로 셉니다",
+                    type = QuestType.BattleFeat, minLevelEdge = 2, targetCount = 1,
+                    category = QuestCategory.Side,
+                    prerequisiteQuestId = "s_tale_diary2",
+                    rewardCandy = 30, rewardExp = 24,
+                    rewardItemId = "wound_salve", rewardItemCount = 2
+                },
+                new TutorialQuest
+                {
+                    questId = "s_tale_diary4", title = "[외전] 일기 마지막 쪽 · 가장 큰 놈",
+                    description = "일기 마지막 쪽 — '가장 큰 놈 앞에서 손이 멈췄다.' 몸길이 60mm 이상 곤충을 포획하세요.",
+                    hint = "영웅·전설 곤충이나, 큰 개체로 태어난 희귀 곤충을 노리세요",
+                    type = QuestType.CaptureTrait, minSizeMm = 60f, targetCount = 1,
+                    category = QuestCategory.Side,
+                    prerequisiteQuestId = "s_tale_diary3",
+                    rewardCandy = 60, rewardExp = 50,
+                    rewardItemId = "net_gold", rewardItemCount = 2
+                },
+
+                // 외전 ② 라온의 도전장 — 전투의 내용. 앞 편을 깨야 다음 도전장이 열린다.
+                new TutorialQuest
+                {
+                    questId = "s_tale_raon1", title = "[외전] 라온의 도전장 · 한 판",
+                    description = "초원 게시판에 붙은 라온의 도전장 — '느려 터졌네! 3번 안에 끝내 봐.' 내 행동 3번 이내에 전투를 이기세요.",
+                    hint = "강한 기술로 몰아치세요 — 기본 공격과 기절로 건너뛴 차례도 행동으로 셉니다",
+                    type = QuestType.BattleFeat, maxTurns = 3, targetCount = 1,
+                    category = QuestCategory.Side,
+                    prerequisiteQuestId = "q_battle",
+                    rewardCandy = 20, rewardExp = 16,
+                    rewardItemId = "wound_salve", rewardItemCount = 2
+                },
+                new TutorialQuest
+                {
+                    questId = "s_tale_raon2", title = "[외전] 라온의 도전장 · 흠집 없이",
+                    description = "도전장 두 번째 — '이기는 건 누구나 해. 흠집 없이 이겨야 채집가지.' HP를 70% 이상 남기고 2번 이기세요.",
+                    hint = "상성이 유리하면 피해를 덜 입습니다",
+                    type = QuestType.BattleFeat, minHpPercent = 70, targetCount = 2,
+                    category = QuestCategory.Side,
+                    prerequisiteQuestId = "s_tale_raon1",
+                    rewardCandy = 25, rewardExp = 20,
+                    rewardItemId = "antidote", rewardItemCount = 2
+                },
+                new TutorialQuest
+                {
+                    questId = "s_tale_raon3", title = "[외전] 라온의 도전장 · 연승 증명",
+                    description = "도전장 세 번째 — '한 번 이긴 건 운이야. 3연승을 보여 줘.' 전투를 연달아 3번 이기세요. 지거나 도망치면 처음부터 다시 셉니다.",
+                    hint = "컨디션이 좋을 때 도전하세요 — 남은 HP는 병원이나 치료 아이템으로 채울 수 있습니다",
+                    type = QuestType.BattleFeat, resetOnLoss = true, targetCount = 3,
+                    category = QuestCategory.Side,
+                    prerequisiteQuestId = "s_tale_raon2",
+                    rewardCandy = 30, rewardExp = 24,
+                    rewardItemId = "full_restore", rewardItemCount = 1
+                },
+                new TutorialQuest
+                {
+                    questId = "s_tale_raon4", title = "[외전] 라온의 도전장 · 마지막 한 수",
+                    description = "도전장 마지막 장 — '센 녀석을 한 방에 눕혀 봐!' 희귀(Rare) 이상 곤충을 내 행동 3번 이내에 쓰러뜨리세요.",
+                    hint = "유리한 상성과 가장 센 기술로 마무리하세요",
+                    type = QuestType.BattleFeat, minRarity = InsectRarity.Rare, maxTurns = 3, targetCount = 1,
+                    category = QuestCategory.Side,
+                    prerequisiteQuestId = "s_tale_raon3",
+                    rewardCandy = 60, rewardExp = 50,
+                    rewardItemId = "full_restore", rewardItemCount = 2
+                },
+
+                // 외전 ③ 세라의 표본 조사 — 속성과 크기. 세라가 숲에서 합류한 뒤라야 이름이 어울리므로 첫 거점 정화 뒤에 연다.
+                new TutorialQuest
+                {
+                    questId = "s_tale_sera1", title = "[외전] 세라의 표본 조사 · 물가",
+                    description = "세라의 표본 조사 1 — '물가의 곤충부터 기록해요.' 물 속성 곤충을 2마리 포획하세요.",
+                    hint = "연못에 물 속성 곤충이 많습니다",
+                    type = QuestType.CaptureTrait, requiredElement = InsectElement.Water, targetCount = 2,
+                    category = QuestCategory.Side,
+                    prerequisiteQuestId = "q_blight_first",
+                    rewardCandy = 30, rewardExp = 24,
+                    rewardItemId = "net_silver", rewardItemCount = 1
+                },
+                new TutorialQuest
+                {
+                    questId = "s_tale_sera2", title = "[외전] 세라의 표본 조사 · 불빛",
+                    description = "표본 조사 2 — '다음은 빛을 품은 곤충이에요.' 빛 속성 곤충을 2마리 포획하세요.",
+                    hint = "반딧불이처럼 빛을 내는 곤충이 대표적입니다",
+                    type = QuestType.CaptureTrait, requiredElement = InsectElement.Light, targetCount = 2,
+                    category = QuestCategory.Side,
+                    prerequisiteQuestId = "s_tale_sera1",
+                    rewardCandy = 30, rewardExp = 24,
+                    rewardItemId = "net_silver", rewardItemCount = 1
+                },
+                new TutorialQuest
+                {
+                    questId = "s_tale_sera3", title = "[외전] 세라의 표본 조사 · 마지막 칸",
+                    description = "표본 조사 마지막 칸 — '같은 종 평균보다 20% 이상 큰 개체예요.' 그런 개체를 1마리 포획하세요.",
+                    hint = "종마다 평균 크기가 다릅니다 — 같은 종을 여러 마리 잡아 견주어 보세요",
+                    type = QuestType.CaptureTrait, minSizeRatio = 1.2f, targetCount = 1,
+                    category = QuestCategory.Side,
+                    prerequisiteQuestId = "s_tale_sera2",
+                    rewardCandy = 50, rewardExp = 40,
+                    rewardItemId = "net_gold", rewardItemCount = 2
                 },
 
                 // --- 마을 의뢰(지역 한정·1회) — category=Side + requiredRegionId ---
@@ -880,6 +1266,11 @@ namespace InsectGame.Core
             {
                 NotifyAction(QuestType.Battle);
             }
+            else
+            {
+                // 졌거나 도망쳤다 — 연승 퀘스트의 진행이 끊긴다.
+                ResetBattleStreaks();
+            }
         }
 
         private void OnRaidEnded(bool playerWon)
@@ -987,6 +1378,86 @@ namespace InsectGame.Core
 
             // 서브 포획 퀘스트: Capture는 모든 포획, CaptureRare는 Uncommon+, CaptureRarity는 지정 등급만.
             ProgressSideCapture(rarity);
+        }
+
+        /// <summary>
+        /// 포획 + 잡은 개체의 성질. 등급 기반 퀘스트는 <see cref="NotifyCapture(InsectRarity)"/>를 그대로 거치고,
+        /// 이어서 조건부 포획(<see cref="QuestType.CaptureTrait"/> — 몸길이·속성·이로치)을 센다.
+        /// <b>한 번의 포획이 맞는 조건 전부를 함께 올린다</b> — 서브가 다중 활성이라 병렬이다.
+        /// </summary>
+        public void NotifyCapture(CaptureFacts facts)
+        {
+            NotifyCapture(facts.rarity);
+            if (!tutorialSessionStarted) return;
+            if (DreamPrologueState.Active) return;
+            if (allQuests == null) return;
+
+            // 맞는 퀘스트를 **먼저 다 모은 뒤** 올린다. 올리는 도중 앞 에피소드가 끝나 다음 에피소드가 열려도
+            // 같은 포획이 그쪽까지 세지 않아야 외전이 "한 걸음씩"이다(배열을 훑으며 바로 올리면 뒤 칸이 따라 오른다).
+            traitTargets.Clear();
+            foreach (TutorialQuest q in allQuests)
+            {
+                if (q.type != QuestType.CaptureTrait || !IsSideActive(q) || !CountsHere(q)) continue;
+                if (QuestTraitRules.Matches(q, facts)) traitTargets.Add(q);
+            }
+            IncrementTraitTargets();
+        }
+
+        /// <summary>
+        /// 이긴 전투의 모습으로 조건부 전투(<see cref="QuestType.BattleFeat"/>)를 센다.
+        /// <c>InsectBattleController</c>가 **이긴 순간** 직접 부른다(이벤트 구독자 예외에 진행이 삼켜지지 않게 —
+        /// <see cref="NotifyCapture(CaptureFacts)"/>와 같은 이유). 지거나 도망친 전투는 부르지 않고,
+        /// 연승(<see cref="TutorialQuest.resetOnLoss"/>)을 끊는 것은 <see cref="OnBattleEnded"/>의 몫이다.
+        /// </summary>
+        public void NotifyBattleFeat(BattleFacts facts)
+        {
+            if (!tutorialSessionStarted) return;
+            if (DreamPrologueState.Active) return;   // 꿈속 전투는 어느 기록에도 남지 않는다
+            if (allQuests == null) return;
+
+            traitTargets.Clear();
+            foreach (TutorialQuest q in allQuests)
+            {
+                if (q.type != QuestType.BattleFeat || !IsSideActive(q) || !CountsHere(q)) continue;
+                if (QuestTraitRules.Matches(q, facts)) traitTargets.Add(q);
+            }
+            IncrementTraitTargets();
+        }
+
+        // 조건부 서브 퀘스트 수집 버퍼 — 포획·전투마다 불리므로 리스트를 새로 만들지 않는다.
+        private readonly List<TutorialQuest> traitTargets = new List<TutorialQuest>();
+
+        private void IncrementTraitTargets()
+        {
+            if (traitTargets.Count == 0) return;
+            // 완료 이벤트 구독자가 되짚어 들어와 버퍼를 비워도 이 루프가 흔들리지 않게 복사해서 돈다.
+            // 맞는 퀘스트가 있을 때만 할당한다(대부분의 포획·전투는 여기 오기 전에 끝난다).
+            TutorialQuest[] hits = traitTargets.ToArray();
+            traitTargets.Clear();
+            for (int i = 0; i < hits.Length; i++)
+                IncrementSideProgress(hits[i], 1);
+        }
+
+        /// <summary>
+        /// 지거나 도망쳐서 연승이 끊겼다. 진행만 0으로 되돌린다 — 목표·반복 횟수는 그대로다.
+        /// 진행 이벤트는 쏘지 않는다(되돌림마다 "0/5" 알림이 뜨면 시끄럽다. 목록은 매번 진행값을 직접 읽는다).
+        /// </summary>
+        private void ResetBattleStreaks()
+        {
+            if (!tutorialSessionStarted) return;
+            if (DreamPrologueState.Active) return;
+            if (allQuests == null) return;
+
+            bool changed = false;
+            foreach (TutorialQuest q in allQuests)
+            {
+                if (q.type != QuestType.BattleFeat || !q.resetOnLoss) continue;
+                if (!IsSideActive(q) || !CountsHere(q)) continue;
+                if (GetSideProgress(q.questId) <= 0) continue;
+                sideProgress[q.questId] = 0;
+                changed = true;
+            }
+            if (changed) SaveProgress();
         }
 
         public void NotifyBattleWon()
@@ -1295,11 +1766,11 @@ namespace InsectGame.Core
             return region != null && regionManager.IsRegionAccessible(region);
         }
 
-        // 이번 행동이 지역 의뢰의 진행으로 세어지는가 — 행동이 일어난 순간의 현재 리전으로 판정한다.
+        // 이번 행동이 지역 의뢰의 진행으로 세어지는가 — 행동이 일어난 순간의 리전으로 판정한다.
+        // CurrentRegion이 아니라 ActionRegionId다: 나의 섬에서는 null이라 섬 손님 곤충이 떠나기 전 리전의 의뢰로 세어지지 않는다.
         private bool CountsHere(TutorialQuest q)
         {
-            string current = regionManager != null && regionManager.CurrentRegion != null
-                ? regionManager.CurrentRegion.regionId : null;
+            string current = regionManager != null ? regionManager.ActionRegionId : null;
             return QuestRegionGate.Counts(q.requiredRegionId, current);
         }
 

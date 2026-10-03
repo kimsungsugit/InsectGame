@@ -24,6 +24,13 @@ namespace InsectGame.Core
         public const string ChallengerInsectId = "dragonfly_ancient";
         public const int ChallengerLevel = 72;
 
+        // ── 도입 영상 ──
+        /// <summary>
+        /// 경기장 입장 영상의 길이(초). <c>Tools/Video/dream_arena.py</c>의 <c>T_TOTAL</c>과 같아야 한다 —
+        /// 테스트가 mp4·wav 헤더로 맞춰 본다(디코더가 필요 없다).
+        /// </summary>
+        public const float IntroSeconds = 8f;
+
         /// <summary>내 곤충이 쓸 기술 수 — 전투 화면의 스킬 카드 수와 같다.</summary>
         public const int SkillCount = 4;
 

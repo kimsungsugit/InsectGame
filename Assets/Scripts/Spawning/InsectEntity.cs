@@ -57,6 +57,43 @@ namespace InsectGame.Spawning
         // 아이템 도주 방지 확률 제공자 — 부트스트랩이 세팅(itemEffects.GetFleePreventChance). null이면 0(방지 없음).
         // InsectEntity는 풀링 객체라 AutoWire/provider 참조가 없어 static 훅으로 주입.
         public static System.Func<float> FleePreventChanceProvider;
+
+        // ── 습격(AmbushRules) ──
+        // 깨어 있는 습격형은 플레이어를 알아채면 달아나는 대신 멈칫 → 다가간다. 경계·도주와 같은 칸(alertState)을 쓴다 —
+        // 3이 습격이고 IsAlerted가 참이라 스포너가 그동안 거두거나 바꾸지 않는다. CanBeEngaged의 뜻은 그대로다(다가오는 중에도 [E]로 말을 걸 수 있다).
+        private const int AmbushState = 3;
+        private bool ambusherSpecies;     // 이 종이 습격형인가 — 몸을 지을 때 한 번 정한다(온순한 종은 판정을 묻지도 않는다)
+        private float ambushReadyTime;    // 이 몸이 다시 습격할 수 있는 시각(Time.time) — 개체 쿨다운(AmbushRules.EntityCooldownSeconds)
+        private float ambushHesitate;     // 남은 멈칫(초). 0 이하면 다가가는 중
+        private float ambushChaseTime;    // 다가간 시간(기다린 시간 제외)
+        private float ambushReplanTimer;
+        private float ambushStuckTime;
+        private float ambushSide = 1f;
+        private Vector3 ambushDir;
+        private float ambushLegAllowed;
+        private float ambushLegTravelled;
+        private bool ambushAnnounced;
+        // 풀 더미가 서 있는 자리 — 습격으로 몸이 자리를 옮겨도(RebaseHere) 풀은 처음 자리에 남는다.
+        private Vector3 grassAnchor;
+
+        // 도주가 나갈 수 없는 구역 — (출발점, 방향) → 그 방향으로 구역 안에서 갈 수 있는 거리(m). null이면 제약 없음(필드).
+        // 섬 손님 곤충이 쓴다(SetFleeArea): 물리 측정은 벽·건물만 보고 "빈 칸"을 모르므로, 그대로 두면 꽃밭 너머·섬 가장자리 너머로 달아난다.
+        private Func<Vector3, Vector3, float> fleeArea;
+
+        /// <summary>
+        /// 습격 판정 — 이 곤충이 지금 습격할 수 있는가(막혔다면 까닭). <c>CaptureInputController</c>가 세운다. 풀 객체라 AutoWire가 없어
+        /// <see cref="FleePreventChanceProvider"/>와 같은 static 훅이다. <b>null이면 습격이 없다</b> — 모든 곤충이 예전처럼 달아나기만 한다.
+        /// </summary>
+        public static Func<InsectEntity, AmbushRefusal> AmbushGate;
+
+        /// <summary>습격형이 멈칫을 끝내고 발을 뗐다 — 필드 경고 문구가 듣는다.</summary>
+        public static event Action<InsectEntity> AmbushStarted;
+
+        /// <summary>
+        /// 습격형이 플레이어에게 닿았다 — 받는 쪽이 「습격!」 창을 연다(<c>SetEngaged(true)</c>). 아무도 안 열면 이 곤충은 맴돌지 않고 물러난다.
+        /// </summary>
+        public static event Action<InsectEntity> AmbushReached;
+
         private bool despawnedThisCycle; // Despawn 다중 호출 가드 (Battle/Capture 동시 호출 시 풀 중복 반환 차단)
         // 수문장 표식 — 기본은 빈 문자열(야생). 풀 재사용마다 반드시 지운다(GuardianRegionId 주석 참조).
         private string guardianRegionId = string.Empty;
@@ -82,6 +119,7 @@ namespace InsectGame.Spawning
         private static readonly RaycastHit[] fleeProbeHits = new RaycastHit[32];
         private static Vector3 fleeProbeOrigin;
         private static Func<Vector3, float> fleeClearanceProbe;
+        private static Func<Vector3, float> approachClearanceProbe;   // 습격 접근용(울타리 층 포함) — 한 번만 묶는다
         /// <summary>도주 경로 측정 높이(발 위 m)와 굵기 — 낮은 풀·돌턱은 넘고 벽·줄기·바위 옆면에는 걸린다.</summary>
         private const float FleeProbeHeight = 0.6f;
         private const float FleeProbeRadius = 0.3f;
@@ -140,6 +178,14 @@ namespace InsectGame.Spawning
 
         /// <summary>플레이어를 알아챘거나(경계) 달아나는 중인가. 스포너가 수명 교체를 미룬다.</summary>
         public bool IsAlerted => alertState != 0;
+
+        /// <summary>
+        /// 습격 중인가(멈칫해 노려보거나 다가오는 중). 연출(경계 포즈·붉은 기운)이 읽을 자리다 — 모양·색은 visual-dev 영역이라 여기서 칠하지 않는다.
+        /// </summary>
+        public bool IsAmbushing => alertState == AmbushState;
+
+        /// <summary>이 몸의 습격 쿨다운이 끝날 때까지 남은 시간(초, 0 이상).</summary>
+        public float AmbushCooldownLeft => AmbushRules.Remaining(Time.time, ambushReadyTime);
 
         /// <summary>
         /// 몸을 지을 때마다(<see cref="Initialize(InsectData,int,string,Action{InsectEntity},bool,bool)"/>·
@@ -224,6 +270,10 @@ namespace InsectGame.Spawning
             despawnedThisCycle = false;
             fled = false;
             guardianRegionId = string.Empty;   // 풀에서 왔다면 직전 개체의 표식을 물려받지 않는다
+            // 습격 — 풀에서 왔다면 직전 개체의 쿨다운·쫓기를 물려받지 않는다. 종이 습격형인지는 여기서 한 번만 본다.
+            ResetAmbush();
+            ambusherSpecies = data != null && InsectHabits.For(data).Temperament == InsectTemperament.Ambusher;
+            fleeArea = null;                   // 풀 재사용 — 섬 손님이던 몸이 필드에서 섬 경계를 물려받지 않게
 
             ClearChildren();
             BuildModel();
@@ -233,6 +283,7 @@ namespace InsectGame.Spawning
             float scale = GetRarityScale();
             transform.localScale = Vector3.one * scale;
             basePosition = transform.position;
+            grassAnchor = basePosition;
             baseSurfaceY = Core.FieldGround.SurfaceY(basePosition.x, basePosition.z);
             bobPhase = UnityEngine.Random.Range(0f, Mathf.PI * 2f);
             wingPhase = UnityEngine.Random.Range(0f, Mathf.PI * 2f);
@@ -267,10 +318,14 @@ namespace InsectGame.Spawning
             despawnedThisCycle = false;
             fled = false;
             guardianRegionId = string.Empty;   // 풀에서 왔다면 직전 개체의 표식을 물려받지 않는다
+            ResetAmbush();
+            ambusherSpecies = false;           // 아레나·전시·수문장 몸은 덤벼들지 않는다
+            fleeArea = null;
 
             ClearChildren();
             BuildModel();
             basePosition = transform.position;
+            grassAnchor = basePosition;
             bobPhase = UnityEngine.Random.Range(0f, Mathf.PI * 2f);
             wingPhase = UnityEngine.Random.Range(0f, Mathf.PI * 2f);
         }
@@ -367,6 +422,13 @@ namespace InsectGame.Spawning
                 return;
             }
 
+            // ===== 습격 진행 — 멈칫 → 다가가기(AmbushRules). 붙잡히면(engaged) 아래 경계 분기가 받는다 =====
+            if (alertState == AmbushState && !engaged)
+            {
+                UpdateAmbush(dt, t);
+                return;
+            }
+
             float dist = cachedPlayer != null ? Vector3.Distance(transform.position, cachedPlayer.position) : 999f;
             float skit = Skittishness();
             float alertR = 6.5f + skit * 1.6f;   // 레어할수록 먼 거리에서 눈치챔
@@ -376,6 +438,12 @@ namespace InsectGame.Spawning
             if (engaged)
             {
                 alertState = 1; // 포획 중 — 경계 포즈 유지, 도주 분기 진입 안 함
+            }
+            else if (ambusherSpecies && dist < AmbushRules.NoticeRadius && TryBeginAmbush())
+            {
+                // 깨어 있는 습격형 — 달아나지 않고 덤벼든다. 판정이 막으면(잠잠·쿨다운·싸울 곤충 없음 등) 아래로 내려가 온순한 곤충처럼 군다.
+                UpdateAmbush(dt, t);
+                return;
             }
             else if (dist < alertR)
             {
@@ -492,8 +560,14 @@ namespace InsectGame.Spawning
         // 진입 시 인내심·유예 리셋 → 포획 취소 직후 즉시 도망가지 않게(관대).
         public void SetEngaged(bool value)
         {
+            bool wasEngaged = engaged;
+            // 다가오던 몸이 붙잡혔다(습격 창·[E]·아이 NPC) — 지금 자리를 기준으로 삼는다. 안 그러면 경계 포즈(basePosition 기준)가
+            // 몸을 스폰 자리로 순간이동시킨다(창 뒤에서, 그리고 전투 아레나가 그 자리를 적 위치로 읽는다).
+            if (value && alertState == AmbushState) RebaseHere();
             engaged = value;
             if (value) { alertState = 1; patience = 2.6f; alertGraceTimer = 0.6f; }
+            // 풀려났다(포획 창 취소·습격 도망 등) — 한동안 덤벼들지 않는다. 창을 닫자마자 바로 옆에서 다시 닿지 않게.
+            else if (wasEngaged) ambushReadyTime = Mathf.Max(ambushReadyTime, Time.time + AmbushRules.EntityCooldownSeconds);
         }
 
         public void ScareAway()
@@ -525,18 +599,44 @@ namespace InsectGame.Spawning
             if (fleeClearanceProbe == null) fleeClearanceProbe = MeasureFleeClearance;
             fleeProbeOrigin = new Vector3(transform.position.x, basePosition.y + FleeProbeHeight, transform.position.z);
             float side = UnityEngine.Random.value < 0.5f ? -1f : 1f;
-            fleeDir = FleePath.Choose(away, side, fleeClearanceProbe, out fleeAllowed);
+            Func<Vector3, float> probe = fleeClearanceProbe;
+            if (fleeArea != null)
+            {
+                // 구역이 정해진 몸(섬 손님) — 벽까지의 거리와 구역 끝까지의 거리 중 짧은 쪽. 도주를 시작할 때만 만든다.
+                Func<Vector3, Vector3, float> area = fleeArea;
+                Vector3 origin = fleeProbeOrigin;
+                probe = dir => Mathf.Min(MeasureFleeClearance(dir), area(origin, dir));
+            }
+            fleeDir = FleePath.Choose(away, side, probe, out fleeAllowed);
+        }
+
+        /// <summary>
+        /// 도주가 이 구역 밖으로 나가지 않게 한다 — <paramref name="areaRun"/>은 (출발점, 방향) → 그 방향으로 구역 안에서 갈 수 있는
+        /// 거리(m). 나의 섬 손님 곤충이 "빈 칸 위에서만" 달아나게 쓴다(물리 측정은 벽·건물만 본다). <see cref="Initialize(InsectData,int,string,Action{InsectEntity},bool,bool)"/>와
+        /// <see cref="BuildForBattle"/>이 지우므로 몸을 세운 <b>뒤에</b> 부를 것.
+        /// </summary>
+        public void SetFleeArea(Func<Vector3, Vector3, float> areaRun)
+        {
+            fleeArea = areaRun;
         }
 
         /// <summary>
         /// <c>fleeProbeOrigin</c>에서 <paramref name="dir"/>로 막히지 않고 갈 수 있는 거리(m). 트리거(NPC 몸통·줍기 구)는
         /// 장애물이 아니고, 곤충·플레이어 몸도 아니다. 위를 향한 면(바닥·바위 윗면)은 올라타는 곳이지 벽이 아니다.
         /// </summary>
-        private static float MeasureFleeClearance(Vector3 dir)
+        private static float MeasureFleeClearance(Vector3 dir) => MeasureClearance(dir, Physics.DefaultRaycastLayers);
+
+        /// <summary>
+        /// 습격 접근용 — 도주 측정과 같되 <b>Ignore Raycast 층도 본다</b>. 울타리 난간 차단(<c>RegionTerrainBuilder.AddRailBlocker</c>)이
+        /// 카메라·탭 레이를 피하려고 그 층에 있어서, 기본 층만 쏘면 플레이어를 향해 울타리를 뚫고 온다. 플레이어 몸도 그 층이지만 아래에서 거른다.
+        /// </summary>
+        private static float MeasureApproachClearance(Vector3 dir) => MeasureClearance(dir, Physics.AllLayers);
+
+        private static float MeasureClearance(Vector3 dir, int layerMask)
         {
             float length = FleePath.ProbeLength;
             int n = Physics.SphereCastNonAlloc(fleeProbeOrigin, FleeProbeRadius, dir, fleeProbeHits, length,
-                Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore);
+                layerMask, QueryTriggerInteraction.Ignore);
             if (n >= fleeProbeHits.Length) return 0f;   // 버퍼가 찼다 — 빠진 충돌 중 벽이 있을 수 있다
             float nearest = length;
             for (int i = 0; i < n; i++)
@@ -559,6 +659,193 @@ namespace InsectGame.Spawning
             float step = FleePath.StepDistance(wanted, fleeAllowed, fleeTravelled);
             fleeTravelled += step;
             return fleeDir * step;
+        }
+
+        // ── 습격(AmbushRules) ──────────────────────────────────────────────
+
+        private void ResetAmbush()
+        {
+            ambushReadyTime = 0f;
+            ambushHesitate = 0f;
+            ambushChaseTime = 0f;
+            ambushReplanTimer = 0f;
+            ambushStuckTime = 0f;
+            ambushLegAllowed = 0f;
+            ambushLegTravelled = 0f;
+            ambushAnnounced = false;
+        }
+
+        /// <summary>
+        /// 깨어 있는 습격형이 플레이어를 알아챘다 — 판정(<see cref="AmbushGate"/>)이 허가하면 습격을 시작한다(멈칫부터).
+        /// 막히면 false — 호출부가 온순한 곤충의 경계·도주로 내려간다.
+        /// </summary>
+        private bool TryBeginAmbush()
+        {
+            if (forBattle || IsGuardian || despawnedThisCycle || cachedPlayer == null) return false;
+            if (Time.time < ambushReadyTime) return false;   // 판정도 보지만, 묻기 전에 싸게 거른다
+            if (AmbushGate == null || AmbushGate(this) != AmbushRefusal.None) return false;
+
+            alertState = AmbushState;
+            ambushHesitate = AmbushRules.HesitateSeconds;
+            ambushChaseTime = 0f;
+            ambushReplanTimer = 0f;
+            ambushStuckTime = 0f;
+            ambushLegAllowed = 0f;
+            ambushLegTravelled = 0f;
+            ambushAnnounced = false;
+            // 한 습격 동안 같은 쪽으로 돌아간다 — 벽 앞에서 좌우로 흔들리지 않게(늘 같은 쪽이면 곤충들이 한쪽으로만 돈다).
+            ambushSide = UnityEngine.Random.value < 0.5f ? -1f : 1f;
+            return true;
+        }
+
+        /// <summary>
+        /// 습격 한 프레임 — 판정을 다시 묻고(대화·메뉴면 기다리고, 그 밖에 막히면 물러난다) 멈칫 → 다가가기 → 닿기.
+        /// 다가가는 길은 <see cref="AmbushRules.ReplanSeconds"/>마다 몸 높이에서 장애물을 재어 고른다 — 곤충은 몸 콜라이더가 없어
+        /// 물리가 막아 주지 않으므로, 재지 않으면 벽·건물·바위·울타리를 그대로 뚫고 온다(도주와 같은 이유).
+        /// </summary>
+        private void UpdateAmbush(float dt, float t)
+        {
+            if (cachedPlayer == null) { GiveUpAmbush(); return; }
+            AmbushRefusal gate = AmbushGate != null ? AmbushGate(this) : AmbushRefusal.NotAwake;
+            if (gate != AmbushRefusal.None)
+            {
+                if (AmbushRules.IsPauseOnly(gate)) HoldAmbushPose(dt, t);   // 대화·메뉴 — 그 자리에서 노려보며 기다린다
+                else GiveUpAmbush();
+                return;
+            }
+
+            Vector3 toPlayer = cachedPlayer.position - transform.position;
+            toPlayer.y = 0f;
+            float planar = toPlayer.magnitude;
+
+            if (ambushHesitate > 0f)
+            {
+                ambushHesitate -= dt;
+                HoldAmbushPose(dt, t);
+                if (AmbushRules.HasReached(planar)) ReachPlayer();   // 멈칫하는 사이 플레이어가 먼저 다가와 닿았다
+                return;
+            }
+
+            if (!ambushAnnounced)
+            {
+                ambushAnnounced = true;
+                RaiseAmbushEvent(AmbushStarted);
+                if (engaged || alertState != AmbushState) return;    // 듣는 쪽이 이 곤충을 붙잡았다
+            }
+
+            if (AmbushRules.HasReached(planar)) { ReachPlayer(); return; }
+
+            ambushChaseTime += dt;
+            if (AmbushRules.ShouldGiveUp(planar, ambushChaseTime)) { GiveUpAmbush(); return; }
+
+            // 길은 일정 간격으로만 다시 잰다. 걸음을 다 써도 바로 재지 않는다 — 막혀서 조금씩만 열리는 곳에서 매 프레임 쏘지 않게.
+            ambushReplanTimer -= dt;
+            if (ambushReplanTimer <= 0f)
+            {
+                PlanAmbushLeg(toPlayer, planar);
+                ambushReplanTimer = AmbushRules.ReplanSeconds;
+            }
+
+            float step = FleePath.StepDistance(AmbushRules.ApproachSpeed * dt, ambushLegAllowed, ambushLegTravelled);
+            ambushLegTravelled += step;
+            if (step <= 1e-4f)
+            {
+                ambushStuckTime += dt;
+                if (ambushStuckTime > AmbushRules.StuckGiveUpSeconds) { GiveUpAmbush(); return; }
+            }
+            else
+            {
+                ambushStuckTime = 0f;
+            }
+
+            Vector3 p = transform.position + ambushDir * step;
+            float hover = AmbushMotionHeight(t, true);
+            p.y = basePosition.y + GroundRise(baseSurfaceY, p.x, p.z) + hover;
+            transform.position = p;
+            if (ambushDir.sqrMagnitude > 0.01f)
+                transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.LookRotation(ambushDir), dt * 10f);
+            AnchorGroundMarker(hover);
+            AnchorGrass();
+        }
+
+        /// <summary>이번 걸음의 방향과 거리를 잰다 — 몸 높이(지금 자리 지면 + <see cref="FleeProbeHeight"/>)에서 플레이어 쪽부터.</summary>
+        private void PlanAmbushLeg(Vector3 toPlayer, float planar)
+        {
+            if (approachClearanceProbe == null) approachClearanceProbe = MeasureApproachClearance;
+            Vector3 pos = transform.position;
+            fleeProbeOrigin = new Vector3(pos.x, basePosition.y + GroundRise(baseSurfaceY, pos.x, pos.z) + FleeProbeHeight, pos.z);
+            ambushDir = AmbushRules.ChooseApproach(toPlayer, planar, ambushSide, approachClearanceProbe, out ambushLegAllowed);
+            ambushLegTravelled = 0f;
+        }
+
+        /// <summary>
+        /// 멈칫·기다림 — 지금 자리에서 고개를 들고 떨며 플레이어를 노려본다. 높이는 경계 포즈와 같고, 기준은 스폰 자리가 아니라
+        /// <b>지금 자리</b>다(다가오던 도중에 멈춰도 제자리로 튀지 않는다).
+        /// </summary>
+        private void HoldAmbushPose(float dt, float t)
+        {
+            Vector3 p = transform.position;
+            float hover = AmbushMotionHeight(t, false);
+            p.y = basePosition.y + GroundRise(baseSurfaceY, p.x, p.z) + hover + Mathf.Sin(t * 27f) * 0.02f;
+            transform.position = p;
+            if (cachedPlayer != null)
+            {
+                Vector3 look = cachedPlayer.position - p;
+                look.y = 0f;
+                if (look.sqrMagnitude > 0.01f)
+                    transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.LookRotation(look), dt * 8f);
+            }
+            AnchorGroundMarker(hover);
+            AnchorGrass();
+        }
+
+        /// <summary>습격 중 몸 높이(지면 위 m). 노려볼 때는 경계 포즈 높이, 다가올 때는 날것은 떠서·뛰는 것은 뛰며·기는 것은 낮게 빠르게.</summary>
+        private float AmbushMotionHeight(float t, bool approaching)
+        {
+            if (cachedMoveStyle == 1) return 0.55f + Mathf.Sin(t * 5f) * (approaching ? 0.12f : 0.18f);
+            if (!approaching) return 0.34f + Mathf.Abs(Mathf.Sin(t * 6f)) * 0.06f;
+            if (cachedMoveStyle == 2) return Mathf.Sin(((t % 0.45f) / 0.45f) * Mathf.PI) * 0.6f;
+            return 0.06f + Mathf.Abs(Mathf.Sin(t * 20f)) * 0.06f;
+        }
+
+        /// <summary>
+        /// 닿았다 — 듣는 쪽이 「습격!」 창을 열면 <see cref="SetEngaged"/>로 경계 상태가 된다. 아무도 안 열었으면(창이 다른 일로 막혔다)
+        /// 닿은 채 매 프레임 다시 쏘지 않도록 물러난다.
+        /// </summary>
+        private void ReachPlayer()
+        {
+            RaiseAmbushEvent(AmbushReached);
+            if (!engaged && alertState == AmbushState) GiveUpAmbush();
+        }
+
+        /// <summary>
+        /// 쫓기를 접고 물러난다 — 놓침 도주와 같은 길이다(스포너가 같은 개체를 플레이어 눈 밖 다른 자리로 옮긴다). 다가오며 스폰 자리를
+        /// 떠난 몸을 제자리로 순간이동시키지 않고 치우는 가장 단순한 길이다. 몸에는 쿨다운을 걸어 둔다.
+        /// </summary>
+        private void GiveUpAmbush()
+        {
+            ambushReadyTime = Mathf.Max(ambushReadyTime, Time.time + AmbushRules.EntityCooldownSeconds);
+            alertState = 1;
+            BeginFlee(cachedPlayer != null ? transform.position - cachedPlayer.position : transform.forward);
+        }
+
+        /// <summary>
+        /// 지금 자리를 배회·경계 포즈의 기준으로 삼는다 — 습격으로 스폰 자리를 떠난 몸이 붙잡혔을 때. 높이 기준도 지금 자리 지면으로 옮긴다
+        /// (<see cref="GroundRise"/>가 새 자리에서 0이 되게). 풀 더미는 처음 자리(<c>grassAnchor</c>)에 남는다.
+        /// </summary>
+        private void RebaseHere()
+        {
+            Vector3 p = transform.position;
+            basePosition = new Vector3(p.x, basePosition.y + GroundRise(baseSurfaceY, p.x, p.z), p.z);
+            baseSurfaceY = Core.FieldGround.SurfaceY(p.x, p.z);
+        }
+
+        private void RaiseAmbushEvent(Action<InsectEntity> handler)
+        {
+            if (handler == null) return;
+            // 듣는 쪽이 던져도 이 곤충의 Update가 매 프레임 같은 예외로 멈추지 않게 — 닿기는 물러나기로 정리된다.
+            try { handler(this); }
+            catch (Exception ex) { Debug.LogException(ex); }
         }
 
         // 플레이어 위치/속도 추적 — 프레임당 1회만 계산(전 곤충 공유).
@@ -619,7 +906,7 @@ namespace InsectGame.Spawning
         private void AnchorGrass()
         {
             if (cachedGrass == null) return;
-            cachedGrass.position = basePosition;
+            cachedGrass.position = grassAnchor;
             cachedGrass.rotation = Quaternion.identity;
         }
 

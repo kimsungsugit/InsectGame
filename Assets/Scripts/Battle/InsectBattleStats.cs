@@ -116,6 +116,37 @@ namespace InsectGame.Battle
             return finalDamage;
         }
 
+        // ── 낮·밤·날씨 보정(BattleEnvironment) ──
+        // 처음 걸 때의 공격·방어를 붙잡아 두고 언제나 그 값에 곱한다 — 두 번 불려도 누적되지 않고, 1을 걸면 원래 값으로 돌아간다.
+        // 생성자가 아니라 처음 걸 때 붙잡는 이유: 파생 스탯(레이드 보스)은 base 생성자 뒤에 공격·방어를 다시 정한다.
+        private bool environmentBaseCaptured;
+        private int unscaledAttack;
+        private int unscaledDefense;
+
+        /// <summary>지금 걸려 있는 낮·밤·날씨 배수(1 = 보정 없음).</summary>
+        public float EnvironmentMultiplier { get; private set; } = 1f;
+
+        /// <summary>
+        /// 낮·밤·날씨 보정 — 원래 <see cref="Attack"/>·<see cref="Defense"/>에 <paramref name="multiplier"/>를 곱해 반올림한다(최소 1).
+        /// <b>HP는 건드리지 않는다</b>(HP바가 전투 시작에 튀지 않게). 의상·아이템·버프가 매 턴 다시 계산하는
+        /// <see cref="AttackBonus"/>/<see cref="DefenseBonus"/>와는 따로 논다 — 그쪽에 섞으면 다음 재계산이 지운다.
+        /// 0·음수·NaN·무한대는 1로 본다.
+        /// </summary>
+        public void ApplyEnvironment(float multiplier)
+        {
+            if (!environmentBaseCaptured)
+            {
+                unscaledAttack = Attack;
+                unscaledDefense = Defense;
+                environmentBaseCaptured = true;
+            }
+
+            float m = multiplier > 0f && !float.IsInfinity(multiplier) ? multiplier : 1f;
+            EnvironmentMultiplier = m;
+            Attack = Mathf.Max(1, Mathf.RoundToInt(unscaledAttack * m));
+            Defense = Mathf.Max(1, Mathf.RoundToInt(unscaledDefense * m));
+        }
+
         /// <summary>HP가 <paramref name="floor"/>보다 낮으면 그 값까지 올린다(샌드박스 전투의 하한 — 독 같은 지속 피해를 막는다).</summary>
         public void RaiseHpTo(int floor)
         {

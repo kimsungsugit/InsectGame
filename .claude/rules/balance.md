@@ -13,7 +13,10 @@ description: 밸런스 수치 변경 시 체크리스트 및 참조 기준점
 - atkMult 범위: 0.3~3.0, defRatio 범위: `MinAtkDefRatio`~`MaxAtkDefRatio`
 - HP: baseHp + ivHp×2 + Lv×`HpPerLevel`
 - 기본공격: ATK × 0.7
-- 도주: 50% ± 5%/레벨차 (10%~90%)
+- 도주: 50% ± 5%/레벨차 (10%~90%) — 단일 출처 `BattleEscapeRules.Chance`(습격 도망과 공유)
+- 낮·밤·날씨 보정: **야생 실외 전투만**(수문장·NPC 대결·샌드박스·레이드·실내 서브에리어 제외, 나의 섬은 적용).
+  적과 내 곤충이 **각자의 성향**으로 ATK·DEF에 유리 ×1.10 / 불리 ×0.90, **HP는 그대로**. 날씨는 그 지역에서 보이는 날씨,
+  시각은 전투 시작 시점(교체로 들어온 곤충도 같은 하늘). 단일 출처는 적용 범위·문구 `BattleEnvironment`, 배수 `InsectHabits.BattleStatMultiplier`
 
 ### 전투 길이 3종은 함께 움직인다
 

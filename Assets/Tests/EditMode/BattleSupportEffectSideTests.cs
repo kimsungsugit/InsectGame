@@ -42,8 +42,11 @@ namespace InsectGame.Tests
 
                 arena.PlaySkillEffect(playerActs, InsectElement.None, effectType, null, false, 0.6f);
 
+                // 프레임 수가 아니라 시간으로 기다린다 — 이펙트는 연출 시간이 타격 시점에 닿아야 생기는데, 배치 러너는 렌더가 없어
+                // 600프레임이 0.23초에 끝나 그 직전에 포기하곤 했다(통과 0.25초 · 실패 0.23초, 2026-10-03).
                 GameObject effect = null;
-                for (int frame = 0; frame < 600 && effect == null; frame++)
+                float waitUntil = Time.realtimeSinceStartup + 10f;
+                while (effect == null && Time.realtimeSinceStartup < waitUntil)
                 {
                     await Task.Yield();
                     effect = GameObject.Find(effectName);

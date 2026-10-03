@@ -20,11 +20,12 @@ namespace InsectGame.UI
         private const float FadeInSeconds = 0.25f;
         private const float FadeOutSeconds = 0.35f;
         private const float ToastHeight = 108f;
+        private const float ToastWidth = 760f;
+        /// <summary>카드 둘레 여백 — 처음 0.9초 동안 기호 둘레로 퍼지는 점(반지름 최대 64)이 카드 밖 8px까지 나간다.</summary>
+        private const float BurstMargin = 8f;
         private const float RaceChipHeight = 58f;
-        // 리전 배너(ContentTop부터 80) 아래, 코치 배너(ContentTop+150) 위.
+        // 리전 배너(ContentTop부터 80) 아래.
         private const float RaceChipTop = 86f;
-        // 데스크톱에서 토스트가 놓이는 자리 — 코치 배너(ContentTop+150, 높이 100) 아래.
-        private const float DesktopToastTop = 262f;
 
         private FieldMomentFeed feed;
         private PlayerProgressController progress;
@@ -54,19 +55,24 @@ namespace InsectGame.UI
 
         // 대사·전투·메뉴가 화면을 덮었거나 포획 창처럼 조작이 묶인 동안은 그리지 않고 시간도 흐르지 않는다 —
         // 보지 못한 소식이 그사이에 지나가 버리지 않게.
-        private bool Hidden => ModalUIRegistry.IsAnyOpen() || (playerMovement != null && playerMovement.IsFrozen);
+        // 「챔피언의 꿈」 동안도 숨는다(rules/dream-prologue.md — 필드 위 HUD는 꿈속에 비치지 않는다).
+        private bool Hidden => ModalUIRegistry.IsAnyOpen() || (playerMovement != null && playerMovement.IsFrozen)
+                               || DreamPrologueState.Active;
 
         private void Update()
         {
             WatchLevelUp();
             if (Hidden) return;
 
+            // 소식 카드는 가운데 무대(HudStage)에 선다 — 포획 결과·퀘스트 완료 같은 앞 차례가 서 있으면 꺼내지도, 시간을 쓰지도 않는다.
             if (hasCurrent)
             {
+                if (!HudStage.Request(HudStageItem.Moment)) return;
                 shownFor += Time.deltaTime;
                 if (shownFor >= ShowSeconds) hasCurrent = false;
             }
-            if (!hasCurrent && feed != null && feed.TryDequeue(out current))
+            if (!hasCurrent && feed != null && feed.PendingCount > 0 && HudStage.Request(HudStageItem.Moment)
+                && feed.TryDequeue(out current))
             {
                 hasCurrent = true;
                 shownFor = 0f;
@@ -112,7 +118,7 @@ namespace InsectGame.UI
             UIScale.Begin();
             InitStyles();
             if (race) DrawRaceChip();
-            if (hasCurrent) DrawToast();
+            if (hasCurrent && HudStage.Request(HudStageItem.Moment)) DrawToast();
             GUI.color = Color.white;
             UIScale.End();
         }
@@ -122,18 +128,10 @@ namespace InsectGame.UI
         private void DrawRaceChip()
         {
             UITheme t = UITheme.Instance;
-            float left = UISafeLayout.ContentLeft;
-            float right = left + UISafeLayout.ContentWidth;
-            if (UIScale.IsMobileLayout)
-            {
-                // 리전 배너와 같은 구간에 둔다 — 좌상단 상태 탭과 우상단 단축 바 사이(KeyGuideHUD와 같은 계산).
-                // 화면 중앙에 두면 세로 화면에서 오른쪽 끝("라온")이 단축 바 밑에 깔린다(2026-10-02 검수 캡처).
-                left = PlayerStatusHUD.CollapsedTabRight + UITheme.Space.S;
-                right = QuickAccessBarUI.ShortcutBarRect.x - UITheme.Space.S;
-            }
-            float w = Mathf.Min(460f, Mathf.Max(1f, right - left));
-            Rect chip = new Rect(left + (right - left - w) * 0.5f,
-                UISafeLayout.ContentTop + RaceChipTop, w, RaceChipHeight);
+            HudFrame frame = HudFrame.Current;
+            Rect chip = RaceChipRect(frame);
+            // 상태 패널을 펼치면 겹치는 점수판은 비켜선다(세로 화면에서 패널 폭 480이 이 자리를 덮는다).
+            if (MinimapUI.LeftStackOccluded && chip.Overlaps(PlayerStatusHUD.PanelRect(frame))) return;
             FieldHudInput.RegisterBlockingRect(chip);
             UISurface.HudCard(chip);
 
@@ -167,17 +165,38 @@ namespace InsectGame.UI
 
         // ── 소식 한 장 ──
 
-        private Rect ToastRect()
+        /// <summary>
+        /// 내기 점수판의 자리 — 순수 계산. 리전 배너 아래 줄. 모바일은 좌상단 상태 탭과 우상단 단축 바 사이(리전 배너와 같은 구간) —
+        /// 화면 중앙에 두면 세로 화면에서 오른쪽 끝("라온")이 단축 바 밑에 깔린다(2026-10-02 검수 캡처).
+        /// 가운데 무대(<see cref="HudStage.Area"/>)는 이 아래에서 시작한다.
+        /// </summary>
+        public static Rect RaceChipRect(HudFrame f)
         {
-            float w = Mathf.Min(760f, UISafeLayout.ContentWidth);
-            float x = UISafeLayout.ContentLeft + (UISafeLayout.ContentWidth - w) * 0.5f;
-            // 모바일은 화면 가운데 줄 아래(캐릭터 발밑)에 놓는다 — 위쪽은 미니맵·퀘스트 칩·메뉴 격자 자리라
-            // 그리기 순서가 정해지지 않은 IMGUI에서 그 밑에 깔린다(섬 안내 배너와 같은 자리, rules/island.md).
-            float y = UIScale.IsMobileLayout
-                ? Mathf.Clamp(UIScale.VirtualScreenHeight * (UIScale.IsPortrait ? 0.59f : 0.64f),
-                    UISafeLayout.ContentTop, UISafeLayout.ContentBottom - ToastHeight)
-                : UISafeLayout.ContentTop + DesktopToastTop;
-            return new Rect(x, y, w, ToastHeight);
+            float left = f.ContentLeft;
+            float right = f.ContentRight;
+            if (f.Mobile)
+            {
+                left = PlayerStatusHUD.TabRect(f).xMax + UITheme.Space.S;
+                right = QuickAccessBarUI.ShortcutBarRectFor(f).x - UITheme.Space.S;
+            }
+            float w = Mathf.Min(460f, Mathf.Max(1f, right - left));
+            return new Rect(left + (right - left - w) * 0.5f, f.ContentTop + RaceChipTop, w, RaceChipHeight);
+        }
+
+        /// <summary>
+        /// 소식 카드가 차지하는 자리(둘레로 퍼지는 점까지) — 가운데 무대의 차례 항목(<see cref="HudStageItem.Moment"/>).
+        /// 예전엔 모바일은 화면 가운데 줄, 데스크톱은 ContentTop+262라 섬 안내 배너·대화 버튼·포획 결과 카드와 한 자리였다.
+        /// </summary>
+        public static Rect ToastFootprint(HudFrame f)
+        {
+            return HudStage.Place(f, HudStageItem.Moment, ToastWidth + BurstMargin * 2f, ToastHeight + BurstMargin * 2f);
+        }
+
+        private static Rect ToastRect()
+        {
+            Rect area = ToastFootprint(HudFrame.Current);
+            return new Rect(area.x + BurstMargin, area.y + BurstMargin, area.width - BurstMargin * 2f,
+                area.height - BurstMargin * 2f);
         }
 
         private void DrawToast()
@@ -185,8 +204,10 @@ namespace InsectGame.UI
             UITheme t = UITheme.Instance;
             float alpha = Mathf.Clamp01(shownFor / FadeInSeconds)
                 * Mathf.Clamp01((ShowSeconds - shownFor) / FadeOutSeconds);
+            HudStage.Request(HudStageItem.Moment, ToastFootprint(HudFrame.Current));
             Rect card = ToastRect();
-            card.y -= (1f - Mathf.Clamp01(shownFor / FadeInSeconds)) * 14f;   // 살짝 내려앉으며 나타난다
+            // 나타날 때 아래에서 살짝 올라온다(위로 미끄러지면 무대 밖 — 내기 점수판 — 으로 나간다). 무대 안에서만 움직인다.
+            card.y += (1f - Mathf.Clamp01(shownFor / FadeInSeconds)) * BurstMargin;
             FieldHudInput.RegisterBlockingRect(card);
 
             Color accent = AccentOf(current.Kind);

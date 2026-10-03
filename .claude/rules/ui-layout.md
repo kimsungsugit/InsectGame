@@ -236,10 +236,12 @@ FieldHudInput.RegisterBlockingRect(barRect);   // 그리기 직전
 GUI.DrawTexture(barRect, Texture2D.whiteTexture);
 ```
 
-**픽셀 좌표계라면 `UIScale.Scale`로 나눠서 넘긴다.** `RegisterBlockingRect`는 가상 좌표를 받고
-`IsScreenPointOverHud`가 화면 좌표를 `Scale`로 나눠 비교한다. `UIScale.Begin()`을 쓰지 않는
-화면(`UISafeLayout.Px` 사용)이 그대로 넘기면 스케일이 1이 아닌 기기에서 엉뚱한 영역이 막힌다
-(`WorldFieldMultiplayerUI.BlockFieldClicks`가 그 변환의 본보기다).
+**등록은 가상 좌표다.** `RegisterBlockingRect`는 가상 좌표를 받고 `IsScreenPointOverHud`가 화면 좌표를
+`Scale`로 나눠 비교한다. `UIScale.Begin()` 안에서 그리는 화면은 그린 Rect를 **그대로** 넘긴다
+(`WorldFieldMultiplayerUI.BlockFieldClicks`·`SubAreaWorldBuilder.BlockFieldClicks`가 본보기다). 필드 HUD는 이제
+전부 가상 캔버스에 그린다 — 마지막까지 픽셀 좌표였던 그 둘을 2026-10-03에 옮겼다. 픽셀 좌표로 그리는 화면을 새로
+만든다면 `HudFrame.ToVirtual(pixelRect)`로 바꿔 넘길 것(그대로 넘기면 스케일이 1이 아닌 기기에서 엉뚱한 영역이 막힌다).
+반대로 픽셀 화면을 가상 캔버스로 옮길 때는 **나누던 변환을 함께 걷어낸다** — 가상 Rect를 다시 `Scale`로 나누면 같은 결함이다.
 
 **네 번 났다.** 2026-08-17에 `QuickAccessBarUI`(메뉴를 열 때마다)와 `WorldFieldMultiplayerUI`
 ("3:3 대전"을 누르면 도전과 동시에 캐릭터가 상대 뒤로 걸어감)가 P0이었고, 2026-08-23에
@@ -277,12 +279,38 @@ done
 이미 막힌다). 위험한 것은 **플레이어가 자유롭게 움직이는 동안 그려지는 것**뿐이다 —
 로그인·오프닝(월드 없음), 미니게임·포획 선택(프리즈)은 제외하고 남는 것을 본다.
 
+**가상 조이스틱도 이 목록을 본다**(`VirtualJoystickUI.CanBeginAt`) — 등록된 HUD 위에서는 조이스틱이 **시작하지 않는다**(이미 잡은 조이스틱은
+손가락이 HUD 위를 지나가도 놓치지 않는다). 예전엔 클릭-이동만 이 목록으로 걸러서 좌하단에 걸친 버튼(대화·동굴 입구·퀘스트 목표 행)을 누르면
+버튼과 조이스틱 이동이 함께 걸렸다(2026-10-03). 예외는 조이스틱 자리를 알려 주는 좌하단 안내 원(`HintCenter`·`HintRadius`) 안이다 — 꿈 섬 첫 걸음의
+안내 카드가 그 원을 덮어도 조작이 먹통처럼 보이지 않게. 그러니 **안내 원 위에는 버튼을 두지 말 것**(누르면 버튼과 조이스틱이 같이 걸린다).
+
 `evt.Use()`는 방어가 **아니다.** 그건 IMGUI 안에서만 유효한데 `PlayerMovement`는
 `Input.GetMouseButtonDown(0)`을 Update에서 따로 폴링한다 — IMGUI 밖이라 소비 여부를 모른다.
 
 2026-08-23 기준 등록된 파일: `CaptureInputController`, `WorldInteractionController`,
 `QuickAccessBarUI`, `WorldFieldMultiplayerUI`, `TutorialQuestUI`, `SubAreaWorldBuilder`,
 `MinimapUI`·`PlayerStatusHUD`(버튼 위젯은 없지만 불투명 패널이라 같이 막는다).
+
+## 필드 HUD는 자리를 순수 함수로 내고, 잠깐 뜨는 카드는 가운데 무대에 세운다
+
+필드·동굴·섬 위 HUD는 OnGUI 순서가 정해져 있지 않아 겹치면 어느 쪽이 위인지도 모른다. 그래서 **겹치지 않는 것을 테스트로 고정한다** —
+`HudOverlapSweepTests`가 화면 18장(데스크톱 6, 모바일 세로 2·가로 2 × 배율 0.667/1/1.333)에서 함께 뜰 수 있는 모든 요소의
+모든 쌍을 잰다. 2026-10-03 전수 검사 전엔 204쌍이 겹쳤다.
+
+- **자리는 그 화면 파일의 순수 함수**(`XxxRect(HudFrame f)`)로 낸다. `HudFrame`(UISafeLayout.cs)이 화면 한 장을 값으로 세운다 —
+  그리는 쪽은 `HudFrame.Current`, 테스트는 `HudFrame.ForScreen(…)`. 식을 테스트에 다시 세우지 않는다(배치를 고치면 검사가 따라오게).
+- **잠깐 뜨는 카드·알림은 `HudStage`(가운데 무대)에 선다.** `HudStage.Place(f, item, w, h)`가 자리를, `HudStage.Request(item)`이 차례를 준다
+  — 차례 항목은 한 번에 하나, 앞 차례·고정 칸이 서 있으면 **그리지 말고 시간도 멈출 것**(기다리다 사라지면 못 본다). 고정 칸 셋
+  (미니게임 결과·장소 진입 알림·동굴 출입 토스트)은 시간을 다른 담당 파일이 쥐고 있어 늘 서고, 정해진 칸에 차례로 쌓인다.
+  새 카드를 만들면 `HudStageItem`에 우선순위 자리를 정해 넣는다.
+- **무대는 섬 HUD가 서 있을 때만 섬 HUD를 피한다**(`HudStage.Area(f, islandHud)`) — 필드에서도 섬 열을 피하면 세로 화면의 카드가 왼쪽 절반으로
+  밀린다(2026-10-03 QA 실측, 720×1280에서 x 18~378). 판단은 `HudPresence`(`IslandHudUI`가 섬에서 매 프레임 표시)를 `HudFrame.Current`가
+  `HudFrame.IslandHud`로 담아 넘긴다 — 테스트는 `f.WithIslandHud(true)`로 섬 화면을 세운다. 섬에서만 뜨는 HUD를 무대가 피해야 한다면 같은 식으로 맥락을 둘 것.
+- 무대 안에 서는 가운데 것들(대화 버튼·코치 배너·섬 안내 배너·근처 탐험가)은 서 있는 카드와 겹치면 비켜선다(`HudStage.OccupiedOver`).
+  그래서 카드를 그리는 자리에서는 `Request(item, rect)`로 **그리는 자리를 함께 알린다** — 자리를 모르는 카드는 무대 전체를 덮는다고 본다.
+- **필드 위에 HUD를 새로 그리면 `HudOverlapSweepTests.Elements`에 한 줄 넣는다.** 함께 뜰 수 없는 쌍은 `Exclusion`에 코드 근거와 함께 뺀다 —
+  근거(숨김 조건)를 지우면 그 행도 지울 것. 꿈(`DreamPrologueState.Active`)·섬(`detached` 서브에리어)·모달·조작 잠금(IsFrozen)에서
+  숨는지가 곧 그 근거다.
 
 ## 구독은 `OnEnable`에서 되살린다 — `subscription_lint.py`가 잡는다
 

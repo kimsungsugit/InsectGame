@@ -128,19 +128,29 @@ namespace InsectGame.UI
         /// 읽어 피해 간다 — 세로 화면에서 배너가 화면 중앙에 놓여 우상단 바 밑으로 파고들었다.
         /// 데스크톱 폭 1200은 "보유 곤충 [C]"가 칸 안에 드는 값이다(1130일 때 "[C"에서 잘렸다).
         /// </summary>
-        public static Rect ShortcutBarRect
+        public static Rect ShortcutBarRect =>
+            ShortcutBarRectIn(UIScale.IsMobileLayout, UISafeLayout.HorizontalBox, UISafeLayout.VerticalBox);
+
+        /// <summary>화면 한 장(<see cref="HudFrame"/>)에서의 단축 바 — 전수 겹침 검사와 다른 HUD의 순수 배치가 부른다.</summary>
+        public static Rect ShortcutBarRectFor(HudFrame f) => ShortcutBarRectIn(f.Mobile, f.Horizontal, f.Vertical);
+
+        /// <summary>
+        /// <see cref="ShortcutBarRect"/>의 <b>순수 계산</b> — 안전 범위 두 축을 받는다(<see cref="UISafeLayout.Compute"/>로 만든다).
+        /// 모바일은 <c>TopPanel(324, h, Right)</c>, 데스크톱은 <c>BottomPanel(1200, h)</c>와 같은 값이다.
+        /// 퀘스트 칩(<see cref="QuestChipLayout"/>)과 겹침 테스트가 화면 크기별로 이걸 읽는다.
+        /// </summary>
+        public static Rect ShortcutBarRectIn(bool mobile, UISafeLayout.SafeBox horizontal, UISafeLayout.SafeBox vertical)
         {
-            get
-            {
-                bool mobile = UIScale.IsMobileLayout;
-                int columns = mobile ? 2 : shortcuts.Length;
-                int rows = (shortcuts.Length + columns - 1) / columns;
-                float gap = mobile ? 8f : 6f;
-                float buttonHeight = mobile ? 68f : BarButtonHeight;
-                float desiredHeight = 16f + rows * buttonHeight + (rows - 1) * gap;
-                return mobile ? UISafeLayout.TopPanel(324f, desiredHeight, UISafeLayout.HAlign.Right)
-                    : UISafeLayout.BottomPanel(1200f, desiredHeight);
-            }
+            int columns = mobile ? 2 : shortcuts.Length;
+            int rows = (shortcuts.Length + columns - 1) / columns;
+            float gap = mobile ? 8f : 6f;
+            float buttonHeight = mobile ? 68f : BarButtonHeight;
+            float desiredHeight = 16f + rows * buttonHeight + (rows - 1) * gap;
+            float w = UISafeLayout.ClampSize(mobile ? 324f : 1200f, horizontal);
+            float h = UISafeLayout.ClampSize(desiredHeight, vertical);
+            float x = UISafeLayout.AlignStart(w, mobile ? UISafeLayout.HAlign.Right : UISafeLayout.HAlign.Center, horizontal);
+            float y = mobile ? vertical.Start : UISafeLayout.EndStart(h, vertical);
+            return new Rect(x, y, w, h);
         }
 
         private void DrawShortcuts()

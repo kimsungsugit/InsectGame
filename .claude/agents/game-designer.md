@@ -21,6 +21,7 @@ tools:
 - `Assets/Scripts/Core/TrainerLevelGap.cs` - 캐릭터↔곤충 레벨 차 정본(포획 레벨 제한 배율·캐릭터 EXP 레벨 배율) ※포획 공식 적용부는 capture-dev(`CaptureChanceCalculator`)·battle-dev(`BattleCaptureChanceCalculator`)
 - `Assets/Scripts/Core/TutorialQuestManager.cs` - 튜토리얼/퀘스트
 - `Assets/Scripts/Core/TutorialQuestData.cs` - 퀘스트 데이터
+- `Assets/Scripts/Core/QuestTraitRules.cs` - 조건부 퀘스트(CaptureTrait/BattleFeat) 입력(CaptureFacts/BattleFacts)과 순수 판정
 - `Assets/Scripts/Core/WeeklyContestSchedule.cs` - 주간 크기 대결 일정·대상 종·등급 임계
 - `Assets/Scripts/Core/WeeklyContestManager.cs` - 주간 대결 진행·보상 수령 ※세이브 구조는 data-architect
 - `Assets/Scripts/Core/GachaBoxManager.cs` - 가챠 시스템
@@ -44,7 +45,8 @@ tools:
 - `Assets/Scripts/Story/StoryObjectiveTracker.cs` - 목표 → 월드 좌표·자동 주행 해석
 - `Assets/Scripts/Story/RivalRaceController.cs` - 라온과의 포획 내기 (시간표·보상은 `RivalRaceRules`, `ch1_rival_intro` 뒤 1회)
 - `Assets/Scripts/Story/DreamPrologueDirector.cs` - 「챔피언의 꿈」 프롤로그 지휘 (챔피언전 → 챔피언의 섬 → 깨어남, 신규 계정 1회·설정 다시보기) ※화면 그리기는 ui-dev
-- `Assets/Scripts/Core/DreamPrologueData.cs` - 꿈의 저작 데이터 (챔피언 팀·적·꾸며진 섬 배치·기술 고르기)
+- `Assets/Scripts/Story/DreamIntroVideo.cs` - 꿈 도입 영상(경기장 입장 8초) 재생기 — 무음 영상 + 별도 음원, 못 뜨면 글자 카드로 대신 ※영상·음원 제작은 `Tools/Video/dream_arena*.py`
+- `Assets/Scripts/Core/DreamPrologueData.cs` - 꿈의 저작 데이터 (챔피언 팀·적·꾸며진 섬 배치·기술 고르기·도입 영상 길이)
 - `Assets/Scripts/Core/DreamPrologueState.cs` - 꿈 진행 표지(`Active`)와 시작 조건 순수 판정
 - `Assets/Scripts/Battle/SandboxBattleRules.cs` - 샌드박스 전투의 피해 배율·상하한·길이 (battle-dev와 같은 파일을 보나 수치는 여기가 단일 출처)
 - `Assets/Scripts/Core/FieldMomentFeed.cs` - 필드 소식 대기열 (레벨업·이야기 보상·내기·색다른 조우 — 넣는 쪽과 그리는 쪽을 잇는다)

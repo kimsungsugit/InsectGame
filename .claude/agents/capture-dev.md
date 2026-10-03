@@ -18,7 +18,7 @@ tools:
 - `Assets/Scripts/Capture/CaptureMinigameController.cs` - 포획 미니게임 껍데기 (게임 고르기 · 조작 수집 · 그리기 · 포획 판정 연결)
 - `Assets/Scripts/Capture/CaptureMinigame.cs` - 미니게임 3종의 순수 규칙 (살금살금·가두기·던지기, 결과 0~3점, 포획마다 무작위)
 - `Assets/Scripts/Capture/CaptureMinigameProbability.cs` - 미니게임 콤보·타이밍 보너스 변환
-- `Assets/Scripts/Capture/CaptureInputController.cs` - 포획 입력
+- `Assets/Scripts/Capture/CaptureInputController.cs` - 포획 입력 + 습격 판정 훅(`InsectEntity.AmbushGate`)·교전 종료 시각(쿨다운)·닿으면 습격 창 열기
 - `Assets/Scripts/Capture/CaptureProximityTrigger.cs` - 근접 감지 (8m 반경)
 - `Assets/Scripts/Capture/CaptureRaycastTrigger.cs` - 레이캐스트 감지
 - `Assets/Scripts/Capture/CaptureTriggerModeController.cs` - 감지 모드 전환
@@ -29,27 +29,37 @@ tools:
 - `Assets/Scripts/Spawning/FirstShinyEncounter.cs` - 도입부 확정 조우 (세 번째 포획 앞에서 근처 개체 하나를 색다르게 — 계정당 1회)
 - `Assets/Scripts/Spawning/FieldPopulation.cs` - 슬롯 기록부 + 상태 전이 (게임플레이 퇴장 vs 거리 회수)
 - `Assets/Scripts/Spawning/FleePath.cs` - 도주 방향·거리 순수 판정 (벽 관통 방지)
+- `Assets/Scripts/Spawning/AmbushRules.cs` - 습격 순수 규칙 (거절 조건·전역/개체 쿨다운·알아채는 반경·접근 속도·다가갈 길·"왜 덤벼들었나" 한 줄 — `InsectEntity` AI와 `CaptureInputController` 판정이 읽는다, 규칙은 `rules/world-environment.md` 「습격」)
+- `Assets/Tests/EditMode/AmbushRulesTests.cs` - 습격 거절 조건 하나씩·쿨다운 경계·싸울 곤충·접근 속도/길·진짜 DB 시간대×날씨 깨어남 표(로그 `[Ambush]`)
 - `Assets/Scripts/Spawning/SpawnPoint.cs` - 리전/서브에리어 스폰 표 (풀 · 레벨 대역) — 자리는 정하지 않음
-- `Assets/Scripts/Spawning/InsectEntity.cs` - 곤충 엔티티 (프로시저럴 3D 모델)
+- `Assets/Scripts/Spawning/InsectEntity.cs` - 곤충 엔티티 (프로시저럴 3D 모델) — AI(경계·도주·습격 접근)는 capture-dev
 - `Assets/Scripts/Spawning/SimpleObjectPool.cs` - Get()/Return() 오브젝트 풀
 - `Assets/Scripts/Spawning/DistanceCulling.cs` - 거리 컬링 (25m/20m)
 - `Assets/Scripts/Spawning/CaptureItemSpawner.cs` - 아이템 스폰
 - `Assets/Scripts/Spawning/CaptureItemPickup.cs` - 아이템 획득
 - `Assets/Scripts/Data/InsectSpawnCondition.cs` - 시간/날씨 조건
+- `Assets/Scripts/Data/InsectHabits.cs` - 곤충 시간·날씨 성향 순수 규칙 (주행/야행/무관 · 좋아하는/싫어하는 날씨 · 습격형 → 스폰 배수·궁합 Fit·전투 보정·습격 판정)
+- `Assets/Scripts/Data/InsectHabitTable.cs` - 성향 표 (종마다 한 줄, 계통별 곤충학 근거 주석 — 종을 늘리면 한 줄 추가, `InsectHabitsTests`가 DB와 맞춰 본다)
 - `Assets/Scripts/Data/CaptureItemData.cs` - 포획 아이템
-- `Assets/Scripts/Core/WeatherSystem.cs` - 날씨 (Clear/Rain/Fog/Wind)
+- `Assets/Scripts/Core/WeatherSystem.cs` - 날씨 (Clear/Rain/Fog/Wind/Snow)
+- `Assets/Scripts/Core/WeatherForecast.cs` - 날씨 예보 순수 규칙 (다음 날씨·지속·지역 기후 — 설산은 비→눈, 사막·화산은 눈→센바람)
 - `Assets/Scripts/Core/GameClock.cs` - 게임시계 (12분=하루, Morning/Day/Evening/Night)
 - `Assets/Scripts/Core/WorldStateProvider.cs` - WorldState(시간+날씨) 제공
 - `Assets/Scripts/Core/PlayerMovement.cs` - 플레이어 이동 (월드 탐험)
 - `Assets/Scripts/Core/PlayerStartPlacement.cs` - 플레이어 시작 위치·방향 계산
 - `Assets/Scripts/Core/WorldInteractionTypes.cs` - 월드 상호작용 종류 정의 ※프롬프트 UI는 ui-dev
-- `Assets/Scripts/UI/CaptureChoiceUI.cs` - 포획/배틀/레이드 선택 허브 ※UI 레이아웃은 ui-dev
+- `Assets/Scripts/UI/CaptureChoiceUI.cs` - 포획/배틀/레이드 선택 허브 + 「습격!」 창([싸우기]/[도망치기], ESC=도망) ※UI 레이아웃은 ui-dev
 - `Assets/Scripts/NPC/NpcManager.cs` - NPC 스폰/디스폰/배치
 - `Assets/Scripts/NPC/CatcherKidNpc.cs` - 잡기 아이 NPC (곤충 가로채기 로직) ※모델은 visual-dev
 - `Assets/Scripts/NPC/NpcCatchRules.cs` - NPC 곤충 가로채기 규칙
 - `Assets/Scripts/NPC/VillagerNpc.cs` - 마을 주민 NPC 개체/상호작용 ※모델은 visual-dev
 - `Assets/Scripts/Core/IslandWorldBuilder.cs` - 나의 섬 드나들기(분리 서브에리어 진입·이탈·복귀 좌표), 밟는 땅·경계·물건 차단 콜라이더, 방목 곤충 세우기, 꾸미기 미리보기·카메라, 본 마을 나루터 ※모양은 visual-dev(`IslandTerrainBuilder`·`IslandObjectBuilder`)
-- `Assets/Scripts/Core/IslandInsectWalker.cs` - 섬 방목 곤충의 배회(빈 칸 사이 이동, 건물 통과 금지)
+- `Assets/Scripts/Core/IslandInsectWalker.cs` - 섬 방목 곤충의 배회(빈 칸 사이 이동, 건물 통과 금지, 시간·날씨 기분 적용)
+- `Assets/Scripts/Core/IslandInsectMood.cs` - 방목 곤충 기분 순수 규칙 (성향 → 활동도 0~1 → 쉬는 시간·속도·나는 높이, 보통 0.6 = 예전 배회)
+- `Assets/Scripts/Core/IslandGuestRules.cs` - 섬 손님 곤충 순수 규칙 (수=BonusSlots · 해금 풀 합집합 · 등급 희귀까지 · 종의 가장 낮은 해금 리전 대역 · 화면 밖에서 떠남 · 빈 칸 위 도주)
+- `Assets/Scripts/Core/IslandWorldBuilder.Guests.cs` - 섬 손님 기록·몸(야생 경로 `Initialize`, 작은 풀) + 방목 곤충 기분 전달 — `IslandWorldBuilder`의 partial
+- `Assets/Tests/EditMode/IslandGuestRulesTests.cs` - 손님 수 표·들어설 곳·종 고르기(초원만 해금)·등급 상한·레벨 대역·떠나기·빈 칸 도주·들어설 칸
+- `Assets/Tests/EditMode/IslandInsectMoodTests.cs` - 야행성 밤 활발·낮 쉼, 주행성 반대, 날씨 취향, 시간 무관 종은 예전 그대로
 - `Assets/Tests/EditMode/IslandIntegrationTests.cs` - 실제 PlayScene에서 섬 진입·이동·구경·퇴장(서브에리어 빌더 비개입, sticky 해제, 끼임 복구 좌표, 복귀 자리)
 
 ## 핵심 공식
@@ -75,7 +85,10 @@ rarityFloor: Common30% / Uncommon22% / Rare14% / Epic8% / Legendary4%
 ```
 등급 = 전역 표 C .60 / U .25 / R .11 / E .035 / L .005 (리전과 무관, 레어 부스트는 R+에만 ×)
   → 풀에 없는 등급은 가까운 아래 → 위로 대체 (안전망)
-종 = 그 등급의 (리전 풀 ∩ 시간·날씨 후보) 안에서 spawnWeight 가중
+종 = 그 등급의 (리전 풀 ∩ 시간·날씨 후보) 안에서 spawnWeight × 성향 배수 가중 (상태는 리전별 — GetWorldState(regionId))
+  → 성향 배수 = InsectHabits.SpawnWeightMultiplier: 야행성 밤 ×2.5·낮 ×0.35 / 주행성 낮 ×1.8·밤 ×0.4 / 좋아하는 날씨 ×1.5·싫어하는 ×0.6, [0.15, 4] clamp — 0 불가(후보가 안 빈다), 등급 분포는 그대로
+보너스 슬롯 = 밤 +1 · 비·안개 +1 (합 최대 +2, FieldSpawnRules.BonusSlots) — RegionCap이 보너스를 먼저 더한 합에 오염 감소(MaxActiveFor)를 얹는다
+시간대 전환 = GameClock.DayPhaseChanged → 잠들 시간의 종은 만료를 5~60초로 당김 (25m 규칙·스토리 목표종 면제는 순환 쪽이 그대로 지킨다)
 레벨(메인) = 리전 대역 [requiredLevel, +GetRegionLevelRange] 안 pow(random, 1.5), 등급 보정 없음
 레벨(서브에리어) = min~max 균등
 슬롯 = 설 수 있는 땅 / 550㎡ (8~40) → BlightPolicy.MaxActiveFor

@@ -28,6 +28,12 @@ namespace InsectGame.UI
         /// <summary>미니맵 좌변 x. 아래에 붙는 HUD가 좌변을 맞추는 데 쓴다.</summary>
         public static float LeftX => UIScale.VirtualSafeLeft + 16f;
 
+        /// <summary>미니맵 판의 자리 — 순수 계산(전수 겹침 검사가 부른다).</summary>
+        public static Rect PanelRect(HudFrame f)
+        {
+            return new Rect(f.SafeLeft + 16f, f.ContentTop + TopOffset, PanelSize, PanelSize);
+        }
+
         /// <summary>
         /// 좌측 스택(미니맵·퀘스트 칩·목표 행)이 지금 가려져 있는가.
         /// <see cref="PlayerStatusHUD"/>의 펼침 패널이 이 영역을 통째로 덮으므로, 덮였으면
@@ -127,10 +133,10 @@ namespace InsectGame.UI
             EnsureAssets();
             UIScale.Begin();
 
-            float size = PanelSize;
-            float x = LeftX;
-            float y = UISafeLayout.ContentTop + TopOffset; // 좌상단 HUD(ContentTop) 닫힘 탭 아래
-            Rect rect = new Rect(x, y, size, size);
+            Rect rect = PanelRect(HudFrame.Current);   // 좌상단 HUD(ContentTop) 닫힘 탭 아래
+            float size = rect.width;
+            float x = rect.x;
+            float y = rect.y;
             float cx = x + size / 2f;
             float cy = y + size / 2f;
             float mapRadius = size / 2f - 12f;

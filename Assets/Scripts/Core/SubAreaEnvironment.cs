@@ -3,9 +3,22 @@ using UnityEngine;
 
 namespace InsectGame.Core
 {
+    /// <summary>
+    /// 리전·서브에리어의 조명 환경을 전환하고, 그 위에 <b>낮·밤·날씨 하늘</b>(<see cref="WorldSkyRules"/>)을 얹는다.
+    ///
+    /// <b>이중 적용을 막는 구조.</b> 전환 보간(<see cref="BlendBase"/>)은 "기본 상태"(<see cref="baseState"/>, 하늘 보정 전)만 만든다.
+    /// 렌더 설정(RenderSettings·라이트·카메라 배경·스카이박스)에 쓰는 건 <see cref="WriteFinal"/>이 기본 상태에 하늘을 얹어 한 번에 한다.
+    /// 스냅샷(<see cref="SnapshotCurrent"/>)은 렌더 설정이 아니라 기본 상태에서 뜬다 — 렌더 설정에서 읽으면 밤색이 기본으로 굳어
+    /// 리전을 옮길 때마다 하늘이 한 겹씩 더 얹힌다.
+    ///
+    /// 보정이 걸리는 곳은 메인 필드와 나의 섬뿐이다(<see cref="WorldSkyRules.Applies"/>). 동굴·방은 실내라 없고
+    /// 「챔피언의 꿈」은 늘 맑은 한낮이다. 걸리고 풀리는 경계는 <see cref="skyBlend"/>가 0.5초에 걸쳐 오가므로 동굴 입구에서
+    /// 밤 하늘이 뚝 끊기지 않는다.
+    /// </summary>
     public class SubAreaEnvironment : MonoBehaviour
     {
         [SerializeField] private RegionManager regionManager;
+        [SerializeField] private WorldStateProvider worldState;
 
         private Light directionalLight;
         private Camera mainCamera;
@@ -29,12 +42,39 @@ namespace InsectGame.Core
         // 서브지역에선 Flat으로 바꿔 ambientColor 한 색이 사방을 비추게 하고(Trilight면 적도·바닥 색이 메인 필드 것으로 남는다.
         // 예전 Skybox 모드에선 ambientColor가 아예 무시돼 서브지역을 밝힐 수 없었다), 빠져나올 때 이 값으로 복원한다.
         private UnityEngine.Rendering.AmbientMode defaultAmbientMode = UnityEngine.Rendering.AmbientMode.Trilight;
+        // Trilight 환경광의 옆·아래 색과 그림자 세기 — 리전 대기는 위쪽(ambientLight = ambientSkyColor) 색만 바꾸므로 나머지는
+        // 부트스트랩이 정한 값 그대로이고, 하늘 보정(밤·흐림)이 이 값 위에 얹힌다. CaptureDefaults가 실제 값을 읽어 덮는다.
+        private Color defaultAmbientEquator = new Color(0.42f, 0.43f, 0.41f);
+        private Color defaultAmbientGround = new Color(0.26f, 0.24f, 0.21f);
+        private float defaultShadowStrength = 0.5f;
 
         // 전환 상태
         private EnvironmentProfile targetProfile;
         private EnvironmentProfile currentState;
         private float transitionProgress = 1f;
         private float transitionSpeed = 2f;
+
+        // 기본 상태 — 전환 보간의 현재 값(하늘 보정 전). 스냅샷·전환의 출발점은 항상 이것이다.
+        private EnvironmentProfile baseState;
+        // 직전 보간에서 출발·도착 중 안개가 있었는가 — 필드 안개 모드(지수제곱)를 계속 쓸지 정한다.
+        private bool baseFogUsed;
+
+        // ── 낮·밤·날씨 하늘 ──
+        /// <summary>하늘을 갱신하는 간격(초). 전환 중에는 매 프레임이다 — 게임 1시간이 30초라 0.1초 단위면 눈에 안 띈다.</summary>
+        private const float SkyTickSeconds = 0.1f;
+        /// <summary>하늘 보정이 걸리고 풀리는 데 드는 시간(초) — 전환 보간(<c>transitionSpeed</c> 2)과 같다.</summary>
+        private const float SkyFadeSeconds = 0.5f;
+        /// <summary><see cref="WorldStateProvider"/>를 못 찾았을 때 다시 찾기까지의 간격(초).</summary>
+        private const float WorldLookupSeconds = 2f;
+
+        private WorldSkyRules.SkyFrame skyFrame;
+        private float skyBlend;                 // 0이면 기본 상태 그대로, 1이면 하늘 보정 전부
+        private bool skyBlendReady;
+        private float skyClock;
+        private float skyLastTime;
+        private float lastWrittenBlend = -1f;
+        private float worldLookupClock;
+        private WorldSkyVisuals skyVisuals;
 
         private bool initialized;
 
@@ -54,6 +94,15 @@ namespace InsectGame.Core
                 regionManager.SubAreaChanged += OnSubAreaChanged;
                 regionManager.RegionChanged += OnRegionChanged;
             }
+        }
+
+        /// <summary>
+        /// 시계·날씨 공급자를 주입한다. 안 주입해도 <c>FindFirstObjectByType</c>로 찾지만(2초 간격 재시도),
+        /// 못 찾으면 하늘은 맑은 정오로 남는다 — 기존 한낮 모습 그대로다.
+        /// </summary>
+        public void AutoWire(WorldStateProvider provider)
+        {
+            if (provider != null) worldState = provider;
         }
 
         private void OnEnable()
@@ -116,9 +165,12 @@ namespace InsectGame.Core
                 defaultLightColor = directionalLight.color;
                 defaultLightIntensity = directionalLight.intensity;
                 defaultLightRotation = directionalLight.transform.rotation;
+                defaultShadowStrength = directionalLight.shadowStrength;
             }
 
             defaultAmbient = RenderSettings.ambientLight;
+            defaultAmbientEquator = RenderSettings.ambientEquatorColor;
+            defaultAmbientGround = RenderSettings.ambientGroundColor;
             defaultAmbientMode = RenderSettings.ambientMode;
             defaultFogEnabled = RenderSettings.fog;
             defaultFogColor = RenderSettings.fogColor;
@@ -132,18 +184,190 @@ namespace InsectGame.Core
             }
 
             currentState = BuildDefaultProfile();
+            baseState = currentState;
             targetProfile = currentState;
+
+            // 스카이박스 복제본 — 낮밤·날씨가 노출을 바꾼다. 원본 에셋은 건드리지 않고 OnDestroy가 되돌린다.
+            skyVisuals = new WorldSkyVisuals();
+            skyVisuals.CreateSkybox();
             initialized = true;
+        }
+
+        private void OnDestroy()
+        {
+            if (skyVisuals != null)
+            {
+                skyVisuals.Dispose();
+                skyVisuals = null;
+            }
         }
 
         private void Update()
         {
             if (!initialized) return;
-            if (transitionProgress >= 1f) return;
 
-            transitionProgress = Mathf.Clamp01(transitionProgress + Time.deltaTime * transitionSpeed);
-            float t = Mathf.SmoothStep(0f, 1f, transitionProgress);
-            ApplyLerp(currentState, targetProfile, t);
+            bool transitioning = transitionProgress < 1f;
+            if (transitioning)
+            {
+                transitionProgress = Mathf.Clamp01(transitionProgress + Time.deltaTime * transitionSpeed);
+                float t = Mathf.SmoothStep(0f, 1f, transitionProgress);
+                BlendBase(currentState, targetProfile, t);
+            }
+
+            // 하늘 — 전환 중에는 매 프레임(기본 상태가 움직인다), 아니면 0.1초마다
+            skyClock -= Time.unscaledDeltaTime;
+            if (!transitioning && skyClock > 0f) return;
+            skyClock = SkyTickSeconds;
+            RefreshSky(transitioning);
+        }
+
+        private void LateUpdate()
+        {
+            // 별·연무 돔이 카메라를 따라다닌다(켜져 있을 때만 일한다)
+            if (skyVisuals != null) skyVisuals.Follow(mainCamera);
+        }
+
+        // ── 낮·밤·날씨 하늘 ──
+
+        /// <summary>하늘 보정이 걸리는 곳인가 — 메인 필드·나의 섬이고 꿈이 아닐 때.</summary>
+        private bool SkyApplies()
+        {
+            SubAreaData sub = regionManager != null ? regionManager.CurrentSubArea : null;
+            return WorldSkyRules.Applies(sub != null, sub != null ? sub.subAreaId : null, DreamPrologueState.Active);
+        }
+
+        /// <summary>
+        /// 날씨를 읽을 리전 — 메인 필드의 현재 리전. 섬·서브에리어에는 지역이 없으니 null(세계 날씨 그대로)이다.
+        /// <c>CurrentRegion</c>은 서브에리어 안에서도 부모 리전을 가리키므로 서브에리어를 먼저 거른다.
+        /// </summary>
+        private string WeatherRegionId()
+        {
+            if (regionManager == null || regionManager.CurrentSubArea != null) return null;
+            return regionManager.CurrentRegion != null ? regionManager.CurrentRegion.regionId : null;
+        }
+
+        private WorldSkyRules.SkyFrame ComputeSkyFrame()
+        {
+            float hour = WorldSkyRules.NoonHour;
+            WorldSkyRules.WeatherMix mix = WorldSkyRules.WeatherMix.Of(WeatherType.Clear);
+
+            if (worldState == null && Time.unscaledTime >= worldLookupClock)
+            {
+                worldState = FindFirstObjectByType<WorldStateProvider>();
+                worldLookupClock = Time.unscaledTime + WorldLookupSeconds;
+            }
+            if (worldState != null)
+            {
+                GameClock clock = worldState.Clock;
+                if (clock != null) hour = clock.GetHourFloat();
+                mix = WorldSkyRules.WeatherMix.From(worldState.Weather, WeatherRegionId());
+            }
+            return WorldSkyRules.Evaluate(hour, mix);
+        }
+
+        /// <summary>
+        /// 하늘 한 틱 — 걸림 비율을 목표로 옮기고 하늘 프레임을 새로 평가해 렌더 설정에 쓴다.
+        /// 걸릴 일이 없는 곳(동굴·방)에서는 비율이 0에 닿은 뒤 아무것도 쓰지 않는다.
+        /// </summary>
+        private void RefreshSky(bool force)
+        {
+            float now = Time.unscaledTime;
+            float dt = skyLastTime > 0f ? Mathf.Clamp(now - skyLastTime, 0f, 0.5f) : 0f;
+            skyLastTime = now;
+
+            bool applies = SkyApplies();
+            float target = applies ? 1f : 0f;
+            if (!skyBlendReady)
+            {
+                // 첫 틱은 서서히 걸지 않는다 — 켜자마자 기본 한낮에서 밤으로 페이드되는 걸 막는다
+                skyBlend = target;
+                skyBlendReady = true;
+            }
+            else
+            {
+                skyBlend = Mathf.MoveTowards(skyBlend, target, dt / SkyFadeSeconds);
+            }
+
+            if (applies || skyBlend > 0f) skyFrame = ComputeSkyFrame();
+
+            if (!force && !applies && skyBlend <= 0f && lastWrittenBlend <= 0f) return;
+            lastWrittenBlend = skyBlend;
+            WriteFinal();
+        }
+
+        private WorldSkyRules.LightingState ToState(EnvironmentProfile p, bool flatAmbient)
+        {
+            return new WorldSkyRules.LightingState
+            {
+                lightColor = p.lightColor,
+                lightIntensity = p.lightIntensity,
+                lightRotation = p.lightRotation,
+                shadowStrength = defaultShadowStrength,
+                ambientSky = p.ambientColor,
+                // 평면 환경광(서브에리어)은 한 색이 사방을 비춘다. 필드(Trilight)는 옆·아래가 부트스트랩이 정한 색이다.
+                ambientEquator = flatAmbient ? p.ambientColor : defaultAmbientEquator,
+                ambientGround = flatAmbient ? p.ambientColor : defaultAmbientGround,
+                fogEnabled = p.fogEnabled,
+                fogColor = p.fogColor,
+                fogDensity = p.fogDensity,
+                background = p.cameraBg,
+            };
+        }
+
+        /// <summary>
+        /// 기본 상태에 하늘을 얹은 최종 값을 렌더 설정에 쓴다 — 이 파일에서 RenderSettings·라이트·카메라 배경에 쓰는 유일한 곳이다.
+        /// 걸림 비율이 1 미만이면 기본 상태와 보정 결과를 섞는다(걸리고 풀리는 경계의 페이드).
+        /// </summary>
+        private void WriteFinal()
+        {
+            if (mainCamera == null) mainCamera = Camera.main;
+            bool inSubArea = regionManager != null && regionManager.CurrentSubArea != null;
+
+            WorldSkyRules.LightingState b = ToState(baseState, inSubArea);
+            WorldSkyRules.LightingState f = b;
+            if (skyBlend > 0.001f)
+            {
+                WorldSkyRules.LightingState m = WorldSkyRules.Apply(b, skyFrame, !inSubArea);
+                f = skyBlend >= 0.999f ? m : WorldSkyRules.LightingState.Lerp(b, m, skyBlend);
+            }
+
+            if (directionalLight != null)
+            {
+                directionalLight.color = f.lightColor;
+                directionalLight.intensity = f.lightIntensity;
+                directionalLight.transform.rotation = f.lightRotation;
+                directionalLight.shadowStrength = f.shadowStrength;
+            }
+
+            // 평면(Flat) 환경광은 ambientLight, Trilight의 위쪽 색은 ambientSkyColor다 — 둘 다 같은 값을 적어 모드가 어느 쪽이든 맞는다.
+            // 옆·아래 색은 Trilight(메인 필드)에서만 쓰이고 서브에리어(평면)에선 건드리지 않는다.
+            RenderSettings.ambientLight = f.ambientSky;
+            RenderSettings.ambientSkyColor = f.ambientSky;
+            if (RenderSettings.ambientMode != UnityEngine.Rendering.AmbientMode.Flat)
+            {
+                RenderSettings.ambientEquatorColor = f.ambientEquator;
+                RenderSettings.ambientGroundColor = f.ambientGround;
+            }
+
+            // **안개는 런타임에만 켠다** — 빌드 씬은 둘 다 m_Fog: 0이라, GraphicsSettings의 Fog Modes가
+            // Automatic이면 기기 빌드에서 FOG_EXP/EXP2 셰이더 변형이 빠져 에디터에서만 보인다.
+            // 그래서 Custom(Exp·Exp2 유지)으로 둔다 — Automatic으로 되돌리지 말 것.
+            RenderSettings.fog = f.fogEnabled;
+            RenderSettings.fogColor = f.fogColor;
+            RenderSettings.fogDensity = f.fogEnabled ? f.fogDensity : 0f;
+            // 서브에리어는 좁은 방이라 지수(Exp), 메인 필드의 리전 연무는 원경만 흐리는 지수제곱(Exp2).
+            // 모드는 RegionAtmosphere의 상수로만 적는다 — 가시거리 검사(FieldThemeTests)가 같은 상수로 투과율을 계산하므로
+            // 여기서 모드를 바꾸면 검사 계산도 함께 바뀐다(리터럴을 쓰면 FieldFog_RuntimeUsesTheSharedModeConstant가 잡는다).
+            // 안개 날씨의 밀도 상한(RegionAtmosphere.MaxWeatherFogDensity*)도 같은 상수·같은 식의 검사가 지킨다.
+            RenderSettings.fogMode = inSubArea ? RegionAtmosphere.SubAreaFogMode
+                : (f.fogEnabled || baseFogUsed) ? RegionAtmosphere.FieldFogMode : defaultFogMode;
+
+            if (mainCamera != null)
+                mainCamera.backgroundColor = f.background;
+
+            // 흐린 날의 연무 막은 이번에 쓴 안개색을 그대로 칠한다 — 원경 산을 덮는 안개와 같은 색이어야 지평선이 녹는다.
+            // 섬(SolidColor 배경)도 같다. 동굴·꿈은 skyBlend가 0이라 막이 꺼진다.
+            if (skyVisuals != null) skyVisuals.Apply(skyFrame, skyBlend, mainCamera, f.fogColor);
         }
 
         private void OnSubAreaChanged(SubAreaData subArea)
@@ -178,56 +402,40 @@ namespace InsectGame.Core
             transitionProgress = 0f;
         }
 
-        private void ApplyLerp(EnvironmentProfile from, EnvironmentProfile to, float t)
+        /// <summary>
+        /// 출발→도착 보간으로 <b>기본 상태</b>(<see cref="baseState"/>)를 갱신한다 — 렌더 설정엔 쓰지 않는다(<see cref="WriteFinal"/>이 쓴다).
+        /// </summary>
+        private void BlendBase(EnvironmentProfile from, EnvironmentProfile to, float t)
         {
-            if (directionalLight != null)
-            {
-                directionalLight.color = Color.Lerp(from.lightColor, to.lightColor, t);
-                directionalLight.intensity = Mathf.Lerp(from.lightIntensity, to.lightIntensity, t);
-                directionalLight.transform.rotation = Quaternion.Slerp(from.lightRotation, to.lightRotation, t);
-            }
-
-            RenderSettings.ambientLight = Color.Lerp(from.ambientColor, to.ambientColor, t);
+            EnvironmentProfile p = baseState;
+            p.lightColor = Color.Lerp(from.lightColor, to.lightColor, t);
+            p.lightIntensity = Mathf.Lerp(from.lightIntensity, to.lightIntensity, t);
+            p.lightRotation = Quaternion.Slerp(from.lightRotation, to.lightRotation, t);
+            p.ambientColor = Color.Lerp(from.ambientColor, to.ambientColor, t);
             // 페이드 도중: from이 fog이고 t<1일 때만 유지. to가 fog면 항상 ON. 둘 다 off이면 즉시 false.
-            // **안개는 런타임에만 켠다** — 빌드 씬은 둘 다 m_Fog: 0이라, GraphicsSettings의 Fog Modes가
-            // Automatic이면 기기 빌드에서 FOG_EXP/EXP2 셰이더 변형이 빠져 에디터에서만 보인다.
-            // 그래서 Custom(Exp·Exp2 유지)으로 둔다 — Automatic으로 되돌리지 말 것.
-            RenderSettings.fog = (from.fogEnabled && t < 1f) || to.fogEnabled;
-            RenderSettings.fogColor = Color.Lerp(from.fogColor, to.fogColor, t);
+            p.fogEnabled = (from.fogEnabled && t < 1f) || to.fogEnabled;
+            p.fogColor = Color.Lerp(from.fogColor, to.fogColor, t);
             // to가 fog 없으면 fogDensity를 0으로 보간 (잔여 안개 제거)
             float targetDensity = to.fogEnabled ? to.fogDensity : 0f;
             float sourceDensity = from.fogEnabled ? from.fogDensity : 0f;
-            RenderSettings.fogDensity = Mathf.Lerp(sourceDensity, targetDensity, t);
-            // 서브에리어는 좁은 방이라 지수(Exp), 메인 필드의 리전 연무는 원경만 흐리는 지수제곱(Exp2).
-            // 모드는 RegionAtmosphere의 상수로만 적는다 — 가시거리 검사(FieldThemeTests)가 같은 상수로 투과율을 계산하므로
-            // 여기서 모드를 바꾸면 검사 계산도 함께 바뀐다(리터럴을 쓰면 FieldFog_RuntimeUsesTheSharedModeConstant가 잡는다).
-            bool inSubArea = regionManager != null && regionManager.CurrentSubArea != null;
-            RenderSettings.fogMode = inSubArea ? RegionAtmosphere.SubAreaFogMode
-                : (to.fogEnabled || from.fogEnabled) ? RegionAtmosphere.FieldFogMode : defaultFogMode;
-
-            if (mainCamera != null)
-                mainCamera.backgroundColor = Color.Lerp(from.cameraBg, to.cameraBg, t);
+            p.fogDensity = Mathf.Lerp(sourceDensity, targetDensity, t);
+            p.cameraBg = Color.Lerp(from.cameraBg, to.cameraBg, t);
 
             // 안개 해제: 전환 완료 + 대상이 안개 없음이면 끔
             if (t >= 1f && !to.fogEnabled)
-                RenderSettings.fog = false;
+                p.fogEnabled = false;
+
+            baseFogUsed = to.fogEnabled || from.fogEnabled;
+            baseState = p;
         }
 
+        /// <summary>
+        /// 전환의 출발점. <b>렌더 설정이 아니라 기본 상태에서 뜬다</b> — 렌더 설정에는 하늘 보정이 이미 얹혀 있어서
+        /// 거기서 읽으면 밤색·날씨색이 기본으로 굳는다(<see cref="WriteFinal"/>이 매번 기본 상태 위에 다시 얹는다).
+        /// </summary>
         private EnvironmentProfile SnapshotCurrent()
         {
-            var p = new EnvironmentProfile();
-            if (directionalLight != null)
-            {
-                p.lightColor = directionalLight.color;
-                p.lightIntensity = directionalLight.intensity;
-                p.lightRotation = directionalLight.transform.rotation;
-            }
-            p.ambientColor = RenderSettings.ambientLight;
-            p.fogEnabled = RenderSettings.fog;
-            p.fogColor = RenderSettings.fogColor;
-            p.fogDensity = RenderSettings.fogDensity;
-            p.cameraBg = mainCamera != null ? mainCamera.backgroundColor : Color.black;
-            return p;
+            return baseState;
         }
 
         private EnvironmentProfile BuildDefaultProfile()

@@ -74,6 +74,10 @@
 
 - `IslandHudUI`는 **비모달**이다 → 매 OnGUI `FieldHudInput.RegisterBlockingRect`(rules/ui-layout.md).
   모바일에서는 좌하단 사분면(가상 조이스틱 시작 영역)에 버튼을 두지 않는다.
+- 자리는 `IslandHudLayout`(순수 계산)이 정하고 시각·날씨 칩(`WorldClockHUD`)이 같은 계산으로 피해 간다. **가로 모바일은 단축 바 왼쪽 두 칸 판**
+  (높이를 단축 바와 같게) — 세로 열(7줄)을 단축 바 아래에 세우면 화면 85%까지 내려와 우하단 잡기 버튼을 덮는다(밤·비 손님 곤충 때문에
+  섬에서도 잡기 버튼이 뜬다). 수확·좋아요 토스트는 **가운데 무대**(`HudStage` — 포획 결과·퀘스트 완료와 한 자리에서 차례로 선다,
+  rules/ui-layout.md). `HudOverlapSweepTests`가 섬 화면(내 섬·남의 섬)의 모든 HUD 쌍을 화면 18장에서 잰다.
 - `IslandEditUI`는 **모달**이다. 지면 탭이 「칸 고르기」인데 같은 탭을 `PlayerMovement`가 클릭-이동으로도 읽기 때문이다.
   그 위에 뜨는 안내 배너는 자기 자리를 `FieldHudInput`에 등록하고, 꾸미기 화면이 그걸 보고 탭을 양보한다
   (OnGUI 호출 순서가 정해져 있지 않아 먼저 도는 쪽이 탭을 먹는다).
@@ -83,11 +87,63 @@
   놓는다 — 좌상단은 미니맵·퀘스트 칩 자리라 그리기 순서가 정해지지 않은 IMGUI에서 배너가 그 밑에 깔렸다(2026-10-02).
   **검수 fixture에 없는 HUD와의 겹침은 캡처로 안 보인다** — `island-ui`의 안내 장면에 진짜 미니맵과 퀘스트 칩 자리 대역을 함께 띄우는 이유다.
 
+## 손님 곤충 — 밤·비·안개에 찾아오는 야생 곤충
+
+규칙은 `IslandGuestRules`(순수), 기록·몸은 `IslandWorldBuilder.Guests.cs`. **필드 스폰의 순수 함수를 그대로 다시 쓴다** — 등급표·레벨·재생 지연·보너스 수를
+섬에서 새로 만들지 않는다(`FieldSpawnRules`). **섬 수입과는 무관하다**(사용자 결정 — 섬 생산 보너스 없음, `economy_sim` 신호 6·7은 그대로다).
+
+| 무엇 | 규칙 | 출처 |
+|---|---|---|
+| 수 | 밤 +1, 비·안개 +1, 최대 2 — 세계 날씨(섬은 지역이 없다) | `FieldSpawnRules.BonusSlots` |
+| 후보 | **해금된 리전**(`RegionManager.IsRegionAccessible`) 풀의 합집합 ∩ 지금 시간·날씨에 나오는 종. 비면 합집합 전체 | `InsectSpawner.CopyFieldRegionTables` |
+| 등급 | 전역 표로 먼저(부스트 없음). **희귀까지** — 영웅·전설은 후보에서 빼고 그 몫(4%)은 기존 대체 규칙대로 희귀로 내려온다(희귀 11% → 15%) | `FieldSpawnRules.PickRarity` |
+| 종 | 그 등급 안에서 `spawnWeight × InsectHabits.SpawnWeightMultiplier` | `FieldSpawnRules.PickWeighted` |
+| 레벨 | 그 종이 사는 해금 리전 중 **가장 낮은** 리전의 대역 | `FieldSpawnRules.RollFieldLevel` |
+| 재생 | 잡기·이기기·놓침 뒤 60~120초, 수명 4~7분, 조건이 막 시작되면 도착을 5~60초에 흩는다 | `RespawnDelay`·`Lifetime`·`PhaseSwapDelay` |
+
+- **진짜 야생 개체다** — `InsectEntity.Initialize`(야생 경로)로 세운다. 그래서 잡기 버튼 → 포획 선택 창(미니게임·배틀) → 포획 보상·도감 등록·퀘스트 통지가
+  필드와 같은 길을 탄다. 방목 곤충(`BuildForBattle` — AI 없음·포획 불가)과 섞지 말 것.
+- **레벨 대역을 왜 그 종의 가장 낮은 해금 리전에서 잡나**: 가장 높은 해금 리전을 쓰면 섬이 고레벨 사냥터가 되고, 가장 낮은 리전(초원)을 쓰면 뒤 리전 종을
+  Lv.1~10으로 거저 준다. 그 종을 필드에서 처음 만나는 곳의 레벨이면 둘 다 아니다.
+- **영웅·전설을 왜 빼나**: 레이드로만 맞서는 등급이라(`CaptureChoiceUI.IsRaidRarity`) 집에서 이동 없이 밤마다 레이드(이기면 확정 포획)를 받는 길이 생긴다.
+  섬은 곤충을 1배로 두는 곳인데 전설 야생 몸은 1.9배라 가구 사이에서 어색하고, 섬 ↔ 레이드 아레나 왕복은 아직 기기에서 보지 않았다.
+- **떠나는 규칙**: 조건이 끝났거나(아침이 오고 맑아져 수가 줄었다) 수명이 다했고, 붙잡히지·놀라지 않았고, **화면 밖**일 때 조용히 떠난다(`InsectEntity.Recall` —
+  게임플레이 퇴장이 아니다). 섬은 한 변이 15~33m라 필드의 "25m 밖" 대신 카메라 화면으로 잰다. 들어설 때도 화면 밖 칸(다 보이면 가장 먼 칸)에, 플레이어에서 3칸 이상 떨어져 선다.
+- **도주는 섬의 빈 칸을 벗어나지 않는다**(`InsectEntity.SetFleeArea` + `IslandGuestRules.FreeRun`) — 물리 측정은 벽·건물만 보고 "빈 칸"을 모른다.
+  놓침은 평소처럼 사라지고 다음 손님은 재생 지연 뒤다(필드의 "같은 개체를 눈 밖으로 옮김"은 섬이 작아 옮길 눈 밖이 없다).
+- **기록이 개체다** — 섬을 나가도 기록은 남고(몸만 거둔다) 돌아오면 같은 손님이다. 섬을 드나들어 다시 굴리지 못한다. 떠나 있는 동안 조건이 끝난 손님은
+  이미 떠난 것으로 친다. **세션 간에는 저장하지 않는다**(필드 개체군과 같다).
+- 손님 몸은 섬 `root` 밖의 작은 풀(`IslandGuestBodies`, 최대 2)에 둔다 — 섬을 다시 지을 때(`DestroyWorld`) 같이 부서지지 않게. 배치가 바뀌어 손님이 선 칸이
+  막히면 그 몸만 거두고 다음 틱에 다른 빈 칸에 선다.
+
+### 어디서 막나
+
+| 자리 | 막는 것 |
+|---|---|
+| `IslandGuestRules.CanHostGuests` | 남의 섬 구경(`Visit` — 스냅샷)·꿈 섬(`DreamMode`)·꾸미기 중(`IsEditing`)에는 들어서지 않는다 |
+| `IslandWorldBuilder.TickGuests` | 내 섬이 아니면(`Visit`·꿈) 내 섬의 손님 기록을 건드리지 않는다 — 세우지도 떠나보내지도 |
+| `CaptureInputController` | 꾸미기 화면(`IslandEditUI`)이 모달이라 그동안 [E]·잡기 버튼이 막힌다(`ModalUIRegistry.IsAnyOpen`) |
+| `AmbushRules` | 서브에리어 거절 — 섬 손님은 습격하지 않는다(습격형이어도 온순한 곤충처럼 군다) |
+
+**섬은 어느 리전도 아니다**: 섬에 있는 동안 `RegionManager.CurrentRegion`은 섬으로 떠나기 전 리전이다(sticky). 그래서 그 값을 읽으면 섬 손님을 잡을 때
+지역 의뢰(`QuestRegionGate`)와 리전 게이트 스토리 비트(`requiredRegionId`)가 그 리전의 포획으로 센다. **"행동이 어느 리전에서 일어났나"는 `RegionManager.ActionRegionId`를 읽는다**
+(섬에서는 null, 동굴은 그 리전 — `RegionActionRegionTests`). `TutorialQuestManager.CountsHere`와 `StoryDirector.RegionGateSatisfied`가 그렇게 한다.
+리전 기준으로 행동을 세는 코드를 새로 쓴다면 `CurrentRegion`이 아니라 이걸 읽을 것.
+
+## 방목 곤충의 기분 — 시간·날씨
+
+`IslandInsectMood`(순수)가 성향(`InsectHabits`)을 활동도 0~1로 바꾸고, `IslandInsectWalker`가 쉬는 시간·걷는 속도·나는 높이에 곱한다. 야행성은 밤에 활발하고 낮엔
+대부분 쉰다(오래 쉬고 느리고, 나는 종은 땅에 낮게 내려앉는다). 주행성은 반대, 싫은 날씨엔 덜 움직이고 좋은 날씨엔 활발하다. **시간·날씨를 안 타는 종은 예전 배회 그대로다**
+(보통 활동도 0.6 = 쉬기 1.2~4.5초 · 속도 ×1). 몸의 위치·속도·쉬는 시간만 바꾼다 — 날갯짓 같은 모델 애니메이션은 visual-dev 영역이다.
+섬 수입과 무관하고, 남의 섬·꿈 섬에서도 같다(꿈은 늘 맑은 한낮이라 자연히 낮의 기분이다).
+
 ## 검증
 
 ```
-python -X utf8 .claude/scripts/economy_sim.py      # 신호 6·7: 섬 수입 대역
+python -X utf8 .claude/scripts/economy_sim.py      # 신호 6·7: 섬 수입 대역 (손님·기분은 바꾸지 않는다)
 python -X utf8 .claude/scripts/quest_lint.py       # 섬 퀘스트 7개(QuestType 6종)
+-testPlatform PlayMode -testFilter InsectGame.Tests.IslandGuestRulesTests
+-testPlatform PlayMode -testFilter InsectGame.Tests.IslandInsectMoodTests
 ```
 
 - 화면: QA 빌드 `-battleScenario island-ui`(데스크톱 1280×720 + 세로 720×1280). 저장을 건드리지 않는 메모리 fixture다.

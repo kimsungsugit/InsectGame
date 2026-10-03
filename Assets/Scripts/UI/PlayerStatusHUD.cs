@@ -54,6 +54,18 @@ namespace InsectGame.UI
 
         private static float CollapsedTabWidth => UIScale.IsMobileLayout ? 84f : 64f;
 
+        /// <summary>닫힘 탭의 자리 — 순수 계산(전수 겹침 검사가 부른다).</summary>
+        public static Rect TabRect(HudFrame f)
+        {
+            return new Rect(f.SafeLeft + 8f, f.ContentTop, f.Mobile ? 84f : 64f, 140f);
+        }
+
+        /// <summary>펼친 패널의 자리(다 펼쳤을 때) — 순수 계산. 가운데 무대(<see cref="HudStage.Area"/>)가 이 오른쪽에서 시작한다.</summary>
+        public static Rect PanelRect(HudFrame f)
+        {
+            return new Rect(f.SafeLeft + 20f, f.ContentTop, PanelW, f.ClampHeight(PanelH));
+        }
+
         private bool expanded = true;
         private bool mobileLayoutInitialized;
         private float xpBarAnim;
@@ -161,7 +173,10 @@ namespace InsectGame.UI
             // 모달이 열려 있는 동안에는 배너 수명을 태우지 않는다 — 위 OnGUI가 그리지 않으므로
             // 그대로 두면 창을 닫았을 때 이미 사라진 뒤다(TutorialQuestUI의 완료 배너와 같은 처리).
             if (subAreaAlertTimer > 0f && !ModalUIRegistry.IsAnyOpen())
+            {
+                HudStage.Request(HudStageItem.PlaceAlert);   // 떠 있는 동안 무대의 다른 차례를 붙잡아 둔다
                 subAreaAlertTimer -= Time.deltaTime;
+            }
         }
 
         private void OnGUI()
@@ -183,16 +198,17 @@ namespace InsectGame.UI
 
             InitStyles();
 
-            float panelW = PanelW;
-            float panelH = UISafeLayout.ClampHeight(PanelH);
-            float margin = 20f;
-            // 세이프 에어리어(노치/상태바) 안쪽으로 — 세로는 하네스의 ContentTop(인셋 + 세로 마진).
-            float safeL = SafeArea.Left / UIScale.Scale;
-            float py = UISafeLayout.ContentTop;
+            // 자리는 PanelRect/TabRect(순수 계산) — 세이프 에어리어 안쪽, 세로는 하네스의 ContentTop(인셋 + 세로 마진).
+            HudFrame frame = HudFrame.Current;
+            Rect openRect = PanelRect(frame);
+            float panelW = openRect.width;
+            float panelH = openRect.height;
+            float safeL = frame.SafeLeft;
+            float py = openRect.y;
 
             // 닫힘 상태에서는 패널을 화면 밖으로 '완전히' 밀어 잘린 숫자가 새어 보이지 않게 한다.
             // (기존엔 50px 띠만 남겨 우측 정렬된 스탯 값이 잘린 채 노출돼 깨져 보였음 — 가로/세로 공통 버그)
-            float openX = margin + safeL;
+            float openX = openRect.x;
             float closedX = -(panelW + 40f);
             float px = Mathf.Lerp(closedX, openX, toggleAnim);
 
@@ -492,11 +508,10 @@ namespace InsectGame.UI
         // 닫힘 상태에서만 그려지고 항목 수가 적어 영향 미미. 패널/탭 모두 IMGUI 관용 패턴 유지.
         private Rect DrawCollapsedTab(float safeL, float py, float strength)
         {
-            float tabW = CollapsedTabWidth;
-            float tabH = 140f;
-            float tabX = safeL + 8f;
-            float tabY = py;
-            Rect rect = new Rect(tabX, tabY, tabW, tabH);
+            Rect rect = TabRect(HudFrame.Current);
+            float tabW = rect.width;
+            float tabX = rect.x;
+            float tabY = rect.y;
 
             float a = Mathf.Clamp01(strength);
             if (a <= 0.001f) return rect; // 완전히 열림 — 탭은 그리지 않음
@@ -518,22 +533,26 @@ namespace InsectGame.UI
             return rect;
         }
 
+        /// <summary>
+        /// 서브에리어·섬에 들어선 알림의 자리 — 가운데 무대의 고정 칸(<see cref="HudStageItem.PlaceAlert"/>). 예전엔 화면 폭 60%로
+        /// 위쪽 가운데(ContentTop+70)에 떠서 리전 배너·내기 점수판·퀘스트 완료 알림·동굴 출입 토스트와 겹쳤다.
+        /// </summary>
+        public static Rect SubAreaAlertRect(HudFrame f)
+        {
+            return HudStage.Place(f, HudStageItem.PlaceAlert, f.Width * 0.6f, HudStage.PlaceAlertHeight);
+        }
+
         private void DrawSubAreaAlert()
         {
             if (subAreaAlertTimer <= 0f) return;
-
+            // 가운데 무대의 고정 칸(리전 진입 알림)에 선다 — 퀘스트 완료 같은 다른 카드는 이게 지나갈 때까지 기다린다.
             InitStyles();
             UITheme t = UITheme.Instance;
 
             float alpha = Mathf.Clamp01(subAreaAlertTimer / 0.5f);
-            float sw = UIScale.VirtualScreenWidth;
-
-            // 세로 기준을 하네스로 — 이 배너만 y가 70/74/110으로 박혀 있어 노치 기기에서
-            // 상태바 뒤로 들어갔다(VirtualSafeTop이 130쯤이면 배너 전체가 가려진다).
-            // +70은 상단 중앙 관례를 그대로 지킨 값이다: ContentTop(토스트) → +30(퀘스트 토스트)
-            // → 여기(+70~150) → +150(가이드 코치 배너).
-            float ay = UISafeLayout.ContentTop + 70f;
-            Rect banner = new Rect(sw * 0.2f, ay, sw * 0.6f, 76f);
+            Rect banner = SubAreaAlertRect(HudFrame.Current);
+            HudStage.Request(HudStageItem.PlaceAlert, banner);
+            float ay = banner.y;
 
             GUI.color = new Color(1f, 1f, 1f, alpha);
             UISurface.HudCard(banner);

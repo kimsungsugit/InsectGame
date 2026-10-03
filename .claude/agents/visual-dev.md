@@ -45,13 +45,17 @@ OnGUI의 Rect 좌표와 레이아웃은 **ui-dev 영역**입니다. 여기서는
 - `Assets/Scripts/Dex/InsectModelPreviewRenderer.cs` - 도감/상세용 곤충 모델 프리뷰 렌더 ※화면 배치는 ui-dev
 
 ### 환경 비주얼
-- `Assets/Scripts/Core/SubAreaEnvironment.cs` - 서브에리어 환경 전환 (조명, 안개, 앰비언트)
+- `Assets/Scripts/Core/SubAreaEnvironment.cs` - 서브에리어 환경 전환 (조명, 안개, 앰비언트) + 그 위에 낮·밤·날씨 하늘 보정 ※전환 보간은 "기본 상태(보정 전)"만 만들고 `WriteFinal`이 하늘을 얹어 쓴다 — 스냅샷을 RenderSettings에서 뜨면 이중 적용. 보정은 메인 필드·나의 섬만(동굴·꿈 제외)
+- `Assets/Scripts/Core/WorldSkyRules.cs` - 낮·밤·날씨 하늘의 순수 규칙(시각 키프레임·날씨 등급·달빛·환경광 밝기 바닥·안개 가산) ※정오 맑음 = 기본 상태 그대로가 기준
+- `Assets/Scripts/Core/WorldSkyVisuals.cs` - 스카이박스 머티리얼 복제본(노출·땅색)과 밤별 돔, 흐린 날 연무 돔(안개색·지평선 쪽 짙은 세로 알파 — 큐 별 2501 → 연무 2502), 하늘·날씨 입자용 `Sprites/Default` 재료(`SkyFx`) ※대기 두께는 건드리지 말 것 — 올리면 흐린 날 지평선이 노을처럼 주황이 된다(테스트가 소스로 막는다)
+- `Assets/Scripts/Core/WeatherEffects.cs` - 날씨 입자(비·눈·센바람) — 카메라를 따라다니는 방출기, 지역 기준 날씨(`WeatherForecast.EffectiveIn`)와 `Blend01`에 맞춰 방출량 조절 ※필드·섬에서만, 모바일 절반
+- `Assets/Tests/EditMode/WorldSkyRulesTests.cs` - 하늘 규칙 검증(정오 항등·낮 곡선 연속성·밤 가시성 바닥·안개 날씨 11m 투과율·날씨 전환 양끝)
 - `Assets/Scripts/Core/WorldTerrainBuilder.cs` - 월드 지형 생성 (절벽, 강, 다리, 경사면)
 - `Assets/Scripts/Core/SubAreaWorldBuilder.cs` - 서브에리어 프로시저럴 던전/환경 생성
 - `Assets/Scripts/Core/RegionTerrainBuilder.cs` - 리전별 필드 지형 생성 (언덕, 길, 바위, 나무)
 - `Assets/Scripts/Core/WorldBackdropBuilder.cs` - 원경(월드 둘레 산맥·뭉게구름) — 리전·길을 피해 바깥으로 훑어 배치, 산 모양은 가장 가까운 리전을 따른다
 - `Assets/Scripts/Core/RegionPalette.cs` - 리전 바닥색·얼룩 톤의 단일 출처(부트스트랩 바닥 평면 + RegionDressingBuilder) ※감마 반사율, 0.8 넘으면 하얗게 날아간다
-- `Assets/Scripts/Core/RegionAtmosphere.cs` - 리전별 햇빛 색·세기·환경광·Exp2 연무(원경 공기원근) ※11m 투과율 98% 상한(MaxFogDensity)
+- `Assets/Scripts/Core/RegionAtmosphere.cs` - 리전별 햇빛 색·세기·환경광·Exp2 연무(원경 공기원근) ※11m 투과율 98% 상한(MaxFogDensity), 안개 날씨는 85%(필드)·80%(섬) 상한(MaxWeatherFogDensity*)
 - `Assets/Scripts/Core/SceneryBatcher.cs` - 콜라이더 없는 장식 소품을 칸×색 단위 메시로 합치는 배처(드로우콜·컬링)
 - `Assets/Scripts/Core/RegionDressingBuilder.cs` - 리전 표면 장식(바닥 얼룩·발밑 디테일·호수·울타리 밖 테두리) ※콜라이더 없음, 남쪽 테두리 키 제한(카메라 차폐), 마을·전초기지가 지어진 뒤 Start에서 빌드
 - `Assets/Scripts/Core/SubAreaGateBuilder.cs` - 필드 쪽 서브에리어 테마 입구 표식 ※여기 등록한 ID는 부트스트랩 CreateSubAreaEntries가 건너뛴다
@@ -91,11 +95,11 @@ OnGUI의 Rect 좌표와 레이아웃은 **ui-dev 영역**입니다. 여기서는
 - `Assets/Scripts/NPC/NpcGesture.cs` - NPC 몸짓 정의 + 각도 곡선 순수부(NpcGesturePose)
 - `Assets/Scripts/Core/VillageBuilder.cs` - 마을 프로시저럴 지형/건물
 - `Assets/Scripts/Core/BlightVfx.cs` - 오염 거점 구조물·안개·지면 탈색·정화 붕괴 연출
-- `Assets/Editor/LiveSceneCapture.cs` - 배치모드 실화면 캡처(3D 변경을 눈으로 확인) ※IMGUI는 안 잡힘
+- `Assets/Editor/LiveSceneCapture.cs` - 배치모드 실화면 캡처(3D 변경을 눈으로 확인) ※IMGUI는 안 잡힘. `-captureHour 0~24`·`-captureWeather clear|rain|fog|wind|snow`로 시각·날씨를 붙잡고 찍는다 — 기본은 정오·맑음(전후 비교가 같은 조명이 되게), `natural`이면 게임 그대로, 날씨 입자는 4초 이후
 - `Assets/Editor/ModelDesignCapture.cs` - 대표 곤충·플레이어·성인·아동 NPC의 표준 조명 3면 비교 캡처 ※IMGUI 제외
 - `Assets/Editor/VillageDesignCapture.cs` - 저장과 분리된 마을 건물 고정 구도 전후 캡처
 - `Assets/Editor/WorldMapDesignCapture.cs` - 실제 지형·소품·마을을 함께 생성한 전체 지역 격리 캡처
-- `Assets/Editor/FieldDesignTour.cs` - 실제 PlayScene으로 마을·리전·전초기지·서브에리어·NPC 전원을 한 번에 도는 전후 비교 캡처(`-tourOnly`·`-tourFilter`) ※IMGUI 제외
+- `Assets/Editor/FieldDesignTour.cs` - 실제 PlayScene으로 마을·리전·전초기지·서브에리어·NPC 전원을 한 번에 도는 전후 비교 캡처(`-tourOnly`·`-tourFilter`) ※IMGUI 제외 ※시계·날씨는 정오·맑음으로 붙잡는다(`-tourHour`·`-tourWeather`, `natural`이면 게임 그대로)
 - `Assets/Scripts/UI/WorldMapVisualCapture.cs` - 저장과 분리된 실제 지도/미니맵 IMGUI 촬영 fixture
 - `Assets/Scripts/Story/StoryDialogueCapture.cs` - 저장과 분리된 실제 대화 IMGUI 촬영 fixture
 - `Assets/Scripts/UI/OutfitVisualCapture.cs` - 의상 창·캐시샵·캐릭터 생성 화면의 실제 IMGUI 촬영 fixture(`-battleScenario outfit`) ※의상 소유·장착 PlayerPrefs는 스냅샷으로 복원, 입어보기·필터·확대는 창 상태를 리플렉션으로 주입

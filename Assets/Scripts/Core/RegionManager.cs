@@ -32,6 +32,21 @@ namespace InsectGame.Core
         public SubAreaData CurrentSubArea => currentSubArea;
         public bool SubAreaSticky => subAreaSticky;
 
+        /// <summary>
+        /// 행동(포획·전투·대화)이 <b>어느 리전에서</b> 일어났는가 — 지역 의뢰(<c>QuestRegionGate</c>)와 스토리 리전 게이트가 읽는다.
+        /// 분리 구역(나의 섬) 안이면 null이다. 섬은 어느 리전도 아닌데 <see cref="CurrentRegion"/>은 섬에 있는 동안에도 떠나기 전
+        /// 리전으로 남아서(sticky — <see cref="EnterDetachedSubArea"/>), 섬의 손님 곤충을 잡으면 그 리전의 의뢰·스토리 포획으로 셌다.
+        /// 동굴 같은 보통 서브에리어는 그 리전 안이다(지역 의뢰는 서브에리어 안의 행동도 센다 — rules/quest-system.md).
+        /// </summary>
+        public string ActionRegionId => ActionRegionIdOf(currentRegion, currentSubArea);
+
+        /// <summary><see cref="ActionRegionId"/>의 순수 판정 — 테스트가 매니저 없이 본다.</summary>
+        public static string ActionRegionIdOf(RegionData region, SubAreaData subArea)
+        {
+            if (subArea != null && subArea.detached) return null;
+            return region != null ? region.regionId : null;
+        }
+
         // 사용자가 영역 안에 있지만 아직 진입 안 한 상태. SubAreaProximityChanged로 UI 표시.
         // 옛은 ContainsPoint 시 SubAreaChanged 자동 발화 → 자동 진입. 사용자 명시 요청: [E] 키 선택.
         private SubAreaData nearbySubArea;

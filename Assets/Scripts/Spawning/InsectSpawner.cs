@@ -5,6 +5,23 @@ using UnityEngine;
 
 namespace InsectGame.Spawning
 {
+    /// <summary>필드 리전 하나의 표 — 풀과 레벨 대역(<see cref="InsectSpawner.CopyFieldRegionTables"/>).</summary>
+    public readonly struct FieldRegionTable
+    {
+        public readonly string RegionId;
+        public readonly int MinLevel;
+        public readonly int MaxLevel;
+        public readonly IReadOnlyList<InsectData> Pool;
+
+        public FieldRegionTable(string regionId, int minLevel, int maxLevel, IReadOnlyList<InsectData> pool)
+        {
+            RegionId = regionId;
+            MinLevel = minLevel;
+            MaxLevel = maxLevel;
+            Pool = pool;
+        }
+    }
+
     /// <summary>
     /// 필드 곤충 개체군 — <b>기록(슬롯)이 곧 개체이고, 월드의 곤충은 가까울 때만 빌려 쓰는 몸이다.</b>
     ///
@@ -51,6 +68,7 @@ namespace InsectGame.Spawning
         private Core.RegionBlightManager blight;
         private OutfitBonusProvider outfitBonus;
         private RegionManager regionManager;
+        private GameClock subscribedClock;
         private SubAreaData currentSubArea;
         private string currentSubAreaKey;
 
@@ -111,10 +129,9 @@ namespace InsectGame.Spawning
         private readonly List<string> storyWanted = new List<string>();
         private readonly HashSet<string> storyCandidateIds = new HashSet<string>();
         private readonly HashSet<string> storyAliveIds = new HashSet<string>();
-        private readonly HashSet<string> stateCandidateIds = new HashSet<string>();
+        // 종 고르기 가중 배수(등급 후보와 같은 순서) — 성향(InsectHabits)을 곱한 값. 굴릴 때마다 비우고 다시 채운다.
+        private readonly List<float> rarityMultipliers = new List<float>();
         private readonly Collider[] bodyProbeHits = new Collider[16];
-        private bool stateCandidatesValid;
-        private WorldState stateCandidatesFor;
         private static readonly System.Comparison<FieldSlot> ByDistance = (a, b) => a.SortKey.CompareTo(b.SortKey);
 
         // 자리 굴리기 고리 — PickSpawnPosition에 넘기는 대리자를 매번 새로 만들지 않게 필드로 든다.
@@ -136,6 +153,12 @@ namespace InsectGame.Spawning
             /// <summary>오염 전 슬롯 수(설 수 있는 땅 × 밀도). 오염 감소는 <see cref="RegionCap"/>만 얹는다.</summary>
             public int BaseSlots;
             public readonly List<InsectData> Pool = new List<InsectData>();
+
+            // 이 리전에서 <b>보이는</b> 시간대·날씨(설산은 비가 눈, 사막은 눈이 센바람)와 그 상태에 나올 수 있는 종 ID.
+            // 리전마다 따로 든다 — 같은 세계 날씨라도 리전의 후보가 다르다. 상태가 바뀔 때만 다시 만든다.
+            public bool StateValid;
+            public WorldState State;
+            public readonly HashSet<string> CandidateIds = new HashSet<string>();
         }
 
         /// <summary>
@@ -201,7 +224,10 @@ namespace InsectGame.Spawning
             {
                 worldStateProvider = FindFirstObjectByType<WorldStateProvider>();
                 if (worldStateProvider != null)
+                {
                     Debug.Log("[InsectSpawner] WorldStateProvider 자동 탐색 완료");
+                    SubscribeClock();
+                }
             }
 
             if (database == null)
@@ -385,6 +411,10 @@ namespace InsectGame.Spawning
                     // 수명 순환 — 몸이 있으면(25m 밖) 먼저 거두고 그 자리를 새 개체로 바꾼다.
                     RecallSlot(slot);
                     FieldPopulation.Vacate(slot, now);
+                    // 자리가 상한보다 많다(보너스가 걷혔거나 오염이 번졌다) — 이 자리는 다시 굴리지 않는다. 비운 자리는 다음 틱
+                    // ReconcileRegionSlots가 뺀다. 여기서 또 굴리면 서 있던 몸이 새 개체로 이어져 남는다. 몸이 선 자리는 이 길을
+                    // 수명이 다하고 플레이어 25m 밖일 때만 타므로, 눈앞의 곤충이 사라지는 일은 없다.
+                    if (slots.Count > RegionCap(info)) continue;
                     RollFieldSlot(slot, info, now, FieldSpawnRules.SpawnMinPlayerDistance,
                         FieldSpawnRules.RollLifetime(Random.value));
                 }
@@ -453,18 +483,20 @@ namespace InsectGame.Spawning
 
         /// <summary>
         /// 종 고르기 — <b>등급을 먼저 전역 표로 굴리고</b>(<see cref="FieldSpawnRules.PickRarity"/>, 레어 부스트 포함),
-        /// 그 등급의 후보(리전 풀 ∩ 지금 시간대·날씨) 안에서 <c>spawnWeight</c>로 종을 고른다. 그래서 등급 분포는
-        /// 리전과 무관하다. 스토리가 기다리는 종이 그 리전에 없으면 일정 확률로 그 종을 먼저 준다.
+        /// 그 등급의 후보(리전 풀 ∩ 이 리전에서 보이는 시간대·날씨) 안에서 <c>spawnWeight</c> × 성향 배수로 종을 고른다.
+        /// 그래서 등급 분포는 리전·시간·날씨와 무관하다(성향 배수는 같은 등급 안의 상대 비율만 바꾼다). 스토리가 기다리는 종이
+        /// 그 리전에 없으면 일정 확률로 그 종을 먼저 준다.
         /// </summary>
         private InsectData PickFieldSpecies(RegionSpawnInfo info)
         {
             if (info.Pool.Count == 0) return null;
 
             regionCandidates.Clear();
-            if (RefreshStateCandidates())
+            bool hasState = RefreshStateCandidates(info);
+            if (hasState)
             {
                 for (int i = 0; i < info.Pool.Count; i++)
-                    if (stateCandidateIds.Contains(info.Pool[i].insectId)) regionCandidates.Add(info.Pool[i]);
+                    if (info.CandidateIds.Contains(info.Pool[i].insectId)) regionCandidates.Add(info.Pool[i]);
             }
             // 시간대·날씨에 리전 풀이 통째로 걸러지면 풀 전체로 굴린다. 옛 코드는 이때 전역 DB 후보로 새서
             // 그 리전과 무관한 종(초원 한복판에 유적 전설)이 뜰 수 있었다.
@@ -483,9 +515,18 @@ namespace InsectGame.Spawning
             if (rarity < 0) return null;
 
             rarityCandidates.Clear();
+            rarityMultipliers.Clear();
             for (int i = 0; i < regionCandidates.Count; i++)
-                if ((int)regionCandidates[i].rarity == rarity) rarityCandidates.Add(regionCandidates[i]);
-            return InsectDatabase.PickWeighted(rarityCandidates, Random.value);
+            {
+                if ((int)regionCandidates[i].rarity != rarity) continue;
+                rarityCandidates.Add(regionCandidates[i]);
+                // 시간대·날씨 성향 — 야행성은 밤에, 주행성은 낮에 흔하다. 0으로 내려가지 않으므로 후보는 줄지 않는다.
+                // 상태를 모르면(공급자 없음) 배수 없이 spawnWeight만 본다.
+                rarityMultipliers.Add(hasState
+                    ? InsectHabits.SpawnWeightMultiplier(InsectHabits.For(regionCandidates[i]), info.State)
+                    : 1f);
+            }
+            return FieldSpawnRules.PickWeighted(rarityCandidates, rarityMultipliers, Random.value);
         }
 
         /// <summary>아이템·의상의 희귀 출현 배수 — 등급표의 희귀 이상 몫에 곱한다(<see cref="FieldSpawnRules.BoostedShare"/>).</summary>
@@ -496,23 +537,25 @@ namespace InsectGame.Spawning
         }
 
         /// <summary>
-        /// 지금 시간대·날씨에 나올 수 있는 종 ID. 상태가 바뀔 때만 다시 만든다(게임 하루 12분에 몇 번).
-        /// 공급자가 없으면 false — 걸러 내지 않는다.
+        /// 이 리전에서 지금 보이는 시간대·날씨(<c>info.State</c>)와, 그 상태에 나올 수 있는 종 ID(<c>info.CandidateIds</c>).
+        /// <b>리전별 상태다</b> — 설산에서는 세계 날씨가 비여도 눈이 보이고 사막에서는 눈이 센바람으로 보인다
+        /// (<c>WorldStateProvider.GetWorldState(regionId)</c>). 상태가 바뀔 때만 후보를 다시 만든다(게임 하루 12분에 몇 번).
+        /// 공급자가 없으면 false — 걸러 내지 않고 성향 배수도 곱하지 않는다.
         /// </summary>
-        private bool RefreshStateCandidates()
+        private bool RefreshStateCandidates(RegionSpawnInfo info)
         {
             if (worldStateProvider == null || database == null) return false;
-            WorldState state = worldStateProvider.GetWorldState();
-            if (stateCandidatesValid && state.DayPhase == stateCandidatesFor.DayPhase
-                && state.Weather == stateCandidatesFor.Weather && state.Hour24 == stateCandidatesFor.Hour24)
+            WorldState state = worldStateProvider.GetWorldState(info.RegionId);
+            if (info.StateValid && state.DayPhase == info.State.DayPhase
+                && state.Weather == info.State.Weather && state.Hour24 == info.State.Hour24)
                 return true;
 
-            stateCandidatesValid = true;
-            stateCandidatesFor = state;
-            stateCandidateIds.Clear();
+            info.StateValid = true;
+            info.State = state;
+            info.CandidateIds.Clear();
             List<InsectData> list = database.GetCandidates(state);
             for (int i = 0; i < list.Count; i++)
-                if (list[i] != null) stateCandidateIds.Add(list[i].insectId);
+                if (list[i] != null) info.CandidateIds.Add(list[i].insectId);
             return true;
         }
 
@@ -749,6 +792,25 @@ namespace InsectGame.Spawning
         // ======= 리전 표 =======
 
         /// <summary>
+        /// 필드 리전 표(풀·레벨 대역)를 <paramref name="into"/>에 옮겨 담는다 — 나의 섬 손님 곤충(<c>IslandWorldBuilder</c>)이
+        /// 해금된 리전만 골라 읽는다. 레벨 대역의 단일 출처가 여기다(부트스트랩이 스폰 포인트에 적은 값). 표가 아직
+        /// 안 만들어졌으면(스폰 포인트가 없다) 0개다. 풀 목록은 복사하지 않는다 — 읽기만 할 것.
+        /// </summary>
+        public int CopyFieldRegionTables(List<FieldRegionTable> into)
+        {
+            if (into == null) return 0;
+            into.Clear();
+            BuildRegionInfos();
+            for (int i = 0; i < regionInfos.Count; i++)
+            {
+                RegionSpawnInfo info = regionInfos[i];
+                if (string.IsNullOrEmpty(info.RegionId) || info.Pool.Count == 0) continue;
+                into.Add(new FieldRegionTable(info.RegionId, info.MinLevel, info.MaxLevel, info.Pool));
+            }
+            return into.Count;
+        }
+
+        /// <summary>
         /// 스폰 포인트(풀·레벨 대역)와 리전 정의(원판·게이트·귀환종)를 리전 단위로 묶는다. 한 번만 만든다.
         /// 서브에리어 포인트는 거른다 — 부모 리전 ID를 달고 있어 그대로 두면 전용종이 필드 풀에 섞인다.
         /// </summary>
@@ -868,7 +930,19 @@ namespace InsectGame.Spawning
         private int RegionCap(RegionSpawnInfo info)
         {
             bool blighted = blight != null && blight.IsBlighted(info.RegionId);
-            return Core.BlightPolicy.MaxActiveFor(blighted, info.BaseSlots);
+            // 밤·비·안개의 보너스 슬롯(+1~+2)을 <b>먼저 더하고</b> 오염 감소를 그 합에 얹는다. 순서가 중요하다 — 오염 상한을
+            // 먼저 구해 놓고 보너스를 더하면 황폐한 땅(8칸 → 2칸)이 밤·비에 3~4칸이 되어 줄인 몫이 도로 찬다.
+            // 합에 얹으면 보너스도 같이 3분의 1로 줄어 큰 리전은 오염 상한이 그대로고(24칸+2 → 8칸 = 24칸 → 8칸),
+            // 작은 리전도 한 칸 이내로만 는다. 오염 리전이 같은 상태의 멀쩡한 리전보다 많아지는 일은 없다
+            // (BlightPolicy.MaxActiveFor가 baseMax를 넘기지 않는다). 0으로 내려가지 않는 하한(MinActive)도 그대로다.
+            return Core.BlightPolicy.MaxActiveFor(blighted, info.BaseSlots + BonusSlotsFor(info));
+        }
+
+        /// <summary>이 리전에서 지금 보이는 시간대·날씨가 더하는 슬롯 수 — 공급자가 없으면 0.</summary>
+        private int BonusSlotsFor(RegionSpawnInfo info)
+        {
+            if (worldStateProvider == null) return 0;
+            return FieldSpawnRules.BonusSlots(worldStateProvider.GetWorldState(info.RegionId));
         }
 
         // ======= 몸 — 세우기 · 거두기 · 게임플레이 퇴장 =======
@@ -1097,6 +1171,9 @@ namespace InsectGame.Spawning
             {
                 spawnPoints = points;
             }
+
+            // 시간대 신호는 공급자가 든 시계에서 온다 — 공급자가 들어온 지금 구독한다(OnEnable은 이보다 먼저 불렸다).
+            SubscribeClock();
         }
 
         public void AutoWire(ItemEffectManager effects)
@@ -1141,11 +1218,55 @@ namespace InsectGame.Spawning
                 blight.RegionCleansed -= OnRegionCleansed;
                 blight.RegionCleansed += OnRegionCleansed;
             }
+            SubscribeClock();
+        }
+
+        /// <summary>
+        /// 시계의 시간대 신호 — 새 시간대에 어울리지 않는 개체를 갈아입힌다(<see cref="OnDayPhaseChanged"/>).
+        /// 어느 시계를 구독 중인지 들고 있어 해지가 같은 시계를 가리킨다(<c>-=</c> 뒤 <c>+=</c>라 중복 구독은 되지 않는다).
+        /// </summary>
+        private void SubscribeClock()
+        {
+            UnsubscribeClock();
+            GameClock clock = worldStateProvider != null ? worldStateProvider.Clock : null;
+            if (clock == null) return;
+            subscribedClock = clock;
+            clock.DayPhaseChanged += OnDayPhaseChanged;
+        }
+
+        private void UnsubscribeClock()
+        {
+            if (subscribedClock != null) subscribedClock.DayPhaseChanged -= OnDayPhaseChanged;
+            subscribedClock = null;
         }
 
         private void OnEnable()
         {
             Subscribe();
+        }
+
+        /// <summary>
+        /// 시간대가 바뀌었다 — 새 시간대에 어울리지 않는 산 개체(밤이 오면 주행성, 아침이 오면 야행성)의 수명을
+        /// 5~60초 안으로 당긴다(<see cref="FieldSpawnRules.PhaseSwapDelayMin"/>~<see cref="FieldSpawnRules.PhaseSwapDelayMax"/>).
+        ///
+        /// <b>개체를 지우지도 바꾸지도 않는다</b> — 만료 시각만 당긴다. 실제 교체는 평소 순환(<see cref="TickField"/>의
+        /// <see cref="FieldPopulation.CanRotate"/>)이 하므로 플레이어 25m 안의 몸은 그대로 서 있다가 멀어진 뒤에 바뀌고
+        /// (눈앞에서 바뀌면 리전 이동 리롤과 같다), 스토리 포획 목표종은 면제다(<see cref="IsStoryCaptureTarget"/>).
+        /// 기록만 만지므로 서브에리어 안에 있어도 안전하다(메인 필드의 시간은 계속 흐른다).
+        /// </summary>
+        private void OnDayPhaseChanged(DayPhase phase)
+        {
+            float now = Time.time;
+            for (int k = 0; k < regionInfos.Count; k++)
+            {
+                List<FieldSlot> slots = population.SlotsOf(regionInfos[k].RegionId);
+                for (int i = 0; i < slots.Count; i++)
+                {
+                    FieldSlot slot = slots[i];
+                    if (!slot.IsAlive || !InsectHabits.IsOutOfPhase(InsectHabits.Of(slot.InsectId), phase)) continue;
+                    FieldPopulation.PullExpiryForward(slot, now, FieldSpawnRules.RollPhaseSwapDelay(Random.value));
+                }
+            }
         }
 
         /// <summary>
@@ -1165,6 +1286,7 @@ namespace InsectGame.Spawning
                 regionManager.SubAreaChanged -= OnSubAreaChanged;
             if (blight != null)
                 blight.RegionCleansed -= OnRegionCleansed;
+            UnsubscribeClock();
             // 꺼지면 복구 코루틴도 멈춘다 — 보류만 남으면 그 리전 슬롯이 영영 안 는다. 다시 켜진 첫 틱이 채운다.
             foreach (string r in cleanseHold)
                 if (!pendingCleansed.Contains(r)) pendingCleansed.Add(r);

@@ -81,7 +81,8 @@ namespace InsectGame.Core
             switch (step)
             {
                 case IslandGuideStep.OpenEdit:
-                    return "보관함에 벤치와 화분을 넣어 두었어요. 아래 [꾸미기]를 눌러 보세요.";
+                    // 방향을 적지 않는다 — [꾸미기] 버튼은 데스크톱·세로에선 아래, 가로 모바일에선 위쪽 판에 있다(IslandHudLayout).
+                    return "보관함에 벤치와 화분을 넣어 두었어요. [꾸미기] 버튼을 눌러 보세요.";
                 case IslandGuideStep.PlaceFirst:
                     return "아래 보관함에서 물건을 고르고, 섬 위의 칸을 누른 뒤 [놓기]를 누르세요.";
                 case IslandGuideStep.ReleaseInsect:

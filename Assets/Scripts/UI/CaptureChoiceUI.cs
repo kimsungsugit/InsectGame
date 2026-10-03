@@ -26,7 +26,12 @@ namespace InsectGame.UI
 
         private bool isOpen;
         public bool IsOpen => isOpen;
-        public void CloseModal() { Hide(); }
+
+        /// <summary>
+        /// 모달 닫기(ESC — <c>PlayerMovement</c>·<c>ModalUIRegistry.HandleEscape</c>). 습격 창에서는 <b>그냥 닫지 않고 도망 판정으로 보낸다</b>
+        /// (<see cref="RequestClose"/>) — 닫기가 도망을 우회하면 습격이 무의미해진다.
+        /// </summary>
+        public void CloseModal() { RequestClose(); }
         private InsectEntity targetInsect;
 #pragma warning disable 0414
         private int selectedTeamSlot = -1;
@@ -47,6 +52,7 @@ namespace InsectGame.UI
             targetInsect = target;
             target.SetEngaged(true); // 포획 상호작용 중 — 곤충 도주 방지
             isOpen = true;
+            ambushMode = false;      // 습격 창은 ShowAmbush가 이 위에 켠다
             openedFrame = Time.frameCount;
             openKeyHeld = Input.GetKey(KeyCode.E);
             EnsureLastNetLoaded();   // 창을 열 때 한 번 — 그리는 쪽(OnGUI 패스마다)에서 키 문자열을 만들지 않는다
@@ -64,8 +70,24 @@ namespace InsectGame.UI
             targetInsect = null;
             showTeamSelect = false;
             showItemSelect = false;
+            ambushMode = false;
             ModalUIRegistry.Unregister(this);
             if (playerMovement != null) playerMovement.SetFrozen(false);
+        }
+
+        /// <summary>
+        /// 닫기 요청 — ESC가 오는 길(이 창의 키 처리 · <c>CaptureInputController</c> · <c>PlayerMovement</c>의 모달 ESC)이 전부 여기로 모인다.
+        /// 보통 창은 닫고, 습격 창은 도망 판정(팀 고르기 중이면 습격 창으로 돌아가기)으로 보낸다.
+        /// </summary>
+        public void RequestClose()
+        {
+            if (!isOpen) return;
+            if (!ambushMode)
+            {
+                Hide();
+                return;
+            }
+            HandleAmbushEscapeKey();
         }
 
         private void OnDisable() { ModalUIRegistry.Unregister(this); }
@@ -78,6 +100,15 @@ namespace InsectGame.UI
             {
                 Hide();
                 return;
+            }
+
+            // 도망에 실패했다 — 「도망치지 못했다!」를 잠깐 보여 준 뒤 싸움으로 넘어간다(한 번만. 팀 고르기에서 ‹ 뒤로를 누르면 [싸우기]만 남은 창이다).
+            if (ambushMode && ambushEscapeFailed && !ambushAutoFought && !showTeamSelect
+                && Time.unscaledTime - ambushFailAt >= AmbushRules.EscapeFailPauseSeconds)
+            {
+                ambushAutoFought = true;
+                BeginAmbushFight();
+                if (!isOpen) return;
             }
 
             HandleInputUpdate();
@@ -95,6 +126,11 @@ namespace InsectGame.UI
         {
             if (!isOpen) return;
             if (Time.frameCount <= openedFrame + 1) return;
+            if (ambushMode)
+            {
+                HandleAmbushInput(key);
+                return;
+            }
             if (openKeyHeld)
             {
                 if (Input.GetKey(KeyCode.E)) { if (key == KeyCode.E) return; }
@@ -139,14 +175,17 @@ namespace InsectGame.UI
             }
         }
 
+        // 매 프레임 새 배열을 만들지 않는다. F는 습격 창의 [도망치기]다(보통 창에서는 아무 일도 하지 않는다).
+        private static readonly KeyCode[] InputKeys = { KeyCode.E, KeyCode.B, KeyCode.R, KeyCode.F, KeyCode.Escape,
+                                                        KeyCode.Backspace, KeyCode.Alpha1, KeyCode.Alpha2, KeyCode.Alpha3 };
+
         private void HandleInputUpdate()
         {
-            KeyCode[] keys = { KeyCode.E, KeyCode.B, KeyCode.R, KeyCode.Escape, KeyCode.Backspace,
-                               KeyCode.Alpha1, KeyCode.Alpha2, KeyCode.Alpha3 };
-            foreach (var k in keys)
+            for (int i = 0; i < InputKeys.Length; i++)
             {
-                if (Input.GetKeyDown(k))
-                    HandleInput(k);
+                if (!isOpen) return;   // 앞 키가 창을 닫았다(싸우기·도망 성공)
+                if (Input.GetKeyDown(InputKeys[i]))
+                    HandleInput(InputKeys[i]);
             }
         }
 
@@ -161,20 +200,33 @@ namespace InsectGame.UI
                 evt.Use();
             }
 
+            // 키 처리가 창을 닫았을 수 있다(싸우기 → 전투, 도망 성공) — 닫힌 창을 이번 패스에 그리지 않는다.
+            if (!isOpen || targetInsect == null) return;
+
             UIScale.Begin();
             if (showTeamSelect)
                 DrawTeamSelect();
             else if (showItemSelect)
                 DrawItemSelect();
+            else if (ambushMode)
+                DrawAmbush();
             else
                 DrawChoice();
             UIScale.End();
         }
 
+        /// <summary>
+        /// 레이드로만 맞설 수 있는 등급(영웅·전설) — 포획 선택 창의 분기와 습격 판정(<c>CaptureInputController</c>의 「싸울 수 있나」)이
+        /// 같은 답을 읽는다. 두 곳이 따로 적으면 습격 창이 막힌 버튼으로 뜬다.
+        /// </summary>
+        public static bool IsRaidRarity(InsectRarity rarity)
+        {
+            return rarity == InsectRarity.Epic || rarity == InsectRarity.Legendary;
+        }
+
         private bool IsRaidTarget()
         {
-            return targetInsect != null && targetInsect.Data != null &&
-                (targetInsect.Data.rarity == InsectRarity.Epic || targetInsect.Data.rarity == InsectRarity.Legendary);
+            return targetInsect != null && targetInsect.Data != null && IsRaidRarity(targetInsect.Data.rarity);
         }
 
         // ── 스타일 캐시 ──
@@ -183,6 +235,7 @@ namespace InsectGame.UI
         private GUIStyle titleStyle, subStyle, nameStyle, buttonStyle, cancelStyle, hintStyle;
         private GUIStyle raidHintStyle, raidDescStyle, itemNameStyle, itemDescStyle, countStyle;
         private GUIStyle slotNumStyle, slotNameStyle, slotInfoStyle, netRowStyle;
+        private GUIStyle ambushTitleStyle, ambushFailStyle;
         private bool stylesReady;
 
         private void InitStyles()
@@ -215,6 +268,11 @@ namespace InsectGame.UI
             slotNameStyle = new GUIStyle(GUI.skin.label) { fontSize = 30, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
             slotInfoStyle = new GUIStyle(GUI.skin.label) { fontSize = 23, alignment = TextAnchor.MiddleLeft };
             slotInfoStyle.normal.textColor = t.textSecondary;
+            // 습격 창 — 머리말과 도망 실패 줄은 경고색(헤더·활성 탭에 쓰는 코랄 토큰)이다.
+            ambushTitleStyle = new GUIStyle(GUI.skin.label) { fontSize = 44, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            ambushTitleStyle.normal.textColor = t.accentCoral;
+            ambushFailStyle = new GUIStyle(GUI.skin.label) { fontSize = 30, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            ambushFailStyle.normal.textColor = t.accentCoral;
         }
 
         /// <summary>데스크톱에서만 단축키를 작게 붙인다 — 모바일엔 키보드가 없다.</summary>
@@ -427,6 +485,231 @@ namespace InsectGame.UI
             }
             if (guardian)
                 UISurface.Chip(new Rect(x, y, guardianW, h), "수문장", t.accentCoral, t.textPrimary);
+        }
+
+        // ── 습격 창 ─────────────────────────────────────────────────────────
+        // 깨어 있는 습격형 곤충이 닿으면 CaptureInputController가 연다(규칙은 AmbushRules). 고를 것은 [싸우기]와 [도망치기]뿐이다.
+        //  · 포획 버튼이 없다 — 덤벼드는 곤충을 미니게임으로 잡는 건 이상하다. 이기면 전투의 포획 기회가 있다.
+        //  · 그냥 닫는 길이 없다 — ESC는 도망치기다(RequestClose). 닫기가 도망 판정을 우회하면 습격이 무의미해진다.
+        //  · 도망은 전투의 도주 확률(BattleEscapeRules — 선두 출전 곤충 레벨 대 상대 레벨)을 한 번만 굴리고, 실패하면 싸운다.
+        //  · 싸우기는 기존 [B] 배틀 경로(출전할 곤충 고르기)다. 영웅·전설은 기존처럼 레이드로 맞선다(IsRaidRarity).
+
+        private bool ambushMode;
+        private string ambushReason;
+        private string ambushNameLabel;
+        private string ambushFightLabel;
+        private string ambushEscapeLabel;
+        private string ambushChanceLabel;
+        private float ambushOpenedAt;
+        private bool ambushEscapeTried;
+        private bool ambushEscapeFailed;
+        private bool ambushAutoFought;
+        private float ambushFailAt;
+        private int ambushLeadLevel = 1;
+        private int ambushActionFrame = -1;
+        private const float AmbushPanelH = 640f;
+
+        /// <summary>습격 창이 열려 있는가(팀 고르기로 넘어간 동안도 참이다).</summary>
+        public bool IsAmbushOpen => isOpen && ambushMode;
+
+        /// <summary>
+        /// 「습격!」 창을 연다. <b>싸울 수 없으면 열지 않는다</b>(false) — 이 창엔 그냥 닫는 길이 없어서 싸울 수 없는 창은 갇힌 창이 된다
+        /// (판정 쪽 <c>AmbushRules.CanFight</c>도 같은 조건으로 습격 자체를 막는다). 이미 다른 창이 열려 있어도 false.
+        /// </summary>
+        /// <param name="reason">"왜 덤벼들었나" 한 줄(<c>AmbushRules.ReasonLine</c>). 비면 기본 문구.</param>
+        public bool ShowAmbush(InsectEntity target, string reason)
+        {
+            if (isOpen || target == null || target.Data == null) return false;
+            if (!CanFight(target)) return false;
+
+            ShowChoice(target);
+            if (!isOpen) return false;
+            ambushMode = true;
+            ambushReason = string.IsNullOrEmpty(reason) ? AmbushRules.FallbackReason : reason;
+            ambushOpenedAt = Time.unscaledTime;
+            ambushEscapeTried = false;
+            ambushEscapeFailed = false;
+            ambushAutoFought = false;
+            ambushFailAt = 0f;
+            ambushActionFrame = -1;
+            ambushLeadLevel = LeadFighterLevel();
+            // 문구는 창을 열 때 한 번 만든다 — OnGUI 패스마다 이어 붙이지 않는다.
+            ambushNameLabel = $"{target.DisplayNameForPlayer}  Lv.{target.Level}";
+            ambushFightLabel = WithKey(IsRaidTarget() ? "레이드로 맞서기" : "싸우기", "B");
+            ambushEscapeLabel = WithKey("도망치기", "F/ESC");
+            int percent = Mathf.RoundToInt(BattleEscapeRules.Chance(ambushLeadLevel, target.Level) * 100f);
+            ambushChanceLabel = $"도망칠 확률 {percent}%";
+            return true;
+        }
+
+        /// <summary>
+        /// 이 곤충과 지금 싸울 수 있는가 — 1v1이면 기절 안 한 출전 곤충, 레이드 대상이면 5마리 팀(그중 하나라도 싸울 수 있게).
+        /// 습격 판정(<c>CaptureInputController</c>)과 같은 술어(<c>AmbushRules.CanFight</c>)다.
+        /// </summary>
+        public bool CanFight(InsectEntity target)
+        {
+            if (target == null || target.Data == null) return false;
+            GetFightReadiness(out int filled, out int ready);
+            return AmbushRules.CanFight(IsRaidRarity(target.Data.rarity), filled, ready);
+        }
+
+        /// <summary>배틀팀 상태 — 채운 칸 수와 그중 지금 싸울 수 있는(기절 안 한) 곤충 수. 습격 판정이 프레임마다 한 번 읽는다.</summary>
+        public void GetFightReadiness(out int filledSlots, out int readySlots)
+        {
+            filledSlots = teamManager != null ? teamManager.FilledSlots : 0;
+            readySlots = CountBattleReadyTeamMembers();
+        }
+
+        /// <summary>창이 뜬 직후에는 입력을 받지 않는다 — 걷던 손가락·누르던 키가 그대로 버튼을 누르지 않게.</summary>
+        private bool AmbushInputReady => Time.unscaledTime - ambushOpenedAt >= AmbushRules.InputDelaySeconds;
+
+        /// <summary>
+        /// 한 프레임에 한 동작만. 같은 누름이 여러 길로 온다(이 창의 Update·OnGUI, <c>CaptureInputController</c>, <c>PlayerMovement</c>의 모달 ESC) —
+        /// 안 막으면 팀 고르기에서 ESC 한 번이 ‹ 뒤로와 도망치기를 함께 일으킨다.
+        /// </summary>
+        private bool ConsumeAmbushAction()
+        {
+            if (ambushActionFrame == Time.frameCount) return false;
+            ambushActionFrame = Time.frameCount;
+            return true;
+        }
+
+        private void HandleAmbushInput(KeyCode key)
+        {
+            if (key == KeyCode.Escape || key == KeyCode.Backspace)
+            {
+                HandleAmbushEscapeKey();
+                return;
+            }
+            if (showTeamSelect) return;   // 출전 곤충은 버튼으로 고른다(보통 창과 같다)
+
+            bool isRaid = IsRaidTarget();
+            if (key == KeyCode.B || key == KeyCode.Alpha1 || (isRaid && key == KeyCode.R))
+            {
+                if (AmbushInputReady && ConsumeAmbushAction()) BeginAmbushFight();
+            }
+            else if (key == KeyCode.F || key == KeyCode.Alpha2)
+            {
+                if (AmbushInputReady && ConsumeAmbushAction()) TryAmbushEscape();
+            }
+        }
+
+        /// <summary>ESC — 팀 고르기 중이면 습격 창으로 돌아가고, 아니면 도망치기다. 그냥 닫는 길은 없다.</summary>
+        private void HandleAmbushEscapeKey()
+        {
+            if (!ConsumeAmbushAction()) return;
+            if (showTeamSelect)
+            {
+                showTeamSelect = false;
+                return;
+            }
+            if (!AmbushInputReady) return;
+            TryAmbushEscape();
+        }
+
+        /// <summary>
+        /// 도망치기 — 한 번만 굴린다. 성공하면 창을 닫고(교전이 풀리며 그 몸에 쿨다운이 걸린다) 곤충은 물러난다(놓침 도주와 같은 길 —
+        /// 스포너가 같은 개체를 눈 밖 다른 자리로 옮긴다). 실패하면 「도망치지 못했다!」 뒤 싸움으로 넘어간다(Update).
+        /// </summary>
+        private void TryAmbushEscape()
+        {
+            if (!ambushMode || ambushEscapeTried || targetInsect == null) return;
+            ambushEscapeTried = true;
+            InsectEntity target = targetInsect;
+            // 안전망 — 열 때는 싸울 수 있었는데 그 수단이 사라졌다면, 갇힌 창이 되지 않게 도망은 늘 성공한다.
+            bool escaped = !CanFight(target)
+                           || Random.value < BattleEscapeRules.Chance(ambushLeadLevel, target.Level);
+            if (escaped)
+            {
+                Hide();
+                target.ScareAway();
+                return;
+            }
+            ambushEscapeFailed = true;
+            ambushFailAt = Time.unscaledTime;
+        }
+
+        /// <summary>싸우기 — 영웅·전설은 기존 레이드 진입, 그 밖에는 기존 [B] 배틀 경로(출전할 곤충 고르기)를 그대로 탄다.</summary>
+        private void BeginAmbushFight()
+        {
+            if (!ambushMode || targetInsect == null) return;
+            if (IsRaidTarget()) StartRaidBattle();
+            else showTeamSelect = true;
+        }
+
+        /// <summary>선두 출전 곤충의 레벨 — 배틀팀 앞 칸부터 기절하지 않은 첫 곤충. 도망 확률이 이 레벨과 상대 레벨을 견준다.</summary>
+        private int LeadFighterLevel()
+        {
+            if (teamManager == null || collection == null) return 1;
+            for (int i = 0; i < BattleTeamManager.MaxSlots; i++)
+            {
+                string instanceId = teamManager.GetSlot(i);
+                if (string.IsNullOrEmpty(instanceId)) continue;
+                PlayerInsectData pid = collection.GetByInstanceId(instanceId);
+                if (pid != null && !pid.IsFainted) return Mathf.Max(1, pid.level);
+            }
+            return 1;
+        }
+
+        private void DrawAmbush()
+        {
+            if (targetInsect == null || targetInsect.Data == null) return;
+
+            InitStyles();
+            UITheme t = UITheme.Instance;
+            bool isRaid = IsRaidTarget();
+            Rect panel = UISafeLayout.CenteredPanel(820f, AmbushPanelH);
+            float panelW = panel.width;
+            float px = panel.x;
+            float py = panel.y;
+
+            Color rarityCol = t.GetInsectRarityColor(targetInsect.Data.rarity);
+            DrawPanel(panel, t.accentCoral);
+            GUI.color = Color.white;
+
+            UIHelper.LabelFit(new Rect(px + 24f, py + 14f, panelW - 48f, 60f), "습격!", ambushTitleStyle);
+            UIHelper.LabelFit(new Rect(px + 24f, py + 74f, panelW - 48f, 36f), ambushReason, subStyle);
+
+            // 미리보기 — 포획 선택 창과 같은 자리·크기. 바탕만 경고색이 섞인다.
+            Rect frame = new Rect(px + panelW / 2f - 100f, py + 118f, 200f, 200f);
+            UISurface.Rounded(frame, Color.Lerp(t.surfaceBase, t.accentCoral, 0.16f));
+            InsectVisual.Draw(frame.center.x, frame.center.y, 188f, targetInsect.Data, targetInsect.IsShiny, 1f);
+
+            nameStyle.normal.textColor = rarityCol;
+            UIHelper.LabelFit(new Rect(px + 20f, py + 326f, panelW - 40f, 50f), ambushNameLabel, nameStyle);
+            DrawChoiceChips(px + panelW / 2f, py + 382f, rarityCol);
+
+            // 버튼 둘 — 크기는 포획 선택 창(330×88)과 같다. 창이 뜬 직후 잠깐은 눌리지 않는다(InputDelaySeconds).
+            const float btnW = 330f;
+            const float btnH = 88f;
+            const float gap = 24f;
+            float btnY = py + 440f;
+            float leftX = px + panelW / 2f - btnW - gap / 2f;
+            float rightX = leftX + btnW + gap;
+            bool ready = AmbushInputReady;
+
+            GUI.enabled = ready;
+            if (UISurface.Button(new Rect(leftX, btnY, btnW, btnH), ambushFightLabel,
+                    ready ? t.btnDanger : t.btnDisabled, buttonStyle) && ConsumeAmbushAction())
+                BeginAmbushFight();
+
+            bool canEscape = ready && !ambushEscapeTried;
+            GUI.enabled = canEscape;
+            if (UISurface.Button(new Rect(rightX, btnY, btnW, btnH), ambushEscapeLabel,
+                    canEscape ? t.btnSecondary : t.btnDisabled, buttonStyle) && ConsumeAmbushAction())
+                TryAmbushEscape();
+            GUI.enabled = true;
+            if (!isOpen || showTeamSelect) return;   // 도망에 성공해 닫혔거나 출전 곤충 고르기로 넘어갔다
+
+            hintStyle.normal.textColor = t.textMuted;
+            UIHelper.LabelFit(new Rect(leftX, btnY + btnH + 6f, btnW, 32f),
+                isRaid ? "5마리 팀 레이드" : "출전할 곤충을 고른다", hintStyle);
+            hintStyle.normal.textColor = ambushEscapeTried ? t.accentCoral : t.textSecondary;
+            UIHelper.LabelFit(new Rect(rightX, btnY + btnH + 6f, btnW, 32f),
+                ambushEscapeTried ? "도망 실패" : ambushChanceLabel, hintStyle);
+
+            if (ambushEscapeFailed)
+                UIHelper.LabelFit(new Rect(px + 24f, btnY + btnH + 46f, panelW - 48f, 48f), "도망치지 못했다!", ambushFailStyle);
         }
 
         private void DrawItemSelect()

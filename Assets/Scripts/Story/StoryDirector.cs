@@ -884,8 +884,8 @@ namespace InsectGame.Story
         private bool RegionGateSatisfied(StoryBeat beat)
         {
             if (beat == null || string.IsNullOrEmpty(beat.requiredRegionId)) return true;
-            string current = regionManager != null && regionManager.CurrentRegion != null
-                ? regionManager.CurrentRegion.regionId : null;
+            // ActionRegionId — 나의 섬에서는 null이다(섬 손님 곤충을 잡아도 떠나기 전 리전의 비트가 발화하지 않게).
+            string current = regionManager != null ? regionManager.ActionRegionId : null;
             return beat.requiredRegionId == current;
         }
 

@@ -1820,6 +1820,7 @@ namespace InsectGame.UI
             DrawHpBox(player.x, player.y, player.width, playerStats, displayPlayerHp, true);
             DrawHpBox(enemy.x, enemy.y, enemy.width, enemyStats, displayEnemyHp, false);
             DrawLedgerGauge(enemy.x, enemy.yMax + UITheme.Space.S, enemy.width);
+            DrawEnvironmentChips(player, enemy);   // 낮·밤·날씨 보정 칩 — BattleScreenUI.Environment.cs
         }
 
         private void DrawLedgerGauge(float x, float y, float w)
@@ -1833,7 +1834,7 @@ namespace InsectGame.UI
             // 단계 판정은 순수부가 든다 — 경고 여부만 보고 색을 고르면 **가득 찬 순간**
             // 평상색으로 되돌아간다(IsWarning은 정의상 IsFull일 때 false다).
             LedgerAlert alert = LedgerPressure.AlertOf(tally, threshold);
-            const float h = 26f;
+            const float h = BattleHudStack.LedgerGaugeHeight;
 
             UISurface.Flat(new Rect(x, y, w, h), new Color(0.09f, 0.09f, 0.14f, 0.94f));
             if (fill > 0.001f)

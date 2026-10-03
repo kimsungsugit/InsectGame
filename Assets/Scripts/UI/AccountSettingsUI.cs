@@ -82,7 +82,35 @@ namespace InsectGame.UI
 
         private void Update()
         {
-            if (messageTimer > 0f) messageTimer -= Time.deltaTime;
+            if (messageTimer <= 0f) return;
+            // 필드 위에 뜰 때는 가운데 무대(HudStage)의 차례를 기다린다 — 기다리는 동안은 시간도 멈춘다.
+            if (MessageOnField() && !HudStage.Request(HudStageItem.AccountMessage)) return;
+            messageTimer -= Time.deltaTime;
+        }
+
+        /// <summary>
+        /// 알림이 필드 HUD 위에 뜨는가 — 설정 창이 닫혀 있고 다른 창도 없고 꿈도 아닐 때. 창 위에서는 예전 자리(가운데보다 조금 위)에 뜬다.
+        /// </summary>
+        private bool MessageOnField()
+        {
+            return LoggedIn() && !open && !ModalUIRegistry.IsAnyOpen() && !InsectGame.Core.DreamPrologueState.Active;
+        }
+
+        public const float OpenButtonWidth = 116f;
+        public const float OpenButtonHeight = 46f;
+        public const float MessageWidth = 560f;
+        public const float MessageHeight = 54f;
+
+        /// <summary>우하단 "설정" 버튼의 자리 — 순수 계산(제스처바 + 세로 마진 위). 잡기 버튼이 이 위로 비켜 선다.</summary>
+        public static Rect OpenButtonRect(HudFrame f)
+        {
+            return f.BottomPanel(OpenButtonWidth, OpenButtonHeight, UISafeLayout.HAlign.Right);
+        }
+
+        /// <summary>필드 위 계정 알림의 자리 — 가운데 무대의 차례 항목(<see cref="HudStageItem.AccountMessage"/>).</summary>
+        public static Rect FieldMessageRect(HudFrame f)
+        {
+            return HudStage.Place(f, HudStageItem.AccountMessage, MessageWidth, MessageHeight);
         }
 
         private void OnAccountDeleted(bool success, string error)
@@ -150,7 +178,7 @@ namespace InsectGame.UI
         private void DrawOpenButton()
         {
             // 우측 하단 앵커 — 제스처바 + 세로 마진 위로.
-            Rect btn = UISafeLayout.BottomPanel(116f, 46f, UISafeLayout.HAlign.Right);
+            Rect btn = OpenButtonRect(HudFrame.Current);
             FieldHudInput.RegisterBlockingRect(btn);
             if (GUI.Button(btn, "설정", openBtnStyle))
             {
@@ -366,17 +394,28 @@ namespace InsectGame.UI
         {
             if (messageTimer <= 0f || string.IsNullOrEmpty(message)) return;
             EnsureStyles();
-            float w = Mathf.Min(560f, UIScale.ContentWidth() * 0.7f);
-            float h = 54f;
-            float x = UIScale.VirtualSafeLeft + (UIScale.ContentWidth(0f) - w) * 0.5f;
-            // 안전 영역 중앙보다 200 위 — 마진 위로는 넘지 않는다.
-            float y = Mathf.Max(UISafeLayout.ContentTop, UISafeLayout.CenteredY(h) - 200f);
+            float w, h, x, y;
+            if (MessageOnField())
+            {
+                // 필드 위 — 가운데 무대에 선다(예전 자리 가운데−200은 데스크톱 퀘스트 알림·포획 결과 카드와 한 자리였다).
+                Rect r = FieldMessageRect(HudFrame.Current);
+                if (!HudStage.Request(HudStageItem.AccountMessage, r)) return;
+                w = r.width; h = r.height; x = r.x; y = r.y;
+            }
+            else
+            {
+                w = Mathf.Min(MessageWidth, UIScale.ContentWidth() * 0.7f);
+                h = MessageHeight;
+                x = UIScale.VirtualSafeLeft + (UIScale.ContentWidth(0f) - w) * 0.5f;
+                // 안전 영역 중앙보다 200 위 — 마진 위로는 넘지 않는다.
+                y = Mathf.Max(UISafeLayout.ContentTop, UISafeLayout.CenteredY(h) - 200f);
+            }
 
             GUI.color = messageError ? new Color(0.35f, 0.08f, 0.08f, 0.92f) : new Color(0.08f, 0.25f, 0.12f, 0.92f);
             GUI.DrawTexture(new Rect(x, y, w, h), Texture2D.whiteTexture);
             GUI.color = Color.white;
             msgStyle.normal.textColor = messageError ? new Color(1f, 0.6f, 0.6f) : new Color(0.7f, 1f, 0.75f);
-            GUI.Label(new Rect(x + 12f, y, w - 24f, h), message, msgStyle);
+            UIHelper.LabelFit(new Rect(x + 12f, y, w - 24f, h), message, msgStyle);
         }
 
         private static void ReloadScene()

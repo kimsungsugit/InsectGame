@@ -27,8 +27,11 @@ namespace InsectGame.Story
         private enum IslandStep { Move, Approach, Fountain, Linger }
 
         // ── 시간표(초) ──
+        // 영상이 못 뜰 때의 예전 도입: 페이드 → 글자 카드. 영상 뒤에는 이미 검어서 카드만 짧게 뜬다.
         private const float OpenFadeSeconds = 0.8f;
         private const float OpenTitleSeconds = 2.8f;
+        private const float IntroCardSeconds = 2.4f;
+        private const float IntroPrepFadeSeconds = 0.5f;
         private const float BattleRevealSeconds = 1.0f;
         private const float FlashSeconds = 0.5f;
         private const float IslandRevealSeconds = 1.1f;
@@ -101,6 +104,12 @@ namespace InsectGame.Story
         private Camera cachedCamera;
         // 검수 촬영이 한 단계를 세워 두는 동안 시간이 흐르지 않게 한다. enabled=false는 못 쓴다 — OnDisable이 꿈을 끝낸다.
         private bool pausedForCapture;
+        // 도입: 경기장 입장 영상 → 글자 카드. 영상이 못 뜨면(openVideoDone이 곧바로 참) 예전처럼 카드만.
+        private DreamIntroVideo introVideo;
+        private bool openVideoDone;
+        private float openClock;        // 카드 단계의 시계
+        private float openCardStart;    // 카드 글자가 뜨기 시작하는 시각(openClock 기준)
+        private float openCardEnd;
         private GUIStyle skipStyle;
         private GUIStyle titleStyle, subStyle, bigStyle, hintStyle, captionStyle, speakerStyle, glyphStyle, distStyle;
         private bool stylesReady;
@@ -176,6 +185,12 @@ namespace InsectGame.Story
         {
             if (phase != Phase.Idle) Finish(false);
             else DreamPrologueState.End();
+            if (introVideo != null) introVideo.Dispose();
+        }
+
+        private void OnApplicationPause(bool paused)
+        {
+            if (introVideo != null) introVideo.Pause(paused);
         }
 
         private void WatchAutoStart()
@@ -213,6 +228,7 @@ namespace InsectGame.Story
             SetPhase(Phase.Opening);
             fadeColor = Color.black;
             fadeAlpha = 0f;
+            StartIntro();
         }
 
         private static string ReadChampionName()
@@ -227,12 +243,51 @@ namespace InsectGame.Story
             phaseTime = 0f;
         }
 
-        // ── 도입(검은 화면의 타이틀 카드) ──
+        // ── 도입(경기장 입장 영상 → 검은 화면의 타이틀 카드) ──
+
+        // 영상을 틀고(성공하면 영상 단계), 파일을 미리 못 찾으면 글자 카드로 대신한다.
+        private void StartIntro()
+        {
+            if (introVideo == null) introVideo = new DreamIntroVideo(gameObject);
+            if (introVideo.Play()) { openVideoDone = false; openClock = 0f; }
+            else SetOpeningCard(false);
+        }
+
+        // 카드 단계의 시간표. 영상 뒤엔 이미 검은 화면이라 곧바로 글자가 뜨고, 영상 없이는 페이드 인 뒤에 뜬다.
+        private void SetOpeningCard(bool afterVideo)
+        {
+            openVideoDone = true;
+            openClock = 0f;
+            openCardStart = afterVideo ? 0f : OpenFadeSeconds;
+            openCardEnd = openCardStart + (afterVideo ? IntroCardSeconds : OpenTitleSeconds);
+        }
 
         private void UpdateOpening(float dt)
         {
-            fadeAlpha = Mathf.Clamp01(phaseTime / OpenFadeSeconds);
-            if (phaseTime < OpenFadeSeconds + OpenTitleSeconds) return;
+            if (!openVideoDone)
+            {
+                introVideo.Tick(dt);
+                DreamIntroVideo.State state = introVideo.Current;
+                if (state == DreamIntroVideo.State.Preparing)
+                {
+                    fadeAlpha = Mathf.Clamp01(phaseTime / IntroPrepFadeSeconds);   // 준비하는 동안 검게 가라앉는다
+                    return;
+                }
+                if (state == DreamIntroVideo.State.Playing)
+                {
+                    fadeAlpha = 1f;   // 영상이 화면을 덮는다 — 이 검정은 첫 프레임 전의 틈 메우기다
+                    return;
+                }
+                // 끝났거나(마지막 프레임은 검다) 못 틀었다 — 카드로 이어 간다.
+                bool played = state == DreamIntroVideo.State.Ended;
+                introVideo.Stop();
+                SetOpeningCard(played);
+                return;
+            }
+
+            openClock += dt;
+            fadeAlpha = openCardStart <= 0f ? 1f : Mathf.Clamp01(openClock / openCardStart);
+            if (openClock < openCardEnd) return;
 
             if (TryStartBattle()) SetPhase(Phase.Battle);
             else BeginIsland();   // 전투를 못 세우면(종 없음 등) 섬부터 — 꿈은 계속된다
@@ -470,7 +525,9 @@ namespace InsectGame.Story
             {
                 case Phase.Opening:
                     // 도입을 건너뛰어도 전투는 본다 — 건너뛰기가 연출 전체를 날리는 버튼이 되면 안 된다.
-                    phaseTime = OpenFadeSeconds + OpenTitleSeconds;
+                    if (introVideo != null) introVideo.Stop();
+                    SetOpeningCard(true);
+                    openClock = openCardEnd;   // 카드도 건너뛴다 — 다음 프레임에 전투가 선다
                     break;
                 case Phase.Battle:
                     // 전투는 정상 종료 길(결과 화면·정리)을 타게 이긴 것으로 끝낸다.
@@ -493,6 +550,7 @@ namespace InsectGame.Story
         /// </summary>
         private void Finish(bool completed)
         {
+            if (introVideo != null) introVideo.Stop();   // 영상 소리·디코더·BGM 더킹을 놓는다
             UnsubscribeBattle();
             LeaveIsland();
             Phase was = phase;
@@ -556,7 +614,7 @@ namespace InsectGame.Story
             DrawFade();
             switch (phase)
             {
-                case Phase.Opening: DrawOpeningCard(); break;
+                case Phase.Opening: DrawOpening(); break;
                 case Phase.Battle: DrawBattleHint(); break;
                 case Phase.Island: DrawIslandOverlay(); break;
                 case Phase.Wake: DrawCaption(); break;
@@ -574,10 +632,21 @@ namespace InsectGame.Story
             GUI.color = Color.white;
         }
 
+        private void DrawOpening()
+        {
+            if (!openVideoDone)
+            {
+                if (introVideo != null)
+                    introVideo.Draw(new Rect(0f, 0f, UIScale.VirtualScreenWidth, UIScale.VirtualScreenHeight));
+                return;
+            }
+            DrawOpeningCard();
+        }
+
         private void DrawOpeningCard()
         {
-            float textAlpha = Mathf.Clamp01((phaseTime - OpenFadeSeconds) / 0.7f)
-                * Mathf.Clamp01((OpenFadeSeconds + OpenTitleSeconds - phaseTime) / 0.5f);
+            float textAlpha = Mathf.Clamp01((openClock - openCardStart) / 0.7f)
+                * Mathf.Clamp01((openCardEnd - openClock) / 0.5f);
             if (textAlpha <= 0f) return;
             UITheme t = UITheme.Instance;
             Rect panel = UISafeLayout.CenteredPanel(Mathf.Min(900f, UISafeLayout.ContentWidth), 300f);
@@ -615,11 +684,21 @@ namespace InsectGame.Story
             }
         }
 
+        /// <summary>섬 걷기 안내 알약의 윗변 — 안전 영역 위에서 이만큼(건너뛰기 버튼과 같은 줄, 가운데).</summary>
+        public const float IslandPillTop = 40f;
+
+        /// <summary>안내 알약의 자리 — 순수 계산(겹침 전수 검사가 섬 단계의 것을 읽는다).</summary>
+        public static Rect HintPillRect(HudFrame f, float topOffset)
+        {
+            Rect pill = f.TopPanel(Mathf.Min(f.ContentWidth, f.Mobile ? 640f : 900f), 64f);
+            pill.y += topOffset;
+            return pill;
+        }
+
         private void DrawHintPill(string text, float topOffset)
         {
             UITheme t = UITheme.Instance;
-            Rect pill = UISafeLayout.TopPanel(Mathf.Min(UISafeLayout.ContentWidth, UIScale.IsMobileLayout ? 640f : 900f), 64f);
-            pill.y += topOffset;
+            Rect pill = HintPillRect(HudFrame.Current, topOffset);
             FieldHudInput.RegisterBlockingRect(pill);
             UISurface.HudCard(pill);
             hintStyle.normal.textColor = t.textPrimary;
@@ -659,7 +738,7 @@ namespace InsectGame.Story
                     hint = "모두가 당신을 기다리고 있었다";
                     break;
             }
-            if (hint != null && phaseTime > 1f) DrawHintPill(hint, 40f);
+            if (hint != null && phaseTime > 1f) DrawHintPill(hint, IslandPillTop);
             if (hasTarget && phaseTime > 1f) DrawWaypoint(target, t.accentMint);
 
             // 카드(섬 이름·곤충 소개) — 0.3초에 나타나 끝나기 0.4초 전부터 사라진다
@@ -668,11 +747,23 @@ namespace InsectGame.Story
                 DrawCard(Mathf.Clamp01(shown / 0.3f) * Mathf.Clamp01((cardDuration - shown) / 0.4f));
         }
 
+        /// <summary>
+        /// 섬 카드(섬 이름·곤충 소개)의 자리 — 순수 계산. 아래 가운데. <b>세로 모바일</b>은 잡기 버튼 열(오른쪽 아래)이 폭 760 카드의
+        /// 오른쪽 끝에 걸리므로 그 위의 습격 경고 글자보다 위로 올린다.
+        /// </summary>
+        public static Rect IslandCardRect(HudFrame f)
+        {
+            Rect card = f.BottomPanel(Mathf.Min(f.ContentWidth, 760f), 150f);
+            card.y -= 24f;
+            if (f.Mobile && f.Portrait)
+                card.y = Mathf.Min(card.y, InsectGame.Capture.CatchButtonLayout.WarnRect(f).y - UITheme.Space.S - card.height);
+            return card;
+        }
+
         private void DrawCard(float alpha)
         {
             UITheme t = UITheme.Instance;
-            Rect card = UISafeLayout.BottomPanel(Mathf.Min(UISafeLayout.ContentWidth, 760f), 150f);
-            card.y -= 24f;
+            Rect card = IslandCardRect(HudFrame.Current);
             FieldHudInput.RegisterBlockingRect(card);
             GUI.color = new Color(1f, 1f, 1f, alpha);
             UISurface.Card(card, t.surfaceCard, Color.Lerp(t.surfaceBorder, t.accentAmber, 0.6f));
@@ -765,16 +856,21 @@ namespace InsectGame.Story
 
         // ── 건너뛰기 ──
 
+        /// <summary>
+        /// 건너뛰기 버튼의 자리 — 순수 계산. 오른쪽 위. 전투 중에는 오른쪽 위가 배속 버튼 자리라 아레나 바닥 쪽(아래 행동 패널 바로 위)으로 내린다.
+        /// </summary>
+        public static Rect SkipRect(HudFrame f, bool battle)
+        {
+            float w = f.Mobile ? 170f : 150f;
+            float h = f.Mobile ? 64f : 50f;
+            float y = battle ? Mathf.Clamp(f.Height * 0.6f, f.ContentTop, f.ContentBottom - h) : f.ContentTop + 10f;
+            return new Rect(f.Width - f.SafeRight - w - 20f, y, w, h);
+        }
+
         private void DrawSkipButton()
         {
             UITheme t = UITheme.Instance;
-            float w = UIScale.IsMobileLayout ? 170f : 150f;
-            float h = UIScale.IsMobileLayout ? 64f : 50f;
-            // 전투 중에는 오른쪽 위가 배속 버튼 자리라 아레나 바닥 쪽(아래 행동 패널 바로 위)으로 내린다.
-            float y = phase == Phase.Battle
-                ? Mathf.Clamp(UIScale.VirtualScreenHeight * 0.6f, UISafeLayout.ContentTop, UISafeLayout.ContentBottom - h)
-                : UISafeLayout.ContentTop + 10f;
-            Rect rect = new Rect(UIScale.VirtualScreenWidth - UIScale.VirtualSafeRight - w - 20f, y, w, h);
+            Rect rect = SkipRect(HudFrame.Current, phase == Phase.Battle);
             FieldHudInput.RegisterBlockingRect(rect);
             skipStyle.fontSize = UIScale.IsMobileLayout ? 26 : 22;
             if (UISurface.Button(rect, "건너뛰기 ›", Faded(t.surfaceRaised, 0.85f), skipStyle)) Skip();
@@ -789,6 +885,7 @@ namespace InsectGame.Story
         /// </summary>
         public void ShowForCapture(string stage, float seconds)
         {
+            if (introVideo != null) introVideo.Stop();   // 앞 단계의 영상이 뒤에서 계속 돌지 않게
             DreamPrologueState.Begin();
             championName = "하늘";
             challengerName = "태고의 비천룡";
@@ -798,9 +895,17 @@ namespace InsectGame.Story
             {
                 case "opening":
                     SetPhase(Phase.Opening);
-                    phaseTime = OpenFadeSeconds + seconds;
+                    SetOpeningCard(false);
+                    openClock = openCardStart + seconds;
                     fadeColor = Color.black;
                     fadeAlpha = 1f;
+                    break;
+                case "opening-video":
+                    // 진짜 영상을 실시간으로 튼다 — 시간을 세워 두지 않는다(촬영기가 시각을 골라 찍는다).
+                    SetPhase(Phase.Opening);
+                    fadeColor = Color.black;
+                    fadeAlpha = 0f;
+                    StartIntro();
                     break;
                 case "battle":
                     SetPhase(Phase.Battle);
@@ -839,8 +944,8 @@ namespace InsectGame.Story
                     fadeAlpha = Mathf.Clamp01(1f - phaseTime / WakeFadeInSeconds);
                     break;
             }
-            // 이 단계가 시간으로 넘어가지 않게 멈춰 둔다.
-            pausedForCapture = true;
+            // 이 단계가 시간으로 넘어가지 않게 멈춰 둔다(영상 단계만 실시간으로 돈다).
+            pausedForCapture = stage != "opening-video";
         }
 
         // 섬은 한 번만 짓는다 — 단계마다 다시 지으면 곤충이 처음 자리로 돌아가고 촬영이 느려진다.
@@ -853,6 +958,13 @@ namespace InsectGame.Story
             }
             BeginIsland();
         }
+
+        /// <summary>도입 영상이 실제로 재생 중일 때의 영상 시각(초). 재생 중이 아니면 -1 — 촬영기가 영상 시각을 기다릴 때 쓴다.</summary>
+        public float IntroClockForCapture =>
+            introVideo != null && introVideo.Current == DreamIntroVideo.State.Playing ? introVideo.Clock : -1f;
+
+        /// <summary>도입 영상이 실제로 끝나(또는 못 틀어) 글자 카드 단계로 넘어갔는가.</summary>
+        public bool IntroReachedCardForCapture => openVideoDone;
 
         /// <summary>실제 전투 장면 검수용 — 도입을 건너뛰고 샌드박스 전투를 바로 연다. 이후 흐름(섬·깨어남)은 실제 그대로 돈다.</summary>
         public bool StartBattleForCapture()

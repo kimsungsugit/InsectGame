@@ -986,6 +986,27 @@ def evaluate_signals() -> list:
         "FAIL" if gated_on_repeat else "PASS",
     ))
 
+    # 30. 「거둬들이다」는 **명부회의 말**이다(StoryBible 2장). `ch3_warning`에서 세라가 "채집가는 그런 말을
+    #     안 써요. 수확하는 사람의 말이에요"라고 짚는데, 그 앞뒤에서 주인공 쪽(라온·세라·어르신·지문)이 같은
+    #     말을 쓰면 그 대사가 거짓이 된다 — 예외도 경고도 없이 읽히므로 눈으로만 잡히던 결함이다(2026-10-03에
+    #     다섯 줄이 그랬다). 인용부호가 든 줄은 그 말을 **언급**하는 것이라 건너뛴다. 명부회 화자·검은 옷은 자기 말이라 허용.
+    villain_speakers = {n for n in speaker_names if n.startswith("검은 옷") or n in ("집게", "저울", "먹", "관장 하월")} | {"하월"}
+    harvest_word = re.compile(r"거둬|거둔|거두[는고며면어]|거뒀|거둘|거둡")
+    quote_marks = ('"', "“", "”")
+    hero_harvest = sorted(
+        f"{b['beatId']}#{i}:{l.get('speaker')}"
+        for b in beats for i, l in enumerate(b.get("lines") or [])
+        if (l.get("speaker") or "") not in villain_speakers
+        and harvest_word.search(l.get("text") or "")
+        and not any(q in (l.get("text") or "") for q in quote_marks))
+    signals.append((
+        "명부회의 말 「거둬들이다」를 주인공 쪽이 쓰지 않는가 (인용·명부회 화자 제외)",
+        "0건",
+        f"{len(hero_harvest)}건 ({hero_harvest[:10]})" if hero_harvest
+        else f"0건 (명부회 화자 {len(villain_speakers)}종 제외)",
+        "FAIL" if hero_harvest else "PASS",
+    ))
+
     return signals
 
 

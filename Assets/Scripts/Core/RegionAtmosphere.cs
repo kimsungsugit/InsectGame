@@ -34,6 +34,23 @@ namespace InsectGame.Core
         /// <summary><see cref="FieldFogMode"/>(Exp2)에서 11m 투과율이 98%가 되는 밀도(≈0.0129)에 여유를 둔 상한.</summary>
         public const float MaxFogDensity = 0.009f;
 
+        // ── 안개 날씨(<see cref="WorldSkyRules"/>가 리전 연무 위에 얹는 가산) ──
+        // 리전 연무는 "원경을 하늘로 푸는 공기원근"이라 98%였지만, 안개 낀 날은 안개가 **보여야** 한다. 대신 캐릭터가 묻히면 안 되므로
+        // 같은 11m 거리에서 아래 하한을 지킨다. 한도는 투과율 식에서 거꾸로 푼 값에 여유를 둔 것이고
+        // <c>WorldSkyRulesTests</c>가 모든 리전·시각·날씨 조합으로 같은 식(<see cref="FogTransmittance"/>)을 돌려 고정한다.
+
+        /// <summary>메인 필드(<see cref="FieldFogMode"/>)의 안개 날씨에서 11m 투과율 하한 — 캐릭터가 읽히는 선.</summary>
+        public const float MinWeatherTransmittance = 0.85f;
+
+        /// <summary><see cref="FieldFogMode"/>(Exp2)에서 11m 투과율 85%가 되는 밀도(≈0.0366)에 여유를 둔 상한.</summary>
+        public const float MaxWeatherFogDensity = 0.034f;
+
+        /// <summary>섬 같은 분리 서브에리어(<see cref="SubAreaFogMode"/>, Exp)의 안개 날씨 11m 투과율 하한.</summary>
+        public const float MinWeatherTransmittanceSubArea = 0.80f;
+
+        /// <summary><see cref="SubAreaFogMode"/>(Exp)에서 11m 투과율 80%가 되는 밀도(≈0.0203)에 여유를 둔 상한.</summary>
+        public const float MaxWeatherFogDensitySubArea = 0.019f;
+
         /// <summary>
         /// Unity 내장 안개의 투과율(1 = 안개 없음) — 셰이더의 <c>UNITY_CALC_FOG_FACTOR</c>와 같은 식이다.
         /// Linear e = (end − z)/(end − start), Exp e = exp(−density·z), Exp2 e = exp(−(density·z)²).

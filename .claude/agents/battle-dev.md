@@ -29,6 +29,8 @@ tools:
 - `Assets/Editor/LedgerDuelProbe.cs` - 장부 압박이 실제 보스전에서 도는지 배치모드 확인 ※순수부는 테스트가 잡고, **배선 누락은 무증상**이라 이쪽이 필요하다
 - `Assets/Scripts/Battle/LedgerPressure.cs` - 명부회 보스전 「장부」 압박 순수 계산부 ※임계값(누가 얼마나 빨리 적는가)은 `NpcBossDuels` 표가 든다 — 여기에 인물 ID를 두지 않는다
 - `Assets/Scripts/Battle/RaidSupportPlanner.cs` - 비-리더 팀원의 스킬 선택 AI(순수 정적, **난수 미사용** — 동점은 최저 인덱스라 결정론 테스트가 성립한다)
+- `Assets/Scripts/Battle/BattleEnvironment.cs` - 낮·밤·날씨 전투 보정 순수부(`BattleEnvironmentNote` 배수·칩 문구, `Applies` 적용 범위). 배수는 `InsectHabits.BattleStatMultiplier`가 단일 출처 ※칩 그리기는 ui-dev
+- `Assets/Scripts/Battle/BattleEscapeRules.cs` - 도주 확률 순수 규칙(`Chance`) — 1v1 `TryEscape`와 습격 곤충 도망(capture-dev)이 함께 읽는다
 - `Assets/Scripts/NPC/NpcDuelController.cs` - 곤충잡이 아이 1v1 대결(듀얼 진입·보상) ※아이 상태·상대 배정은 capture-dev
 
 ### Core 배틀 관련
@@ -64,7 +66,14 @@ HP×5, ATK×1.5, DEF×1.3
 
 ### 도주
 ```
-escapeChance = clamp(0.5 + (playerLv-enemyLv)×0.05, 0.1, 0.9)
+escapeChance = clamp(0.5 + (playerLv-enemyLv)×0.05, 0.1, 0.9)   // BattleEscapeRules.Chance
+```
+
+### 낮·밤·날씨 보정 (야생 실외 전투만)
+```
+ATK·DEF × InsectHabits.BattleStatMultiplier(habit, GetWorldState(regionId))   // 1.10 / 1.00 / 0.90, HP 제외
+제외: 수문장 · NPC 대결 · 샌드박스 · 레이드 · 실내 서브에리어(섬은 적용, 세계 날씨)
+표지: InsectBattleController.PlayerEnvironment / EnemyEnvironment — BeginBattleCommon이 매번 None으로 끈다
 ```
 
 ### 1v1 승리 포획
@@ -95,3 +104,4 @@ captureChance = clamp(0.90 - rarityIndex×0.07 - clamp01(captureDifficulty)×0.5
 
 ### 전투 지속시간 회귀 테스트
 - `Assets/Tests/EditMode/BattlePacingTests.cs` - 일반전 라운드 분포 및 보스 계수 분리
+- `Assets/Tests/EditMode/BattleEnvironmentTests.cs` - 낮·밤·날씨 보정(노트·적용 범위·능력치·컨트롤러 배선·다음 전투 상속 금지)과 도주 규칙

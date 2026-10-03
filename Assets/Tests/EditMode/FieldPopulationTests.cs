@@ -148,6 +148,56 @@ namespace InsectGame.Tests
             Assert.IsFalse(FieldPopulation.CanRotate(slot, 400f, far, true), "포획·경계·도주 중인 몸을 바꿨다");
         }
 
+        // ── 시간대 갈아입기 — 만료만 당긴다 ──
+
+        [Test]
+        public void PullExpiryForward_BringsExpiryCloser_NeverPushesItBack()
+        {
+            var pop = new FieldPopulation();
+            FieldSlot slot = FilledSlot(pop, "meadow", 0f, expiresAt: 1000f);
+
+            Assert.IsTrue(FieldPopulation.PullExpiryForward(slot, 100f, 20f));
+            Assert.AreEqual(120f, slot.ExpiresAt);
+            Assert.IsFalse(FieldPopulation.PullExpiryForward(slot, 100f, 50f), "이미 더 일찍 만료인 것을 뒤로 밀었다");
+            Assert.AreEqual(120f, slot.ExpiresAt);
+            Assert.IsTrue(slot.IsAlive, "개체는 그대로여야 한다 — 만료만 당긴다");
+            Assert.AreEqual("stag_beetle", slot.InsectId);
+        }
+
+        [Test]
+        public void PullExpiryForward_IgnoresEmptyAndSubAreaSlots()
+        {
+            var pop = new FieldPopulation();
+            pop.EnsureSlotCount("meadow", 1, 0f, isSubArea: false);
+            FieldSlot empty = pop.SlotsOf("meadow")[0];
+            Assert.IsFalse(FieldPopulation.PullExpiryForward(empty, 100f, 10f), "빈 자리의 만료를 당겼다");
+
+            pop.EnsureSlotCount("sub:cave", 1, 0f, isSubArea: true);
+            FieldSlot room = pop.SlotsOf("sub:cave")[0];
+            FieldPopulation.Fill(room, "centipede_common", null, 5, false, false, Vector3.zero, float.PositiveInfinity);
+            Assert.IsFalse(FieldPopulation.PullExpiryForward(room, 100f, 10f), "서브에리어 전용종은 시간대와 무관하다");
+            Assert.IsTrue(float.IsPositiveInfinity(room.ExpiresAt));
+            Assert.IsFalse(FieldPopulation.PullExpiryForward(null, 100f, 10f));
+        }
+
+        [Test]
+        public void PullExpiryForward_KeepsTheNearPlayerRule_TheBodyStaysUntilThePlayerIsFar()
+        {
+            // 시간대가 바뀌어 만료가 당겨져도 플레이어 25m 안의 몸은 그대로다 — 눈앞에서 바뀌면 리롤과 같다.
+            var pop = new FieldPopulation();
+            FieldSlot slot = FilledSlot(pop, "meadow", 0f, expiresAt: 1000f);
+            slot.Entity = Body();
+            FieldPopulation.PullExpiryForward(slot, 100f, FieldSpawnRules.PhaseSwapDelayMin);
+
+            float near = FieldSpawnRules.RotateMinPlayerDistance - 1f;
+            float far = FieldSpawnRules.RotateMinPlayerDistance + 1f;
+            Assert.IsTrue(FieldPopulation.IsExpired(slot, 105f));
+            Assert.IsFalse(FieldPopulation.CanRotate(slot, 200f, near, false), "눈앞에서 갈아입었다");
+            Assert.IsTrue(FieldPopulation.CanRotate(slot, 200f, far, false), "멀어졌는데도 못 바꾼다");
+            Assert.IsFalse(FieldPopulation.CanRotate(slot, 200f, far, true), "경계·포획 중인 몸을 갈아입었다");
+            Assert.IsTrue(slot.IsAlive && slot.IsMaterialized, "당기기만 했는데 몸이나 기록이 바뀌었다");
+        }
+
         // ── 실체화 히스테리시스 ──
 
         [Test]

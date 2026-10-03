@@ -19,6 +19,17 @@ namespace InsectGame.EditorTools
     ///   -captureSize 900x700 -captureOffset 1.5,1.15,1.9 -captureLook 0,0.8,0
     /// </code>
     ///
+    /// <b>낮·밤·날씨 검수</b> — <c>-captureHour 0~24</c>(소수 가능, 12 = 정오)와 <c>-captureWeather clear|rain|fog|wind|snow</c>가
+    /// 시계와 날씨를 그 값으로 <b>붙잡고</b>(hold, 날씨는 즉시 전환) 찍는다. <b>둘 다 안 주면 정오·맑음이다</b> — 낮·밤이 생기기 전의 캡처는
+    /// 늘 한낮 조명이었고(게임 시계는 새벽 6시에 시작해 돈다), 전후 비교 도구가 실행마다 다른 조명으로 찍히면 안 되기 때문이다.
+    /// 게임이 스스로 돌리는 시각·날씨 그대로 찍으려면 <c>-captureHour natural</c> / <c>-captureWeather natural</c>.
+    /// 두 인자는 <b>쉼표 목록</b>도 받는다 — 촬영 순서대로 그 시각·날씨로 찍고(목록이 짧으면 마지막 값), 한 장을 찍자마자 다음 장의 값을 건다.
+    /// 그러면 Unity를 한 번만 띄워 여러 조합을 찍는다(파일 이름에 <c>_날씨_시각h</c>가 붙는다).
+    /// <b>촬영 시각은 플레이모드 진입부터 잰다</b> — 부트스트랩이 한 프레임에 수 초를 쓰므로 첫 촬영을 10초 이후로 잡을 것.
+    /// 그보다 이르면 시각·날씨를 건 바로 그 틱에 찍혀 하늘도 입자도 바뀌기 전 모습이 나온다(2026-10-03에 그렇게 맑은 하늘을 찍었다).
+    /// 하늘 조명은 곧바로 바뀌지만 눈은 위에서 내려와 시야에 차기까지 몇 초 걸리므로 촬영 간격도 6초 이상 둔다. 하늘이 보이는 낮은 구도(<c>-captureOffset 0,1.2,-6 -captureLook 0,3,8</c>)도 함께 찍어 두면
+    /// 지평선·안개·별을 볼 수 있다 — 기본 게임 카메라는 고각이라 하늘이 거의 안 잡힌다.
+    ///
     /// <b>알아야 할 한계 — IMGUI는 안 찍힌다.</b> <c>OnGUI</c>는 카메라를 거치지 않고 화면 위에
     /// 직접 그리므로 여기서 잡히지 않는다(상점·대화창·배틀 UI·HUD). 그건 스탠드얼론 빌드로
     /// <c>ScreenCapture</c>를 써야 한다. 이 도구가 덮는 것은 <b>월드에 있는 것</b>이다.
@@ -73,6 +84,7 @@ namespace InsectGame.EditorTools
             /// 초원 밖의 것을 찍으려면 이게 필요하다 — 플레이어는 늘 초원에서 시작하고,
             /// 리전에 실제로 들어가야만 그 리전에 붙은 것들(수문장 봉인·오염 거점 구조물 등)이
             /// 지어진다. 좌표만 옮기면 <c>RegionManager.Update</c>가 리전 변경을 알아서 잡는다.
+            /// <c>island</c>면 나의 섬으로 들어간다(<see cref="EnterOwnIsland"/>).
             /// </summary>
             public string region;
 
@@ -90,6 +102,27 @@ namespace InsectGame.EditorTools
 
             /// <summary>촬영 전에 정화 기록을 지울 것인가.</summary>
             public bool resetBlight;
+
+            /// <summary>
+            /// 시계를 붙잡을 시각(0~24, 기본 12) — <b>촬영 순서대로</b>의 목록이고 목록보다 촬영이 많으면 마지막 값을 쓴다.
+            /// null(<c>natural</c>)이면 건드리지 않는다.
+            /// </summary>
+            public float[] hours;
+
+            /// <summary>붙잡을 날씨 이름(clear·rain·fog·wind·snow, 기본 clear)의 쉼표 목록 — 시각과 같은 규칙. 비면(<c>natural</c>) 건드리지 않는다.</summary>
+            public string weather;
+
+            public float HourAt(int shot) => hours == null || hours.Length == 0 ? -1f : hours[Mathf.Clamp(shot, 0, hours.Length - 1)];
+
+            public string WeatherAt(int shot)
+            {
+                if (string.IsNullOrEmpty(weather)) return "";
+                string[] parts = weather.Split(',');
+                return parts[Mathf.Clamp(shot, 0, parts.Length - 1)].Trim();
+            }
+
+            /// <summary>촬영마다 시각·날씨가 바뀌는가 — 그러면 파일 이름에 그 조합을 붙인다(한 장짜리는 옛 이름 그대로).</summary>
+            public bool VariesPerShot => (hours != null && hours.Length > 1) || (weather != null && weather.Contains(","));
         }
 
         [MenuItem("InsectGame/Live Scene Capture")]
@@ -123,12 +156,65 @@ namespace InsectGame.EditorTools
             written = 0;
             regionMoved = false;
             cleansed = false;
+            skyApplied = false;
+            skyAppliedShot = -1;
             EditorApplication.update += Tick;
             Log("플레이모드 진입 — 촬영 대기");
         }
 
         private static bool regionMoved;
         private static bool cleansed;
+        private static bool skyApplied;
+
+        /// <summary>
+        /// <c>-captureHour</c>·<c>-captureWeather</c>를 게임에 건다. 시계·날씨 공급자는 부트스트랩이 지은 뒤에야 있으므로
+        /// 찾을 때까지 틱마다 시도하고, 한 번 걸린 뒤에도 매 촬영 직전에 다시 건다(다른 연출이 시계를 풀었어도 같은 조건으로 찍히게).
+        /// 아무 인자도 없으면 아무것도 안 하고 true다. 공급자를 못 찾으면 false.
+        /// </summary>
+        private static bool ApplySkyOverrides(int shot)
+        {
+            float hour = settings.HourAt(shot);
+            string weatherName = settings.WeatherAt(shot);
+            bool wantHour = hour >= 0f;
+            bool wantWeather = !string.IsNullOrEmpty(weatherName);
+            if (!wantHour && !wantWeather) return true;
+
+            var provider = UnityEngine.Object.FindFirstObjectByType<InsectGame.Core.WorldStateProvider>();
+            if (provider == null) return false;
+
+            if (wantHour && provider.Clock != null)
+                provider.Clock.SetTime01(hour / 24f, true);
+
+            if (wantWeather && provider.Weather != null)
+            {
+                if (TryParseWeather(weatherName, out InsectGame.Core.WeatherType weather))
+                    provider.Weather.SetWeather(weather, true, true);
+                else if (!skyApplied)
+                    Log($"알 수 없는 날씨 '{weatherName}' — clear|rain|fog|wind|snow 중 하나여야 한다");
+            }
+
+            if (shot != skyAppliedShot)
+                Log($"하늘 고정(촬영 {shot + 1}) — hour={(wantHour ? hour.ToString("0.##", CultureInfo.InvariantCulture) : "-")} weather={(wantWeather ? weatherName : "-")}");
+            skyApplied = true;
+            skyAppliedShot = shot;
+            return true;
+        }
+
+        /// <summary>마지막으로 하늘을 건 촬영 번호 — 같은 촬영의 재적용은 로그에 다시 남기지 않는다.</summary>
+        private static int skyAppliedShot = -1;
+
+        private static bool TryParseWeather(string raw, out InsectGame.Core.WeatherType weather)
+        {
+            switch ((raw ?? "").Trim().ToLowerInvariant())
+            {
+                case "clear": weather = InsectGame.Core.WeatherType.Clear; return true;
+                case "rain": weather = InsectGame.Core.WeatherType.Rain; return true;
+                case "fog": weather = InsectGame.Core.WeatherType.Fog; return true;
+                case "wind": weather = InsectGame.Core.WeatherType.Wind; return true;
+                case "snow": weather = InsectGame.Core.WeatherType.Snow; return true;
+                default: weather = InsectGame.Core.WeatherType.Clear; return false;
+            }
+        }
 
         /// <summary>
         /// 정화 기록을 지운다. 정화는 세이브에 남으므로 안 지우면 <b>두 번째 실행부터 거점이
@@ -197,9 +283,26 @@ namespace InsectGame.EditorTools
             Log($"리전 이동 → {regionId} {p}");
         }
 
+        /// <summary>
+        /// 나의 섬으로 들어간다(<c>-captureRegion island</c>) — 섬 하늘(낮·밤·날씨)과 손님 곤충을 찍기 위한 것이다.
+        /// 게임의 진입 경로(<c>IslandWorldBuilder.EnterOwnIsland</c>)를 그대로 탄다.
+        /// </summary>
+        private static void EnterOwnIsland()
+        {
+            var island = UnityEngine.Object.FindFirstObjectByType<InsectGame.Core.IslandWorldBuilder>();
+            if (island == null)
+            {
+                Log("섬 진입 실패 — IslandWorldBuilder 없음");
+                return;
+            }
+            Log($"섬 진입 {(island.EnterOwnIsland() ? "성공" : "실패")}");
+        }
+
         private static void Tick()
         {
             float elapsed = Time.realtimeSinceStartup - startTime;
+
+            if (!skyApplied) ApplySkyOverrides(0);
 
             if (!regionMoved && !string.IsNullOrEmpty(settings.region) && elapsed >= settings.regionAt)
             {
@@ -208,7 +311,8 @@ namespace InsectGame.EditorTools
                 // 잡히는데 실행 중에는 계정 스코프 키를 쓴다 — 엉뚱한 키를 지우고 "초기화했다"고
                 // 로그만 남긴 채 거점이 안 서는 일을 실제로 겪었다.
                 if (settings.resetBlight) ResetBlightRecord();
-                MoveToRegion(settings.region);
+                if (settings.region == "island") EnterOwnIsland();
+                else MoveToRegion(settings.region);
             }
 
             if (!cleansed && settings.cleanseAt >= 0f && elapsed >= settings.cleanseAt)
@@ -219,10 +323,17 @@ namespace InsectGame.EditorTools
 
             if (nextShot < settings.times.Length && elapsed >= settings.times[nextShot])
             {
+                ApplySkyOverrides(nextShot);
+                LogWeatherFx();
+                string suffix = settings.VariesPerShot
+                    ? $"_{settings.WeatherAt(nextShot)}_{settings.HourAt(nextShot).ToString("0.#", CultureInfo.InvariantCulture)}h"
+                    : "";
                 string path = Path.GetFullPath(ProjectPath(Path.Combine(
-                    settings.outDir, $"shot_{settings.times[nextShot].ToString("0.0", CultureInfo.InvariantCulture)}s.png")));
+                    settings.outDir, $"shot_{settings.times[nextShot].ToString("0.0", CultureInfo.InvariantCulture)}s{suffix}.png")));
                 if (Capture(path)) written++;
                 nextShot++;
+                // 다음 촬영의 시각·날씨를 지금 건다 — 하늘은 바로, 날씨 입자는 몇 초에 걸쳐 차오르므로 촬영 간격만큼 자리를 잡는다.
+                if (nextShot < settings.times.Length) ApplySkyOverrides(nextShot);
             }
 
             bool done = nextShot >= settings.times.Length;
@@ -232,6 +343,31 @@ namespace InsectGame.EditorTools
             SessionState.SetString(StageKey, "");
             Log($"완료 written={written}/{settings.times.Length} elapsed={elapsed:F1}s");
             EditorApplication.Exit(written == settings.times.Length ? 0 : 3);
+        }
+
+        /// <summary>
+        /// 날씨 입자의 상태를 한 줄씩 남긴다 — 입자는 정지 화면에서 "안 보인다"와 "안 생겼다"를 가를 수 없다.
+        /// 층마다 켜짐·재생·살아 있는 수·방출량·위치를, 그리고 끌 수 있는 조건(꿈·서브에리어·시간 정지)을 함께 적는다.
+        /// </summary>
+        private static void LogWeatherFx()
+        {
+            var fx = UnityEngine.Object.FindFirstObjectByType<InsectGame.Core.WeatherEffects>(FindObjectsInactive.Include);
+            var rm = UnityEngine.Object.FindFirstObjectByType<InsectGame.Core.RegionManager>();
+            Camera cam = Camera.main;
+            Log($"[WX] fx={(fx != null ? (fx.isActiveAndEnabled ? "on" : "off") : "없음")} timeScale={Time.timeScale:0.##} "
+                + $"dream={InsectGame.Core.DreamPrologueState.Active} sub={(rm != null && rm.CurrentSubArea != null ? rm.CurrentSubArea.subAreaId : "-")} "
+                + $"region={(rm != null && rm.CurrentRegion != null ? rm.CurrentRegion.regionId : "-")} "
+                + $"cam={(cam != null ? cam.transform.position.ToString("F1") : "없음")} fxPos={(fx != null ? fx.transform.position.ToString("F1") : "-")}");
+            var islandWorld = UnityEngine.Object.FindFirstObjectByType<InsectGame.Core.IslandWorldBuilder>();
+            if (rm != null && rm.CurrentSubArea != null && islandWorld != null)
+                Log($"[WX]   섬 손님 {islandWorld.ActiveGuestCount}마리");
+            if (fx == null) return;
+            foreach (ParticleSystem ps in fx.GetComponentsInChildren<ParticleSystem>(true))
+            {
+                ParticleSystem.EmissionModule em = ps.emission;
+                Log($"[WX]   {ps.name} active={ps.gameObject.activeInHierarchy} playing={ps.isPlaying} count={ps.particleCount} "
+                    + $"rate={em.rateOverTime.constant:0.#} bounds={ps.GetComponent<ParticleSystemRenderer>().bounds.center.ToString("F1")}");
+            }
         }
 
         /// <summary>
@@ -323,12 +459,16 @@ namespace InsectGame.EditorTools
                 regionAt = Floats(Arg("-captureRegionAt"), new[] { 2f })[0],
                 cleanseAt = Floats(Arg("-captureCleanseAt"), new[] { -1f })[0],
                 resetBlight = Arg("-captureResetBlight") != null,
+                hours = IsNatural(Arg("-captureHour")) ? null : Floats(Arg("-captureHour"), new[] { 12f }),
+                weather = IsNatural(Arg("-captureWeather")) ? "" : (Arg("-captureWeather") ?? "clear"),
             };
             Size(Arg("-captureSize"), out s.width, out s.height);
             // "-captureTarget none"이면 게임 카메라 구도를 그대로 쓴다.
             if (s.target == "none") s.target = "";
             return s;
         }
+
+        private static bool IsNatural(string raw) => string.Equals(raw, "natural", StringComparison.OrdinalIgnoreCase);
 
         private static string Arg(string name)
         {
@@ -378,7 +518,9 @@ namespace InsectGame.EditorTools
                 V(s.offset), V(s.look), s.target ?? "",
                 s.region ?? "", s.regionAt.ToString(CultureInfo.InvariantCulture),
                 s.cleanseAt.ToString(CultureInfo.InvariantCulture),
-                s.resetBlight ? "1" : "0");
+                s.resetBlight ? "1" : "0",
+                s.hours == null ? "" : string.Join(",", Array.ConvertAll(s.hours, h => h.ToString(CultureInfo.InvariantCulture))),
+                s.weather ?? "");
         }
 
         private static string V(Vector3 v) => string.Format(CultureInfo.InvariantCulture,
@@ -401,6 +543,8 @@ namespace InsectGame.EditorTools
                 regionAt = p.Length > 9 ? Floats(p[9], new[] { 2f })[0] : 2f,
                 cleanseAt = p.Length > 10 ? Floats(p[10], new[] { -1f })[0] : -1f,
                 resetBlight = p.Length > 11 && p[11] == "1",
+                hours = p.Length > 12 ? Floats(p[12], null) : null,
+                weather = p.Length > 13 ? p[13] : "",
             };
         }
 
