@@ -1,4 +1,5 @@
-using UnityEngine;
+﻿using UnityEngine;
+using InsectGame.Core;
 
 namespace InsectGame.NPC
 {
@@ -9,6 +10,8 @@ namespace InsectGame.NPC
     /// </summary>
     public class NpcWalkAnimator
     {
+        private readonly Transform handL, handR;
+        private readonly Vector3 netHandleBasePos, netRingBasePos;
         private readonly Transform armL;
         private readonly Transform armR;
         private readonly Transform legPivotL;
@@ -39,6 +42,8 @@ namespace InsectGame.NPC
         public NpcWalkAnimator(Transform root)
         {
             // 노드 캐시 — NPC 모델은 재생성되지 않으므로 생성자 1회로 충분 (PlayerMovement lazy 캐시 참고)
+            handL = root.Find("HandL");
+            handR = root.Find("HandR");
             armL = root.Find("ArmL");
             armR = root.Find("ArmR");
             legPivotL = root.Find("LegLPivot");
@@ -51,6 +56,8 @@ namespace InsectGame.NPC
             // 뜰채 base 회전 — NPC는 도구 교체가 없어 생성 시 1회 고정 캐시
             if (netHandle != null) netHandleBaseRot = netHandle.localRotation;
             if (netRing != null) netRingBaseRot = netRing.localRotation;
+            if (netHandle != null) netHandleBasePos = netHandle.localPosition;
+            if (netRing != null) netRingBasePos = netRing.localPosition;
 
             // idle 위상차 — 위치 기반 결정적 값(할당 없음). 근처 NPC끼리 호흡/고개 타이밍이 어긋난다.
             Vector3 p = root.position;
@@ -130,6 +137,19 @@ namespace InsectGame.NPC
                 netHandle.localRotation = Quaternion.Euler(rightArmDeg, 0f, 0f) * netHandleBaseRot;
             if (netRing != null)
                 netRing.localRotation = Quaternion.Euler(rightArmDeg, 0f, 0f) * netRingBaseRot;
+
+            if (handL != null && armL != null)
+            {
+                handL.localPosition = PlayerVisualBuilder.RotateAttachment(new Vector3(-0.29f, 0.52f, 0f), armL.localPosition, leftArmDeg);
+                handL.localRotation = armL.localRotation;
+            }
+            if (handR != null && armR != null)
+            {
+                handR.localPosition = PlayerVisualBuilder.RotateAttachment(new Vector3(0.29f, 0.52f, 0f), armR.localPosition, rightArmDeg);
+                handR.localRotation = armR.localRotation;
+                if (netHandle != null) netHandle.localPosition = PlayerVisualBuilder.RotateAttachment(netHandleBasePos, armR.localPosition, rightArmDeg);
+                if (netRing != null) netRing.localPosition = PlayerVisualBuilder.RotateAttachment(netRingBasePos, armR.localPosition, rightArmDeg);
+            }
 
             // 다리 (팔과 반대) — LegPivot 회전으로 Leg+Boot 함께 전파. 제스처는 전부 상체라 관여하지 않는다.
             if (legPivotL != null) legPivotL.localRotation = Quaternion.Euler(-swingDeg * 0.8f, 0f, 0f);

@@ -395,6 +395,196 @@ namespace InsectGame.Tests
 
             Assert.AreNotSame(disc, sphere);
         }
+
+        // ── 2026-09-30 캐릭터 본체 개편에서 늘어난 생성기 ──
+
+        private static Mesh Profiled() => ProcMeshLibrary.ProfiledRoundedBox(new Vector3(0.471f, 0.451f, 0.371f), 0.08f, 4, 0.9f, 0.85f, 1f);
+        private static Mesh SmileArc() => ProcMeshLibrary.Arc(0.51f, 0.23f, 205f, 335f, 10);
+        private static Mesh LidArcReversed() => ProcMeshLibrary.Arc(0.51f, 0.19f, 172f, 35f, 10);   // 끝각이 더 작은 방향
+        private static Mesh OpenMouth() => ProcMeshLibrary.Sector(0.51f, 1.01f, 180f, 360f, 12);
+        private static Mesh Fringe(bool rounded) =>
+            ProcMeshLibrary.FringeShell(0.371f, 0.361f, 55f, 61f, 18f, 12f, 6f, 5, rounded ? 0.5f : 0.8f, rounded);
+
+        /// <summary>새 생성기도 와인딩·유한성·단위 노멀 세 규약을 그대로 지킨다(평면 생성기는 면 노멀 ↔ 정점 노멀 기준).</summary>
+        [Test]
+        public void NewGenerators_KeepWindingFiniteAndUnitNormals()
+        {
+            Mesh[] meshes = { Profiled(), SmileArc(), LidArcReversed(), OpenMouth(), Fringe(false), Fringe(true) };
+            string[] labels = { "ProfiledRoundedBox", "Arc", "Arc(역방향)", "Sector", "FringeShell(톱니)", "FringeShell(물결)" };
+            for (int i = 0; i < meshes.Length; i++)
+            {
+                AssertWindingMatchesNormals(meshes[i], labels[i]);
+                AssertFinite(meshes[i], labels[i]);
+                AssertUnitNormals(meshes[i], labels[i]);
+            }
+            AssertOutwardWinding(Profiled(), "ProfiledRoundedBox");
+        }
+
+        /// <summary>
+        /// 프로필 상자는 X만 누른다 — Z(두께)가 변하면 몸통 앞면에 붙인 셔츠 패널·배지가 아래쪽에서 떠 보인다.
+        /// 위·아래 폭은 요청한 배율을 따른다.
+        /// </summary>
+        [Test]
+        public void ProfiledRoundedBox_ScalesWidthOnly()
+        {
+            Mesh m = Profiled();
+            Bounds b = m.bounds;
+            Assert.AreEqual(0.371f, b.size.z, 0.002f, "두께가 변했다");
+            Assert.AreEqual(0.451f, b.size.y, 0.002f, "높이가 변했다");
+
+            float topHalf = 0f, bottomHalf = 0f;
+            foreach (Vector3 v in m.vertices)
+            {
+                if (v.y > b.max.y - 0.09f) topHalf = Mathf.Max(topHalf, Mathf.Abs(v.x));
+                if (v.y < b.min.y + 0.09f) bottomHalf = Mathf.Max(bottomHalf, Mathf.Abs(v.x));
+            }
+            Assert.Greater(topHalf, bottomHalf, "위(배율 1)가 아래(0.9)보다 넓어야 한다");
+        }
+
+        [Test]
+        public void ProfileScale_PassesThroughItsThreeControlPoints()
+        {
+            Assert.AreEqual(0.9f, ProcMeshLibrary.ProfileScale(0f, 0.9f, 0.8f, 1f), 1e-5f);
+            Assert.AreEqual(0.8f, ProcMeshLibrary.ProfileScale(0.5f, 0.9f, 0.8f, 1f), 1e-5f);
+            Assert.AreEqual(1f, ProcMeshLibrary.ProfileScale(1f, 0.9f, 0.8f, 1f), 1e-5f);
+        }
+
+        /// <summary>
+        /// 오프셋 캡슐은 모양은 같고 위치만 민다 — 팔 원점을 어깨로 옮겨도 쉬는 자세의 팔 모양이 같아야 한다.
+        /// 오프셋 0은 기존 캐시 키 그대로다(기존 메시를 쓰는 곳이 바뀌지 않는다).
+        /// </summary>
+        [Test]
+        public void TaperedCapsule_Offset_TranslatesWithoutReshaping()
+        {
+            Mesh plain = ProcMeshLibrary.TaperedCapsule(0.052f, 0.037f, 0.113f, 8, 10);
+            Mesh shifted = ProcMeshLibrary.TaperedCapsule(0.052f, 0.037f, 0.113f, 8, 10, -0.0565f);
+
+            Assert.AreSame(plain, ProcMeshLibrary.TaperedCapsule(0.052f, 0.037f, 0.113f, 8, 10, 0f));
+            Assert.AreEqual(plain.bounds.size.x, shifted.bounds.size.x, 1e-5f);
+            Assert.AreEqual(plain.bounds.size.y, shifted.bounds.size.y, 1e-5f);
+            Assert.AreEqual(plain.bounds.center.y - 0.0565f, shifted.bounds.center.y, 1e-5f);
+        }
+
+        /// <summary>
+        /// 앞머리 끝모양: 톱니 끝은 가장 낮고(tipDeg), 뿌리는 그보다 toothDeg 위다. 양 끝(가장자리)은 뿌리다 —
+        /// 끝이 가장자리에 걸리면 관자놀이에서 가닥이 잘린 것처럼 보인다. 옆 처짐은 가운데엔 없다.
+        /// </summary>
+        [Test]
+        public void FringeEdge_TipsRootsAndSideDrop()
+        {
+            const int teeth = 4;
+            float tip = 17f, tooth = 19f;
+
+            // 대칭 톱니(skew 0.5): 첫 톱니 끝은 u = 0.5/teeth
+            Assert.AreEqual(tip, ProcMeshLibrary.FringeEdgeDeg(0.5f / teeth, tip, tooth, 0f, teeth, 0.5f, false), 1e-3f);
+            Assert.AreEqual(tip + tooth, ProcMeshLibrary.FringeEdgeDeg(0f, tip, tooth, 0f, teeth, 0.5f, false), 1e-3f);
+            Assert.AreEqual(tip + tooth, ProcMeshLibrary.FringeEdgeDeg(1f, tip, tooth, 0f, teeth, 0.5f, false), 1e-3f,
+                "오른쪽 끝도 뿌리여야 한다");
+            Assert.AreEqual(tip + tooth, ProcMeshLibrary.FringeEdgeDeg(1f, tip, tooth, 0f, teeth, 0.5f, true), 1e-3f,
+                "물결도 가장자리는 뿌리");
+
+            // 옆 처짐: 가운데는 그대로, 가장자리는 처짐만큼 내려간다.
+            float mid = ProcMeshLibrary.FringeEdgeDeg(0.5f, tip, tooth, 10f, teeth, 0.5f, false);
+            float midNoDrop = ProcMeshLibrary.FringeEdgeDeg(0.5f, tip, tooth, 0f, teeth, 0.5f, false);
+            Assert.AreEqual(midNoDrop, mid, 1e-3f);
+            Assert.AreEqual(tip + tooth - 10f, ProcMeshLibrary.FringeEdgeDeg(0f, tip, tooth, 10f, teeth, 0.5f, false), 1e-3f);
+        }
+
+        // ── 3단계(의상 형태)에서 늘어난 생성기 ──
+
+        [Test]
+        public void ClothAndRingGenerators_KeepWindingFiniteAndUnitNormals()
+        {
+            Mesh[] meshes =
+            {
+                ProcMeshLibrary.DrapeShell(201f, 1.31f, 4, 0.021f),
+                ProcMeshLibrary.DrapeShell(359f, 1.37f, 6, 0.011f, 3),
+                ProcMeshLibrary.Torus(0.061f, 24, 8),
+                ProcMeshLibrary.NetHead(0.051f, 0.83f),
+            };
+            string[] labels = { "DrapeShell(망토)", "DrapeShell(치마)", "Torus", "NetHead" };
+            for (int i = 0; i < meshes.Length; i++)
+            {
+                AssertWindingMatchesNormals(meshes[i], labels[i]);
+                AssertFinite(meshes[i], labels[i]);
+                AssertUnitNormals(meshes[i], labels[i]);
+            }
+        }
+
+        /// <summary>늘어진 천은 원점이 윗변이고 아래로 늘어진다 — 레시피가 "어깨에 건다"고 적는 좌표의 전제.</summary>
+        [Test]
+        public void DrapeShell_HangsDownFromItsTopEdge_AndFlares()
+        {
+            Mesh m = ProcMeshLibrary.DrapeShell(202f, 1.4f, 0, 0f);
+            Assert.AreEqual(0f, m.bounds.max.y, 1e-4f, "윗변이 원점 높이가 아니다");
+            Assert.AreEqual(-1f, m.bounds.min.y, 1e-4f, "길이 1(아래로)이 아니다");
+
+            float topWidth = 0f, bottomWidth = 0f;
+            foreach (Vector3 v in m.vertices)
+            {
+                if (v.y > -0.01f) topWidth = Mathf.Max(topWidth, Mathf.Abs(v.x));
+                if (v.y < -0.99f) bottomWidth = Mathf.Max(bottomWidth, Mathf.Abs(v.x));
+            }
+            Assert.Greater(bottomWidth, topWidth, "밑단이 퍼지지 않는다");
+            Assert.Less(m.bounds.center.z, 0f, "뒤(−Z)를 감싸야 한다 — 망토가 가슴 앞에 걸린다");
+        }
+
+        /// <summary>
+        /// 잠자리채 머리의 원점은 테 **아래 끝**이다 — 노드를 자루 끝에 두면 테가 자루 위에 선다
+        /// (PlayerVisualRebuildTests가 "자루 끝 = 테 노드 위치"를 고정한다). 그물은 뒤(−Z)로 늘어진다.
+        /// </summary>
+        [Test]
+        public void NetHead_StandsOnItsOrigin_AndTheBagTrailsBack()
+        {
+            Mesh m = ProcMeshLibrary.NetHead(0.052f, 0.84f);
+            Assert.AreEqual(0f, m.bounds.min.y, 0.06f, "테 아래 끝이 원점이 아니다");
+            Assert.Greater(m.bounds.max.y, 0.95f, "테가 자루 위로 서지 않는다");
+            Assert.Less(m.bounds.min.z, -0.7f, "그물이 뒤로 늘어지지 않는다");
+        }
+
+        /// <summary>
+        /// 둥근 상자 UV 아틀라스 — 앞면은 u 0~0.5, 뒷면·옆면은 0.5~1. 앞면 전용 무늬(단추·거미줄 중심)가 등에 찍히지 않는 전제다.
+        /// </summary>
+        [Test]
+        public void RoundedBox_Uv_SplitsFrontFromBack()
+        {
+            Mesh m = ProcMeshLibrary.RoundedBox(new Vector3(0.481f, 0.461f, 0.381f), 0.08f, 3);
+            Vector3[] v = m.vertices;
+            Vector2[] uv = m.uv;
+            Assert.AreEqual(v.Length, uv.Length, "UV가 없다 — 무늬 텍스처가 한 점 색으로 번진다");
+
+            Vector3[] n = m.normals;
+            for (int i = 0; i < v.Length; i++)
+            {
+                if (n[i].z > 0.95f) Assert.LessOrEqual(uv[i].x, 0.5f, "앞면 정점이 뒤 칸 UV를 쓴다");
+                if (n[i].z < -0.95f) Assert.GreaterOrEqual(uv[i].x, 0.5f, "뒷면 정점이 앞 칸 UV를 쓴다");
+            }
+        }
+
+        /// <summary>캡슐(팔·다리) UV — 원통 투영이고 이음매(u 0/1)는 **뒤**에 있다. 앞(+Z)이 u 0.5다.</summary>
+        [Test]
+        public void TaperedCapsule_Uv_SeamSitsAtTheBack()
+        {
+            Mesh m = ProcMeshLibrary.TaperedCapsule(0.053f, 0.041f, 0.117f, 8, 10);
+            Vector3[] v = m.vertices;
+            Vector2[] uv = m.uv;
+            Assert.AreEqual(v.Length, uv.Length);
+            for (int i = 0; i < v.Length; i++)
+            {
+                Vector2 xz = new Vector2(v[i].x, v[i].z);
+                if (xz.magnitude < 0.02f) continue;                    // 극점 근처는 방향이 없다
+                if (v[i].z > 0.03f && Mathf.Abs(v[i].x) < 0.01f) Assert.AreEqual(0.5f, uv[i].x, 0.08f, "앞이 u 0.5가 아니다");
+            }
+        }
+
+        /// <summary>앞머리 껍질은 윗변이 끝모양보다 항상 위다 — 뒤집히면 면이 안쪽을 향해 컬링된다.</summary>
+        [Test]
+        public void FringeShell_TopStaysAboveEdge()
+        {
+            Mesh m = Fringe(false);
+            Assert.Greater(m.bounds.max.y, 0.361f * Mathf.Sin(55f * Mathf.Deg2Rad), "윗변이 정수리 덮개 밑으로 들어갈 만큼 높아야 한다");
+            Assert.Greater(m.bounds.max.z, 0.3f, "정면(+Z)을 덮어야 한다");
+        }
     }
 }
 #endif

@@ -18,10 +18,10 @@ namespace InsectGame.UI
 
         // GUIStyle 캐싱
         private GUIStyle sectionTitleStyle;
+        private GUIStyle playerNameStyle;
         private GUIStyle levelBadgeLabelStyle;
         private GUIStyle levelBadgeNumStyle;
         private GUIStyle xpTitleStyle;
-        private GUIStyle xpTextStyle;
         private GUIStyle xpPctStyle;
         private GUIStyle regionNameStyle;
         private GUIStyle regionSubStyle;
@@ -46,6 +46,26 @@ namespace InsectGame.UI
         /// </summary>
         public bool IsExpanded => expanded;
 
+        /// <summary>
+        /// 닫힘 탭의 오른쪽 끝(가상 x). 상단 가운데 리전 배너가 세로 화면에서 이 탭과 우상단 단축 바
+        /// 사이에 자리를 잡으려고 읽는다. 탭 폭이 바뀌면 배너도 같이 따라간다.
+        /// </summary>
+        public static float CollapsedTabRight => UIScale.VirtualSafeLeft + 8f + CollapsedTabWidth;
+
+        private static float CollapsedTabWidth => UIScale.IsMobileLayout ? 84f : 64f;
+
+        /// <summary>닫힘 탭의 자리 — 순수 계산(전수 겹침 검사가 부른다).</summary>
+        public static Rect TabRect(HudFrame f)
+        {
+            return new Rect(f.SafeLeft + 8f, f.ContentTop, f.Mobile ? 84f : 64f, 140f);
+        }
+
+        /// <summary>펼친 패널의 자리(다 펼쳤을 때) — 순수 계산. 가운데 무대(<see cref="HudStage.Area"/>)가 이 오른쪽에서 시작한다.</summary>
+        public static Rect PanelRect(HudFrame f)
+        {
+            return new Rect(f.SafeLeft + 20f, f.ContentTop, PanelW, f.ClampHeight(PanelH));
+        }
+
         private bool expanded = true;
         private bool mobileLayoutInitialized;
         private float xpBarAnim;
@@ -56,23 +76,11 @@ namespace InsectGame.UI
         private float subAreaAlertTimer;
         private bool subscribedSubArea;
 
-        // OnGUI 매 프레임 new Color 회피용 (alpha/scaled 동적 값 제외).
-        private static readonly Color PanelBgCol = new Color(0.03f, 0.04f, 0.08f, 0.92f);
-        private static readonly Color PanelAccentBlueCol = new Color(0.3f, 0.6f, 1f);
-        private static readonly Color PanelDividerCol = new Color(0.15f, 0.18f, 0.25f);
-        private static readonly Color LvBadgeBgDarkCol = new Color(0.15f, 0.25f, 0.5f);
-        private static readonly Color LvBadgeAccentCol = new Color(0.3f, 0.6f, 1f);
-        private static readonly Color XpBarBgCol = new Color(0.08f, 0.08f, 0.12f);
-        private static readonly Color XpBarFillDarkCol = new Color(0.2f, 0.5f, 0.9f);
-        private static readonly Color XpBarFillLightCol = new Color(0.3f, 0.65f, 1f);
-        private static readonly Color StatCandyPinkCol = new Color(1f, 0.7f, 0.85f);
-        private static readonly Color StatCoinGoldCol = new Color(1f, 0.85f, 0.3f);
-        private static readonly Color StatGemBlueCol = new Color(0.4f, 0.7f, 1f);
-        private static readonly Color StatTeamOrangeCol = new Color(1f, 0.6f, 0.3f);
-        private static readonly Color StatOwnedGreenCol = new Color(0.4f, 0.85f, 0.5f);
-        private static readonly Color StatDiscoveredBlueCol = new Color(0.6f, 0.8f, 1f);
-        private static readonly Color StatCapturedGoldCol = new Color(1f, 0.85f, 0.3f);
-        private static readonly Color RegionDefaultCol = new Color(0.6f, 0.7f, 0.8f);
+        // 색은 전부 UITheme 토큰에서 받는다(rules/ui-layout.md). 이 파일이 한때 자기 색 16개와
+        // 각진 사각형 21개로 그려, 같은 화면의 미니맵·퀘스트 칩(HudCard)과 다른 앱처럼 보였다.
+        private const float PanelW = 480f;
+        private const float PanelH = 540f;
+        private const float TileH = 58f;
 
         // GetAllOwned 캐싱 — DrawCollectionSection 매 프레임 호출 회피 (CollectionUI 패턴).
         private int cachedOwnedCount;
@@ -97,7 +105,7 @@ namespace InsectGame.UI
                 {
                     string saved = PlayerPrefs.GetString(
                         InsectGame.Core.SaveScope.PrefsKey("InsectGame.Character.Name"), "");
-                    cachedPlayerName = string.IsNullOrWhiteSpace(saved) ? "PLAYER" : saved;
+                    cachedPlayerName = string.IsNullOrWhiteSpace(saved) ? "탐험가" : saved;
                 }
                 return cachedPlayerName;
             }
@@ -165,7 +173,10 @@ namespace InsectGame.UI
             // 모달이 열려 있는 동안에는 배너 수명을 태우지 않는다 — 위 OnGUI가 그리지 않으므로
             // 그대로 두면 창을 닫았을 때 이미 사라진 뒤다(TutorialQuestUI의 완료 배너와 같은 처리).
             if (subAreaAlertTimer > 0f && !ModalUIRegistry.IsAnyOpen())
+            {
+                HudStage.Request(HudStageItem.PlaceAlert);   // 떠 있는 동안 무대의 다른 차례를 붙잡아 둔다
                 subAreaAlertTimer -= Time.deltaTime;
+            }
         }
 
         private void OnGUI()
@@ -178,7 +189,7 @@ namespace InsectGame.UI
             //      직접 히트테스트하고 `evt.Use()`로 소비한다. IMGUI는 z-order로 히트테스트를
             //      가르지 않으므로, 모달의 좌상단 컨트롤을 누른 탭을 **이쪽이 먼저 먹고**
             //      상태 패널만 접혔다 펴진다(모바일 기본은 닫힘이라 그 자리에 탭이 서 있다).
-            if (ModalUIRegistry.IsAnyOpen()) return;
+            if (ModalUIRegistry.IsAnyOpen() || DreamPrologueState.Active) return;
 
             UIScale.Begin();
             DrawSubAreaAlert();
@@ -187,16 +198,17 @@ namespace InsectGame.UI
 
             InitStyles();
 
-            float panelW = 480f;
-            float panelH = UISafeLayout.ClampHeight(540f);
-            float margin = 20f;
-            // 세이프 에어리어(노치/상태바) 안쪽으로 — 세로는 하네스의 ContentTop(인셋 + 세로 마진).
-            float safeL = SafeArea.Left / UIScale.Scale;
-            float py = UISafeLayout.ContentTop;
+            // 자리는 PanelRect/TabRect(순수 계산) — 세이프 에어리어 안쪽, 세로는 하네스의 ContentTop(인셋 + 세로 마진).
+            HudFrame frame = HudFrame.Current;
+            Rect openRect = PanelRect(frame);
+            float panelW = openRect.width;
+            float panelH = openRect.height;
+            float safeL = frame.SafeLeft;
+            float py = openRect.y;
 
             // 닫힘 상태에서는 패널을 화면 밖으로 '완전히' 밀어 잘린 숫자가 새어 보이지 않게 한다.
             // (기존엔 50px 띠만 남겨 우측 정렬된 스탯 값이 잘린 채 노출돼 깨져 보였음 — 가로/세로 공통 버그)
-            float openX = margin + safeL;
+            float openX = openRect.x;
             float closedX = -(panelW + 40f);
             float px = Mathf.Lerp(closedX, openX, toggleAnim);
 
@@ -218,35 +230,18 @@ namespace InsectGame.UI
             {
                 FieldHudInput.RegisterBlockingRect(new Rect(px, py, panelW, panelH));
 
-                GUI.color = PanelBgCol;
-                GUI.DrawTexture(new Rect(px, py, panelW, panelH), Texture2D.whiteTexture);
-
-                GUI.color = PanelAccentBlueCol;
-                GUI.DrawTexture(new Rect(px, py, panelW, 4), Texture2D.whiteTexture);
-                GUI.DrawTexture(new Rect(px, py + panelH - 3, panelW, 3), Texture2D.whiteTexture);
-                GUI.DrawTexture(new Rect(px, py, 3, panelH), Texture2D.whiteTexture);
-                GUI.DrawTexture(new Rect(px + panelW - 3, py, 3, panelH), Texture2D.whiteTexture);
-
+                // 미니맵·퀘스트 칩과 같은 반투명 HUD 카드 — 월드가 비치되 글자 대비는 유지된다.
+                UISurface.HudCard(new Rect(px, py, panelW, panelH));
                 GUI.color = Color.white;
 
-                float cy = py + 16;
+                DrawLevelSection(px, py + 14f, panelW);
+                DrawResourceSection(px, py + 142f, panelW);
+                DrawCollectionSection(px, py + 300f, panelW);
+                DrawRegionSection(px, py + 402f, panelW);
 
-                DrawLevelSection(px, cy, panelW);
-                cy += 135;
-
-                DrawResourceSection(px, cy, panelW);
-                cy += 160;
-
-                DrawCollectionSection(px, cy, panelW);
-                cy += 85;
-
-                DrawRegionSection(px, cy, panelW);
-
-                float toggleSize = UIScale.IsMobileLayout ? 58f : 38f;
-                panelToggleRect = new Rect(px + panelW - toggleSize - 8f, py + 8f, toggleSize, toggleSize);
-                GUI.color = PanelDividerCol;
-                GUI.DrawTexture(panelToggleRect, Texture2D.whiteTexture);
-                GUI.color = Color.white;
+                float toggleSize = UIScale.IsMobileLayout ? 58f : 44f;
+                panelToggleRect = new Rect(px + panelW - toggleSize - 12f, py + 12f, toggleSize, toggleSize);
+                UISurface.Rounded(panelToggleRect, UITheme.Instance.surfaceRaised, UITheme.Radius.Chip);
                 GUI.Label(panelToggleRect, "◀", toggleStyle);
             }
 
@@ -267,89 +262,74 @@ namespace InsectGame.UI
             UIScale.End();
         }
 
-        private void DrawLevelSection(float px, float cy, float pw)
+        private void DrawLevelSection(float px, float top, float pw)
         {
+            UITheme t = UITheme.Instance;
             int level = progress.Level;
             int xp = progress.CurrentXp;
             int xpNeeded = progress.XpToNextLevel;
 
             // 캐릭터 이름. 오래 리터럴 "PLAYER"였다 — 생성 화면이 이름을 받아 저장하고
             // 클라우드 동기까지 하는데 게임 어디에서도 보여주지 않아 사실상 버려지는 값이었다.
-            // 한글 12자가 150px 상자를 넘길 수 있어 LabelFit으로 줄여 맞춘다(ui-layout.md).
-            UIHelper.LabelFit(new Rect(px + 20, cy, 150, 28), PlayerDisplayName, sectionTitleStyle);
+            // 한글 12자가 상자를 넘길 수 있어 LabelFit으로 줄여 맞춘다(ui-layout.md).
+            // 오른쪽 76px는 접기 버튼 자리다.
+            UIHelper.LabelFit(new Rect(px + 20f, top, pw - 96f, 34f), PlayerDisplayName, playerNameStyle);
 
-            float lvBadgeX = px + 20;
-            float lvBadgeY = cy + 32;
+            Rect badge = new Rect(px + 20f, top + 44f, 88f, 70f);
+            UISurface.Rounded(badge, Color.Lerp(t.surfaceRaised, t.accentMint, 0.45f), UITheme.Radius.Chip);
+            GUI.Label(new Rect(badge.x, badge.y + 2f, badge.width, 24f), "Lv", levelBadgeLabelStyle);
+            GUI.Label(new Rect(badge.x, badge.y + 22f, badge.width, 46f), level.ToString(), levelBadgeNumStyle);
 
-            GUI.color = LvBadgeBgDarkCol;
-            GUI.DrawTexture(new Rect(lvBadgeX, lvBadgeY, 84, 60), Texture2D.whiteTexture);
-            GUI.color = LvBadgeAccentCol;
-            GUI.DrawTexture(new Rect(lvBadgeX, lvBadgeY, 84, 3), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(lvBadgeX, lvBadgeY + 57, 84, 3), Texture2D.whiteTexture);
-
-            GUI.color = Color.white;
-            GUI.Label(new Rect(lvBadgeX, lvBadgeY + 2, 84, 22), "LEVEL", levelBadgeLabelStyle);
-            GUI.Label(new Rect(lvBadgeX, lvBadgeY + 20, 84, 40), level.ToString(), levelBadgeNumStyle);
-
-            float barX = lvBadgeX + 100;
-            float barW = pw - 140;
-            float barH = 26f;
-            float barY = lvBadgeY + 6;
-
-            GUI.Label(new Rect(barX, lvBadgeY - 4, barW, 24), "경험치 (EXP)", xpTitleStyle);
-
-            GUI.color = XpBarBgCol;
-            GUI.DrawTexture(new Rect(barX, barY + 24, barW, barH), Texture2D.whiteTexture);
-
-            if (xpBarAnim > 0)
-            {
-                GUI.color = XpBarFillDarkCol;
-                GUI.DrawTexture(new Rect(barX, barY + 24 + barH / 2, barW * xpBarAnim, barH / 2), Texture2D.whiteTexture);
-                GUI.color = XpBarFillLightCol;
-                GUI.DrawTexture(new Rect(barX, barY + 24, barW * xpBarAnim, barH / 2), Texture2D.whiteTexture);
-
-                float shine = Mathf.Sin(Time.time * 2f) * 0.15f;
-                if (shine > 0)
-                {
-                    GUI.color = new Color(1f, 1f, 1f, shine);
-                    GUI.DrawTexture(new Rect(barX, barY + 24, barW * xpBarAnim, barH), Texture2D.whiteTexture);
-                }
-            }
-
-            GUI.color = Color.white;
-            GUI.Label(new Rect(barX, barY + 24, barW, barH), $"{xp} / {xpNeeded}", xpTextStyle);
-
+            float barX = badge.xMax + 16f;
+            float barW = px + pw - 20f - barX;
             int percent = xpNeeded > 0 ? Mathf.RoundToInt((float)xp / xpNeeded * 100f) : 100;
-            GUI.Label(new Rect(barX, barY + 52, barW, 24), $"{percent}%", xpPctStyle);
+            GUI.Label(new Rect(barX, top + 46f, barW, 26f), "경험치", xpTitleStyle);
+            GUI.Label(new Rect(barX, top + 46f, barW, 26f), $"{xp} / {xpNeeded} · {percent}%", xpPctStyle);
+
+            // 20px 막대 — 둥근 9-slice는 테두리가 높이를 넘겨 뭉개지므로 각진 채로 둔다(ui-layout.md).
+            Rect track = new Rect(barX, top + 80f, barW, 20f);
+            UISurface.Flat(track, t.surfaceBase);
+            if (xpBarAnim > 0f)
+            {
+                // 민트 — 보유 곤충 상세의 경험치 막대와 같은 색. 코랄은 이 테마에서 HP 위험·닫기 색이다.
+                Rect fill = new Rect(track.x, track.y, track.width * xpBarAnim, track.height);
+                UISurface.Flat(fill, t.accentMint);
+                // 윗면 광택 + 느린 반짝임 — 막대가 살아 있다는 신호만 준다.
+                float shine = 0.16f + Mathf.Max(0f, Mathf.Sin(Time.time * 2f)) * 0.12f;
+                UISurface.Flat(new Rect(fill.x, fill.y, fill.width, fill.height * 0.4f), new Color(1f, 1f, 1f, shine));
+            }
         }
 
-        private void DrawResourceSection(float px, float cy, float pw)
+        private void DrawResourceSection(float px, float top, float pw)
         {
-            GUI.Label(new Rect(px + 20, cy, 150, 26), "RESOURCES", sectionTitleStyle);
+            UITheme t = UITheme.Instance;
+            GUI.Label(new Rect(px + 20f, top, pw - 40f, 26f), "재화", sectionTitleStyle);
 
-            float halfW = (pw - 56) / 2f;
+            float gap = 12f;
+            float halfW = (pw - 40f - gap) / 2f;
+            float row1Y = top + 30f;
+            float row2Y = row1Y + TileH + 8f;
 
-            // Row 1: 캔디 + 코인
-            float row1Y = cy + 32;
             int candies = candyInventory != null ? candyInventory.Candies : 0;
-            DrawStatBox(px + 20, row1Y, halfW, 56, "캔디", candies.ToString(), StatCandyPinkCol);
             int coins = currencyWallet != null ? currencyWallet.Coins : 0;
-            DrawStatBox(px + 20 + halfW + 14, row1Y, halfW, 56, "코인", coins.ToString(), StatCoinGoldCol);
-
-            // Row 2: 보석 + 배틀팀
-            float row2Y = row1Y + 62;
             int gems = currencyWallet != null ? currencyWallet.Gems : 0;
-            DrawStatBox(px + 20, row2Y, halfW, 56, "보석", gems.ToString(), StatGemBlueCol);
             int teamCount = teamManager != null ? teamManager.FilledSlots : 0;
-            DrawStatBox(px + 20 + halfW + 14, row2Y, halfW, 56, "배틀팀", $"{teamCount}/5", StatTeamOrangeCol);
+            DrawStatBox(px + 20f, row1Y, halfW, TileH, "캔디", candies.ToString(), t.accentCoral);
+            DrawStatBox(px + 20f + halfW + gap, row1Y, halfW, TileH, "코인", coins.ToString(), t.coinColor);
+            // 보석은 파랑 — accentColor는 코랄로 동기화돼 있어(UITheme.SynchronizeLegacyTokens) 캔디와 같은 색이 됐다.
+            DrawStatBox(px + 20f, row2Y, halfW, TileH, "보석", gems.ToString(), t.itemRare);
+            DrawStatBox(px + 20f + halfW + gap, row2Y, halfW, TileH, "배틀팀",
+                $"{teamCount}/{BattleTeamManager.MaxSlots}", t.accentAmber);
         }
 
-        private void DrawCollectionSection(float px, float cy, float pw)
+        private void DrawCollectionSection(float px, float top, float pw)
         {
-            GUI.Label(new Rect(px + 20, cy, 180, 26), "COLLECTION", sectionTitleStyle);
+            UITheme t = UITheme.Instance;
+            GUI.Label(new Rect(px + 20f, top, pw - 40f, 26f), "수집", sectionTitleStyle);
 
-            float rowY = cy + 32;
-            float thirdW = (pw - 68) / 3f;
+            float gap = 10f;
+            float thirdW = (pw - 40f - gap * 2f) / 3f;
+            float rowY = top + 30f;
 
             // GetAllOwned 캐싱 — InsectUpdated 이벤트로 invalidate (매 프레임 List 할당 회피).
             if (ownedCountCacheDirty && insectCollection != null)
@@ -357,7 +337,6 @@ namespace InsectGame.UI
                 cachedOwnedCount = insectCollection.GetAllOwned().Count;
                 ownedCountCacheDirty = false;
             }
-            DrawStatBox(px + 20, rowY, thirdW, 56, "보유", cachedOwnedCount.ToString(), StatOwnedGreenCol);
 
             int discovered = 0;
             int captured = 0;
@@ -371,16 +350,18 @@ namespace InsectGame.UI
                         if (r.capturedCount > 0) captured++;
                 }
             }
-            DrawStatBox(px + 20 + thirdW + 12, rowY, thirdW, 56, "발견", discovered.ToString(), StatDiscoveredBlueCol);
-            DrawStatBox(px + 20 + (thirdW + 12) * 2, rowY, thirdW, 56, "포획", captured.ToString(), StatCapturedGoldCol);
+            DrawStatBox(px + 20f, rowY, thirdW, TileH, "보유", cachedOwnedCount.ToString(), t.accentMint);
+            DrawStatBox(px + 20f + thirdW + gap, rowY, thirdW, TileH, "발견", discovered.ToString(), t.textSecondary);
+            DrawStatBox(px + 20f + (thirdW + gap) * 2f, rowY, thirdW, TileH, "포획", captured.ToString(), t.accentAmber);
         }
 
-        private void DrawRegionSection(float px, float cy, float pw)
+        private void DrawRegionSection(float px, float top, float pw)
         {
-            GUI.Label(new Rect(px + 20, cy, 150, 26), "LOCATION", sectionTitleStyle);
+            UITheme t = UITheme.Instance;
+            GUI.Label(new Rect(px + 20f, top, pw - 40f, 26f), "현재 위치", sectionTitleStyle);
 
             string regionName = "탐험 중...";
-            Color regionCol = RegionDefaultCol;
+            Color regionCol = t.textSecondary;
             string regionInsects = "";
             if (regionManager != null && regionManager.CurrentRegion != null)
             {
@@ -388,39 +369,45 @@ namespace InsectGame.UI
                 regionName = r.displayName;
                 regionCol = r.themeColor;
                 if (r.insectIds != null && r.insectIds.Length > 0)
-                    regionInsects = $"출현 곤충: {r.insectIds.Length}종";
+                    regionInsects = $"출현 곤충 {r.insectIds.Length}종";
             }
 
-            regionNameStyle.normal.textColor = regionCol;
-            GUI.Label(new Rect(px + 20, cy + 30, pw - 40, 36), regionName, regionNameStyle);
+            // 리전 색 점 + 이름 — 색을 글자에만 칠하면 어두운 테마색 리전은 읽기 어렵다.
+            UISurface.Rounded(new Rect(px + 20f, top + 40f, 14f, 14f), regionCol, 4f);
+            regionNameStyle.normal.textColor = Color.Lerp(regionCol, t.textPrimary, 0.25f);
+            UIHelper.LabelFit(new Rect(px + 42f, top + 28f, pw - 62f, 38f), regionName, regionNameStyle);
 
             // SubArea 안에서는 이름을 상시 표시 (▾ 표시 + 빛바랜 색)
-            float subY = cy + 62;
+            float subY = top + 68f;
             if (regionManager != null && regionManager.CurrentSubArea != null)
             {
-                Color subCol = new Color(regionCol.r * 0.85f + 0.15f, regionCol.g * 0.85f + 0.15f, regionCol.b * 0.85f + 0.15f);
-                regionSubStyle.normal.textColor = subCol;
-                UIHelper.LabelFit(new Rect(px + 20, subY, pw - 40, 24), $"▾ {regionManager.CurrentSubArea.displayName}", regionSubStyle);
-                subY += 22;
+                regionSubStyle.normal.textColor = Color.Lerp(regionCol, t.textPrimary, 0.4f);
+                UIHelper.LabelFit(new Rect(px + 42f, subY, pw - 62f, 26f), $"▾ {regionManager.CurrentSubArea.displayName}", regionSubStyle);
+                subY += 26f;
             }
 
             if (!string.IsNullOrEmpty(regionInsects))
-                GUI.Label(new Rect(px + 20, subY, pw - 40, 24), regionInsects, regionSubStyle);
+            {
+                regionSubStyle.normal.textColor = t.textSecondary;
+                GUI.Label(new Rect(px + 42f, subY, pw - 62f, 26f), regionInsects, regionSubStyle);
+            }
         }
 
+        /// <summary>
+        /// 재화·수집 타일 — 둥근 표면 + 위쪽 액센트 줄. 줄은 3px라 각진 채로 두고
+        /// 가로를 반경만큼 물려 둥근 모서리를 뚫지 않게 한다(ui-layout.md).
+        /// </summary>
         private void DrawStatBox(float x, float y, float w, float h, string label, string value, Color accent)
         {
-            GUI.color = new Color(accent.r * 0.08f, accent.g * 0.08f, accent.b * 0.08f, 0.8f);
-            GUI.DrawTexture(new Rect(x, y, w, h), Texture2D.whiteTexture);
-            GUI.color = accent;
-            GUI.DrawTexture(new Rect(x, y, w, 3), Texture2D.whiteTexture);
+            UITheme t = UITheme.Instance;
+            UISurface.Rounded(new Rect(x, y, w, h), t.surfaceRaised, UITheme.Radius.Chip);
+            UISurface.Flat(new Rect(x + UITheme.Radius.Chip, y + 3f, w - UITheme.Radius.Chip * 2f, 3f), accent);
 
-            statBoxLblStyle.normal.textColor = new Color(accent.r * 0.7f, accent.g * 0.7f, accent.b * 0.7f);
             GUI.color = Color.white;
-            GUI.Label(new Rect(x + 8, y + 4, w - 16, 22), label, statBoxLblStyle);
+            GUI.Label(new Rect(x + 12f, y + 8f, w - 24f, 22f), label, statBoxLblStyle);
 
             statBoxValStyle.normal.textColor = accent;
-            GUI.Label(new Rect(x + 8, y + 20, w - 16, 34), value, statBoxValStyle);
+            UIHelper.LabelFit(new Rect(x + 12f, y + 22f, w - 24f, 34f), value, statBoxValStyle);
         }
 
         public void AutoWire(PlayerProgressController prog, PlayerCandyInventory candy,
@@ -468,119 +455,115 @@ namespace InsectGame.UI
         {
             if (stylesInitialized) return;
             stylesInitialized = true;
+            UITheme t = UITheme.Instance;
 
-            sectionTitleStyle = new GUIStyle(GUI.skin.label) { fontSize = 19, fontStyle = FontStyle.Bold };
-            sectionTitleStyle.normal.textColor = new Color(0.5f, 0.6f, 0.8f);
+            sectionTitleStyle = new GUIStyle(GUI.skin.label) { fontSize = 18, fontStyle = FontStyle.Bold };
+            sectionTitleStyle.normal.textColor = t.textMuted;
 
-            levelBadgeLabelStyle = new GUIStyle(GUI.skin.label) { fontSize = 14, alignment = TextAnchor.MiddleCenter };
-            levelBadgeLabelStyle.normal.textColor = new Color(0.5f, 0.7f, 1f);
+            playerNameStyle = new GUIStyle(GUI.skin.label) { fontSize = 26, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
+            playerNameStyle.normal.textColor = t.textPrimary;
 
-            levelBadgeNumStyle = new GUIStyle(GUI.skin.label) { fontSize = 32, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            levelBadgeNumStyle.normal.textColor = Color.white;
+            levelBadgeLabelStyle = new GUIStyle(GUI.skin.label) { fontSize = 16, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            levelBadgeLabelStyle.normal.textColor = t.textSecondary;
 
-            xpTitleStyle = new GUIStyle(GUI.skin.label) { fontSize = 18, fontStyle = FontStyle.Bold };
-            xpTitleStyle.normal.textColor = new Color(0.7f, 0.8f, 0.9f);
+            levelBadgeNumStyle = new GUIStyle(GUI.skin.label) { fontSize = 36, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            levelBadgeNumStyle.normal.textColor = t.textPrimary;
 
-            xpTextStyle = new GUIStyle(GUI.skin.label) { fontSize = 17, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            xpTextStyle.normal.textColor = new Color(0.9f, 0.95f, 1f);
+            xpTitleStyle = new GUIStyle(GUI.skin.label) { fontSize = 18, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
+            xpTitleStyle.normal.textColor = t.textSecondary;
 
-            xpPctStyle = new GUIStyle(GUI.skin.label) { fontSize = 17, alignment = TextAnchor.MiddleRight };
-            xpPctStyle.normal.textColor = new Color(0.5f, 0.65f, 0.9f);
+            xpPctStyle = new GUIStyle(GUI.skin.label) { fontSize = 18, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleRight };
+            xpPctStyle.normal.textColor = t.textPrimary;
 
-            regionNameStyle = new GUIStyle(GUI.skin.label) { fontSize = 26, fontStyle = FontStyle.Bold };
+            regionNameStyle = new GUIStyle(GUI.skin.label) { fontSize = 28, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
 
-            regionSubStyle = new GUIStyle(GUI.skin.label) { fontSize = 17 };
-            regionSubStyle.normal.textColor = new Color(0.55f, 0.6f, 0.7f);
+            regionSubStyle = new GUIStyle(GUI.skin.label) { fontSize = 18, alignment = TextAnchor.MiddleLeft };
+            regionSubStyle.normal.textColor = t.textSecondary;
 
-            statBoxLblStyle = new GUIStyle(GUI.skin.label) { fontSize = 16 };
-            statBoxValStyle = new GUIStyle(GUI.skin.label) { fontSize = 24, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleRight };
+            statBoxLblStyle = new GUIStyle(GUI.skin.label) { fontSize = 17, fontStyle = FontStyle.Bold };
+            statBoxLblStyle.normal.textColor = t.textSecondary;
+            statBoxValStyle = new GUIStyle(GUI.skin.label) { fontSize = 26, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleRight };
 
             toggleStyle = new GUIStyle(GUI.skin.label) { fontSize = 24, alignment = TextAnchor.MiddleCenter };
-            toggleStyle.normal.textColor = new Color(0.6f, 0.7f, 0.9f);
+            toggleStyle.normal.textColor = t.textPrimary;
 
             alertNameStyle = new GUIStyle(GUI.skin.label)
             { fontSize = 30, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             alertDescStyle = new GUIStyle(GUI.skin.label)
             { fontSize = 18, alignment = TextAnchor.MiddleCenter };
 
-            // 닫힘 탭 전용 스타일 (textColor는 흰색 기반 — 알파는 GUI.color로 곱해 페이드)
+            // 닫힘 탭 전용 스타일 (알파는 GUI.color로 곱해 페이드)
             tabLabelStyle = new GUIStyle(GUI.skin.label)
-            { fontSize = 13, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            tabLabelStyle.normal.textColor = new Color(0.5f, 0.7f, 1f);
+            { fontSize = 16, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            tabLabelStyle.normal.textColor = t.textSecondary;
             tabNumStyle = new GUIStyle(GUI.skin.label)
-            { fontSize = 30, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            tabNumStyle.normal.textColor = Color.white;
+            { fontSize = 32, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            tabNumStyle.normal.textColor = t.textPrimary;
             tabHintStyle = new GUIStyle(GUI.skin.label)
-            { fontSize = 26, alignment = TextAnchor.MiddleCenter };
-            tabHintStyle.normal.textColor = new Color(0.6f, 0.7f, 0.9f);
+            { fontSize = 24, alignment = TextAnchor.MiddleCenter };
+            tabHintStyle.normal.textColor = t.textSecondary;
         }
 
         // OnGUI Rect 캐싱 회피용 — 닫힘 탭은 좌표가 safeL/py에만 의존해 매 프레임 new Rect를 만들지만
         // 닫힘 상태에서만 그려지고 항목 수가 적어 영향 미미. 패널/탭 모두 IMGUI 관용 패턴 유지.
         private Rect DrawCollapsedTab(float safeL, float py, float strength)
         {
-            float tabW = UIScale.IsMobileLayout ? 72f : 54f;
-            float tabH = 134f;
-            float tabX = safeL + 6f;
-            float tabY = py;
-            Rect rect = new Rect(tabX, tabY, tabW, tabH);
+            Rect rect = TabRect(HudFrame.Current);
+            float tabW = rect.width;
+            float tabX = rect.x;
+            float tabY = rect.y;
 
             float a = Mathf.Clamp01(strength);
             if (a <= 0.001f) return rect; // 완전히 열림 — 탭은 그리지 않음
 
-            // 배경 + accent (알파는 strength로 페이드)
-            GUI.color = new Color(PanelBgCol.r, PanelBgCol.g, PanelBgCol.b, PanelBgCol.a * a);
-            GUI.DrawTexture(rect, Texture2D.whiteTexture);
-            GUI.color = new Color(PanelAccentBlueCol.r, PanelAccentBlueCol.g, PanelAccentBlueCol.b, a);
-            GUI.DrawTexture(new Rect(tabX, tabY, tabW, 3), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(tabX + tabW - 3, tabY, 3, tabH), Texture2D.whiteTexture);
-
-            // LV 뱃지 (닫힘 상태에서도 레벨 요약 표시)
+            // 알파는 GUI.color로 곱한다 — UISurface.Rounded가 호출부 알파를 살린다.
             GUI.color = new Color(1f, 1f, 1f, a);
-            GUI.Label(new Rect(tabX, tabY + 12, tabW, 18), "LV", tabLabelStyle);
-            GUI.Label(new Rect(tabX, tabY + 28, tabW, 36), progress.Level.ToString(), tabNumStyle);
+            UISurface.HudCard(rect);
 
-            GUI.color = new Color(PanelDividerCol.r, PanelDividerCol.g, PanelDividerCol.b, a);
-            GUI.DrawTexture(new Rect(tabX + 12, tabY + 74, tabW - 24, 2), Texture2D.whiteTexture);
+            // 레벨 요약 — 닫힘 상태에서도 보인다.
+            GUI.Label(new Rect(tabX, tabY + 8f, tabW, 24f), "Lv", tabLabelStyle);
+            GUI.Label(new Rect(tabX, tabY + 30f, tabW, 40f), progress.Level.ToString(), tabNumStyle);
+
+            UISurface.Flat(new Rect(tabX + 14f, tabY + 80f, tabW - 28f, 2f), UITheme.Instance.surfaceBorder);
 
             // ▶ 펼치기 안내
-            GUI.color = new Color(1f, 1f, 1f, a);
-            GUI.Label(new Rect(tabX, tabY + 84, tabW, 40), "▶", tabHintStyle);
+            GUI.Label(new Rect(tabX, tabY + 88f, tabW, 42f), "▶", tabHintStyle);
 
             GUI.color = Color.white;
             return rect;
         }
 
+        /// <summary>
+        /// 서브에리어·섬에 들어선 알림의 자리 — 가운데 무대의 고정 칸(<see cref="HudStageItem.PlaceAlert"/>). 예전엔 화면 폭 60%로
+        /// 위쪽 가운데(ContentTop+70)에 떠서 리전 배너·내기 점수판·퀘스트 완료 알림·동굴 출입 토스트와 겹쳤다.
+        /// </summary>
+        public static Rect SubAreaAlertRect(HudFrame f)
+        {
+            return HudStage.Place(f, HudStageItem.PlaceAlert, f.Width * 0.6f, HudStage.PlaceAlertHeight);
+        }
+
         private void DrawSubAreaAlert()
         {
             if (subAreaAlertTimer <= 0f) return;
-
+            // 가운데 무대의 고정 칸(리전 진입 알림)에 선다 — 퀘스트 완료 같은 다른 카드는 이게 지나갈 때까지 기다린다.
             InitStyles();
+            UITheme t = UITheme.Instance;
 
             float alpha = Mathf.Clamp01(subAreaAlertTimer / 0.5f);
-            float sw = UIScale.VirtualScreenWidth;
+            Rect banner = SubAreaAlertRect(HudFrame.Current);
+            HudStage.Request(HudStageItem.PlaceAlert, banner);
+            float ay = banner.y;
 
-            // 배경
-            // 세로 기준을 하네스로 — 이 배너만 y가 70/74/110으로 박혀 있어 노치 기기에서
-            // 상태바 뒤로 들어갔다(VirtualSafeTop이 130쯤이면 배너 전체가 가려진다).
-            // +70은 상단 중앙 관례를 그대로 지킨 값이다: ContentTop(토스트) → +30(퀘스트 토스트)
-            // → 여기(+70~142) → +150(가이드 코치 배너).
-            float ay = UISafeLayout.ContentTop + 70f;
+            GUI.color = new Color(1f, 1f, 1f, alpha);
+            UISurface.HudCard(banner);
+            UISurface.Flat(new Rect(banner.x + UITheme.Radius.Card, banner.y + 3f,
+                banner.width - UITheme.Radius.Card * 2f, 3f), t.accentAmber);
 
-            GUI.color = new Color(0f, 0f, 0f, 0.75f * alpha);
-            GUI.DrawTexture(new Rect(sw * 0.2f, ay, sw * 0.6f, 72), Texture2D.whiteTexture);
-            // 상단 라인
-            GUI.color = new Color(1f, 0.85f, 0.3f, 0.8f * alpha);
-            GUI.DrawTexture(new Rect(sw * 0.2f, ay, sw * 0.6f, 3), Texture2D.whiteTexture);
-
-            // 서브에리어 이름 (캐시된 스타일 + 알파만 변경)
-            alertNameStyle.normal.textColor = new Color(1f, 0.9f, 0.4f, alpha);
-            GUI.color = Color.white;
-            GUI.Label(new Rect(sw * 0.2f, ay + 4f, sw * 0.6f, 38), subAreaAlertName, alertNameStyle);
-
-            // 설명
-            alertDescStyle.normal.textColor = new Color(0.8f, 0.8f, 0.8f, alpha * 0.9f);
-            GUI.Label(new Rect(sw * 0.2f, ay + 40f, sw * 0.6f, 26), subAreaAlertDesc, alertDescStyle);
+            // 서브에리어 이름·설명 — 스타일은 캐시하고 알파만 GUI.color로 곱한다.
+            alertNameStyle.normal.textColor = t.accentAmber;
+            UIHelper.LabelFit(new Rect(banner.x + 16f, ay + 6f, banner.width - 32f, 38f), subAreaAlertName, alertNameStyle);
+            alertDescStyle.normal.textColor = t.textSecondary;
+            UIHelper.LabelFit(new Rect(banner.x + 16f, ay + 44f, banner.width - 32f, 26f), subAreaAlertDesc, alertDescStyle);
 
             GUI.color = Color.white;
         }

@@ -33,6 +33,22 @@ namespace InsectGame.Capture
 
         public event Action<InsectEntity, bool> CaptureResolved;
 
+        /// <summary>
+        /// 직전 포획에서 실제로 지급한 EXP·캔디(부스터 포함, 실패면 0). <see cref="CaptureResolved"/> 전에 채운다 —
+        /// 팝업이 공식을 다시 돌리면 지급 뒤 캐릭터 레벨로 레벨 차를 재서 지급값과 갈린다.
+        /// </summary>
+        public int LastExpReward { get; private set; }
+        public int LastCandyReward { get; private set; }
+
+        /// <summary>
+        /// 직전 포획이 <b>그 종의 첫 포획</b>이었는가 — 팝업이 「NEW」를 붙인다. 도감 등록 <b>전에</b> 재야 한다:
+        /// 등록 뒤에 물으면 방금 올린 기록 때문에 늘 "이미 잡은 종"이다.
+        /// </summary>
+        public bool LastCaptureWasNewSpecies { get; private set; }
+
+        /// <summary>포획 공식이 쓰는 캐릭터 레벨 — 포획 선택 화면이 레벨 차 경고를 같은 값으로 판단한다.</summary>
+        public int TrainerLevel => playerProgress != null ? playerProgress.Level : 1;
+
         public void AttemptCapture(InsectEntity target, float timing01, float extraBonus = 0f)
         {
             if (target == null || target.Data == null)
@@ -40,6 +56,11 @@ namespace InsectGame.Capture
                 return;
             }
 
+            LastExpReward = 0;
+            LastCandyReward = 0;
+            LastCaptureWasNewSpecies = false;
+            // 확률과 EXP가 같은 레벨 차를 보도록 지급 전에 고정한다(GainXp가 레벨을 올린다).
+            int trainerLevel = TrainerLevel;
             float chance = CalculateSuccessChance(target.Data, target.Level, timing01, extraBonus);
             bool success = UnityEngine.Random.value <= chance;
 
@@ -48,6 +69,8 @@ namespace InsectGame.Capture
                 dexController.RegisterEncounter(target.Data.insectId);
                 if (success)
                 {
+                    LastCaptureWasNewSpecies = !dexController.TryGetRecord(target.Data.insectId, out Dex.DexRecord record)
+                        || record == null || record.capturedCount <= 0;
                     dexController.RegisterCapture(target.Data.insectId);
                 }
             }
@@ -56,10 +79,11 @@ namespace InsectGame.Capture
             {
                 if (playerProgress != null)
                 {
-                    int exp = InsectRewardCalculator.GetExpReward(target.Data);
+                    int exp = InsectRewardCalculator.GetExpReward(target.Data, target.Level, trainerLevel);
                     float expMultiplier = (itemEffects != null ? itemEffects.GetExpMultiplier() : 1f)
                                         * (outfitBonus != null ? outfitBonus.GetExpMultiplier() : 1f);
-                    playerProgress.GainXp(Mathf.RoundToInt(exp * expMultiplier));
+                    LastExpReward = Mathf.RoundToInt(exp * expMultiplier);
+                    playerProgress.GainXp(LastExpReward);
                 }
 
                 if (candyInventory != null)
@@ -67,11 +91,15 @@ namespace InsectGame.Capture
                     int candy = InsectRewardCalculator.GetCandyReward(target.Data);
                     float candyMultiplier = (itemEffects != null ? itemEffects.GetCandyMultiplier() : 1f)
                                            * (outfitBonus != null ? outfitBonus.GetCandyMultiplier() : 1f);
-                    candyInventory.AddCandy(Mathf.RoundToInt(candy * candyMultiplier));
+                    LastCandyReward = Mathf.RoundToInt(candy * candyMultiplier);
+                    candyInventory.AddCandy(LastCandyReward);
                 }
                 // 필드에서 본 이로치(색다른 곤충)를 그대로 저장 — 옛 2-인자 호출은 isShiny=false라
                 // 미니게임 포획 시 색다른 개체가 일반 개체로 유실됐음(배틀/레이드 경로는 정상 전달).
-                insectCollection?.AddCapturedInsect(target.Data.insectId, target.Level, target.IsShiny);
+                // 반환된 개체는 조건부 퀘스트(몸길이·이로치)가 실제 저장된 값을 보도록 통지에 넘긴다.
+                // 컬렉션이 없으면 null — 그래도 통지는 간다(CaptureFacts.From이 크기를 중간값으로 둔다).
+                PlayerInsectData captured = insectCollection?.AddCapturedInsect(
+                    target.Data.insectId, target.Level, target.IsShiny);
 
                 // **퀘스트 통지는 이벤트가 아니라 여기서 한다.** 예전엔 `CaptureFeedbackController`
                 // (효과음·팝업을 담당하는 연출 컴포넌트) 안에 있었는데, 그건 `CaptureResolved`의
@@ -80,7 +108,7 @@ namespace InsectGame.Capture
                 // 포획 퀘스트 진행이 경고 한 줄만 남기고 영구 유실된다.
                 // 진행에 필수인 통지는 연출과 같은 배를 타면 안 된다(`InsectBattleController`가
                 // 전투 경로에서 이미 같은 이유로 직접 부른다).
-                TutorialQuestManager.Instance?.NotifyCapture(target.Data.rarity);
+                TutorialQuestManager.Instance?.NotifyCapture(CaptureFacts.From(target.Data, captured, target.IsShiny));
             }
 
             // **지급이 끝난 뒤에 알린다.** 예전엔 이 호출이 맨 앞이라, 팝업이
@@ -102,7 +130,7 @@ namespace InsectGame.Capture
             float timing01,
             float minigameBonus)
         {
-            int playerLevel = playerProgress != null ? playerProgress.Level : 1;
+            int playerLevel = TrainerLevel;
             float activeItemBonus = itemEffects != null ? itemEffects.GetCaptureChanceBonus() : 0f;
             float equippedOutfitBonus = outfitBonus != null ? outfitBonus.GetCaptureChanceBonus() : 0f;
             CaptureChanceTuning tuning = new CaptureChanceTuning(

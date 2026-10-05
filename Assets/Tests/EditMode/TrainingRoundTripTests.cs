@@ -188,6 +188,64 @@ namespace InsectGame.Tests
             Assert.AreEqual(0, items.GetCount(disc.itemId));
         }
 
+        // ── 성장 훈련: 능력치(개체값) ──
+
+        [Test]
+        public void TrainStat_SpendsEscalatingCandy_AndRaisesGrade()
+        {
+            // 13/13/13 = 39 → A. 두 번 올려 41이 되면 S. 컬렉션이 없으면 등급 배율은 일반(1.0).
+            candy.SetCandies(1000);
+            var insect = new PlayerInsectData { instanceId = "g", insectId = "test_beetle", level = 10, ivHp = 13, ivAtk = 13, ivDef = 13 };
+            int cost13 = TrainingPricing.StatCost(13, InsectRarity.Common);
+
+            Assert.AreEqual(cost13, training.GetStatTrainingCost(insect, GrowthStat.Hp));
+            Assert.IsTrue(training.TrainStat(insect, GrowthStat.Hp));
+            Assert.AreEqual(14, insect.ivHp);
+            Assert.AreEqual(1000 - cost13, candy.Candies);
+            Assert.AreEqual(IVGrade.A, insect.Grade);
+
+            Assert.IsTrue(training.TrainStat(insect, GrowthStat.Attack));
+            Assert.AreEqual(IVGrade.A, training.LastStatGradeBefore);
+            Assert.AreEqual(IVGrade.S, insect.Grade, "능력치를 올리면 등급이 따라 오른다");
+            Assert.AreEqual(1000 - cost13 * 2, candy.Candies);
+
+            Assert.Greater(training.GetStatTrainingCost(insect, GrowthStat.Hp), cost13, "올릴수록 비싸진다");
+        }
+
+        [Test]
+        public void TrainStat_AtMax_IsRefusedAndChargesNothing()
+        {
+            candy.SetCandies(1000);
+            var insect = new PlayerInsectData { instanceId = "g", insectId = "test_beetle", level = 10, ivDef = PlayerInsectData.MaxIV };
+
+            Assert.IsFalse(training.CanTrainStat(insect, GrowthStat.Defense));
+            Assert.IsFalse(training.TrainStat(insect, GrowthStat.Defense));
+            Assert.AreEqual(1000, candy.Candies);
+            Assert.AreEqual(PlayerInsectData.MaxIV, insect.ivDef);
+        }
+
+        [Test]
+        public void TrainStat_NotEnoughCandy_IsRefused()
+        {
+            candy.SetCandies(10);
+            var insect = new PlayerInsectData { instanceId = "g", insectId = "test_beetle", level = 10, ivAtk = 5 };
+
+            Assert.IsFalse(training.TrainStat(insect, GrowthStat.Attack));
+            Assert.AreEqual(5, insect.ivAtk);
+            Assert.AreEqual(10, candy.Candies);
+        }
+
+        [Test]
+        public void TrainLevel_WithoutCollection_IsRefused()
+        {
+            // 레벨 가격의 정본은 컬렉션이다 — 배선이 없으면 값을 지어내지 않고 거부한다.
+            var insect = InsectAtLevel(5);
+            Assert.IsFalse(training.CanTrainLevel(insect));
+            Assert.IsFalse(training.TrainLevel(insect));
+            Assert.AreEqual(5, insect.level);
+            Assert.AreEqual(100, candy.Candies);
+        }
+
         [Test]
         public void TrainSkill_DiscMethod_WithoutDisc_IsRefused()
         {

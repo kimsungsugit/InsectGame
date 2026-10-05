@@ -344,6 +344,52 @@ namespace InsectGame.Tests
         }
 
         [Test]
+        public void CompareObjectivePriority_FinaleLeafBeatsSideSpine_ButChapterLeafDoesNot()
+        {
+            var spine = new HashSet<string> { "town_meet" };
+            StoryBeat epilogue = Beat("fin_epilogue", "fin", 53);
+            StoryBeat townMeet = Beat("town_meet", "town", 1);
+            // 에필로그는 leaf인데도 마을 주민 만남(스파인)보다 앞이다 — 엔딩이 곁이야기에 가려지면 안 된다.
+            Assert.Less(StoryObjectiveResolver.CompareObjectivePriority(epilogue, townMeet, spine), 0);
+            // 본편 leaf 전체를 앞세우지는 않는다 — 놓친 1장 동굴이 곁이야기 사슬을 전부 가로챈다.
+            Assert.Greater(StoryObjectiveResolver.CompareObjectivePriority(Beat("ch1_cave", "ch1", 1), townMeet, spine), 0);
+        }
+
+        [Test]
+        public void CompareBeatPriority_FinaleLeafIsNotPromoted_ChiefTauntBeforeReconciliation()
+        {
+            // 발화 순서엔 종장 우대가 없다 — 있으면 엔딩 뒤 하월에게 말을 걸 때 화해(ch12_clash)가
+            // 도발(talk_chief)보다 먼저 떠 서사가 거꾸로 흐른다. 둘 다 leaf라 챕터 순(12장 → 종장)이다.
+            var spine = new HashSet<string>();
+            StoryBeat taunt = Beat("talk_chief", "ch12", 82, param: "ledger_chief");
+            StoryBeat clash = Beat("ch12_clash", "fin", 54, param: "ledger_chief");
+            Assert.Less(StoryObjectiveResolver.CompareBeatPriority(taunt, clash, spine), 0);
+        }
+
+        [Test]
+        public void SelectObjectiveBeat_RealStoryData_AfterSeal_PointsToEpilogueNotTownTales()
+        {
+            // 본편·종장 사슬을 fin_seal까지 다 봤고 곁이야기(마을 주민·도감·꽃밭)는 하나도 안 본 세이브.
+            var beats = new List<StoryBeat>(StoryService.AllBeats());
+            Assume.That(beats.Count, Is.GreaterThan(0), "Story.json 로드 실패");
+            var finaleLeaves = new HashSet<string> { "fin_epilogue", "ch12_clash", "post_rival_rematch" };
+            var seen = new HashSet<string>();
+            foreach (StoryBeat b in beats)
+                if (StoryObjectiveResolver.ChapterRank(b.chapterId) <= StoryObjectiveResolver.ChapterRank("fin")
+                    && !finaleLeaves.Contains(b.beatId))
+                    seen.Add(b.beatId);
+            Assume.That(seen.Contains("fin_seal"), "종장 봉인 비트가 없다 — 저작이 바뀌었는가?");
+
+            StoryBeat chosen = StoryObjectiveResolver.SelectObjectiveBeat(beats, seen.Contains,
+                StoryObjectiveResolver.CollectSpineBeatIds(beats), null,
+                StoryObjectiveResolver.CollectChoiceTargetIds(beats));
+
+            Assert.IsNotNull(chosen);
+            Assert.AreEqual("fin_epilogue", chosen.beatId,
+                $"봉인 뒤 HUD가 에필로그가 아니라 {chosen.beatId}({chosen.chapterId})를 가리킨다");
+        }
+
+        [Test]
         public void CompareBeatPriority_SameRank_FallsBackToBeatId_SoOrderIsDeterministic()
         {
             var spine = new HashSet<string>();

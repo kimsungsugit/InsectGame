@@ -1,3 +1,4 @@
+using InsectGame.Core;
 using InsectGame.Data;
 using UnityEngine;
 
@@ -38,7 +39,10 @@ namespace InsectGame.Battle
             chance += Mathf.Max(0f, activeItemBonus);
             chance += Mathf.Max(0f, outfitBonus);
 
-            return Mathf.Clamp(chance, MinimumSuccessChance, MaximumSuccessChance);
+            // 최저 보장(10%)은 **레벨 유예 안에서만** 보장이다 — 캐릭터보다 훨씬 높은 곤충은 이겨도
+            // 그 아래로 내려간다(미니게임 경로와 같은 TrainerLevelGap 배율).
+            return Mathf.Clamp(chance, MinimumSuccessChance, MaximumSuccessChance)
+                   * TrainerLevelGap.CaptureMultiplier(playerLevel, insectLevel);
         }
 
         internal static float GetLevelModifier(int playerLevel, int insectLevel)

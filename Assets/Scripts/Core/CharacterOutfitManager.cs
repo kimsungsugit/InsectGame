@@ -16,7 +16,46 @@ namespace InsectGame.Core
 
         private PlayerCurrencyWallet wallet;
 
+        // 조건 해금(unlockCondition)의 출처. 셋 다 이 매니저보다 늦게 서므로 따로 배선한다.
+        private RegionManager unlockRegions;
+        private PlayerProgressController unlockProgress;
+        private TutorialQuestManager unlockQuests;
+
         public event System.Action OutfitChanged;
+
+        /// <summary>
+        /// 조건을 채워 의상을 새로 얻었다(구매 제외). 의상 화면의 "NEW" 표시가 듣는다.
+        /// 구매는 사용자가 누른 버튼의 결과라 알릴 필요가 없어 여기로 오지 않는다.
+        /// </summary>
+        public event System.Action<OutfitItem> OutfitUnlocked;
+
+        // ── "새로 얻음" 표시 ──
+        // 조건 해금으로 들어온 의상은 조용히 소유 목록에만 붙어 아무도 몰랐다. 의상 창의 NEW 배지·탭 점·
+        // 퀵바 점이 이 집합을 읽는다. **세션 한정**(저장하지 않는다) — 다시 켜면 사라지는 알림이면 충분하고,
+        // 저장 키를 늘리면 클라우드 DTO까지 따라 늘어야 한다(save-system.md).
+        private readonly HashSet<string> newItems = new HashSet<string>();
+
+        public bool IsNew(string itemId) => itemId != null && newItems.Contains(itemId);
+        public bool HasAnyNew => newItems.Count > 0;
+
+        /// <summary>사용자가 그 카드를 봤다(호버·선택) — 배지를 내린다.</summary>
+        public void MarkSeen(string itemId)
+        {
+            if (itemId != null) newItems.Remove(itemId);
+        }
+
+        public bool HasNewInSlot(OutfitSlot slot)
+        {
+            foreach (string id in newItems)
+                if (outfitLookup.TryGetValue(id, out OutfitItem item) && item.slot == slot) return true;
+            return false;
+        }
+
+        /// <summary>
+        /// 소유 목록이 바뀔 때마다 오른다(구매·해금·클라우드 재적재). 의상 창이 "보유/미보유" 필터 결과를
+        /// 이 값이 같을 때만 재사용한다 — OnGUI마다 95벌을 다시 거르지 않게.
+        /// </summary>
+        public int OwnershipVersion { get; private set; }
 
         private static string EquipKey => SaveScope.PrefsKey("InsectGame.Equipped");
         private static string OwnedKey => SaveScope.PrefsKey("InsectGame.OwnedOutfits");
@@ -42,6 +81,7 @@ namespace InsectGame.Core
         // `singleton_lint.py`가 이 짝을 강제한다.
         private void OnDestroy()
         {
+            UnsubscribeUnlockSources();
             if (ReferenceEquals(Instance, this)) Instance = null;
         }
 
@@ -50,12 +90,79 @@ namespace InsectGame.Core
             if (wallet == null) wallet = w;
         }
 
+        /// <summary>
+        /// 조건 해금의 출처를 받는다. Bootstrap이 퀘스트 매니저를 만든 <b>뒤에</b> 부른다 —
+        /// 이 매니저는 UI 구간에서 먼저 생성돼 <see cref="AutoWire"/> 시점엔 퀘스트가 없다.
+        /// 받는 즉시 한 번 판정해 기존 세이브(이미 Lv.15인 계정 등)도 소급해서 푼다.
+        /// </summary>
+        public void AutoWireUnlockSources(RegionManager regions, PlayerProgressController progress,
+            TutorialQuestManager quests)
+        {
+            UnsubscribeUnlockSources();
+            unlockRegions = regions;
+            unlockProgress = progress;
+            unlockQuests = quests;
+            if (unlockRegions != null) unlockRegions.RegionChanged += OnUnlockRegionChanged;
+            if (unlockProgress != null) unlockProgress.ProgressChanged += OnUnlockProgressChanged;
+            if (unlockQuests != null) unlockQuests.QuestCompleted += OnUnlockQuestCompleted;
+            EvaluateUnlocks();
+        }
+
+        private void UnsubscribeUnlockSources()
+        {
+            if (unlockRegions != null) unlockRegions.RegionChanged -= OnUnlockRegionChanged;
+            if (unlockProgress != null) unlockProgress.ProgressChanged -= OnUnlockProgressChanged;
+            if (unlockQuests != null) unlockQuests.QuestCompleted -= OnUnlockQuestCompleted;
+        }
+
+        private void OnUnlockRegionChanged(Data.RegionData _) => EvaluateUnlocks();
+        private void OnUnlockProgressChanged(PlayerProgressData _) => EvaluateUnlocks();
+        private void OnUnlockQuestCompleted(TutorialQuest _) => EvaluateUnlocks();
+
+        /// <summary>
+        /// 아직 없는 조건부 의상을 전부 다시 판정한다. 대상은 네 벌뿐이라 이벤트마다 훑어도 싸다.
+        /// 레벨은 <c>ProgressChanged</c>가 XP 한 번마다 울려 가장 자주 오지만, 이미 가진 옷은 첫 줄에서 빠진다.
+        /// </summary>
+        public void EvaluateUnlocks()
+        {
+            if (allOutfits == null) return;
+
+            string regionId = null;
+            int level = 0;
+            System.Func<string, bool> questDone = null;   // 델리게이트는 후보가 있을 때만 만든다(XP마다 불린다)
+            bool gathered = false;
+
+            for (int i = 0; i < allOutfits.Length; i++)
+            {
+                OutfitItem item = allOutfits[i];
+                if (item == null || string.IsNullOrEmpty(item.unlockCondition)) continue;
+                if (ownedItems.Contains(item.itemId)) continue;
+
+                if (!gathered)
+                {
+                    gathered = true;
+                    if (unlockRegions != null && unlockRegions.CurrentRegion != null)
+                        regionId = unlockRegions.CurrentRegion.regionId;
+                    if (unlockProgress != null) level = unlockProgress.Level;
+                    if (unlockQuests != null) questDone = unlockQuests.IsQuestCompleted;
+                }
+                if (!OutfitUnlockRules.IsMet(item.unlockCondition, regionId, level, questDone)) continue;
+
+                UnlockItem(item.itemId);
+                newItems.Add(item.itemId);
+                Debug.Log($"[Outfit] 조건 해금 — {item.displayName} ({item.unlockCondition})");
+                OutfitUnlocked?.Invoke(item);
+            }
+        }
+
         // 클라우드 로드 후 PlayerPrefs(소유/장착 의상)를 다시 읽어 인메모리 갱신 + 외형 재적용.
         // OutfitChanged 발화 → PlayerVisualBuilder/PortraitRenderer가 클라우드 의상으로 재구성.
         public void ReloadFromDisk()
         {
             LoadOwnership();
             LoadEquipment();
+            // 다른 기기에서 조건을 채웠는데 소유 목록이 그 전 것일 수 있다 — 다시 판정한다.
+            EvaluateUnlocks();
             OutfitChanged?.Invoke();
         }
 
@@ -632,45 +739,98 @@ namespace InsectGame.Core
             // 모자 — 색을 먼저 적용해 Cap/CapBrim을 되살린 뒤, 레시피가 있으면 그때 다시 숨긴다.
             // 순서가 뒤집히면 왕관 → 탐험가 캡으로 갈아입을 때 Cap이 숨겨진 채 남아 맨머리가 된다.
             OutfitItem hat = Resolve(loadout, OutfitSlot.Hat);
+            // 모자 선 위로 솟는 머리(올림머리)는 먼저 되살리고, 정수리를 덮는 모자면 아래에서 다시 숨긴다 —
+            // 레시피 hideNodes는 끄기만 하므로 여기서 켜 두지 않으면 헬멧을 벗어도 스파이크가 안 돌아온다.
+            Transform crown = FindDeep(player.transform, OutfitShapeLibrary.HairCrownNode);
+            if (crown != null) crown.gameObject.SetActive(true);
             ApplyPartColor(player, "Cap", hat != null ? hat.primaryColor : Color.clear);
             ApplyPartColor(player, "CapBrim", hat != null ? hat.primaryColor : Color.clear);
             ApplyShapeRecipe(player, OutfitSlot.Hat, hat);
+            // 레시피 없는 모자(기본 캡 계열)는 Cap 노드 자체가 모자다 — 그게 보이면 정수리를 덮는다.
+            Transform capNode = FindDeep(player.transform, "Cap");
+            if (crown != null && capNode != null && capNode.gameObject.activeSelf) crown.gameObject.SetActive(false);
 
-            // 상의
+            // ── 상의·겉옷 ──
+            // 겉옷의 **형태**(OutfitShapeLibrary.OuterFormOf)가 몸통·팔·셔츠 판을 누가 칠할지 정한다.
+            //   겉옷 없음(outer_none)·망토 → 몸통은 상의. 팔은 소매 길이대로(긴소매 = 상의, 반소매 = 피부 + 어깨 캡만 상의).
+            //   열린 자켓 → 몸통·팔은 겉옷, 앞섶 사이 셔츠 판에 상의(무늬 포함), 옷깃·라펠 표시.
+            //   로브 → 몸통·팔은 겉옷, 상의는 안 보인다.
+            // 예전엔 자켓이 셔츠 판을 폭 0.16의 좁은 조각으로만 남겨 상의 14벌이 사실상 안 보였다.
             OutfitItem top = Resolve(loadout, OutfitSlot.Top);
-            ApplyPartColor(player, "Shirt", top != null ? top.primaryColor : defaultShirt);
-
-            // 겉옷: outer_none이면 Body는 셔츠 색, 팔은 피부색으로 (몸통/팔이 사라지지 않게)
             OutfitItem outer = Resolve(loadout, OutfitSlot.Outerwear);
-            Color bodyCol, armCol;
-            if (outer == null)
+            string topId = top != null ? top.itemId : null;
+            Color topCol = top != null ? top.primaryColor : defaultShirt;
+            Color topSec = top != null ? top.secondaryColor : defaultShirt;
+            SleeveLength sleeve = OutfitShapeLibrary.SleeveOf(topId);
+            Color sleeveCol = OutfitShapeLibrary.SleeveIsSecondary(topId) ? topSec : topCol;
+
+            bool outerWorn = outer == null || outer.primaryColor.a >= 0.01f;   // null(미장착)은 기본 자켓
+            string outerId = outer != null ? outer.itemId : null;
+            Color outerCol = outer != null ? outer.primaryColor : defaultJacket;
+            Color outerSec = outer != null ? outer.secondaryColor : defaultJacket;
+            OuterForm form = OutfitShapeLibrary.OuterFormOf(outerId);
+            bool torsoIsTop = !outerWorn || form == OuterForm.Cape;
+
+            if (torsoIsTop)
             {
-                bodyCol = defaultJacket; armCol = defaultJacket;
-            }
-            else if (outer.primaryColor.a < 0.01f)
-            {
-                // outer_none: 외피 벗음 → Body는 셔츠 색, 팔은 피부색
-                Color shirtCol = top != null ? top.primaryColor : defaultShirt;
-                bodyCol = shirtCol; armCol = skinColor;
+                ApplyPartColor(player, "Body", topCol);
+                ApplyPattern(player, "Body", topId, PatternSurface.Torso, topCol, topSec);
+                Color armCol = sleeve == SleeveLength.Long ? sleeveCol : skinColor;
+                string armPattern = sleeve == SleeveLength.Long ? topId : null;
+                ApplyPartColor(player, "ArmL", armCol);
+                ApplyPartColor(player, "ArmR", armCol);
+                ApplyPattern(player, "ArmL", armPattern, PatternSurface.Sleeve, topCol, topSec);
+                ApplyPattern(player, "ArmR", armPattern, PatternSurface.Sleeve, topCol, topSec);
+                // 어깨 캡 — 반소매는 상의 색(피부로 두면 팔이 어깨부터 맨살이라 민소매로 읽힌다), 민소매는 피부.
+                Color capCol = sleeve == SleeveLength.None ? skinColor : sleeveCol;
+                ApplyPartColor(player, "ShoulderL", capCol);
+                ApplyPartColor(player, "ShoulderR", capCol);
+                // 셔츠 판은 자켓 사이로 보이는 상의 조각이다 — 자켓이 없으면 몸통 앞에 네모 주머니로 남는다.
+                ApplyPartColor(player, "Shirt", Color.clear);
+                SetJacketTrim(player, Color.clear);
             }
             else
             {
-                bodyCol = outer.primaryColor; armCol = outer.primaryColor;
+                ApplyPartColor(player, "Body", outerCol);
+                ApplyPattern(player, "Body", outerId, PatternSurface.Torso, outerCol, outerSec);
+                ApplyPartColor(player, "ArmL", outerCol);
+                ApplyPartColor(player, "ArmR", outerCol);
+                ApplyPattern(player, "ArmL", outerId, PatternSurface.Sleeve, outerCol, outerSec);
+                ApplyPattern(player, "ArmR", outerId, PatternSurface.Sleeve, outerCol, outerSec);
+                ApplyPartColor(player, "ShoulderL", outerCol);
+                ApplyPartColor(player, "ShoulderR", outerCol);
+                bool open = form == OuterForm.OpenJacket;
+                ApplyPartColor(player, "Shirt", open ? topCol : Color.clear);
+                if (open) ApplyPattern(player, "Shirt", topId, PatternSurface.Panel, topCol, topSec);
+                SetJacketTrim(player, open ? OutfitShapeLibrary.Darken(outerCol) : Color.clear);
             }
-            ApplyPartColor(player, "Body", bodyCol);
-            ApplyPartColor(player, "ArmL", armCol);
-            ApplyPartColor(player, "ArmR", armCol);
             ApplyShapeRecipe(player, OutfitSlot.Outerwear, outer);   // 망토·로브 자락 등 덧붙임 파츠
+            // 상의 덧붙임(카우보이 술 장식 등)은 상의가 **보일 때만** — 자켓 밑단 아래로 삐져나오지 않게.
+            ApplyShapeRecipe(player, OutfitSlot.Top, torsoIsTop ? top : null);
 
-            // 하의
+            // ── 하의 ── 반바지는 다리를 피부로, 허벅지 천은 레시피가 단다.
             OutfitItem bot = Resolve(loadout, OutfitSlot.Bottom);
-            ApplyPartColor(player, "LegL", bot != null ? bot.primaryColor : defaultPants);
-            ApplyPartColor(player, "LegR", bot != null ? bot.primaryColor : defaultPants);
+            string botId = bot != null ? bot.itemId : null;
+            Color botCol = bot != null ? bot.primaryColor : defaultPants;
+            Color botSec = bot != null ? bot.secondaryColor : defaultPants;
+            bool shorts = OutfitShapeLibrary.LegFormOf(botId) == LegForm.Shorts;
+            ApplyPartColor(player, "LegL", shorts ? skinColor : botCol);
+            ApplyPartColor(player, "LegR", shorts ? skinColor : botCol);
+            ApplyPattern(player, "LegL", shorts ? null : botId, PatternSurface.Leg, botCol, botSec);
+            ApplyPattern(player, "LegR", shorts ? null : botId, PatternSurface.Leg, botCol, botSec);
+            ApplyShapeRecipe(player, OutfitSlot.Bottom, bot);
 
-            // 신발
+            // ── 신발 ── 샌들은 발을 피부로, 밑창·끈은 레시피가 단다.
             OutfitItem shoe = Resolve(loadout, OutfitSlot.Shoes);
-            ApplyPartColor(player, "BootL", shoe != null ? shoe.primaryColor : defaultBoot);
-            ApplyPartColor(player, "BootR", shoe != null ? shoe.primaryColor : defaultBoot);
+            string shoeId = shoe != null ? shoe.itemId : null;
+            Color shoeCol = shoe != null ? shoe.primaryColor : defaultBoot;
+            Color shoeSec = shoe != null ? shoe.secondaryColor : defaultBoot;
+            bool sandal = OutfitShapeLibrary.FootFormOf(shoeId) == FootForm.Sandal;
+            ApplyPartColor(player, "BootL", sandal ? skinColor : shoeCol);
+            ApplyPartColor(player, "BootR", sandal ? skinColor : shoeCol);
+            ApplyPattern(player, "BootL", sandal ? null : shoeId, PatternSurface.Boot, shoeCol, shoeSec);
+            ApplyPattern(player, "BootR", sandal ? null : shoeId, PatternSurface.Boot, shoeCol, shoeSec);
+            ApplyShapeRecipe(player, OutfitSlot.Shoes, shoe);
 
             // 가방
             OutfitItem bag = Resolve(loadout, OutfitSlot.Backpack);
@@ -731,6 +891,38 @@ namespace InsectGame.Core
                 OutfitShapeLibrary.TryGet(slot, item.itemId ?? "", out recipe);
 
             OutfitShapeLibrary.Apply(player.transform, slot, recipe, primary, secondary);
+        }
+
+        /// <summary>
+        /// 무늬 텍스처를 입힌다(<see cref="OutfitPatternLibrary"/>). 무늬가 없으면 텍스처를 **비운다** —
+        /// 갤럭시 티 → 기본 셔츠로 갈아입었는데 별이 남으면 안 된다. 색은 텍스처에 구워져 있으므로 머티리얼 색은 흰색으로 둔다.
+        /// <b>ApplyPartColor 다음에 부를 것</b> — 그쪽이 색을 다시 칠하고, 여기서 무늬가 있으면 흰색으로 덮는다.
+        /// 꺼진 노드(셔츠 판이 숨은 경우 등)는 건드리지 않는다.
+        /// </summary>
+        private void ApplyPattern(GameObject root, string partName, string itemId, PatternSurface surface,
+            Color primary, Color secondary)
+        {
+            Transform part = FindDeep(root.transform, partName);
+            if (part == null || !part.gameObject.activeSelf) return;
+            MeshRenderer renderer = part.GetComponent<MeshRenderer>();
+            if (renderer == null) return;
+
+            Texture2D tex = string.IsNullOrEmpty(itemId) ? null : OutfitPatternLibrary.Get(itemId, surface, primary, secondary);
+            Material mat = renderer.material;
+            mat.mainTexture = tex;
+            if (tex != null)
+            {
+                mat.color = Color.white;
+                if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", Color.white);
+            }
+        }
+
+        /// <summary>열린 자켓의 옷깃·라펠(PlayerVisualBuilder가 몸통 자식으로 만든다). 알파 0이면 숨긴다.</summary>
+        private void SetJacketTrim(GameObject root, Color color)
+        {
+            ApplyPartColor(root, "LapelL", color);
+            ApplyPartColor(root, "LapelR", color);
+            ApplyPartColor(root, "Collar", color);
         }
 
         private void ApplyPartColor(GameObject root, string partName, Color color)
@@ -809,6 +1001,7 @@ namespace InsectGame.Core
 
         private void SaveOwnership()
         {
+            OwnershipVersion++;
             string joined = string.Join(",", ownedItems);
             PlayerPrefs.SetString(OwnedKey, joined);
             PlayerPrefs.Save();
@@ -816,6 +1009,7 @@ namespace InsectGame.Core
 
         private void LoadOwnership()
         {
+            OwnershipVersion++;
             // unlockedByDefault=true 아이템은 항상 ownedItems에 자동 등록
             // (Equip은 ownedItems 가드가 있어서 누락 시 기본 장착이 silent fail됨)
             bool addedDefault = false;

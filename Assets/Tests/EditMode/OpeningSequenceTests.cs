@@ -281,19 +281,19 @@ namespace InsectGame.Tests
         [Test]
         public void Narration_DoesNotOverlapTitle()
         {
-            // 타이틀은 6.2s에 뜬다. 앞의 두 줄이 거기까지 남아 있으면 글자가 겹쳐 둘 다 못 읽는다.
-            Assert.LessOrEqual(OpeningSequenceState.Narration2End, OpeningSequenceState.TitleStart + 0.01f,
-                "두 번째 내레이션이 타이틀과 겹친다");
-            // 세 번째 줄은 타이틀이 자리잡은 뒤(TitleHold 8s) 얹는 것이 의도다.
-            Assert.GreaterOrEqual(OpeningSequenceState.Narration3Start, OpeningSequenceState.TitleHoldStart,
-                "세 번째 내레이션이 타이틀이 자리잡기 전에 뜬다");
+            // 타이틀은 곡의 강세(TitleStart)에 뜬다. 앞의 세 줄이 거기까지 남아 있으면 글자가 겹쳐 둘 다 못 읽는다.
+            Assert.LessOrEqual(OpeningSequenceState.Narration3End, OpeningSequenceState.TitleStart + 0.01f,
+                "세 번째 내레이션이 타이틀과 겹친다");
+            // 마지막 줄은 타이틀이 자리잡은 뒤(TitleHold) 얹는 것이 의도다.
+            Assert.GreaterOrEqual(OpeningSequenceState.Narration4Start, OpeningSequenceState.TitleHoldStart,
+                "마지막 내레이션이 타이틀이 자리잡기 전에 뜬다");
         }
 
         [Test]
         public void Narration_EndsBeforeSequenceEnds()
         {
-            // 마지막 줄이 페이드아웃(9.2s~10s) 뒤까지 남으면 검은 화면에 글자만 뜬다.
-            Assert.LessOrEqual(OpeningSequenceState.Narration3End, OpeningSequenceState.Duration,
+            // 마지막 줄이 페이드아웃 뒤까지 남으면 검은 화면에 글자만 뜬다.
+            Assert.LessOrEqual(OpeningSequenceState.Narration4End, OpeningSequenceState.Duration,
                 "내레이션이 오프닝보다 늦게 끝난다");
         }
 
@@ -304,6 +304,26 @@ namespace InsectGame.Tests
                 "1번과 2번 내레이션이 겹친다");
             Assert.Less(OpeningSequenceState.Narration2End, OpeningSequenceState.Narration3Start,
                 "2번과 3번 내레이션이 겹친다");
+            Assert.Less(OpeningSequenceState.Narration3End, OpeningSequenceState.Narration4Start,
+                "3번과 4번 내레이션이 겹친다");
+        }
+
+        [Test]
+        public void Narration_AvoidsVideoBlackout()
+        {
+            // 영상은 8.3s부터 암전했다가 파트너가 떠오른다. 그 사이 글자만 떠 있으면 영상이 멈춘 것처럼 보인다.
+            Assert.LessOrEqual(OpeningSequenceState.Narration2End, OpeningSequenceState.BlackoutStart,
+                "두 번째 내레이션이 암전 속까지 남는다");
+            Assert.GreaterOrEqual(OpeningSequenceState.Narration3Start, OpeningSequenceState.PartnerRevealEnd,
+                "세 번째 내레이션이 파트너가 다 떠오르기 전에 뜬다");
+        }
+
+        [Test]
+        public void Narration_LineCountMatchesTimeline()
+        {
+            // 문장은 컨트롤러에, 시각은 상태 클래스에 있다 — 한쪽만 늘리면 줄이 안 뜨거나 범위 밖을 읽는다.
+            Assert.AreEqual(OpeningSequenceState.NarrationCount, OpeningSceneController.NarrationLineCount,
+                "내레이션 문장 수와 시각 구간 수가 다르다");
         }
 
         [Test]
@@ -312,10 +332,12 @@ namespace InsectGame.Tests
             AssertNarrationAt((OpeningSequenceState.Narration1Start + OpeningSequenceState.Narration1End) * 0.5f, 0);
             AssertNarrationAt((OpeningSequenceState.Narration2Start + OpeningSequenceState.Narration2End) * 0.5f, 1);
             AssertNarrationAt((OpeningSequenceState.Narration3Start + OpeningSequenceState.Narration3End) * 0.5f, 2);
+            AssertNarrationAt((OpeningSequenceState.Narration4Start + OpeningSequenceState.Narration4End) * 0.5f, 3);
 
             // 창 사이 공백과 시작 전에는 아무것도 안 뜬다.
             AssertNarrationAt(0.2f, -1);
             AssertNarrationAt((OpeningSequenceState.Narration1End + OpeningSequenceState.Narration2Start) * 0.5f, -1);
+            AssertNarrationAt((OpeningSequenceState.BlackoutStart + OpeningSequenceState.PartnerRevealEnd) * 0.5f, -1);
         }
 
         [Test]

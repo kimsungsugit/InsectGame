@@ -9,7 +9,7 @@ namespace InsectGame.Core
     /// 서브에리어 진입 시 완전히 다른 공간을 프로시저럴 생성합니다.
     /// 메인 월드를 숨기고, 별도 위치(2000,0,2000)에 미니 던전/환경을 구축합니다.
     /// </summary>
-    public class SubAreaWorldBuilder : MonoBehaviour
+    public partial class SubAreaWorldBuilder : MonoBehaviour
     {
         [SerializeField] private RegionManager regionManager;
         [SerializeField] private CameraFollower cameraFollower;
@@ -30,6 +30,9 @@ namespace InsectGame.Core
         private bool notifyIsEnter;
         private GUIStyle notifyStyleCache;
         private GUIStyle entryExitButtonStyleCache;
+        // 진입 버튼 문구 캐시 — 표시 이름이 바뀔 때만 다시 만든다(GetEnterLabel)
+        private string enterLabelName;
+        private string enterLabel;
         private static readonly Color NotifyEnterCol = new Color(0.3f, 0.85f, 0.5f);
         private static readonly Color NotifyExitCol = new Color(0.85f, 0.75f, 0.3f);
         private static readonly Color NotifyBgCol = new Color(0f, 0f, 0f, 0.78f);
@@ -66,7 +69,7 @@ namespace InsectGame.Core
         /// <summary>
         /// 이번 서브에리어 빌드가 만든 런타임 머티리얼. <b>subAreaRoot를 Destroy해도 이건 안 지워진다</b> —
         /// <c>new Material(...)</c>은 GameObject가 아니라 별개 오브젝트라 명시적으로 파괴해야 한다.
-        /// 한 번 지을 때마다 <c>Mat()</c>이 41번 불리고, 서브에리어는 25m 이탈·[E] 재진입으로
+        /// 한 번 지을 때마다 <c>Mat()</c>이 수십 번 불리고(테마마다 다르다), 서브에리어는 25m 이탈·[E] 재진입으로
         /// 세션 내내 반복해서 들락거리므로 방치하면 계속 쌓인다.
         /// (같은 이유로 <c>NpcVisualBuilder.CleanupMaterials</c>·<c>PlayerVisualBuilder.OnDestroy</c>가 있다.)
         /// </summary>
@@ -176,7 +179,12 @@ namespace InsectGame.Core
 
         private void Update()
         {
-            if (notifyTimer > 0f) notifyTimer -= Time.deltaTime;
+            if (notifyTimer > 0f)
+            {
+                notifyTimer -= Time.deltaTime;
+                // 출입 토스트는 가운데 무대(HudStage)의 고정 칸에 선다 — 서 있는 동안 차례 카드들이 기다린다.
+                HudStage.Request(HudStageItem.PlaceToast);
+            }
 
             // 모달/배틀/미니게임/포획 모달(frozen) 중에는 수동 진입·퇴장 입력을 막는다.
             // CaptureInputController와 동일 신호 — 같은 [E]가 포획과 SubArea 진입에 동시 발화하던 충돌 차단.
@@ -254,17 +262,17 @@ namespace InsectGame.Core
                 { fontSize = 28, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             }
 
-            // 진입/퇴장 토스트 (3초 페이드)
+            // 토스트와 버튼은 다른 HUD와 같은 가상 캔버스(1920×1080 / 1080×1920)에 그린다 — 자리를 HudStage·GateRect가
+            // 가상 좌표로 정하고, 겹침 전수 검사(HudOverlapSweepTests)가 그 좌표를 본다.
+            UIScale.Begin();
+            HudFrame frame = HudFrame.Current;
+
+            // 진입/퇴장 토스트 (3초 페이드) — 가운데 무대의 고정 칸(ToastRect).
             if (notifyTimer > 0f && !string.IsNullOrEmpty(notifyText))
             {
                 float alpha = Mathf.Clamp01(notifyTimer / 3f);
-                float w = 560f;
-                float h = 56f;
-                // 픽셀 좌표계다(`UIScale.Begin()`을 쓰지 않는다). 고정 90px은 노치·상단 인셋이
-                // 있는 기기에서 토스트를 그 아래로 밀어 넣는다 — 인셋이 0인 데스크톱에서는
-                // 90이 그대로 이기고, 인셋이 있으면 그만큼 내려간다(rules/ui-layout.md의 Px 파사드).
-                float toastY = Mathf.Max(90f, UISafeLayout.Px.ContentTop);
-                Rect r = new Rect((Screen.width - w) * 0.5f, toastY, w, h);
+                Rect r = ToastRect(frame);
+                HudStage.Request(HudStageItem.PlaceToast, r);
                 Color bg = NotifyBgCol;
                 bg.a = 0.78f * alpha;
                 GUI.color = bg;
@@ -273,7 +281,7 @@ namespace InsectGame.Core
                 textCol.a = alpha;
                 notifyStyleCache.normal.textColor = textCol;
                 GUI.color = Color.white;
-                GUI.Label(r, notifyText, notifyStyleCache);
+                UIHelper.LabelFit(r, notifyText, notifyStyleCache);
             }
 
             // 진입/퇴장 버튼은 모달/배틀/미니게임/포획 모달(frozen) 중에는 그리지도 입력받지도 않는다.
@@ -283,8 +291,9 @@ namespace InsectGame.Core
                 // 진입과 퇴장은 같은 고정 위치의 큰 버튼으로 제공한다.
                 if (isInSubArea)
                 {
-                    Rect r = GetEntryExitButtonRect();
+                    Rect r = GateRect(frame);
                     BlockFieldClicks(r);
+                    HudPresence.Mark(HudPresenceItem.Gate);   // 겹치는 안내 배너가 비켜 준다
                     GUI.backgroundColor = NotifyExitCol;
                     if (GUI.Button(r, "메인 월드로 나가기", GetEntryExitButtonStyle()))
                         RequestExit();
@@ -294,10 +303,11 @@ namespace InsectGame.Core
                 else if (regionManager != null && regionManager.NearbySubArea != null)
                 {
                     SubAreaData sub = regionManager.NearbySubArea;
-                    Rect r = GetEntryExitButtonRect();
+                    Rect r = GateRect(frame);
                     BlockFieldClicks(r);
+                    HudPresence.Mark(HudPresenceItem.Gate);
                     GUI.backgroundColor = NotifyEnterCol;
-                    if (GUI.Button(r, $"{GetSubAreaDisplayName(sub)} 들어가기", GetEntryExitButtonStyle()))
+                    if (GUI.Button(r, GetEnterLabel(sub), GetEntryExitButtonStyle()))
                     {
                         regionManager.RequestEnterSubArea();
                     }
@@ -305,6 +315,7 @@ namespace InsectGame.Core
                 }
             }
             GUI.color = Color.white;
+            UIScale.End();
         }
 
         /// <summary>
@@ -316,25 +327,42 @@ namespace InsectGame.Core
         /// (rules/ui-layout.md — 같은 결함을 QuickAccessBarUI·WorldFieldMultiplayerUI·
         /// TutorialQuestUI에서 이미 고쳤다. 이 화면의 버튼이 그중 가장 크다: 620×100).
         ///
-        /// <b>이 화면은 픽셀 좌표로 그린다</b>(`UIScale.Begin()`을 쓰지 않는다) — 등록은
-        /// 가상 좌표를 받으므로 `UIScale.Scale`로 나눠 넘긴다.
+        /// 이 화면은 가상 캔버스(`UIScale.Begin()`)에 그리므로 Rect를 그대로 넘긴다.
         /// </summary>
-        private static void BlockFieldClicks(Rect pixelRect)
+        private static void BlockFieldClicks(Rect virtualRect)
         {
-            float s = UIScale.Scale;
-            if (s <= 0f) return;
-            FieldHudInput.RegisterBlockingRect(
-                new Rect(pixelRect.x / s, pixelRect.y / s, pixelRect.width / s, pixelRect.height / s));
+            FieldHudInput.RegisterBlockingRect(virtualRect);
         }
 
-        private Rect GetEntryExitButtonRect()
+        public const float GateMaxWidth = 620f;
+        public const float GateHeight = 100f;
+        public const float ToastWidth = 560f;
+        public const float ToastHeight = 56f;
+
+        /// <summary>
+        /// 동굴 입구·나가기 버튼의 자리(가상 좌표) — <b>순수 계산</b>. 겹침 전수 검사와 가운데 무대(<see cref="HudStage.Area"/>)가 읽는다.
+        /// <b>데스크톱</b>: 아래 단축 바 바로 위 가운데(예전엔 화면 맨 아래라 단축 바를 덮었다).
+        /// <b>가로 모바일</b>: 아래 가운데 — 단축 바가 오른쪽 위라 비어 있고, 왼쪽 조이스틱 안내 원보다 오른쪽이다.
+        /// <b>세로 모바일</b>: 잡기 버튼 위 습격 경고 글자 바로 위 가운데 — 맨 아래 가운데는 720×1280에서 조이스틱 안내 원을 덮었다.
+        /// </summary>
+        public static Rect GateRect(HudFrame f)
         {
-            float availableWidth = Screen.width - SafeArea.Left - SafeArea.Right - 40f;
-            float w = Mathf.Min(620f, availableWidth);
-            float h = 100f;
-            float x = (Screen.width - w) * 0.5f;
-            float y = UISafeLayout.Px.BottomY(h);
-            return new Rect(x, y, w, h);
+            float w = Mathf.Min(GateMaxWidth, f.ContentWidth);
+            float x = f.ContentLeft + (f.ContentWidth - w) * 0.5f;
+            float y;
+            if (!f.Mobile)
+                y = QuickAccessBarUI.ShortcutBarRectFor(f).y - UITheme.Space.S - GateHeight;
+            else if (!f.Portrait)
+                y = f.ContentBottom - GateHeight;
+            else
+                y = InsectGame.Capture.CatchButtonLayout.WarnRect(f).y - UITheme.Space.S - GateHeight;
+            return new Rect(x, y, w, GateHeight);
+        }
+
+        /// <summary>출입 토스트의 자리 — 가운데 무대의 고정 칸(<see cref="HudStageItem.PlaceToast"/>).</summary>
+        public static Rect ToastRect(HudFrame f)
+        {
+            return HudStage.Place(f, HudStageItem.PlaceToast, ToastWidth, ToastHeight);
         }
 
         private GUIStyle GetEntryExitButtonStyle()
@@ -357,6 +385,10 @@ namespace InsectGame.Core
 
         private void OnSubAreaChanged(SubAreaData subArea)
         {
+            // 분리 구역(나의 섬)은 여기서 짓지 않는다 — 그 구역의 주인(IslandWorldBuilder)이 짓고 드나듦도 맡는다.
+            // isInSubArea가 false로 남으므로 25m 자동 이탈·퇴장 버튼·F2도 섬에서는 돌지 않는다.
+            if (subArea != null && subArea.detached) return;
+
             if (subArea != null && !isInSubArea)
             {
                 EnterSubArea(subArea);
@@ -376,6 +408,21 @@ namespace InsectGame.Core
                 if (AudioManager.Instance != null)
                     AudioManager.Instance.SetSubAreaActive(false);
             }
+        }
+
+        /// <summary>
+        /// "○○ 들어가기" 버튼 문구. OnGUI는 이벤트마다(프레임당 Layout·Repaint 최소 2회) 불리므로 매번 보간하면
+        /// 근처에 서 있는 내내 문자열이 쌓인다 — 표시 이름이 바뀔 때만 다시 만든다(서브에리어가 바뀌어도 이름으로 걸린다).
+        /// </summary>
+        private string GetEnterLabel(SubAreaData sub)
+        {
+            string name = GetSubAreaDisplayName(sub);
+            if (enterLabel == null || !string.Equals(name, enterLabelName, System.StringComparison.Ordinal))
+            {
+                enterLabelName = name;
+                enterLabel = $"{name} 들어가기";
+            }
+            return enterLabel;
         }
 
         private static string GetSubAreaDisplayName(SubAreaData sub)
@@ -477,6 +524,7 @@ namespace InsectGame.Core
             // 환경 전체에 SubArea layer 일괄 설정 — CameraFollower 차폐 제외용.
             // 8개 환경 빌드에 개별 추가하지 않고 subAreaRoot 자식 트리 전체 재귀 처리.
             SetLayerRecursively(subAreaRoot, GetSubAreaEnvLayer());
+            Physics.SyncTransforms();
 
             // 플레이어를 서브에리어 입구로 텔레포트 — 벽 겹침 회피.
             // BuildCave의 무작위 미로(7×7), BuildTemple의 z=-8 pillar 등으로 옛 고정 좌표는
@@ -484,6 +532,7 @@ namespace InsectGame.Core
             if (player != null)
             {
                 player.transform.position = FindSafeSpawnPosition(SubAreaOrigin);
+                player.GetComponent<PlayerMovement>()?.StopNavigation();
                 // 좌표 점프 후 카메라 baseline 리셋 — 옛 메인 월드 좌표에서 SubArea(2000m)로
                 // 슬슬 들어오는 시각적 끊김 차단. SetSubAreaMode가 내부적으로 ResetBaseline 호출.
                 if (cameraFollower != null) cameraFollower.SetSubAreaMode(true);
@@ -507,6 +556,10 @@ namespace InsectGame.Core
                         Mathf.Sin(angle) * radii[r],
                         0.5f,
                         -8f + Mathf.Cos(angle) * radii[r]);
+                    // The smallest interior has walls at +/-9. Never select an empty
+                    // point on the far side of a wall just because no collider overlaps it.
+                    if (Mathf.Abs(candidate.x - origin.x) > 8f
+                        || Mathf.Abs(candidate.z - origin.z) > 8f) continue;
                     if (IsSpawnPositionClear(candidate)) return candidate;
                 }
             }
@@ -567,7 +620,6 @@ namespace InsectGame.Core
         {
             isInSubArea = false;
             string exitedId = currentSubArea != null ? currentSubArea.subAreaId : null;
-            SubAreaData exited = currentSubArea;
             currentSubArea = null;
 
             // 서브에리어 파괴
@@ -575,27 +627,21 @@ namespace InsectGame.Core
 
             // 메인 월드 복원
             ShowMainWorld();
+            Physics.SyncTransforms();
 
-            // 플레이어를 원래 위치로. 단 savedPlayerPos가 방금 나온 SubArea 안이면
-            // 자동 재진입을 막기 위해 중심에서 약간 밖으로 밀어낸다.
+            // 명시적 진입과 재진입 쿨다운을 유지하며 원래 접근 위치로 복귀한다.
             GameObject player = GameObject.Find("Player");
             if (player != null)
             {
                 Vector3 dest = savedPlayerPos;
-                if (exited != null && exited.ContainsPoint(savedPlayerPos))
-                {
-                    Vector3 dir = savedPlayerPos - exited.centerPosition;
-                    dir.y = 0f;
-                    if (dir.sqrMagnitude < 0.01f) dir = Vector3.back;
-                    dir.Normalize();
-                    dest = exited.centerPosition + dir * (exited.radius + 2f);
-                    dest.y = savedPlayerPos.y;
-                }
+                // Entry is explicit and RegionManager already applies a cooldown.
+                // Keep the approach location instead of pushing across a region edge.
                 // 진입(FindSafeSpawnPosition)과 대칭으로 지면 스냅 + 충돌 빈자리 보정. ShowMainWorld로
                 // 메인 콜라이더(산 바위 Scenery_MountainRock/경사 등)가 복원된 뒤라, dest가 그 안에 박히면
                 // PlayerMovement.IsBlockedPosition이 모든 이동을 막아 영구 갇힘 → 산에서 못 움직이던 원인.
                 dest = FindClearGroundPositionNear(dest);
                 player.transform.position = dest;
+                player.GetComponent<PlayerMovement>()?.StopNavigation();
                 // 좌표 점프 후 카메라 baseline 리셋 + 일반 모드로 offset 복귀.
                 // SetSubAreaMode(false)가 내부적으로 ResetBaseline 호출하여 한 번에 처리.
                 if (cameraFollower != null) cameraFollower.SetSubAreaMode(false);
@@ -659,11 +705,17 @@ namespace InsectGame.Core
         // ========== 동굴 ==========
         private void BuildCave(SubAreaData sub)
         {
+            // 같은 cave/underground라도 방마다 다르다(SubAreaWorldBuilder.Themes.cs) — 개미귀신 구덩이와
+            // 빈칸은 동굴이 아니라 따로 짓는다. 방 크기는 이 빌더와 같은 14로 둔다(story_lint 21).
+            if (sub.subAreaId == "dunes_pit") { BuildAntlionPit(sub); return; }
+            if (sub.subAreaId == "nameless_core") { BuildBlankCore(sub); return; }
+            CaveTheme theme = CaveThemeFor(sub.subAreaId);
+
             // 어두운 머티리얼이 동굴이 새까매 보이던 핵심 원인 — 바닥/벽 밝기를 올려 환경광이 반사되게 한다.
-            Material wallMat = Mat(new Color(0.4f, 0.35f, 0.29f));
-            Material floorMat = Mat(new Color(0.32f, 0.28f, 0.22f));
+            Material wallMat = Mat(theme.wall);
+            Material floorMat = Mat(theme.floor);
             Material ceilingMat = Mat(new Color(0.1f, 0.08f, 0.06f));
-            Material torchMat = Mat(new Color(1f, 0.7f, 0.2f));
+            Material torchMat = GlowMat(theme.flame, theme.flame * 0.9f);
             Material torchHandleMat = Mat(new Color(0.3f, 0.2f, 0.1f));
 
             // 바닥
@@ -708,7 +760,7 @@ namespace InsectGame.Core
 
             // 횃불 (통로에 배치)
             int torchCount = 0;
-            for (int x = 0; x < 7 && torchCount < 12; x++)
+            for (int x = 0; x < 7 && torchCount < 12 && theme.torches; x++)
             {
                 for (int z = 0; z < 7 && torchCount < 12; z++)
                 {
@@ -722,10 +774,12 @@ namespace InsectGame.Core
             }
 
             // 포인트 라이트 (횃불에서) — 범위/세기 상향 + 중앙 상단 따뜻한 채움광으로 전체를 밝힌다.
-            CreatePointLight(new Vector3(0f, 3f, 0f), new Color(1f, 0.7f, 0.3f), 16f, 2.4f);
-            CreatePointLight(new Vector3(10f, 3f, 5f), new Color(1f, 0.7f, 0.3f), 13f, 1.8f);
-            CreatePointLight(new Vector3(-8f, 3f, -4f), new Color(1f, 0.7f, 0.3f), 13f, 1.8f);
+            CreatePointLight(new Vector3(0f, 3f, 0f), theme.light, 16f, 2.4f);
+            CreatePointLight(new Vector3(10f, 3f, 5f), theme.light, 13f, 1.8f);
+            CreatePointLight(new Vector3(-8f, 3f, -4f), theme.light, 13f, 1.8f);
             CreatePointLight(new Vector3(0f, 9f, 0f), new Color(0.95f, 0.88f, 0.72f), 26f, 1.3f);
+
+            DecorateCave(theme, maze, cellSize, offsetX, offsetZ);
 
             // 외곽 벽 — 바닥(30 = ±15) 안쪽에 배치하여 벽-바닥 사이 빠짐 방지
             CreateBoundaryWalls(wallMat, 14f, 5f);
@@ -734,10 +788,12 @@ namespace InsectGame.Core
         // ========== 깊은 숲 ==========
         private void BuildDeepForest(SubAreaData sub)
         {
-            Material groundMat = Mat(new Color(0.1f, 0.18f, 0.06f));
-            Material trunkMat = Mat(new Color(0.2f, 0.12f, 0.06f));
-            Material leafMat = Mat(new Color(0.05f, 0.25f, 0.03f));
-            Material pathMat = Mat(new Color(0.3f, 0.25f, 0.15f));
+            // 우듬지의 겹친 가지 속은 1막 깊은 숲보다 밝고 살아 있다 — 같은 미로에 색과 소품만 바꾼다
+            bool bough = sub.subAreaId == "canopy_bough";
+            Material groundMat = Mat(bough ? new Color(0.22f, 0.34f, 0.16f) : new Color(0.1f, 0.18f, 0.06f));
+            Material trunkMat = Mat(bough ? new Color(0.36f, 0.26f, 0.16f) : new Color(0.2f, 0.12f, 0.06f));
+            Material leafMat = Mat(bough ? new Color(0.22f, 0.46f, 0.20f) : new Color(0.05f, 0.25f, 0.03f));
+            Material pathMat = Mat(bough ? new Color(0.40f, 0.32f, 0.20f) : new Color(0.3f, 0.25f, 0.15f));
 
             CreateFloor(groundMat, 35f);
 
@@ -782,7 +838,7 @@ namespace InsectGame.Core
 
             // 안개 구체
             Material fogMat = Mat(new Color(0.15f, 0.25f, 0.1f, 0.15f));
-            SetTransparent(fogMat);
+            SceneryMaterials.MakeFade(fogMat);
             for (int i = 0; i < 6; i++)
             {
                 GameObject fog = Prim(PrimitiveType.Sphere, $"Fog_{i}");
@@ -793,12 +849,19 @@ namespace InsectGame.Core
             }
 
             CreatePointLight(Vector3.up * 8f, new Color(0.3f, 0.6f, 0.2f), 20f, 0.6f);
+            if (bough)
+            {
+                DecorateBough();
+                CreatePointLight(new Vector3(0f, 6f, 0f), new Color(1f, 0.95f, 0.75f), 22f, 1.0f);   // 잎 틈 햇살
+            }
             CreateBoundaryWalls(trunkMat, 16f, 7f);
         }
 
         // ========== 수중 ==========
         private void BuildUnderwater(SubAreaData sub)
         {
+            // 초원의 숨겨진 웅덩이는 물속이 아니라 풀밭의 맑은 웅덩이다 — 분홍 산호가 서면 안 된다
+            if (sub.subAreaId == "meadow_pond") { BuildHiddenPuddle(sub); return; }
             // 바닥을 조금 밝게 — 옛 (0.1,0.15,0.25)는 파란 fog와 겹쳐 캐릭터 발밑이 새까매 대비 상실.
             Material floorMat = Mat(new Color(0.16f, 0.22f, 0.33f));
             Material coralMat = Mat(new Color(0.8f, 0.3f, 0.4f));
@@ -806,7 +869,7 @@ namespace InsectGame.Core
             // 물 표면 alpha 0.3 → 0.16: 옛은 카메라-캐릭터 시선을 가로지르는 반투명 파란 막이 캐릭터를 덮어
             // "연못/수중에서 캐릭터가 안 보임"의 직접 원인이었음(사용자 보고). 위치도 함께 올려 이중 방어.
             Material waterMat = Mat(new Color(0.1f, 0.25f, 0.5f, 0.16f));
-            SetTransparent(waterMat);
+            SceneryMaterials.MakeFade(waterMat);
 
             CreateFloor(floorMat, 30f);
 
@@ -851,7 +914,7 @@ namespace InsectGame.Core
 
             // 기포
             Material bubbleMat = Mat(new Color(0.6f, 0.8f, 1f, 0.3f));
-            SetTransparent(bubbleMat);
+            SceneryMaterials.MakeFade(bubbleMat);
             for (int i = 0; i < 20; i++)
             {
                 GameObject bubble = Prim(PrimitiveType.Sphere, $"Bubble_{i}");
@@ -872,14 +935,16 @@ namespace InsectGame.Core
         // ========== 안개 늪 ==========
         private void BuildFogSwamp(SubAreaData sub)
         {
-            Material mudMat = Mat(new Color(0.18f, 0.2f, 0.1f));
+            // 텅 빈 들의 침묵의 자리는 늪이 아니다 — 빛바랜 풀밭. 물웅덩이·고목 대신 풍경 장대를 둔다
+            bool silence = sub.subAreaId == "hollow_silence";
+            Material mudMat = Mat(silence ? new Color(0.52f, 0.50f, 0.42f) : new Color(0.18f, 0.2f, 0.1f));
             Material waterMat = Mat(new Color(0.12f, 0.2f, 0.15f, 0.5f));
-            SetTransparent(waterMat);
+            SceneryMaterials.MakeFade(waterMat);
 
             CreateFloor(mudMat, 30f);
 
             // 물웅덩이
-            for (int i = 0; i < 8; i++)
+            for (int i = 0; i < (silence ? 0 : 8); i++)
             {
                 GameObject pool = Prim(PrimitiveType.Cylinder, $"Pool_{i}");
                 pool.transform.localPosition = new Vector3(Random.Range(-10f, 10f), 0.02f, Random.Range(-10f, 10f));
@@ -890,8 +955,8 @@ namespace InsectGame.Core
             }
 
             // 안개 구체 (밀집)
-            Material fogMat = Mat(new Color(0.5f, 0.5f, 0.45f, 0.12f));
-            SetTransparent(fogMat);
+            Material fogMat = Mat(silence ? new Color(0.78f, 0.78f, 0.76f, 0.1f) : new Color(0.5f, 0.5f, 0.45f, 0.12f));
+            SceneryMaterials.MakeFade(fogMat);
             for (int i = 0; i < 15; i++)
             {
                 GameObject fog = Prim(PrimitiveType.Sphere, $"Fog_{i}");
@@ -903,7 +968,8 @@ namespace InsectGame.Core
 
             // 고목
             Material deadWood = Mat(new Color(0.25f, 0.2f, 0.15f));
-            for (int i = 0; i < 6; i++)
+            if (silence) DecorateSilence();
+            for (int i = 0; i < (silence ? 0 : 6); i++)
             {
                 GameObject tree = Prim(PrimitiveType.Cylinder, $"DeadTree_{i}");
                 Vector3 pos = new Vector3(Random.Range(-10f, 10f), 0f, Random.Range(-10f, 10f));
@@ -923,22 +989,16 @@ namespace InsectGame.Core
         // ========== 산 정상 ==========
         private void BuildMountainPeak(SubAreaData sub)
         {
-            Material rockMat = Mat(new Color(0.5f, 0.48f, 0.44f));
-            Material snowMat = Mat(new Color(0.9f, 0.92f, 0.95f));
-            Material pathMat = Mat(new Color(0.45f, 0.42f, 0.38f));
+            // 우듬지의 "가장 높은 가지"는 나무 꼭대기다 — 바위산이 아니다. 방 크기는 같은 11.
+            if (sub.subAreaId == "canopy_crown") { BuildCanopyCrown(sub); return; }
+            bool frost = sub.subAreaId == "frostline_ridge";
+            Material rockMat = Mat(frost ? new Color(0.72f, 0.77f, 0.84f) : new Color(0.5f, 0.48f, 0.44f));
 
             CreateFloor(rockMat, 25f);
 
-            // 눈 패치
-            for (int i = 0; i < 8; i++)
-            {
-                GameObject snow = Prim(PrimitiveType.Plane, $"Snow_{i}");
-                snow.transform.localPosition = new Vector3(Random.Range(-10f, 10f), 0.08f, Random.Range(-10f, 10f));
-                float ss = Random.Range(0.3f, 0.6f);
-                snow.transform.localScale = new Vector3(ss, 1f, ss);
-                Apply(snow, snowMat);
-                NoCollider(snow);
-            }
+            // 눈 — 옛날엔 Plane(정사각형)이라 종이를 깐 듯 각졌다. 둔덕·돌탑·얼음 가시는 테마 파일에서.
+            DecoratePeak(sub);
+            if (frost) rockMat = Mat(new Color(0.55f, 0.61f, 0.69f));   // 능선 바위는 바닥보다 짙게
 
             // 바위
             for (int i = 0; i < 12; i++)
@@ -968,7 +1028,7 @@ namespace InsectGame.Core
             Material shelfMat = Mat(new Color(0.38f, 0.28f, 0.17f));
             Material crateMat = Mat(new Color(0.52f, 0.42f, 0.26f));
             Material glassMat = Mat(new Color(0.62f, 0.74f, 0.72f, 0.35f));
-            SetTransparent(glassMat);   // 알파 재질은 Mat만으론 불투명하게 나온다
+            SceneryMaterials.MakeFade(glassMat);   // 알파 재질은 Mat만으론 불투명하게 나온다
             Material lampMat = Mat(new Color(0.95f, 0.80f, 0.45f));
 
             CreateFloor(floorMat, 30f);
@@ -1027,7 +1087,7 @@ namespace InsectGame.Core
         {
             Material floorMat = Mat(new Color(0.62f, 0.72f, 0.80f));
             Material iceMat = Mat(new Color(0.70f, 0.84f, 0.92f, 0.55f));
-            SetTransparent(iceMat);
+            SceneryMaterials.MakeFade(iceMat);
             Material deepMat = Mat(new Color(0.42f, 0.58f, 0.72f));
             Material paperMat = Mat(new Color(0.86f, 0.82f, 0.68f));
             Material glowMat = Mat(new Color(0.55f, 0.85f, 1f));
@@ -1305,7 +1365,7 @@ namespace InsectGame.Core
         {
             Material frameMat = Mat(new Color(0.7f, 0.7f, 0.7f));
             Material glassMat = Mat(new Color(0.8f, 0.9f, 0.8f, 0.15f));
-            SetTransparent(glassMat);
+            SceneryMaterials.MakeFade(glassMat);
             Material soilMat = Mat(new Color(0.3f, 0.22f, 0.12f));
 
             CreateFloor(soilMat, 20f);
@@ -1339,7 +1399,7 @@ namespace InsectGame.Core
         private void BuildReeds(SubAreaData sub)
         {
             Material waterMat = Mat(new Color(0.15f, 0.25f, 0.35f, 0.5f));
-            SetTransparent(waterMat);
+            SceneryMaterials.MakeFade(waterMat);
             Material reedMat = Mat(new Color(0.4f, 0.5f, 0.2f));
             Material mudMat = Mat(new Color(0.25f, 0.22f, 0.15f));
 
@@ -1550,29 +1610,22 @@ namespace InsectGame.Core
         private void NoCollider(GameObject obj)
         {
             Collider c = obj.GetComponent<Collider>();
-            if (c != null) Destroy(c);
+            if (c != null)
+            {
+                c.enabled = false; // Spawn checks run before deferred Destroy completes.
+                Destroy(c);
+            }
         }
 
+        /// <summary>
+        /// 셰이더 폴백·무광 마감은 <see cref="SceneryMaterials.Create"/>가 한다. 알파 재질은 이것만으론 불투명하게
+        /// 나오므로 호출부가 <see cref="SceneryMaterials.MakeFade"/>를 함께 부른다.
+        /// </summary>
         private Material Mat(Color color)
         {
-            Shader shader = Shader.Find("Standard");
-            if (shader == null) shader = Shader.Find("Universal Render Pipeline/Lit");
-            if (shader == null) shader = Shader.Find("Unlit/Color");
-            if (shader == null) shader = Shader.Find("Sprites/Default");
-            Material mat = shader != null ? new Material(shader) : new Material(Shader.Find("Hidden/InternalErrorShader"));
-            mat.color = color;
-            runtimeMaterials.Add(mat);   // 빌드 파기 때 함께 정리 — 안 하면 진입할 때마다 41개씩 샌다
+            Material mat = SceneryMaterials.Create(color);
+            runtimeMaterials.Add(mat);   // 빌드 파기 때 함께 정리 — 안 하면 진입할 때마다 수십 개씩 샌다
             return mat;
-        }
-
-        private void SetTransparent(Material mat)
-        {
-            mat.SetFloat("_Mode", 3);
-            mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
-            mat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
-            mat.SetInt("_ZWrite", 0);
-            mat.EnableKeyword("_ALPHABLEND_ON");
-            mat.renderQueue = 3000;
         }
     }
 }

@@ -105,6 +105,7 @@ namespace InsectGame.NPC
             rng = new System.Random(seed);
             animator = new NpcWalkAnimator(transform);
             groundY = transform.position.y;
+            SetStandY(0f);   // 앵커가 둔덕 위면 그 윗면에 선다(평지는 그대로 — VillagerNpc.StandHeight)
             state = State.Idle;
             stateEndTime = 0f;
             cooldownUntilTime = 0f;
@@ -199,9 +200,7 @@ namespace InsectGame.NPC
                 {
                     // 점프 모션 — 남은 시간 기반 sin 바운스
                     float elapsed = CelebrateDuration - (stateEndTime - time);
-                    Vector3 pos = transform.position;
-                    pos.y = groundY + Mathf.Abs(Mathf.Sin(elapsed * 8f)) * 0.3f;
-                    transform.position = pos;
+                    SetStandY(Mathf.Abs(Mathf.Sin(elapsed * 8f)) * 0.3f);
                     break;
                 }
 
@@ -364,9 +363,7 @@ namespace InsectGame.NPC
         private void EnterIdle(float time)
         {
             // Celebrate 점프 잔여 Y 복귀
-            Vector3 pos = transform.position;
-            pos.y = groundY;
-            transform.position = pos;
+            SetStandY(0f);
             watchInsect = null;
             state = State.Idle;
             stateEndTime = time + RandomRange(1f, 3f);
@@ -384,10 +381,22 @@ namespace InsectGame.NPC
             if (IsBlockedAhead(dir, speed * dt)) return false; // 벽 관통 방지 — Wander는 Idle 복귀, Approach는 타임아웃→GiveUp
 
             Vector3 pos = transform.position + dir * (speed * dt);
-            pos.y = groundY;
+            // 둔덕은 콜라이더가 없어 groundY(레이)가 못 본다 — 매 스텝 그 자리 둔덕을 얹는다. 사구 위 곤충을 쫓아 올라간다.
+            pos.y = VillagerNpc.StandHeight(groundY, pos.x, pos.z);
             transform.position = pos;
             RotateTowards(dir, dt);
             return true;
+        }
+
+        /// <summary>
+        /// 지금 자리 발 높이 + <paramref name="lift"/>(축하 점프)로 선다. 발 높이 규칙은 주민과 하나다
+        /// (<see cref="VillagerNpc.StandHeight"/> — 둔덕이 없는 곳에선 groundY 그대로).
+        /// </summary>
+        private void SetStandY(float lift)
+        {
+            Vector3 pos = transform.position;
+            pos.y = VillagerNpc.StandHeight(groundY, pos.x, pos.z) + lift;
+            transform.position = pos;
         }
 
         /// <summary>진행 방향에 통행 불가 콜라이더(건물 벽 등)가 있는지 — 벽 관통 방지.</summary>

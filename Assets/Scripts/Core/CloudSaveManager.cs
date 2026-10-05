@@ -407,6 +407,9 @@ namespace InsectGame.Core
                 // 오염 거점 정화 기록 — 안 올리면 기기를 바꿀 때 정화한 리전이 다시 오염으로 뜬다.
                 blightCleansed = PlayerPrefs.GetString(
                     AuthManager.ScopedKey(GameConstants.PrefsKeys.BlightCleansed), ""),
+                // 배지 이정표 보상 수령 상태 — 안 올리면 기기를 바꿀 때마다 같은 보상을 다시 받는다.
+                badgeMilestonesClaimed = PlayerPrefs.GetString(
+                    AuthManager.ScopedKey(GameConstants.PrefsKeys.BadgeMilestonesClaimed), ""),
                 // 퀘스트는 계정별 키에서 읽어 현재 계정의 진행만 클라우드에 올린다(교차 오염 방지).
                 questProgress = PlayerPrefs.GetString(
                     AuthManager.ScopedKey(GameConstants.PrefsKeys.QuestProgress), ""),
@@ -421,6 +424,8 @@ namespace InsectGame.Core
                 // 스토리 진행은 story_progress.json 파일(StoryDirector 저작) — 퀘스트와 달리 파일 기반이라
                 // dexData/playerItems처럼 LoadLocalFile로 수집(계정별 SaveScope 경로).
                 storyProgress = LoadLocalFile(GameConstants.SaveFiles.StoryProgress),
+                // 섬(보관함·배치·방목·누적 수확) — story_progress.json과 같은 파일 블롭이다.
+                islandData = LoadLocalFile(GameConstants.SaveFiles.Island),
                 // 캐릭터 외형(LoginUI가 PlayerPrefs "InsectGame.Character.*"에 저장) — 옛은 클라우드
                 // 미수집이라 다른 기기 접속 시 외형(피부/머리/표정/성별) 전부 초기화됐음.
                 charCreated = PlayerPrefs.GetInt(SaveScope.PrefsKey("InsectGame.Character.Created"), 0),
@@ -534,6 +539,10 @@ namespace InsectGame.Core
                 QuestSaveMerge.MaxIntDict);
             ApplyQuestField(GameConstants.PrefsKeys.QuestSideRepeat, data.questSideRepeat, forceReplace,
                 QuestSaveMerge.MaxIntDict);
+            // 배지 이정표 수령도 단조 증가(받은 걸 도로 안 받는다)라 합집합이 안전하다 — 낡은 클라우드가 수령
+            // 기록을 지우면 같은 보상을 다시 받는다. 병합 규칙이 퀘스트 완료와 같아 그 경로를 그대로 탄다.
+            ApplyQuestField(GameConstants.PrefsKeys.BadgeMilestonesClaimed, data.badgeMilestonesClaimed, forceReplace,
+                QuestSaveMerge.UnionCsv);
 
             // 캐릭터 외형 — 옛 클라우드 문서엔 없을 수 있어 sentinel(-1)이면 로컬 유지(초기화 방지).
             if (data.charCreated == 1) PlayerPrefs.SetInt(SaveScope.PrefsKey("InsectGame.Character.Created"), 1);
@@ -569,6 +578,8 @@ namespace InsectGame.Core
             ApplyCloudFile(GameConstants.SaveFiles.PlayerItems, data.playerItems, forceReplace);
             // 스토리 진행 파일 — dexData/playerItems와 동형. StoryDirector.ReloadFromDisk가 아래 reloadables 순회에서 인메모리 갱신.
             ApplyCloudFile(GameConstants.SaveFiles.StoryProgress, data.storyProgress, forceReplace);
+            // 섬 — IslandManager.ReloadFromDisk가 아래 reloadables 순회에서 다시 읽는다(곤충 컬렉션 뒤에 등록돼 있다).
+            ApplyCloudFile(GameConstants.SaveFiles.Island, data.islandData, forceReplace);
 
             // 파일/PlayerPrefs 갱신 후 인메모리 캐시 리로드 — 곤충/팀/도감/지역/의상 등이
             // 다른 기기 첫 로그인에서도 즉시 반영(앱 재시작 불필요).
@@ -681,12 +692,14 @@ namespace InsectGame.Core
             sb.Append(","); AppendStringField(sb, "defeatedBosses", data.defeatedBosses);
             sb.Append(","); AppendStringField(sb, "weeklyContestClaimed", data.weeklyContestClaimed);
             sb.Append(","); AppendStringField(sb, "blightCleansed", data.blightCleansed);
+            sb.Append(","); AppendStringField(sb, "badgeMilestonesClaimed", data.badgeMilestonesClaimed);
             sb.Append(","); AppendStringField(sb, "questProgress", data.questProgress);
             sb.Append(","); AppendStringField(sb, "questCompleted", data.questCompleted);
             sb.Append(","); AppendStringField(sb, "activeQuest", data.activeQuest);
             sb.Append(","); AppendStringField(sb, "questSideProgress", data.questSideProgress);
             sb.Append(","); AppendStringField(sb, "questSideRepeat", data.questSideRepeat);
             sb.Append(","); AppendStringField(sb, "storyProgress", data.storyProgress);
+            sb.Append(","); AppendStringField(sb, "islandData", data.islandData);
             sb.Append(","); AppendIntField(sb, "charCreated", data.charCreated);
             sb.Append(","); AppendStringField(sb, "charName", data.charName);
             sb.Append(","); AppendStringField(sb, "charStarter", data.charStarter);
@@ -731,12 +744,14 @@ namespace InsectGame.Core
             data.defeatedBosses = ExtractStringValue(json, "defeatedBosses");
             data.weeklyContestClaimed = ExtractStringValue(json, "weeklyContestClaimed");
             data.blightCleansed = ExtractStringValue(json, "blightCleansed");
+            data.badgeMilestonesClaimed = ExtractStringValue(json, "badgeMilestonesClaimed");
             data.questProgress = ExtractStringValue(json, "questProgress");
             data.questCompleted = ExtractStringValue(json, "questCompleted");
             data.activeQuest = ExtractStringValue(json, "activeQuest");
             data.questSideProgress = ExtractStringValue(json, "questSideProgress");
             data.questSideRepeat = ExtractStringValue(json, "questSideRepeat");
             data.storyProgress = ExtractStringValue(json, "storyProgress");
+            data.islandData = ExtractStringValue(json, "islandData");
             // 캐릭터 외형 — 옛 문서엔 없을 수 있어 sentinel(-1)로 받아 ApplySaveData에서 로컬 보존.
             data.charCreated = ExtractIntValueOrDefault(json, "charCreated", 0);
             data.charName = ExtractStringValue(json, "charName");
@@ -788,56 +803,23 @@ namespace InsectGame.Core
                 .Replace("\t", "\\t");
         }
 
-        /// <summary>
-        /// Firestore 응답에서 stringValue를 추출하는 간이 파서.
-        /// {"fieldName":{"stringValue":"..."}} 형식에서 값을 꺼냅니다.
-        /// </summary>
-        private string ExtractStringValue(string json, string fieldName)
+        // 필드 추출은 FirestoreDocParser가 한다 — 공백 없는 형식과 줄바꿈·들여쓰기된 형식을 둘 다 읽는다.
+        // 예전 구현은 `"키":{"stringValue":"`라는 공백 없는 마커를 통째로 찾아서, 응답이 들여쓰기돼 오면
+        // 한 필드도 못 찾고 전부 기본값(레벨 0·캔디 0·빈 문자열)으로 복원했다.
+        private static string ExtractStringValue(string json, string fieldName)
         {
-            string marker = "\"" + fieldName + "\":{\"stringValue\":\"";
-            int start = json.IndexOf(marker, StringComparison.Ordinal);
-            if (start < 0) return "";
-            start += marker.Length;
-            int end = json.IndexOf("\"}", start, StringComparison.Ordinal);
-            if (end < 0) return "";
-
-            // 이스케이프된 따옴표를 건너뛰기
-            while (end > 0 && json[end - 1] == '\\')
-            {
-                end = json.IndexOf("\"}", end + 1, StringComparison.Ordinal);
-                if (end < 0) return "";
-            }
-
-            return json.Substring(start, end - start)
-                .Replace("\\\"", "\"")
-                .Replace("\\\\", "\\")
-                .Replace("\\n", "\n")
-                .Replace("\\r", "\r")
-                .Replace("\\t", "\t");
+            FirestoreDocParser.TryGetString(json, fieldName, out string value);
+            return value;
         }
 
-        /// <summary>
-        /// Firestore 응답에서 integerValue를 추출하는 간이 파서.
-        /// {"fieldName":{"integerValue":"123"}} 형식에서 값을 꺼냅니다.
-        /// </summary>
-        private int ExtractIntValue(string json, string fieldName)
+        private static int ExtractIntValue(string json, string fieldName)
         {
             return ExtractIntValueOrDefault(json, fieldName, 0);
         }
 
-        private int ExtractIntValueOrDefault(string json, string fieldName, int defaultValue)
+        private static int ExtractIntValueOrDefault(string json, string fieldName, int defaultValue)
         {
-            string marker = "\"" + fieldName + "\":{\"integerValue\":\"";
-            int start = json.IndexOf(marker, StringComparison.Ordinal);
-            if (start < 0) return defaultValue;
-            start += marker.Length;
-            int end = json.IndexOf("\"", start, StringComparison.Ordinal);
-            if (end < 0) return defaultValue;
-
-            string numStr = json.Substring(start, end - start);
-            if (int.TryParse(numStr, out int result))
-                return result;
-            return defaultValue;
+            return FirestoreDocParser.TryGetInt(json, fieldName, out int value) ? value : defaultValue;
         }
 
         // ── 로컬 파일 IO ──
@@ -924,6 +906,10 @@ namespace InsectGame.Core
         /// — 옛 문서에 없어도 무해하고, 그게 이 기능이 기존 유저에게 보이는 방식이다.</summary>
         public string blightCleansed;
 
+        /// <summary>받은 배지 이정표("4,8"). 기본 ""이면 아무것도 안 받은 상태다 — 옛 문서에 없어도 무해하고,
+        /// 부트 로드는 로컬과 합집합이라 낡은 문서가 수령 기록을 지우지도 않는다.</summary>
+        public string badgeMilestonesClaimed = "";
+
         public string questProgress;
         public string questCompleted;
         public string activeQuest;
@@ -931,6 +917,8 @@ namespace InsectGame.Core
         public string questSideRepeat;
         // 스토리 진행(seenBeatIds) — story_progress.json 내용. 파일 기반이라 수집/적용은 dexData와 동형.
         public string storyProgress;
+        /// <summary>나의 섬 — island.json 내용. 기본 ""이면 로컬을 덮지 않는다(옛 문서에 없어도 무해하다).</summary>
+        public string islandData = "";
         // 캐릭터 외형 — int는 -1 sentinel(옛 클라우드 문서 누락 시 로컬 유지), charCreated만 0 기본.
         public int charCreated;
         public string charName;

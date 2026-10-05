@@ -245,4 +245,135 @@ namespace InsectGame.UI
             public static float BottomY(float height) => EndStart(height, VerticalBox);
         }
     }
+
+    /// <summary>
+    /// 화면 한 장의 배치 기준 — <b>실제 화면이든 테스트가 세운 화면이든 같은 식으로</b> HUD 자리를 계산하게 한다.
+    /// 필드 HUD의 순수 배치 함수가 이걸 받는다. 그리기는 <see cref="Current"/>(Screen·SafeArea·<see cref="UIScale"/>)를 넘기고,
+    /// 전수 겹침 검사(<c>HudOverlapSweepTests</c>)는 해상도·스케일·노치별로 <see cref="ForScreen"/>을 세워 넘긴다 —
+    /// 식을 테스트에 베껴 두면 원본이 바뀔 때 테스트가 거짓으로 통과하므로, 계산은 언제나 HUD 쪽 함수를 부른다.
+    /// 가상 좌표·스케일·모바일 판정은 <see cref="UIScale"/>과 같은 식이다(<c>UISafeLayoutTests</c>가 맞춰 본다).
+    /// 화면 모양 말고 하나 더 — 섬 HUD가 서 있는지(<see cref="IslandHud"/>)를 든다. 가운데 무대(<c>HudStage</c>)의 자리가 그걸로 갈린다.
+    /// </summary>
+    public readonly struct HudFrame
+    {
+        /// <summary>실제 화면 픽셀.</summary>
+        public readonly float PixelWidth;
+        public readonly float PixelHeight;
+        /// <summary>세이프 에어리어 인셋(픽셀, GUI 기준 — 위는 노치, 아래는 제스처 바).</summary>
+        public readonly float PixelSafeLeft;
+        public readonly float PixelSafeRight;
+        public readonly float PixelSafeTop;
+        public readonly float PixelSafeBottom;
+        /// <summary><see cref="UIScale.Scale"/>과 같은 값.</summary>
+        public readonly float Scale;
+        /// <summary>가상 화면(<see cref="UIScale.VirtualScreenWidth"/>·Height).</summary>
+        public readonly float Width;
+        public readonly float Height;
+        /// <summary><see cref="UIScale.IsMobileLayout"/>과 같은 값.</summary>
+        public readonly bool Mobile;
+        /// <summary><see cref="UIScale.IsPortrait"/>와 같은 값.</summary>
+        public readonly bool Portrait;
+        /// <summary>
+        /// 섬 HUD 판(<c>IslandHudUI</c> — 내 섬·남의 섬)이 이 화면에 서 있는가. 가운데 무대(<c>HudStage.Area</c>)가 이때만 섬 HUD를 피한다 —
+        /// 필드에서도 피하면 세로 화면의 카드가 화면 왼쪽 절반으로 밀린다(2026-10-03 QA 실측).
+        /// <see cref="Current"/>는 <c>HudPresence</c>(섬 HUD가 매 프레임 표시한다)에서 읽고, <see cref="ForScreen"/>은 false(필드)다 —
+        /// 섬 화면은 <see cref="WithIslandHud"/>로 세운다.
+        /// </summary>
+        public readonly bool IslandHud;
+
+        private HudFrame(float pixelWidth, float pixelHeight, float safeLeft, float safeRight, float safeTop, float safeBottom,
+            bool mobile, bool islandHud)
+        {
+            IslandHud = islandHud;
+            PixelWidth = Mathf.Max(1f, pixelWidth);
+            PixelHeight = Mathf.Max(1f, pixelHeight);
+            PixelSafeLeft = Mathf.Max(0f, safeLeft);
+            PixelSafeRight = Mathf.Max(0f, safeRight);
+            PixelSafeTop = Mathf.Max(0f, safeTop);
+            PixelSafeBottom = Mathf.Max(0f, safeBottom);
+            Portrait = PixelHeight > PixelWidth;
+            float refW = Portrait ? UIScale.PortraitReferenceWidth : UIScale.ReferenceWidth;
+            float refH = Portrait ? UIScale.PortraitReferenceHeight : UIScale.ReferenceHeight;
+            Scale = Mathf.Max(0.3f, Mathf.Min(PixelWidth / refW, PixelHeight / refH));
+            Width = PixelWidth / Scale;
+            Height = PixelHeight / Scale;
+            Mobile = mobile;
+        }
+
+        /// <summary>
+        /// 화면을 세운다. <paramref name="mobilePlatform"/>은 <c>Application.isMobilePlatform</c> — 세로로 긴 창은 그것과 무관하게
+        /// 모바일 배치다(<see cref="UIScale.IsMobileLayout"/>과 같은 판정).
+        /// </summary>
+        public static HudFrame ForScreen(float pixelWidth, float pixelHeight, float safeLeft, float safeRight, float safeTop,
+            float safeBottom, bool mobilePlatform)
+        {
+            bool mobile = mobilePlatform || pixelHeight > pixelWidth * 1.08f;
+            return new HudFrame(pixelWidth, pixelHeight, safeLeft, safeRight, safeTop, safeBottom, mobile, false);
+        }
+
+        /// <summary>지금 화면(섬 HUD가 서 있는지는 <c>HudPresence</c>에서).</summary>
+        public static HudFrame Current => new HudFrame(Screen.width, Screen.height, SafeArea.Left, SafeArea.Right,
+            SafeArea.Top, SafeArea.Bottom, UIScale.IsMobileLayout, HudPresence.IsShowing(HudPresenceItem.IslandHud));
+
+        /// <summary>같은 화면에서 섬 HUD가 서 있거나(<paramref name="on"/>) 없는 판.</summary>
+        public HudFrame WithIslandHud(bool on) => new HudFrame(PixelWidth, PixelHeight, PixelSafeLeft, PixelSafeRight,
+            PixelSafeTop, PixelSafeBottom, Mobile, on);
+
+        // ── 가상 좌표 ──
+
+        public float SafeLeft => PixelSafeLeft / Scale;
+        public float SafeRight => PixelSafeRight / Scale;
+        public float SafeTop => PixelSafeTop / Scale;
+        public float SafeBottom => PixelSafeBottom / Scale;
+
+        public UISafeLayout.SafeBox Horizontal =>
+            UISafeLayout.ComputeWithMargin(Width, SafeLeft, SafeRight, UISafeLayout.MarginX);
+        public UISafeLayout.SafeBox Vertical => UISafeLayout.Compute(Height, SafeTop, SafeBottom);
+
+        public float ContentLeft => Horizontal.Start;
+        public float ContentRight => Horizontal.End;
+        public float ContentWidth => Horizontal.Extent;
+        public float ContentTop => Vertical.Start;
+        public float ContentBottom => Vertical.End;
+        public float ContentHeight => Vertical.Extent;
+
+        public float ClampWidth(float desired) => UISafeLayout.ClampSize(desired, Horizontal);
+        public float ClampHeight(float desired) => UISafeLayout.ClampSize(desired, Vertical);
+
+        /// <summary><c>UISafeLayout.TopPanel</c>과 같은 값.</summary>
+        public Rect TopPanel(float width, float height, UISafeLayout.HAlign align = UISafeLayout.HAlign.Center)
+        {
+            UISafeLayout.SafeBox h = Horizontal;
+            UISafeLayout.SafeBox v = Vertical;
+            float w = UISafeLayout.ClampSize(width, h);
+            return new Rect(UISafeLayout.AlignStart(w, align, h), v.Start, w, UISafeLayout.ClampSize(height, v));
+        }
+
+        /// <summary><c>UISafeLayout.BottomPanel</c>과 같은 값.</summary>
+        public Rect BottomPanel(float width, float height, UISafeLayout.HAlign align = UISafeLayout.HAlign.Center)
+        {
+            UISafeLayout.SafeBox h = Horizontal;
+            UISafeLayout.SafeBox v = Vertical;
+            float w = UISafeLayout.ClampSize(width, h);
+            float ph = UISafeLayout.ClampSize(height, v);
+            return new Rect(UISafeLayout.AlignStart(w, align, h), UISafeLayout.EndStart(ph, v), w, ph);
+        }
+
+        /// <summary><c>UISafeLayout.CenteredY</c>와 같은 값.</summary>
+        public float CenteredY(float height) => UISafeLayout.CenterStart(height, Vertical);
+
+        // ── 픽셀 좌표(UIScale.Begin을 쓰지 않는 화면) ──
+
+        public UISafeLayout.SafeBox PixelHorizontal =>
+            UISafeLayout.ComputeWithMargin(PixelWidth, PixelSafeLeft, PixelSafeRight, UISafeLayout.MarginX);
+        public UISafeLayout.SafeBox PixelVertical => UISafeLayout.Compute(PixelHeight, PixelSafeTop, PixelSafeBottom);
+
+        /// <summary>가상 → 픽셀.</summary>
+        public Rect ToPixels(Rect virtualRect) =>
+            new Rect(virtualRect.x * Scale, virtualRect.y * Scale, virtualRect.width * Scale, virtualRect.height * Scale);
+
+        /// <summary>픽셀 → 가상(<c>FieldHudInput.RegisterBlockingRect</c>가 받는 좌표).</summary>
+        public Rect ToVirtual(Rect pixelRect) =>
+            new Rect(pixelRect.x / Scale, pixelRect.y / Scale, pixelRect.width / Scale, pixelRect.height / Scale);
+    }
 }

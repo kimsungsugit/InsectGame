@@ -229,6 +229,84 @@ namespace InsectGame.Tests
             Assert.AreEqual(CharacterPalette.Skin(3), spec.SkinTone);
             Assert.AreEqual(CharacterPalette.Hair(2), spec.HairTone);
         }
+
+        // ── 큰 패널 재렌더 판정 ──
+
+        /// <summary>
+        /// 생성 화면의 세부 조정(성별·머리·피부·표정)은 로드아웃도 각도도 안 바꾼다. 판정이 그 둘만 보던 때는
+        /// 외형을 바꿔도 <b>드래그하기 전까지 그림이 그대로</b>였다.
+        /// </summary>
+        [Test]
+        public void NeedsPanelRender_AppearanceDirtyAlone_Renders()
+        {
+            Assert.IsTrue(CharacterModelPreviewRenderer.NeedsPanelRender(42, 42, 200f, 200f, true));
+        }
+
+        [Test]
+        public void NeedsPanelRender_NothingChanged_Skips()
+        {
+            // 멈춰 있을 때 매 프레임 다시 찍지 않는다.
+            Assert.IsFalse(CharacterModelPreviewRenderer.NeedsPanelRender(42, 42, 200f, 200f, false));
+        }
+
+        [Test]
+        public void NeedsPanelRender_LoadoutOrAngle_Renders()
+        {
+            Assert.IsTrue(CharacterModelPreviewRenderer.NeedsPanelRender(43, 42, 200f, 200f, false));
+            Assert.IsTrue(CharacterModelPreviewRenderer.NeedsPanelRender(42, 42, 201f, 200f, false));
+            Assert.IsTrue(CharacterModelPreviewRenderer.NeedsPanelRender(42, 42, 200f, float.NaN, false),
+                "InvalidatePreview가 각도를 NaN으로 두면 다음 프레임에 반드시 찍혀야 한다");
+        }
+
+        /// <summary>
+        /// 생성 화면은 오버라이드를 OnGUI 패스마다 넘긴다 — 같은 값이면 dirty를 세우지 않아야
+        /// 멈춰 있을 때 매 프레임 재렌더하지 않는다.
+        /// </summary>
+        [Test]
+        public void OverrideChanged_SameSpec_IsFalse_DifferentSpec_IsTrue()
+        {
+            AppearanceSpec a = new AppearanceSpec { gender = 1, hairStyle = 2 };
+            AppearanceSpec same = a;
+            AppearanceSpec other = a; other.skinColor = 3;
+
+            Assert.IsFalse(CharacterModelPreviewRenderer.OverrideChanged(a, same));
+            Assert.IsTrue(CharacterModelPreviewRenderer.OverrideChanged(a, other));
+            Assert.IsTrue(CharacterModelPreviewRenderer.OverrideChanged(null, a), "PlayerPrefs → 편집 중 외형");
+            Assert.IsTrue(CharacterModelPreviewRenderer.OverrideChanged(a, null), "편집 중 외형 → PlayerPrefs");
+            Assert.IsFalse(CharacterModelPreviewRenderer.OverrideChanged(null, null));
+        }
+
+        // ── 카드 썸네일 조합 ──
+
+        /// <summary>
+        /// 상의 카드는 겉옷을 벗긴 채 구워야 한다. 겉옷이 비면 몸통·팔이 기본 자켓 색이라
+        /// 상의 14장이 전부 "파란 자켓"으로 구워졌다.
+        /// </summary>
+        [Test]
+        public void ThumbLoadout_Top_RemovesOuterwear()
+        {
+            OutfitLoadout lo = new OutfitLoadout();
+            CharacterModelPreviewRenderer.BuildThumbLoadout(lo, OutfitSlot.Top, "top_galaxy");
+
+            Assert.AreEqual("top_galaxy", lo.Get(OutfitSlot.Top));
+            Assert.AreEqual(CharacterModelPreviewRenderer.OuterNoneId, lo.Get(OutfitSlot.Outerwear));
+            Assert.IsNotNull(Array.Find(CharacterOutfitManager.BuildCatalog(),
+                i => i.itemId == CharacterModelPreviewRenderer.OuterNoneId), "outer_none이 카탈로그에서 빠졌다");
+        }
+
+        [Test]
+        public void ThumbLoadout_OtherSlots_AreSolo()
+        {
+            OutfitLoadout lo = new OutfitLoadout();
+            lo.Set(OutfitSlot.Hat, "leftover");
+            CharacterModelPreviewRenderer.BuildThumbLoadout(lo, OutfitSlot.Shoes, "shoe_rocket");
+
+            for (int i = 0; i < OutfitLoadout.SlotCount; i++)
+            {
+                OutfitSlot slot = (OutfitSlot)i;
+                Assert.AreEqual(slot == OutfitSlot.Shoes ? "shoe_rocket" : null, lo.Get(slot), slot.ToString());
+            }
+        }
     }
 }
 #endif

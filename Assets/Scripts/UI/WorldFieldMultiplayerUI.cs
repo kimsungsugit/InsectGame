@@ -38,7 +38,10 @@ namespace InsectGame.UI
         private string pendingBlockUid = string.Empty;
         private float blockConfirmUntil;
         private string toast = string.Empty;
-        private float toastUntil;
+        // 남은 표시 시간 — 가운데 무대에서 차례를 기다리거나 화면이 가려진 동안은 줄지 않는다.
+        private float toastRemaining;
+        private RegionManager regionManager;
+        private bool regionSearched;
         private Vector2 friendScroll;
         private readonly UIDirectScroll friendDirectScroll = new UIDirectScroll();
 
@@ -129,6 +132,7 @@ namespace InsectGame.UI
 
         private void Update()
         {
+            TickToast();
             nearestPlayer = null;
             if (manager == null || !manager.IsJoined || localPlayer == null) return;
 
@@ -255,7 +259,7 @@ namespace InsectGame.UI
         private void ShowToast(string message)
         {
             toast = message ?? string.Empty;
-            toastUntil = Time.unscaledTime + 3.5f;
+            toastRemaining = 3.5f;
         }
 
         private RemoteAvatar CreateRemoteAvatar(WorldPlayer player)
@@ -347,30 +351,93 @@ namespace InsectGame.UI
         {
             if (manager == null) return;
             InitStyles();
-            if (!manager.IsJoined)
+            // 다른 HUD와 같은 가상 캔버스(1920×1080 / 1080×1920)에 그린다 — 예전엔 이 화면만 픽셀 좌표라 스케일이 1이 아닌
+            // 화면에서 혼자 크기가 달랐고, 자리를 다른 HUD의 순수 배치와 맞춰 볼 수 없었다(겹침 전수 검사가 이 좌표를 읽는다).
+            UIScale.Begin();
+            try
             {
-                if (invites.Count > 0) DrawInvitePopup(invites[0]);
-                if (Time.unscaledTime < toastUntil) DrawToast();
-                return;
+                DrawScaled(HudFrame.Current);
             }
-            DrawFieldStatus();
-            DrawMessages();
-            if (nearestPlayer != null) DrawNearbyInteraction(nearestPlayer);
-            if (chatOpen)
+            finally
             {
-                // 대상은 nearestPlayer가 아니라 고정 uid로 해석한다. 대상이 사라지면
-                // 입력창만 감추는 게 아니라 모달을 닫아야 입력 잠금이 풀린다.
-                WorldPlayer chatTarget = ResolveChatTarget();
-                if (chatTarget != null) DrawChatComposer(chatTarget);
-                else CloseModal();
+                UIScale.End();
             }
-            if (friendsOpen) DrawFriendInvitePanel();
-            if (invites.Count > 0) DrawInvitePopup(invites[0]);
-            if (Time.unscaledTime < toastUntil) DrawToast();
         }
 
-        // 세이프 에어리어를 반영한 가용폭 클램프 + 중앙 정렬 X (가로 비대칭 노치 보정).
-        // DrawFieldStatus가 이미 쓰던 방식을 중앙 정렬 패널 전반에 통일한다.
+        private void DrawScaled(HudFrame f)
+        {
+            // 자기 창(대화 입력·친구 초대)이 열려 있으면 그 창만 그린다 — 필드 HUD는 다른 모달 때처럼 물러난다.
+            if (IsOpen)
+            {
+                if (chatOpen)
+                {
+                    // 대상은 nearestPlayer가 아니라 고정 uid로 해석한다. 대상이 사라지면
+                    // 입력창만 감추는 게 아니라 모달을 닫아야 입력 잠금이 풀린다.
+                    WorldPlayer chatTarget = ResolveChatTarget();
+                    if (chatTarget != null) DrawChatComposer(f, chatTarget);
+                    else CloseModal();
+                }
+                if (friendsOpen) DrawFriendInvitePanel(f);
+                // 자기 창에서 한 일(초대 보냄·실패)의 안내는 창 위에서 바로 보인다 — 창과 겹치지 않는 자리(ModalToastRect).
+                if (toastRemaining > 0f && IsOpen) DrawToastAt(ModalToastRect(f, chatOpen));
+                return;
+            }
+            if (!FieldVisible()) return;
+
+            if (manager.IsJoined)
+            {
+                DrawFieldStatus(f);
+                DrawMessages(f);
+                // 근처 탐험가 패널은 가운데 행동 자리(대화 버튼과 같은 자리)에 선다 — 대화 버튼이 섰거나 서 있는 카드와 겹치면 비켜선다.
+                if (nearestPlayer != null && !HudPresence.IsShowing(HudPresenceItem.Talk) && !HudStage.OccupiedOver(NearbyRect(f)))
+                    DrawNearbyInteraction(f, nearestPlayer);
+            }
+            // 초대·안내는 가운데 무대(HudStage)의 차례 항목이다 — 앞 차례가 서 있으면 기다린다(안내는 시간도 멈춘다).
+            if (invites.Count > 0 && HudStage.Request(HudStageItem.NetInvite)) DrawInvitePopup(f, invites[0]);
+            if (toastRemaining > 0f && HudStage.Request(HudStageItem.NetToast)) DrawToast(f);
+        }
+
+        /// <summary>
+        /// 필드 HUD를 그릴 수 있는가 — 다른 창·조작 잠금(포획·전투)·「챔피언의 꿈」·나의 섬에서는 물러난다.
+        /// 예전엔 아무 조건 없이 그려 상점·도감 위에도, 섬 화면의 버튼 줄 위에도 이 패널이 떴다.
+        /// </summary>
+        private bool FieldVisible()
+        {
+            if (DreamPrologueState.Active) return false;
+            if (ModalUIRegistry.IsAnyOpen()) return false;
+            if (localPlayer != null && localPlayer.IsFrozen) return false;
+            return !OnIsland;
+        }
+
+        private bool OnIsland
+        {
+            get
+            {
+                if (regionManager == null && !regionSearched)
+                {
+                    regionSearched = true;   // 한 번만 찾는다(없는 씬에서 매 프레임 훑지 않게)
+                    regionManager = FindFirstObjectByType<RegionManager>();
+                }
+                InsectGame.Data.SubAreaData area = regionManager != null ? regionManager.CurrentSubArea : null;
+                return area != null && area.detached;
+            }
+        }
+
+        // 서 있는 동안만 줄어든다 — 무대 차례를 기다리거나 화면이 가려진 동안은 멈춘다(못 보고 지나가지 않게).
+        private void TickToast()
+        {
+            if (toastRemaining <= 0f) return;
+            if (IsOpen)
+            {
+                // 자기 창(대화 입력·친구 초대)이 열려 있으면 그 창 곁에 바로 띄운다 — 무대 차례와 무관하다.
+                toastRemaining -= Time.unscaledDeltaTime;
+                return;
+            }
+            if (!FieldVisible()) return;
+            if (!HudStage.Request(HudStageItem.NetToast)) return;
+            toastRemaining -= Time.unscaledDeltaTime;
+        }
+
         /// <summary>
         /// 이 패널 위의 탭이 월드 클릭-이동으로 새지 않게 등록한다.
         ///
@@ -379,34 +446,98 @@ namespace InsectGame.UI
         /// <c>pointerOverUI</c>도 false다. 등록이 없으면 버튼 아래 월드 지점이 클릭 목표로 잡혀
         /// "3:3 대전"을 누른 순간 캐릭터가 상대 뒤로 걸어간다. 같은 결함을 `QuickAccessBarUI`가
         /// P0으로 겪었고 `CaptureInputController`는 처음부터 등록하고 있었다.
-        ///
-        /// <b>좌표 변환에 주의.</b> 이 화면은 <c>UIScale.Begin()</c>을 쓰지 않는 **픽셀 좌표계**
-        /// (<c>UISafeLayout.Px</c>)인데 <c>RegisterBlockingRect</c>는 **가상 좌표**를 받는다
-        /// (<c>IsScreenPointOverHud</c>가 화면좌표를 <c>UIScale.Scale</c>로 나눠 비교한다).
-        /// 그대로 넘기면 스케일이 1이 아닌 기기에서 엉뚱한 영역이 막힌다.
+        /// 이 화면은 가상 캔버스(<c>UIScale.Begin()</c>)에 그리므로 Rect를 그대로 넘긴다.
         /// </summary>
-        private static void BlockFieldClicks(float x, float y, float w, float h)
+        private static void BlockFieldClicks(Rect virtualRect)
         {
-            float s = UIScale.Scale;
-            if (s <= 0f) return;
-            FieldHudInput.RegisterBlockingRect(new Rect(x / s, y / s, w / s, h / s));
+            FieldHudInput.RegisterBlockingRect(virtualRect);
         }
 
-        private static float SafeClampW(float desired) =>
-            Mathf.Min(desired, Screen.width - SafeArea.Left - SafeArea.Right - 32f);
+        // ── 자리(순수 계산 — 겹침 전수 검사가 읽는다) ──
 
-        private static float SafeCenterX(float w) =>
-            SafeArea.Left + (Screen.width - SafeArea.Left - SafeArea.Right - w) * 0.5f;
+        public const float StatusWidth = 360f;
+        public const float StatusHeight = 122f;
+        public const float MessagesWidth = 470f;
+        public const float MessagesMaxHeight = 190f;
+        public const float NearbyHeight = 132f;
 
-        private void DrawFieldStatus()
+        /// <summary>
+        /// 필드 상태 판(필드 이름·인원·초대 버튼). <b>데스크톱</b>·<b>세로 모바일</b>: 오른쪽 열의 시각 알림 자리 아래.
+        /// <b>가로 모바일</b>: 우상단 단축 바 왼쪽. 예전엔 화면 오른쪽 위(ContentTop)라 포획 아이템 패널·시각 칩·단축 바를 덮었다.
+        /// </summary>
+        public static Rect StatusRect(HudFrame f)
         {
-            WorldInstance world = manager.CurrentWorld;
-            float w = Mathf.Min(360f, Screen.width - SafeArea.Left - SafeArea.Right - 32f);
-            float x = Screen.width - SafeArea.Right - w - 18f;
-            float y = UISafeLayout.Px.ContentTop;
-            BlockFieldClicks(x, y, w, 122f);   // 탭이 월드 클릭-이동으로 새지 않게
-            GUI.Box(new Rect(x, y, w, 122f), "", panelStyle);
-            GUI.Label(new Rect(x + 12f, y + 8f, w - 24f, 36f), cachedWorldTitle, titleStyle);
+            float s = UITheme.Space.S;
+            float w = Mathf.Min(StatusWidth, f.ContentWidth);
+            Rect bar = QuickAccessBarUI.ShortcutBarRectFor(f);
+            if (f.Mobile && !f.Portrait)
+                return new Rect(bar.x - s - w, f.ContentTop, w, StatusHeight);
+            Rect notice = WorldClockRules.NoticeBelow(f, WorldClockRules.FieldChip(f));
+            float x = f.Mobile ? bar.xMax - w : f.Width - f.SafeRight - 20f - w;
+            return new Rect(x, notice.yMax + s, w, StatusHeight);
+        }
+
+        /// <summary>
+        /// 대화 기록 판(최대 크기 — 줄 수가 적으면 아래가 짧아진다). <b>데스크톱</b>: 왼쪽 상태 판 아래.
+        /// <b>가로 모바일</b>: 필드 상태 판 바로 아래(오른쪽 맞춤) — 왼쪽은 미니맵·퀘스트 칩 아래가 곧 조이스틱 자리다.
+        /// <b>세로 모바일</b>: 가운데 무대 왼쪽 위 — 무대에 카드가 서면 비켜선다.
+        /// 예전엔 화면 아래(BottomY−150)라 잡기 버튼 줄·조이스틱 자리·퀘스트 칩과 겹쳤다.
+        /// </summary>
+        public static Rect MessagesRect(HudFrame f)
+        {
+            float s = UITheme.Space.S;
+            float w = Mathf.Min(MessagesWidth, f.ContentWidth);
+            if (f.Mobile && !f.Portrait)
+            {
+                Rect status = StatusRect(f);
+                return new Rect(status.xMax - w, status.yMax + s, w, MessagesMaxHeight);
+            }
+            float x = f.SafeLeft + 16f;
+            float y = f.Mobile ? HudStage.Area(f).y : PlayerStatusHUD.PanelRect(f).yMax + s;
+            return new Rect(x, y, w, MessagesMaxHeight);
+        }
+
+        /// <summary>근처 탐험가 패널 — 가운데 대화 버튼 자리(<see cref="WorldInteractionController.TalkRect"/>)와 같은 폭·윗변.</summary>
+        public static Rect NearbyRect(HudFrame f)
+        {
+            Rect talk = WorldInteractionController.TalkRect(f);
+            float y = Mathf.Min(talk.y, f.ContentBottom - NearbyHeight);
+            return new Rect(talk.x, y, talk.width, NearbyHeight);
+        }
+
+        /// <summary>필드 초대 — 가운데 무대의 차례 항목.</summary>
+        public static Rect InviteRect(HudFrame f) => HudStage.Place(f, HudStageItem.NetInvite, 520f, 190f);
+
+        /// <summary>필드 멀티 안내 — 가운데 무대의 차례 항목.</summary>
+        public static Rect ToastRect(HudFrame f) => HudStage.Place(f, HudStageItem.NetToast, 560f, 58f);
+
+        public const float ComposerHeight = 124f;
+        public const float FriendPanelHeight = 520f;
+
+        /// <summary>
+        /// 자기 창이 열려 있을 때의 안내 자리 — 창과 겹치지 않게. 대화 입력(가운데)은 그 바로 위, 친구 초대(위쪽)는 그 바로 아래.
+        /// 예전엔 화면 위 가운데(ContentTop)라 친구 초대 창의 제목 줄을 덮었다.
+        /// </summary>
+        public static Rect ModalToastRect(HudFrame f, bool chat)
+        {
+            const float h = 58f;
+            float w = Mathf.Min(560f, f.ContentWidth);
+            float x = f.ContentLeft + (f.ContentWidth - w) * 0.5f;
+            float y = chat
+                ? Mathf.Max(f.ContentTop, f.CenteredY(ComposerHeight) - UITheme.Space.S - h)
+                : Mathf.Min(f.ContentTop + f.ClampHeight(FriendPanelHeight) + UITheme.Space.S, f.ContentBottom - h);
+            return new Rect(x, y, w, h);
+        }
+
+        // ── 그리기 ──
+
+        private void DrawFieldStatus(HudFrame f)
+        {
+            Rect r = StatusRect(f);
+            float x = r.x, y = r.y, w = r.width;
+            BlockFieldClicks(r);   // 탭이 월드 클릭-이동으로 새지 않게
+            GUI.Box(r, "", panelStyle);
+            UIHelper.LabelFit(new Rect(x + 12f, y + 8f, w - 24f, 36f), cachedWorldTitle, titleStyle);
             if (GUI.Button(new Rect(x + 14f, y + 54f, w - 28f, 56f), "친구를 이 필드로 초대", buttonStyle))
             {
                 bool opening = !friendsOpen;
@@ -416,15 +547,14 @@ namespace InsectGame.UI
             }
         }
 
-        private void DrawNearbyInteraction(WorldPlayer player)
+        private void DrawNearbyInteraction(HudFrame f, WorldPlayer player)
         {
-            float w = SafeClampW(620f);
-            float h = 132f;
-            float x = SafeCenterX(w);
-            float y = UISafeLayout.Px.BottomY(h);
-            BlockFieldClicks(x, y, w, h);   // 탭이 월드 클릭-이동으로 새지 않게
-            GUI.Box(new Rect(x, y, w, h), "", panelStyle);
-            GUI.Label(new Rect(x + 18f, y + 10f, w - 36f, 30f), cachedNearbyLabel, titleStyle);
+            Rect r = NearbyRect(f);
+            float x = r.x, y = r.y, w = r.width;
+            BlockFieldClicks(r);   // 탭이 월드 클릭-이동으로 새지 않게
+            HudPresence.Mark(HudPresenceItem.Nearby);   // 코치 배너가 겹치면 비켜 준다
+            GUI.Box(r, "", panelStyle);
+            UIHelper.LabelFit(new Rect(x + 18f, y + 8f, w - 36f, 36f), cachedNearbyLabel, titleStyle);
 
             float gap = 8f;
             float btnW = (w - 44f - gap * 2f) / 3f;
@@ -468,17 +598,17 @@ namespace InsectGame.UI
             }
         }
 
-        private void DrawChatComposer(WorldPlayer player)
+        private void DrawChatComposer(HudFrame f, WorldPlayer player)
         {
-            float w = SafeClampW(620f);
-            float h = 120f;
-            float x = SafeCenterX(w);
-            float y = UISafeLayout.Px.CenteredY(h);
-            BlockFieldClicks(x, y, w, h);   // 탭이 월드 클릭-이동으로 새지 않게
+            float w = Mathf.Min(620f, f.ContentWidth);
+            float h = ComposerHeight;
+            float x = f.ContentLeft + (f.ContentWidth - w) * 0.5f;
+            float y = f.CenteredY(h);
+            BlockFieldClicks(new Rect(x, y, w, h));   // 탭이 월드 클릭-이동으로 새지 않게
             GUI.Box(new Rect(x, y, w, h), "", panelStyle);
-            UIHelper.LabelFit(new Rect(x + 14f, y + 8f, w - 28f, 27f), player.displayName + "에게 말하기", titleStyle);
-            chatInput = GUI.TextField(new Rect(x + 14f, y + 42f, w - 150f, 55f), chatInput, 80, fieldStyle);
-            if (GUI.Button(new Rect(x + w - 126f, y + 42f, 112f, 55f), "보내기", buttonStyle))
+            UIHelper.LabelFit(new Rect(x + 14f, y + 6f, w - 28f, 34f), player.displayName + "에게 말하기", titleStyle);
+            chatInput = GUI.TextField(new Rect(x + 14f, y + 46f, w - 150f, 60f), chatInput, 80, fieldStyle);
+            if (GUI.Button(new Rect(x + w - 126f, y + 46f, 112f, 60f), "보내기", buttonStyle))
             {
                 // player는 ResolveChatTarget이 chatTargetUid로 해석한 고정 대상이다.
                 manager.SendPrivateChat(player.uid, chatInput);
@@ -486,29 +616,33 @@ namespace InsectGame.UI
             }
         }
 
-        private void DrawMessages()
+        private void DrawMessages(HudFrame f)
         {
             if (messages.Count == 0) return;
-            float w = Mathf.Min(470f, Screen.width * 0.46f);
-            float h = Mathf.Min(190f, messages.Count * 34f + 20f);
-            float x = SafeArea.Left + 16f;
-            float y = UISafeLayout.Px.BottomY(h) - 150f;   // 하단 근접 패널 위
-            GUI.Box(new Rect(x, y, w, h), "", panelStyle);
+            Rect slot = MessagesRect(f);
+            // 상태 판을 펼치면 겹치는 기록은 비켜선다(가로 모바일 — 미니맵 아래 자리를 펼친 판이 덮는다).
+            if (MinimapUI.LeftStackOccluded && slot.Overlaps(PlayerStatusHUD.PanelRect(f))) return;
+            // 세로 모바일에서는 무대 안이라 카드가 서면 비켜선다.
+            float h = Mathf.Min(MessagesMaxHeight, messages.Count * 34f + 20f);
+            Rect r = new Rect(slot.x, slot.y, slot.width, h);
+            if (f.Mobile && f.Portrait && HudStage.OccupiedOver(r)) return;
+            BlockFieldClicks(r);   // 불투명 판 — 위의 탭이 월드 클릭-이동으로 새지 않게
+            GUI.Box(r, "", panelStyle);
             int first = Mathf.Max(0, messageLines.Count - 5);
             for (int i = first; i < messageLines.Count; i++)
             {
-                GUI.Label(new Rect(x + 12f, y + 8f + (i - first) * 34f, w - 24f, 30f),
+                UIHelper.LabelFit(new Rect(r.x + 12f, r.y + 8f + (i - first) * 34f, r.width - 24f, 32f),
                     messageLines[i], smallStyle);
             }
         }
 
-        private void DrawFriendInvitePanel()
+        private void DrawFriendInvitePanel(HudFrame f)
         {
-            float w = SafeClampW(520f);
-            float h = UISafeLayout.Px.ClampHeight(520f);
-            float x = SafeCenterX(w);
-            float y = UISafeLayout.Px.ContentTop;
-            BlockFieldClicks(x, y, w, h);   // 탭이 월드 클릭-이동으로 새지 않게
+            float w = Mathf.Min(520f, f.ContentWidth);
+            float h = f.ClampHeight(FriendPanelHeight);
+            float x = f.ContentLeft + (f.ContentWidth - w) * 0.5f;
+            float y = f.ContentTop;
+            BlockFieldClicks(new Rect(x, y, w, h));   // 탭이 월드 클릭-이동으로 새지 않게
             GUI.Box(new Rect(x, y, w, h), "", panelStyle);
             GUI.Label(new Rect(x + 16f, y + 12f, w - 100f, 36f), "친구 필드 초대", titleStyle);
             if (GUI.Button(new Rect(x + w - 72f, y + 8f, 58f, 56f), "X", dangerStyle)) CloseModal();
@@ -516,22 +650,17 @@ namespace InsectGame.UI
             PvpProfileSnapshot[] friends = SocialPvpManager.Instance != null
                 ? SocialPvpManager.Instance.State.friends
                 : Array.Empty<PvpProfileSnapshot>();
-            Rect view = new Rect(x + 16f, y + 72f, w - 32f, h - 88f);
+            Rect view = new Rect(x + 16f, y + 72f, w - 32f, Mathf.Max(1f, h - 88f));
             float contentH = Mathf.Max(view.height, friends.Length * 76f);
-            HandleScreenSpaceDirectScroll(
-                ref friendScroll,
-                friendDirectScroll,
-                view,
-                contentH,
-                38f);
+            friendDirectScroll.Handle(ref friendScroll, view, contentH, 38f);
             friendScroll = GUI.BeginScrollView(view, friendScroll, new Rect(0f, 0f, view.width - 18f, contentH));
             if (friends.Length == 0)
-                GUI.Label(new Rect(8f, 20f, view.width - 40f, 60f), "친구 목록이 비어 있습니다.\n소셜 메뉴에서 친구를 먼저 추가하세요.", labelStyle);
+                UIHelper.LabelFit(new Rect(8f, 20f, view.width - 40f, 64f), "친구 목록이 비어 있습니다.\n소셜 메뉴에서 친구를 먼저 추가하세요.", labelStyle);
             for (int i = 0; i < friends.Length; i++)
             {
                 PvpProfileSnapshot friend = friends[i];
                 float rowY = i * 76f;
-                GUI.Label(new Rect(8f, rowY + 8f, view.width - 176f, 56f),
+                UIHelper.LabelFit(new Rect(8f, rowY + 8f, view.width - 176f, 56f),
                     $"{friend.displayName}  Lv.{friend.level}", labelStyle);
                 if (GUI.Button(new Rect(view.width - 160f, rowY + 7f, 128f, 56f), "초대", buttonStyle))
                     manager.InviteFriend(friend.uid);
@@ -545,53 +674,34 @@ namespace InsectGame.UI
             friendDirectScroll.Reset();
         }
 
-        private static void HandleScreenSpaceDirectScroll(
-            ref Vector2 scrollPosition,
-            UIDirectScroll directScroll,
-            Rect viewport,
-            float contentHeight,
-            float wheelStep)
+        private void DrawInvitePopup(HudFrame f, WorldInviteSnapshot invite)
         {
-            float scale = Mathf.Max(0.3f, UIScale.Scale);
-            Vector2 virtualScroll = scrollPosition / scale;
-            Rect virtualViewport = new Rect(
-                viewport.x / scale,
-                viewport.y / scale,
-                viewport.width / scale,
-                viewport.height / scale);
-            directScroll.Handle(
-                ref virtualScroll,
-                virtualViewport,
-                contentHeight / scale,
-                wheelStep / scale);
-            scrollPosition = virtualScroll * scale;
-        }
-
-        private void DrawInvitePopup(WorldInviteSnapshot invite)
-        {
-            float w = SafeClampW(520f);
-            float h = 190f;
-            float x = SafeCenterX(w);
-            float y = UISafeLayout.Px.ContentTop + 100f;   // 상단 초대/친구 패널 아래
-            BlockFieldClicks(x, y, w, h);   // 탭이 월드 클릭-이동으로 새지 않게
-            GUI.Box(new Rect(x, y, w, h), "", panelStyle);
-            GUI.Label(new Rect(x + 16f, y + 12f, w - 32f, 32f), "필드 초대", titleStyle);
-            GUI.Label(new Rect(x + 16f, y + 50f, w - 32f, 40f),
+            Rect r = InviteRect(f);
+            HudStage.Request(HudStageItem.NetInvite, r);
+            float x = r.x, y = r.y, w = r.width;
+            BlockFieldClicks(r);   // 탭이 월드 클릭-이동으로 새지 않게
+            GUI.Box(r, "", panelStyle);
+            GUI.Label(new Rect(x + 16f, y + 10f, w - 32f, 36f), "필드 초대", titleStyle);
+            UIHelper.LabelFit(new Rect(x + 16f, y + 50f, w - 32f, 54f),
                 $"{invite.displayName}님이 {invite.worldName}에 초대했습니다.", labelStyle);
             float btnW = (w - 48f) * 0.5f;
-            if (GUI.Button(new Rect(x + 16f, y + 112f, btnW, 58f), "함께 입장", buttonStyle))
+            if (GUI.Button(new Rect(x + 16f, y + 116f, btnW, 58f), "함께 입장", buttonStyle))
                 manager.RespondInvite(invite.inviteId, true);
-            if (GUI.Button(new Rect(x + 24f + btnW, y + 112f, btnW, 58f), "거절", dangerStyle))
+            if (GUI.Button(new Rect(x + 32f + btnW, y + 116f, btnW, 58f), "거절", dangerStyle))
                 manager.RespondInvite(invite.inviteId, false);
         }
 
-        private void DrawToast()
+        private void DrawToast(HudFrame f)
         {
-            float w = SafeClampW(560f);
-            float x = SafeCenterX(w);
-            float y = UISafeLayout.Px.ContentTop;
-            GUI.Box(new Rect(x, y, w, 58f), "", panelStyle);
-            GUI.Label(new Rect(x + 12f, y + 8f, w - 24f, 42f), toast, labelStyle);
+            Rect r = ToastRect(f);
+            HudStage.Request(HudStageItem.NetToast, r);
+            DrawToastAt(r);
+        }
+
+        private void DrawToastAt(Rect r)
+        {
+            GUI.Box(r, "", panelStyle);
+            UIHelper.LabelFit(new Rect(r.x + 12f, r.y + 6f, r.width - 24f, r.height - 12f), toast, labelStyle);
         }
 
         private void InitStyles()
@@ -602,25 +712,26 @@ namespace InsectGame.UI
             panelStyle.normal.background = UIHelper.GetCachedTex(new Color(0.04f, 0.08f, 0.12f, 0.94f));
             panelStyle.padding = new RectOffset(8, 8, 8, 8);
 
+            // 글자 크기는 가상 캔버스 기준이다(다른 HUD와 같은 단위 — 1920×1080에서 예전 픽셀 크기보다 조금 크다).
             titleStyle = new GUIStyle(GUI.skin.label)
             {
-                fontSize = 20, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft
+                fontSize = 24, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft
             };
             titleStyle.normal.textColor = new Color(0.48f, 1f, 0.62f, 1f);
 
             labelStyle = new GUIStyle(GUI.skin.label)
             {
-                fontSize = 17, alignment = TextAnchor.MiddleLeft, wordWrap = true
+                fontSize = 22, alignment = TextAnchor.MiddleLeft, wordWrap = true
             };
             labelStyle.normal.textColor = Color.white;
 
-            smallStyle = new GUIStyle(labelStyle) { fontSize = 15 };
+            smallStyle = new GUIStyle(labelStyle) { fontSize = 20 };
             buttonStyle = MakeButtonStyle(new Color(0.12f, 0.46f, 0.3f, 1f));
             dangerStyle = MakeButtonStyle(new Color(0.55f, 0.15f, 0.18f, 1f));
             disabledStyle = MakeButtonStyle(new Color(0.25f, 0.27f, 0.3f, 1f));
             fieldStyle = new GUIStyle(GUI.skin.textField)
             {
-                fontSize = 19, padding = new RectOffset(12, 12, 8, 8)
+                fontSize = 24, padding = new RectOffset(12, 12, 8, 8)
             };
             fieldStyle.normal.textColor = Color.white;
             fieldStyle.normal.background = UIHelper.GetCachedTex(new Color(0.08f, 0.13f, 0.18f, 1f));
@@ -632,7 +743,7 @@ namespace InsectGame.UI
         {
             var style = new GUIStyle(GUI.skin.button)
             {
-                fontSize = 17, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter
+                fontSize = 22, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter
             };
             // Color * float는 알파까지 곱한다 — 그대로 쓰면 눌림 상태(0.82)가 반투명해진다.
             // 명도만 조절하고 알파는 보존한다.

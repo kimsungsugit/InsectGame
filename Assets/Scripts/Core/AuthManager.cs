@@ -877,6 +877,23 @@ namespace InsectGame.Core
 
         private IEnumerator DeleteAccountCoroutine()
         {
+            // 0) 공개해 둔 섬을 내린다 — `islands/{uid}`는 서버 전용 컬렉션이라 클라이언트가 직접 못 지우고,
+            //    Auth 계정이 사라진 뒤엔 토큰이 없어 부를 수도 없다. 안 내리면 탈퇴한 사람의 섬(닉네임 포함)이
+            //    섬 코드로 계속 열린다. 실패해도 삭제는 계속한다(서버 미배포·오프라인이면 올린 섬도 없다).
+            if (FirebaseConfig.IsSocialPvpConfigured)
+            {
+                using (UnityWebRequest island = new UnityWebRequest(FirebaseConfig.SocialPvpApiUrl, "POST"))
+                {
+                    island.uploadHandler = new UploadHandlerRaw(
+                        System.Text.Encoding.UTF8.GetBytes("{\"action\":\"deleteIsland\"}"));
+                    island.downloadHandler = new DownloadHandlerBuffer();
+                    island.SetRequestHeader("Content-Type", "application/json");
+                    island.SetRequestHeader("Authorization", "Bearer " + IdToken);
+                    island.timeout = 15;
+                    yield return island.SendWebRequest();
+                }
+            }
+
             // 1) Firestore 사용자 문서 삭제 (토큰 유효한 동안 먼저).
             string docUrl = FirebaseConfig.FirestoreBaseUrl + "/users/" + UserId;
             using (UnityWebRequest del = UnityWebRequest.Delete(docUrl))
@@ -938,7 +955,7 @@ namespace InsectGame.Core
                 GameConstants.SaveFiles.PlayerProgress, GameConstants.SaveFiles.PlayerInsects,
                 GameConstants.SaveFiles.PlayerCandies, GameConstants.SaveFiles.PlayerCurrency,
                 GameConstants.SaveFiles.PlayerItems, GameConstants.SaveFiles.BattleTeam,
-                GameConstants.SaveFiles.DexSave
+                GameConstants.SaveFiles.DexSave, GameConstants.SaveFiles.Island
             };
             foreach (string f in files)
             {

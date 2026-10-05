@@ -1,4 +1,4 @@
-using InsectGame.Spawning;
+﻿using InsectGame.Spawning;
 using UnityEngine;
 using UnityEngine.EventSystems;
 
@@ -72,6 +72,9 @@ namespace InsectGame.Core
         private Transform cachedArmL, cachedArmR, cachedLegPivotL, cachedLegPivotR, cachedBody, cachedHeadPivot;
         // 도구(NetHandle/NetRing)는 오른팔과 동기 회전 — 손과 분리되어 공중에 떠 있는 인상 차단.
         private Transform cachedNetHandle, cachedNetRing;
+        private Transform cachedHandL, cachedHandR;
+        private Vector3 lastHandlePos, lastRingPos;
+        private Quaternion lastHandleRot, lastRingRot;
         private Vector3 netHandleBasePos, netRingBasePos;
         private Quaternion netHandleBaseRot, netRingBaseRot;
         private bool toolBaseCached;
@@ -83,6 +86,34 @@ namespace InsectGame.Core
         private const float CatchSwingDuration = 0.42f;
         private const float CatchSwingMaxDeg = 72f;
         private float stuckTimer; // 끼임(embedded) 자동탈출용 — 이동 시도 중 콜라이더 박힘 지속시간
+
+        // ── 접지 ──
+        // 매 프레임 발밑 높이(GroundHeight — 밟을 수 있는 콜라이더 윗면과 둔덕 윗면 중 높은 쪽)를 따라간다.
+        // 옛 접지 Max(pos.y, hit.y)는 **올라가기만 하고 내려오지 않았다** — 레이가 2m라 필드에선 늘 접지로 판정돼
+        // 중력도 안 걸려서, 물가 바위(Pond_ShoreRock_*, 콜라이더 꼭대기 최대 0.72m)·개구리 바위(0.85m)처럼 몸통 검사
+        // (IsBlockedPosition, 발 위 1.0~1.8m)에 안 걸리는 낮고 둥근 콜라이더를 타 넘으면 그 높이에 뜬 채 남았다.
+        // 텔레포트의 "+0.5 여유"(서브에리어 입구 y 0.5, 이탈 지면 스냅 +0.5)도 같은 이유로 그대로 떠 있었다.
+        // 둔덕(사구·재 더미 …)은 콜라이더가 없어 FieldGround가 좌표로 답한다.
+        //
+        // 이 컴포넌트가 마지막으로 둔 자리 — 다르면 누가 옮긴 것(텔레포트)이라 보간 없이 곧장 발밑에 앉힌다.
+        private Vector3 lastOwnPosition;
+        private bool hasOwnPosition;
+        private bool snapToGround = true;   // 첫 프레임·텔레포트·F9 복구 직후
+
+        /// <summary>
+        /// 한 걸음에 올라설 수 있는 높이(m) — 접지 레이를 발 위 이만큼에서 쏜다(옛 값 그대로). 이보다 높은 콜라이더는
+        /// 레이가 그 안에서 출발해 못 보고 지나친다. 곤충 스폰(<c>InsectSpawner</c>)도 같은 높이까지만 밟는다.
+        /// </summary>
+        internal const float StepHeight = 0.5f;
+
+        /// <summary>
+        /// 발밑 높이를 따라가는 속도(m/s). 재 더미·이끼 둔덕은 구 중심이 바닥 위라 가장자리에 0.1~0.33m 턱이 있고, 바위
+        /// 가장자리·상자 콜라이더도 턱이 진다 — 그대로 따라가면 한 프레임에 몸과 카메라 시선(<c>CameraFollower</c>는 위치만
+        /// 보간하고 LookAt은 즉시다)이 튄다. 6m/s면 턱 0.33m는 4프레임(60fps), 한 걸음 0.5m는 5프레임에 나눠 넘고,
+        /// 사구·언덕 경사는 가장 가파른 곳(사구 짧은 축 가장자리, 기울기 약 0.25)을 의상 배율 2배 최고 속도 16m/s로
+        /// 넘어도 초당 4m 남짓이라 지연 없이 따라간다. 더 느리면 재 더미처럼 가파른 둔덕에서 발이 잠기는 시간이 길어진다.
+        /// </summary>
+        internal const float GroundFollowSpeed = 6f;
 
         public bool IsFrozen => frozen;
         public PlayerStartPose MainWorldSafePose => mainWorldSafePose;
@@ -141,7 +172,7 @@ namespace InsectGame.Core
         public void InvalidateVisualCache()
         {
             cachedArmL = cachedArmR = cachedLegPivotL = cachedLegPivotR = cachedBody = cachedHeadPivot = null;
-            cachedNetHandle = cachedNetRing = null;
+            cachedNetHandle = cachedNetRing = cachedHandL = cachedHandR = null;
             toolBaseCached = false;
             toolLookupDone = false;
             bodyBaseY = float.NaN;
@@ -236,6 +267,24 @@ namespace InsectGame.Core
                 {
                     return; // 모달 닫음 — 이번 프레임 이동 처리 스킵
                 }
+            }
+
+            // A modal blocks every movement source, including a destination selected before it opened.
+            if (InsectGame.UI.ModalUIRegistry.IsAnyOpen())
+            {
+                movingToClick = false;
+                EndAutoRun();
+                joystickActive = false;
+                joystickInput = Vector2.zero;
+                guiClickRequest = false;
+                guiKeyW = guiKeyA = guiKeyS = guiKeyD = false;
+                guiKeyUp = guiKeyDown = guiKeyLeft = guiKeyRight = false;
+                walkAnimTimer = footstepTimer = 0f;
+                isWalking = false;
+                if (catchSwingTimer > 0f) catchSwingTimer -= Time.unscaledDeltaTime;
+                if (blockedMsgTimer > 0f) blockedMsgTimer -= Time.unscaledDeltaTime;
+                AnimateWalk(false);
+                return;
             }
 
             // OnGUI KeyDown 래치(guiKey*)는 KeyUp 이벤트를 놓치면 켜진 채 stuck된다 — 에디터 Game뷰가
@@ -366,15 +415,25 @@ namespace InsectGame.Core
             float speedMul = Mathf.Clamp(outfitBonus != null ? outfitBonus.GetMoveSpeedMultiplier() : 1f, 0.5f, 2f);
             Vector3 move = direction * moveSpeed * speedMul * Time.deltaTime;
 
+            // 접지 — 이번 프레임 발밑 높이를 따라간다(오르막·내리막 모두). 누가 옮겼다면(텔레포트) 곧장 앉힌다.
+            Vector3 current = transform.position;
+            if (!hasOwnPosition || current != lastOwnPosition) snapToGround = true;
+
+            // 트리거는 땅이 아니다 — 프로젝트 설정이 Queries Hit Triggers=1이라 명시하지 않으면 NPC 몸통·아이템 줍기 구
+            // 같은 트리거 윗면에 올라선다(옛 Max 접지에선 그 높이에 붙어 남았다).
             isGrounded = Physics.Raycast(
-                transform.position + Vector3.up * 0.5f,
-                Vector3.down, out RaycastHit hit, groundCheckDistance);
+                current + Vector3.up * StepHeight,
+                Vector3.down, out RaycastHit hit, groundCheckDistance,
+                Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore);
 
             if (isGrounded)
             {
                 verticalVelocity = 0f;
-                Vector3 pos = transform.position;
-                pos.y = Mathf.Max(pos.y, hit.point.y);
+                bool inSubArea = regionManager != null && regionManager.CurrentSubArea != null;
+                float groundY = GroundHeight(hit.point.y, current.x, current.z, inSubArea);
+                Vector3 pos = current;
+                pos.y = snapToGround ? groundY : FollowGround(current.y, groundY, Time.deltaTime);
+                snapToGround = false;
                 transform.position = pos;
             }
             else
@@ -414,6 +473,8 @@ namespace InsectGame.Core
             }
 
             transform.position += move;
+            lastOwnPosition = transform.position;
+            hasOwnPosition = true;
 
             // 걷기 애니메이션
             bool walking = direction.sqrMagnitude > 0.01f;
@@ -538,21 +599,43 @@ namespace InsectGame.Core
                 cachedNetHandle = transform.Find("NetHandle");
                 cachedNetRing = transform.Find("NetRing");
             }
-            // 잡기 스윙 중엔 base 재캐싱 금지 — 안 그러면 스윙된 회전이 base로 누적돼 도구가 드리프트.
-            if (!walking && catchSwingTimer <= 0f && cachedNetHandle != null && cachedNetRing != null)
+            if (cachedHandL == null) cachedHandL = transform.Find("HandL");
+            if (cachedHandR == null) cachedHandR = transform.Find("HandR");
+            if (cachedHandL != null && cachedArmL != null)
             {
-                netHandleBaseRot = cachedNetHandle.localRotation;
-                netRingBaseRot = cachedNetRing.localRotation;
-                toolBaseCached = true;
+                cachedHandL.localPosition = PlayerVisualBuilder.RotateAttachment(
+                    new Vector3(-0.29f, 0.52f, 0f), cachedArmL.localPosition, swingDeg + idleArm);
+                cachedHandL.localRotation = cachedArmL.localRotation;
             }
-            if (toolBaseCached)
+            if (cachedHandR != null && cachedArmR != null)
             {
-                // idle 호흡이 빠진 toolDeg를 쓴다 — 위 재캐싱이 매 idle 프레임 도므로,
-                // 여기에 idleArm을 섞으면 그 회전이 base로 누적돼 도구가 드리프트한다.
-                if (cachedNetHandle != null)
-                    cachedNetHandle.localRotation = Quaternion.Euler(toolDeg, 0f, 0f) * netHandleBaseRot;
-                if (cachedNetRing != null)
-                    cachedNetRing.localRotation = Quaternion.Euler(toolDeg, 0f, 0f) * netRingBaseRot;
+                cachedHandR.localPosition = PlayerVisualBuilder.RotateAttachment(
+                    new Vector3(0.29f, 0.52f, 0f), cachedArmR.localPosition, rightArmDeg);
+                cachedHandR.localRotation = cachedArmR.localRotation;
+            }
+            if (cachedNetHandle != null && cachedNetRing != null && cachedArmR != null)
+            {
+                // Recipe writes are detected against the last displayed pose, never
+                // by recaching an animated idle pose (which accumulated drift).
+                if (!toolBaseCached || cachedNetHandle.localPosition != lastHandlePos
+                    || cachedNetHandle.localRotation != lastHandleRot
+                    || cachedNetRing.localPosition != lastRingPos || cachedNetRing.localRotation != lastRingRot)
+                {
+                    netHandleBasePos = cachedNetHandle.localPosition;
+                    netRingBasePos = cachedNetRing.localPosition;
+                    netHandleBaseRot = cachedNetHandle.localRotation;
+                    netRingBaseRot = cachedNetRing.localRotation;
+                    toolBaseCached = true;
+                }
+                Quaternion attachmentRotation = Quaternion.Euler(rightArmDeg, 0f, 0f);
+                cachedNetHandle.localPosition = PlayerVisualBuilder.RotateAttachment(netHandleBasePos, cachedArmR.localPosition, rightArmDeg);
+                cachedNetRing.localPosition = PlayerVisualBuilder.RotateAttachment(netRingBasePos, cachedArmR.localPosition, rightArmDeg);
+                cachedNetHandle.localRotation = attachmentRotation * netHandleBaseRot;
+                cachedNetRing.localRotation = attachmentRotation * netRingBaseRot;
+                lastHandlePos = cachedNetHandle.localPosition;
+                lastRingPos = cachedNetRing.localPosition;
+                lastHandleRot = cachedNetHandle.localRotation;
+                lastRingRot = cachedNetRing.localRotation;
             }
 
             // 다리 흔들기 (팔과 반대) — LegPivot 회전 시 Leg+Boot 모두 함께 전파.
@@ -650,14 +733,15 @@ namespace InsectGame.Core
         ///
         /// 조사는 "…에게"로 잇는다. 수문장 이름이 데이터에서 오는데 받침이 갈려서
         /// ("사마귀" / "장수말벌") 을/를 어느 쪽으로 고정해도 절반은 어색해진다.
+        ///
+        /// 문구는 <see cref="RegionManager.DescribeLock"/>이 만든다 — 수문장을 이미 이겼는데 이야기 대결(명부회 간부)이
+        /// 남은 리전(서릿길·잿불 골짜기)은 "집게에게 이겨야 열립니다"가 맞다. 여기서 수문장만 보면 이미 쓰러뜨린 수문장을
+        /// 다시 가리킨다. 지도·HUD 목표가 같은 판정을 읽는다.
         /// </summary>
         private string BuildBlockedMessage(Data.RegionData region)
         {
-            Data.RegionData gate = regionManager.GetGatekeeperRegion(region.regionId);
-            if (gate != null && !string.IsNullOrEmpty(gate.guardianDisplayName))
-                return $"{region.displayName} — {gate.guardianDisplayName}에게 이겨야 열립니다";
-
-            return $"{region.displayName} — 아직 갈 수 없습니다";
+            string message = regionManager.DescribeLock(region);
+            return string.IsNullOrEmpty(message) ? $"{region.displayName} — 아직 갈 수 없습니다" : message;
         }
 
         // F9 unstick — 끼임 escape. SubArea 안이면 SubAreaWorldBuilder의 FindSafeSpawnPosition과
@@ -666,7 +750,14 @@ namespace InsectGame.Core
         {
             bool inSubArea = regionManager != null && regionManager.CurrentSubArea != null;
             Vector3 target;
-            if (inSubArea)
+            if (inSubArea && regionManager.CurrentSubArea.detached)
+            {
+                // 분리 구역(나의 섬) — 방이 (2000,·,2000)에 없다. 그 구역이 정해 둔 도착 자리 부근으로 보낸다
+                // (섬은 centerPosition에 도착 칸을 적어 두고, 그 칸은 물건을 놓을 수 없게 보호돼 있다).
+                Vector3 arrival = regionManager.CurrentSubArea.centerPosition;
+                target = FindClearSpot(arrival + new Vector3(0f, 0.5f, 0f), arrival);
+            }
+            else if (inSubArea)
             {
                 // SubArea 안 — Origin 부근 spiral 탐색
                 Vector3 origin = new Vector3(2000f, 0f, 2000f);
@@ -682,7 +773,28 @@ namespace InsectGame.Core
                 transform.rotation = mainWorldSafePose.Rotation;
             verticalVelocity = 0f;
             movingToClick = false;
+            // 복구 좌표로 곧장 앉힌다. 끼임 자동탈출은 이 뒤 같은 프레임에 lastOwnPosition을 새로 적어
+            // 텔레포트로 안 잡히므로 여기서 직접 켠다.
+            snapToGround = true;
         }
+
+        // ================= 접지 — 순수 계산 =================
+
+        /// <summary>
+        /// 발 디딜 높이(월드 y) — 레이가 맞은 콜라이더 윗면(<paramref name="colliderTopY"/>, 없으면 음의 무한대)과
+        /// 둔덕 윗면(<see cref="FieldGround.SurfaceY"/>) 중 높은 쪽. 둔덕 속에 묻힌 바위는 둔덕 윗면이 이기고, 둔덕 위로
+        /// 삐져나온 바위는 바위가 이긴다. 평지에선 <see cref="FieldGround.FloorY"/>(0.1)라 옛 시작 높이와 같다
+        /// (리전 평면 콜라이더는 0.08~0.093, 바깥 바닥은 0).
+        ///
+        /// <b>서브에리어에선 콜라이더만 본다.</b> (2000,·,2000) 너머라 둔덕이 없고, 바닥도 FloorY가 아니라 y=0이다 —
+        /// SurfaceY를 섞으면 서브에리어에서만 0.1m 떠 있게 된다.
+        /// </summary>
+        internal static float GroundHeight(float colliderTopY, float x, float z, bool inSubArea)
+            => inSubArea ? colliderTopY : Mathf.Max(colliderTopY, FieldGround.SurfaceY(x, z));
+
+        /// <summary>발밑 높이를 향해 <see cref="GroundFollowSpeed"/>만큼 한 프레임 옮긴다(오르막·내리막 같은 속도).</summary>
+        internal static float FollowGround(float currentY, float groundY, float deltaTime)
+            => Mathf.MoveTowards(currentY, groundY, GroundFollowSpeed * Mathf.Max(0f, deltaTime));
 
         private Vector3 FindClearSpot(Vector3 preferred, Vector3 fallbackCenter)
         {
@@ -747,6 +859,16 @@ namespace InsectGame.Core
         {
             if (!autoRunning) return;
             movingToClick = false;
+            EndAutoRun();
+        }
+
+        /// <summary>월드 이동 시 일반 클릭 목적지까지 폐기한다. 도착 이벤트는 발생시키지 않는다.</summary>
+        public void StopNavigation()
+        {
+            movingToClick = false;
+            clickTarget = transform.position;
+            joystickInput = Vector2.zero;
+            joystickActive = false;
             EndAutoRun();
         }
 

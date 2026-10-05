@@ -82,8 +82,9 @@ namespace InsectGame.Core
             new Preset("밤의 채집가", 1, 3, 4, 3, 2, new[]
                 { "hat_cap", "top_shirt", "outer_jacket", "bot_pants", "shoe_boots", "bag_basic", "tool_magnify" }),
 
-            new Preset("직접 만들기", 0, 0, 0, 0, 1, new[]
-                { "hat_cap", "top_shirt", "outer_jacket", "bot_pants", "shoe_boots", "bag_basic", "tool_net" }),
+            // 탐험가와 머리색만 다른 복제였다(2026-09-30) — 세부 조정의 출발점답게 모자·겉옷 없는 캐주얼 기본형으로.
+            new Preset("직접 만들기", 0, 1, 0, 0, 1, new[]
+                { "hat_none", "top_polo", "outer_none", "bot_pants", "shoe_sneakers", "bag_basic", "tool_net" }),
         };
 
         // ── 에셋 오버라이드 ──────────────────────────────────

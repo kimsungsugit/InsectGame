@@ -6,7 +6,7 @@ namespace InsectGame.Story
 {
     /// <summary>
     /// 프로시저럴 컷신 재생기 — 카메라 워크 + 흔들림 + 딤 + 자막을 시간축으로 돌린다.
-    /// 에셋을 쓰지 않는다(이 게임엔 영상도 컷신 스틸도 없다).
+    /// 에셋을 쓰지 않는다. 실제 영상(mp4)은 <see cref="StoryVideoDirector"/>가 같은 시점에 따로 재생한다.
     ///
     /// <b>스토리 비트의 대사가 끝난 뒤</b>(<c>StoryBeatCompleted</c>) 재생한다. 발화 시점에 걸면
     /// 대사 모달과 화면을 다투게 되고, 읽는 순서도 "장면을 보고 나서 대사"가 되어 어색하다.
@@ -58,6 +58,18 @@ namespace InsectGame.Story
             Subscribe();
         }
 
+        // 1대1·레이드 결과 화면이 떠 있는가 — 부트스트랩이 넘긴다(Story가 UI를 모르게 함수 하나). 미뤄 둔 컷신의 포기 시계를 멈춘다.
+        private System.Func<bool> battleResultShowing;
+
+        /// <summary>
+        /// 결과 화면 탐침. 결과 화면은 눌러야 닫혀서(<c>BattleResultRules</c>) 그 시간을 "굳은 전투 화면"으로 세면
+        /// 보상을 오래 본 사람의 컷신이 사라진다(<see cref="StoryBattleWait"/>). 없으면 예전처럼 결과 화면도 센다.
+        /// </summary>
+        public void AutoWire(System.Func<bool> resultShowing)
+        {
+            if (battleResultShowing == null) battleResultShowing = resultShowing;
+        }
+
         // AutoWire와 OnEnable이 함께 부른다 — `-=` 뒤 `+=`라 중복 구독이 되지 않는다.
         private void Subscribe()
         {
@@ -88,9 +100,10 @@ namespace InsectGame.Story
                 return;
             }
 
-            // **전투 화면이 아직 떠 있으면 미룬다.** `fin_seal`처럼 `BattleWin` 비트에 붙은
-            // 컷신이 여기 걸린다 — 결과 화면은 4초 뒤 스스로 닫히는데 대사를 그보다 빨리
-            // 넘기면 컷신이 전투 UI 밑에서 재생된다. 더 나쁜 건 카메라다: 그 시점의
+            // **전투 화면이 아직 떠 있으면 미룬다.** 대사가 전투 화면이 걷히기 전에 끝나면(카메라가 배선 안 된 대사 큐가
+            // 종료 통지 없이 상한을 넘겨 쏜 경우 등) 컷신이 전투 UI 밑에서 재생된다. 정상 경로에서는 `BattleWin` 비트
+            // (fin_seal 등)가 결과 화면이 닫힌 **뒤에** 발화하므로(StoryDirector의 지연 큐) 여기 오지 않는다 — 이건 안전망이다.
+            // 더 나쁜 건 카메라다: 그 시점의
             // <c>Play</c>는 <c>InBattleMode = true</c>를 "원래 상태"로 기록하고, 끝날 때
             // 그 상태로 되돌려 **전투 구도에 갇힌다**(전투는 이미 끝났는데).
             //
@@ -108,31 +121,34 @@ namespace InsectGame.Story
 
         // ── 전투 화면 때문에 미뤄 둔 컷신 ──
         private CutsceneShot[] pendingShots;
+        // 포기 시계 — 전투 카메라가 **결과 화면 밖에서** 안 풀린 시간만 센다(StoryBattleWait).
+        // 상한(StoryBattleWait.SceneGiveUpSeconds)을 넘으면 **연출을 잃되 진행은 잃지 않는다** — 비트는 이미 완료됐고,
+        // 억지로 재생하면 카메라가 전투 구도에 갇힌다. 결과 화면은 이제 눌러야 닫히지만 그 시간은 세지 않으므로
+        // 보상을 오래 봐도 여기 닿지 않는다 — 닿는 건 결과 화면이 아닌데 카메라가 굳은 경우뿐이다.
         private float pendingSeconds;
-        /// <summary>
-        /// 미뤄 둔 컷신을 포기하는 시각(초). 전투가 끝나지 않으면 <b>연출을 잃되 진행은 잃지
-        /// 않는다</b> — 비트는 이미 완료됐고, 억지로 재생하면 카메라가 전투 구도에 갇힌다.
-        /// 결과 화면은 4초면 닫히므로 정상 경로에서는 여기 닿지 않는다.
-        /// </summary>
-        private const float PendingGiveUpSeconds = 12f;
 
-        private void TickPending()
+        /// <summary>미뤄 둔 컷신의 한 프레임. 무엇을 했는지 돌려준다(테스트가 본다).</summary>
+        private StoryBattleWait.SceneStep TickPending(float deltaSeconds)
         {
-            if (pendingShots == null) return;
+            if (pendingShots == null) return StoryBattleWait.SceneStep.None;
 
-            if (cameraFollower == null || !cameraFollower.InBattleMode)
+            StoryBattleWait.SceneStep step = StoryBattleWait.TickScene(ref pendingSeconds, deltaSeconds,
+                cameraFollower != null && cameraFollower.InBattleMode,
+                StoryBattleWait.ReadProbe(battleResultShowing),
+                modalOpen: false);
+
+            if (step == StoryBattleWait.SceneStep.Play)
             {
                 CutsceneShot[] queued = pendingShots;
                 pendingShots = null;
                 Play(queued);
-                return;
             }
-
-            pendingSeconds += Time.unscaledDeltaTime;
-            if (pendingSeconds < PendingGiveUpSeconds) return;
-
-            Debug.LogWarning("[Cutscene] 전투 화면이 닫히지 않아 컷신을 건너뛴다");
-            pendingShots = null;
+            else if (step == StoryBattleWait.SceneStep.GiveUp)
+            {
+                Debug.LogWarning("[Cutscene] 전투 화면(결과 화면 밖)이 닫히지 않아 컷신을 건너뛴다");
+                pendingShots = null;
+            }
+            return step;
         }
 
         public void Play(CutsceneShot[] definition)
@@ -208,7 +224,7 @@ namespace InsectGame.Story
         {
             if (!playing)
             {
-                TickPending();
+                TickPending(Time.unscaledDeltaTime);
                 return;
             }
 

@@ -1,4 +1,4 @@
----
+﻿---
 name: ui-dev
 description: 2D IMGUI(OnGUI) 화면 담당 — 화면 흐름과 전환, Rect 좌표와 레이아웃, GUIStyle 캐싱, 키 안내, 이벤트 구독 바인딩, IModalUI 스택. 무엇을 어디에 그리는가가 문제일 때 PROACTIVELY 위임. 예 - 배틀 화면 버튼이 겹친다 / OnGUI에서 매 프레임 new GUIStyle이 생긴다 / ESC로 패널이 안 닫힌다 / 슬롯 배치가 틀어졌다. 3D 메시·머티리얼·파티클·색상값은 visual-dev 영역이므로 손대지 않는다.
 tools:
@@ -17,52 +17,73 @@ tools:
 ### UI 모듈 (전체)
 - `Assets/Scripts/UI/MainMenuManager.cs` - 메인 메뉴 (Start/Settings/Exit)
 - `Assets/Scripts/UI/BattleScreenUI.cs` - 1v1 배틀 화면 (모놀리스, Phase 상태머신) ※배틀 로직은 battle-dev, 시각연출은 visual-dev
+- `Assets/Scripts/UI/BattleScreenUI.Duel.cs` - 위의 연출 partial: 간부·수문장 컷인, 전투 중 말풍선, 결과 한마디, 팀 대결의 남은 곤충 공(상대 HP 카드 윗줄)·교체 문구(「집게가 지네를 내보냈다!」 + 교체 한마디 — 교체 단계와 이어지는 턴 배너 동안, 아래쪽 띠) (레이아웃·그리기). 같은 파일 `DuelTeamHud`(순수 — 공 줄·화면에 선 순번·교체 문구 자리·문장) ※대사 문구는 game-designer(`DuelBanter`), 교체 단계 전이는 battle-dev
+- `Assets/Scripts/UI/BattleScreenUI.Environment.cs` - 위의 partial: 야생 전투 낮·밤·날씨 보정 칩(양쪽 HP 카드 아래) + HP 카드 아래 쌓기 순수 계산(`BattleHudStack` — 장부 게이지 → 보정 칩 → 대결 말풍선) ※배수·문구는 battle-dev(`BattleEnvironment`)
+- `Assets/Scripts/UI/BattleScreenUI.Feel.cs` - 위의 partial(4단계 전투 체감): 진입(화면 쓸기 + 「야생 ○○이(가) 나타났다!」 — 실제 1.4초, 컷인 전투는 진입 구간 끝에 사라짐), 타격 순간 상성 표시(피해 숫자 위 화살표 + 「아주 잘 통했다!」), 전용기 컷인 띠(시전자 클로즈업 동안 — 아레나 머리 위 이름은 끈다), 승리 화면(「승리!」·보상 줄·「눌러서 계속」) ※결과 닫기·진입 시계는 battle-dev(`BattleScreenUI.Flow`), 연출 시각표는 visual-dev(`BattleFlourish`)
+- `Assets/Scripts/UI/BattleFeelHud.cs` - 1대1·레이드 공용 체감 화면: 순수 계산(`BattleEntryText`·`BattleEntryStaging`·`BattleEntryLayout` 진입 문구·쓸기·자리, `MatchupHud` 상성 문구·화살표·칩, `SignatureCutInLayout` 전용기 띠, `BattleRewardLines`·`BattleVictoryLayout` 승리 화면 보상 줄·시각·자리, `RaidTeamStrip` 레이드 팀 줄 내림·숨김) + 그리기(`BattleFeelDraw`) ※상성 등급은 battle-dev(`ElementMatchup`)
+- `Assets/Scripts/UI/BadgeCeremonyUI.cs` - 수문장 배지 획득 연출(전투 화면이 닫히는 순간 스토리 대사보다 먼저 뜨는 모달) ※배지 표·보상은 game-designer(`GuardianBadges`)
+- `Assets/Scripts/UI/BadgeCaseUI.cs` - 배지 케이스(진열판·상세·이정표 [받기]) — 퀵메뉴 [배지](K)
+- `Assets/Scripts/UI/BadgeArt.cs` - 배지 PNG 캐시·잠김 틴트·배율 안전 회전 그리기(연출·케이스 공용)
 - `Assets/Scripts/UI/RaidBattleUI.cs` - 레이드 화면 상태기계 (Phase 전이·입력·컨트롤러 이벤트) ※배틀 로직은 battle-dev, 시각연출은 visual-dev
 - `Assets/Scripts/UI/RaidBattleUI.Draw.cs` - 위의 렌더 절반 partial (GUIStyle 캐시 + Draw* 전부) ※AOE·유나이트 이펙트는 visual-dev
+- `Assets/Scripts/UI/RaidBattleUI.Stage.cs` - 위의 이야기 문구 partial: 수문장 등장 배너(인트로 — 칭호·별칭·이름 + 속성 칩·등장 줄, 포효 박자에 별칭), 변신 문구(변신 단계), 보스 이름 아래 「○○의 모습」. 같은 파일 `RaidStageLayout`(순수 — 보스 카드·예고·팀 줄·합체 게이지·아래 무대·변신 판·수문장 배너) ※별칭·등장 줄은 game-designer(`GuardianIntros`), 변신 규칙은 battle-dev(`RaidBossForms`), 연출 박자는 visual-dev(`BattleStaging`)
+- `Assets/Scripts/UI/RaidBattleUI.Feel.cs` - 위의 partial(4단계 전투 체감): 일반 레이드 진입(화면 쓸기 + 아래 무대 「레이드 보스 ○○ 출현!」 — 수문장은 `.Stage` 배너), 타격 순간 상성 표시(팀원 → 보스는 지금 모습 기준), 전용기 행동 강조(행동 문구 띠 크게·속성색 테두리 + 「전용기!」 — 레이드는 사전 컷인 없음), 승리 화면(「레이드 승리!」·보상 줄·「눌러서 계속」) ※팀 줄의 내림·숨김(`TeamStripY`·`TeamStripVisibility`)은 battle-dev 파일 `RaidBattleUI.Impact`의 배치 몫
 - `Assets/Scripts/UI/CaptureChoiceUI.cs` - 포획/배틀 선택 허브 (11개 의존성) ※포획 로직은 capture-dev
-- `Assets/Scripts/UI/CapturePopupUI.cs` - 포획 팝업 UI
+- `Assets/Scripts/UI/CapturePopupUI.cs` - 포획 팝업 UI (가운데 무대의 차례 항목 — 성공 카드는 640×640 설계 좌표를 무대에 맞춰 행렬로 줄인다)
 - `Assets/Scripts/UI/PlayUIConfig.cs` + `PlayUIRefs.cs` - UI 설정/참조
 - `Assets/Scripts/UI/PlayerStatusHUD.cs` - 상태 HUD
 - `Assets/Scripts/UI/KeyGuideHUD.cs` - 키 안내 HUD
 - `Assets/Scripts/UI/TrainingUI.cs` - 훈련 UI
 - `Assets/Scripts/UI/CollectionUI.cs` - 보유 곤충 UI
+- `Assets/Scripts/UI/InsectDetailVisualCapture.cs` - 도감·보유 개체 상세와 퀵바 실제 IMGUI 검수용 저장 비접촉 fixture
+- `Assets/Scripts/UI/FieldHudVisualCapture.cs` - 필드 HUD·포획 선택/성공 팝업·배틀팀 실제 IMGUI 검수용 저장 비접촉 fixture(`-battleScenario field-ui`)
 - `Assets/Scripts/UI/BattleTeamUI.cs` - 팀 편성 UI ※배틀 로직은 battle-dev
 - `Assets/Scripts/UI/HospitalUI.cs` - 병원 치료·아이템 대상 선택 UI
 - `Assets/Scripts/UI/InventoryUI.cs` - 가방(보유 아이템 목록·사용) UI
-- `Assets/Scripts/UI/RegionMapUI.cs` - 지역 맵 UI
+- `Assets/Scripts/UI/RegionMapUI.cs` - 지역 맵 UI (잠긴 지역 안내는 `RegionManager.DescribeLock` — 문구는 game-designer)
 - `Assets/Scripts/UI/SettingsPanel.cs` - 설정 패널
 - `Assets/Scripts/UI/AccountSettingsUI.cs` - 계정/오프닝 다시 보기 패널
 - `Assets/Scripts/UI/LoginUI.cs` - 로그인 화면
 - `Assets/Scripts/UI/CashShopUI.cs` - 캐시샵 화면
 - `Assets/Scripts/UI/CharacterOutfitUI.cs` - 의상 UI
-- `Assets/Scripts/UI/QuickAccessBarUI.cs` - 퀵액세스 바
+- `Assets/Scripts/UI/QuickAccessBarUI.cs` - 퀵액세스 바 (자리는 순수 계산 `ShortcutBarRectIn` — 퀘스트 칩·섬 HUD·시각 칩이 이걸 기준으로 피해 간다)
 - `Assets/Scripts/UI/SocialPvpUI.cs` - 소셜 PvP 로비·스킬 선택 UI
-- `Assets/Scripts/UI/TutorialQuestUI.cs` - 튜토리얼 퀘스트 UI
+- `Assets/Scripts/UI/TutorialQuestUI.cs` - 튜토리얼 퀘스트 UI (칩·복원 버튼·목표 행 자리는 같은 파일 `QuestChipLayout` — 세로 모바일 미니맵 아래, 가로 모바일 미니맵 오른쪽(아래는 조이스틱 자리), 데스크톱은 단축 바 왼쪽 끝까지·바닥에서 위로). 목표 행은 트래커의 「왜」가 있으면 두 줄(`RowHeightFor` — 칩 자리·그리기·등록·무대가 같은 값, 일시 안내는 그 둘째 줄을 잠깐 빌린다)
 - `Assets/Scripts/UI/GuidedTutorialController.cs` - 첫 몇 단계 강제 가이드 오버레이(코치 배너+시작 프리즈) ※퀘스트 이벤트는 TutorialQuestManager(Core)
 - `Assets/Scripts/UI/WorldLobbyUI.cs` - 월드 로비
 - `Assets/Scripts/UI/CharacterPortraitRenderer.cs` - 통합 캐릭터 포트레이트 렌더러
 - `Assets/Scripts/UI/InsectVisual.cs` - 곤충 그림 단일 진입점(3D 썸네일 or 2D 폴백 판단) ※렌더는 InsectModelPreviewRenderer(visual-dev)
-- `Assets/Scripts/UI/UIShapes.cs` - 2D 폴백 도형 원시요소(원·캡슐·실루엣) ※색은 UITheme 토큰
+- `Assets/Scripts/UI/UIShapes.cs` - 2D 폴백 도형 원시요소(원·캡슐·실루엣·화살표 — 전투 상성 표시는 글리프 대신 도형) ※색은 UITheme 토큰
+- `Assets/Scripts/UI/KoreanJosa.cs` - 받침으로 고르는 조사(이/가·을/를·은/는·와/과) 순수 계산 — 모르면(영문) 「이(가)」로 둘 다
 - `Assets/Scripts/UI/UIHelper.cs` - UI 유틸리티
 - `Assets/Scripts/UI/UIScale.cs` - 1920×1080 기준 가상 좌표계 / GUI.matrix 자동 스케일링
-- `Assets/Scripts/UI/UISafeLayout.cs` - 세이프에어리어 + 세로 마진 배치 하네스 (패널 Rect의 단일 출처, `rules/ui-layout.md`)
+- `Assets/Scripts/UI/UISafeLayout.cs` - 세이프에어리어 + 세로 마진 배치 하네스 (패널 Rect의 단일 출처, `rules/ui-layout.md`). 같은 파일의 `HudFrame` — 화면 한 장(픽셀·인셋·배율·모바일/세로)을 값으로 세워 순수 배치 함수가 받는다(전수 겹침 검사가 화면 18장을 이걸로 만든다)
+- `Assets/Scripts/UI/HudStage.cs` - 가운데 무대 — 잠깐 뜨는 카드·알림(포획 결과·퀘스트 완료/다음·소식·섬 토스트·대결 결과·계정 알림·멀티 초대/안내·잠긴 리전)이 서는 한 자리(`Area` — 늘 떠 있는 HUD를 모두 피한 사각형)와 차례 중재(`Request`/`Granted` — 고정 셋은 늘 서고 차례 항목은 한 번에 하나, 기다리는 동안 시간도 멈춘다). 무대 안의 가운데 것들(대화 버튼·코치·섬 안내·근처 탐험가)은 서 있는 카드와 겹치면 비켜선다(`OccupiedOver` — 카드는 그리는 자리에서 `Request(item, rect)`로 자리를 알린다). 같은 파일 `HudPresence` — 코치 배너가 비켜설 버튼(대화·근처 탐험가·동굴 입구)과 섬 안내의 「지금 서 있다」 표지
 - `Assets/Scripts/UI/UISurface.cs` - 둥근 카드·그림자·호버 공용 서피스 (전 화면 표면 처리의 단일 출처). 색은 UITheme 토큰에서만 받는다
 - `Assets/Scripts/UI/QuestListLayout.cs` - 퀘스트 목록 아코디언 가변 높이 순수 계산
 - `Assets/Scripts/UI/UIDirectScroll.cs` - IMGUI 목록 휠·터치 드래그 직접 스크롤
 - `Assets/Scripts/UI/UITheme.cs` - UI 테마/스타일
 - `Assets/Scripts/UI/UITween.cs` - UI 트윈 애니메이션
 - `Assets/Scripts/UI/InsectBrowseSort.cs` - 보유 곤충 정렬 순수부(등급/레벨/CP/최근)
-- `Assets/Scripts/UI/StoryJournalUI.cs` - 스토리 저널 챕터 탭·다시 읽기 렌더
+- `Assets/Scripts/UI/StoryJournalUI.cs` - 스토리 저널 챕터 탭·다시 읽기 렌더 + 장 머리(지난 이야기·이번 목표 — 여는 비트를 본 장만, 스포일러 금지) + 본 비트의 「▶ 영상」 다시보기(대사 앞 `introVideoId` → 뒤 `videoId` 순, `StoryVideoDirector.PlayReplay` — 영상이 모달 맨 위라 ESC·건너뛰기는 영상만 닫고, 덮는 동안 저널은 그리지도 입력을 받지도 않는다). 같은 파일 `StoryJournalHeadLayout`(순수 — 목록 영역 위 절반까지)·`StoryJournalRowLayout`(순수 — 행 버튼 자리: 「다시 읽기」 오른쪽 끝 고정, 「▶ 영상」 그 왼쪽)·`StoryJournalVideo`(순수 — 다시 볼 영상 고르기) ※영상 재생·자막은 game-designer(`StoryVideoDirector`·`StoryVideoLibrary`)
+- `Assets/Scripts/UI/StoryRecapVisualCapture.cs` - 「지난 이야기」 카드·HUD 목표 행 두 줄(할 일 + 왜)·잡담 띠 "다음 이야기 — 이유" 실제 IMGUI 검수용 저장 비접촉 fixture(`-battleScenario story`의 앞 컷)
+- `Assets/Scripts/UI/StoryVideoScreenLayout.cs` - 스토리 영상 화면의 자막 띠·「건너뛰기」 자리(순수 — 36pt 두 줄 칸·띠 0.68, 건너뛰기는 가로 오른쪽 아래·세로 오른쪽 위, 겹치면 띠를 올린다). 그리기는 `StoryVideoDirector`의 OnGUI(ui-dev 경계) ※재생 로직·대사 앞 영상 콜백은 game-designer
+- `Assets/Scripts/UI/StoryVideoVisualCapture.cs` - 스토리 영상 실제 디코더 검수 장면(`-battleScenario story-video`, 일부만 `-videoOnly ch6_wall,ch7_fence`) — 진짜 `StoryVideoDirector.PlayReplay`로 편마다 첫 자막 0.5초 앞·자막 가운데를 찍고 README에 재생 여부·첫 프레임·실제 길이. 앞머리에 저널 「▶ 영상」→ESC 판정(`00-journal-*`). 저장 비접촉(지휘자 AutoWire 없음, 열람 기록은 꺼진 `StoryDirector`에 메모리로). 종료 코드 0/3(재생 실패)/5(저널 ESC 실패)/2
 - `Assets/Scripts/UI/AccountLinkUI.cs` - 게스트→정식 계정 연동 화면
 - `Assets/Scripts/UI/SaveConflictUI.cs` - 로컬/클라우드 세이브 충돌 선택 모달 ※세이브 구조는 data-architect
-- `Assets/Scripts/UI/WorldFieldMultiplayerUI.cs` - 필드 멀티 초대·친구 목록 (픽셀 좌표계 — `UISafeLayout.Px` 사용)
+- `Assets/Scripts/UI/WorldFieldMultiplayerUI.cs` - 필드 멀티 초대·친구 목록 (가상 캔버스 — 상태 판·대화 기록·근처 탐험가 자리는 순수 계산 `StatusRect`·`MessagesRect`·`NearbyRect`, 초대·안내는 가운데 무대. 섬·꿈·창·조작 잠금에서 물러난다)
 - `Assets/Scripts/UI/WorldInteractionController.cs` - 월드 오브젝트 상호작용 프롬프트
 - `Assets/Scripts/UI/MinimapUI.cs` - 미니맵 HUD
+- `Assets/Scripts/UI/FieldMomentsUI.cs` - 필드 소식 카드 + 라온 내기 점수판 (비모달 — FieldMomentFeed에서 꺼내 그린다. 소식 카드는 가운데 무대의 차례 항목, 점수판 자리는 `RaceChipRect`)
+- `Assets/Scripts/UI/WorldClockHUD.cs` - 필드·나의 섬 HUD 시각·날씨 칩 + 시간대·날씨 변화 알림 (비모달 — `FieldHudInput` 등록. 우측 열 맨 아래, 날씨는 현재 리전 기준 `WeatherForecast.EffectiveIn`, 섬은 세계 날씨. 모바일 섬 — 세로는 섬 HUD 열 아래, 가로는 필드와 같은 단축 바 아래) ※시계·날씨 규칙은 Core
+- `Assets/Scripts/UI/WorldClockRules.cs` - 시각 표기(10분 내림)·알림 문구 고르기·날씨 지역(`SkyRegionId`)·칩/알림 좌표(필드·섬) 순수 계산
+- `Assets/Scripts/UI/DreamVisualCapture.cs` - 「챔피언의 꿈」 섬·도입·깨어남 화면 검수 장면 (`-battleScenario dream-island`)
 - `Assets/Scripts/UI/SafeArea.cs` - `Screen.safeArea` 픽셀 인셋 (프레임당 1회 캐시). `UISafeLayout`의 입력원
 - `Assets/Scripts/UI/SafeAreaPanel.cs` - uGUI RectTransform 세이프에어리어 적용 컴포넌트
-- `Assets/Scripts/UI/VirtualJoystickUI.cs` - 모바일 가상 조이스틱 ※`ui_layout_lint` 면제 대상(조작 영역이라 마진을 주면 좁아진다)
-- `Assets/Scripts/UI/PlayerHintOverlay.cs` - 필드 안내 문구(이동 잠금·리전 레벨 부족) ※상태는 PlayerMovement가 소유, 여기선 그리기만
+- `Assets/Scripts/UI/VirtualJoystickUI.cs` - 모바일 가상 조이스틱 ※`ui_layout_lint` 면제 대상(조작 영역이라 마진을 주면 좁아진다). 등록된 필드 HUD(`FieldHudInput`) 위에서는 시작하지 않는다 — 유휴 힌트 원 안은 예외(`CanBeginAt`). 모바일 배치에서만 켠다(`EnabledFor` — 데스크톱은 좌하단이 퀘스트 칩 자리)
+- `Assets/Scripts/UI/PlayerHintOverlay.cs` - 필드 안내 문구(이동 잠금·리전 레벨 부족) ※상태는 PlayerMovement가 소유, 여기선 그리기만. 잠금 안내는 동굴 입구 버튼 자리 아랫줄(`FrozenRect`), 차단 문구는 가운데 무대의 마지막 차례
 - `Assets/Scripts/UI/BattleEffectTextOverlay.cs` - 전투 문구 오버레이 ※목록은 BattleArenaController가 소유
+- `Assets/Scripts/UI/BattleShoutOverlay.cs` - 전투 외침 오버레이(기술명 말풍선·비명·의성어) ※목록·타이밍은 BattleArenaController가 소유. 회전·확대는 `GUIUtility.RotateAroundPivot` 대신 행렬을 직접 곱한다(UIScale≠1이면 피벗이 어긋난다)
 - `Assets/Scripts/UI/FieldHudInput.cs` - 필드 HUD 터치 좌표 변환 ※`ui_layout_lint` 면제 대상(배치가 아니라 입력)
 - `Assets/Scripts/Dex/DexBrowseLayout.cs` - 도감 순환 선택·그리드 열 수/높이 순수 계산 (도감 탭과 보유 탭이 공유)
 
@@ -78,11 +99,37 @@ tools:
 - `Assets/Scripts/Core/ItemRarityTuningUIController.cs` - 레어도 튜닝 UI
 - `Assets/Scripts/Core/ItemInventoryGridItem.cs` - 그리드 아이템 위젯
 - `Assets/Scripts/Core/ShopUIController.cs` - 샵 UI 컨트롤러
-- `Assets/Scripts/UI/NpcDialogueUI.cs` - NPC 대화 모달 (레이아웃/렌더) ※대사 내용은 game-designer
+- `Assets/Scripts/UI/NpcDialogueUI.cs` - NPC 대화 모달 (레이아웃/렌더) + 장을 여는 비트의 첫 대사 앞 「지난 이야기」 카드(처음 발화만, 다시보기 제외) + 대사 직후 대결이면 마지막 버튼 「승부!」·[건너뛰고 승부]. 같은 파일 `StoryRecapLayout`(순수 — 대사 상자·카드 판·줄 쌓기)·`DialogueDuelPrompt`(순수 — 대결이 이어지는지·버튼 문구). 꺼진·파괴된 창으로는 스토리 대사를 열지 않는다(대사 앞 영상·등장 연출이 씬 재로드 중 끝나며 부르는 콜백 — 비트를 쥐었다가 다시 켜지면 연다, 모달 레지스트리에 안 남긴다) ※대사·장 요약 문구는 game-designer
+- `Assets/Scripts/UI/StoryDialogueStaging.cs` - 스토리 대사 무대 규칙(좌우 배치·타자 속도·줄 연출 fx) 순수 계산 ※어느 줄에 어떤 fx를 붙일지는 game-designer
 - `Assets/Scripts/Core/QuestRewardFormatter.cs` - 퀘스트 보상 표시 문자열 조립 (배너·목록 공용) ※보상 수치 자체는 game-designer
+
+### 나의 섬 화면
+- `Assets/Scripts/UI/IslandHudUI.cs` - 섬 위 버튼 줄(꾸미기·상점·곤충·수확·방문·도움말·나가기 / 남의 섬: 좋아요·돌아가기) — 비모달이라 `FieldHudInput` 등록 필수. 자리는 같은 파일의 `IslandHudLayout`(순수 계산 — 데스크톱 한 줄 · 세로 모바일 열 · 가로 모바일 단축 바 왼쪽 두 칸 판, 결과 토스트 자리. 시각·날씨 칩이 같은 계산으로 피해 간다)
+- `Assets/Scripts/UI/IslandEditUI.cs` - 섬 꾸미기(보관함 트레이, 칸 탭 = 자리 고르기, 끌기 = 화면 옮기기, 돌리기·놓기·넣기) — 모달
+- `Assets/Scripts/UI/IslandShopUI.cs` - 섬 상점(건물·가구·지형지물·도구·확장 5탭) ※가격은 game-designer(`IslandCatalog`)
+- `Assets/Scripts/UI/IslandInsectUI.cs` - 섬 곤충 창(풀어놓기·거두기, 친밀도·시간당 생산 표시)
+- `Assets/Scripts/UI/IslandVisitUI.cs` - 섬 나들목(내 섬 가기·나가기, 섬 코드·공개 설정, 친구·코드로 방문) — 퀵바 [내 섬]과 본 마을 나루터가 연다
+- `Assets/Scripts/UI/IslandGuideUI.cs` - 섬 안내 코치 배너(꾸미기 모달 위에서도 뜬다) + 도움말 창 ※단계 판정·문구는 game-designer(`IslandGuideSteps`)
+- `Assets/Scripts/UI/IslandUiKit.cs` - 섬 화면 공용 스타일·결과 문구
+- `Assets/Scripts/UI/IslandVisualCapture.cs` - 섬 화면 실제 IMGUI 검수용 저장 비접촉 fixture(`-battleScenario island-ui`)
 
 ### Editor
 - `Assets/Editor/PlayUIPrefabGenerator.cs` - UI 프리팹 자동 생성
+
+### Tests
+- `Assets/Tests/EditMode/MapNavigationTests.cs` - 서브월드 지도위치, 출구복원 이동순서, 미니맵 좌표 회귀
+- `Assets/Tests/EditMode/InsectDetailNavigationTests.cs` - 도감에서 보유 개체 상세로 이동할 때 고유 ID와 모달 상태 회귀
+- `Assets/Tests/EditMode/NpcDialogueContinuityTests.cs` - 줄별 화자, 전투 후 재대화, 모달 재진입 회귀, 꺼진 창에 온 스토리 대사(레지스트리에 안 남고 다시 켜지면 열림·다시보기는 버림·파괴된 창)
+- `Assets/Tests/EditMode/DuelHudLayoutTests.cs` - 전투 진영 배치, 버튼 중첩, 기술 대상 표시
+- `Assets/Tests/EditMode/StoryBattleHudTests.cs` - 이야기 전투 화면: 조사(이/가·을/를), 팀 대결 공 줄·화면에 선 순번·교체 문구 자리(화면 7장 — 전투 HUD 전 조각과 안 겹침), 레이드 변신 판·수문장 배너(보스 위 2/3·아레나 수문장 창 비움), 「○○의 모습」(연출 전엔 이전 모습), 대화창 「승부!」 조건·문구
+- `Assets/Tests/EditMode/BattleFeelHudTests.cs` - 4단계 전투 체감 화면: 종류별 진입 문구(조사·진짜 대결 상대 이름)·화면 쓸기(덮고 열림)·진입 문구 시각(컷인 앞에서 사라짐), 상성 등급 → 문구·화살표·색(상성표 전 쌍)·숫자 위 자리, 스킬 카드 칩 자리, 전용기 띠(화면 7장 — 전투 HUD 전 조각과 안 겹침·들어오는 쪽), 승리 화면(보상 줄 순서·0.8초부터 한 줄씩·가운데 비움·「눌러서 계속」은 닫을 수 있을 때만), 결과 화면 옛 안내문 금지, 레이드 팀 줄(곧바로 내림·숨김 단계)
+- `Assets/Tests/EditMode/ExplorationNavigationTests.cs` - 메뉴 경로, 단축키 보존, 모달 전환 회귀
+- `Assets/Tests/EditMode/UIParityTests.cs` - 등급 한글 표기·HP 색 기준의 단일 출처(화면 간 표기 혼재 회귀)
+- `Assets/Tests/EditMode/WorldClockHudTests.cs` - 시각 표기·시간대 이름 일관성, 지역 기준 알림 선택(섬 = 세계 날씨), 칩·알림 배치, 섬 HUD 버튼 배치(모양 셋), 퀘스트 칩 자리(`QuestChip_*` — 단축 바 옆 폭·좁을 때 위로·가로 모바일 미니맵 옆), 조이스틱 시작 판정(`JoystickCanBeginAt_*`), 전투 보정 칩 배치·문구·펄스. 화면 전체 겹침은 아래 `HudOverlapSweepTests`로 옮겼다
+- `Assets/Tests/EditMode/StoryVideoScreenLayoutTests.cs` - 영상 자막 띠·「건너뛰기」(화면 16장 — 세이프 영역 안·안 겹침·세로는 오른쪽 위·두 줄 칸·최장 24자 두 줄·아이용 글자 크기와 띠 농도)
+- `Assets/Tests/EditMode/StoryJournalVideoTests.cs` - 저널 영상 다시보기: 행 버튼 자리(행 안·안 겹침·터치 높이·글자가 버튼 앞에서 끊김·「다시 읽기」 열 고정), 다시 볼 영상(앞 → 뒤 순·하나면 하나·모르는 ID는 버튼 없음)
+- `Assets/Tests/EditMode/StoryRecapLayoutTests.cs` - 「지난 이야기」 카드(띄울지·대사 상자 위 판·줄 쌓기·넘치면 본문만 줄이기, 가로·세로·배율)·저널 장 머리·HUD 목표 행 「왜」 둘째 줄(무대가 피하는지)·잡담 띠 문구
+- `Assets/Tests/EditMode/HudOverlapSweepTests.cs` - **필드·동굴·나의 섬·남의 섬·꿈 섬 HUD 전수 겹침** — 화면 18장(데스크톱 6, 모바일 세로 2·가로 2 × 배율 0.667/1/1.333)에서 함께 뜰 수 있는 모든 요소의 모든 쌍. 자리는 전부 화면 파일의 순수 배치 함수를 부르고, 함께 뜰 수 없는 쌍만 `Exclusion`이 코드 근거와 함께 뺀다. 안전 영역 안·가운데 무대 크기와 고정 칸·차례 중재(`StageGranted_*`)·조이스틱 자리(늘 떠 있는 HUD 없음·잠깐 뜨는 것 다 띄워도 절반 넘게 빔). **필드 위에 HUD를 새로 그리면 여기 `Elements`에 한 줄 넣을 것**
 
 ## 화면 흐름
 ```

@@ -38,6 +38,8 @@ PATHS = {
     "reward_calc": "Assets/Scripts/Data/InsectRewardCalculator.cs",
     "tutorial": "Assets/Scripts/Core/TutorialQuestManager.cs",
     "insect_entity": "Assets/Scripts/Spawning/InsectEntity.cs",
+    # 필드 스폰 규칙(전역 등급표 · 레벨 · 슬롯). 리전 등급 분포의 단일 출처다(2026-09-29부터).
+    "field_rules": "Assets/Scripts/Spawning/FieldSpawnRules.cs",
     "raid": "Assets/Scripts/Battle/RaidBattleController.cs",
     "game_constants": "Assets/Scripts/Core/GameConstants.cs",
     "trainer_progress": "Assets/Scripts/Core/PlayerProgressController.cs",
@@ -60,6 +62,9 @@ PATHS = {
     "village_builder": "Assets/Scripts/Core/VillageBuilder.cs",
     "stage_library": "Assets/Scripts/Story/StoryStageLibrary.cs",
     "subarea_builder": "Assets/Scripts/Core/SubAreaWorldBuilder.cs",
+    # 대결 표 — 명부회 간부(인물당 하나)와 라온 라이벌 단계(인물 하나·단계 여럿). story_lint 검사 35가 duelAfter를 대조한다.
+    "boss_duels": "Assets/Scripts/NPC/NpcBossDuels.cs",
+    "rival_duels": "Assets/Scripts/NPC/NpcRivalDuels.cs",
 }
 
 RARITIES = ("Common", "Uncommon", "Rare", "Epic", "Legendary")
@@ -310,21 +315,106 @@ def trainer_xp_curve() -> dict:
     return {"base": base, "growth": growth, "floor": floor, "max": maxlv, "kind": "linear"}
 
 
-def insect_candy_curve() -> dict:
-    """곤충 레벨업 캔디 비용 곡선. 출처: InsectLevelCurve.GetCandyCost.
+def trainer_level_gap() -> dict:
+    """캐릭터 레벨 ↔ 곤충 레벨 차 계수. 출처: GameConstants.TrainerLevel(공식은 TrainerLevelGap).
 
-    지수: baseCandyCost * growth^(level-1). 곤충은 이 캔디 경로로만 큰다
-    (TryLevelUpWithCandy). 곤충 XP 곡선(GetXpToNextLevel, 20*1.12^)은 배선만 돼 있고
-    게임플레이가 곤충에 XP를 주지 않아 미사용이다 — 진행 경로로 쓰면 안 된다.
+    EXP = base × 등급배율 × (1 + (곤충Lv−1)·exp_per_level) × 차 배율
+      차 배율: 곤충이 높으면 1 + min(차, higher_cap)·higher_step, 낮으면 max(lower_min, 1 + 차·lower_step)
+    포획 = 최종 확률 × max(capture_min, 1 − (차 − grace)·capture_drop)  (차 > grace일 때만)
+    2026-10-01 전엔 EXP가 등급만 봐서 이 계수가 없었다 — Lv60 일반 곤충도 Lv1과 같은 5였다.
     """
+    src = _read("game_constants")
+    block = _need(re.search(r"class\s+TrainerLevel\s*\{(.*?)\n\s{8}\}", src, re.DOTALL),
+                  "TrainerLevel 블록", "game_constants").group(1)
+
+    def num(name: str, kind=float):
+        pat = r"\b" + name + r"\s*=\s*([\d.]+)f?;"
+        return kind(_need(re.search(pat, block), name, "game_constants").group(1))
+
+    return {
+        "grace": num("CaptureGraceLevels", int),
+        "capture_drop": num("CaptureDropPerLevel"),
+        "capture_min": num("MinCaptureMultiplier"),
+        "exp_per_level": num("ExpPerInsectLevel"),
+        "higher_step": num("ExpHigherBonusPerLevel"),
+        "higher_cap": num("ExpHigherCapLevels", int),
+        "lower_step": num("ExpLowerPenaltyPerLevel"),
+        "lower_min": num("ExpLowerMinFactor"),
+    }
+
+
+def _level_curve_wired() -> bool:
+    """InsectLevelCurve가 **실제로 배선되는가** — `levelCurve`/`defaultCurve`에 값을 넣는 코드가 있는가.
+
+    `PlayerInsectCollection`은 곡선이 null이면 GameConstants.Leveling의 폴백(선형)으로 캔디를 뺀다.
+    곡선 에셋이 프로젝트에 없고 InsectData·컬렉션이 전부 런타임 생성이라, 대입하는 코드가 없으면 SO의
+    지수식은 **죽은 코드**다. 2026-09-30까지 이 추출기는 그 죽은 식(4×1.125^)을 읽어 진행 판정을 냈다 —
+    Lv50 한 레벨이 실제 102캔디인데 1,284로 계산했다.
+    """
+    rx = re.compile(r"\b(?:levelCurve|defaultCurve)\s*=(?!=)")
+    for root, _dirs, files in os.walk("Assets/Scripts"):
+        for name in files:
+            if not name.endswith(".cs"):
+                continue
+            with open(os.path.join(root, name), encoding="utf-8", errors="replace") as f:
+                if rx.search(strip_cs(f.read())):
+                    return True
+    return False
+
+
+def insect_candy_curve() -> dict:
+    """곤충 레벨업 캔디 비용 곡선 — **실제로 캔디를 빼는 식**.
+
+    곤충은 캔디로만 큰다(TryLevelUpWithCandy → GetCandyCostForLevel). 곡선 SO가 배선되지 않았으면
+    (`_level_curve_wired`) 컬렉션의 폴백 선형식 `base + (lv-1)*step`(GameConstants.Leveling)이 정본이고,
+    배선됐으면 InsectLevelCurve.GetCandyCost의 지수식이다. 곤충 XP 곡선(GetXpToNextLevel)은
+    게임플레이가 곤충에 XP를 주지 않아 미사용이다 — 진행 경로로 쓰면 안 된다.
+    반환: {"kind": "linear", "base", "step", "max"} 또는 {"kind": "exponential", "base", "growth", "max"}.
+    """
+    if not _level_curve_wired():
+        src = _read("game_constants")
+        block = _need(re.search(r"class\s+Leveling\s*\{(.*?)\n\s{8}\}", src, re.DOTALL),
+                      "Leveling 블록", "game_constants").group(1)
+        base = int(_need(re.search(r"FallbackBaseCandyCost\s*=\s*(\d+)", block),
+                         "FallbackBaseCandyCost", "game_constants").group(1))
+        step = int(_need(re.search(r"FallbackCandyCostGrowth\s*=\s*(\d+)", block),
+                         "FallbackCandyCostGrowth", "game_constants").group(1))
+        maxlv = int(_need(re.search(r"FallbackMaxLevel\s*=\s*(\d+)", block),
+                          "FallbackMaxLevel", "game_constants").group(1))
+        return {"base": base, "step": step, "max": maxlv, "kind": "linear"}
+
     src = _read("insect_curve")
     base = int(_need(re.search(r"baseCandyCost\s*=\s*(\d+)", src), "baseCandyCost", "insect_curve").group(1))
-    # GetCandyCost 본체의 Mathf.Pow(1.14f, level - 1)
     body = _need(re.search(r"GetCandyCost\s*\([^)]*\)\s*\{(.*?)\n\s{8}\}", src, re.DOTALL),
                  "GetCandyCost() 본체", "insect_curve").group(1)
     growth = float(_need(re.search(r"Pow\(\s*([\d.]+)f", body), "GetCandyCost의 성장률", "insect_curve").group(1))
     maxlv = int(_need(re.search(r"maxLevel\s*=\s*(\d+)", src), "maxLevel", "insect_curve").group(1))
     return {"base": base, "growth": growth, "max": maxlv, "kind": "exponential"}
+
+
+def candy_cost_at(curve: dict, level: int) -> int:
+    """곡선 dict(`insect_candy_curve`)로 Lv→Lv+1 캔디. 두 시뮬(progression·gacha)이 같은 식을 쓴다."""
+    if curve["kind"] == "linear":
+        return max(1, curve["base"] + (level - 1) * curve["step"])
+    return max(1, round(curve["base"] * (curve["growth"] ** (level - 1))))
+
+
+def curve_label(curve: dict) -> str:
+    if curve["kind"] == "linear":
+        return f"선형 {curve['base']}+{curve['step']}*(lv-1)"
+    return f"지수 {curve['base']}*{curve['growth']}^(lv-1)"
+
+
+def training_stat_cost() -> dict:
+    """능력치(개체값) 훈련 계수. 출처: GameConstants.Training(StatBaseCost·StatCostGrowth).
+    공식은 TrainingPricing.StatCost = base × growth^iv × 등급배율(rarity_multipliers)."""
+    src = _read("game_constants")
+    block = _need(re.search(r"class\s+Training\s*\{(.*?)\n\s{8}\}", src, re.DOTALL),
+                  "Training 블록", "game_constants").group(1)
+    base = int(_need(re.search(r"StatBaseCost\s*=\s*(\d+)", block), "StatBaseCost", "game_constants").group(1))
+    growth = float(_need(re.search(r"StatCostGrowth\s*=\s*([\d.]+)f", block),
+                         "StatCostGrowth", "game_constants").group(1))
+    return {"base": base, "growth": growth, "max_iv": 15}
 
 
 def battle_rewards_by_rarity() -> dict:
@@ -361,8 +451,10 @@ def field_roster() -> dict:
 
     출처: PlaySceneBootstrap.CreateStableInsect(id, name, InsectRarity.X, weight, ...) +
     InsectExpansion(2)Definitions.new InsectSeed(id, name, InsectRarity.X, weight, ...).
-    가챠 전용(weight=0)은 필드 스폰이 없으므로 제외한다. InsectSpawner.GetWeightedRandom이
-    이 spawnWeight로 후보를 뽑으므로, 리전 내 실제 조우 등급 분포의 단일 출처다.
+    가챠 전용(weight=0)은 필드 스폰이 없으므로 제외한다.
+
+    **등급 분포의 출처는 이제 여기가 아니다.** 필드 스폰은 등급을 전역 표(field_rarity_shares)로 먼저 굴리고
+    spawnWeight는 그 등급 안에서 종을 고를 때만 쓴다(2026-09-29). 리전 풀에 어떤 등급이 있는지를 가리는 데 쓴다.
     """
     out = {}
     for key, pat in (
@@ -432,6 +524,30 @@ def quest_types_enum() -> list:
     ]
 
 
+# 조건부 퀘스트(QuestType.CaptureTrait / BattleFeat)가 읽는 TutorialQuest 조건 필드.
+# 판정은 QuestTraitRules(C#)가 한다 — 여기는 "저작이 그 판정에 닿는가"만 본다.
+TRAIT_CAPTURE_FIELDS = ("minSizeMm", "maxSizeMm", "minSizeRatio", "maxSizeRatio", "requireShiny")
+TRAIT_BATTLE_FIELDS = ("minLevelEdge", "maxTurns", "minHpPercent", "resetOnLoss")
+TRAIT_SHARED_FIELDS = ("requiredElement", "minRarity")
+_TRAIT_FIELDS = TRAIT_CAPTURE_FIELDS + TRAIT_BATTLE_FIELDS + TRAIT_SHARED_FIELDS
+# 기본값을 일부러 적어 둔 것은 조건이 아니다(C# 필드 기본값과 같은 값).
+_TRAIT_DEFAULTS = {"0", "0f", "0.0f", "false", "InsectElement.None", "InsectRarity.Common"}
+
+
+def _trait_fields(block: str) -> dict:
+    """퀘스트 블록에서 **채워진** 조건 필드만 {필드: 값 문자열}로."""
+    out = {}
+    for name in _TRAIT_FIELDS:
+        m = re.search(rf"\b{name}\s*=\s*([^,\n]+)", block)
+        if not m:
+            continue
+        val = m.group(1).strip()
+        if val in _TRAIT_DEFAULTS:
+            continue
+        out[name] = val
+    return out
+
+
 def quest_defs() -> list:
     """[{questId, type, prereq, reward_insect, reward_item, reward_item_count, target}, ...]
 
@@ -468,6 +584,10 @@ def quest_defs() -> list:
             "category": cat.group(1) if cat else "Story",
             "repeatable": (rep.group(1) == "true") if rep else False,
             "target_increment": i("targetIncrement") or 0,
+            # 지역 의뢰(Side 전용) — 비면 None(어디서든 센다).
+            "region": s("requiredRegionId"),
+            # 조건부 퀘스트 조건 — 채운 필드만. 조건부 타입이 아니어도 담아 둔다(엉뚱한 타입에 쓴 것을 검사 13이 잡는다).
+            "trait_fields": _trait_fields(block),
         })
     if not out:
         raise ExtractorBroken("allQuests 배열에서 퀘스트를 하나도 못 읽었다 — 구조가 바뀌었는가?")
@@ -543,11 +663,10 @@ def quest_progress_wiring() -> dict:
 
 # ── 스토리 ──────────────────────────────────────────────────────────────────
 
-def story_beats() -> list:
-    """Story.json의 비트 목록 (파싱된 dict). json.load라 퀘스트 정규식보다 견고하다.
+def story_document() -> dict:
+    """Story.json 루트 전체 (파싱된 dict) — StoryList 하나다(`beats`·`chapters`).
 
-    설계(Docs/StorySystemDesign.md)가 데이터 모델을 JSON으로 정한 이유가 이것이다 —
-    lines[]/choices[] 중첩 구조를 정규식으로 자르는 대신 네이티브 파싱한다.
+    story_lint 검사 14가 루트 키까지 StoryList 필드와 대조하려고 통째로 읽는다.
     """
     import json
     path = PATHS["story_json"]
@@ -558,10 +677,32 @@ def story_beats() -> list:
             data = json.load(f)
     except (OSError, ValueError) as e:
         raise ExtractorBroken(f"{path} 파싱 실패: {e}")
+    if not isinstance(data, dict):
+        raise ExtractorBroken(f"{path}의 루트가 객체가 아니다 — StoryList 형식이 바뀌었는가?")
+    return data
+
+
+def story_beats() -> list:
+    """Story.json의 비트 목록 (파싱된 dict). json.load라 퀘스트 정규식보다 견고하다.
+
+    설계(Docs/StorySystemDesign.md)가 데이터 모델을 JSON으로 정한 이유가 이것이다 —
+    lines[]/choices[] 중첩 구조를 정규식으로 자르는 대신 네이티브 파싱한다.
+    """
+    data = story_document()
     beats = data.get("beats")
     if beats is None:
-        raise ExtractorBroken(f"{path}에 'beats' 키가 없다 — StoryList 형식이 바뀌었는가?")
+        raise ExtractorBroken(f"{PATHS['story_json']}에 'beats' 키가 없다 — StoryList 형식이 바뀌었는가?")
     return beats
+
+
+def story_chapters() -> list:
+    """Story.json의 장 목록(`chapters`, 파싱된 dict) — 배열 순서가 곧 장 순서다.
+
+    **키가 없으면 빈 목록이다**(추출기 고장이 아니다) — 런타임(JsonUtility)도 옛 JSON을 빈 목록으로 읽는다.
+    장이 비어 있는 게 결함인지는 story_lint 검사 34가 판정한다.
+    """
+    chapters = story_document().get("chapters")
+    return chapters if isinstance(chapters, list) else []
 
 
 def story_trigger_wiring() -> dict:
@@ -676,20 +817,23 @@ def _switch_case_ids(key: str, func: str) -> set:
 
 
 def story_npc_display_ids() -> set:
-    """표시명 switch에 등록된 스토리 NPC(NpcManager.StoryNpcDisplayName).
+    """표시명 switch에 등록된 스토리 NPC(NpcDialogueDatabase.StorySpeakerName).
 
-    **빠뜨리면 default로 떨어져 그 인물이 "마을 어르신"으로 뜬다.** 조용하다.
+    **빠뜨리면 내부 NPC ID가 이름으로 표시된다.** 월드와 대화가 같은 표를 쓴다.
     """
-    return _switch_case_ids("npc_manager", "StoryNpcDisplayName")
+    return _switch_case_ids("npc_dialogue", "StorySpeakerName")
 
 
 def story_npc_appearance_ids() -> set:
-    """외형 switch에 등록된 스토리 NPC(NpcVisualBuilder.StoryNpcAppearance).
+    """외형 switch에 등록된 스토리 NPC(NpcVisualBuilder.StoryNpcFace — 얼굴·색).
 
     **빠뜨리면 default로 떨어져 마을 어르신 외형(백발·모자·따뜻한 상의)으로 뜬다.**
     명부회 하수가 마을 어르신 얼굴로 서 있어도 예외도 경고도 안 난다.
+
+    공개 진입점 `StoryNpcAppearance`는 얼굴(`StoryNpcFace`) 위에 옷차림(`StorySignature`)을 입히는
+    래퍼다. 등록 여부를 가르는 건 얼굴 switch라 그쪽을 읽는다(옷차림 switch는 default가 어르신 옷이다).
     """
-    return _switch_case_ids("npc_visual", "StoryNpcAppearance")
+    return _switch_case_ids("npc_visual", "StoryNpcFace")
 
 
 def stage_offsets() -> dict:
@@ -924,6 +1068,62 @@ def blight_sites() -> list:
     return sites
 
 
+def subarea_parent_regions() -> dict:
+    """{subAreaId: regionId} — 서브에리어가 어느 리전 안에 있는가.
+
+    출처: RegionDefinitions.CreateAll()의 각 RegionData 블록 안 `subAreaId = "..."`.
+    서브에리어 안의 행동은 그 리전의 행동이다(RegionManager.ActionRegionId) — `SubAreaEnter` 비트의 리전을 정할 때 쓴다.
+    """
+    src = _read("region_defs")
+    out = {}
+    starts = [m for m in re.finditer(r'regionId = "(\w+)"', src)]
+    for i, m in enumerate(starts):
+        end = starts[i + 1].start() if i + 1 < len(starts) else len(src)
+        for sub in re.findall(r'subAreaId\s*=\s*"([a-z_0-9]+)"', src[m.start():end]):
+            out.setdefault(sub, m.group(1))
+    if not out:
+        raise ExtractorBroken("RegionDefinitions에서 subAreaId를 하나도 못 읽었다 — 구조가 바뀌었는가?")
+    return out
+
+
+def boss_duel_npcs() -> set:
+    """명부회 간부 대결 상대의 storyNpcId 집합 — NpcBossDuels의 표.
+
+    표가 팀 대결로 바뀌어도(2026-10-04 battle-dev) `storyNpcId = "..."` 줄은 대결마다 하나다.
+    """
+    ids = set(re.findall(r'storyNpcId\s*=\s*"([a-z_0-9]+)"', _read("boss_duels")))
+    if not ids:
+        raise ExtractorBroken("NpcBossDuels에서 storyNpcId를 하나도 못 읽었다 — 표 구조가 바뀌었는가?")
+    return ids
+
+
+def rival_duel_stages() -> list:
+    """[{stageId, storyNpcId, regionId, openBeatId, closeBeatId}, ...] — NpcRivalDuels 표(순서 그대로).
+
+    값이 문자열 리터럴이 아니라 같은 파일의 상수(`closeBeatId = InjuryBeatId`)일 수 있어 상수를 먼저 풀어 둔다.
+    상수를 못 풀면 그 칸을 빈 문자열이 아니라 None으로 둔다 — 검사가 "닫힘 없음"으로 오해하지 않게.
+    """
+    src = _read("rival_duels")
+    consts = dict(re.findall(r'const\s+string\s+(\w+)\s*=\s*"([^"]*)"', src))
+    stages = []
+    for block in re.findall(r"new\s+Stage\s*\{(.*?)\}", src, re.S):
+        stage = {}
+        for key in ("stageId", "storyNpcId", "regionId", "openBeatId", "closeBeatId"):
+            lit = re.search(key + r'\s*=\s*"([^"]*)"', block)
+            ref = re.search(key + r'\s*=\s*([A-Za-z_]\w*)\b', block)
+            if lit:
+                stage[key] = lit.group(1)
+            elif ref:
+                stage[key] = consts.get(ref.group(1))
+            else:
+                stage[key] = ""
+        if stage.get("stageId"):
+            stages.append(stage)
+    if not stages:
+        raise ExtractorBroken("NpcRivalDuels에서 단계를 하나도 못 읽었다 — 표 구조가 바뀌었는가?")
+    return stages
+
+
 def team_max_slots() -> int:
     """배틀 팀 최대 슬롯 수. 출처: GameConstants.Battle.MaxTeamSlots.
 
@@ -977,19 +1177,62 @@ def tutorial_rewards() -> dict:
 
 
 def field_shiny_pct() -> float:
-    """필드 샤이니 확률(%). 출처: InsectEntity.cs의 `shiny = Random.value < 0.01f`.
+    """필드 샤이니 확률(%). 출처: InsectEntity.cs의 `const float FieldShinyChance = 0.01f`.
 
     느슨한 정규식(`shiny\\w*\\s*[=<]\\s*([\\d.]+)f`)을 먼저 썼다가 `cachedShinyShift = -1f`
-    같은 무관한 필드를 물어 조용히 0.0을 반환했다. 대입 형태를 통째로 고정한다 —
-    형태가 바뀌면 0을 반환하는 대신 ExtractorBroken으로 죽는 게 낫다.
+    같은 무관한 필드를 물어 조용히 0.0을 반환했다. 선언 형태를 통째로 고정한다 —
+    형태가 바뀌면 0을 반환하는 대신 ExtractorBroken으로 죽는 게 낫다. (2026-09-29부터 스포너가 슬롯에 개체를
+    들일 때 이 상수로 한 번 굴려 기록한다 — 예전의 `shiny = Random.value < 0.01f` 대입은 상수로 옮겨 갔다.)
     """
     src = _read("insect_entity")
     m = _need(
-        re.search(r"\bshiny\s*=\s*UnityEngine\.Random\.value\s*<\s*([\d.]+)f", src),
-        "`shiny = UnityEngine.Random.value < Xf` 형태의 샤이니 확률",
+        re.search(r"\bconst\s+float\s+FieldShinyChance\s*=\s*([\d.]+)f", src),
+        "`const float FieldShinyChance = Xf` 형태의 샤이니 확률",
         "insect_entity",
     )
     return float(m.group(1)) * 100.0
+
+
+def field_rarity_shares() -> dict:
+    """{"Common": 0.60, ..., "Legendary": 0.005} — 필드 전역 등급표(정규화 전 원래 몫).
+
+    출처: FieldSpawnRules.cs의 `public const float {Rarity}Share = Xf` 다섯 줄. 리전과 무관한 표다 —
+    종은 그 등급 안에서 리전 풀로 고른다. 풀에 그 등급이 없으면 가까운 아래 → 위 등급으로 대체한다
+    (field_rarity_fallback).
+    """
+    src = _read("field_rules")
+    out = {}
+    for r in RARITIES:
+        m = _need(re.search(rf"\b{r}Share\s*=\s*([\d.]+)f", src), f"{r}Share 등급 몫", "field_rules")
+        out[r] = float(m.group(1))
+    if sum(out.values()) <= 0:
+        raise ExtractorBroken(f"필드 등급표 합이 0 이하다 ({out}) — 추출이 어긋났는가?")
+    return out
+
+
+def field_rarity_fallback(wanted: str, available: set):
+    """풀에 없는 등급의 대체 — FieldSpawnRules.Fallback과 같은 규칙(가까운 아래 → 위). 없으면 None.
+
+    규칙은 코드의 순수 함수가 단일 출처이고 여기는 시뮬이 같은 답을 내도록 옮긴 것이다. 코드에서
+    순서 문장을 읽어 확인한다 — "아래 → 위"가 바뀌면(주석이 아니라 루프 방향) 시뮬이 어긋나므로 죽는다.
+    """
+    src = _read("field_rules")
+    body = _need(re.search(r"static int Fallback\(.*?\n        \}", src, re.DOTALL),
+                 "Fallback 본체", "field_rules").group(0)
+    down = body.find("r >= 0; r--")
+    up = body.find("r < available.Length; r++")
+    if down < 0 or up < 0 or down > up:
+        raise ExtractorBroken("FieldSpawnRules.Fallback의 순서(아래 먼저 → 위)가 바뀌었다 — 시뮬 규칙도 고칠 것")
+    if wanted in available:
+        return wanted
+    i = RARITIES.index(wanted)
+    for r in reversed(RARITIES[:i]):
+        if r in available:
+            return r
+    for r in RARITIES[i + 1:]:
+        if r in available:
+            return r
+    return None
 
 
 def gacha_has_shiny() -> bool:

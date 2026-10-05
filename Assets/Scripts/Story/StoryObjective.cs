@@ -99,6 +99,28 @@ namespace InsectGame.Story
         }
 
         /// <summary>
+        /// <b>아직 뒤가 남은</b> 스파인 — 자기를 선행으로 무는 비트 중 <b>안 본 것이 하나라도 있는</b> 비트.
+        /// 목표 도출(<c>StoryDirector.RecomputeObjective</c>)이 <see cref="CollectSpineBeatIds"/> 대신 쓴다.
+        ///
+        /// 정상 진행에서는 둘이 같다 — 선행을 보기 전엔 뒤가 안 열리므로 "안 본 스파인"의 뒤는 늘 안 봤다.
+        /// 갈리는 것은 <b>선행을 나중에 끼워 넣었을 때</b>뿐이다: 간부 승리(<c>duel_grip_win</c>)를 서릿길 도착(<c>ch9_arrive</c>)의
+        /// 선행으로 바꾸자, 그 전에 서릿길을 지나온 세이브는 도착을 이미 봤는데도 간부 승리가 스파인 1순위로 떠 HUD가
+        /// 모래언덕으로 되돌려 보냈다. 뒤를 다 본 스파인은 leaf와 같은 급으로 내린다(목표에서 빠지지는 않는다).
+        /// </summary>
+        public static HashSet<string> CollectLiveSpineBeatIds(IEnumerable<StoryBeat> beats, System.Func<string, bool> isSeen)
+        {
+            var spine = new HashSet<string>();
+            if (beats == null) return spine;
+            foreach (StoryBeat beat in beats)
+            {
+                if (beat == null || string.IsNullOrEmpty(beat.prerequisiteBeatId)) continue;
+                if (isSeen != null && isSeen(beat.beatId)) continue;   // 뒤를 이미 봤다 — 이 선행은 더 잇는 것이 없다
+                spine.Add(beat.prerequisiteBeatId);
+            }
+            return spine;
+        }
+
+        /// <summary>
         /// 선택지 결과 집합(어떤 비트의 <c>choices[].nextBeatId</c>로 지목된 비트).
         ///
         /// 이 비트들은 <b>플레이어가 고른 순간에만</b> 발화한다 — 목표로 안내하지도, 시작 시
@@ -134,7 +156,7 @@ namespace InsectGame.Story
             if (string.IsNullOrEmpty(chapterId)) return int.MaxValue;
             if (chapterId.StartsWith("ch") && int.TryParse(chapterId.Substring(2), out int n))
                 return n;
-            if (chapterId == "fin") return 1000;   // 최종장 — 본편 뒤
+            if (chapterId == FinaleChapterId) return 1000;   // 최종장 — 본편 뒤
             return 2000;                            // side / npc 등 곁이야기
         }
 
@@ -143,7 +165,8 @@ namespace InsectGame.Story
         /// 순위는 <b>(스파인 우선, 챕터, order, beatId)</b>다.
         ///
         /// <b>이 함수가 순서의 단일 출처다.</b> 목표 도출(<see cref="SelectObjectiveBeat"/>)과
-        /// 실제 발화(<c>StoryDirector.EvaluateTriggers</c>)가 <b>같은 답</b>을 내야 한다 —
+        /// 실제 발화(<c>StoryDirector.EvaluateTriggers</c>)가 <b>같은 답</b>을 내야 한다(목표 쪽은 종장
+        /// 한 가지만 덧붙인다 — <see cref="CompareObjectivePriority"/>) —
         /// 예전엔 발화 쪽이 <c>AllBeats()</c>(Dictionary.Values, 순서 비결정)를 훑어 <b>첫 일치</b>를
         /// 집었다. 그래서 동시에 자격을 갖는 비트가 있으면 HUD가 가리키는 것과 실제로 뜨는 것이
         /// 갈렸다: 마을 어르신에게 말을 걸었을 때 1막 개막(<c>ch1_intro</c>, 프롤로그 컷신)이 아니라
@@ -157,7 +180,72 @@ namespace InsectGame.Story
             int spineA = spineBeatIds != null && spineBeatIds.Contains(a.beatId) ? 0 : 1;
             int spineB = spineBeatIds != null && spineBeatIds.Contains(b.beatId) ? 0 : 1;
             if (spineA != spineB) return spineA - spineB;
+            return CompareChapterOrderId(a, b);
+        }
 
+        /// <summary>최종장 챕터 ID. <see cref="ChapterRank"/>의 "fin"과 같은 값이다.</summary>
+        public const string FinaleChapterId = "fin";
+
+        /// <summary>
+        /// <b>목표 도출 전용</b> 순위 — 종장(fin) leaf를 스파인과 같은 급으로 친 뒤 (챕터, order, beatId).
+        ///
+        /// 에필로그(<c>fin_epilogue</c>)는 아무도 prereq로 지목하지 않는 leaf라, 스파인 우선만 두면
+        /// <c>fin_seal</c> 직후 남은 곁이야기 스파인(마을 주민 만남 12명·도감 100/140종·꽃밭 사슬)이 전부
+        /// 엔딩보다 앞섰다 — HUD가 "세라에게 말 걸기" 대신 "꼬마 화가 달래에게 말 걸기"를 가리켰다.
+        /// 종장 leaf는 <c>fin_seal</c> 뒤에만 자격을 얻으므로(선택 결과는 목표에서 빠진다) 캠페인 도중의
+        /// 목표는 그대로다. 본편 leaf 전체를 앞세우면 안 된다 — 놓친 1장 동굴(<c>ch1_cave</c>)이 에필로그를 가로챈다.
+        ///
+        /// <b>발화 순서(<see cref="CompareBeatPriority"/>)에는 넣지 않는다.</b> 넣으면 같은 인물에게 걸린 12장 leaf와
+        /// 종장 leaf가 함께 자격을 가질 때 종장 쪽(화해)이 먼저 떠 서사가 거꾸로 흐른다(엔딩 뒤 관장 하월의 도발
+        /// <c>talk_chief</c>와 화해 <c>ch12_clash</c>가 그 예였다 — 도발은 2026-10-04에 대치 직후 대결로 바뀌며 지웠다).
+        /// 그 경우 HUD가 가리킨 비트는 같은 행동을 한 번 더 하면 뜬다(「한 걸음에 시도가 2회」 — rules/testing.md).
+        /// </summary>
+        public static int CompareObjectivePriority(StoryBeat a, StoryBeat b, HashSet<string> spineBeatIds)
+        {
+            if (a == null) return b == null ? 0 : 1;
+            if (b == null) return -1;
+
+            int tierA = ObjectiveTier(a, spineBeatIds);
+            int tierB = ObjectiveTier(b, spineBeatIds);
+            if (tierA != tierB) return tierA - tierB;
+            return CompareChapterOrderId(a, b);
+        }
+
+        // 0 = 이야기를 잇는 비트(스파인 또는 종장), 1 = leaf.
+        private static int ObjectiveTier(StoryBeat beat, HashSet<string> spineBeatIds)
+            => IsObjectiveThread(beat, spineBeatIds) ? 0 : 1;
+
+        /// <summary>
+        /// 목표 도출에서 <b>먼저 뽑히는 급</b>(이야기를 잇는 비트 — 스파인 또는 종장)인가.
+        /// <see cref="CompareObjectivePriority"/>의 0급과 같은 판정이다. leaf는 이 급이 바닥난 뒤에만 뽑힌다.
+        ///
+        /// HUD 목표 이유(<see cref="StoryBeat.why"/>)를 꼭 써야 하는 비트가 이 급이다 — story_lint 검사 33과
+        /// 실제 데이터 테스트가 같은 기준으로 센다(선택지 결과·<c>Immediate</c>는 목표 행에 머무르지 않아 뺀다).
+        /// </summary>
+        public static bool IsObjectiveThread(StoryBeat beat, HashSet<string> spineBeatIds)
+        {
+            if (beat == null) return false;
+            if (spineBeatIds != null && spineBeatIds.Contains(beat.beatId)) return true;
+            return beat.chapterId == FinaleChapterId;
+        }
+
+        /// <summary>
+        /// HUD 목표 행 두 번째 줄의 "왜" 한 줄. <b>순수 함수다</b> — 비트 조회는 호출부가 한다.
+        ///
+        /// 목표가 <b>잠긴 리전의 열쇠(앞 리전 수문장)로 바꿔 쳐졌으면</b> 빈 문자열이다. 이유는 원래 비트의 것이라
+        /// "숲으로 가려면 초원 수문장 격파" 아래에 "상자에 갇힌 곤충이 있대"가 붙으면 수문장 얘기처럼 읽힌다.
+        /// 비트가 없거나 why가 비어 있어도 빈 문자열이다 — null을 흘리지 않는다(HUD가 그대로 그린다).
+        /// </summary>
+        /// <param name="redirectedToGatekeeper">트래커가 목표를 앞 리전 수문장으로 바꿔 쳤는가.</param>
+        public static string WhyFor(StoryBeat beat, bool redirectedToGatekeeper)
+        {
+            if (redirectedToGatekeeper || beat == null || string.IsNullOrWhiteSpace(beat.why)) return string.Empty;
+            return beat.why.Trim();
+        }
+
+        // 급이 같을 때의 나머지 순서 — 두 비교가 공유한다.
+        private static int CompareChapterOrderId(StoryBeat a, StoryBeat b)
+        {
             int chapterA = ChapterRank(a.chapterId);
             int chapterB = ChapterRank(b.chapterId);
             if (chapterA != chapterB) return chapterA - chapterB;
@@ -313,6 +401,18 @@ namespace InsectGame.Story
         }
 
         /// <summary>
+        /// 목적지가 <b>이야기 대결</b>로 잠겨 있을 때의 문구 — "서릿길(으)로 가려면 집게에게 이기기".
+        /// 앞 리전 수문장은 이미 쓰러뜨렸고 남은 열쇠가 명부회 간부다(<c>RegionManager</c>의 이야기 잠금).
+        /// 수문장 문구(<see cref="DescribeRegionObjective"/>)로 떨어지면 이미 이긴 수문장을 다시 가리킨다.
+        /// 조사는 "…에게"로 잇는다 — 이름에 따라 을/를이 갈리는 것을 피한다(필드 차단 문구와 같은 이유).
+        /// </summary>
+        public static string DescribeDuelLockObjective(string regionName, string opponentName)
+        {
+            if (string.IsNullOrEmpty(opponentName)) return $"{regionName}(으)로";
+            return $"{regionName}(으)로 가려면 {opponentName}에게 이기기";
+        }
+
+        /// <summary>
         /// 지금 기다리고 있는 비트 하나를 <b>결정적으로</b> 고른다.
         ///
         /// <see cref="StoryService.AllBeats"/>는 <c>Dictionary.Values</c>라 순서가 비결정적이다 —
@@ -359,12 +459,177 @@ namespace InsectGame.Story
                 if (!string.IsNullOrEmpty(beat.requiredBeatId) && !isSeen(beat.requiredBeatId))
                     continue;
 
-                // 순위 비교는 CompareBeatPriority 하나만 쓴다 — 발화 쪽과 답이 갈리지 않게.
-                if (best == null || CompareBeatPriority(beat, best, spineBeatIds) < 0)
+                // 발화 순서(CompareBeatPriority)에 종장 한 가지만 덧붙인 순위 — 까닭은 CompareObjectivePriority.
+                if (best == null || CompareObjectivePriority(beat, best, spineBeatIds) < 0)
                     best = beat;
             }
 
             return best;
+        }
+    }
+
+    /// <summary>마을 이야기 한 편(주민 한 명)에서 <b>지금</b> 해야 할 일.</summary>
+    public enum TaleStepKind
+    {
+        /// <summary>이 NPC에게 걸린 대화 비트가 아예 없다.</summary>
+        None,
+        /// <summary>말을 걸면 새 이야기가 나온다 — 지도·머리 위 <c>!</c>.</summary>
+        Talk,
+        /// <summary>의뢰를 끝냈으니 알리러 가면 된다 — <c>?</c>. 퀘스트 게이트가 걸린 비트가 열린 상태다.</summary>
+        Report,
+        /// <summary>다음 대화가 <b>의뢰 완료만</b> 기다린다 — 따라가기는 의뢰(리전·진행)를 가리킨다.</summary>
+        Errand,
+        /// <summary>다음 대화가 본편 진행(<c>requiredBeatId</c>)을 기다린다 — 지금은 할 일이 없다.</summary>
+        Waiting,
+        /// <summary>이 NPC의 대화를 전부 들었다.</summary>
+        Done,
+    }
+
+    /// <summary>
+    /// 마을 이야기 따라가기·표식의 <b>순수</b> 판정부. <see cref="StoryObjectiveResolver"/>와 같은 이유로
+    /// MonoBehaviour와 떼어 둔다 — 여기 게이트 판정은 발화 쪽(<c>StoryDirector.EvaluateTriggers</c>)과
+    /// <b>같은 답</b>을 내야 한다. 한쪽만 다르면 <c>!</c>를 띄워 놓고 가서 말을 걸면 아무 일도 없다.
+    ///
+    /// 이야기 한 편은 <b>한 NPC에게 거는 <c>NpcTalk</c> 비트의 사슬</b>이다. 중간의 포획 징후 비트는
+    /// 곁들임이라 따라가지 않는다 — 할 일은 의뢰(퀘스트)가 들고, 말할 차례는 대화 비트가 든다.
+    /// </summary>
+    public static class StoryTaleResolver
+    {
+        /// <summary>마을 이야기 챕터 ID. 저널 탭(<c>StoryJournalUI</c>)과 같은 값이다.</summary>
+        public const string TownChapterId = "town";
+
+        /// <summary>
+        /// 이 NPC의 이야기에서 지금 할 일. <paramref name="beat"/>는 Talk/Report/Errand일 때 그 대화 비트,
+        /// <paramref name="questId"/>는 Errand일 때 기다리는 의뢰다.
+        /// </summary>
+        public static TaleStepKind ResolveStep(
+            IEnumerable<StoryBeat> beats, string npcId,
+            System.Func<string, bool> isSeen, System.Func<string, bool> isQuestDone,
+            out StoryBeat beat, out string questId)
+        {
+            beat = null;
+            questId = null;
+            if (beats == null || isSeen == null || string.IsNullOrEmpty(npcId)) return TaleStepKind.None;
+
+            bool any = false, anyUnseen = false;
+            StoryBeat talk = null, errand = null;
+
+            foreach (StoryBeat b in beats)
+            {
+                if (b == null || b.trigger == null || string.IsNullOrEmpty(b.beatId)) continue;
+                if (b.trigger.type != StoryDirector.TriggerNpcTalk || b.trigger.param != npcId) continue;
+
+                any = true;
+                if (isSeen(b.beatId)) continue;
+                anyUnseen = true;
+
+                // 순서(prereq)·단계(requiredBeatId)가 막혀 있으면 아직 차례가 아니다.
+                if (!string.IsNullOrEmpty(b.prerequisiteBeatId) && !isSeen(b.prerequisiteBeatId)) continue;
+                if (!string.IsNullOrEmpty(b.requiredBeatId) && !isSeen(b.requiredBeatId)) continue;
+
+                bool questOpen = string.IsNullOrEmpty(b.requiredQuestId)
+                    || (isQuestDone != null && isQuestDone(b.requiredQuestId));
+                if (questOpen)
+                {
+                    if (talk == null || StoryObjectiveResolver.CompareBeatPriority(b, talk, null) < 0) talk = b;
+                }
+                else if (errand == null || StoryObjectiveResolver.CompareBeatPriority(b, errand, null) < 0)
+                {
+                    errand = b;
+                }
+            }
+
+            if (talk != null)
+            {
+                beat = talk;
+                return string.IsNullOrEmpty(talk.requiredQuestId) ? TaleStepKind.Talk : TaleStepKind.Report;
+            }
+            if (errand != null)
+            {
+                beat = errand;
+                questId = errand.requiredQuestId;
+                return TaleStepKind.Errand;
+            }
+            if (anyUnseen) return TaleStepKind.Waiting;
+            return any ? TaleStepKind.Done : TaleStepKind.None;
+        }
+
+        /// <summary>
+        /// 마을 주민 한 명에게 달 표식. <b>의뢰가 본편을 이긴다</b> — 말을 걸면 어차피 둘 중 하나가 나오고,
+        /// 의뢰 표식은 눌러서 따라갈 수 있어 잃으면 안 된다. 할 의뢰가 없는 주민이 본편 대상이면 본편 표식이다.
+        /// </summary>
+        public static InsectGame.NPC.QuestMark MarkFor(TaleStepKind step, bool isMainTarget)
+        {
+            if (step == TaleStepKind.Talk) return InsectGame.NPC.QuestMark.New;
+            if (step == TaleStepKind.Report) return InsectGame.NPC.QuestMark.Report;
+            return isMainTarget ? InsectGame.NPC.QuestMark.Main : InsectGame.NPC.QuestMark.None;
+        }
+
+        /// <summary>
+        /// 마을 이야기 주민 목록 — <see cref="TownChapterId"/> 챕터의 <c>NpcTalk</c> 대상.
+        /// 인물 목록을 코드에 박지 않는다(주민을 늘려도 여기는 그대로다). 순서는 처음 등장한 비트의
+        /// <c>order</c> 순이라 저작 순서(초원 → 연못 → …)와 같다.
+        /// </summary>
+        public static List<string> CollectTaleNpcIds(IEnumerable<StoryBeat> beats)
+        {
+            var firstOrder = new Dictionary<string, int>();
+            if (beats != null)
+            {
+                foreach (StoryBeat b in beats)
+                {
+                    if (b == null || b.trigger == null || b.chapterId != TownChapterId) continue;
+                    if (b.trigger.type != StoryDirector.TriggerNpcTalk || string.IsNullOrEmpty(b.trigger.param)) continue;
+                    if (!firstOrder.TryGetValue(b.trigger.param, out int o) || b.order < o)
+                        firstOrder[b.trigger.param] = b.order;
+                }
+            }
+            var ids = new List<string>(firstOrder.Keys);
+            ids.Sort((a, c) => firstOrder[a] != firstOrder[c]
+                ? firstOrder[a].CompareTo(firstOrder[c]) : string.CompareOrdinal(a, c));
+            return ids;
+        }
+
+        /// <summary>
+        /// 이 의뢰(questId)를 기다리는 대화 비트의 NPC — 퀘스트 목록의 [따라가기]가 쓴다. 없으면 null.
+        /// <b>마을 이야기(town) 비트만 본다.</b> 본편도 퀘스트 게이트를 쓴다 — <c>ch1_intro</c>가
+        /// <c>q_move</c>를 물어서, 거르지 않으면 튜토리얼 "첫 걸음!" 행에 [따라가기]가 떠 마을 어르신을
+        /// "의뢰"로 따라갔다.
+        /// </summary>
+        public static string FindNpcForQuest(IEnumerable<StoryBeat> beats, string questId)
+        {
+            if (beats == null || string.IsNullOrEmpty(questId)) return null;
+            foreach (StoryBeat b in beats)
+            {
+                if (b == null || b.trigger == null || b.chapterId != TownChapterId || b.requiredQuestId != questId) continue;
+                if (b.trigger.type == StoryDirector.TriggerNpcTalk && !string.IsNullOrEmpty(b.trigger.param))
+                    return b.trigger.param;
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// 의뢰 진행 한 줄("연못에서 곤충 포획 3/5"). <b>순수 함수</b> — 이름·진행은 호출부가 읽어 넘긴다.
+        /// </summary>
+        /// <param name="inRegion">이미 그 리전 안이면 지명을 뺀다(스토리 목표 문구와 같은 규칙).</param>
+        public static string DescribeErrand(InsectGame.Core.QuestType type, string regionName,
+            bool inRegion, int current, int target)
+        {
+            string verb;
+            switch (type)
+            {
+                case InsectGame.Core.QuestType.Capture:
+                case InsectGame.Core.QuestType.CaptureRarity: verb = "곤충 포획"; break;
+                case InsectGame.Core.QuestType.CaptureRare: verb = "희귀 곤충 포획"; break;
+                case InsectGame.Core.QuestType.Battle: verb = "전투 승리"; break;
+                case InsectGame.Core.QuestType.RaidBattle: verb = "레이드 승리"; break;
+                case InsectGame.Core.QuestType.VisitSubArea: verb = "숨은 장소 방문"; break;
+                case InsectGame.Core.QuestType.NpcDuel: verb = "대결 승리"; break;
+                default: verb = "의뢰 진행"; break;
+            }
+            string progress = target > 0 ? $" {UnityEngine.Mathf.Clamp(current, 0, target)}/{target}" : string.Empty;
+            return !inRegion && !string.IsNullOrEmpty(regionName)
+                ? $"{regionName}에서 {verb}{progress}"
+                : $"{verb}{progress}";
         }
     }
 }

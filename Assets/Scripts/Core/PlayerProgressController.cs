@@ -20,6 +20,13 @@ namespace InsectGame.Core
 
         public event Action<PlayerProgressData> ProgressChanged;
 
+        /// <summary>
+        /// <b>경험치로</b> 레벨이 오를 때마다 1씩 오른다. 화면이 이 값의 변화를 읽어 레벨업 연출을 띄운다.
+        /// <see cref="ProgressChanged"/>로는 그걸 가릴 수 없다 — 로그인·클라우드 적재도 같은 이벤트를 쏘는데,
+        /// 그때 레벨이 1에서 저장된 값으로 뛰는 것은 "레벨업"이 아니다.
+        /// </summary>
+        public int LevelUpSerial { get; private set; }
+
         private void Awake()
         {
             data = PlayerProgressSaveService.Load();
@@ -78,6 +85,7 @@ namespace InsectGame.Core
             }
 
             PlayerProgressSaveService.Save(data);
+            if (data.level > levelBefore) LevelUpSerial++;
             ProgressChanged?.Invoke(data);
 
             // 레벨업은 중요한 진행이라 자동저장 120초 대기 안 하고 즉시 클라우드 동기화

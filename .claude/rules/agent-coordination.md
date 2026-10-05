@@ -58,6 +58,9 @@ description: 공유 파일별 에이전트 수정 경계와 충돌 방지 절차
 | `CutsceneDirector.cs` | game-designer | 재생 시점(StoryBeatCompleted), 전투 지연 큐, 프리즈 복귀 |
 | | visual-dev | 카메라 프레이밍 적용, 딤 강도 |
 | | ui-dev | 자막 렌더(OnGUI), IModalUI 스택, 건너뛰기 버튼 |
+| `StoryVideoLibrary.cs` | game-designer | 어느 비트에 붙일지, 자막 문구·큐 타이밍, 파일명 |
+| `StoryVideoDirector.cs` | game-designer | 재생 시점(StoryBeatCompleted), 전투 지연 큐, 프리즈 복귀 |
+| | ui-dev | 영상 그리기(OnGUI·cover UV), 자막 렌더, IModalUI 스택, 건너뛰기 버튼(자리는 `StoryVideoScreenLayout`) |
 | `NpcBossDuels.cs` | game-designer | 상대 곤충·레벨·보상 아이템·재도전 쿨다운 |
 | | battle-dev | `isFinal`(보스 BGM 분기), 대결 진입 연동 |
 | `PlayerVisualBuilder.cs` | visual-dev | BuildAll() 슬림 비례, BuildHair*, Accessory 노드 추가, Material/슈더 fallback |

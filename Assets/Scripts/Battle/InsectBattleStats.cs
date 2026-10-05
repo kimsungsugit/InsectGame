@@ -6,7 +6,19 @@ namespace InsectGame.Battle
 {
     public class InsectBattleStats
     {
+        /// <summary>
+        /// 이 곤충의 <b>정체</b> — 도감·포획·보상·스토리 판정(<c>BattleWin</c> 종 지정)이 읽는다. 전투 중 바뀌지 않는다.
+        /// 상성·자속·기술은 <see cref="CombatData"/>로 잰다.
+        /// </summary>
         public InsectData Data { get; }
+
+        /// <summary>
+        /// 상성·자속·기술을 잴 때 쓰는 곤충 — 보통 <see cref="Data"/>와 같다. <b>모습을 바꾸는 레이드 보스만 다르다</b>
+        /// (<see cref="RaidBossStats.ChangeForm"/>, 표는 <see cref="RaidBossForms"/>). 이름 없는 사마귀가 나비의 모습을 빌려도
+        /// 이긴 상대는 사마귀다 — 그래서 <see cref="Data"/>를 갈아끼우지 않고 따로 둔다(갈아끼우면 레이드 승리가
+        /// 나비를 도감·컬렉션에 올리고, 최종장 <c>BattleWin</c> 비트가 사마귀를 못 알아본다).
+        /// </summary>
+        public InsectData CombatData { get; protected set; }
         public PlayerInsectData PlayerData { get; }
         public int Level { get; }
         public int MaxHp { get; protected set; }
@@ -53,6 +65,7 @@ namespace InsectGame.Battle
         public InsectBattleStats(InsectData data, int level, PlayerInsectData pid = null)
         {
             Data = data;
+            CombatData = data;
             PlayerData = pid;
             Level = Mathf.Max(1, level);
 
@@ -95,6 +108,15 @@ namespace InsectGame.Battle
 
         public void ApplyDamage(int amount, int attackerAtk = 0, int defenderDef = 0)
         {
+            CurrentHp = Mathf.Max(0, CurrentHp - Mathf.Max(1, ResolveDamage(amount, attackerAtk, defenderDef)));
+        }
+
+        /// <summary>
+        /// 공격력 대 방어력 비율까지 반영한 <b>실제로 깎일 피해</b> — <see cref="ApplyDamage"/>가 쓰는 계산 그대로다.
+        /// 샌드박스 전투가 이 값에 배율·상한을 걸어야 해서 떼어 냈다(두 곳이 따로 계산하면 어긋난다).
+        /// </summary>
+        public int ResolveDamage(int amount, int attackerAtk = 0, int defenderDef = 0)
+        {
             int finalDamage = amount;
             if (attackerAtk > 0 && defenderDef > 0)
             {
@@ -104,7 +126,44 @@ namespace InsectGame.Battle
                 finalDamage = Mathf.RoundToInt(amount * Mathf.Clamp(ratio,
                     GameConstants.Battle.MinAtkDefRatio, GameConstants.Battle.MaxAtkDefRatio));
             }
-            CurrentHp = Mathf.Max(0, CurrentHp - Mathf.Max(1, finalDamage));
+            return finalDamage;
+        }
+
+        // ── 낮·밤·날씨 보정(BattleEnvironment) ──
+        // 처음 걸 때의 공격·방어를 붙잡아 두고 언제나 그 값에 곱한다 — 두 번 불려도 누적되지 않고, 1을 걸면 원래 값으로 돌아간다.
+        // 생성자가 아니라 처음 걸 때 붙잡는 이유: 파생 스탯(레이드 보스)은 base 생성자 뒤에 공격·방어를 다시 정한다.
+        private bool environmentBaseCaptured;
+        private int unscaledAttack;
+        private int unscaledDefense;
+
+        /// <summary>지금 걸려 있는 낮·밤·날씨 배수(1 = 보정 없음).</summary>
+        public float EnvironmentMultiplier { get; private set; } = 1f;
+
+        /// <summary>
+        /// 낮·밤·날씨 보정 — 원래 <see cref="Attack"/>·<see cref="Defense"/>에 <paramref name="multiplier"/>를 곱해 반올림한다(최소 1).
+        /// <b>HP는 건드리지 않는다</b>(HP바가 전투 시작에 튀지 않게). 의상·아이템·버프가 매 턴 다시 계산하는
+        /// <see cref="AttackBonus"/>/<see cref="DefenseBonus"/>와는 따로 논다 — 그쪽에 섞으면 다음 재계산이 지운다.
+        /// 0·음수·NaN·무한대는 1로 본다.
+        /// </summary>
+        public void ApplyEnvironment(float multiplier)
+        {
+            if (!environmentBaseCaptured)
+            {
+                unscaledAttack = Attack;
+                unscaledDefense = Defense;
+                environmentBaseCaptured = true;
+            }
+
+            float m = multiplier > 0f && !float.IsInfinity(multiplier) ? multiplier : 1f;
+            EnvironmentMultiplier = m;
+            Attack = Mathf.Max(1, Mathf.RoundToInt(unscaledAttack * m));
+            Defense = Mathf.Max(1, Mathf.RoundToInt(unscaledDefense * m));
+        }
+
+        /// <summary>HP가 <paramref name="floor"/>보다 낮으면 그 값까지 올린다(샌드박스 전투의 하한 — 독 같은 지속 피해를 막는다).</summary>
+        public void RaiseHpTo(int floor)
+        {
+            if (CurrentHp < floor) CurrentHp = Mathf.Min(MaxHp, Mathf.Max(1, floor));
         }
     }
 }

@@ -12,8 +12,11 @@ developer_instructions = """
 - `Assets/Scripts/Capture/CaptureTriggerModeController.cs` - 감지 모드 전환
 - `Assets/Scripts/Capture/CaptureFeedbackController.cs` - 포획 연출
 - `Assets/Scripts/Capture/CaptureTriggerOptionsUI.cs` - 트리거 설정 UI
-- `Assets/Scripts/Spawning/InsectSpawner.cs` - 월드 스폰 (최대20, 리전별 최소5)
-- `Assets/Scripts/Spawning/SpawnPoint.cs` - 스폰 포인트 (반경5m, 로컬최대2)
+- `Assets/Scripts/Spawning/InsectSpawner.cs` - 필드 개체군 (리전별 슬롯 기록 · 시간 기반 재생 · 45m 실체화/55m 회수 · 서브에리어 슬롯)
+- `Assets/Scripts/Spawning/FieldSpawnRules.cs` - 필드 스폰 순수 규칙 (전역 등급표 · 등급 대체 · 레어 부스트 · 레벨 · 슬롯 수 · 재생/수명)
+- `Assets/Scripts/Spawning/FieldPopulation.cs` - 슬롯 기록부 + 상태 전이 (게임플레이 퇴장 vs 거리 회수)
+- `Assets/Scripts/Spawning/FleePath.cs` - 도주 방향·거리 순수 판정 (벽 관통 방지)
+- `Assets/Scripts/Spawning/SpawnPoint.cs` - 리전/서브에리어 스폰 표 (풀 · 레벨 대역) — 자리는 정하지 않음
 - `Assets/Scripts/Spawning/InsectEntity.cs` - 곤충 엔티티 (프로시저럴 3D 모델)
 - `Assets/Scripts/Spawning/SimpleObjectPool.cs` - Get()/Return() 오브젝트 풀
 - `Assets/Scripts/Spawning/DistanceCulling.cs` - 거리 컬링 (25m/20m)
@@ -44,11 +47,15 @@ timingBonus: |timing-0.5|≤0.15이면 +0.15
 커서 가속: 1 + |pos-0.5|×0.6 (가장자리에서 빨라짐)
 ```
 
-### 스폰 레벨
+### 필드 스폰 (FieldSpawnRules가 단일 출처)
 ```
-level = lerp(min, max, pow(random, power))
-서브에리어: power=2.0, 메인필드: power=3.5
-레어도 보정: Uncommon+0.5, Rare+1.5, Epic+3.0, Legendary+5.0
+등급 = 전역 표 C .60 / U .25 / R .11 / E .035 / L .005 (리전과 무관, 레어 부스트는 R+에만 ×)
+  → 풀에 없는 등급은 가까운 아래 → 위로 대체 (안전망)
+종 = 그 등급의 (리전 풀 ∩ 시간·날씨 후보) 안에서 spawnWeight 가중
+레벨(메인) = 리전 대역 [requiredLevel, +GetRegionLevelRange] 안 pow(random, 1.5), 등급 보정 없음
+레벨(서브에리어) = min~max 균등
+슬롯 = 설 수 있는 땅 / 550㎡ (8~40) → BlightPolicy.MaxActiveFor
+재생 60~120s (서브에리어 45s) · 수명 4~7분(플레이어 25m 밖에서만 교체) · 새 개체는 플레이어 20m 밖
 ```
 
 ## 공유 파일 수정 경계
@@ -61,5 +68,6 @@ level = lerp(min, max, pow(random, power))
 ## 설계 원칙
 - WorldState 기반 스폰 필터링 (시간+날씨 조합)
 - 오브젝트 풀 필수 사용 (Instantiate 최소화)
-- 60m 이상 자동 디스폰, 8초마다 스폰포인트 재배치
+- 기록(슬롯)이 개체다 — 멀어지면 몸만 풀로 돌리고(Recall) 기록은 남긴다. 리전 이동으로 리롤하지 않는다
+- 사라지는 방식 둘: 게임플레이 퇴장(Despawn 콜백 → 재생 지연) vs 스포너 회수(Recall → 개체 유지)
 - 포획 아이템은 speedMult/zoneMult/timeMult/captureBonus 4가지 효과"""

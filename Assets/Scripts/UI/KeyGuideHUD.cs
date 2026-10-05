@@ -78,7 +78,7 @@ namespace InsectGame.UI
             // 모달이 열려 있으면 HUD를 숨긴다. depth를 안 거는 전체화면 모달(CollectionUI,
             // TrainingUI, RegionMapUI 등)과 렌더 순서가 미정의라 패널 위로 튀어나올 수 있다.
             // UIScale.Begin() 전에 return해야 Begin/End 균형이 유지된다(MinimapUI:52 관례).
-            if (ModalUIRegistry.IsAnyOpen()) return;
+            if (ModalUIRegistry.IsAnyOpen() || DreamPrologueState.Active) return;
 
             UIScale.Begin();
             InitStyles();
@@ -110,7 +110,7 @@ namespace InsectGame.UI
             y += lineH + 2;
 
             DrawKeyRow(x, ref y, lineH, "WASD", "이동", keyStyle, descStyle);
-            DrawKeyRow(x, ref y, lineH, "E", inMinigame ? "타이밍 확인" : "포획", keyStyle, descStyle);
+            DrawKeyRow(x, ref y, lineH, "E", inMinigame ? "미니게임 조작" : "포획", keyStyle, descStyle);
 
             if (inMinigame)
                 DrawKeyRow(x, ref y, lineH, "ESC", "포획 취소", keyStyle, descStyle);
@@ -148,69 +148,109 @@ namespace InsectGame.UI
         private void DrawCurrentRegion()
         {
             if (regionManager == null) return;
+            UITheme t = UITheme.Instance;
 
             RegionData current = regionManager.CurrentRegion;
-            string regionName = current != null ? current.displayName : "Wild";
-            Color regionCol = current != null ? current.themeColor : new Color(0.5f, 0.5f, 0.5f);
+            string regionName = current != null ? current.displayName : "야외";
+            Color regionCol = current != null ? current.themeColor : t.textSecondary;
+            // 섬(분리 구역)에 있는 동안은 리전 판정이 얼어 있어 CurrentRegion이 떠나온 리전에 머문다 —
+            // 그대로 두면 섬 위에서 배너가 "초원"이라고 말한다.
+            SubAreaData detached = regionManager.CurrentSubArea;
+            if (detached != null && detached.detached)
+            {
+                regionName = detached.displayName;
+                regionCol = t.accentMint;
+            }
 
-            float w = UIScale.IsMobileLayout ? 430f : 520f;
-            float h = UIScale.IsMobileLayout ? 64f : 80f;
-            // 진짜 화면 중앙이 아니라 '세이프 에어리어 중앙'으로 — 가로 비대칭 노치 보정.
-            float safeL = UIScale.VirtualSafeLeft;
-            float safeR = UIScale.VirtualSafeRight;
-            float x = safeL + (UIScale.VirtualScreenWidth - safeL - safeR - w) / 2f;
-            float y = UISafeLayout.ContentTop;
+            bool mobile = UIScale.IsMobileLayout;
+            HudFrame frame = HudFrame.Current;
+            Rect banner = RegionBannerRect(frame);
+            // 상태 패널을 펼치면(그 안에 리전 칸이 있다) 겹치는 배너는 비켜선다 — 세로 화면에서 패널(폭 480)이 배너 자리를 덮는다.
+            if (MinimapUI.LeftStackOccluded && banner.Overlaps(PlayerStatusHUD.PanelRect(frame))) return;
 
-            GUI.color = new Color(0, 0, 0, 0.6f);
-            GUI.DrawTexture(new Rect(x, y, w, h), Texture2D.whiteTexture);
-            GUI.color = regionCol;
-            GUI.DrawTexture(new Rect(x, y + h - 5, w, 5), Texture2D.whiteTexture);
+            // 미니맵·상태 패널과 같은 HUD 카드 + 리전 색 밑줄(얇아서 각진 채, 반경만큼 물린다).
+            UISurface.HudCard(banner);
+            UISurface.Flat(new Rect(banner.x + UITheme.Radius.Card, banner.yMax - 9f,
+                banner.width - UITheme.Radius.Card * 2f, 4f), regionCol);
 
-            hintStyle.fontSize = UIScale.IsMobileLayout ? 32 : 44;
+            hintStyle.fontSize = mobile ? 32 : 40;
             hintStyle.alignment = TextAnchor.MiddleCenter;
-            hintStyle.normal.textColor = regionCol;
+            hintStyle.normal.textColor = Color.Lerp(regionCol, t.textPrimary, 0.25f);
             GUI.color = Color.white;
-            GUI.Label(new Rect(x, y, w, h), regionName, hintStyle);
+            UIHelper.LabelFit(new Rect(banner.x + 16f, banner.y, banner.width - 32f, banner.height - 8f), regionName, hintStyle);
         }
+
+        public const float CaptureItemsWidth = 440f;
+        public const float CaptureItemsHeight = 226f;
+
+        /// <summary>
+        /// 위쪽 가운데 리전 배너의 자리 — 순수 계산. 진짜 화면 중앙이 아니라 '세이프 에어리어 중앙'(가로 비대칭 노치 보정).
+        /// 모바일은 좌상단 상태 탭과 우상단 단축 바 사이에 둔다 — 화면 중앙에 두면 세로 화면에서 단축 바(폭 324) 밑으로 20px 넘게
+        /// 파고들었다(2026-09-30 검수 캡처).
+        /// </summary>
+        public static Rect RegionBannerRect(HudFrame f)
+        {
+            if (!f.Mobile)
+            {
+                float l = f.SafeLeft;
+                float r = f.Width - f.SafeRight;
+                return new Rect(l + (r - l - 520f) * 0.5f, f.ContentTop, 520f, 80f);
+            }
+            float left = PlayerStatusHUD.TabRect(f).xMax + UITheme.Space.S;
+            float right = QuickAccessBarUI.ShortcutBarRectFor(f).x - UITheme.Space.S;
+            float w = Mathf.Min(430f, Mathf.Max(1f, right - left));
+            return new Rect(left + (right - left - w) * 0.5f, f.ContentTop, w, 68f);
+        }
+
+        /// <summary>우상단 포획 아이템 패널(데스크톱 전용)의 자리 — 순수 계산.</summary>
+        public static Rect CaptureItemsRectFor(HudFrame f)
+        {
+            return new Rect(f.Width - f.SafeRight - CaptureItemsWidth - 20f, f.ContentTop, CaptureItemsWidth, CaptureItemsHeight);
+        }
+
+        /// <summary>
+        /// 우상단 포획 아이템 패널의 자리(가상 좌표, 데스크톱 전용). 그 아래에 붙는 HUD(<see cref="WorldClockHUD"/>)가
+        /// 읽어 한 열로 선다 — 크기를 베껴 두면 패널을 키울 때 조용히 겹친다(<see cref="MinimapUI.StackBelowY"/>와 같은 이유).
+        /// </summary>
+        public static Rect CaptureItemsRect => CaptureItemsRectFor(HudFrame.Current);
 
         private void DrawCaptureItems()
         {
             if (itemInventory == null) return;
+            UITheme t = UITheme.Instance;
 
-            float w = 440f;
-            float h = 220f;
-            float x = UIScale.VirtualScreenWidth - w - 20;
-            float y = UISafeLayout.ContentTop;
+            Rect panel = CaptureItemsRect;
+            float w = panel.width;
 
-            GUI.color = new Color(0, 0, 0, 0.6f);
-            GUI.DrawTexture(new Rect(x, y, w, h), Texture2D.whiteTexture);
-            GUI.color = new Color(0.3f, 0.8f, 0.4f);
-            GUI.DrawTexture(new Rect(x, y, w, 4), Texture2D.whiteTexture);
+            UISurface.HudCard(panel);
+            UISurface.Flat(new Rect(panel.x + UITheme.Radius.Card, panel.y + 3f,
+                panel.width - UITheme.Radius.Card * 2f, 3f), t.accentMint);
+
+            titleStyle.normal.textColor = t.textSecondary;
             GUI.color = Color.white;
+            GUI.Label(new Rect(panel.x + 20f, panel.y + 10f, w - 40f, 44f), "포획 아이템", titleStyle);
 
-            titleStyle.normal.textColor = new Color(0.75f, 0.75f, 0.75f);
-            GUI.Label(new Rect(x + 16, y + 10, w, 40), "포획 아이템", titleStyle);
-
-            float iy = y + 56;
-            DrawItemCount(x + 16, iy, "기본 채집망", itemInventory.GetCount("net_basic"), new Color(0.65f, 0.65f, 0.65f));
-            DrawItemCount(x + 16, iy + 50, "실버 채집망", itemInventory.GetCount("net_silver"), new Color(0.75f, 0.82f, 0.95f));
-            DrawItemCount(x + 16, iy + 100, "골드 채집망", itemInventory.GetCount("net_gold"), new Color(1f, 0.85f, 0.2f));
+            // 이름은 아이템 DB·상점·포획 창과 같은 "은빛/황금"이다 — 여기만 "실버/골드"라 같은 그물이 둘로 보였다.
+            float iy = panel.y + 60f;
+            DrawItemCount(panel.x + 20f, iy, w - 40f, "기본 채집망", itemInventory.GetCount("net_basic"), t.itemCommon);
+            DrawItemCount(panel.x + 20f, iy + 52f, w - 40f, "은빛 채집망", itemInventory.GetCount("net_silver"), t.itemRare);
+            DrawItemCount(panel.x + 20f, iy + 104f, w - 40f, "황금 채집망", itemInventory.GetCount("net_gold"), t.itemLegendary);
         }
 
-        private void DrawItemCount(float x, float y, string label, int count, Color col)
+        private void DrawItemCount(float x, float y, float w, string label, int count, Color col)
         {
-            GUI.color = col;
-            GUI.DrawTexture(new Rect(x, y + 10, 22, 22), Texture2D.whiteTexture);
-            GUI.color = Color.white;
+            UITheme t = UITheme.Instance;
+            bool has = count > 0;
+            UISurface.Rounded(new Rect(x, y + 10f, 24f, 24f), has ? col : t.surfaceRaised, 6f);
 
-            itemNameStyle.normal.textColor = col;
-            GUI.Label(new Rect(x + 32, y, 220, 42), label, itemNameStyle);
+            itemNameStyle.normal.textColor = has ? t.textPrimary : t.textMuted;
+            GUI.Label(new Rect(x + 36f, y, w - 150f, 44f), label, itemNameStyle);
 
             itemCountStyle.fontStyle = FontStyle.Bold;
             itemCountStyle.fontSize = 32;
             itemCountStyle.alignment = TextAnchor.MiddleRight;
-            itemCountStyle.normal.textColor = count > 0 ? new Color(1f, 0.92f, 0.5f) : new Color(0.4f, 0.3f, 0.3f);
-            GUI.Label(new Rect(x + 260, y, 120, 42), $"x{count}", itemCountStyle);
+            itemCountStyle.normal.textColor = has ? t.accentAmber : t.textMuted;
+            GUI.Label(new Rect(x + w - 120f, y, 120f, 44f), $"×{count}", itemCountStyle);
         }
 
         public void AutoWire(CaptureMinigameController mg, InsectBattleController bc, InsectBattleUIController bui)

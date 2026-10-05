@@ -36,6 +36,7 @@ namespace InsectGame.UI
         private CameraFollower cameraFollower;                   // 첫 조우 시네마틱 줌
         private HospitalUI hospital;                             // 병원 치료 UI
         private NpcDuelController duelController;                // 곤충잡이 아이 대결
+        private IslandVisitUI islandVisit;                       // 나루터 → 섬 나들목 창
 
         private readonly List<InteractionPointDef> points = new List<InteractionPointDef>();
 
@@ -76,6 +77,11 @@ namespace InsectGame.UI
         public void AutoWire(HospitalUI hospitalUi)
         {
             if (hospital == null) hospital = hospitalUi;
+        }
+
+        public void AutoWire(IslandVisitUI islandVisitUi)
+        {
+            if (islandVisit == null) islandVisit = islandVisitUi;
         }
 
         public void AutoWire(NpcDialogueUI dialogueUi)
@@ -370,6 +376,9 @@ namespace InsectGame.UI
                     case InteractionKind.Hospital:
                         if (hospital != null) hospital.Toggle();
                         break;
+                    case InteractionKind.IslandDock:
+                        if (islandVisit != null) islandVisit.Toggle();
+                        break;
                 }
             }
 
@@ -385,66 +394,76 @@ namespace InsectGame.UI
         // 컨트롤러가 찍으면 그 시각이 전투 결과 화면이 열리는 프레임이라, 화면이 4초를
         // 채우고 닫힐 때쯤엔 3.5초 창이 이미 지나 토스트가 한 번도 안 보인다.
         private string resultToastText = string.Empty;
-        private float resultToastShownAt = float.MinValue;
+        // 남은 표시 시간 — 가운데 무대(HudStage)에서 차례를 기다리는 동안은 줄지 않는다.
+        private float resultToastRemaining;
 
         private void OnGUI()
         {
             // 모달(전투 화면 포함) 중에는 그리지도 않고 **꺼내 오지도 않는다** —
             // 여기서 소비하면 필드로 돌아오기 전에 창이 시작돼 같은 결함을 반복한다.
             if (ModalUIRegistry.IsAnyOpen()) return;
+            // 「챔피언의 꿈」에는 마을·주민이 없다 — 꿈 밖의 대결 결과도 꿈속에 비치지 않게 기다린다.
+            if (DreamPrologueState.Active) return;
 
             // 대결 결과 토스트는 대상이 없어도(대결 직후엔 아이가 쿨다운이라 대상에서 빠진다) 떠야 한다.
             if (duelController != null && duelController.TryConsumeResult(out string freshResult))
             {
                 resultToastText = freshResult;
-                resultToastShownAt = Time.time;
+                resultToastRemaining = ResultToastSeconds;
             }
-            bool showResult = !string.IsNullOrEmpty(resultToastText)
-                && Time.time - resultToastShownAt < ResultToastSeconds;
+            // 가운데 무대에 선다 — 앞 차례(포획 결과·퀘스트 완료 등)가 서 있으면 기다리고 시간도 흐르지 않는다.
+            bool showResult = !string.IsNullOrEmpty(resultToastText) && resultToastRemaining > 0f
+                && HudStage.Request(HudStageItem.DuelResult);
+            if (showResult && Event.current != null && Event.current.type == EventType.Repaint)
+                resultToastRemaining -= Time.unscaledDeltaTime;
 
-            if (!hasPriorityTarget && !showResult) return;
+            if (!hasPriorityTarget && !showResult)
+            {
+                centerButtonRect = new Rect(0, 0, 0, 0);
+                return;
+            }
 
             EnsureStyles();
             EnsureCircleTex();
 
             UIScale.Begin();
 
+            HudFrame frame = HudFrame.Current;
             if (showResult)
             {
                 // 길이를 **데이터가** 정한다(상대 이름 + 보상 아이템 + 거점 이름) — 800×44 고정
                 // 상자에 raw GUI.Label로 그리면 긴 조합에서 조용히 잘린다. rules/ui-layout.md의
                 // 그 규칙 그대로 LabelFit으로 맞춰 넣는다.
-                UIHelper.LabelFit(
-                    new Rect(UIScale.VirtualScreenWidth / 2f - 400f, UISafeLayout.ContentBottom - 150f, 800f, 44f),
-                    resultToastText,
-                    promptStyle);
+                Rect resultRect = DuelResultRect(frame);
+                HudStage.Request(HudStageItem.DuelResult, resultRect);
+                UIHelper.LabelFit(resultRect, resultToastText, promptStyle);
             }
 
             if (!hasPriorityTarget)
             {
+                centerButtonRect = new Rect(0, 0, 0, 0);
                 UIScale.End();
                 return;
             }
 
-            float vw = UIScale.VirtualScreenWidth;
-            float safeR = UIScale.VirtualSafeRight;
-
-            // 프롬프트 — 화면 하단 중앙에서 좌측 오프셋 (잡기 버튼/미스 피드백과 겹침 회피).
-            // **길이를 데이터가 정한다**(NPC 표시명·건물 라벨)는데 상자는 640 고정이고 wordWrap도
-            // 없어서, 이름이 길면 **가로로 잘린다**(rules/ui-layout.md). `text_fit_lint`는 라벨 인자가
-            // 캐시된 문자열(`promptText`)이라 데이터 출처를 못 봐서 이 자리를 놓친다.
-            UIHelper.LabelFit(new Rect(vw / 2f - 560f, UISafeLayout.ContentBottom - 96f, 640f, 44f),
-                promptText, promptStyle);
-
-            DrawCenterButton(vw);
+            // 가운데 대화 버튼과 그 아래 안내 글자는 가운데 무대 안에 선다 — 서 있는 카드와 겹치면 비켜선다
+            // (E 키와 우하단 원형 버튼은 그대로 살아 있다).
+            if (HudStage.OccupiedOver(TalkRect(frame)) || HudStage.OccupiedOver(PromptRect(frame)))
+            {
+                centerButtonRect = new Rect(0, 0, 0, 0);
+            }
+            else
+            {
+                HudPresence.Mark(HudPresenceItem.Talk);   // 코치 배너가 겹치면 비켜 준다
+                // 프롬프트 — 대화 버튼 바로 아래. **길이를 데이터가 정한다**(NPC 표시명·건물 라벨)는데 상자는 고정이라
+                // LabelFit으로 맞춘다(rules/ui-layout.md). 예전엔 화면 아래 가운데(ContentBottom−96)라 데스크톱 단축 바·
+                // 동굴 입구 버튼과 겹쳤다.
+                UIHelper.LabelFit(PromptRect(frame), promptText, promptStyle);
+                DrawCenterButton(frame);
+            }
 
             // 원형 상호작용 버튼 — 잡기 버튼(우하단, 반경 96) 왼쪽에 배치
-            float radius = 80f;
-            float accountClear = 92f / UIScale.Scale; // CaptureInputController와 동일한 '계정' 버튼 회피 보정
-            float catchCx = vw - safeR - 96f - 40f;   // 잡기 버튼 중심 X (DrawCatchButton과 동기)
-            float cx = catchCx - 96f - radius - 36f;  // 잡기 버튼 왼쪽
-            float cy = UISafeLayout.ContentBottom - 96f - accountClear; // 잡기 버튼과 같은 높이(중심 정렬)
-            Rect rect = new Rect(cx - radius, cy - radius, radius * 2f, radius * 2f);
+            Rect rect = InteractButtonRect(frame);
             interactButtonRect = rect;
             FieldHudInput.RegisterBlockingRect(rect); // 버튼 위 탭의 클릭-이동 오발 차단
 
@@ -469,15 +488,44 @@ namespace InsectGame.UI
         /// 시선이 머무는 자리에 놓는다. 고정 높이라 세로 마진 안으로 clamp한다
         /// (rules/ui-layout.md: 비율 배치는 허용, 다만 고정 높이는 가둔다).
         /// </summary>
-        private void DrawCenterButton(float vw)
+        /// <summary>
+        /// 가운데 대화 버튼의 자리 — 순수 계산. 플레이어 머리 위쯤(세로 58%)에 두어 시선이 머무는 자리에 놓는다.
+        /// 가운데 무대(<see cref="HudStage.Area"/>) 안이라 카드가 서면 비켜선다.
+        /// </summary>
+        public static Rect TalkRect(HudFrame f)
         {
-            float w = Mathf.Min(560f, vw - 80f);
-            float h = UIScale.IsMobileLayout ? 132f : 108f;
-            float y = Mathf.Clamp(
-                UIScale.VirtualScreenHeight * 0.58f,
-                UISafeLayout.ContentTop,
-                UISafeLayout.ContentBottom - h);
-            Rect rect = new Rect((vw - w) * 0.5f, y, w, h);
+            float w = Mathf.Min(560f, f.Width - 80f);
+            float h = f.Mobile ? 132f : 108f;
+            float y = Mathf.Clamp(f.Height * 0.58f, f.ContentTop, f.ContentBottom - h);
+            return new Rect((f.Width - w) * 0.5f, y, w, h);
+        }
+
+        /// <summary>대화 대상 안내 글자(이름 포함) — 대화 버튼 바로 아래, 같은 폭.</summary>
+        public static Rect PromptRect(HudFrame f)
+        {
+            Rect talk = TalkRect(f);
+            return new Rect(talk.x, talk.yMax + UITheme.Space.XS, talk.width, 44f);
+        }
+
+        /// <summary>우하단 원형 상호작용 버튼 — 잡기 버튼 왼쪽, 같은 높이(중심 정렬).</summary>
+        public static Rect InteractButtonRect(HudFrame f)
+        {
+            const float radius = 80f;
+            Vector2 c = InsectGame.Capture.CatchButtonLayout.Center(f);
+            float cx = c.x - InsectGame.Capture.CatchButtonLayout.Radius - InsectGame.Capture.CatchButtonLayout.NeighborGap - radius;
+            return new Rect(cx - radius, c.y - radius, radius * 2f, radius * 2f);
+        }
+
+        /// <summary>대결 결과 글자 — 가운데 무대의 차례 항목(<see cref="HudStageItem.DuelResult"/>).</summary>
+        public static Rect DuelResultRect(HudFrame f)
+        {
+            return HudStage.Place(f, HudStageItem.DuelResult, 800f, 44f);
+        }
+
+        private void DrawCenterButton(HudFrame f)
+        {
+            Rect rect = TalkRect(f);
+            float h = rect.height;
 
             centerButtonRect = rect;
             FieldHudInput.RegisterBlockingRect(rect);   // 배너 위 탭이 클릭-이동으로 새지 않게
@@ -513,6 +561,7 @@ namespace InsectGame.UI
                 case InteractionKind.Gacha: return "상자";
                 case InteractionKind.Training: return "훈련";
                 case InteractionKind.Hospital: return "병원";
+                case InteractionKind.IslandDock: return "내 섬";
                 default: return "확인";
             }
         }

@@ -25,7 +25,7 @@ FAIL 0을 확인한다.**
   "requiredRegionId": "리전 ID 또는 \"\" (무param 트리거 리전 잠금)",
   "trigger": { "type": "RegionEnter", "param": "pond" },
   "speakerNpcId": "village_elder",
-  "lines": [ { "speaker": "이름", "text": "대사" } ],
+  "lines": [ { "speaker": "이름", "text": "대사" }, { "speaker": "지문", "text": "해설", "fx": "pause" } ],
   "choices": [],
   "onComplete": { "rewardCandy": 5, "rewardExp": 0, "rewardItemId": "",
     "rewardInsectId": "", "unlockQuestId": "" },
@@ -125,14 +125,22 @@ Dictionary 비결정 — 그럴 땐 prereq로 한 번에 하나만 적격이 되
 python -X utf8 .claude/scripts/story_lint.py
 ```
 
-22검사가 전부 PASS여야 한다(FAIL 0, WARN 0):
+29검사가 전부 PASS여야 한다(FAIL 0, WARN 0). 급소만 추리면:
 - beatId 중복 / prerequisite 무결성(끊김·순환) / 트리거 param 대상 존재 /
   분기 도달성(choices.nextBeatId) / onComplete 보상·unlock ID 존재 /
   **트리거 배선 정합(JSON↔StoryDirector)** / **requiredRegionId 정합(리전 게이트)** /
   **일생 1회 트리거의 스파인 사용**(GuardianDefeat가 어느 비트의 prereq도 아닐 것) /
-  **스토리 인물 4중 등록**(앰비언트·소개 비트·표시명·외형)
+  **스토리 인물 4중 등록**(앰비언트·소개 비트·표시명·외형) /
+  **퀘스트 게이트의 1회 완료형**(검사 29 — `requiredQuestId`가 반복 서브를 물면 영영 안 열린다)
 
-### 스토리 NPC를 새로 세운다면 — 등록이 여섯 곳이다
+### 마을 이야기(`chapterId: town`)를 더한다면
+
+한 편 = 4비트(만남 · 징후 · 매듭 · 후일담) + 지역 의뢰 1개(`s_town_{r}`, Side·1회·`requiredRegionId`).
+매듭이 `requiredQuestId`로 의뢰 완료를 **관찰**한다(스토리는 퀘스트를 만들지 않는다). 형태·게이트·자리 계산은
+`Docs/StoryBible.md` 13장. `!`/`?` 표식과 따라가기는 town 챕터의 `NpcTalk` 대상에게 **저절로** 붙는다 —
+인물 목록을 코드에 박지 않았다(`StoryTaleResolver.CollectTaleNpcIds`).
+
+### 스토리 NPC를 새로 세운다면 — 등록이 일곱 곳이다
 
 비트만 쓰면 안 된다. 아래를 다 채워야 그 인물이 제 이름과 얼굴로 서고 말을 한다.
 검사기가 넷을 보고 **둘(앵커 각도·보스 표의 레벨)은 사람이 판단해야 한다**:
@@ -141,10 +149,11 @@ python -X utf8 .claude/scripts/story_lint.py
 |---|---|---|---|
 | 1 | `VillageBuilder` 앵커 (`storyNpcId` **리터럴**) | 월드에 안 선다 | 검사 3 |
 | 2 | `NpcManager.StoryNpcDisplayName` | **"마을 어르신"으로 뜬다** | 검사 22 |
-| 3 | `NpcVisualBuilder.StoryNpcAppearance` | **마을 어르신 얼굴로 뜬다** | 검사 22 |
+| 3 | `NpcVisualBuilder.StoryNpcFace`(얼굴) + `StorySignature`(옷차림) | **마을 어르신 얼굴로 뜬다** / 옷차림 누락은 어르신 모자·지팡이 | 검사 22 |
 | 4 | `NpcDialogueDatabase.StoryNpcLines` | 주민 잡담으로 떨어진다 | 검사 20 |
 | 5 | `NpcBossDuels.Table` (싸울 상대면) | 도전이 안 열린다 | `blight_lint` 1 |
 | 6 | 소개 비트(`speakerNpcId` 또는 `NpcTalk` param) | `HasMetStoryNpc` false → 보스전 불가 | 검사 19 |
+| 7 | `NpcDialogueUI.GetStoryPortrait` (대사창 초상) | **얼굴 없이 이름표만** 뜬다 | 검사기 없음 — 마을 주민은 `TownTaleTests` |
 
 **앵커 각도는 손으로 고른다.** 서브에리어 진입 반경 안에 서면 말을 걸려다 구역에 빨려
 들어가고, 같은 리전의 다른 인물과 겹치면 누구에게 말을 거는지 알 수 없다. 그 리전의

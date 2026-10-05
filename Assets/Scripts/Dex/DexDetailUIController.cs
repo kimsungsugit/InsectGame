@@ -61,12 +61,12 @@ namespace InsectGame.Dex
 
             if (rarityText != null)
             {
-                rarityText.text = discovered ? $"등급: {data.rarity}" : "등급: ???";
+                rarityText.text = discovered ? $"등급: {data.rarity.Korean()}" : "등급: ???";
                 rarityText.color = discovered ? GetRarityColor(data.rarity) : Color.white;
             }
             if (rarityTextTmp != null)
             {
-                rarityTextTmp.text = discovered ? $"등급: {data.rarity}" : "등급: ???";
+                rarityTextTmp.text = discovered ? $"등급: {data.rarity.Korean()}" : "등급: ???";
                 rarityTextTmp.color = discovered ? GetRarityColor(data.rarity) : Color.white;
             }
 

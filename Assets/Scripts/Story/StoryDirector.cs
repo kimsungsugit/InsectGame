@@ -78,7 +78,15 @@ namespace InsectGame.Story
         // 부류라 이 트리거를 쓰는 비트는 **leaf 전용**이다. 어떤 비트의 prerequisiteBeatId도
         // 되어선 안 된다. 스파인에 걸면 그 순간 prereq가 미충족인 세이브는 캠페인이 영구 정지한다.
         internal const string TriggerGuardianDefeat = "GuardianDefeat";
-        /// <summary>명부회 간부 대결 승리. param = 간부의 storyNpcId. 소스는 <c>NpcDuelController.BossDuelWon</c>.</summary>
+        /// <summary>
+        /// 명부회 간부 대결 승리. param = 간부의 storyNpcId. 소스는 <c>NpcDuelController.BossDuelWon</c>.
+        ///
+        /// <b>재발화형이다 — 스파인에 걸어도 된다</b>(2026-10-04부터 <c>duel_grip_win</c>·<c>duel_scale_win</c>·<c>duel_chief_win</c>이
+        /// 다음 장 도착·최종장의 선행이다). 이긴 순간의 이벤트는 일생 1회지만, <see cref="ResweepPersistentConditions"/>가
+        /// <b>격파 기록</b>(<c>NpcDuelController.IsBossDefeated</c> — 저장·클라우드 동기)을 보고 시작·리전 이동·비트 완료·클라우드
+        /// 재적재 때마다 다시 흘린다. 그래서 그 순간을 놓친 세이브(앱 종료·선행 미충족)도, 이 비트를 필수로 바꾸기 전에 이미
+        /// 그 간부를 이긴 세이브도 다음 재확인에서 자동으로 통과한다. story_lint 검사 8이 이 재확인 줄을 소스에서 확인한다.
+        /// </summary>
         internal const string TriggerDuelWin = "DuelWin";
         // 도감에 이름을 새긴 종 수가 임계에 닿으면 발화. param=정수 임계값.
         // LevelReach와 같은 누적형이라 **재발화 트리거다** — 임계를 넘긴 뒤 도감이 갱신될 때마다
@@ -104,6 +112,14 @@ namespace InsectGame.Story
         }
 
         // 보상 인벤토리 주입(캔디/아이템). 곤충/EXP는 위 AutoWire의 collection/progress 재사용.
+        // 이야기 보상을 받았다는 소식을 넣는 곳. 없으면 예전처럼 말없이 지급한다(지급 자체는 그대로다).
+        private FieldMomentFeed momentFeed;
+
+        public void AutoWire(FieldMomentFeed feed)
+        {
+            if (momentFeed == null) momentFeed = feed;
+        }
+
         public void AutoWire(PlayerCandyInventory candy, PlayerItemInventory items)
         {
             if (candyInventory == null) candyInventory = candy;
@@ -176,6 +192,8 @@ namespace InsectGame.Story
             // Immediate 트리거는 이벤트가 없으므로 시작 시 1회 평가.
             RouteTrigger(TriggerImmediate, null);
             ResweepCompletedQuests();
+            ResweepPersistentConditions();
+            DrainPendingTriggers();
         }
 
         /// <summary>
@@ -192,12 +210,57 @@ namespace InsectGame.Story
             // 스냅샷 — 발화 체인이 어떤 경로로든 CompleteQuest에 닿으면 열거 중 변경 예외가 된다.
             string[] completed = System.Linq.Enumerable.ToArray(questManager.CompletedQuestIds);
             for (int i = 0; i < completed.Length; i++)
-                RouteTrigger(TriggerQuestComplete, completed[i]);
+                DeferTrigger(TriggerQuestComplete, completed[i]);
         }
+
+        // 누적 조건은 선행 대화보다 먼저 달성할 수 있다. 다음 레벨업/포획/재대결을
+        // 요구하지 않고 현재 저장 상태로 재평가한다. 이동·포획·승리 이벤트는 재현하지 않는다.
+        //
+        // **간부 대결 승리(DuelWin)의 자동 통과가 여기다.** 이긴 기록이 있는데 승리 비트를 아직 안 봤으면 다시 흘린다 —
+        // 간부전이 본편 필수가 되면서(duel_*_win이 다음 장의 선행) 이 줄이 캠페인 정지를 막는 유일한 회복 경로가 됐다.
+        // 지우면 story_lint 검사 8이 FAIL을 낸다(DuelWin 스파인의 재발화 근거가 사라진다).
+        private void ResweepPersistentConditions()
+        {
+            if (progressController != null && HasUnseenBeatOfType(TriggerLevelReach))
+                DeferTrigger(TriggerLevelReach, progressController.Level.ToString());
+            if (dexController != null && HasUnseenBeatOfType(TriggerDexProgress))
+                DeferTrigger(TriggerDexProgress, dexController.CapturedSpeciesCount.ToString());
+
+            foreach (StoryBeat beat in StoryService.AllBeats())
+            {
+                if (beat == null || beat.trigger == null || IsSeen(beat.beatId)) continue;
+                string type = beat.trigger.type;
+                string param = beat.trigger.param;
+                if ((type == TriggerDuelWin && HasDefeatedStoryNpc(param))
+                    || (type == TriggerRegionCleansed && IsRegionCleansed(param)))
+                    DeferTrigger(type, param);
+            }
+        }
+
+        public bool HasDefeatedStoryNpc(string npcId) =>
+            !string.IsNullOrEmpty(npcId) && duelController != null && duelController.IsBossDefeated(npcId);
+
+        /// <summary>
+        /// 이야기가 아직 할 말을 들고 있는가 — 대사가 떠 있거나(<c>pendingBeatId</c>), 렌더러를 기다리는 비트가 있거나,
+        /// 미뤄 둔 트리거가 큐에 남아 있다(선택지 결과·전투 뒤 대사·재확인).
+        ///
+        /// <c>StoryDuelLauncher</c>가 묻는다 — 모달 판정만으로는 <b>영상이 끝난 프레임과 큐가 다음 대사를 여는 프레임 사이</b>가
+        /// 비어 보여서, 선택지 결과 대사(<c>ch9_confront</c>)보다 대결이 먼저 열린다. 큐는 막힌 게 없으면 몇 프레임 안에 빈다
+        /// (1회성 트리거도 <see cref="MaxDrainRetries"/>번 뒤 버려진다).
+        /// </summary>
+        public bool IsBusy => !string.IsNullOrEmpty(pendingBeatId) || deferredBeat != null || pendingTriggers.Count > 0;
+
+        public bool IsRegionCleansed(string regionId) =>
+            !string.IsNullOrEmpty(regionId) && blight != null && blight.IsCleansed(regionId);
 
         private void OnDestroy()
         {
             UnsubscribeEvents();
+            // 부트스트랩이 스포너의 정적 훅에 이 인스턴스를 걸었다 — 씬 재로드(로그아웃·계정 삭제)로 파기된 뒤에도
+            // 붙잡고 있으면 옛 계정 진행으로 답한다. 내 것일 때만 푼다(새 씬이 먼저 새 인스턴스를 걸었을 수 있다).
+            System.Action<string, System.Collections.Generic.List<string>> hook = InsectGame.Spawning.InsectSpawner.StoryCaptureTargetProvider;
+            if (hook != null && ReferenceEquals(hook.Target, this))
+                InsectGame.Spawning.InsectSpawner.StoryCaptureTargetProvider = null;
         }
 
         // --- 이벤트 구독 (SubscribeEvents/UnsubscribeEvents 짝) ---
@@ -275,6 +338,7 @@ namespace InsectGame.Story
             // 이미 열람한 비트는 어차피 다시 안 뜨므로 중복 발화 걱정은 없다.
             if (blight != null && blight.IsCleansed(region.regionId))
                 RouteTrigger(TriggerRegionCleansed, region.regionId);
+            ResweepPersistentConditions();
         }
 
         /// <summary>
@@ -297,26 +361,23 @@ namespace InsectGame.Story
 
         /// <summary>
         /// <b>이기자마자 대사를 띄우지 않는다.</b> <c>BattleEnded</c>는 KO 순간에 울리는데
-        /// 전투 결과 화면은 그로부터 4초를 더 떠 있다(연출 페이즈가 끼면 6초 가까이). 그 위로
+        /// 전투 결과 화면은 그 뒤로 플레이어가 누를 때까지 떠 있다(2026-10-04 전엔 4초 뒤 저절로 닫혔다). 그 위로
         /// 대화 모달이 열리면 <b>획득 EXP·캔디가 적힌 보상 패널을 통째로 덮는다</b> — 무엇을
         /// 얻었는지 못 본 채 대사를 읽게 된다. <c>BattleWin</c> 비트 12개 전부에 해당한다.
         ///
-        /// 그래서 결과 화면이 스스로 닫힐 때(<c>BattleScreenUI.EndBattle</c>)까지 미룬다.
+        /// 그래서 결과 화면이 닫힐 때(<c>BattleScreenUI.EndBattle</c>)까지 미룬다 — 얼마나 오래 보든.
         /// 같은 판단을 <c>CutsceneDirector</c>가 컷신에 대해 이미 하고 있다 — 거기서는
         /// 카메라의 배틀 모드를 신호로 쓴다(BattleScreenUI는 IModalUI가 아니라 레지스트리로
         /// 알 수 없다). 이쪽은 화면 쪽이 끝났다고 <b>알려 주는</b> 형태다: UI가 스토리를 아는
         /// 방향은 허용되지만 그 반대는 의존 방향에 어긋난다.
-        /// </summary>
-        /// <summary>
-        /// <b>이기자마자 대사를 띄우지 않는다.</b> <c>BattleEnded</c>는 KO 순간에 울리는데
-        /// 전투 결과 화면은 그로부터 4초를 더 떠 있다(연출 페이즈가 끼면 6초 가까이). 그 위로
-        /// 대화 모달이 열리면 <b>획득 EXP·캔디가 적힌 보상 패널을 통째로 덮는다</b>.
         /// </summary>
         private void OnBattleEnded(bool playerWon)
         {
             // **종 ID를 지금 읽어 큐에 싣는다.** 발화는 결과 화면이 닫힌 뒤로 미뤄지는데, 그때
             // 컨트롤러를 다시 물으면 이미 다음 전투가 시작됐을 수 있다(필드에서 연달아 붙는다).
             // 무param 비트는 이 값을 보지 않으므로 기존 저작은 그대로다.
+            // 꿈속의 챔피언전은 이야기의 전투가 아니다 — BattleWin을 쏘면 1막의 "첫 전투" 비트가 꿈에서 열린다.
+            if (battleController != null && battleController.IsSandbox) return;
             if (playerWon)
                 DeferTrigger(TriggerBattleWin, battleController != null ? battleController.EnemyInsectId : null);
         }
@@ -408,16 +469,28 @@ namespace InsectGame.Story
         // 전투 화면이 닫혔다는 통지를 받았다 — 그 뒤로는 모달만 기다리면 되고 시간은 안 센다.
         private bool presentationClosed;
 
+        // 상한 둘은 StoryBattleWait에 있다(컷신·영상과 같은 대기 시계 규칙).
+        //  - DialogueFallbackSeconds(12): 카메라가 **배선되지 않았을 때만** 쓴다. 미뤄 둔 발화를 포기하지 않고 **그냥 쏘는**
+        //    시각이다 — 컷신·영상은 연출이라 버려도 되지만 여기는 이야기의 진행이라 버리면 안 된다. 전투 화면이 닫혔다고
+        //    알려 주지 않으면(미배선·예외로 EndBattle 중단·씬 교체) 보상 패널을 덮는 쪽이 진행이 멈추는 것보다 낫다.
+        //  - DialogueLongWaitWarnSeconds(60): 진단 경고뿐이다. **카메라 경로는 전투 화면 위로 대사를 쏘지 않는다** —
+        //    Update가 ShouldDeferNow에서 먼저 돌아가므로 이 값이 발화를 앞당긴 적은 없다(예전 주석은 "절대 상한"이라 적었다).
+        // 둘 다 결과 화면이 떠 있는 시간은 세지 않는다 — 결과 화면은 2026-10-04부터 눌러야 닫힌다(BattleResultRules).
+
+        // 1대1·레이드 결과 화면이 떠 있는가 — 부트스트랩이 넘긴다(Story가 UI를 모르게 함수 하나).
+        private Func<bool> battleResultShowing;
+
         /// <summary>
-        /// 미뤄 둔 발화를 포기하지 않고 <b>그냥 쏘는</b> 시각(초). 컷신의
-        /// <c>PendingGiveUpSeconds</c>와 같은 값이지만 처리가 반대다 — 저쪽은 연출이라 버려도
-        /// 되지만 <b>여기는 이야기의 진행이라 버리면 안 된다.</b> 전투 화면이 어떤 이유로든
-        /// 닫혔다고 알려 주지 않으면(미배선·예외로 EndBattle 중단·씬 교체) 보상 패널을 덮는
-        /// 쪽이 진행이 멈추는 것보다 훨씬 낫다.
+        /// 결과 화면 탐침 — <see cref="ShouldDeferNow"/>가 전투 화면으로 치고, 대기 시계는 그동안 멈춘다(<see cref="StoryBattleWait"/>).
+        /// 카메라가 배선돼 있으면 판정은 바뀌지 않는다(결과 화면 동안 카메라도 배틀 모드다). 카메라가 없을 때 12초 폴백이
+        /// 결과 화면 위로 대사를 띄우던 길을 막는다 — 결과 화면은 이제 눌러야 닫혀서 아이가 30초씩 본다.
         /// </summary>
-        private const float PendingGiveUpSeconds = 12f;
-        /// <summary>카메라가 배선돼 있어도 넘기지 않는 절대 상한(초).</summary>
-        private const float PendingAbsoluteGiveUpSeconds = 60f;
+        public void AutoWire(Func<bool> resultShowing)
+        {
+            if (battleResultShowing == null) battleResultShowing = resultShowing;
+        }
+
+        private bool BattleResultShowing => StoryBattleWait.ReadProbe(battleResultShowing);
 
         /// <summary>
         /// <b>지금 대사를 띄워도 되는가.</b> 안 되면 큐가 들고 있다가 전투·대화가 끝난 뒤 흘린다.
@@ -440,6 +513,7 @@ namespace InsectGame.Story
         private bool ShouldDeferNow()
         {
             if (InsectGame.UI.ModalUIRegistry.IsAnyOpen()) return true;   // 대화·컷신·상점·도감
+            if (BattleResultShowing) return true;                         // 결과 화면(카메라 미배선에도 안다)
             return cameraFollower != null && cameraFollower.InBattleMode; // 전투 화면(결과 포함)
         }
 
@@ -452,7 +526,7 @@ namespace InsectGame.Story
         /// </summary>
         private bool RouteTrigger(string type, string param)
         {
-            if (ShouldDeferNow())
+            if (!string.IsNullOrEmpty(pendingBeatId) || ShouldDeferNow())
             {
                 DeferTrigger(type, param);
                 return false;
@@ -498,8 +572,17 @@ namespace InsectGame.Story
         public void NotifyBattlePresentationClosed()
         {
             presentationClosed = true;
+            BattlePresentationClosed?.Invoke();
             DrainPendingTriggers();
         }
+
+        /// <summary>
+        /// 전투 화면이 닫혔다 — 미뤄 둔 대사를 흘리기 <b>직전에</b> 울린다. 수문장 배지 연출(<c>BadgeCeremonyUI</c>)이
+        /// 여기서 모달을 먼저 열어 <c>gd_*</c> 대사보다 배지가 먼저 보이게 한다. 드레인은 모달 가드에 막혔다가
+        /// 연출이 닫히면 <see cref="Update"/>가 이어 흘린다. 폴링으로는 이 순서를 못 만든다 — 드레인이 같은 호출
+        /// 안에서 동기로 대사를 열어 버린다.
+        /// </summary>
+        public event System.Action BattlePresentationClosed;
 
         /// <summary>
         /// 미뤄 둔 트리거를 <b>하나씩</b> 흘린다. 한 편이 화면에 뜨면 거기서 멈추고, 그 비트가
@@ -549,9 +632,18 @@ namespace InsectGame.Story
         private void Update()
         {
             if (pendingTriggers.Count == 0) return;
-
             // timeScale에 끌려다니면 안 된다 — 히트스톱·슬로모션이 결과 화면 직전까지 걸린다.
-            pendingSeconds += Time.unscaledDeltaTime;
+            TickPendingTriggers(Time.unscaledDeltaTime);
+        }
+
+        /// <summary>미뤄 둔 트리거의 한 프레임(<see cref="Update"/>가 부른다 — 테스트는 시간을 넣어 직접 부른다).</summary>
+        private void TickPendingTriggers(float deltaSeconds)
+        {
+            if (pendingTriggers.Count == 0) return;
+
+            // **결과 화면이 떠 있는 동안은 시계가 멈춘다**(StoryBattleWait). 결과 화면은 눌러야 닫히므로 보상을 천천히 보는
+            // 시간이 "통지가 안 온다"로 세어지면 안 된다 — 카메라가 없을 때 12초 폴백이 결과 화면 위로 대사를 띄웠다.
+            pendingSeconds = StoryBattleWait.Advance(pendingSeconds, deltaSeconds, BattleResultShowing);
 
             // 대사·컷신·전투 화면이 떠 있는 동안은 시간이 지나도 밀어 넣지 않는다(위 주석의 그 손실).
             // 12초 포기 타이머가 있어도 여기서 막히므로, 대화가 길어도 대사가 겹치지 않는다.
@@ -563,18 +655,19 @@ namespace InsectGame.Story
             // 아래 12초 타이머는 원래 "전투 화면이 떠 있는지 알 방법이 없어서" 둔 안전망인데,
             // 그대로 두면 **대화 때문에 미뤄 둔 트리거가 대화를 닫고도 12초를 더 기다린다.**
             //
-            // 카메라가 없을 때(미배선)만 옛 경로로 떨어진다 — 통지 아니면 12초.
+            // 카메라가 없을 때(미배선)만 옛 경로로 떨어진다 — 통지 아니면 12초(결과 화면 시간 제외).
             if (cameraFollower == null && !presentationClosed)
             {
-                if (pendingSeconds < PendingGiveUpSeconds) return;
+                if (pendingSeconds < StoryBattleWait.DialogueFallbackSeconds) return;
                 // 그게 끝내 안 오면 겹치더라도 쏜다 — 진행을 잃는 것보다 낫다.
                 Debug.LogWarning("[Story] 전투 화면 종료 통지가 없어 미뤄 둔 트리거를 그대로 발화한다");
             }
-            else if (cameraFollower != null && pendingSeconds >= PendingAbsoluteGiveUpSeconds)
+            else if (cameraFollower != null && pendingSeconds >= StoryBattleWait.DialogueLongWaitWarnSeconds)
             {
-                // 카메라 경로에는 상한이 없었다 — InBattleMode가 어떤 이유로든 true로 굳으면(컷신 복원
-                // 누락 등) 큐가 무기한 멈춘다. 훨씬 긴 절대 상한 하나를 남긴다.
-                Debug.LogWarning($"[Story] {PendingAbsoluteGiveUpSeconds:0}초 넘게 화면이 안 닫혀 미뤄 둔 트리거를 그대로 발화한다");
+                // 진단만 한다 — 여기 왔다는 건 화면이 이미 비었다는 뜻이고(ShouldDeferNow가 거짓), 어차피 지금 흘린다.
+                // 카메라 경로에는 발화를 앞당기는 상한이 없다: InBattleMode가 굳으면(컷신 복원 누락 등) 큐는 그 동안 기다린다.
+                // 결과 화면 밖에서 그렇게 오래 기다렸다면 카메라나 모달이 굳었던 것이다 — 로그로 남긴다.
+                Debug.LogWarning($"[Story] 미뤄 둔 트리거가 결과 화면 밖에서 {StoryBattleWait.DialogueLongWaitWarnSeconds:0}초 넘게 기다린 뒤 흐른다 — 전투 카메라·모달이 오래 안 풀렸다");
             }
 
             DrainPendingTriggers();
@@ -589,6 +682,10 @@ namespace InsectGame.Story
 
         private void OnQuestCompleted(TutorialQuest quest)
         {
+            // **목표 캐시를 버린다.** requiredQuestId가 걸린 비트(ch1_intro·마을 이야기의 매듭)는
+            // 퀘스트가 끝나는 순간 자격을 얻는데, 캐시는 MarkSeen·클라우드 재적재에서만 비워져서
+            // 다음 비트를 볼 때까지 HUD가 낡은 목표에 굳어 있었다.
+            objectiveDirty = true;
             if (quest != null) RouteTrigger(TriggerQuestComplete, quest.questId);
         }
 
@@ -612,8 +709,15 @@ namespace InsectGame.Story
             // **여기서 바로 쏘지 않는다.** 전투·레이드 안에서 잡은 것이면 곧 결과 화면이 뜨는데,
             // 그걸 알려 주는 신호(BattleEnded/RaidEnded)는 **같은 프레임 뒤에** 온다.
             // 지금 쏘면 대사창이 획득 EXP·캔디 패널 위로 열린다 — `BattleWin`을 미루는 그 이유다.
+            if (grantingStarter) return;   // 첫 파트너는 받은 것이지 잡은 것이 아니다 — 아래 GrantReward 참조
             frameCaptures.Add(insect != null ? insect.insectId : null);
         }
+
+        // 첫 파트너를 건네는 동안만 선다. 그 지급이 `CaptureInsect`를 울리면 어르신의 "첫 포획 축하"
+        // (`ch1_first_capture` — "훌륭해! 이 초원에서 곤충을 거둬 왔구나")가 **아무것도 잡기 전에** 뜬다.
+        // 정작 처음 잡았을 때는 그 대사가 이미 지나가 라온이 대신 나온다(2026-10-02 걸음 보고서에서 확인).
+        // 다른 스토리 보상 곤충은 그대로 `CaptureInsect`를 울린다 — 그쪽은 그 발화에 기대는 비트가 있다(`ch12_sign`).
+        private bool grantingStarter;
 
         /// <summary>
         /// 포획을 <b>프레임 끝에</b> 판정한다. 여기까지 오면 같은 프레임의 전투 종료가
@@ -677,6 +781,7 @@ namespace InsectGame.Story
         private bool EvaluateTriggers(string triggerType, string eventParam)
         {
             if (string.IsNullOrEmpty(triggerType)) return false;
+            if (!string.IsNullOrEmpty(pendingBeatId)) return false;
 
             StoryBeat chosen = null;
 
@@ -819,8 +924,8 @@ namespace InsectGame.Story
         private bool RegionGateSatisfied(StoryBeat beat)
         {
             if (beat == null || string.IsNullOrEmpty(beat.requiredRegionId)) return true;
-            string current = regionManager != null && regionManager.CurrentRegion != null
-                ? regionManager.CurrentRegion.regionId : null;
+            // ActionRegionId — 나의 섬에서는 null이다(섬 손님 곤충을 잡아도 떠나기 전 리전의 비트가 발화하지 않게).
+            string current = regionManager != null ? regionManager.ActionRegionId : null;
             return beat.requiredRegionId == current;
         }
 
@@ -923,6 +1028,9 @@ namespace InsectGame.Story
 
             StoryBeatCompleted?.Invoke(beat);   // 모달 닫힘 → 조우 카메라 포커스 조기 릴리즈
 
+            ResweepCompletedQuests();
+            ResweepPersistentConditions();
+
             // 한 편이 끝났으니 미뤄 둔 다음 편을 이어 붙인다. 컷신이 방금 시작됐다면
             // (StoryBeatCompleted 구독자) 레지스트리 가드에 걸려 여기서는 넘어가고,
             // 컷신이 끝난 뒤 Update가 집는다.
@@ -969,8 +1077,13 @@ namespace InsectGame.Story
         {
             // 퀘스트 게이트를 함께 넘긴다 — 안 넘기면 튜토리얼 중에 "마을 어르신에게 말 걸기"를
             // 안내해 놓고 정작 가서 말을 걸면 아무 일도 안 일어난다.
+            //
+            // 스파인은 **아직 뒤가 남은 것만** 앞세운다(CollectLiveSpineBeatIds). 선행을 나중에 끼워 넣은 자리 —
+            // 간부 승리(duel_*_win)를 다음 장의 선행으로 바꾼 것 — 에서, 그 장을 이미 지나온 세이브는 뒤 비트를 다 봤는데도
+            // 끼워 넣은 스파인이 목표 1순위로 떠 HUD가 지난 장으로 되돌려 보냈다. 그런 비트는 leaf처럼 뒤로 민다.
             StoryBeat beat = StoryObjectiveResolver.SelectObjectiveBeat(
-                StoryService.AllBeats(), IsSeen, SpineBeatIds(),
+                StoryService.AllBeats(), IsSeen,
+                StoryObjectiveResolver.CollectLiveSpineBeatIds(StoryService.AllBeats(), IsSeen),
                 questManager != null ? questManager.IsQuestCompleted : (System.Func<string, bool>)null,
                 ChoiceTargetIds());
 
@@ -1004,6 +1117,29 @@ namespace InsectGame.Story
             return IsSeen(beatId);
         }
 
+        /// <summary>
+        /// 이 리전에서 <b>지금 발화를 기다리는</b> 종 지정 포획 비트(<c>CaptureInsect</c> + param)의 종 ID를 모은다
+        /// (<paramref name="into"/>를 비우지 않는다). 필드 스포너의 스토리 포획 보조가 부트스트랩 배선으로 부른다 —
+        /// 리전 이동으로 곤충을 다시 굴릴 수 없게 된 뒤(시간 기반 재생) 특정 영웅·희귀 한 종을 찾다 본편이 멈추지 않게.
+        ///
+        /// 게이트는 발화(<see cref="EvaluateTriggers"/>)와 <b>같은 것</b>을 그대로 부른다 — 미열람·대기 중 아님·선행·
+        /// 퀘스트·진행 게이트. 리전 게이트만 "지금 리전"이 아니라 묻는 리전으로 바꿔 본다(스포너는 플레이어가 없는
+        /// 리전의 자리도 굴린다). 읽기 전용이라 진행은 건드리지 않는다.
+        /// </summary>
+        public void CollectPendingCaptureSpecies(string regionId, List<string> into)
+        {
+            if (into == null || string.IsNullOrEmpty(regionId)) return;
+            foreach (StoryBeat beat in StoryService.AllBeats())
+            {
+                if (beat == null || beat.trigger == null || beat.trigger.type != TriggerCaptureInsect) continue;
+                if (string.IsNullOrEmpty(beat.trigger.param)) continue;   // 아무 포획이나 — 도울 종이 없다
+                if (beat.requiredRegionId != regionId) continue;
+                if (IsSeen(beat.beatId) || beat.beatId == pendingBeatId) continue;
+                if (!PrerequisiteSatisfied(beat) || !QuestGateSatisfied(beat) || !BeatGateSatisfied(beat)) continue;
+                if (!into.Contains(beat.trigger.param)) into.Add(beat.trigger.param);
+            }
+        }
+
         /// <summary>열람한 비트 수 — 저널 헤더의 진행률 표시용.</summary>
         public int SeenCount => progress != null && progress.seenBeatIds != null
             ? progress.seenBeatIds.Count : 0;
@@ -1026,6 +1162,61 @@ namespace InsectGame.Story
             return StoryObjectiveResolver.HasMetNpc(StoryService.AllBeats(), IsSeen, npcId);
         }
 
+        // ------------------------------------------------------------------
+        // 마을 이야기 — 따라가기·표식(StoryObjectiveTracker)이 소비. 판정은 StoryTaleResolver.
+        // ------------------------------------------------------------------
+
+        // Story.json에서만 나오므로 1회 계산(스파인 캐시와 같은 성격).
+        private List<string> taleNpcIdsCache;
+        // 의뢰 → 주민. 퀘스트 목록이 행을 펼쳐 두면 OnGUI 패스마다 묻는다 — 비트 전체를 매번 훑지 않게
+        // 답(없음 포함)을 기억한다. 비트는 진행과 무관하게 고정이라 무효화가 필요 없다.
+        private Dictionary<string, string> taleNpcByQuestCache;
+        // 트래커가 0.5초마다 주민 수만큼 묻는다 — 호출마다 대리자를 새로 만들지 않게 묶어 둔다.
+        private System.Func<string, bool> isSeenProbe;
+        private System.Func<string, bool> isQuestDoneProbe;
+
+        /// <summary>마을 이야기 주민(storyNpcId) 목록. 저작 순서대로.</summary>
+        public IReadOnlyList<string> TaleNpcIds
+        {
+            get
+            {
+                if (taleNpcIdsCache == null)
+                    taleNpcIdsCache = StoryTaleResolver.CollectTaleNpcIds(StoryService.AllBeats());
+                return taleNpcIdsCache;
+            }
+        }
+
+        /// <summary>
+        /// 이 주민의 이야기에서 지금 할 일. Errand면 <paramref name="questId"/>에 기다리는 의뢰가 온다.
+        /// 게이트는 발화 쪽과 같다 — 퀘스트 판정기가 없으면 <see cref="QuestGateSatisfied"/>처럼 통과시킨다.
+        /// </summary>
+        public TaleStepKind GetTaleStep(string npcId, out string questId)
+        {
+            if (isSeenProbe == null) isSeenProbe = IsSeen;
+            if (isQuestDoneProbe == null) isQuestDoneProbe = IsQuestDoneForGate;
+            return StoryTaleResolver.ResolveStep(StoryService.AllBeats(), npcId,
+                isSeenProbe, isQuestDoneProbe, out _, out questId);
+        }
+
+        /// <summary>이 의뢰를 기다리는 주민(storyNpcId). 마을 이야기가 아닌 퀘스트면 null.</summary>
+        public string FindTaleNpcForQuest(string questId)
+        {
+            if (string.IsNullOrEmpty(questId)) return null;
+            if (taleNpcByQuestCache == null) taleNpcByQuestCache = new Dictionary<string, string>();
+            if (!taleNpcByQuestCache.TryGetValue(questId, out string npcId))
+            {
+                npcId = StoryTaleResolver.FindNpcForQuest(StoryService.AllBeats(), questId);
+                taleNpcByQuestCache[questId] = npcId;
+            }
+            return npcId;
+        }
+
+        // QuestGateSatisfied와 같은 규칙 — 매니저가 없으면 막지 않는다.
+        private bool IsQuestDoneForGate(string questId)
+        {
+            return questManager == null || questManager.IsQuestCompleted(questId);
+        }
+
         // 보상 지급 — TutorialQuestManager.CompleteQuest 패턴 동일(null 시 경고 후 계속).
         /// <param name="beatId">
         /// 어느 비트의 보상인가. 첫 파트너 곤충만 플레이어 선택으로 바꾸므로 그 판정에 쓴다 —
@@ -1034,6 +1225,8 @@ namespace InsectGame.Story
         private void GrantReward(StoryReward reward, string beatId)
         {
             if (reward == null) return;
+            // 실제로 건넨 곤충의 이름 — 첫 파트너는 고른 종으로 바뀌므로 보상 데이터의 이름과 다르다.
+            string grantedInsectName = null;
 
             if (reward.rewardCandy > 0)
             {
@@ -1072,7 +1265,11 @@ namespace InsectGame.Story
                         Debug.LogWarning($"[Story] 첫 파트너 '{insectId}'가 DB에 없어 비트 보상 '{reward.rewardInsectId}'로 대체한다");
                         insectId = reward.rewardInsectId;
                     }
-                    insectCollection.AddCapturedInsect(insectId, Mathf.Max(1, reward.rewardInsectLevel));
+                    grantingStarter = beatId == StarterInsectCatalog.StarterBeatId;
+                    try { insectCollection.AddCapturedInsect(insectId, Mathf.Max(1, reward.rewardInsectLevel)); }
+                    finally { grantingStarter = false; }
+                    InsectData granted = insectCollection.GetInsectData(insectId);
+                    grantedInsectName = granted != null ? granted.displayName : insectId;
 
                     // 도감 등록은 지급과 한 쌍이다(`TutorialQuestManager`와 같은 형태). 빠뜨리면
                     // 준 곤충이 도감에 없어 100% 완주가 막히는데, **여기선 자기 발등도 찍는다** —
@@ -1089,6 +1286,13 @@ namespace InsectGame.Story
             }
 
             // unlockQuestId: 스토리→퀘스트 역주입은 설계상 배제(단방향 관찰). 여기서 처리하지 않는다.
+
+            // 받은 것을 알린다 — 예전엔 대사가 닫히면 캔디·그물·파트너가 말없이 들어와 있었다.
+            if (momentFeed != null)
+            {
+                string text = StoryRewardText.Format(reward, momentFeed.ItemName, grantedInsectName);
+                if (!string.IsNullOrEmpty(text)) momentFeed.Push(FieldMomentKind.Reward, "보상을 받았습니다", text);
+            }
         }
 
         // --- 저장/로드 (SaveScope 계정별 격리, DexSaveService 패턴) ---
@@ -1135,6 +1339,7 @@ namespace InsectGame.Story
             // 계정 전환·클라우드 로드로 완료 퀘스트 집합이 채워지는 시점이 여기다 — 리전을 옮기기 전까지
             // 재스윕이 없으면 완료 퀘스트 비트가 이번 세션 내내 안 뜬다.
             ResweepCompletedQuests();
+            ResweepPersistentConditions();
         }
     }
 }

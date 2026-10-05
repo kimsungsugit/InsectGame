@@ -26,6 +26,10 @@ THRESHOLD_GEM_HOARD_DAYS_WARN = 14           # 14일 후 젬 잔고 > 골드박�
 THRESHOLD_NO_EXCHANGE_WARN = True            # 캔디↔젬 교환 경로 0건 = WARN
 # 근거: 효과 1% 차이에 가격 5배(diamond_net 2000젬 vs normal_net 150코인)는 명백한 P2W 함정.
 THRESHOLD_P2W_GAP_RATIO_WARN = 5.0           # 프리미엄/베이직 가격 비율 5배+ = WARN
+# 근거: 섬은 곁들이는 수입이다. 기본 섬이 활동 수입의 20%를 넘거나 풀 확장 섬이 1.25배를 넘으면
+# "섬만 돌려도 되는 게임"이 된다(Docs/IslandDesign.md 3장, IslandYieldTests가 같은 대역을 본다).
+THRESHOLD_ISLAND_BASIC_SHARE_FAIL = 0.20
+THRESHOLD_ISLAND_MAX_SHARE_FAIL = 1.25
 
 # === 정본 = 코드. 사본 없음 ===
 # "동기화 필요"라 적어둔 사본은 동기화되지 않는다 — 실제로 박스 가격이 실버 800 /
@@ -182,6 +186,57 @@ def p2w_outfit_gap() -> dict:
             "ratio_note": "평균 의상가 — 정확값은 CharacterOutfitManager.cs 인스펙터 참조"}
 
 
+def island_daily_candy() -> dict:
+    """섬 일일 캔디 — 기본 섬(일반 3마리)과 풀 확장 섬(전설 최대 마리 · 보너스 전부).
+
+    상수는 코드에서 읽는다(사본 없음). 못 읽으면 조용히 0을 내지 않고 ExtractorBroken으로 죽는다.
+    공식은 IslandYield.CandyPerHour와 같아야 한다:
+      캔디/h = CandyPerInsectHour × 섬 등급 배율 × (1 + 쾌적도 보너스 + 설비 보너스) × (1 + 친밀도 보너스)
+    """
+    def read(path):
+        try:
+            with open(path, encoding="utf-8-sig") as f:
+                return strip_cs(f.read())
+        except OSError as e:
+            raise game_facts.ExtractorBroken(f"{path} 읽기 실패: {e}")
+
+    def const(src, name, path):
+        m = re.search(r"\bconst\s+(?:float|int)\s+" + name + r"\s*=\s*([0-9.]+)f?\s*;", src)
+        if not m:
+            raise game_facts.ExtractorBroken(f"{path}에서 상수 {name}을 찾지 못했다")
+        return float(m.group(1))
+
+    gc_path = "Assets/Scripts/Core/GameConstants.cs"
+    gc = read(gc_path)
+    block = re.search(r"class\s+Island\b(.*?)class\s+Battle\b", gc, re.S)
+    if not block:
+        raise game_facts.ExtractorBroken(f"{gc_path}에서 Island 상수 블록을 찾지 못했다")
+    isl = block.group(1)
+    per_hour = const(isl, "CandyPerInsectHour", gc_path)
+    base_slots = const(isl, "BaseInsectSlots", gc_path)
+    max_slots = const(isl, "MaxInsectSlots", gc_path)
+    max_comfort = const(isl, "MaxComfortBonus", gc_path)
+    bond_per_level = const(isl, "BondBonusPerLevel", gc_path)
+    max_bond = const(isl, "MaxBondLevel", gc_path)
+
+    yield_path = "Assets/Scripts/Core/IslandYield.cs"
+    m = re.search(r"case\s+InsectRarity\.Legendary\s*:\s*return\s+([0-9.]+)f\s*;", read(yield_path))
+    if not m:
+        raise game_facts.ExtractorBroken(f"{yield_path}에서 전설 등급 배율을 찾지 못했다")
+    legendary = float(m.group(1))
+
+    cat_path = "Assets/Scripts/Core/IslandCatalog.cs"
+    tool_bonus = sum(float(v) for v in re.findall(
+        r"IslandEffectKind\.YieldBonus\s*,\s*([0-9.]+)f", read(cat_path)))
+    if tool_bonus <= 0:
+        raise game_facts.ExtractorBroken(f"{cat_path}에서 생산 설비(YieldBonus)를 찾지 못했다")
+
+    basic = base_slots * per_hour * 24.0
+    full = (max_slots * per_hour * legendary * (1.0 + max_comfort + tool_bonus)
+            * (1.0 + bond_per_level * max_bond) * 24.0)
+    return {"basic": basic, "full": full}
+
+
 def evaluate_signals(args) -> list:
     signals = []
 
@@ -229,6 +284,20 @@ def evaluate_signals(args) -> list:
                     f"< {THRESHOLD_P2W_GAP_RATIO_WARN:.1f}x",
                     f"{ratio:.1f}x (코인 {p2w['basic_avg_coin']} vs 젬 {p2w['premium_avg_gem']})",
                     judge))
+
+    # 6. 섬 수입 — 활동 수입 대비 몫. 방치 수입이 주 수입을 넘으면 필드에 나갈 이유가 사라진다.
+    island = island_daily_candy()
+    daily = max(1e-6, args.daily_candy_income)
+    basic_share = island["basic"] / daily
+    full_share = island["full"] / daily
+    judge = "FAIL" if basic_share > THRESHOLD_ISLAND_BASIC_SHARE_FAIL else "PASS"
+    signals.append(("섬 기본 수입 (일반 3마리)",
+                    f"<= 활동 수입의 {THRESHOLD_ISLAND_BASIC_SHARE_FAIL:.0%}",
+                    f"하루 {island['basic']:.0f}캔디 = {basic_share:.0%}", judge))
+    judge = "FAIL" if full_share > THRESHOLD_ISLAND_MAX_SHARE_FAIL else "PASS"
+    signals.append(("섬 최대 수입 (전설 최대 마리 · 보너스 전부)",
+                    f"<= 활동 수입의 {THRESHOLD_ISLAND_MAX_SHARE_FAIL:.0%}",
+                    f"하루 {island['full']:.0f}캔디 = {full_share:.0%}", judge))
 
     return signals
 

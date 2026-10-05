@@ -147,11 +147,11 @@ namespace InsectGame.Story
             // 것으로 보인다. 플레이어가 멀어질 때까지 기다렸다가 조용히 되돌린다(Update).
             if (string.IsNullOrEmpty(beat.stageExitId)) { restorePending = warpedActors.Count > 0; return; }
 
-            // cutsceneId가 함께 있으면 CutsceneDirector와 조작·카메라를 다툰다. story_lint가
+            // cutsceneId/videoId가 함께 있으면 CutsceneDirector/StoryVideoDirector와 조작·모달을 다툰다. story_lint가
             // 그 조합을 금지하지만, 런타임에서도 컷신 쪽에 양보한다(카메라를 뺏는 쪽이 더 크다).
-            if (!string.IsNullOrEmpty(beat.cutsceneId))
+            if (!string.IsNullOrEmpty(beat.cutsceneId) || !string.IsNullOrEmpty(beat.videoId))
             {
-                Debug.LogWarning($"[Stage] {beat.beatId}: cutsceneId와 stageExitId가 함께 있어 연출을 건너뛴다");
+                Debug.LogWarning($"[Stage] {beat.beatId}: cutsceneId/videoId와 stageExitId가 함께 있어 연출을 건너뛴다");
                 restorePending = warpedActors.Count > 0;   // 연출은 건너뛰어도 배우는 제자리로
                 return;
             }

@@ -83,15 +83,15 @@ MonoBehaviour:
     - tool_magnify
   - displayName: "\uC9C1\uC811 \uB9CC\uB4E4\uAE30"
     gender: 0
-    hairStyle: 0
+    hairStyle: 1
     hairColor: 0
     faceType: 0
     skinColor: 1
     outfitItemIds:
-    - hat_cap
-    - top_shirt
-    - outer_jacket
+    - hat_none
+    - top_polo
+    - outer_none
     - bot_pants
-    - shoe_boots
+    - shoe_sneakers
     - bag_basic
     - tool_net

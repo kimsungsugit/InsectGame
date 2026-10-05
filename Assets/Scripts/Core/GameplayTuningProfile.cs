@@ -7,10 +7,9 @@ namespace InsectGame.Core
     {
         [Header("Spawning")]
         // 기본값은 InsectSpawner 코드 기본값과 동기화 — 에셋을 새로 만들어도 하향 함정이 없도록 유지.
-        [Range(1f, 180f)] public float spawnIntervalSeconds = 5f;
+        // (스폰 간격·초기 수·리전 상한은 2026-09-29에 뺐다 — 필드 개체군이 슬롯 기록으로 바뀌어 리전 곤충 수는
+        //  설 수 있는 땅이 정하고(FieldSpawnRules.SlotCountFor), 새 개체는 재생 지연·수명으로만 들어선다.)
         [Range(1, 60)] public int maxActiveTotal = 32;
-        [Range(1, 40)] public int initialSpawnCount = 20;
-        [Range(1, 15)] public int maxActivePerRegion = 10;
         [Range(1, 5)] public int subAreaActiveCount = 2;
         [Range(5f, 180f)] public float subAreaRespawnSeconds = 45f;
 

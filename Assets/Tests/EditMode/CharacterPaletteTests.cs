@@ -123,15 +123,28 @@ namespace InsectGame.Tests
         // ── 의상 프리셋 ──
 
         /// <summary>
-        /// 2D 폴백(3D 프리뷰가 아직 없는 첫 프레임·미배선 시)의 대표색이 프리셋 수와 맞아야 한다.
-        /// 짧으면 뒤쪽 프리셋이 clamp돼 앞 것과 같은 색으로 그려진다 — 프리셋이 3→5로 늘었을 때
-        /// 실제로 그 상태였다.
+        /// 2D 폴백(3D 프리뷰가 아직 없는 첫 프레임·미배선 시)의 색은 **프리셋이 실제로 입히는 아이템**에서 나온다.
+        /// 예전엔 대표색 배열을 따로 적어 자켓 색이 실제와 달랐고, 프리셋이 늘 때 배열이 짧으면 앞 것과 같은 색이 됐다.
+        /// 몸통은 겉옷을 입으면 겉옷 색, 벗으면 상의 색(ApplyToCharacter와 같은 규칙).
         /// </summary>
         [Test]
-        public void PortraitFallbackColors_CoverEveryPreset()
+        public void PortraitFallbackColors_ComeFromThePresetItems()
         {
-            Assert.AreEqual(CharacterPresetLibrary.Count, CharacterPortraitRenderer.PresetTopColors.Length,
-                "2D 폴백 색 배열이 프리셋 수와 다르면 뒤쪽 프리셋이 앞 것과 같은 색이 된다");
+            Dictionary<string, OutfitItem> byId = new Dictionary<string, OutfitItem>();
+            foreach (OutfitItem item in CharacterOutfitManager.BuildCatalog()) byId[item.itemId] = item;
+
+            for (int i = 0; i < CharacterPresetLibrary.Count; i++)
+            {
+                CharacterPresetLibrary.Preset p = CharacterPresetLibrary.Get(i);
+                Color top = default, outer = new Color(0f, 0f, 0f, 0f);
+                foreach (string id in p.OutfitItemIds)
+                {
+                    if (byId[id].slot == OutfitSlot.Top) top = byId[id].primaryColor;
+                    if (byId[id].slot == OutfitSlot.Outerwear) outer = byId[id].primaryColor;
+                }
+                CharacterPortraitRenderer.PresetColors(i, out Color body, out _, out _, out _, out _);
+                Assert.AreEqual(outer.a > 0.01f ? outer : top, body, p.DisplayName + ": 2D 폴백 몸통 색이 실제 옷과 다르다");
+            }
         }
 
         [Test]

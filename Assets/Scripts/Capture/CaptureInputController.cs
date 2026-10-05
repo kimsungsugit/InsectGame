@@ -25,6 +25,11 @@ namespace InsectGame.Capture
         [Range(0f, 0.25f)] [SerializeField] private float distancePenaltyPerMeter = 0.07f;
         [SerializeField] private float idealApproachDistance = 1.2f;
 
+        [Header("Ambush")]
+        // 습격 판정에 쓰는 시간·날씨(플레이어가 있는 리전 기준)와 서브에리어 여부. AutoWire(WorldStateProvider, RegionManager)로 받는다.
+        [SerializeField] private WorldStateProvider worldStateProvider;
+        [SerializeField] private RegionManager regionManager;
+
         private InsectEntity nearestInsect;
         private float nearCheckTimer;
         private float attemptCooldown;
@@ -48,8 +53,53 @@ namespace InsectGame.Capture
         /// </summary>
         public bool HasCatchTarget => nearestInsect != null && nearestInsect.Data != null;
 
+        // ── 습격(AmbushRules) ──
+        // 습격형 곤충이 "지금 덤벼들어도 되나"를 묻는 판정(InsectEntity.AmbushGate)을 여기서 세우고, 닿으면 「습격!」 창을 연다.
+        // 판정의 전역 칸(시간·날씨·꿈·서브에리어·멈춤·창·교전·쿨다운·배틀팀)은 프레임마다 한 번만 채우고 곤충마다 개체 칸만 바꾼다.
+        private System.Func<InsectEntity, AmbushRefusal> ambushGate;   // 한 번만 묶는다 — OnEnable마다 새 대리자를 만들지 않게
+        private bool ambushRefsSearched;
+        private int ambushFrame = -1;
+        private AmbushRules.Context ambushBase;
+        private bool ambushStateKnown;
+        private int ambushTeamFilled;
+        private int ambushTeamReady;
+        // 교전(선택 창·미니게임·전투·레이드)이 끝난 시각 — 전역 쿨다운의 기준. 습격으로 시작한 교전이면 습격 쿨다운도 함께 건다.
+        private int encounterTrackFrame = -1;
+        private bool inEncounterLastFrame;
+        private bool encounterIsAmbush;
+        private float lastEncounterEndTime;
+        private float lastAmbushEndTime = float.NegativeInfinity;
+        private bool feedbackIsWarn;          // 현재 피드백이 습격 경고인지(스타일 분기)
+        private GUIStyle warnStyle;
+
+        private void OnEnable()
+        {
+            // 구독은 여기서 걸고 OnDisable에서 푼다 — 꺼졌다 켜져도 되살아난다(subscription_lint).
+            if (ambushGate == null) ambushGate = EvaluateAmbushGate;
+            InsectEntity.AmbushGate = ambushGate;
+            InsectEntity.AmbushStarted -= OnAmbushStarted;
+            InsectEntity.AmbushStarted += OnAmbushStarted;
+            InsectEntity.AmbushReached -= OnAmbushReached;
+            InsectEntity.AmbushReached += OnAmbushReached;
+        }
+
+        private void OnDisable()
+        {
+            // 판정은 static이라 씬을 다시 읽어도 남는다 — 파기된 이 컴포넌트로 들어가지 않게 내 것이면 비운다(null이면 습격이 없다).
+            if (InsectEntity.AmbushGate == ambushGate) InsectEntity.AmbushGate = null;
+            InsectEntity.AmbushStarted -= OnAmbushStarted;
+            InsectEntity.AmbushReached -= OnAmbushReached;
+        }
+
+        private void Start()
+        {
+            // 씬이 막 열렸을 때도 숨 돌릴 틈을 둔다 — 로드 직후 곁의 사마귀가 바로 덮치지 않게(AfterEncounterGraceSeconds).
+            lastEncounterEndTime = Time.time;
+        }
+
         private void Update()
         {
+            TrackEncounter();
             if (attemptCooldown > 0f) attemptCooldown -= Time.deltaTime;
             if (feedbackTimer > 0f) feedbackTimer -= Time.deltaTime;
             if (swingTimer > 0f) swingTimer -= Time.deltaTime;
@@ -82,8 +132,9 @@ namespace InsectGame.Capture
 
             if (Input.GetKeyDown(KeyCode.Escape))
             {
+                // Hide가 아니라 CloseModal — 습격 창에서 ESC는 「닫기」가 아니라 도망치기다(그냥 닫으면 도망 판정을 우회한다).
                 if (choiceUi != null && choiceUi.IsChoiceOpen)
-                    choiceUi.Hide();
+                    choiceUi.CloseModal();
                 else if (minigame != null && minigame.IsActive)
                     minigame.CancelCapture();
             }
@@ -111,7 +162,7 @@ namespace InsectGame.Capture
                 if (evt.keyCode == KeyCode.Escape)
                 {
                     if (choiceUi != null && choiceUi.IsChoiceOpen)
-                        choiceUi.Hide();
+                        choiceUi.CloseModal();   // Update와 같은 이유 — 습격 창의 ESC는 도망치기다
                     else if (minigame != null && minigame.IsActive)
                         minigame.CancelCapture();
                     evt.Use();
@@ -133,15 +184,13 @@ namespace InsectGame.Capture
         {
             bool near = nearestInsect != null && nearestInsect.Data != null;
 
-            float vw = UIScale.VirtualScreenWidth;
-            float safeR = UIScale.VirtualSafeRight;
-            float radius = 96f;
-            // '계정' 버튼(AccountSettingsUI)은 raw 픽셀로 하단 62px에 고정 — 스케일이 작을수록 가상좌표와
-            // 어긋나 겹친다. 가상 여백을 1/Scale로 환산해 화면 스케일과 무관하게 항상 그 위로 띄운다.
-            float accountClear = 92f / UIScale.Scale;
-            float cx = vw - safeR - radius - 40f;
-            float cy = UISafeLayout.ContentBottom - radius - accountClear; // 우하단 '계정' 버튼 위(스케일 보정)
-            Rect rect = new Rect(cx - radius, cy - radius, radius * 2f, radius * 2f);
+            // 자리는 CatchButtonLayout(순수 계산) — 전수 겹침 검사(HudOverlapSweepTests)와 같은 함수다.
+            HudFrame frame = HudFrame.Current;
+            float radius = CatchButtonLayout.Radius;
+            Vector2 center = CatchButtonLayout.Center(frame);
+            float cx = center.x;
+            float cy = center.y;
+            Rect rect = CatchButtonLayout.ButtonRect(frame);
             catchButtonRect = rect; // 멀티터치 raw 히트테스트 + 클릭-이동 억제용으로 공유
             // PlayerMovement 클릭-이동이 이 버튼 위 탭을 월드 클릭으로 오인하지 않게 등록.
             FieldHudInput.RegisterBlockingRect(rect);
@@ -155,7 +204,8 @@ namespace InsectGame.Capture
             if (swingTimer > 0f)
             {
                 float t = 1f - Mathf.Clamp01(swingTimer / 0.35f); // 0→1
-                float er = radius * (1f + t * 0.85f);
+                // 이웃(상호작용 버튼·설정 버튼·피드백 글자)에 닿지 않는 반지름까지만 퍼진다(CatchButtonLayout.SwingRadius).
+                float er = Mathf.Lerp(radius, CatchButtonLayout.SwingRadius(frame), t);
                 GUI.color = new Color(baseCol.r, baseCol.g, baseCol.b, (1f - t) * 0.65f);
                 GUI.DrawTexture(new Rect(cx - er, cy - er, er * 2f, er * 2f), circleRingTex);
             }
@@ -174,9 +224,19 @@ namespace InsectGame.Capture
             // 피드백(버튼 위) — 미스는 크고 붉게, 그 외는 일반 안내.
             if (feedbackTimer > 0f && !string.IsNullOrEmpty(feedbackMessage))
             {
-                GUIStyle fs = feedbackIsMiss ? missStyle : feedbackStyle;
-                float fh = feedbackIsMiss ? 72f : 52f;
-                GUI.Label(new Rect(cx - 260f, cy - radius - fh - 16f, 520f, fh), feedbackMessage, fs);
+                if (feedbackIsWarn)
+                {
+                    // 습격 경고 — 곤충 이름이 길이를 정하므로 고정 상자에 LabelFit(ui-layout.md). 화면 오른쪽 밖으로 밀리지 않게 가둔다.
+                    // 글자만 그린다(패널 없음) — 쫓기는 동안 이 자리를 탭해 달아날 수 있어야 해서 클릭-이동을 막지 않는다.
+                    // 폭 520 — 가로 모바일에서 화면 가운데 줄의 섬 안내 배너(폭 760, IslandGuideUI.CoachRect)와 36px 띄운다.
+                    // 560일 땐 Scale 0.667에서 배너 오른쪽 모서리와 4px 겹쳤다.
+                    UIHelper.LabelFit(CatchButtonLayout.WarnRect(frame), feedbackMessage, warnStyle);
+                }
+                else
+                {
+                    GUIStyle fs = feedbackIsMiss ? missStyle : feedbackStyle;
+                    GUI.Label(CatchButtonLayout.FeedbackRect(frame, feedbackIsMiss), feedbackMessage, fs);
+                }
             }
 
             // 입력(투명 히트영역) — 데스크탑(마우스)은 GUI.Button으로 처리. 터치 기기는 Update의 raw
@@ -286,6 +346,135 @@ namespace InsectGame.Capture
             feedbackMessage = message;
             feedbackTimer = 2.2f;
             feedbackIsMiss = isMiss;
+            feedbackIsWarn = false;
+        }
+
+        /// <summary>습격 경고 — 다가오는 동안(멈칫 끝 → 닿기까지 최대 수 초) 보이도록 보통 안내보다 조금 오래 둔다.</summary>
+        private void ShowWarning(string message)
+        {
+            feedbackMessage = message;
+            feedbackTimer = 3f;
+            feedbackIsMiss = false;
+            feedbackIsWarn = true;
+        }
+
+        // ── 습격 판정·창 ─────────────────────────────────────────────────
+
+        /// <summary>
+        /// <see cref="InsectEntity.AmbushGate"/>의 본체 — 이 곤충이 지금 덤벼들어도 되는가(막혔다면 까닭). 규칙은 <see cref="AmbushRules.Check"/>.
+        /// 시간·날씨를 모르면(월드 상태 미배선) 덤벼들지 않는다 — 기본값(아침·맑음)으로 판정하면 주행성 말벌이 엉뚱한 때 깬다.
+        /// </summary>
+        private AmbushRefusal EvaluateAmbushGate(InsectEntity e)
+        {
+            if (e == null || e.Data == null) return AmbushRefusal.NotAwake;
+            RefreshAmbushBase();
+            if (!ambushStateKnown) return AmbushRefusal.NotAwake;
+
+            AmbushRules.Context c = ambushBase;
+            c.Habit = InsectGame.Data.InsectHabits.For(e.Data);
+            c.IsGuardian = e.IsGuardian;
+            c.IsEngaged = e.IsEngaged;
+            c.EntityCooldownLeft = e.AmbushCooldownLeft;
+            c.CanFight = AmbushRules.CanFight(CaptureChoiceUI.IsRaidRarity(e.Data.rarity), ambushTeamFilled, ambushTeamReady);
+            return AmbushRules.Check(c);
+        }
+
+        /// <summary>판정의 전역 칸을 프레임마다 한 번 채운다 — 다가오는 곤충이 여럿이어도 같은 값을 읽는다.</summary>
+        private void RefreshAmbushBase()
+        {
+            if (ambushFrame == Time.frameCount) return;
+            ambushFrame = Time.frameCount;
+            EnsureAmbushRefs();
+            TrackEncounter();
+
+            ambushStateKnown = worldStateProvider != null;
+            float now = Time.time;
+            ambushBase = new AmbushRules.Context
+            {
+                // 플레이어가 있는 리전에서 보이는 날씨(설산의 눈·사막의 센바람) — 스폰과 같은 기준(rules/world-environment.md).
+                State = ambushStateKnown ? worldStateProvider.GetWorldState(CurrentRegionId()) : default(WorldState),
+                SinceLastAmbushEnded = now - lastAmbushEndTime,
+                SinceLastEncounterEnded = now - lastEncounterEndTime,
+                PlayerInEncounter = IsInEncounter(),
+                DreamActive = DreamPrologueState.Active,
+                InSubArea = regionManager != null && regionManager.CurrentSubArea != null,
+                PlayerFrozen = IsPlayerFrozen(),
+                ModalOpen = ModalUIRegistry.IsAnyOpen()
+            };
+
+            ambushTeamFilled = 0;
+            ambushTeamReady = 0;
+            if (choiceUi != null) choiceUi.GetFightReadiness(out ambushTeamFilled, out ambushTeamReady);
+        }
+
+        private string CurrentRegionId()
+        {
+            if (regionManager == null) return null;
+            InsectGame.Data.RegionData region = regionManager.CurrentRegion;
+            return region != null ? region.regionId : null;
+        }
+
+        /// <summary>배선이 빠졌을 때 한 번만 찾는다(AutoWire가 우선 — FindFirstObjectByType는 폴백).</summary>
+        private void EnsureAmbushRefs()
+        {
+            if (ambushRefsSearched) return;
+            ambushRefsSearched = true;
+            if (worldStateProvider == null) worldStateProvider = FindFirstObjectByType<WorldStateProvider>();
+            if (regionManager == null) regionManager = FindFirstObjectByType<RegionManager>();
+        }
+
+        /// <summary>플레이어가 교전(선택 창·미니게임·전투·레이드) 중인가.</summary>
+        private bool IsInEncounter()
+        {
+            return (choiceUi != null && choiceUi.IsChoiceOpen)
+                || (minigame != null && minigame.IsActive)
+                || (battleScreen != null && battleScreen.IsBattleActive)
+                || (raidScreen != null && raidScreen.IsRaidActive);
+        }
+
+        /// <summary>
+        /// 교전이 끝난 순간을 적는다(프레임마다 한 번) — 전역 쿨다운의 기준. 습격 창 → 전투로 이어지는 동안은 한 교전이다
+        /// (창을 닫고 전투를 여는 것이 한 호출 안에서 일어나 그 사이에 끊기지 않는다).
+        /// </summary>
+        private void TrackEncounter()
+        {
+            if (encounterTrackFrame == Time.frameCount) return;
+            encounterTrackFrame = Time.frameCount;
+            bool inEncounter = IsInEncounter();
+            if (inEncounterLastFrame && !inEncounter)
+            {
+                lastEncounterEndTime = Time.time;
+                if (encounterIsAmbush) lastAmbushEndTime = Time.time;
+                encounterIsAmbush = false;
+            }
+            inEncounterLastFrame = inEncounter;
+        }
+
+        /// <summary>습격형이 멈칫을 끝내고 다가오기 시작했다 — 잡기 버튼 위에 경고를 띄운다(보고 달아날 틈).</summary>
+        private void OnAmbushStarted(InsectEntity e)
+        {
+            if (e == null || e.Data == null) return;
+            ShowWarning($"{e.DisplayNameForPlayer} Lv.{e.Level} — 덤벼든다! 달아나면 떼어 낼 수 있다");
+        }
+
+        /// <summary>
+        /// 습격형이 닿았다 — 판정을 한 번 더 묻고(다가오는 사이 다른 창이 열렸거나 쿨다운이 시작됐을 수 있다) 「습격!」 창을 연다.
+        /// 열지 않으면 곤충이 스스로 물러난다(<c>InsectEntity.ReachPlayer</c>).
+        /// </summary>
+        private void OnAmbushReached(InsectEntity e)
+        {
+            if (e == null || e.Data == null || choiceUi == null) return;
+            if (EvaluateAmbushGate(e) != AmbushRefusal.None) return;
+
+            string reason = AmbushRules.ReasonLine(InsectGame.Data.InsectHabits.For(e.Data), ambushBase.State);
+            if (!choiceUi.ShowAmbush(e, reason)) return;
+
+            // 이 창에서 시작하는 교전(창 → 전투·레이드)이 끝나면 습격 쿨다운이 걸린다.
+            encounterIsAmbush = true;
+            inEncounterLastFrame = true;
+            feedbackTimer = 0f;   // "덤벼든다!" 경고는 창이 대신한다
+            PlayerMovement pm = GetPlayerMovement();
+            if (pm != null) pm.FaceTowards(e.transform.position);
         }
 
         private void EnsureStyles()
@@ -329,6 +518,16 @@ namespace InsectGame.Capture
                 richText = true
             };
             missStyle.normal.textColor = new Color(1f, 0.32f, 0.3f);
+
+            // 습격 경고 — 경고색 토큰(새 색을 만들지 않는다). 두 줄까지 들어가는 상자에 LabelFit으로 그린다.
+            warnStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 30,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleCenter,
+                wordWrap = true
+            };
+            warnStyle.normal.textColor = UITheme.Instance.accentCoral;
         }
 
         private void EnsureCircleTex()
@@ -390,6 +589,96 @@ namespace InsectGame.Capture
             if (battleScreen == null) battleScreen = battle;
             if (raidScreen == null) raidScreen = raid;
             if (dexScreen == null) dexScreen = dex;
+        }
+
+        /// <summary>
+        /// 습격 판정의 시간·날씨(플레이어가 있는 리전 기준)와 서브에리어 여부. 빠지면 처음 판정 때 한 번 찾아보고, 그래도 없으면
+        /// 습격이 일어나지 않는다(곤충이 예전처럼 달아나기만 한다).
+        /// </summary>
+        public void AutoWire(WorldStateProvider worldState, RegionManager regions)
+        {
+            if (worldStateProvider == null) worldStateProvider = worldState;
+            if (regionManager == null) regionManager = regions;
+        }
+    }
+
+    /// <summary>
+    /// 우하단 잡기 버튼과 그 위 글자(놓침·습격 경고), 탭 고리의 자리 — <b>순수 계산</b>. 그리기(<see cref="CaptureInputController"/>)와
+    /// 전수 겹침 검사(<c>HudOverlapSweepTests</c>)가 같은 함수를 부른다. 상호작용 버튼(<c>WorldInteractionController</c>)·
+    /// 가운데 무대(<c>HudStage</c>)·동굴 입구 버튼·꿈 안내 카드가 이 값을 기준으로 비켜 선다.
+    /// </summary>
+    public static class CatchButtonLayout
+    {
+        public const float Radius = 96f;
+        /// <summary>오른쪽 안전 가장자리와 버튼 사이.</summary>
+        public const float RightGap = 40f;
+        /// <summary>
+        /// 아래 '설정' 버튼(AccountSettingsUI)을 피하는 여백 — <b>픽셀</b> 92를 가상으로 환산한다(스케일이 작을수록 가상 여백이 크다).
+        /// 예전 계정 버튼이 픽셀 좌표로 하단에 고정돼 있던 때의 보정이다.
+        /// </summary>
+        public const float AccountClearPixels = 92f;
+        /// <summary>잡기 버튼과 그 왼쪽 상호작용 버튼 사이(<c>WorldInteractionController</c>가 같은 값을 쓴다).</summary>
+        public const float NeighborGap = 36f;
+        public const float LabelWidth = 520f;
+        public const float LabelGap = 16f;
+        public const float WarnHeight = 96f;
+        public const float MissHeight = 72f;
+        public const float NoteHeight = 52f;
+        /// <summary>탭 고리가 이웃이 없을 때 퍼질 수 있는 배율.</summary>
+        public const float SwingMaxScale = 1.85f;
+
+        public static Vector2 Center(HudFrame f)
+        {
+            return new Vector2(f.Width - f.SafeRight - Radius - RightGap,
+                f.ContentBottom - Radius - AccountClearPixels / f.Scale);
+        }
+
+        public static Rect ButtonRect(HudFrame f)
+        {
+            Vector2 c = Center(f);
+            return new Rect(c.x - Radius, c.y - Radius, Radius * 2f, Radius * 2f);
+        }
+
+        // 글자 칸의 왼쪽 끝 — 버튼 가운데에 맞추되 화면 오른쪽 안전 가장자리(24) 밖으로 밀리지 않게 가둔다.
+        // (놓침 글자는 예전에 가두지 않아 오른쪽 180px가 화면 밖이었다.)
+        private static float LabelX(HudFrame f)
+        {
+            return Mathf.Min(Center(f).x - LabelWidth * 0.5f, f.Width - f.SafeRight - 24f - LabelWidth);
+        }
+
+        /// <summary>습격 경고 — 글자만(패널 없음). 곤충 이름이 길이를 정하므로 그리는 쪽이 LabelFit으로 맞춘다.</summary>
+        public static Rect WarnRect(HudFrame f)
+        {
+            return new Rect(LabelX(f), Center(f).y - Radius - WarnHeight - LabelGap, LabelWidth, WarnHeight);
+        }
+
+        /// <summary>잡기 결과 글자 — 놓쳤으면 크게(72), 그 밖의 안내는 52.</summary>
+        public static Rect FeedbackRect(HudFrame f, bool miss)
+        {
+            float h = miss ? MissHeight : NoteHeight;
+            return new Rect(LabelX(f), Center(f).y - Radius - h - LabelGap, LabelWidth, h);
+        }
+
+        /// <summary>
+        /// 탭 고리가 퍼지는 최대 반지름 — 이웃에 닿지 않게 가둔다. 왼쪽 상호작용 버튼까지 <c>Radius + NeighborGap</c>,
+        /// 위 글자 칸까지 <c>Radius + LabelGap</c>, 아래 설정 버튼까지 <c>Radius + 92/Scale − 46</c>. 버튼보다 작아지면 버튼 크기다.
+        /// 예전엔 늘 1.85배(178)까지 퍼져 상호작용 버튼·설정 버튼·글자를 덮었다.
+        /// </summary>
+        public static float SwingRadius(HudFrame f)
+        {
+            float toInteract = Radius + NeighborGap - 2f;
+            float toLabel = Radius + LabelGap - 2f;
+            float toSettings = Radius + AccountClearPixels / f.Scale - AccountSettingsUI.OpenButtonHeight - 2f;
+            float r = Mathf.Min(Radius * SwingMaxScale, Mathf.Min(toInteract, Mathf.Min(toLabel, toSettings)));
+            return Mathf.Max(Radius, r);
+        }
+
+        /// <summary>탭 고리가 가장 크게 퍼졌을 때의 자리.</summary>
+        public static Rect SwingRect(HudFrame f)
+        {
+            Vector2 c = Center(f);
+            float r = SwingRadius(f);
+            return new Rect(c.x - r, c.y - r, r * 2f, r * 2f);
         }
     }
 }

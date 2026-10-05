@@ -7,6 +7,12 @@ quest_lint의 형제다. 스토리 비트는 Story.json(json.load)이라 퀘스�
 EvaluateTriggers switch 케이스나 이벤트 구독을 빠뜨리면, 그 타입을 쓰는 비트가 영영 발화하지
 않는다. quest_lint의 "QuestType↔진행 배선"과 정확히 같은 구조 — q_team 회귀의 스토리 등가물.
 
+36검사다. 31~34는 초등 고학년이 읽는 이야기(2026-10-04 다시 쓰기)의 저작 규칙이다 —
+대사 한 줄·장면 길이(31), 쓰지 않는 말(32), HUD 목표 이유 why(33), 장 「지난 이야기」 데이터(34).
+35는 대사 직후 대결(duelAfter — 2026-10-04 「이야기 전투」)의 상대·자리·단계 정합이다.
+36은 대사 앞 영상(introVideoId — 2026-10-05 「영상이 설명하고, 대사는 짧게」) 비트의 대사 길이(1~6줄)다.
+위반 전체 목록은 표 아래 「상세」에 찍는다(표 칸에는 앞 몇 건만).
+
 종료 코드: 0 정상 / 1 데이터 결함 / 2 추출기 고장 (관통 원칙).
 """
 import io
@@ -272,20 +278,40 @@ def evaluate_signals() -> list:
     #    옮겨 부채를 청산했다. 지금은 0건이며, 다시 늘면 측정값에 드러난다.
     #    FAIL로 승격하지 않는 이유: leaf로 쓰는 QuestComplete는 정상이고(놓쳐도 체인이 안 끊긴다),
     #    이 검사는 "prereq로 쓰였는가"만 본다 — 그 조건이면 GuardianDefeat와 달리 즉시 위험하진 않다.
+    #
+    #    **DuelWin은 조건부로 허용한다**(2026-10-04 — 간부 승리 duel_*_win이 다음 장 도착·최종장의 선행이 됐다).
+    #    이긴 순간의 이벤트(BossDuelWon)는 일생 1회지만 StoryDirector.ResweepPersistentConditions가 **격파 기록**을 보고
+    #    시작·리전 이동·비트 완료·클라우드 재적재 때마다 다시 흘린다. 그 한 줄이 이 스파인의 유일한 회복 경로라 소스에서
+    #    확인한다 — 지우면 그 순간을 놓친 세이브(앱 종료)와 필수화 전에 이미 이긴 세이브가 그 장에서 영구 정지한다.
+    #    게이트(requiredBeatId) 대상도 같은 이유로 본다(검사 16은 일생 1회 트리거만 막는다).
     prereq_targets = {b.get("prerequisiteBeatId") for b in beats if b.get("prerequisiteBeatId")}
+    gate_targets8 = {b.get("requiredBeatId") for b in beats if b.get("requiredBeatId")}
     once_only = []
     grandfathered = 0
+    duel_spines = []
     for b in beats:
         ttype = (b.get("trigger") or {}).get("type")
+        if ttype == "DuelWin" and (b["beatId"] in prereq_targets or b["beatId"] in gate_targets8):
+            duel_spines.append(b["beatId"])
         if b["beatId"] not in prereq_targets:
             continue
         if ttype == "GuardianDefeat":
             once_only.append(f"{b['beatId']}({ttype})")
         elif ttype == "QuestComplete":
             grandfathered += 1
+    if duel_spines:
+        director8 = _read_repo("Assets/Scripts/Story/StoryDirector.cs")
+        m8 = re.search(r"private void ResweepPersistentConditions\(\)(.*?)\n        \}", director8, re.S)
+        resweeps_duels = bool(m8) and bool(re.search(
+            r"type\s*==\s*TriggerDuelWin\s*&&\s*HasDefeatedStoryNpc\(\s*param\s*\)", m8.group(1)))
+        if not resweeps_duels:
+            once_only.extend(f"{x}(DuelWin — ResweepPersistentConditions의 격파 기록 재확인 없음)"
+                             for x in sorted(duel_spines))
     note = f" / QuestComplete 기존 {grandfathered}건은 1막 유예" if grandfathered else ""
+    if duel_spines:
+        note += f" / DuelWin 스파인·게이트 {len(duel_spines)}건은 격파 기록 재확인으로 재발화({sorted(duel_spines)})"
     signals.append((
-        "일생 1회 트리거의 스파인 사용 (GuardianDefeat leaf 강제)",
+        "일생 1회 트리거의 스파인 사용 (GuardianDefeat leaf 강제 · DuelWin은 격파 기록 재확인 필수)",
         "0건",
         (f"{len(once_only)}건 ({once_only})" if once_only else "0건") + note,
         "FAIL" if once_only else "PASS",
@@ -447,14 +473,22 @@ def evaluate_signals() -> list:
     #     조작(SetFrozen)과 모달 스택을 뺏는다. 함께 걸면 서로의 복구를 덮어써서
     #     조작이 안 돌아오거나 카메라가 컷신 마지막 구도로 굳는다.
     #     런타임에도 StoryStageDirector가 컷신에 양보하지만, 저작 단계에서 막는 편이 낫다.
+    #     videoId(StoryVideoDirector)도 같은 시점을 구독한다 — 셋 중 둘 이상이면 FAIL.
+    #     introVideoId(대사 앞 영상)는 시점이 달라 셋과는 안 다투지만 **videoId와는 함께 두지 않는다** —
+    #     한 지휘자가 한 비트에 두 편(앞·뒤)을 트는 것이고, 영상이 설명하고 대사가 짧은 비트에 마무리 영상까지
+    #     붙이면 아이가 대사 6줄을 사이에 둔 영상 두 편(최대 30초)을 보게 된다. 설명은 앞 영상 하나로 한다.
     both_slots = sorted(
         b["beatId"] for b in beats
-        if b.get("stageExitId") and b.get("cutsceneId"))
+        if sum(1 for k in ("stageExitId", "cutsceneId", "videoId") if b.get(k)) >= 2)
+    both_videos = sorted(
+        f"{b['beatId']}(introVideoId+videoId)" for b in beats
+        if b.get("introVideoId") and b.get("videoId"))
+    slot_problems = both_slots + both_videos
     signals.append((
-        "stageExitId ↔ cutsceneId 배타",
+        "stageExitId ↔ cutsceneId ↔ videoId 배타 · introVideoId ↔ videoId 배타",
         "0건 동시 사용",
-        f"{len(both_slots)}건 ({both_slots})" if both_slots else "0건",
-        "FAIL" if both_slots else "PASS",
+        f"{len(slot_problems)}건 ({slot_problems})" if slot_problems else "0건",
+        "FAIL" if slot_problems else "PASS",
     ))
 
     # 14. Story.json의 키가 StoryBeat.cs에 실재하는가.
@@ -485,8 +519,10 @@ def evaluate_signals() -> list:
             fields[fname] = elem.group(1) if elem else ftype
         class_fields[cls_name] = fields
 
-    if not class_fields.get("StoryBeat"):
-        raise ExtractorBroken("StoryBeat.cs에서 StoryBeat의 public 필드를 찾지 못했다 — 추출기가 낡았다")
+    for required_cls in ("StoryBeat", "StoryList", "StoryChapter"):
+        if not class_fields.get(required_cls):
+            raise ExtractorBroken(
+                f"StoryBeat.cs에서 {required_cls}의 public 필드를 찾지 못했다 — 추출기가 낡았다")
 
     def _walk_keys(node, cls_name, path, out):
         known = class_fields.get(cls_name)
@@ -505,14 +541,27 @@ def evaluate_signals() -> list:
                         _walk_keys(item, child, f"{path}.{key}[{idx}]", out)
 
     orphan_keys = []
+    # 루트(StoryList) — `beats`·`chapters` 외의 키는 JsonUtility가 통째로 버린다("chapter" 한 글자 오타면
+    # 장 13개가 전부 증발하고 「지난 이야기」 카드가 하나도 안 뜬다).
+    story_doc = game_facts.story_document()
+    for key in story_doc:
+        if key not in class_fields["StoryList"]:
+            orphan_keys.append(f"(루트).{key}")
     for b in beats:
         _walk_keys(b, "StoryBeat", b.get("beatId") or "(무명)", orphan_keys)
+    doc_chapters = story_doc.get("chapters")
+    if isinstance(doc_chapters, list):
+        for idx, ch in enumerate(doc_chapters):
+            if isinstance(ch, dict):
+                _walk_keys(ch, "StoryChapter", f"chapters[{idx}:{ch.get('chapterId') or '?'}]", orphan_keys)
 
     signals.append((
-        "Story.json 키 실재성 (JSON↔StoryBeat 필드)",
+        "Story.json 키 실재성 (JSON↔StoryList·StoryBeat·StoryChapter 필드)",
         "0건 미매핑",
         f"{len(orphan_keys)}건 ({orphan_keys[:8]})" if orphan_keys
-        else f"0건 (비트 {len(beats)}개 / 필드 {len(class_fields['StoryBeat'])}종)",
+        else (f"0건 (비트 {len(beats)}개 / 필드 {len(class_fields['StoryBeat'])}종 · "
+              f"장 {len(doc_chapters) if isinstance(doc_chapters, list) else 0}개 / "
+              f"필드 {len(class_fields['StoryChapter'])}종)"),
         "FAIL" if orphan_keys else "PASS",
     ))
 
@@ -844,7 +893,491 @@ def evaluate_signals() -> list:
         "FAIL" if choice_bad else "PASS",
     ))
 
+    # 25. videoId·introVideoId 실재성 — 검사 9(cutsceneId)·12(stageId)와 같은 무증상 결함 계열이다.
+    #     오타면 런타임에 LogWarning만 찍고 영상이 그냥 안 나온다(대사 앞 영상이면 영상 없이 짧은 대사만 남는다). 셋을 본다:
+    #     ① JSON videoId·introVideoId → StoryVideoLibrary 상수 실재  ② 상수 선언됐는데 TryGet case 없음
+    #     ③ fileName이 Assets/StreamingAssets/Video/ 에 실제로 있는가.
+    #     ③은 **WARN**이다 — 영상은 외부(AI 생성)에서 만들어 들어오므로 코드가 먼저 준비되는 것이
+    #     정상 순서고, 없으면 런타임이 경고 1줄 찍고 건너뛰어 진행은 산다(StoryVideoDirector.Play).
+    #     단 배포 전에는 0건이어야 한다 — 릴리스 체크리스트가 이 줄을 본다.
+    video_lib_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "Assets", "Scripts", "Story", "StoryVideoLibrary.cs")
+    try:
+        with open(video_lib_path, encoding="utf-8") as fh:
+            video_src = fh.read()
+    except OSError as exc:
+        raise ExtractorBroken(f"StoryVideoLibrary.cs를 읽지 못했다: {exc}")
+
+    video_declared = dict(re.findall(
+        r'public const string (\w+)\s*=\s*"([a-z_0-9]+)"', video_src))
+    if not video_declared:
+        raise ExtractorBroken(
+            "StoryVideoLibrary.cs에서 영상 ID 상수를 하나도 찾지 못했다 — 추출기가 낡았다")
+    known_videos = set(video_declared.values())
+    video_dispatched = set(re.findall(r'case (\w+):\s*def\s*=', video_src))
+    video_undispatched = sorted(v for k, v in video_declared.items() if k not in video_dispatched)
+
+    # 파일명은 빌더의 `new StoryVideoDefinition(상수, "파일.mp4", ...)`에서 읽는다.
+    video_files = dict(re.findall(
+        r'new StoryVideoDefinition\((\w+),\s*"([^"]+\.mp4)"', video_src))
+    if len(video_files) != len(video_declared):
+        raise ExtractorBroken(
+            f"StoryVideoLibrary.cs 파일명 추출 {len(video_files)}건 ≠ 상수 {len(video_declared)}건 — 추출기가 낡았다")
+
+    VIDEO_KEYS = ("videoId", "introVideoId")
+    missing_video = sorted(
+        f"{b['beatId']}.{key}→{b[key]}"
+        for b in beats
+        for key in VIDEO_KEYS
+        if b.get(key) and b[key] not in known_videos)
+    video_problems = missing_video + [f"{v}(switch 미배선)" for v in video_undispatched]
+    video_used = sum(1 for b in beats if b.get("videoId"))
+    intro_used = sum(1 for b in beats if b.get("introVideoId"))
+    signals.append((
+        "videoId·introVideoId 실재성 (JSON↔StoryVideoLibrary)",
+        "0건 미존재",
+        f"{len(video_problems)}건 ({video_problems})" if video_problems
+        else f"0건 (대사 뒤 {video_used}건 · 대사 앞 {intro_used}건 / 정의 {len(known_videos)}종)",
+        "FAIL" if video_problems else "PASS",
+    ))
+
+    video_dir = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "Assets", "StreamingAssets", "Video")
+    # os.path.isfile은 Windows에서 대소문자를 무시한다 — Android(jar)는 구분하므로 실제 디렉터리
+    # 목록과 **정확히** 대조한다. 어긋나면 에디터·테스트는 통과하고 기기에서만 5초 검은 화면이 난다.
+    present_files = set(os.listdir(video_dir)) if os.path.isdir(video_dir) else set()
+    absent_files = sorted(
+        f"{video_declared[k]}→{fn}" for k, fn in video_files.items()
+        if fn not in present_files)
+    used_video_ids = {b[key] for b in beats for key in VIDEO_KEYS if b.get(key)}
+    unused_videos = sorted(v for v in known_videos if v not in used_video_ids)
+    file_notes = ([f"{len(absent_files)}건 미배치 ({absent_files})"] if absent_files else []) \
+        + ([f"미사용 {len(unused_videos)}건 ({unused_videos})"] if unused_videos else [])
+    signals.append((
+        "영상 파일 배치 (StreamingAssets/Video · 대소문자 정확)",
+        "0건 미배치 (배포 전) · 미사용 0건",
+        " / ".join(file_notes) if file_notes else f"0건 ({len(video_files)}편 배치·전부 사용)",
+        "WARN" if file_notes else "PASS",
+    ))
+
+    # 27. 대사 화자 실재성 — lines[].speaker는 **표시명**이고 대사창이 그걸 초상 ID로 푼다
+    #     (NpcDialogueDatabase.StoryPortraitId). 오타면 예외도 경고도 없이 그 줄만 초상 없이
+    #     "세리"라는 이름표로 뜬다 — 무대 연출이 좌우 배치를 화자로 정하므로 한 글자 오타가 장면
+    #     전체의 자리 배치를 흔든다. 허용: StorySpeakerName의 표시명 ∪ 별칭 "하월" ∪ 해설 "지문".
+    db_src = _read_repo("Assets/Scripts/NPC/NpcDialogueDatabase.cs")
+    m_names = re.search(r"public static string StorySpeakerName\(string storyId\)(.*?)default:", db_src, re.S)
+    if not m_names:
+        raise ExtractorBroken("NpcDialogueDatabase.StorySpeakerName switch를 찾지 못했다 — 추출기가 낡았다")
+    speaker_names = set(re.findall(r'case "\w+":\s*return "([^"]+)";', m_names.group(1)))
+    if len(speaker_names) < 5:
+        raise ExtractorBroken(f"StorySpeakerName 표시명 추출 {len(speaker_names)}건 — 추출기가 낡았다")
+    staging_src = _read_repo("Assets/Scripts/UI/StoryDialogueStaging.cs")
+    m_narr = re.search(r'NarrationSpeaker\s*=\s*"([^"]+)"', staging_src)
+    if not m_narr:
+        raise ExtractorBroken("StoryDialogueStaging.NarrationSpeaker를 찾지 못했다 — 추출기가 낡았다")
+    narration_speaker = m_narr.group(1)
+    valid_speakers = speaker_names | {"하월", narration_speaker}
+    bad_speakers = sorted({
+        f"{b['beatId']}:{(l.get('speaker') or '(빈 화자)')}"
+        for b in beats for l in (b.get("lines") or [])
+        if (l.get("speaker") or "") not in valid_speakers})
+    narration_lines = sum(1 for b in beats for l in (b.get("lines") or []) if l.get("speaker") == narration_speaker)
+    signals.append((
+        "대사 화자 실재성 (표시명 · 하월 · 지문)",
+        "0건",
+        f"{len(bad_speakers)}건 ({bad_speakers[:10]})" if bad_speakers
+        else f"0건 (인물 {len(speaker_names)}명 · 지문 {narration_lines}줄)",
+        "FAIL" if bad_speakers else "PASS",
+    ))
+
+    # 28. 줄 연출 토큰 — lines[].fx는 쉼표 토큰이고 모르는 토큰은 ParseFx가 **조용히 버린다**.
+    #     "shak"으로 적으면 흔들림 없이 지나가도 아무도 모른다. 목록의 단일 출처는
+    #     StoryDialogueStaging.KnownFxTokens다(C# 테스트가 목록↔해석 switch 일치를 본다).
+    m_fx = re.search(r"KnownFxTokens\s*=\s*\{(.*?)\};", staging_src, re.S)
+    if not m_fx:
+        raise ExtractorBroken("StoryDialogueStaging.KnownFxTokens를 찾지 못했다 — 추출기가 낡았다")
+    known_fx = set(re.findall(r'"(\w+)"', m_fx.group(1)))
+    bad_fx, fx_lines = [], 0
+    for b in beats:
+        for i, l in enumerate(b.get("lines") or []):
+            raw = l.get("fx") or ""
+            if not raw.strip():
+                continue
+            fx_lines += 1
+            for tok in raw.split(","):
+                tok = tok.strip().lower()
+                if tok and tok not in known_fx:
+                    bad_fx.append(f"{b['beatId']}#{i}:{tok}")
+    signals.append((
+        "줄 연출 토큰 (lines[].fx ↔ KnownFxTokens)",
+        "0건",
+        f"{len(bad_fx)}건 ({bad_fx[:10]})" if bad_fx
+        else f"0건 (연출 {fx_lines}줄 · 토큰 {len(known_fx)}종)",
+        "FAIL" if bad_fx else "PASS",
+    ))
+
+    # 29. 퀘스트 게이트가 **반복 서브 퀘스트**를 물면 영영 안 열린다.
+    #     `TutorialQuestManager.CompleteSideQuest`는 반복 퀘스트를 completedQuests에 넣지 않고
+    #     목표만 올려 재시작한다 — `IsQuestCompleted`가 영원히 false라 그 비트는 조용히 잠긴다.
+    #     마을 이야기의 매듭 비트(`town_*_close`)가 지역 의뢰(`s_town_*`)의 완료를 이 게이트로
+    #     관찰하므로, 의뢰를 반복형으로 바꾸는 순간 이야기가 거기서 끊긴다(예외도 경고도 없다).
+    repeatable_quests = {q["questId"] for q in game_facts.quest_defs() if q.get("repeatable")}
+    gated_on_repeat = sorted(
+        f"{b['beatId']}→{b['requiredQuestId']}"
+        for b in beats
+        if b.get("requiredQuestId") and b["requiredQuestId"] in repeatable_quests)
+    quest_gated = sum(1 for b in beats if b.get("requiredQuestId"))
+    signals.append((
+        "퀘스트 게이트 대상이 1회 완료형인가 (반복 서브는 완료 기록이 안 남는다)",
+        "0건",
+        f"{len(gated_on_repeat)}건 ({gated_on_repeat})" if gated_on_repeat
+        else f"0건 (퀘스트 게이트 {quest_gated}건 / 반복 퀘스트 {len(repeatable_quests)}개)",
+        "FAIL" if gated_on_repeat else "PASS",
+    ))
+
+    # 30. 「거둬들이다」는 **명부회의 말**이다(StoryBible 2장). `ch3_warning`에서 세라가 "채집가는 그런 말을
+    #     안 써요. 수확하는 사람의 말이에요"라고 짚는데, 그 앞뒤에서 주인공 쪽(라온·세라·어르신·지문)이 같은
+    #     말을 쓰면 그 대사가 거짓이 된다 — 예외도 경고도 없이 읽히므로 눈으로만 잡히던 결함이다(2026-10-03에
+    #     다섯 줄이 그랬다). 인용부호가 든 줄은 그 말을 **언급**하는 것이라 건너뛴다. 명부회 화자·검은 옷은 자기 말이라 허용.
+    villain_speakers = {n for n in speaker_names if n.startswith("검은 옷") or n in ("집게", "저울", "먹", "관장 하월")} | {"하월"}
+    harvest_word = re.compile(r"거둬|거둔|거두[는고며면어]|거뒀|거둘|거둡")
+    quote_marks = ('"', "“", "”")
+    hero_harvest = sorted(
+        f"{b['beatId']}#{i}:{l.get('speaker')}"
+        for b in beats for i, l in enumerate(b.get("lines") or [])
+        if (l.get("speaker") or "") not in villain_speakers
+        and harvest_word.search(l.get("text") or "")
+        and not any(q in (l.get("text") or "") for q in quote_marks))
+    signals.append((
+        "명부회의 말 「거둬들이다」를 주인공 쪽이 쓰지 않는가 (인용·명부회 화자 제외)",
+        "0건",
+        f"{len(hero_harvest)}건 ({hero_harvest[:10]})" if hero_harvest
+        else f"0건 (명부회 화자 {len(villain_speakers)}종 제외)",
+        "FAIL" if hero_harvest else "PASS",
+    ))
+
+    # ── 31~34: 초등 고학년이 읽는 이야기 (2026-10-04 다시 쓰기) ──────────────────────────
+    # 대사·목표 이유·장 요약의 **길이와 말**을 본다. 규칙의 단일 출처는 Docs/StoryBible.md다 —
+    # 여기 상수는 그 규칙을 강제할 뿐이다. 대상은 본편(ch1~ch12·fin)과 명부회 아크(bl)·곁이야기(side·npc)·
+    # 마을 이야기(town — 2026-10-05에 같은 규칙으로 다시 썼다)다.
+    #
+    # 길이는 **화면이 아니라 읽는 사람** 기준이다. 대사창은 LabelFit이 글자를 줄여서라도 다 넣으므로
+    # 긴 줄이 잘리지는 않는다 — 대신 18pt까지 작아진 세 줄짜리 문장이 된다. 예외도 경고도 없다.
+    beat_by_id_all = {b["beatId"]: b for b in beats}
+
+    def _in_scope(b):
+        return (b.get("chapterId") or "") in STORY_REWRITE_CHAPTERS
+
+    def _is_staged(b):
+        return any(b.get(k) for k in STAGED_BEAT_KEYS) or bool(b.get("choices"))
+
+    # 31. 대사 한 줄 40자 · 장면 7줄(연출·선택지가 붙으면 10줄).
+    long_lines, long_scenes = [], []
+    scoped = [b for b in beats if _in_scope(b)]
+    for b in scoped:
+        lines = b.get("lines") or []
+        for i, l in enumerate(lines):
+            n = len(l.get("text") or "")
+            if n > MAX_LINE_CHARS:
+                long_lines.append(f"{b['beatId']}.lines[{i}]={n}자")
+        cap = MAX_STAGED_SCENE_LINES if _is_staged(b) else MAX_SCENE_LINES
+        if len(lines) > cap:
+            long_scenes.append(f"{b['beatId']}={len(lines)}줄(상한 {cap}{' · 연출/선택지' if cap == MAX_STAGED_SCENE_LINES else ''})")
+    DETAILS["31 대사 한 줄 길이"] = long_lines
+    DETAILS["31 장면 줄 수"] = long_scenes
+    scoped_lines = sum(len(b.get("lines") or []) for b in scoped)
+    if long_lines or long_scenes:
+        val31 = (f"줄 {len(long_lines)}건 · 장면 {len(long_scenes)}건 "
+                 f"({(long_scenes + long_lines)[:8]} … 전체는 아래 「상세」)")
+    else:
+        val31 = f"0건 (대상 비트 {len(scoped)}개 · 대사 {scoped_lines}줄)"
+    signals.append((
+        f"대사 길이 (한 줄 ≤{MAX_LINE_CHARS}자 · 장면 ≤{MAX_SCENE_LINES}줄, 연출·선택지 비트 ≤{MAX_STAGED_SCENE_LINES}줄)",
+        "0건",
+        val31,
+        "FAIL" if (long_lines or long_scenes) else "PASS",
+    ))
+
+    # 32. 쓰지 않는 말 — 어려운 말을 쉬운 말로 바꿨다. 옛 말이 한 줄이라도 남으면 같은 대상을 두 이름으로
+    #     부르게 된다("봉인"과 "이름 벽"이 한 장면에 섞인다). 인용·언급 예외 없음 — 대사와 선택지 문구 전부.
+    retired_hits = []
+    retired_count = {w: 0 for w in RETIRED_WORDS}
+    for b in scoped:
+        texts = [(f"lines[{i}]", l.get("text") or "") for i, l in enumerate(b.get("lines") or [])]
+        texts += [(f"choices[{i}]", c.get("text") or "") for i, c in enumerate(b.get("choices") or [])]
+        for where, text in texts:
+            for word, replacement in RETIRED_WORDS.items():
+                if word in text:
+                    retired_count[word] += 1
+                    retired_hits.append(f"{b['beatId']}.{where}:{word}→{replacement}")
+    DETAILS["32 쓰지 않는 말"] = retired_hits
+    by_word = " · ".join(f"{w} {n}" for w, n in retired_count.items() if n)
+    signals.append((
+        "쓰지 않는 말 (" + " · ".join(f"{w}→{r}" for w, r in RETIRED_WORDS.items()) + ")",
+        "0건",
+        f"{len(retired_hits)}건 ({by_word}: {retired_hits[:6]})" if retired_hits else "0건",
+        "FAIL" if retired_hits else "PASS",
+    ))
+
+    # 33. 목표 이유(why) — HUD가 "모래언덕으로" 아래에 "상자에 갇힌 곤충이 있대"를 붙인다.
+    #     **HUD 목표로 우선 뽑히는 본편 비트**에는 이유가 있어야 한다. 그 집합은 C#과 같은 기준이다
+    #     (StoryObjectiveResolver.SelectObjectiveBeat → CompareObjectivePriority의 0급):
+    #       스파인(누군가의 prerequisiteBeatId) ∪ 종장(fin) 비트, 단 선택지 결과는 목표에서 빠진다.
+    #     Immediate는 조건이 차는 그 자리에서 뜨므로 목표 행에 머무르지 않아 뺀다.
+    #     leaf(gd_*·여운·대치 뒤 표식)는 스파인이 바닥난 뒤에만 뽑혀 대상이 아니다 — 써 두면 쓰인다.
+    #     길이는 비트 종류와 무관하게 **why가 있는 모든 비트**에서 본다(HUD 두 번째 줄 한 줄).
+    spine_ids = {b.get("prerequisiteBeatId") for b in beats if b.get("prerequisiteBeatId")}
+    choice_ids = {c.get("nextBeatId") for b in beats for c in (b.get("choices") or []) if c.get("nextBeatId")}
+    why_required = [
+        b for b in beats
+        if _chapter_ordinal(b.get("chapterId")) is not None
+        and (b["beatId"] in spine_ids or b.get("chapterId") == "fin")
+        and b["beatId"] not in choice_ids
+        and (b.get("trigger") or {}).get("type") != "Immediate"
+    ]
+    why_missing = [f"{b['beatId']}({(b.get('trigger') or {}).get('type')})"
+                   for b in why_required if not (b.get("why") or "").strip()]
+    why_long = [f"{b['beatId']}={len(b['why'])}자"
+                for b in beats if (b.get("why") or "") and len(b["why"]) > MAX_WHY_CHARS]
+    DETAILS["33 why 누락"] = why_missing
+    DETAILS["33 why 길이"] = why_long
+    why_written = sum(1 for b in beats if (b.get("why") or "").strip())
+    if why_missing or why_long:
+        val33 = (f"누락 {len(why_missing)}/{len(why_required)}건 · {MAX_WHY_CHARS}자 초과 {len(why_long)}건 "
+                 f"({(why_long + why_missing)[:8]} … 전체는 아래 「상세」)")
+    else:
+        val33 = f"0건 (대상 {len(why_required)}비트 · 작성 {why_written}건)"
+    signals.append((
+        f"목표 이유 why (본편 목표 0급 비트 필수 · ≤{MAX_WHY_CHARS}자)",
+        "0건",
+        val33,
+        "FAIL" if (why_missing or why_long) else "PASS",
+    ))
+
+    # 34. 장 데이터(StoryList.chapters) — 「지난 이야기」 카드와 저널 장 탭 머리.
+    #     카드는 openingBeatId 비트의 대사 앞에 뜬다(StoryService.TryGetChapterOpenedBy). 그 ID가 오타거나
+    #     다른 장의 비트면 **카드가 조용히 안 뜨거나 엉뚱한 장면 앞에 뜬다** — 예외도 경고도 없다.
+    #     장 순서가 곧 배열 순서다(StoryList 주석).
+    chapters = game_facts.story_chapters()
+    chapter_problems = []
+    chapter_ids = [c.get("chapterId") or "" for c in chapters if isinstance(c, dict)]
+    if not chapters:
+        chapter_problems.append("chapters 없음(옛 JSON — 루트 키가 없거나 비어 있다)")
+    dup_chapters = sorted({c for c in chapter_ids if chapter_ids.count(c) > 1})
+    if dup_chapters:
+        chapter_problems.append(f"chapterId 중복 {dup_chapters}")
+    if chapters:
+        missing_chapters = [c for c in EXPECTED_CHAPTERS if c not in chapter_ids]
+        if missing_chapters:
+            chapter_problems.append(f"장 누락 {missing_chapters}")
+        unexpected = sorted({c for c in chapter_ids if c not in EXPECTED_CHAPTERS})
+        if unexpected:
+            chapter_problems.append(f"예상 밖 장 {unexpected}(본편 13장만 — 오타인가?)")
+        seen_order = []
+        for c in chapter_ids:
+            if c in EXPECTED_CHAPTERS and c not in seen_order:
+                seen_order.append(c)
+        if seen_order != [c for c in EXPECTED_CHAPTERS if c in seen_order]:
+            chapter_problems.append(f"장 순서 어긋남 {seen_order}")
+    opening_ids = [c.get("openingBeatId") for c in chapters if isinstance(c, dict) and c.get("openingBeatId")]
+    dup_openings = sorted({o for o in opening_ids if opening_ids.count(o) > 1})
+    if dup_openings:
+        chapter_problems.append(f"openingBeatId 중복 {dup_openings}(뒤 장의 카드가 영영 안 뜬다)")
+    for idx, c in enumerate(chapters):
+        if not isinstance(c, dict):
+            chapter_problems.append(f"chapters[{idx}]: 객체가 아니다")
+            continue
+        cid = c.get("chapterId") or f"chapters[{idx}]"
+        if not (c.get("title") or "").strip():
+            chapter_problems.append(f"{cid}: title 비어 있음")
+        goal = c.get("goal") or ""
+        if not goal.strip():
+            chapter_problems.append(f"{cid}: goal 비어 있음")
+        elif len(goal) > MAX_CHAPTER_LINE_CHARS:
+            chapter_problems.append(f"{cid}: goal {len(goal)}자(≤{MAX_CHAPTER_LINE_CHARS})")
+        opening = c.get("openingBeatId") or ""
+        if not opening:
+            chapter_problems.append(f"{cid}: openingBeatId 비어 있음")
+        elif opening not in beat_by_id_all:
+            chapter_problems.append(f"{cid}: openingBeatId {opening} 없음")
+        elif (beat_by_id_all[opening].get("chapterId") or "") != c.get("chapterId"):
+            chapter_problems.append(
+                f"{cid}: openingBeatId {opening}는 {beat_by_id_all[opening].get('chapterId')} 장의 비트")
+        recap = c.get("recap")
+        if recap is None:
+            recap = []
+        if not isinstance(recap, list):
+            chapter_problems.append(f"{cid}: recap이 목록이 아니다")
+            continue
+        if len(recap) > MAX_RECAP_LINES:
+            chapter_problems.append(f"{cid}: recap {len(recap)}줄(≤{MAX_RECAP_LINES})")
+        if not recap and c.get("chapterId") != FIRST_CHAPTER:
+            chapter_problems.append(f"{cid}: recap 비어 있음({FIRST_CHAPTER} 외에는 1줄 이상)")
+        for i, line in enumerate(recap):
+            text = line if isinstance(line, str) else ""
+            if not text.strip():
+                chapter_problems.append(f"{cid}.recap[{i}]: 빈 줄")
+            elif len(text) > MAX_CHAPTER_LINE_CHARS:
+                chapter_problems.append(f"{cid}.recap[{i}]={len(text)}자(≤{MAX_CHAPTER_LINE_CHARS})")
+    DETAILS["34 장 데이터"] = chapter_problems
+    signals.append((
+        "장 데이터 (ch1~ch12·fin 13장 · 여는 비트 실재·같은 장 · recap ≤4줄·줄 ≤40자 · goal ≤40자)",
+        "0건",
+        f"{len(chapter_problems)}건 ({chapter_problems[:6]})" if chapter_problems
+        else f"0건 (장 {len(chapters)}개 · recap {sum(len(c.get('recap') or []) for c in chapters)}줄)",
+        "FAIL" if chapter_problems else "PASS",
+    ))
+
+    # 35. 대사 직후 대결(duelAfter) — 2026-10-04 「이야기 전투」. 대사가 끝나면 StoryDuelLauncher가 그 상대와 대결을 연다.
+    #     실패가 전부 무증상이다(런타임은 로그 한 줄만 찍고 대결 없이 지나간다 — 이야기 속 싸움이 그냥 사라진다):
+    #     ① 상대가 대결 표에 없다(오타) — NpcBossDuels(간부)·NpcRivalDuels(라온) 어디에도 없으면 열 대결이 없다.
+    #     ② 퇴장 연출(stageExitId)과 함께 — 상대가 걸어 나간 뒤에 대결이 열린다.
+    #     ③ 소개 없이 — 그 비트의 화자(speakerNpcId)나 말 건 상대가 아니다. 지면 다시 말을 걸어 재도전하는데,
+    #        WorldInteractionController는 "만난 적 있는 인물"(HasMetNpc)에게만 간부전을 연다.
+    #     ④ 간부가 오염 거점 보스면 그 거점 리전에서만 싸운다(NpcDuelController.BossDuelAllowedInRegion).
+    #     ⑤ 라온이면 **그 비트를 본 직후** 그 리전에서 단계가 골라져야 한다(NpcRivalDuels.TrySelect) — 여는 비트가
+    #        이 비트이거나 반드시 먼저 본 비트(선행·게이트 사슬)이고, 리전이 맞고(비면 어디서든), 닫는 비트가 그 사슬에 없어야 한다.
+    #     ⑥ 런처 배선 — StoryDuelLauncher가 비트 완료를 구독하고 부트스트랩이 만든다. 하나만 빠져도 전부 조용히 사라진다.
+    boss_npcs35 = game_facts.boss_duel_npcs()
+    rival_stages35 = game_facts.rival_duel_stages()
+    sub_parent35 = game_facts.subarea_parent_regions()
+    site_regions35 = {}
+    for rid, boss, _name, _ret in game_facts.blight_sites():
+        site_regions35.setdefault(boss, set()).add(rid)
+    beat_by_id35 = {b["beatId"]: b for b in beats}
+
+    def _guaranteed_seen(beat_id):
+        """이 비트를 볼 때 반드시 이미 본 비트(자기 포함) — 선행·게이트 사슬 전체."""
+        seen, stack = set(), [beat_id]
+        while stack:
+            cur = stack.pop()
+            if not cur or cur in seen:
+                continue
+            seen.add(cur)
+            cb = beat_by_id35.get(cur)
+            if cb is None:
+                continue
+            for key in ("prerequisiteBeatId", "requiredBeatId"):
+                if cb.get(key):
+                    stack.append(cb[key])
+        return seen
+
+    def _beat_region(b):
+        """비트가 발화하는 리전 — 리전 게이트 · RegionEnter 대상 · SubAreaEnter의 부모 리전. 모르면 None."""
+        if b.get("requiredRegionId"):
+            return b["requiredRegionId"]
+        trig = b.get("trigger") or {}
+        if trig.get("type") == "RegionEnter":
+            return trig.get("param") or None
+        if trig.get("type") == "SubAreaEnter":
+            return sub_parent35.get(trig.get("param") or "")
+        return None
+
+    duel_problems = []
+    duel_beats = [b for b in beats if (b.get("duelAfter") or "").strip()]
+    for b in duel_beats:
+        bid, npc = b["beatId"], b["duelAfter"].strip()
+        is_boss = npc in boss_npcs35
+        stages = [st for st in rival_stages35 if st.get("storyNpcId") == npc]
+        if not is_boss and not stages:
+            duel_problems.append(f"{bid}: duelAfter {npc}는 대결 표(NpcBossDuels·NpcRivalDuels)에 없다")
+            continue
+        if b.get("stageExitId"):
+            duel_problems.append(f"{bid}: stageExitId와 함께 — 상대가 퇴장한 뒤 대결이 열린다")
+        trig = b.get("trigger") or {}
+        if b.get("speakerNpcId") != npc and not (trig.get("type") == "NpcTalk" and trig.get("param") == npc):
+            duel_problems.append(f"{bid}: 화자·말 건 상대가 {npc}가 아니다(소개 없이 대결 — 재도전 길이 막힌다)")
+        region = _beat_region(b)
+        if is_boss:
+            sites = site_regions35.get(npc)
+            if sites and region not in sites:
+                duel_problems.append(f"{bid}: {npc}는 거점 보스라 {sorted(sites)}에서만 싸운다(비트 리전 {region})")
+            continue
+        seen_chain = _guaranteed_seen(bid)
+        ok = False
+        for st in stages:
+            if st.get("closeBeatId") is None or st.get("openBeatId") is None:
+                continue   # 상수를 못 풀었다 — 아래에서 따로 알린다
+            if st.get("regionId") and st["regionId"] != region:
+                continue
+            if st.get("openBeatId") not in seen_chain:
+                continue
+            if st.get("closeBeatId") and st["closeBeatId"] in seen_chain:
+                continue
+            ok = True
+            break
+        if not ok:
+            duel_problems.append(f"{bid}: 이 비트를 본 직후 {npc}의 단계가 안 열린다(비트 리전 {region} · 여는/닫는 비트 확인)")
+    if any(st.get("closeBeatId") is None or st.get("openBeatId") is None for st in rival_stages35):
+        duel_problems.append("NpcRivalDuels: 열림·닫힘 비트에 풀리지 않는 상수가 있다 — 추출기를 확인할 것")
+    if duel_beats:
+        launcher_src = _read_repo("Assets/Scripts/Story/StoryDuelLauncher.cs")
+        boot35 = _read_repo("Assets/Scripts/Core/PlaySceneBootstrap.cs")
+        if "StoryBeatCompleted += OnBeatCompleted" not in launcher_src or "duelAfter" not in launcher_src:
+            duel_problems.append("StoryDuelLauncher가 비트 완료를 구독하지 않거나 duelAfter를 읽지 않는다")
+        if not re.search(r"EnsureComponent<InsectGame\.Story\.StoryDuelLauncher>", boot35) \
+                or not re.search(r"duelLauncher\.AutoWire\(", boot35):
+            duel_problems.append("PlaySceneBootstrap이 StoryDuelLauncher를 만들거나 배선하지 않는다")
+    DETAILS["35 대사 직후 대결"] = duel_problems
+    duel_pairs = sorted(f"{b['beatId']}→{b['duelAfter'].strip()}" for b in duel_beats)
+    signals.append((
+        "대사 직후 대결 duelAfter (상대 실재 · 퇴장 연출 금지 · 소개 · 거점 리전 · 라온 단계 열림 · 런처 배선)",
+        "0건",
+        f"{len(duel_problems)}건 ({duel_problems[:4]})" if duel_problems
+        else f"0건 (대결 비트 {len(duel_beats)}개: {duel_pairs})",
+        "FAIL" if duel_problems else "PASS",
+    ))
+
+    # 36. 대사 앞 영상(introVideoId) 비트의 대사는 1~6줄 — 2026-10-05 「영상이 설명하고, 대사는 짧게」(초등 고학년).
+    #     설명은 영상 자막이 한 줄씩 하고 대사는 인물의 반응만 맡는다. 길어지면 영상이 한 설명을 대사가 되풀이한다.
+    #     대사가 없으면 대사 "앞"이 아니다 — 영상만 틀 거면 대사 뒤 영상(videoId)에 둔다(무대가 그 순서를 가정한다).
+    #     검사 31의 상한(연출 비트 10줄)보다 좁다 — 둘 다 걸리면 이쪽이 이긴다.
+    intro_problems = []
+    intro_beats = [b for b in beats if b.get("introVideoId")]
+    for b in intro_beats:
+        n = len(b.get("lines") or [])
+        if n == 0:
+            intro_problems.append(f"{b['beatId']}: 대사 없음(영상만이면 videoId에)")
+        elif n > MAX_INTRO_VIDEO_LINES:
+            intro_problems.append(f"{b['beatId']}={n}줄(상한 {MAX_INTRO_VIDEO_LINES})")
+    DETAILS["36 대사 앞 영상의 대사 길이"] = intro_problems
+    signals.append((
+        f"대사 앞 영상 비트의 대사 (introVideoId · 1~{MAX_INTRO_VIDEO_LINES}줄)",
+        "0건",
+        f"{len(intro_problems)}건 ({intro_problems[:4]})" if intro_problems
+        else f"0건 (대사 앞 영상 비트 {len(intro_beats)}개: {sorted(b['beatId'] + '→' + b['introVideoId'] for b in intro_beats)})",
+        "FAIL" if intro_problems else "PASS",
+    ))
+
     return signals
+
+
+# ── 31~34의 기준 — 규칙의 단일 출처는 Docs/StoryBible.md, 여기는 강제할 뿐이다 ──
+# 다시 쓰기 대상 장. 마을 이야기(town)는 2026-10-05에 같은 규칙으로 다시 쓰고 넣었다.
+STORY_REWRITE_CHAPTERS = frozenset({f"ch{i}" for i in range(1, 13)} | {"fin", "bl", "side", "npc", "town"})
+MAX_LINE_CHARS = 40            # 대사 한 줄(공백 포함 len). 목표는 30자 안팎.
+MAX_SCENE_LINES = 7            # 한 장면(비트)의 lines
+MAX_STAGED_SCENE_LINES = 10    # 연출(stageEnterId·cutsceneId·videoId·introVideoId)이나 선택지가 붙은 비트
+STAGED_BEAT_KEYS = ("stageEnterId", "cutsceneId", "videoId", "introVideoId")
+MAX_INTRO_VIDEO_LINES = 6      # 대사 앞 영상(introVideoId)이 붙은 비트 — 검사 36. 영상이 설명하므로 대사는 반응만
+# 쓰지 않는 말 → 바꿔 쓰는 말. 「잦아듦」·「명부회」·「장부」·「빈칸」은 그대로 쓴다.
+RETIRED_WORDS = {
+    "봉인": "이름 벽",
+    "무명": "그림자",
+    "지워진 개체": "이름 잃은 곤충",
+    "예비 울타리": "비상 울타리",
+}
+MAX_WHY_CHARS = 20             # HUD 목표 아래 한 줄 — 22pt로 약 18자, LabelFit 하한 18pt로 약 22자가 든다(QA 실측 2026-10-04). 여유를 둬 20
+# 장 목록 — 배열 순서가 곧 장 순서다. 1장은 지난 이야기가 없어 recap이 비어도 된다.
+EXPECTED_CHAPTERS = tuple([f"ch{i}" for i in range(1, 13)] + ["fin"])
+FIRST_CHAPTER = "ch1"
+MAX_RECAP_LINES = 4
+MAX_CHAPTER_LINE_CHARS = 40
+
+# 표 칸에는 앞 몇 건만 싣고 전체 목록은 여기 모아 main()이 「상세」로 찍는다(31~34 — 다시 쓰는 사람이 볼 목록).
+DETAILS = {}
 
 
 def _read_repo(rel_path: str) -> str:
@@ -878,6 +1411,14 @@ def main():
     signals = evaluate_signals()
     print(render(signals))
     print()
+    detail_rows = [(k, v) for k, v in DETAILS.items() if v]
+    if detail_rows:
+        print("## 상세 (검사 31~36 위반 전체)")
+        for key, items in detail_rows:
+            print(f"\n### {key} — {len(items)}건")
+            for item in items:
+                print(f"- {item}")
+        print()
     print("## 가정 / 한계")
     print("- 스토리 비트는 Assets/Resources/Story.json에서 json.load로 읽는다(정규식 아님).")
     print("  지연 발화(DeferTrigger)도 배선으로 세되, 큐를 흘리는 지점이 있을 때만 센다.")
@@ -896,11 +1437,23 @@ def main():
     print("- 검사 21은 SubAreaWorldBuilder의 CreateBoundaryWalls 크기와 FindSafeSpawnPosition의")
     print("  입구 좌표를 읽어 연출 워프 지점이 방 안인지 본다. 방은 축정렬 정사각이고 오프셋도")
     print("  월드축이라 좌표가 결정적이다 — 벽 밖이면 배우가 막혀 대사만 뜬다(무증상).")
-    print("- 검사 22는 NpcManager.StoryNpcDisplayName / NpcVisualBuilder.StoryNpcAppearance의")
-    print("  case를 읽어 월드 배치 인물과 대조한다. 둘 다 default가 마을 어르신이라")
+    print("- 검사 22는 NpcDialogueDatabase.StorySpeakerName / NpcVisualBuilder.StoryNpcFace의")
+    print("  case를 읽어 월드 배치 인물과 대조한다. 이름 누락은 내부 ID, 외형 누락은 어르신으로 표시되어")
     print("  누락이 무증상이다 — village_elder만 그 default 가지라서 면제한다.")
     print("- 검사 19는 NpcBossDuels.cs의 storyNpcId를 정규식으로 읽어 Story.json의")
     print("  speakerNpcId ∪ NpcTalk param과 대조한다(소개 없는 보스 = 영구 도전 불가).")
+    print("- 검사 25는 StoryVideoLibrary.cs의 상수·case·파일명을 읽어 Story.json의 videoId·introVideoId와 대조한다.")
+    print("  파일 미배치는 WARN — 영상은 렌더러(Tools/Video/storybook)가 따로 만들고, 없으면 런타임이 건너뛰어 진행은 산다")
+    print("  (대사 앞 영상이면 대사가 곧바로 열린다). 배포 전에는 0건이어야 한다.")
+    print("- 검사 36은 introVideoId가 붙은 비트의 lines 수만 센다(1~6줄). 한 줄 길이는 검사 31이 본다.")
+    print("- 검사 31·32는 ch1~ch12·fin·bl·side·npc·town을 본다. 글자 수는 공백 포함 len(text)이고")
+    print("  한글 음절은 C# string.Length와 같은 값이다. 줄 번호는 lines[i]의 0부터 센 배열 위치다.")
+    print("- 검사 33의 필수 대상은 C# CompareObjectivePriority의 0급(스파인 ∪ 종장) − 선택지 결과 − Immediate,")
+    print("  그중 본편(ch*·fin)이다. 같은 기준을 StoryObjectiveResolver.IsObjectiveThread와 C# 테스트가 쓴다.")
+    print("- 검사 34의 chapters 키가 없으면(옛 JSON) FAIL이다 — 런타임은 빈 목록으로 읽어 카드가 하나도 안 뜬다.")
+    print("- 검사 35는 NpcBossDuels·NpcRivalDuels를 정규식으로 읽는다(라이벌 표의 열림·닫힘은 같은 파일의 상수까지 푼다).")
+    print("  비트의 리전은 requiredRegionId → RegionEnter 대상 → SubAreaEnter의 부모 리전 순으로 정한다.")
+    print("- 검사 8의 DuelWin 허용은 StoryDirector.ResweepPersistentConditions 안의 격파 기록 재확인 줄을 소스에서 찾는다.")
     fail = sum(1 for s in signals if s[3] == "FAIL")
     return 1 if fail else 0
 

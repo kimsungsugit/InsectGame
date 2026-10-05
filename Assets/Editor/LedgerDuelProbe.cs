@@ -199,9 +199,15 @@ namespace InsectGame.EditorTools
             latestPlayer = null;
             probedBattle = battle;
             battle.BattleUpdated += OnBattleUpdated;
+            // 간부는 팀으로 싸운다 — 한 방에 쓰러진 곤충 대신 다음 곤충이 나오면 그쪽을 잰다.
+            battle.EnemySwitched += OnEnemySwitched;
+            // **치명타를 끈다.** 이 도구는 정독 턴과 평턴의 피해를 나눠 배율을 재는데, 평턴에 1/16로 ×1.5가 끼면
+            // 그 표본이 정독(배율)처럼 보여 비가 흐려진다. 치명타는 별개 줄기라 끄더라도 명중 롤 순서는 같다.
+            battle.SetCritSource(null);
             if (!duels.TryStartBossDuel(bossId, Time.time))
             {
-                notes.Add("**대결이 안 열렸다** — CanBossDuel이 false(리더 없음/쿨다운/데이터)");
+                notes.Add("**대결이 안 열렸다** — CanBossDuel이 false(리더 없음/쿨다운/데이터, "
+                          + "또는 거점 보스인데 플레이어가 그 거점 리전 밖 — BossDuelAllowedInRegion)");
                 return;
             }
 
@@ -321,6 +327,11 @@ namespace InsectGame.EditorTools
             latestEnemy = enemy;
         }
 
+        private static void OnEnemySwitched(InsectBattleStats outgoing, InsectBattleStats incoming)
+        {
+            latestEnemy = incoming;
+        }
+
         private static float PlayerHp()
         {
             return latestPlayer != null ? latestPlayer.CurrentHp : 0f;
@@ -353,6 +364,7 @@ namespace InsectGame.EditorTools
             if (probedBattle != null)
             {
                 probedBattle.BattleUpdated -= OnBattleUpdated;
+                probedBattle.EnemySwitched -= OnEnemySwitched;
                 probedBattle = null;
             }
             SessionState.SetString(StageKey, "");

@@ -2,86 +2,78 @@ using InsectGame.Data;
 using InsectGame.Spawning;
 using InsectGame.UI;
 using UnityEngine;
-using UnityEngine.UI;
 
 namespace InsectGame.Capture
 {
+    /// <summary>
+    /// 포획 미니게임의 껍데기 — 게임을 고르고, 조작을 모아 넘기고, 화면을 그리고, 끝나면 포획을 판정한다.
+    /// 규칙은 <see cref="CaptureMinigame"/>(순수)에 있다.
+    ///
+    /// 예전엔 좌우로 오가는 타이밍 바 하나였다. 곤충이 화면에 나오지 않았고 어떤 종을 잡든 판이 같았다.
+    /// 지금은 살금살금·가두기·던지기 셋 중 하나가 포획마다 무작위로 걸리고(2026-10-02 결정), 잡으려는
+    /// 곤충이 놀이판에 직접 나온다. 결과는 셋 다 0~3점이라 <see cref="CaptureMinigameProbability"/>와
+    /// 채집망 보정은 그대로 이어진다.
+    /// </summary>
     public class CaptureMinigameController : MonoBehaviour
     {
         [SerializeField] private CaptureController captureController;
-        [SerializeField] private Slider timingSlider;
+        // 옛 uGUI 포획 패널. 부트스트랩이 리플렉션으로 꽂아 주는데 아무도 켜지 않는다 — 끝날 때 숨기기만 한다.
         [SerializeField] private GameObject panelRoot;
         [SerializeField] private InsectGame.Core.PlayerMovement playerMovement;
 
-        [Header("Minigame Tuning")]
-        [SerializeField] private float baseSpeed = 1.4f;
-        [SerializeField] private float speedPerRarity = 0.5f;
-        [SerializeField] private float baseZoneSize = 0.35f;
-        [SerializeField] private float zoneShrinkPerRarity = 0.05f;
-        [SerializeField] private float timeLimit = 4f;
+        // 판이 열리고 조작을 받기까지. 채집망을 고른 그 누름이 첫 조작으로 새지 않게 하고, 무슨 게임인지 읽을 틈을 준다.
+        private const float IntroSeconds = 0.9f;
+        private const float ResultSeconds = 1.5f;
+        private const float HeaderHeight = 148f;
+        private const float BoardPad = 24f;
+        // 가두기에서 그물을 손가락 위로 띄우는 높이(가상 px). 손가락이 곤충을 가리지 않게 한다.
+        private const float TouchNetLift = 96f;
+
+        private readonly System.Random random = new System.Random();
 
         private InsectEntity currentTarget;
-        private float cursor;
-        private float direction = 1f;
-        private float currentSpeed;
-        private float zoneCenter;
-        private float zoneHalfSize;
-        private float timer;
+        private CaptureMinigame game;
+        private CaptureMinigameKind? lastKind;
         private bool isActive;
         public bool IsActive => isActive;
+        private float introLeft;
+        private float animTime;
+        private float itemCaptureBonus;
+        private string titleText = string.Empty;
+        private bool wantCancel;
+        // 옛 uGUI 포획 버튼(ConfirmCapture)의 누름 — 다음 Update가 한 번 소비한다.
+        private bool legacyPress;
+
         private float resultTimer;
         private string resultMessage;
         private bool resultSuccess;
-        private int comboHits;
-        private bool wantConfirm;
-        private bool wantCancel;
 
-        private enum Phase { Ready, Attempt1, Attempt2, Attempt3, Done }
-        private Phase phase;
-        private int hits;
+        // 이번 프레임의 배치. Update(조작 좌표)와 OnGUI(그리기)가 같은 값을 쓴다.
+        private Rect panelRect;
+        private Rect boardRect;
+        private float boardScale = 1f;
+        private Rect cancelButtonRect;
 
-        private float itemSpeedMult = 1f;
-        private float itemZoneMult = 1f;
-        private float itemTimeMult = 1f;
-        private float itemCaptureBonus;
+        private GUIStyle titleStyle, starStyle, hintStyle, markStyle, boardTextStyle, introStyle, cancelStyle, resultStyle;
+        private bool stylesReady;
 
-        // OnGUI 스타일 캐시 — 옛은 매 프레임 6개 new GUIStyle (라인 244/279/288/309/318/337).
-        // 콤보 별은 loop 안이라 매 프레임 최대 3개 추가 → 60 FPS × 6~9 = 360~540회/초 회귀.
-        // textColor가 동적인 스타일(title/phase/result)은 베이스만 캐시 후 textColor 매번 할당.
-        private GUIStyle titleStyleCache;
-        private GUIStyle phaseStyleCache;
-        private GUIStyle starStyleCache;
-        private GUIStyle captureBtnCache;
-        private GUIStyle cancelBtnCache;
-        private GUIStyle resultStyleCache;
-        private bool stylesInitialized;
-
-        private void InitMinigameStyles()
+        private void InitStyles()
         {
-            if (stylesInitialized) return;
-            stylesInitialized = true;
+            if (stylesReady) return;
+            stylesReady = true;
+            UITheme t = UITheme.Instance;
 
-            int titleSize = UIScale.IsMobileLayout ? 30 : 20;
-            int phaseSize = UIScale.IsMobileLayout ? 24 : 16;
-            int buttonSize = UIScale.IsMobileLayout ? 25 : 18;
-            titleStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = titleSize, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-
-            phaseStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = phaseSize, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-
-            starStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 26, alignment = TextAnchor.MiddleCenter };
-            starStyleCache.normal.textColor = Color.green;
-
-            captureBtnCache = new GUIStyle(GUI.skin.button)
-            { fontSize = buttonSize, fontStyle = FontStyle.Bold };
-
-            cancelBtnCache = new GUIStyle(GUI.skin.button)
-            { fontSize = UIScale.IsMobileLayout ? 23 : 16 };
-
-            resultStyleCache = new GUIStyle(GUI.skin.label)
-            { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            titleStyle = new GUIStyle(GUI.skin.label) { fontSize = 32, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            starStyle = new GUIStyle(GUI.skin.label) { fontSize = 38, alignment = TextAnchor.MiddleCenter };
+            hintStyle = new GUIStyle(GUI.skin.label) { fontSize = 26, alignment = TextAnchor.MiddleCenter };
+            hintStyle.normal.textColor = t.textSecondary;
+            markStyle = new GUIStyle(GUI.skin.label) { fontSize = 44, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            boardTextStyle = new GUIStyle(GUI.skin.label) { fontSize = 30, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            introStyle = new GUIStyle(GUI.skin.label) { fontSize = 44, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            introStyle.normal.textColor = t.textPrimary;
+            cancelStyle = new GUIStyle(GUI.skin.label) { fontSize = 26, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            cancelStyle.normal.textColor = t.textPrimary;
+            resultStyle = new GUIStyle(GUI.skin.label) { fontSize = 46, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
         }
 
         public void StartMinigame(InsectEntity target)
@@ -90,6 +82,12 @@ namespace InsectGame.Capture
         }
 
         public void StartMinigame(InsectEntity target, float speedMult, float zoneMult, float timeMult, float captureBonus)
+        {
+            StartMinigame(target, speedMult, zoneMult, timeMult, captureBonus, CaptureMinigame.PickNext(lastKind, random));
+        }
+
+        private void StartMinigame(InsectEntity target, float speedMult, float zoneMult, float timeMult,
+            float captureBonus, CaptureMinigameKind kind)
         {
             // 수문장 포획 금지의 단일 출처. CaptureChoiceUI의 버튼/키 분기에만 있었는데 근접·레이캐스트·
             // 입력 컨트롤러 세 경로는 여기로 바로 들어온다 — 수문장을 잡아 버리면 표식 개체가
@@ -105,112 +103,104 @@ namespace InsectGame.Capture
             if (playerMovement != null) playerMovement.SetFrozen(true);
             resultTimer = 0f;
             resultMessage = null;
-            comboHits = 0;
-            hits = 0;
-            itemSpeedMult = speedMult;
-            itemZoneMult = zoneMult;
-            itemTimeMult = timeMult;
             itemCaptureBonus = captureBonus;
+            introLeft = IntroSeconds;
+            animTime = 0f;
+            wantCancel = false;
+            legacyPress = false;
+
+            // 지워진 개체는 포획 전까지 본명을 감춘다(`CaptureChoiceUI`와 같은 이유·같은 출처).
+            // 제목은 판 내내 같으므로 여기서 한 번만 만든다(OnGUI 패스마다 이어 붙이지 않는다).
+            string targetName = target != null ? target.DisplayNameForPlayer : "???";
+            titleText = target != null && target.Data != null
+                ? $"{targetName}  ·  {target.Data.rarity.Korean()}" : targetName;
 
             int rarity = target != null && target.Data != null ? (int)target.Data.rarity : 0;
-            currentSpeed = (baseSpeed + rarity * speedPerRarity) * itemSpeedMult;
-            zoneHalfSize = Mathf.Max(0.08f, (baseZoneSize - rarity * zoneShrinkPerRarity) / 2f * itemZoneMult);
-
-            BeginPhase(Phase.Attempt1);
-        }
-
-        private void BeginPhase(Phase p)
-        {
-            phase = p;
-            cursor = 0f;
-            direction = 1f;
-            timer = timeLimit * itemTimeMult;
-
-            float margin = zoneHalfSize + 0.05f;
-            zoneCenter = Random.Range(margin, 1f - margin);
-
-            if (p == Phase.Attempt2)
-            {
-                currentSpeed *= 1.15f;
-                zoneHalfSize = Mathf.Max(0.06f, zoneHalfSize * 0.85f);
-            }
-            else if (p == Phase.Attempt3)
-            {
-                currentSpeed *= 1.15f;
-                zoneHalfSize = Mathf.Max(0.05f, zoneHalfSize * 0.8f);
-            }
+            lastKind = kind;
+            game = CaptureMinigame.Create(kind, new CaptureMinigameTuning(rarity, speedMult, zoneMult, timeMult), random);
         }
 
         private void Update()
         {
             if (resultTimer > 0f)
             {
+                // 결과 글자는 가운데 무대(HudStage)의 첫 고정 칸에 선다 — 서 있는 동안 포획 결과 카드 등이 차례를 기다린다.
+                InsectGame.UI.HudStage.Request(InsectGame.UI.HudStageItem.MinigameResult);
                 resultTimer -= Time.deltaTime;
                 if (resultTimer <= 0f) resultMessage = null;
             }
 
-            if (!isActive) return;
+            if (!isActive || game == null) return;
 
-            // 입력은 OnGUI 이벤트 패스(KeyDown/MouseDown)에서만 wantConfirm/wantCancel를 세팅한다.
-            // 옛은 여기서 Input.GetKeyDown/GetMouseButtonDown 폴링으로도 세팅 → 같은 누름을 Update(폴링)+
-            // OnGUI(이벤트)가 이중 큐잉, 프레임당 1회만 소비돼 누름 1회당 ConfirmCapture가 2회 실행됨.
-            // 두 번째가 BeginPhase 직후 cursor=0에서 항상 miss→FinishCapture로 즉시 종료 → 3단계 콤보·
-            // 퍼펙트 타이밍 보너스 영구 불가였음. 단일 입력 소스(OnGUI)로 통일.
-            if (wantConfirm) { wantConfirm = false; ConfirmCapture(); }
             if (wantCancel) { wantCancel = false; CancelCapture(); return; }
+            // 대상이 사라졌으면(풀 회수·씬 정리) 판을 붙들고 있지 않는다 — 조작이 얼어붙은 채 남는다.
+            if (currentTarget == null) { StopMinigame(); return; }
 
-            timer -= Time.deltaTime;
-            if (timer <= 0f) { FinishCapture(); return; }
+            float dt = Time.deltaTime;
+            animTime += dt;
 
-            float speedMod = 1f + Mathf.Abs(cursor - 0.5f) * 0.6f;
-            cursor += direction * currentSpeed * speedMod * Time.deltaTime;
+            if (introLeft > 0f)
+            {
+                introLeft -= dt;
+                legacyPress = false;
+                return;
+            }
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            if (debugFrozen) return;
+#endif
 
-            if (cursor >= 1f) { cursor = 1f; direction = -1f; }
-            else if (cursor <= 0f) { cursor = 0f; direction = 1f; }
-
-            if (timingSlider != null) timingSlider.value = cursor;
+            game.Tick(dt, ReadInput());
+            if (game.Done) FinishCapture();
         }
 
+        // 조작은 여기 한 곳에서만 읽는다. 예전 타이밍 바는 Update 폴링과 OnGUI 이벤트가 같은 누름을
+        // 따로 세어 한 번 누르면 두 번 확정됐다(3단계 콤보가 영영 불가능했다) — 출처를 둘로 늘리지 말 것.
+        private CaptureMinigameInput ReadInput()
+        {
+            Layout();
+            Vector2 pointer = UIScale.VirtualMousePosition;
+            bool overCancel = cancelButtonRect.Contains(pointer);
+            bool pointerDown = Input.GetMouseButton(0) && !overCancel;
+            bool pointerPressed = Input.GetMouseButtonDown(0) && !overCancel;
+            bool keyDown = Input.GetKey(KeyCode.Space) || Input.GetKey(KeyCode.E);
+            bool keyPressed = Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.E)
+                || Input.GetKeyDown(KeyCode.Return) || legacyPress;
+            legacyPress = false;
+
+            // 가두기는 손가락이 곤충을 가린다 — 터치일 때만 그물을 손가락 위로 띄운다.
+            if (game.Kind == CaptureMinigameKind.Track && Input.touchCount > 0) pointer.y -= TouchNetLift;
+
+            var input = new CaptureMinigameInput
+            {
+                Down = pointerDown || keyDown,
+                Pressed = pointerPressed || keyPressed,
+                Point = new Vector2((pointer.x - boardRect.x) / boardScale, (pointer.y - boardRect.y) / boardScale)
+            };
+            // 던지기는 놀이판 안을 눌렀을 때만 던진다 — 판 밖(제목·힌트)을 눌러 그물을 버리지 않게.
+            if (game.Kind == CaptureMinigameKind.Toss && !boardRect.Contains(pointer)) input.Pressed = false;
+            return input;
+        }
+
+        /// <summary>옛 uGUI 포획 버튼의 진입점 — 지금은 "한 번 누름"으로 넘긴다.</summary>
         public void ConfirmCapture()
         {
-            if (!isActive || currentTarget == null) return;
-
-            hits++;
-            bool inZone = Mathf.Abs(cursor - zoneCenter) <= zoneHalfSize;
-
-            if (inZone)
-            {
-                comboHits++;
-                if (phase == Phase.Attempt1)
-                    BeginPhase(Phase.Attempt2);
-                else if (phase == Phase.Attempt2)
-                    BeginPhase(Phase.Attempt3);
-                else
-                    FinishCapture();
-            }
-            else
-            {
-                FinishCapture();
-            }
+            if (isActive) legacyPress = true;
         }
 
         private void FinishCapture()
         {
-            float timing01 = CaptureMinigameProbability.GetTiming01(comboHits);
-            float extraBonus = CaptureMinigameProbability.GetExtraBonus(comboHits, itemCaptureBonus);
+            int hits = game != null ? game.Hits : 0;
+            float timing01 = CaptureMinigameProbability.GetTiming01(hits);
+            float extraBonus = CaptureMinigameProbability.GetExtraBonus(hits, itemCaptureBonus);
 
             if (captureController != null && currentTarget != null)
             {
                 captureController.AttemptCapture(currentTarget, timing01, extraBonus);
 
-                if (comboHits >= 3)
-                    ShowResult("PERFECT!", true);
-                else if (comboHits >= 2)
-                    ShowResult("GREAT!", true);
-                else if (comboHits >= 1)
-                    ShowResult("GOOD", false);
-                else
-                    ShowResult("MISS...", false);
+                if (hits >= 3) ShowResult("PERFECT!", true);
+                else if (hits >= 2) ShowResult("GREAT!", true);
+                else if (hits >= 1) ShowResult("GOOD", false);
+                else ShowResult("MISS...", false);
             }
 
             StopMinigame();
@@ -220,7 +210,7 @@ namespace InsectGame.Capture
         {
             resultMessage = msg;
             resultSuccess = success;
-            resultTimer = 1.5f;
+            resultTimer = ResultSeconds;
         }
 
         public void CancelCapture()
@@ -231,8 +221,7 @@ namespace InsectGame.Capture
         private void StopMinigame()
         {
             isActive = false;
-            phase = Phase.Done;
-            hits = 0;
+            game = null;
             if (currentTarget != null) currentTarget.SetEngaged(false); // 미니게임 종료 — 도주 가능 상태 복귀
             currentTarget = null;
             if (panelRoot != null) panelRoot.SetActive(false);
@@ -251,183 +240,363 @@ namespace InsectGame.Capture
             if (isActive)
             {
                 Event evt = Event.current;
-                if (evt != null && evt.type == EventType.KeyDown)
+                if (evt != null && evt.type == EventType.KeyDown && evt.keyCode == KeyCode.Escape)
                 {
-                    if (evt.keyCode == KeyCode.Space || evt.keyCode == KeyCode.E
-                        || evt.keyCode == KeyCode.Tab || evt.keyCode == KeyCode.Return)
-                    {
-                        wantConfirm = true;
-                        evt.Use();
-                    }
-                    else if (evt.keyCode == KeyCode.Escape)
-                    {
-                        wantCancel = true;
-                        evt.Use();
-                    }
-                }
-
-                if (evt != null && evt.type == EventType.MouseDown && evt.button == 0)
-                {
-                    // 어디든 탭=확정(누름 기반이라 반응성 좋음). 단 취소 버튼 영역은 제외(취소만 발화).
-                    // 캡처 버튼의 MouseUp은 더 이상 확정을 세팅하지 않아(시각 전용) 단일 탭당 ConfirmCapture
-                    // 가 정확히 1회 — 옛은 MouseDown(누름)+버튼 MouseUp(뗌)이 이중확정돼 페이즈 직후 cursor≈0
-                    // 에서 MISS로 즉시 종료, 3단계 콤보·퍼펙트 보너스 영구 불가였음. (취소 rect는 가상 좌표,
-                    // evt.mousePosition은 Begin 전이라 raw → Scale로 나눠 가상좌표로 변환.)
-                    Vector2 vp = evt.mousePosition / Mathf.Max(0.3f, UIScale.Scale);
-                    if (!cancelButtonRect.Contains(vp))
-                        wantConfirm = true;
+                    wantCancel = true;
+                    evt.Use();
                 }
             }
 
             if (resultTimer <= 0f && !isActive) return;
+            InitStyles();
             UIScale.Begin();
             if (resultTimer > 0f && resultMessage != null) DrawResult();
-            if (isActive) DrawMinigame();
+            if (isActive && game != null) DrawMinigame();
+            GUI.color = Color.white;
             UIScale.End();
         }
 
-        // 취소 버튼 가상 rect — 전역 MouseDown 확정에서 취소 영역을 제외하기 위해 직전 DrawMinigame에서 갱신.
-        private Rect cancelButtonRect;
+        // ── 배치 ──
+
+        private void Layout()
+        {
+            bool mobile = UIScale.IsMobileLayout;
+            float footer = mobile ? 132f : 116f;
+            float wantW = mobile ? Mathf.Min(900f, UIScale.ContentWidth(28f)) : 760f;
+            float wantBoardH = (wantW - BoardPad * 2f) * (CaptureMinigame.BoardHeight / CaptureMinigame.BoardWidth);
+            // 높이는 안전 영역 안으로 줄어들 수 있다 — 줄면 놀이판을 같은 비율로 줄인다.
+            panelRect = UISafeLayout.CenteredPanel(wantW, HeaderHeight + wantBoardH + footer);
+            float availH = Mathf.Max(1f, panelRect.height - HeaderHeight - footer);
+            boardScale = Mathf.Max(0.1f, Mathf.Min(
+                (panelRect.width - BoardPad * 2f) / CaptureMinigame.BoardWidth, availH / CaptureMinigame.BoardHeight));
+            float bw = CaptureMinigame.BoardWidth * boardScale;
+            float bh = CaptureMinigame.BoardHeight * boardScale;
+            boardRect = new Rect(panelRect.x + (panelRect.width - bw) * 0.5f, panelRect.y + HeaderHeight, bw, bh);
+
+            float cancelW = mobile ? 220f : 200f;
+            float cancelH = mobile ? 64f : 56f;
+            cancelButtonRect = new Rect(panelRect.x + (panelRect.width - cancelW) * 0.5f,
+                panelRect.yMax - cancelH - 16f, cancelW, cancelH);
+        }
+
+        private Vector2 OnBoard(Vector2 p) => new Vector2(boardRect.x + p.x * boardScale, boardRect.y + p.y * boardScale);
+        private Vector2 OnBoard(float x, float y) => new Vector2(boardRect.x + x * boardScale, boardRect.y + y * boardScale);
+        private Rect OnBoardRect(float cx, float cy, float w, float h)
+            => new Rect(boardRect.x + (cx - w * 0.5f) * boardScale, boardRect.y + (cy - h * 0.5f) * boardScale,
+                w * boardScale, h * boardScale);
+
+        // ── 그리기 ──
 
         private void DrawMinigame()
         {
+            Layout();
+            UITheme t = UITheme.Instance;
+            InsectData data = currentTarget != null ? currentTarget.Data : null;
+            Color rarityCol = data != null ? t.GetInsectRarityColor(data.rarity) : t.textPrimary;
+
+            UISurface.Dim(0.35f);
+            UISurface.Card(panelRect, t.surfaceCard, Color.Lerp(t.surfaceBorder, rarityCol, 0.55f));
+            UISurface.Flat(new Rect(panelRect.x + UITheme.Radius.Card, panelRect.y + 3f,
+                panelRect.width - UITheme.Radius.Card * 2f, 4f), rarityCol);
+
+            titleStyle.normal.textColor = rarityCol;
+            UIHelper.LabelFit(new Rect(panelRect.x + 24f, panelRect.y + 14f, panelRect.width - 48f, 46f),
+                titleText, titleStyle);
+
+            // 별 세 개 — 지금까지 얻은 점수.
+            float starX = panelRect.center.x - 78f;
+            for (int i = 0; i < CaptureMinigame.MaxHits; i++)
+            {
+                starStyle.normal.textColor = i < game.Hits ? t.accentAmber : t.surfaceBorder;
+                GUI.Label(new Rect(starX + i * 52f, panelRect.y + 62f, 52f, 52f), "★", starStyle);
+            }
+            UISurface.Chip(new Rect(panelRect.x + 24f, panelRect.y + 70f, 148f, 36f), KindName(game.Kind),
+                t.surfaceRaised, t.textPrimary);
+
+            float ratio = game.TimeRatio;
+            UISurface.Meter(new Rect(boardRect.x, panelRect.y + 124f, boardRect.width, 10f), ratio,
+                ratio > 0.4f ? t.accentMint : (ratio > 0.2f ? t.accentAmber : t.accentCoral));
+
+            Color boardBg = Color.Lerp(t.surfaceBase, t.accentMint, 0.14f);
+            UISurface.Rounded(boardRect, boardBg);
+
+            switch (game.Kind)
+            {
+                case CaptureMinigameKind.Track: DrawTrack((TrackMinigame)game, data, boardBg); break;
+                case CaptureMinigameKind.Toss: DrawToss((TossMinigame)game, data, boardBg); break;
+                default: DrawSneak((SneakMinigame)game, data, boardBg); break;
+            }
+
+            if (introLeft > 0f) DrawIntro();
+
+            UIHelper.LabelFit(new Rect(panelRect.x + 24f, boardRect.yMax + 8f, panelRect.width - 48f, 40f),
+                HintFor(game), hintStyle);
+
             bool mobile = UIScale.IsMobileLayout;
-            float panelW = mobile ? Mathf.Min(900f, UIScale.ContentWidth(28f)) : 500f;
-            float panelH = UISafeLayout.ClampHeight(mobile ? 340f : 220f);
-            float x = (UIScale.VirtualScreenWidth - panelW) / 2f;
-            // 화면 상단 1/4 근처 비율 배치 — 단 안전 영역 밖으로는 나가지 않는다.
-            float y = Mathf.Clamp(
-                UIScale.VirtualScreenHeight * (mobile ? 0.24f : 0.28f),
-                UISafeLayout.ContentTop,
-                Mathf.Max(UISafeLayout.ContentTop, UISafeLayout.ContentBottom - panelH));
-
-            GUI.color = new Color(0, 0, 0, 0.88f);
-            GUI.DrawTexture(new Rect(x, y, panelW, panelH), Texture2D.whiteTexture);
-
-            // 지워진 개체는 포획 전까지 본명을 감춘다(`CaptureChoiceUI`와 같은 이유·같은 출처).
-            string targetName = currentTarget != null
-                ? currentTarget.DisplayNameForPlayer : "???";
-            string rarityName = currentTarget != null && currentTarget.Data != null
-                ? currentTarget.Data.rarity.ToString() : "";
-
-            InitMinigameStyles();
-            titleStyleCache.normal.textColor = GetRarityGUIColor();
-            GUI.color = Color.white;
-            GUI.Label(new Rect(x, y + (mobile ? 14f : 8f), panelW, mobile ? 44f : 30f),
-                $"{targetName} [{rarityName}]", titleStyleCache);
-
-            float barX = x + 30;
-            float barY = y + (mobile ? 72f : 48f);
-            float barW = panelW - 60;
-            float barH = mobile ? 64f : 40f;
-
-            GUI.color = new Color(0.15f, 0.15f, 0.15f, 1f);
-            GUI.DrawTexture(new Rect(barX, barY, barW, barH), Texture2D.whiteTexture);
-
-            float zoneLeft = barX + (zoneCenter - zoneHalfSize) * barW;
-            float zoneWidth = zoneHalfSize * 2f * barW;
-            GUI.color = new Color(0.1f, 0.7f, 0.2f, 0.6f);
-            GUI.DrawTexture(new Rect(zoneLeft, barY, zoneWidth, barH), Texture2D.whiteTexture);
-
-            float outerLeft = barX + (zoneCenter - zoneHalfSize * 1.8f) * barW;
-            float outerWidth = zoneHalfSize * 3.6f * barW;
-            GUI.color = new Color(0.9f, 0.8f, 0.1f, 0.3f);
-            GUI.DrawTexture(new Rect(outerLeft, barY, (zoneLeft - outerLeft), barH), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(zoneLeft + zoneWidth, barY,
-                (outerLeft + outerWidth) - (zoneLeft + zoneWidth), barH), Texture2D.whiteTexture);
-
-            float dist = Mathf.Abs(cursor - zoneCenter);
-            Color cursorColor = dist <= zoneHalfSize ? Color.green :
-                               dist <= zoneHalfSize * 1.8f ? Color.yellow : Color.red;
-
-            float cursorX = barX + cursor * barW - 3f;
-            GUI.color = cursorColor;
-            GUI.DrawTexture(new Rect(cursorX, barY - 4, 6, barH + 8), Texture2D.whiteTexture);
-
-            GUI.color = Color.white;
-            string phaseLabel = phase == Phase.Attempt1 ? "1st" :
-                               phase == Phase.Attempt2 ? "2nd - Faster!" : "FINAL!";
-            phaseStyleCache.normal.textColor = phase == Phase.Attempt3 ? Color.yellow : Color.white;
-            GUI.Label(new Rect(x, barY + barH + 4, panelW, mobile ? 34f : 22f), phaseLabel, phaseStyleCache);
-
-            for (int i = 0; i < comboHits && i < 3; i++)
-            {
-                float starX = x + panelW / 2f - 45 + i * 30;
-                UIHelper.LabelFit(new Rect(starX, barY + barH + 22, 28, 28), "*", starStyleCache);
-            }
-
-            float timerRatio = Mathf.Clamp01(timer / timeLimit);
-            float timerBarY = y + panelH - (mobile ? 100f : 60f);
-            GUI.color = new Color(0.3f, 0.3f, 0.3f, 1f);
-            GUI.DrawTexture(new Rect(barX, timerBarY, barW, 8), Texture2D.whiteTexture);
-            Color timerColor = timerRatio > 0.4f ? new Color(0.2f, 0.7f, 1f) :
-                              timerRatio > 0.2f ? Color.yellow : Color.red;
-            GUI.color = timerColor;
-            GUI.DrawTexture(new Rect(barX, timerBarY, barW * timerRatio, 8), Texture2D.whiteTexture);
-
-            GUI.color = Color.white;
-            float btnY = y + panelH - (mobile ? 80f : 42f);
-            float btnW = mobile ? (panelW - 90f) * 0.5f : 140f;
-            float btnH = mobile ? 64f : 34f;
-
-            GUI.backgroundColor = new Color(0.2f, 0.8f, 0.3f);
-            string captureText = mobile ? "지금 포획!" : "포획! [Space/클릭]";
-            // 시각 전용 — 확정은 전역 MouseDown(누름)이 처리(버튼 MouseUp 이중확정 차단).
-            GUI.Button(new Rect(x + panelW / 2f - btnW - 10, btnY, btnW, btnH), captureText, captureBtnCache);
-
-            GUI.backgroundColor = new Color(0.6f, 0.2f, 0.2f);
-            string cancelText = mobile ? "취소" : "취소 [ESC]";
-            cancelButtonRect = new Rect(x + panelW / 2f + 10, btnY, btnW, btnH);
-            if (GUI.Button(cancelButtonRect, cancelText, cancelBtnCache))
-            {
+            if (UISurface.Button(cancelButtonRect, mobile ? "취소" : "취소  [ESC]", t.surfaceRaised, cancelStyle))
                 wantCancel = true;
+        }
+
+        private static string KindName(CaptureMinigameKind kind)
+        {
+            switch (kind)
+            {
+                case CaptureMinigameKind.Track: return "가두기";
+                case CaptureMinigameKind.Toss: return "던지기";
+                default: return "살금살금";
             }
-            GUI.backgroundColor = Color.white;
+        }
+
+        private static string HintFor(CaptureMinigame g)
+        {
+            bool mobile = UIScale.IsMobileLayout;
+            switch (g.Kind)
+            {
+                case CaptureMinigameKind.Track:
+                    return "누른 채 끌어서 곤충을 그물 안에 가두세요";
+                case CaptureMinigameKind.Toss:
+                    return "곤충이 갈 곳을 눌러 그물을 던지세요";
+                default:
+                    return mobile ? "누르고 있으면 다가갑니다 · 돌아보면 손을 떼세요"
+                        : "[Space]나 클릭을 누르고 있으면 다가갑니다 · 돌아보면 떼세요";
+            }
+        }
+
+        private void DrawIntro()
+        {
+            UITheme t = UITheme.Instance;
+            float a = Mathf.Clamp01(introLeft / 0.25f);
+            float w = Mathf.Min(420f, boardRect.width - 40f);
+            Rect pill = new Rect(boardRect.center.x - w * 0.5f, boardRect.center.y - 44f, w, 88f);
+            GUI.color = new Color(1f, 1f, 1f, a);
+            UISurface.Rounded(pill, new Color(t.surfaceBase.r, t.surfaceBase.g, t.surfaceBase.b, 0.9f));
+            GUI.color = Color.white;
+            introStyle.normal.textColor = new Color(t.textPrimary.r, t.textPrimary.g, t.textPrimary.b, a);
+            UIHelper.LabelFit(new Rect(pill.x + 16f, pill.y + 12f, pill.width - 32f, 64f), KindName(game.Kind), introStyle);
+        }
+
+        // 두 점을 잇는 막대. UIShapes.Capsule은 GUIUtility.RotateAroundPivot을 쓰는데 그 피벗은 화면 좌표라
+        // UIScale 배율이 1이 아니면 엉뚱한 점을 축으로 돈다 — 지도 쐐기와 같은 행렬(부모 뒤에 곱한다)을 쓴다.
+        private static void DrawBar(Vector2 from, Vector2 to, float thickness, Color color)
+        {
+            Vector2 delta = to - from;
+            float length = delta.magnitude;
+            if (length < 0.01f) return;
+            Matrix4x4 saved = GUI.matrix;
+            GUI.matrix = MapMarkerProjection.PivotMatrix(saved, (from + to) * 0.5f, UIShapes.AngleDegrees(delta));
+            Color prev = GUI.color;
+            GUI.color = color;
+            GUI.DrawTexture(new Rect(-length * 0.5f, -thickness * 0.5f, length, thickness), Texture2D.whiteTexture);
+            GUI.color = prev;
+            GUI.matrix = saved;
+        }
+
+        // 테두리 있는 원. IMGUI에는 고리 도형이 없어 큰 원 위에 속을 덮어 만든다 — 속은 불투명이어야 한다.
+        private static void DrawRing(Vector2 center, float radius, float thickness, Color edge, Color fill)
+        {
+            UIShapes.Ellipse(new Rect(center.x - radius, center.y - radius, radius * 2f, radius * 2f), edge);
+            float inner = Mathf.Max(0f, radius - thickness);
+            UIShapes.Ellipse(new Rect(center.x - inner, center.y - inner, inner * 2f, inner * 2f), fill);
+        }
+
+        private void DrawInsect(Vector2 center, float size, InsectData data, float alpha, bool mirrored = false)
+        {
+            if (data == null)
+            {
+                UIShapes.Ellipse(new Rect(center.x - size * 0.3f, center.y - size * 0.3f, size * 0.6f, size * 0.6f),
+                    UITheme.Instance.accentAmber);
+                return;
+            }
+            bool shiny = currentTarget != null && currentTarget.IsShiny;
+            if (!mirrored)
+            {
+                InsectVisual.Draw(center.x, center.y, size, data, shiny, alpha);
+                return;
+            }
+            // 돌아볼 때 좌우를 뒤집는다 — 등을 보이던 곤충이 이쪽을 향한다.
+            Matrix4x4 saved = GUI.matrix;
+            GUI.matrix = saved * Matrix4x4.TRS(new Vector3(center.x, center.y, 0f), Quaternion.identity, new Vector3(-1f, 1f, 1f));
+            InsectVisual.Draw(0f, 0f, size, data, shiny, alpha);
+            GUI.matrix = saved;
+        }
+
+        private void BoardText(float y, string text, Color color)
+        {
+            boardTextStyle.normal.textColor = color;
+            UIHelper.LabelFit(new Rect(boardRect.x + 12f, boardRect.y + y * boardScale, boardRect.width - 24f, 44f),
+                text, boardTextStyle);
+        }
+
+        // ── 살금살금 ──
+
+        private const float SneakInsectX = 292f;
+        private const float SneakInsectY = 138f;
+        private const float SneakTrackY = 226f;
+
+        private static float SneakNetX(float distance) => Mathf.Lerp(250f, 44f, distance);
+
+        private void DrawSneak(SneakMinigame g, InsectData data, Color boardBg)
+        {
+            UITheme t = UITheme.Instance;
+            float s = boardScale;
+            bool looking = g.State == SneakMinigame.Watch.Look;
+            bool spotted = g.FreezeLeft > 0f;
+
+            // 땅과 다가가는 길
+            UISurface.Flat(new Rect(boardRect.x + 3f, OnBoard(0f, 206f).y, boardRect.width - 6f, 3f),
+                Color.Lerp(boardBg, t.textMuted, 0.5f));
+            Vector2 pathFrom = OnBoard(SneakNetX(1f), SneakTrackY);
+            Vector2 pathTo = OnBoard(SneakNetX(0f), SneakTrackY);
+            UISurface.Flat(new Rect(pathFrom.x, pathFrom.y - 2f, pathTo.x - pathFrom.x, 4f), t.surfaceBorder);
+            DrawFlag(SneakMinigame.FirstFlag, g.Distance, boardBg);
+            DrawFlag(SneakMinigame.SecondFlag, g.Distance, boardBg);
+            DrawFlag(0f, g.Distance, boardBg);
+
+            // 돌아보는 동안 시선이 닿는 자리 — 여기서 움직이면 들킨다.
+            if (looking && !g.Fled && g.Swoop01 < 0f)
+            {
+                Rect gaze = new Rect(boardRect.x + 10f, OnBoard(0f, 96f).y, OnBoard(SneakInsectX, 0f).x - boardRect.x - 10f, 104f * s);
+                UISurface.Rounded(gaze, new Color(t.accentCoral.r, t.accentCoral.g, t.accentCoral.b, spotted ? 0.34f : 0.22f));
+            }
+
+            // 곤충
+            float flee = g.Fled ? g.Flee01 : 0f;
+            float twitch = g.State == SneakMinigame.Watch.Twitch ? Mathf.Sin(animTime * 42f) * 3f : 0f;
+            Vector2 insectAt = OnBoard(SneakInsectX + twitch + flee * 90f, SneakInsectY - flee * 130f);
+            DrawInsect(insectAt, 128f * s, data, 1f - flee, looking || g.Fled);
+            if (!g.Fled)
+            {
+                Rect mark = new Rect(insectAt.x - 40f, insectAt.y - 70f * s - 60f, 80f, 60f);
+                if (spotted) { markStyle.normal.textColor = t.accentCoral; GUI.Label(mark, "!", markStyle); }
+                else if (g.State == SneakMinigame.Watch.Twitch) { markStyle.normal.textColor = t.accentAmber; GUI.Label(mark, "?", markStyle); }
+            }
+
+            // 채집망을 든 손 — 덮칠 때는 곤충에게 내리꽂는다.
+            float swoop = Mathf.Max(0f, g.Swoop01);
+            Vector2 net = OnBoard(Mathf.Lerp(SneakNetX(g.Distance), SneakInsectX - 6f, swoop),
+                Mathf.Lerp(170f, SneakInsectY, swoop));
+            DrawBar(net + new Vector2(-46f, 60f) * s, net, 6f * s, Color.Lerp(t.surfaceBase, t.accentAmber, 0.55f));
+            DrawRing(net + new Vector2(6f, -12f) * s, 24f * s, 4f * s, t.textPrimary, Color.Lerp(boardBg, t.textPrimary, 0.16f));
+
+            // 기척 — 두 번 들키면 달아난다.
+            for (int i = 0; i < SneakMinigame.MaxSpots; i++)
+            {
+                Vector2 dot = OnBoard(20f + i * 18f, 258f);
+                UIShapes.Ellipse(new Rect(dot.x - 6f * s, dot.y - 6f * s, 12f * s, 12f * s),
+                    i < SneakMinigame.MaxSpots - g.Spots ? t.accentMint : t.surfaceBorder);
+            }
+
+            if (introLeft > 0f) return;
+            if (g.Fled) BoardText(24f, "달아났다!", t.accentCoral);
+            else if (spotted) BoardText(24f, "들켰다!", t.accentCoral);
+            else if (g.Swoop01 >= 0f) BoardText(24f, "덮쳤다!", t.accentMint);
+            else if (looking) BoardText(24f, "멈춰!", t.accentCoral);
+            else if (g.State == SneakMinigame.Watch.Twitch) BoardText(24f, "돌아보려 한다", t.accentAmber);
+            else BoardText(24f, "지금이야", t.accentMint);
+        }
+
+        private void DrawFlag(float flagDistance, float distance, Color boardBg)
+        {
+            UITheme t = UITheme.Instance;
+            Vector2 at = OnBoard(SneakNetX(flagDistance), SneakTrackY);
+            float r = 8f * boardScale;
+            DrawRing(at, r, 3f * boardScale, distance <= flagDistance ? t.accentMint : t.textMuted, boardBg);
+        }
+
+        // ── 가두기 ──
+
+        private void DrawTrack(TrackMinigame g, InsectData data, Color boardBg)
+        {
+            UITheme t = UITheme.Instance;
+            float s = boardScale;
+
+            Color edge = g.Inside ? t.accentMint : t.textPrimary;
+            DrawRing(OnBoard(g.Net), g.NetRadius * s, 4f * s, edge, Color.Lerp(boardBg, edge, g.Inside ? 0.28f : 0.12f));
+
+            Vector2 flutter = new Vector2(Mathf.Sin(animTime * 9f), Mathf.Cos(animTime * 7f)) * 3f;
+            DrawInsect(OnBoard(g.Insect + flutter), 66f * s, data, 1f);
+
+            // 게이지 — 3분의 1마다 별 하나.
+            Rect gauge = new Rect(boardRect.x + 24f, boardRect.y + 16f, boardRect.width - 48f, 14f);
+            UISurface.Meter(gauge, g.Gauge, t.accentMint);
+            UISurface.Flat(new Rect(gauge.x + gauge.width / 3f - 1.5f, gauge.y, 3f, gauge.height), boardBg);
+            UISurface.Flat(new Rect(gauge.x + gauge.width * 2f / 3f - 1.5f, gauge.y, 3f, gauge.height), boardBg);
+        }
+
+        // ── 던지기 ──
+
+        private void DrawToss(TossMinigame g, InsectData data, Color boardBg)
+        {
+            UITheme t = UITheme.Instance;
+            float s = boardScale;
+
+            if (g.LandShowLeft > 0f)
+            {
+                Color land = g.LastHit ? t.accentMint : t.accentCoral;
+                DrawRing(OnBoard(g.LastLanding), g.NetRadius * s, 4f * s, land, Color.Lerp(boardBg, land, 0.3f));
+            }
+
+            Vector2 launcher = OnBoard(TossMinigame.Launcher);
+            if (g.InFlight)
+            {
+                // 떨어질 자리를 먼저 보여 준다 — 곤충이 그 안으로 들어올지를 보는 0.45초가 이 게임의 긴장이다.
+                DrawRing(OnBoard(g.Target), g.NetRadius * s, 3f * s, t.textMuted, boardBg);
+                float k = g.Flight01;
+                Vector2 at = Vector2.Lerp(launcher, OnBoard(g.Target), k) + new Vector2(0f, -Mathf.Sin(k * Mathf.PI) * 40f * s);
+                DrawRing(at, Mathf.Lerp(10f, g.NetRadius, k) * s, 3f * s, t.textPrimary, Color.Lerp(boardBg, t.textPrimary, 0.2f));
+            }
+
+            DrawInsect(OnBoard(g.Insect), 66f * s, data, 1f);
+
+            // 남은 그물
+            for (int i = 0; i < TossMinigame.Throws; i++)
+            {
+                Vector2 at = launcher + new Vector2((i - 1) * 34f * s, 0f);
+                DrawRing(at, 11f * s, 3f * s, i < g.ThrowsLeft ? t.textPrimary : t.surfaceBorder, boardBg);
+            }
+
+            if (introLeft > 0f || g.LandShowLeft <= 0f) return;
+            BoardText(14f, g.LastHit ? "잡았다!" : "빗나갔다", g.LastHit ? t.accentMint : t.accentCoral);
         }
 
         private void DrawResult()
         {
+            UITheme t = UITheme.Instance;
             float alpha = Mathf.Clamp01(resultTimer / 0.3f);
-            float cx = UIScale.VirtualScreenWidth / 2f;
-            float baseY = UIScale.VirtualScreenHeight * 0.18f;
+            InsectGame.UI.HudFrame frame = InsectGame.UI.HudFrame.Current;
+            InsectGame.UI.HudStage.Request(InsectGame.UI.HudStageItem.MinigameResult, InsectGame.UI.HudStage.Place(frame,
+                InsectGame.UI.HudStageItem.MinigameResult, InsectGame.UI.HudStage.MinigameSlotWidth, InsectGame.UI.HudStage.MinigameSlotHeight));
+            Rect label = ResultLabelRect(frame);
+            float cx = label.center.x;
+            float baseY = label.y;
 
-            float progress = 1f - (resultTimer / 1.5f);
-            float bounce = 1f + Mathf.Sin(progress * Mathf.PI) * 0.15f;
-            int fontSize = (int)(42 * bounce);
-
-            InitMinigameStyles();
-            resultStyleCache.fontSize = fontSize; // fontSize는 bounce에 따라 동적
-            resultStyleCache.normal.textColor = resultSuccess
-                ? new Color(0.3f, 1f, 0.5f, alpha)
-                : new Color(1f, 0.4f, 0.3f, alpha);
-
-            float w = 400;
-            GUI.color = new Color(1, 1, 1, alpha);
-            GUI.Label(new Rect(cx - w / 2f, baseY, w, 60), resultMessage, resultStyleCache);
+            float progress = 1f - (resultTimer / ResultSeconds);
+            float bounce = 1f + Mathf.Sin(progress * Mathf.PI) * 0.12f;
+            Color col = resultSuccess ? t.accentMint : t.accentCoral;
 
             if (resultSuccess)
             {
-                float glowSize = 120f + progress * 60f;
-                Color glowCol = resultStyleCache.normal.textColor;
-                GUI.color = new Color(glowCol.r, glowCol.g, glowCol.b, 0.08f * alpha);
-                GUI.DrawTexture(new Rect(cx - glowSize / 2, baseY + 30 - glowSize / 2, glowSize, glowSize), Texture2D.whiteTexture);
+                float glow = (140f + progress * 60f) * bounce;
+                UIShapes.Ellipse(new Rect(cx - glow, baseY + 36f - glow * 0.5f, glow * 2f, glow), new Color(col.r, col.g, col.b, 0.1f * alpha));
             }
 
-            GUI.color = Color.white;
+            resultStyle.normal.textColor = new Color(col.r, col.g, col.b, alpha);
+            UIHelper.LabelFit(label, resultMessage, resultStyle);
         }
 
-        private Color GetRarityGUIColor()
+        public const float ResultLabelWidth = 440f;
+        public const float ResultLabelHeight = 72f;
+
+        /// <summary>
+        /// 결과 글자(PERFECT! 등)의 자리 — 가운데 무대의 첫 고정 칸 한가운데. 둘레로 퍼지는 빛(최대 448×224)이 칸 안에 든다.
+        /// 예전엔 화면 높이 18% 가운데라 리전 배너·내기 점수판과 세로 화면의 단축 바를 덮었다.
+        /// </summary>
+        public static Rect ResultLabelRect(InsectGame.UI.HudFrame f)
         {
-            if (currentTarget == null || currentTarget.Data == null) return Color.white;
-            switch (currentTarget.Data.rarity)
-            {
-                case InsectRarity.Common: return new Color(0.7f, 0.7f, 0.7f);
-                case InsectRarity.Uncommon: return new Color(0.4f, 0.9f, 0.4f);
-                case InsectRarity.Rare: return new Color(0.4f, 0.6f, 1f);
-                case InsectRarity.Epic: return new Color(0.8f, 0.4f, 1f);
-                case InsectRarity.Legendary: return new Color(1f, 0.8f, 0.2f);
-                default: return Color.white;
-            }
+            Rect slot = InsectGame.UI.HudStage.Place(f, InsectGame.UI.HudStageItem.MinigameResult,
+                InsectGame.UI.HudStage.MinigameSlotWidth, InsectGame.UI.HudStage.MinigameSlotHeight);
+            float w = Mathf.Min(ResultLabelWidth, slot.width);
+            return new Rect(slot.center.x - w * 0.5f, slot.center.y - ResultLabelHeight * 0.5f, w, ResultLabelHeight);
         }
 
         public void AutoWire(CaptureController controller)
@@ -440,5 +609,38 @@ namespace InsectGame.Capture
         {
             if (playerMovement == null) playerMovement = pm;
         }
+
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+        // ── 검수 빌드 전용 ── 실제 IMGUI를 찍으려면 판을 원하는 순간에 세워 둘 수 있어야 한다.
+        private bool debugFrozen;
+
+        /// <summary>
+        /// 지정한 게임을 열고 <paramref name="seconds"/>만큼 가짜 조작으로 돌린 뒤 멈춰 둔다.
+        /// <paramref name="untilLook"/>이면 살금살금에서 곤충이 돌아보는 순간까지만 돌린다.
+        /// </summary>
+        public void StartForCapture(InsectEntity target, CaptureMinigameKind kind, float seconds, bool hold,
+            Vector2 boardPoint, bool untilLook = false)
+        {
+            StartMinigame(target, 1f, 1f, 1f, 0f, kind);
+            if (game == null) return;
+            introLeft = 0f;
+            const float step = 1f / 60f;
+            game.Tick(step, new CaptureMinigameInput());   // 손을 뗀 상태에서 시작(살금살금은 한 번 떼야 움직인다)
+            bool pressed = true;
+            for (float elapsed = 0f; elapsed < seconds && !game.Done; elapsed += step)
+            {
+                game.Tick(step, new CaptureMinigameInput { Down = hold, Pressed = pressed && hold, Point = boardPoint });
+                pressed = false;
+                if (untilLook && game is SneakMinigame sneak && sneak.State == SneakMinigame.Watch.Look) break;
+            }
+            debugFrozen = true;
+        }
+
+        public void EndCapture()
+        {
+            debugFrozen = false;
+            StopMinigame();
+        }
+#endif
     }
 }

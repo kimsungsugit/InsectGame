@@ -1,0 +1,393 @@
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.IO;
+using System.Reflection;
+using InsectGame.Core;
+using InsectGame.Data;
+using InsectGame.Dex;
+using UnityEngine;
+using Object = UnityEngine.Object;
+
+namespace InsectGame.UI
+{
+    /// <summary>
+    /// 나의 섬 화면의 <b>실제 IMGUI</b> 촬영 fixture(<c>-battleScenario island-ui</c>).
+    ///
+    /// 섬 화면은 전부 OnGUI라 배치 캡처에 안 찍힌다(<c>rules/testing.md</c> 「한계 셋」). 스탠드얼론 검수 빌드에서
+    /// <c>ScreenCapture</c>로 찍는다. 섬 자체는 진짜 <see cref="IslandWorldBuilder"/>가 짓는다 — 지형·물건·곤충·
+    /// 꾸미기 미리보기가 실제 경로다.
+    ///
+    /// <b>디스크에 쓰지 않는다.</b> 검수 빌드는 실제 게임과 같은 저장 폴더를 쓴다. 섬 매니저는
+    /// <see cref="IslandManager.PersistenceEnabled"/>를 끄고, 재화를 건드리는 동작(구매·수확)은 부르지 않는다 —
+    /// 지갑·캔디 컴포넌트는 차감 즉시 파일에 쓰기 때문이다.
+    /// </summary>
+    public static class IslandVisualCapture
+    {
+        private const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
+
+        public static IEnumerator Run(string output, Camera camera)
+        {
+            int shots = 0;
+            var holder = new GameObject("IslandQAData");
+            holder.SetActive(false);
+
+            // ── 종·보유 ──
+            var database = ScriptableObject.CreateInstance<InsectDatabase>();
+            InsectData rhino = Species(database, "rhinoceros_beetle", "장수풍뎅이", InsectRarity.Rare);
+            InsectData stag = Species(database, "stag_beetle", "사슴벌레", InsectRarity.Rare);
+            InsectData mantis = Species(database, "mantis_green", "사마귀", InsectRarity.Uncommon);
+            InsectData azure = Species(database, "butterfly_azure", "푸른나비", InsectRarity.Epic);
+            InsectData dragonfly = Species(database, "dragonfly_lake", "호수 잠자리", InsectRarity.Uncommon);
+            InsectData beetle = Species(database, "beetle_basic", "들판 딱정벌레", InsectRarity.Common);
+            InsectData hercules = Species(database, "beetle_hercules", "헤라클레스장수풍뎅이", InsectRarity.Legendary);
+
+            var owned = new List<PlayerInsectData>
+            {
+                Owned("qa-rhino", rhino, 18, false),
+                Owned("qa-stag", stag, 16, false),
+                Owned("qa-mantis", mantis, 14, true),
+                Owned("qa-azure", azure, 21, false),
+                Owned("qa-dragonfly", dragonfly, 11, false),
+                Owned("qa-beetle", beetle, 6, false),
+                Owned("qa-hercules", hercules, 25, false),
+            };
+            var collection = holder.AddComponent<PlayerInsectCollection>();
+            Set(collection, "database", database);
+            Set(collection, "saveData", new PlayerInsectCollectionSave { insects = owned });
+            var lookup = (Dictionary<string, PlayerInsectData>)Get(collection, "lookup");
+            foreach (PlayerInsectData p in owned) lookup.Add(p.instanceId, p);
+
+            var candy = holder.AddComponent<PlayerCandyInventory>();
+            Set(candy, "data", new PlayerCandyData { candies = 340 });
+            var wallet = holder.AddComponent<PlayerCurrencyWallet>();
+            Set(wallet, "data", new PlayerCurrencyData { coins = 860, gems = 120 });
+            var regionManager = holder.AddComponent<RegionManager>();
+
+            // ── 섬 세이브(메모리) — 14칸 섬, 물건 14개, 곤충 4마리, 다섯 시간치 수확물 ──
+            long now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            var save = new IslandSave
+            {
+                sizeLevel = 1, extraSlots = 1, starterGranted = true, guideDone = true,
+                lastSettleUnix = now - 5 * 3600, harvestCount = 3,
+            };
+            foreach (var (id, x, z, rot) in new[]
+                     {
+                         ("b_cabin", -6, -2, 0), ("t_oak", 3, -1, 0), ("f_bench", -2, -3, 0), ("f_lantern", 1, -3, 0),
+                         ("t_pond", 2, 2, 0), ("f_flowerpot", -3, -5, 0), ("f_flowerpot", 2, -5, 0),
+                         ("t_flowerbed", -3, 0, 0), ("o_feeder", 0, -1, 0), ("f_fence", -6, -4, 0),
+                         ("f_fence", -4, -4, 0), ("t_rock", 5, -4, 0), ("f_campfire", -1, 3, 0), ("b_storage", -6, 3, 0),
+                     })
+                save.placed.Add(new IslandPlacedRecord { id = id, x = x, z = z, rot = rot });
+            foreach (var (id, count) in new[]
+                     {
+                         ("f_campfire", 2), ("f_table", 1), ("t_bush", 3), ("b_windmill", 1), ("f_sign", 1),
+                         ("f_mailbox", 1), ("o_water", 1), ("t_sapling", 2),
+                     })
+                save.owned.Add(new IslandOwnedRecord { id = id, count = count });
+            save.released.AddRange(new[] { "qa-rhino", "qa-azure", "qa-mantis", "qa-beetle" });
+            save.bonds.Add(new IslandBondRecord { instanceId = "qa-rhino", hours = 40f });
+            save.bonds.Add(new IslandBondRecord { instanceId = "qa-azure", hours = 95f });
+            save.bonds.Add(new IslandBondRecord { instanceId = "qa-mantis", hours = 7f });
+
+            var island = holder.AddComponent<IslandManager>();
+            island.PersistenceEnabled = false;
+            island.AutoWire(collection, wallet, candy, database);
+            island.LoadForCapture(save);
+
+            // ── 무대 — 섬 환경 프로필(SubAreaEnvironment의 섬 case)과 같은 값 ──
+            camera.backgroundColor = new Color(0.56f, 0.80f, 0.96f);
+            camera.farClipPlane = 400f;
+            RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
+            RenderSettings.ambientLight = new Color(0.40f, 0.44f, 0.50f);
+            RenderSettings.fog = true;
+            RenderSettings.fogMode = FogMode.Exponential;
+            RenderSettings.fogColor = new Color(0.66f, 0.84f, 0.95f);
+            RenderSettings.fogDensity = 0.006f;
+            var sun = new GameObject("IslandQASun").AddComponent<Light>();
+            sun.type = LightType.Directional;
+            sun.color = new Color(1f, 0.97f, 0.88f);
+            sun.intensity = 1.1f;
+            sun.shadows = LightShadows.Soft;
+            sun.transform.rotation = Quaternion.Euler(52f, 35f, 0f);
+
+            var player = GameObject.CreatePrimitive(PrimitiveType.Capsule);
+            player.name = "Player";
+            player.GetComponent<Renderer>().material.color = new Color(0.3f, 0.45f, 0.85f);
+            PlayerMovement movement = player.AddComponent<PlayerMovement>();
+            movement.AutoWire(regionManager);
+            CameraFollower follower = camera.GetComponent<CameraFollower>();
+            follower.SetTarget(player.transform);
+
+            var visual = new GameObject("IslandQAPreview").AddComponent<InsectModelPreviewRenderer>();
+            InsectVisual.Renderer = visual;
+
+            var world = new GameObject("IslandQAWorld").AddComponent<IslandWorldBuilder>();
+            world.AutoWire(regionManager, island, follower, movement, database);
+            var share = new GameObject("IslandQAShare").AddComponent<IslandShareClient>();
+            share.AutoWire(island);
+
+            var editUi = new GameObject("IslandQAEdit").AddComponent<IslandEditUI>();
+            editUi.AutoWire(island, world, null);   // 공유 클라이언트를 안 준다 — 닫을 때 서버로 올리지 않게
+            var shopUi = new GameObject("IslandQAShop").AddComponent<IslandShopUI>();
+            shopUi.AutoWire(island, wallet);
+            var insectUi = new GameObject("IslandQAInsects").AddComponent<IslandInsectUI>();
+            insectUi.AutoWire(island, collection);
+            var guideUi = new GameObject("IslandQAGuide").AddComponent<IslandGuideUI>();
+            guideUi.AutoWire(island, world, editUi);
+            var hud = new GameObject("IslandQAHud").AddComponent<IslandHudUI>();
+            hud.AutoWire(island, world, movement, share);
+            var visitUi = new GameObject("IslandQAVisit").AddComponent<IslandVisitUI>();
+            visitUi.AutoWire(island, world, share, null, hud);
+            hud.AutoWire(editUi, shopUi, insectUi, visitUi, guideUi);
+            var quick = new GameObject("IslandQAQuickBar").AddComponent<QuickAccessBarUI>();
+            quick.AutoWire(visitUi);
+            // 좌측 스택 — 진짜 미니맵과, 퀘스트 칩·목표 행이 차지하는 자리의 대역(안내 배너가 여기에 깔렸었다).
+            var minimap = new GameObject("IslandQAMinimap").AddComponent<MinimapUI>();
+            minimap.AutoWire(regionManager);
+            var questStandIn = new GameObject("IslandQAQuestStandIn").AddComponent<IslandQaQuestChipStandIn>();
+            questStandIn.enabled = false;
+            // 시각·날씨 칩 — 섬에서도 보이고 모바일에서는 섬 HUD 판을 피해 따로 선다(WorldClockRules.IslandMobileChip).
+            // 밤 22시대·비로 붙잡는다. 칩을 붙이기 전에 걸어 두어 첫 장에 변화 알림이 뜨지 않게 한다(FieldHudVisualCapture와 같다).
+            var skyHolder = new GameObject("IslandQASky");
+            var clock = skyHolder.AddComponent<GameClock>();
+            var weather = skyHolder.AddComponent<WeatherSystem>();
+            var worldState = skyHolder.AddComponent<WorldStateProvider>();
+            worldState.AutoWire(clock, weather);
+            clock.SetTime01(22.2f / 24f, true);
+            weather.SetWeather(WeatherType.Rain, true, true);
+            var clockHud = new GameObject("IslandQAClock").AddComponent<WorldClockHUD>();
+            clockHud.AutoWire(worldState, regionManager, movement);
+            clockHud.AutoWire(world);
+
+            if (!world.EnterOwnIsland())
+            {
+                Debug.LogError("[IslandQA] 섬에 들어가지 못했다");
+                Application.Quit(3);
+                yield break;
+            }
+            // 안내는 뒤에서 따로 찍는다 — 들어올 때 스타터 키트·단계 진행이 돌았으므로 끝난 상태로 되돌린다.
+            save.guideDone = true;
+
+            yield return Wait(2.0f);
+            shots++; yield return Capture(output, "01-island-hud");
+
+            // 수확 토스트(가운데 무대)와 날씨 변화 알림(시각 칩 아래)이 함께 선 모습 — 수확을 부르면 지갑이 디스크에 쓰므로 토스트만 띄운다.
+            hud.ShowToast("수확!  캔디 +8 · 코인 +4");
+            weather.SetWeather(WeatherType.Fog, true, true);
+            yield return Wait(0.8f);
+            shots++; yield return Capture(output, "01b-island-toast-notice");
+            Set(hud, "toastRemaining", 0f);
+            yield return Wait(3.2f);   // 알림(3초)이 걷힌 뒤 다음 장면
+
+            // ── 꾸미기 ──
+            editUi.Open();
+            yield return Wait(1.2f);
+            shots++; yield return Capture(output, "02-edit");
+            editUi.CarryForCapture("f_table", 0, 0, 0);
+            yield return Wait(0.6f);
+            shots++; yield return Capture(output, "03-edit-carry-ok");
+            editUi.CarryForCapture("b_windmill", 2, -2, 0);   // 참나무와 겹친다
+            yield return Wait(0.6f);
+            shots++; yield return Capture(output, "04-edit-carry-blocked");
+            editUi.PickPlacedForCapture(0);                    // 오두막을 집었다 — 옮기기·넣기
+            yield return Wait(0.6f);
+            shots++; yield return Capture(output, "05-edit-move-placed");
+            editUi.CloseModal();
+            yield return Wait(0.8f);
+
+            // ── 상점 ──
+            shopUi.Toggle();
+            yield return Wait(0.8f);
+            shots++; yield return Capture(output, "06-shop-furniture");
+            Set(shopUi, "tab", 0);
+            yield return Wait(0.5f);
+            shots++; yield return Capture(output, "07-shop-building");
+            Set(shopUi, "tab", 3);
+            yield return Wait(0.5f);
+            shots++; yield return Capture(output, "08-shop-tool");
+            Set(shopUi, "tab", 4);
+            yield return Wait(0.5f);
+            shots++; yield return Capture(output, "09-shop-expand");
+            shopUi.CloseModal();
+
+            // ── 곤충 ──
+            insectUi.Toggle();
+            yield return Wait(1.6f);   // 썸네일이 프레임당 하나씩 렌더된다
+            shots++; yield return Capture(output, "10-insects");
+            insectUi.CloseModal();
+
+            // ── 방문 창 ──
+            visitUi.Toggle();
+            yield return Wait(0.8f);
+            shots++; yield return Capture(output, "11-visit-hub");
+            visitUi.CloseModal();
+
+            // ── 안내 — 첫 단계 배너, 꾸미기 화면 위의 배너, 도움말 ──
+            questStandIn.enabled = true;
+            save.guideDone = false;
+            save.guideStep = (int)IslandGuideStep.OpenEdit;
+            yield return Wait(0.6f);
+            shots++; yield return Capture(output, "12-guide-first");
+            // 시간이 지나면 스스로 사라진다 — 단계는 그대로다(행동으로만 넘어간다).
+            yield return Wait(IslandGuideUI.CoachSeconds + 0.6f);
+            shots++; yield return Capture(output, "12b-guide-autohidden");
+            bool stillActive = island.GuideActive && island.GuideStep == IslandGuideStep.OpenEdit;
+            // 다음 단계에 가면 다시 뜬다(꾸미기 화면 위).
+            save.guideStep = (int)IslandGuideStep.PlaceFirst;
+            questStandIn.enabled = false;
+            editUi.Open();
+            yield return Wait(1.0f);
+            shots++; yield return Capture(output, "13-guide-over-edit");
+            editUi.CloseModal();
+            questStandIn.enabled = true;
+            save.guideStep = (int)IslandGuideStep.Finish;
+            yield return Wait(0.8f);
+            shots++; yield return Capture(output, "14-guide-finish");
+            questStandIn.enabled = false;
+            save.guideDone = true;
+            guideUi.OpenHelp();
+            yield return Wait(0.8f);
+            shots++; yield return Capture(output, "15-help");
+            guideUi.CloseModal();
+
+            // ── 남의 섬 구경 ──
+            var snapshot = new IslandSnapshot { ownerName = "하늘", sizeLevel = 0, comfort = 37 };
+            foreach (var (id, x, z, rot) in new[]
+                     {
+                         ("b_greenhouse", -4, 0, 0), ("f_fountain", 1, 0, 0), ("t_blossom", -2, -3, 0),
+                         ("f_hammock", 1, -3, 0), ("f_lantern", 4, -4, 0), ("o_honeypot", -5, -3, 0),
+                     })
+                snapshot.placed.Add(new IslandPlacedRecord { id = id, x = x, z = z, rot = rot });
+            snapshot.insects.Add(new IslandSnapshotInsect { insectId = hercules.insectId, level = 30 });
+            snapshot.insects.Add(new IslandSnapshotInsect { insectId = dragonfly.insectId, level = 12, shiny = true });
+            snapshot.insects.Add(new IslandSnapshotInsect { insectId = stag.insectId, level = 19 });
+            IslandSaveRules.SanitizeSnapshot(snapshot);
+            hud.SetVisitInfo(new IslandInfo { ownerUid = "qa-owner", ownerName = "하늘", likes = 12, visits = 48 });
+            world.EnterVisit(snapshot);
+            yield return Wait(1.6f);
+            shots++; yield return Capture(output, "16-visiting");
+
+            // ── 가장 큰 섬 — 화면 없이 지형만(22칸) ──
+            hud.SetVisitInfo(null);
+            world.ReturnToOwnIsland();
+            save.sizeLevel = GameConstants.Island.MaxSizeLevel;
+            island.LoadForCapture(save);
+            world.ExitIsland();
+            yield return Wait(0.3f);
+            world.EnterOwnIsland();
+            save.guideDone = true;
+            editUi.Open();   // 높은 부감으로 본다
+            yield return Wait(1.4f);
+            shots++; yield return Capture(output, "17-large-island-edit");
+            editUi.CloseModal();
+
+            File.WriteAllText(Path.Combine(output, "README.txt"),
+                $"Actual standalone IMGUI over the real IslandWorldBuilder. {shots} shots at {Screen.width}x{Screen.height} " +
+                $"(mobile layout={UIScale.IsMobileLayout}).\n" +
+                "In-memory island save (IslandManager.PersistenceEnabled=false); wallet/candy on an inactive host and no " +
+                "purchase/harvest calls, so nothing is written to disk.\n" +
+                "Own island: size level 1 (14x14), 14 objects, 4 released insects, ~5h accrued. Visit: snapshot fixture.\n" +
+                "Guide shots: real MinimapUI + a stand-in for the quest chip/objective rows (TutorialQuestUI needs a login session).\n" +
+                $"Guide banner auto-hide: step kept after {IslandGuideUI.CoachSeconds:0}s = {(stillActive ? "PASS" : "FAIL")}\n");
+            Application.Quit(shots > 0 ? 0 : 3);
+        }
+
+        private static InsectData Species(InsectDatabase db, string id, string name, InsectRarity rarity)
+        {
+            var d = ScriptableObject.CreateInstance<InsectData>();
+            d.insectId = id;
+            d.displayName = name;
+            d.rarity = rarity;
+            d.description = name + " — 검수용 설명.";
+            d.baseHp = 120;
+            d.baseAtk = 34;
+            d.baseDef = 28;
+            d.baseSizeMm = 60f;
+            d.baseWeightG = 12f;
+            db.insects.Add(d);
+            return d;
+        }
+
+        private static PlayerInsectData Owned(string instance, InsectData species, int level, bool shiny)
+        {
+            var p = new PlayerInsectData
+            {
+                instanceId = instance,
+                insectId = species.insectId,
+                level = level,
+                ivHp = 10, ivAtk = 10, ivDef = 10,
+                isShiny = shiny,
+                sizeRoll = 50,
+            };
+            p.currentHp = p.GetTotalHp(species.baseHp);
+            return p;
+        }
+
+        private static object Get(object target, string name)
+        {
+            FieldInfo f = target.GetType().GetField(name, Private);
+            if (f == null) throw new MissingFieldException(target.GetType().Name, name);
+            return f.GetValue(target);
+        }
+
+        private static void Set(object target, string name, object value)
+        {
+            FieldInfo f = target.GetType().GetField(name, Private);
+            if (f == null) throw new MissingFieldException(target.GetType().Name, name);
+            f.SetValue(target, value);
+        }
+
+        private static IEnumerator Wait(float seconds)
+        {
+            float until = Time.realtimeSinceStartup + seconds;
+            while (Time.realtimeSinceStartup < until) yield return null;
+        }
+
+        private static IEnumerator Capture(string output, string name)
+        {
+            yield return new WaitForEndOfFrame();
+            Texture2D shot = ScreenCapture.CaptureScreenshotAsTexture();
+            File.WriteAllBytes(Path.Combine(output, name + ".png"), shot.EncodeToPNG());
+            Object.Destroy(shot);
+        }
+    }
+
+    /// <summary>
+    /// 검수 전용 — 퀘스트 칩과 목표 행이 차지하는 <b>자리</b>만 그린다(진짜 <see cref="TutorialQuestUI"/>는 로그인 세션이 있어야
+    /// 칩을 그린다). 좌표는 그쪽과 같은 순수 계산(<see cref="QuestChipLayout"/>)에서 받는다.
+    /// 섬 안내 배너가 이 자리와 겹치는지 눈으로 보려는 것이다.
+    /// </summary>
+    internal class IslandQaQuestChipStandIn : MonoBehaviour
+    {
+        private void OnGUI()
+        {
+            if (ModalUIRegistry.IsAnyOpen()) return;
+            UIScale.Begin();
+            UITheme t = UITheme.Instance;
+            bool mobile = UIScale.IsMobileLayout;
+            const float chipH = 96f;
+            const float rowH = 64f;
+            // 진짜 칩과 같은 순수 계산(QuestChipLayout) — 데스크톱은 단축 바 왼쪽 끝까지만, 목표 행 자리를 비우고 바닥에서 위로.
+            Rect bar = QuickAccessBarUI.ShortcutBarRect;
+            QuestStackPlace place = QuestChipLayout.PlaceFor(mobile, UIScale.IsPortrait);
+            float w = QuestChipLayout.Width(place, UIScale.VirtualScreenWidth, UIScale.VirtualSafeLeft, UIScale.VirtualSafeRight,
+                MinimapUI.LeftX, bar);
+            Rect chip = QuestChipLayout.Chip(place, QuestChipLayout.Left(place, MinimapUI.LeftX), w, chipH, rowH,
+                QuestChipLayout.MobileTop(place, UISafeLayout.ContentTop),
+                QuestChipLayout.DesktopBottom(MinimapUI.LeftX, bar, UISafeLayout.ContentBottom));
+            UISurface.HudCard(chip);
+            IslandUiKit.Label(new Rect(chip.x + 14f, chip.y + 8f, chip.width - 28f, 40f), "퀘스트 칩 자리(검수용)",
+                IslandUiKit.Body, t.accentAmber);
+            IslandUiKit.Label(new Rect(chip.x + 14f, chip.y + 50f, chip.width - 28f, 36f), "진행 0 / 3",
+                IslandUiKit.Small, t.textSecondary);
+            Rect row = QuestChipLayout.Row(chip, w, rowH);
+            UISurface.HudCard(row);
+            IslandUiKit.Label(new Rect(row.x + 14f, row.y + 8f, row.width - 28f, rowH - 16f), "목표 행 자리(검수용)",
+                IslandUiKit.Small, t.textSecondary);
+            UIScale.End();
+        }
+    }
+}
+#endif

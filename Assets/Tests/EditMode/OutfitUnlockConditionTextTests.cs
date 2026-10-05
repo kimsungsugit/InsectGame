@@ -15,8 +15,7 @@ namespace InsectGame.Tests
     /// 토큰인데, 한때 그 값이 카드에 **그대로** 그려져 한국어 게임에 영문 식별자가 노출됐다.
     /// <see cref="CharacterOutfitUI.DescribeUnlockCondition"/>이 문장으로 바꾼다.
     ///
-    /// 해금 <b>판정</b>은 여기 범위가 아니다 — 저장소에 조건을 평가해 소유를 부여하는 코드가
-    /// 아직 없다(별건). 이 테스트는 표시만 본다.
+    /// 해금 <b>판정</b>은 여기 범위가 아니다 — <c>OutfitUnlockRulesTests</c>가 본다. 이 테스트는 표시만 본다.
     /// </summary>
     [TestFixture]
     public class OutfitUnlockConditionTextTests

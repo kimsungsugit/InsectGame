@@ -38,6 +38,7 @@ namespace InsectGame.Tests
             Assert.IsFalse(string.IsNullOrEmpty(GameConstants.SaveFiles.BattleTeam));
             Assert.IsFalse(string.IsNullOrEmpty(GameConstants.SaveFiles.DexSave));
             Assert.IsFalse(string.IsNullOrEmpty(GameConstants.SaveFiles.StoryProgress));
+            Assert.IsFalse(string.IsNullOrEmpty(GameConstants.SaveFiles.Island));
         }
 
         [Test]
@@ -48,6 +49,7 @@ namespace InsectGame.Tests
             Assert.IsTrue(GameConstants.SaveFiles.BattleTeam.EndsWith(".json"));
             Assert.IsTrue(GameConstants.SaveFiles.DexSave.EndsWith(".json"));
             Assert.IsTrue(GameConstants.SaveFiles.StoryProgress.EndsWith(".json"));
+            Assert.IsTrue(GameConstants.SaveFiles.Island.EndsWith(".json"));
         }
 
         [Test]
@@ -137,7 +139,8 @@ namespace InsectGame.Tests
         [Test]
         public void Battle_RaidBossHpMultiplier_MatchesCurrentDamageMath()
         {
-            Assert.AreEqual(4.5f, GameConstants.Battle.RaidBossHpMultiplier);
+            // 4.5(전투 길이 3종에서 파생) × 치명타 기대 이득 1.031 → 4.65. 치명타를 바꾸면 함께 다시 잰다.
+            Assert.AreEqual(4.65f, GameConstants.Battle.RaidBossHpMultiplier);
         }
 
         // ── 전투 길이 3종 ──

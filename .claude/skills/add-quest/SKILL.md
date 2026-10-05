@@ -23,6 +23,7 @@ argument-hint: "<questId> <QuestType> <목표설명>"
 | targetCount | 목표 횟수 | 1 |
 | prerequisiteQuestId | 선행 퀘스트 (선형 체인) | `q_battle10` |
 | 보상 | rewardCandy/rewardExp, rewardItemId+Count, rewardInsectId+DisplayName+Level | 택1+ |
+| requiredRegionId | (Side 전용) 지역 의뢰 — 그 리전 해금 후 활성, 그 리전 안 행동만 셈. 규칙은 `rules/quest-system.md` 「지역 의뢰」 | `pond` |
 
 **기존 QuestType 목록**: Movement, Capture, ViewCollection, LevelUp, UseItem, Battle,
 Training, SetTeam, RaidBattle, DefeatGuardian, VisitRegion, VisitSubArea, OpenDex,

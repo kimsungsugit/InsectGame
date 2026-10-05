@@ -181,6 +181,7 @@ namespace InsectGame.Tests
             RaidBattleController controller =
                 controllerObject.AddComponent<RaidBattleController>();
             controller.SetRandomSource(new LowestSlotRandomSource());
+            controller.SetCritSource(null);   // 치명타는 별개 줄기 — 피해·라운드를 단언하므로 끈다
 
             InsectData[] team = new InsectData[5];
             int[] levels = new int[5];

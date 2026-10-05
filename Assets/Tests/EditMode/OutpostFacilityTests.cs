@@ -34,6 +34,80 @@ namespace InsectGame.Tests
             if (host != null) Object.DestroyImmediate(host);
         }
 
+        [Test]
+        public void Houses_HavePitchedClosedRoofs()
+        {
+            Transform main = GameObject.Find("Village/MainVillage").transform;
+            for (int i = 1; i <= 5; i++)
+            {
+                Transform house = main.Find("House_" + i);
+                Transform right = house.Find("RoofR");
+                Transform left = house.Find("RoofL");
+                Assert.Greater(right.TransformPoint(Vector3.left * 0.5f).y,
+                    right.TransformPoint(Vector3.right * 0.5f).y);
+                Assert.Greater(left.TransformPoint(Vector3.right * 0.5f).y,
+                    left.TransformPoint(Vector3.left * 0.5f).y);
+                Assert.Less(Mathf.Abs(house.Find("RoofRidge").position.y -
+                    right.TransformPoint(Vector3.left * 0.5f).y), 0.15f);
+                Assert.IsNotNull(house.Find("Gable").GetComponent<MeshFilter>().sharedMesh);
+            }
+        }
+
+        [Test]
+        public void VillageDoors_HaveNonBlockingPathsToPlaza()
+        {
+            Transform main = GameObject.Find("Village/MainVillage").transform;
+            Transform paths = main.Find("Walkways");
+            Assert.IsNotNull(paths);
+            foreach (Transform building in main)
+            {
+                Transform door = building.Find("Door");
+                if (door == null) continue;
+                Transform path = paths.Find("Access_" + building.name);
+                Assert.IsNotNull(path, building.name);
+                Vector3 end = main.InverseTransformPoint(path.TransformPoint(Vector3.forward * 5f));
+                end.y = 0f;
+                Assert.Less(end.magnitude, 8f, building.name);
+            }
+            foreach (Collider collider in paths.GetComponentsInChildren<Collider>())
+                Assert.IsFalse(collider.enabled, "장식 길이 첫 프레임에 이동을 막으면 안 된다");
+        }
+
+        [Test]
+        public void EntranceWalkways_ClearBuildingWalls()
+        {
+            Transform main = GameObject.Find("Village/MainVillage").transform;
+            for (int i = 0; i < 3; i++)
+            {
+                Transform path = main.Find("Walkways/Entrance_" + i);
+                for (int sample = 0; sample <= 40; sample++)
+                {
+                    Vector3 point = path.TransformPoint(new Vector3(0f, 0f, -5f + sample * 0.25f));
+                    foreach (Transform building in main)
+                    {
+                        Transform wall = building.Find("Wall");
+                        if (wall == null) continue;
+                        Vector3 local = wall.InverseTransformPoint(point);
+                        float dx = Mathf.Max(0f, Mathf.Abs(local.x) - 0.5f) * wall.lossyScale.x;
+                        float dz = Mathf.Max(0f, Mathf.Abs(local.z) - 0.5f) * wall.lossyScale.z;
+                        bool overlaps = dx * dx + dz * dz < 0.7f * 0.7f;
+                        Assert.IsFalse(overlaps, path.name + " intersects " + building.name);
+                    }
+                }
+            }
+        }
+
+        [Test]
+        public void CabinLogs_LeaveDoorwayVisible()
+        {
+            foreach (Transform part in GameObject.Find("Village").GetComponentsInChildren<Transform>())
+            {
+                if (!part.name.StartsWith("FrontLog")) continue;
+                Assert.GreaterOrEqual(Mathf.Abs(part.localPosition.x) - part.localScale.y, 0.5f,
+                    "문 정면을 가로 통나무가 덮으면 안 된다");
+            }
+        }
+
         private InteractionPointDef Find(string id)
         {
             foreach (InteractionPointDef p in result.interactions)

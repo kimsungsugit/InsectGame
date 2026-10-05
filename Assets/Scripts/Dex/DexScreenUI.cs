@@ -14,6 +14,7 @@ namespace InsectGame.Dex
         private float previewAngle = 150f; // 도감 곤충 프리뷰 Y회전(좌우 버튼으로 시점 변경)
         private bool previewShiny;         // 이로치(색다른 모습) 프리뷰 토글
         [SerializeField] private PlayerInsectCollection insectCollection;
+        [SerializeField] private CollectionUI collectionUI;
         [SerializeField] private PlayerItemInventory itemInventory;
         // 아이템 표시명·설명 폴백(LookupItem) — 아래 switch에 없는 아이템을 생 ID로 뿌리지 않게.
         [SerializeField] private ItemDatabase itemDatabase;
@@ -495,7 +496,10 @@ namespace InsectGame.Dex
 
             // 세이프에어리어 + 세로 마진을 뺀 전체 콘텐츠 영역(도감은 전체화면이라 여기가 곧 패널).
             Rect safeRect = UISafeLayout.Content;
+            bool previousEnabled = GUI.enabled;
+            GUI.enabled = previousEnabled && !detailModalOpen;
             float topBarH = DrawTopBar(safeRect);
+            GUI.enabled = previousEnabled;
             Rect contentRect = new Rect(
                 safeRect.x + 10f,
                 safeRect.y + topBarH + 10f,
@@ -587,7 +591,10 @@ namespace InsectGame.Dex
         {
             // 좌우 분할(좌 34% 목록 + 우 상세)을 버리고 전체 폭 그리드 하나만 그린다.
             // 상세는 그 위에 중앙 모달로 겹친다 — 가로/세로가 같은 경로를 탄다.
+            bool previousEnabled = GUI.enabled;
+            GUI.enabled = previousEnabled && !detailModalOpen;
             DrawDexGrid(contentRect);
+            GUI.enabled = previousEnabled;
 
             if (detailModalOpen
                 && selectedIndex >= 0
@@ -766,19 +773,19 @@ namespace InsectGame.Dex
             float panelH = UISafeLayout.ClampHeight(UIScale.IsPortrait ? 1500f : 920f);
             Rect panelRect = UISafeLayout.CenteredPanel(panelW, panelH);
 
-            // 딤 클릭 → 닫기. 패널 자체에도 투명 버튼을 겹쳐 깔아(아래 흡수 버튼)
-            // 패널 빈 곳 클릭이 여기까지 새지 않게 한다. IMGUI는 나중에 그린 쪽이 이긴다.
-            if (GUI.Button(
-                new Rect(0f, 0f, UIScale.VirtualScreenWidth, UIScale.VirtualScreenHeight),
-                string.Empty, GUIStyle.none))
+            // 패널 밖 클릭만 닫는다. 화면 전체/패널 전체에 GUI.Button을 깔면
+            // IMGUI의 첫 번째 컨트롤이 hotControl을 선점해 내부 버튼이 눌리지 않는다.
+            Event evt = Event.current;
+            if (evt != null && evt.type == EventType.MouseDown && evt.button == 0
+                && !panelRect.Contains(UIScale.VirtualMousePosition))
             {
                 detailModalOpen = false;
                 ScrollToSelected();
+                evt.Use();
                 return;
             }
 
             DrawRoundedCard(panelRect, DetailBg, CardBorderCol);
-            GUI.Button(panelRect, string.Empty, GUIStyle.none);   // 클릭 흡수 (반환값 의도적 무시)
 
             float navHeight = 74f;
             float navBtnH = Mathf.Max(UIScale.MinTouchHeight, 58f);
@@ -841,6 +848,9 @@ namespace InsectGame.Dex
             }
 
             float height = caught ? 1110f : 830f;
+            // Portrait stacks the model above a full-width information column.
+            if (caught && UIScale.IsPortrait)
+                height += 360f;
             if (string.IsNullOrEmpty(insect.habitatHint))
             {
                 height -= 100f;
@@ -852,17 +862,7 @@ namespace InsectGame.Dex
             return height;
         }
 
-        private string GetRarityLabel(InsectRarity rarity)
-        {
-            switch (rarity)
-            {
-                case InsectRarity.Uncommon: return "고급";
-                case InsectRarity.Rare: return "희귀";
-                case InsectRarity.Epic: return "영웅";
-                case InsectRarity.Legendary: return "전설";
-                default: return "일반";
-            }
-        }
+        private static string GetRarityLabel(InsectRarity rarity) => rarity.Korean();
 
         private void DrawElementBadges(
             Rect area,
@@ -946,10 +946,10 @@ namespace InsectGame.Dex
                 // 곤충 3D 프리뷰를 좌측에 크게(세로 가득), 텍스트는 우측 컬럼으로 재배치.
                 // 가로 공간(detailW ~1400px)이 대부분 낭비되던 것을 활용 → 이미지 대형화, 폰트 크기는 불변.
                 float rightEdge = x + w;
-                // 절대 상한(380) 추가 — w는 상세 패널 전체 폭(~1400px)이라 비율만으론 패널 따라 계속 커짐.
+                // 절대 상한(480) 추가 — w는 상세 패널 전체 폭(~1400px)이라 비율만으론 패널 따라 계속 커짐.
                 // 2-인자 Min 중첩(3-인자는 params float[] 할당 — OnGUI 핫패스 회피).
-                float previewSz = Mathf.Min(Mathf.Min(h - 30f, w * 0.42f), 380f);
-                float boxX = x + 10f;
+                float previewSz = Mathf.Min(Mathf.Min(h - 30f, w * 0.44f), 480f);
+                float boxX = UIScale.IsPortrait ? x + (w - previewSz) * 0.5f : x + 10f;
                 float boxY = y + 20f;
 
                 Color portBg = rarityCol;
@@ -994,14 +994,25 @@ namespace InsectGame.Dex
                     previewShiny = !previewShiny;
                 if (ownsShiny)
                     GUI.Label(
-                        new Rect(boxX, boxY + previewSz - 112f, previewSz, LineH(caughtSCache)),
+                        new Rect(boxX, boxY + previewSz + 8f, previewSz, LineH(caughtSCache)),
                         "★ 색다른 개체 보유 중", caughtSCache);
 
-                // 이후 모든 텍스트는 우측 컬럼에 그림 — x/w/cx/py만 재배치(폰트 스타일 불변).
-                x = boxX + previewSz + 30f;
-                w = rightEdge - x - 10f;
-                cx = x + w / 2f;
-                py = y + 20f;
+                if (UIScale.IsPortrait)
+                {
+                    // 세로 화면은 두 열로 나누면 긴 한국어와 수치가 잘린다.
+                    // 모델 아래의 전체 폭을 정보에 사용하고 스크롤 높이를 위에서 늘린다.
+                    x += 20f;
+                    w = rightEdge - x - 10f;
+                    cx = x + w / 2f;
+                    py = boxY + previewSz + (ownsShiny ? 72f : 24f);
+                }
+                else
+                {
+                    x = boxX + previewSz + 30f;
+                    w = rightEdge - x - 10f;
+                    cx = x + w / 2f;
+                    py = y + 20f;
+                }
             }
             else if (found)
             {
@@ -1076,7 +1087,7 @@ namespace InsectGame.Dex
             float infoBoxX = x + 20;
             float infoBoxW = w - 40;
             DrawRoundedCard(
-                new Rect(infoBoxX, py, infoBoxW, caught ? 396 : 120),
+                new Rect(infoBoxX, py, infoBoxW, caught ? 436 : 120),
                 InfoBoxBg,
                 CardBorderCol);
 
@@ -1122,9 +1133,10 @@ namespace InsectGame.Dex
             if (!string.IsNullOrEmpty(ins.habitatHint))
             {
                 py += 10;
-                GUI.Label(new Rect(infoBoxX + 16, py, 90, 40), "서식지", habitatLabelCache);
+                // 라벨 폭 128 — 90일 때 32pt "서식지"의 마지막 글자가 잘려 "서식"으로 보였다(데스크톱·세로 둘 다).
+                UIHelper.LabelFit(new Rect(infoBoxX + 16, py, 128, 44), "서식지", habitatLabelCache);
                 // 값 라벨 높이 확대(40→84) + wordWrap으로 긴 서식지 설명이 여러 줄로 온전히 표시.
-                GUI.Label(new Rect(infoBoxX + 110, py, lw - 110, 84), ins.habitatHint, habitatValCache);
+                GUI.Label(new Rect(infoBoxX + 150, py, lw - 150, 84), ins.habitatHint, habitatValCache);
                 py += 92;
             }
 
@@ -1227,24 +1239,25 @@ namespace InsectGame.Dex
             {
                 // 보유 곤충은 전부 포획 완료라 감쇠가 없다 — 여기 있던 `ic`도 그리드 타일과 같은
                 // "계산만 하고 못 넘기는 색"이었고, 이쪽은 넘길 곳조차 없어 그냥 죽은 지역 변수였다.
-                DrawRoundedRect(new Rect(x + 20f, y + 40f, 74f, 94f), DetailUnknownBg);
-                InsectVisual.Draw(x + 57f, y + h / 2f + 4, 78f, data, pid != null && pid.isShiny, 1f);
+                // 틀을 키운다 — 74×94에 78px 모델이라 곤충이 카드 안에서 성냥갑만 했다(2026-09-30 검수 캡처).
+                DrawRoundedRect(new Rect(x + 22f, y + (h - 112f) / 2f, 96f, 112f), Color.Lerp(DetailUnknownBg, rc, 0.14f));
+                InsectVisual.Draw(x + 70f, y + h / 2f, 100f, data, pid != null && pid.isShiny, 1f);
             }
 
             string name = data != null ? data.displayName : pid.insectId;
             ownedNameCache.normal.textColor = rc;
             // 이름 폭은 우측 등급 컬럼(x+w-90) 앞까지로 제한 — 겹침 방지.
             // 좁아진 그 폭에 데이터가 정하는 이름을 넣으므로 LabelFit으로 줄여 맞춘다(ui-layout.md).
-            UIHelper.LabelFit(new Rect(x + 108, y + 12, w - 204, 52), name, ownedNameCache);
+            UIHelper.LabelFit(new Rect(x + 130, y + 12, w - 226, 52), name, ownedNameCache);
 
             string rStr = data != null ? GetRarityLabel(data.rarity) : "?";
             // IV%는 우하단(x+w-90, y+82)과 아래 IV 상세줄에 이미 표시되므로 중간줄에선 생략 —
             // 폰트 확대(→34) + 좁은 폭(w-176≈269px)에 "Lv | 등급 | IV%"를 넣으면 뒤가 잘리던 회귀 차단.
-            GUI.Label(new Rect(x + 108, y + 70, w - 204, LineH(ownedInfoCache)),
+            GUI.Label(new Rect(x + 130, y + 70, w - 226, LineH(ownedInfoCache)),
                 $"Lv.{pid.level}  |  {rStr}", ownedInfoCache);
 
-            GUI.Label(new Rect(x + 108, y + 126, w - 132, LineH(ownedStCache)),
-                $"HP:{pid.ivHp}  ATK:{pid.ivAtk}  DEF:{pid.ivDef}", ownedStCache);
+            UIHelper.LabelFit(new Rect(x + 130, y + 126, Mathf.Max(1f, w - 308f), LineH(ownedStCache)),
+                $"IV {pid.ivHp}/{pid.ivAtk}/{pid.ivDef}", ownedStCache);
 
             Color gc = UITheme.Instance.GetGradeColor(pid.Grade);
             ownedGrCache.normal.textColor = gc;
@@ -1256,6 +1269,24 @@ namespace InsectGame.Dex
             ownedPctCache.normal.textColor = pctCol;
             GUI.Label(new Rect(x + w - 90, y + 82, 80, LineH(ownedPctCache)),
                 $"{pid.IVPercent * 100:0}%", ownedPctCache);
+
+            // 같은 종을 여러 마리 보유할 수 있으므로 종ID가 아닌 개체 고유ID로 연다.
+            Rect detailButton = new Rect(x + w - 166f, y + h - 62f, 150f, 54f);
+            if (DrawCuteButton(detailButton, "개체 정보", NavButtonBg, navButtonStyleCache)
+                && collectionUI != null
+                && collectionUI.OpenDetailForInstance(pid.instanceId))
+            {
+                CloseModal();
+            }
+
+            Rect cardHit = new Rect(x, y, w, h);
+            if (GUI.Button(cardHit, string.Empty, GUIStyle.none)
+                && !ownedDirectScroll.IsDragging
+                && collectionUI != null
+                && collectionUI.OpenDetailForInstance(pid.instanceId))
+            {
+                CloseModal();
+            }
         }
 
         private void DrawItems(Rect contentRect)
@@ -1625,6 +1656,11 @@ namespace InsectGame.Dex
         {
             if (insectCollection == null) insectCollection = col;
             if (itemInventory == null) itemInventory = items;
+        }
+
+        public void AutoWire(CollectionUI collection)
+        {
+            if (collectionUI == null) collectionUI = collection;
         }
 
         public void AutoWire(InsectModelPreviewRenderer pr)

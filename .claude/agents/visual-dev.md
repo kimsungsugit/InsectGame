@@ -1,4 +1,4 @@
----
+﻿---
 name: visual-dev
 description: 3D 씬 비주얼과 연출 담당 — 프로시저럴 메시 빌더(InsectEntity.BuildModel, PlayerVisualBuilder, RegionTerrainBuilder, SubAreaWorldBuilder), Material·셰이더·색상 팔레트, 파티클과 이펙트, 애니메이션 보간(HP바, 쉐이크, AOE). 어떻게 보이는가(모양·색·움직임)가 문제일 때 PROACTIVELY 위임. 예 - 곤충 모델이 점토처럼 보인다 / 지형이 하늘에 떠 있다 / 레어도 색이 안 맞는다 / 유나이트 이펙트가 안 나온다. UI의 Rect 좌표·레이아웃·화면 전환은 ui-dev 영역이므로 손대지 않는다.
 tools:
@@ -21,8 +21,34 @@ OnGUI의 Rect 좌표와 레이아웃은 **ui-dev 영역**입니다. 여기서는
 
 ### 프로시저럴 비주얼/오디오
 - `Assets/Scripts/Spawning/InsectEntity.cs` - 프로시저럴 곤충 모델 (30+ 종) ※스폰 로직은 capture-dev
+- `Assets/Scripts/Spawning/InsectSculptureMeshes.cs` - 캐시된 곤충 뿔·턱·외골격·날개 커스텀 메시
+- `Assets/Tests/EditMode/InsectSculptureMeshTests.cs` - 곤충 메시 폐곡면·와인딩·유한 좌표·캐시 검증
 - `Assets/Scripts/Battle/BattleArenaController.cs` - 배틀 아레나 환경 구축
+- `Assets/Scripts/Battle/BattleArenaController.Impact.cs` - 타격감 partial: 히트스톱·넉백·피격 섬광(PropertyBlock)·임팩트 버스트·외침 목록·연출 카메라 구동 ※반투명·빛 이펙트 머티리얼은 `CreateFxMaterial`이 단일 출처(Standard Fade는 빌드에서 불투명으로 그려진다)
+- `Assets/Scripts/Battle/BattleArenaController.Raid.cs` - 레이드 3D 연출 partial: 합체공격(차례 돌진·합동 일격), 팀원 한 마리 공격, 보스 공격 예고·보스 공격
+- `Assets/Scripts/Battle/BattleArenaController.Staging.cs` - 이야기 전투 등장·변신 partial: 상대 교체 등장(`PlayEnemySwitchIn` — 빛살·도약·착지 먼지), 그림자 변신(`PlayBossTransform` — 모델 교체는 연기가 가장 짙은 한가운데), 수문장 등장 컷(`PlayGuardianIntro`), 모습을 빌리는 보스의 그림자 모습(PropertyBlock 톤·뒤집힌 껍질 테두리·눈빛·김) ※연출은 한 번에 하나 — 다른 연출의 시작점이 `CompleteStagingNow`로 끝 상태에 접는다. 몸 색은 PropertyBlock, 빛·연기는 `CreateFxMaterial`뿐이라 Standard 변형(`BuildKeepers`)에 기대지 않는다
+- `Assets/Scripts/Battle/BattleArenaController.Life.cs` - 살아 있는 몸 partial: 대기 숨쉬기(배·몸통·마디 크기 + 더듬이 까딱 — 모델 루트는 안 건드린다), 상태이상·강화 몸 표시(독 거품·기절 별·공격 강화 불꽃결·방어 강화 육각 막·약화 내려가는 결), 회복 초록 반짝임 ※원천은 컨트롤러를 0.12초마다 읽는다(1대1 `PlayerStunTurns`·`GetActiveEffects`, 레이드 스택·건너뛴 보스 응답) — HP 카드 상태 줄과 같은 원천·규칙. 표시는 모델 밖(아레나 루트 아래)에 두고 몸을 따라간다. 머티리얼은 `CreateFxMaterial` 종류당 한 벌 + PropertyBlock 알파
+- `Assets/Scripts/Battle/BattleArenaController.Flourish.cs` - 전투 체감 partial: 전용기(시전자 클로즈업 컷인 → 기 모으기 → 속성 큰 이펙트 세 겹·조각 폭발 — 판정은 부르는 쪽 `HitCue.Signature`), 사마귀 칼날 궤적, 승리(1대1 포즈 + 카메라 반 바퀴 / 레이드 팀 점프 + 팀 샷), 전투 진입 샷 ※ui-dev가 읽는 공개 값: `IsSignaturePlaying`·`IsSignatureCutIn`·`SignatureCutInProgress`·`IsVictoryPlaying`·`VictoryFinished`·`IsOpeningPlaying`
+- `Assets/Scripts/Battle/BattleFlourish.cs` - 전투 체감 순수 규칙: 전용기 컷인 시각표(`SignatureCutInStart`~`SignatureCutInEnd`), 승리 포즈·길이(`VictorySeconds` 실제 초), 진입 샷 길이(`OpeningShotSeconds` 실제 초 — 1대1 진입 구간 `BattleReadPacing.EntryIntroSeconds` 안), 숨쉬기·더듬이 곡선
+- `Assets/Scripts/Battle/BattleStatusLook.cs` - 몸 상태 표시의 순수 규칙: 컨트롤러 상태 → `BattleStatusFlags`(1대1 효과 목록·레이드 스택·보스 기절), 상태 색, 거품·결·막 곡선
+- `Assets/Tests/EditMode/BattleFlourishTests.cs` - 계열 분류(진짜 곤충 ID)·계열 몸짓 타격 시각·전용기 컷인이 타격 전에 끝나는지·전용기/승리/진입 샷 첫·끝 프레임·상태 판정·숨쉬기 범위 검증
+- `Assets/Tests/EditMode/BattleMotionTests.cs` - 계열 몸짓 곡선(예비 동작·복귀·실루엣 구별)
+- `Assets/Scripts/Battle/BattleStaging.cs` - 등장·변신 연출의 순수 규칙(교체 등장·그림자 변신 진행률 시각표, 도약·착지·움츠림 곡선, 그림자 색, 수문장 샷 끝 자리·출발 자리) ※수문장 인트로 길이 `GuardianIntroSeconds`의 단일 출처 — `RaidBattleUI`가 읽는다
+- `Assets/Scripts/Battle/BattleCameraDirector.cs` - 스킬 타임라인 → 연출 카메라 샷(시네마틱·펀치·합체공격·상대 등장·그림자 변신·수문장 등장) 순수 계산 ※1v1 기본은 시네마틱(2026-09-28 A/B 비교 후 결정)
+- `Assets/Scripts/Battle/BattleShout.cs` - 외침 문구 표(기술명·비명·의성어)와 종 계열 울음 분류(ID 토막 단위) ※문구 톤은 game-designer와 상의
+- `Assets/Scripts/Battle/RaidUniteTimeline.cs` - 합체공격 타임라인 단일 출처 — 아레나 돌진·타격과 UI 슬롯 숫자·TOTAL이 공유
+- `Assets/Tests/EditMode/BattleImpactFeelTests.cs` - 연출 카메라 샷·히트스톱 시계·외침 분류·타격 세기·합체공격 타임라인 검증
+- `Assets/Tests/EditMode/BattleStagingTests.cs` - 등장·변신 시각표가 화면 단계 안에서 끝나는지, 샷 첫·끝 프레임, 수문장이 화면 위쪽 2/3에 서는지(화면비 4종), 그림자 색 검증
+- `Assets/Scripts/Battle/ForestBattleSet.cs` - 머티리얼별 병합 숲 공터 아레나 메시
+- `Assets/Scripts/Battle/BattleMotion.cs` - 계열별 전투 몸짓 곡선 — 사마귀 두 번 베기·딱정벌레 머리 숙여 돌진·나는 종 내리꽂기·벌 찌르기·지네·거미 덮치기·그 밖 돌진, 원거리 시전도 계열별 ※계열 판정(`FamilyOf`)은 `InsectEntity.BuildModel`의 분기 순서를 따른다. 타격 진행률은 `ImpactOf`(찌르기 0.36, 나머지 0.4) — 1대1은 그 순간 `onImpact`가 숫자를 띄우고, 레이드 볼리는 0.46초(`RaidVolleyImpactSeconds`) 안에 곡선을 눌러 담는다
+- `Assets/Scripts/Battle/BattleFraming.cs` - 모델 경계·안전 영역 기반 전투 카메라 프레이밍
+- `Assets/Scripts/Core/BattlePresentation.cs` - 전투 표시 배속·움직임·섬광 설정
+- `Assets/Tests/EditMode/BattleFramingTests.cs` - 화면 비율·모델 크기별 프레이밍 검증
 - `Assets/Scripts/Core/ProceduralAudioGenerator.cs` - 프로시저럴 오디오
+- `Assets/Scripts/Core/ProceduralAudioGenerator.Battle.cs` - 곤충 계열 울음·비명(`cry_*`/`hurt_*`)과 층 타격음 합성 ※폰 스피커 대역(300Hz~6kHz)에 에너지가 있어야 기기에서 들린다
+- `Assets/Scripts/Core/ProceduralAudioGenerator.Music.cs` - 전투 계열 곡 6곡(1대1·라온 대결·수문장·레이드·간부·최종전)의 작곡과 합성 — 음표 사건 악보 → 음마다 한 번 합성, 22.05kHz 모노, 48~60초 정수 마디, 곡 끝 여운·잔향을 첫머리에 감아 루프 이음매 없음, 300Hz 위 대역 RMS로 음량 맞춤 ※선율 문자열은 마디마다 4박을 검사해 틀리면 예외(테스트가 전곡을 합성하므로 바로 잡힌다). 새 곡은 `CombatSongKeys`·`ComposeCombatSong`·`GetBGM`의 전투 case 세 곳 + `AudioManager` 4지점. 합성은 순수 계산이라 작업 스레드에서 돈다 — 1대1 곡은 첫 탐험 곡 때 미리 굽고, 다른 곡은 `PrewarmBGM(key)`를 부르는 쪽이 정한다(곡당 4~5MB를 쥐므로 곧 쓸 때만)
+- `Assets/Tests/EditMode/CombatMusicTests.cs` - 전투 곡 등록 4지점(키·긴장 램프·작곡기 경로·GetBGM case), 정수 마디 45~64초, 클리핑·리미터 무릎, 폰 대역 에너지 비율(≥20%, 예전 보스 곡 8%), 루프 이음매, 작업 스레드 합성 결정성
+- `Assets/Editor/BattleVoiceExport.cs` - 전투 목소리를 WAV로 추출 — 소리는 화면 캡처로 못 보므로 귀로 검수
 - `Assets/Scripts/Core/AudioManager.cs` - 오디오 매니저 (싱글턴)
 - `Assets/Scripts/Core/UIAudioBinder.cs` - UI 버튼 자동 hover/click 사운드 부착
 - `Assets/Scripts/Data/ItemRarityPalette.cs` - 레어도별 색상 ※data-architect 공유
@@ -30,18 +56,39 @@ OnGUI의 Rect 좌표와 레이아웃은 **ui-dev 영역**입니다. 여기서는
 - `Assets/Scripts/Dex/InsectModelPreviewRenderer.cs` - 도감/상세용 곤충 모델 프리뷰 렌더 ※화면 배치는 ui-dev
 
 ### 환경 비주얼
-- `Assets/Scripts/Core/SubAreaEnvironment.cs` - 서브에리어 환경 전환 (조명, 안개, 앰비언트)
+- `Assets/Scripts/Core/SubAreaEnvironment.cs` - 서브에리어 환경 전환 (조명, 안개, 앰비언트) + 그 위에 낮·밤·날씨 하늘 보정 ※전환 보간은 "기본 상태(보정 전)"만 만들고 `WriteFinal`이 하늘을 얹어 쓴다 — 스냅샷을 RenderSettings에서 뜨면 이중 적용. 보정은 메인 필드·나의 섬만(동굴·꿈 제외)
+- `Assets/Scripts/Core/WorldSkyRules.cs` - 낮·밤·날씨 하늘의 순수 규칙(시각 키프레임·날씨 등급·달빛·환경광 밝기 바닥·안개 가산) ※정오 맑음 = 기본 상태 그대로가 기준
+- `Assets/Scripts/Core/WorldSkyVisuals.cs` - 스카이박스 머티리얼 복제본(노출·땅색)과 밤별 돔, 흐린 날 연무 돔(안개색·지평선 쪽 짙은 세로 알파 — 큐 별 2501 → 연무 2502), 하늘·날씨 입자용 `Sprites/Default` 재료(`SkyFx`) ※대기 두께는 건드리지 말 것 — 올리면 흐린 날 지평선이 노을처럼 주황이 된다(테스트가 소스로 막는다)
+- `Assets/Scripts/Core/WeatherEffects.cs` - 날씨 입자(비·눈·센바람) — 카메라를 따라다니는 방출기, 지역 기준 날씨(`WeatherForecast.EffectiveIn`)와 `Blend01`에 맞춰 방출량 조절 ※필드·섬에서만, 모바일 절반
+- `Assets/Tests/EditMode/WorldSkyRulesTests.cs` - 하늘 규칙 검증(정오 항등·낮 곡선 연속성·밤 가시성 바닥·안개 날씨 11m 투과율·날씨 전환 양끝)
 - `Assets/Scripts/Core/WorldTerrainBuilder.cs` - 월드 지형 생성 (절벽, 강, 다리, 경사면)
 - `Assets/Scripts/Core/SubAreaWorldBuilder.cs` - 서브에리어 프로시저럴 던전/환경 생성
 - `Assets/Scripts/Core/RegionTerrainBuilder.cs` - 리전별 필드 지형 생성 (언덕, 길, 바위, 나무)
+- `Assets/Scripts/Core/WorldBackdropBuilder.cs` - 원경(월드 둘레 산맥·뭉게구름) — 리전·길을 피해 바깥으로 훑어 배치, 산 모양은 가장 가까운 리전을 따른다
+- `Assets/Scripts/Core/RegionPalette.cs` - 리전 바닥색·얼룩 톤의 단일 출처(부트스트랩 바닥 평면 + RegionDressingBuilder) ※감마 반사율, 0.8 넘으면 하얗게 날아간다
+- `Assets/Scripts/Core/RegionAtmosphere.cs` - 리전별 햇빛 색·세기·환경광·Exp2 연무(원경 공기원근) ※11m 투과율 98% 상한(MaxFogDensity), 안개 날씨는 85%(필드)·80%(섬) 상한(MaxWeatherFogDensity*)
+- `Assets/Scripts/Core/SceneryBatcher.cs` - 콜라이더 없는 장식 소품을 칸×색 단위 메시로 합치는 배처(드로우콜·컬링)
+- `Assets/Scripts/Core/RegionDressingBuilder.cs` - 리전 표면 장식(바닥 얼룩·발밑 디테일·호수·울타리 밖 테두리) ※콜라이더 없음, 남쪽 테두리 키 제한(카메라 차폐), 마을·전초기지가 지어진 뒤 Start에서 빌드
+- `Assets/Scripts/Core/SubAreaGateBuilder.cs` - 필드 쪽 서브에리어 테마 입구 표식 ※여기 등록한 ID는 부트스트랩 CreateSubAreaEntries가 건너뛴다
+- `Assets/Scripts/Core/SubAreaWorldBuilder.Themes.cs` - 같은 environmentType을 공유하는 서브에리어의 subAreaId별 변주(동굴 7테마·개미귀신 구덩이·빈칸·가장 높은 가지 등) ※방 크기는 원래 빌더와 같게(story_lint 21)
+- `Assets/Scripts/Core/SceneryMaterials.cs` - 월드 소품 머티리얼의 단일 출처 — 셰이더 폴백(`LitShader`·`Create`), 무광·발광 마감, 반투명(`MakeFade`), 배처 캐시 키(`SceneryMaterialKey`: 색+표면 종류) ※부위별 광택을 따로 주는 곳(곤충 키틴·플레이어 옷·의상 spawn 파츠 — `CharacterPalette.ApplySurface`)은 `Create` 대신 `LitShader`만 빌린다. 오염 거점(`BlightVfx.Mat`)·전투 아레나(`CreateSafeMaterial`)는 2026-09-29 광택 통일로 `Create`(무광)를 쓰고, 금속·물처럼 광택이 제 질감인 스킬 파츠만 `CreateSheenMaterial`로 가른다. 전투 이펙트 반투명·가산은 `BattleArenaController.CreateFxMaterial`(FX 셰이더)이 따로 맡는다. **Standard의 반투명·발광 변형은 `BuildKeepers`(Resources 머티리얼 4벌)가 빌드에 남긴다** — 그게 없던 시절 플레이어 빌드에서 반투명이 불투명, 발광이 무발광으로 그려졌다(2026-09-29 QA 빌드 실측). **Standard를 Always Included Shaders에 다시 넣지 말 것** — 그 목록의 셰이더는 머티리얼 키워드를 안 봐서 이 방법이 무력해진다. 런타임에 새 Standard 키워드 조합을 켜면 `BuildKeepers`에 한 줄 추가 후 `ShaderVariantKeepers.Ensure`
+- `Assets/Scripts/Core/FieldGround.cs` - 필드 둔덕(사구·재 더미·이끼 둔덕)의 윗면 높이 조회(`SurfaceY`·`LiftAt`) — 둔덕엔 콜라이더가 없어 곤충 스폰·플레이어 접지가 이걸로 올라탄다 ※`RegionTerrainBuilder.PlaceMound`/`RegisterDome`가 등록, 빌드 시작·OnDestroy에서 비운다
+- `Assets/Scripts/Core/IslandObjectBuilder.cs` - 섬 물건 28종 프로시저럴 모델(카탈로그 id ↔ switch, 차지 칸 안에 들어와야 함)
+- `Assets/Scripts/Core/IslandTerrainBuilder.cs` - 섬 땅·모래톱·바다·나루터 모양(콜라이더 없음 — 접지·경계는 IslandWorldBuilder)
+- `Assets/Editor/IslandModelCapture.cs` - 섬 지형·물건 배치모드 캡처 도구
+- `Assets/Scripts/Core/IslandMaterialCache.cs` - 섬 머티리얼 캐시(같은 색 = 같은 머티리얼, 불투명·반투명·발광) — 섬의 유일한 머티리얼 생성 경로
 
 ### 캐릭터/의상 비주얼
-- `Assets/Editor/OutfitRenderProbe.cs` - 의상을 입힌 마네킹을 3D 리그로 직접 촬영해 spawn/bind 파츠가 실제로 그려지는지 확인 ※IMGUI를 안 거치므로 배치모드로 돈다
+- `Assets/Editor/OutfitRenderProbe.cs` - 의상을 입힌 마네킹을 3D 리그로 직접 촬영해 spawn/bind 파츠가 실제로 그려지는지 확인 ※IMGUI를 안 거치므로 배치모드로 돈다. `-outfitAll`(카탈로그 전량 × 앞/뒤)·`-outfitLooks`(성별×머리·얼굴·피부·머리색)는 판정 없는 전후 비교용 갤러리
 - `Assets/Scripts/Core/CharacterFaceAnimator.cs` - 눈 깜빡임·표정 전환 ※걷기(PlayerMovement.AnimateWalk)와 직교한 별도 컴포넌트로 유지할 것. 눈 스케일은 base에 대입(곱셈 누적 금지)
 - `Assets/Scripts/Core/ProcMeshLibrary.cs` - 캐릭터용 프로시저럴 메시 생성기(Disc/LowSphere/RoundedBox/TaperedCapsule/Diamond) + 프로세스 수명 정적 캐시 ※bind 가능 노드(Cap·NetHandle 등)에는 쓰지 말 것 — ApplyBound가 sharedMesh·localScale을 덮어쓴다
 - `Assets/Scripts/Core/CharacterPalette.cs` - 피부·머리 색 팔레트와 부위별 PBR 재질(SurfaceKind)의 단일 출처. 3D 캐릭터·마네킹·2D 초상·NPC가 전부 여기를 읽는다 ※인덱스 순서는 세이브가 가리키므로 바꾸지 말 것
 - `Assets/Scripts/Core/CharacterOutfitManager.cs` - 의상 관리
-- `Assets/Scripts/Core/OutfitShapeLibrary.cs` - 의상 파츠 레시피(itemId → OutfitPart[]) 형태의 단일 출처 ※스키마·앵커 확장은 data-architect 공유
+- `Assets/Scripts/Core/OutfitShapeLibrary.cs` - 의상 파츠 레시피(itemId → OutfitPart[]) 형태의 단일 출처 ※스키마·앵커 확장은 data-architect 공유. spawn 파츠 재질은 슬롯 기본(천·가죽) + `SurfaceOverrides`(금속·유리·가죽 아이템, 색 역할 단위). 2026-09-30: 파츠별 앵커(`hasAnchor`/`anchor` — Body·LegL·LegR, `OP_{슬롯}_{앵커}` 컨테이너)와 메시 모양(`PartShape` — 둥근 상자·캡슐·늘어진 천·토러스·보석·잠자리채 머리)을 더했다. 몸 노드를 누가 칠할지는 스타일 표(소매·겉옷 형태·반바지·샌들)가 정한다
+- `Assets/Scripts/Core/OutfitPatternLibrary.cs` - 의상 **표면 무늬**(줄무늬·별·거미줄·위장 등) 절차 텍스처의 단일 출처 ※형태는 OutfitShapeLibrary, 무늬는 여기. 표면별(몸통·셔츠 판·소매·다리·신발) UV 규약과 앞/뒤 아틀라스는 `ProcMeshLibrary.FaceUv`·캡슐 UV와 짝이다
+- `Assets/Tests/EditMode/OutfitPatternLibraryTests.cs` - 무늬 표의 키·슬롯·표면 정합, 결정성, 상의 무늬 상호 구별, 아틀라스 앞/뒤 분리
+- `Assets/Tests/EditMode/CharacterBodyTests.cs` - 캐릭터 본체 계약(어깨 관절 원점·손 쉬는 자리·HairCrown·모자 속 정수리 덮개·표정별 입·얼굴 부품 표면 앞·정점 예산·몸통 부착물)
+- `Assets/Tests/EditMode/OutfitPartSurfaceTests.cs` - 의상 파츠 재질 예외 표의 키 실재·예외 역할 실재·역참조·슬롯 기본 무광 검증
 - `Assets/Scripts/Core/CharacterModelPreviewRenderer.cs` - 의상 미리보기용 3D 마네킹 리그·썸네일 렌더 ※화면 배치는 ui-dev
 - `Assets/Scripts/Core/OutfitBonusProvider.cs` - 의상 보너스
 - `Assets/Scripts/Core/CameraFollower.cs` - 카메라 팔로우
@@ -59,7 +106,15 @@ OnGUI의 Rect 좌표와 레이아웃은 **ui-dev 영역**입니다. 여기서는
 - `Assets/Scripts/NPC/NpcGesture.cs` - NPC 몸짓 정의 + 각도 곡선 순수부(NpcGesturePose)
 - `Assets/Scripts/Core/VillageBuilder.cs` - 마을 프로시저럴 지형/건물
 - `Assets/Scripts/Core/BlightVfx.cs` - 오염 거점 구조물·안개·지면 탈색·정화 붕괴 연출
-- `Assets/Editor/LiveSceneCapture.cs` - 배치모드 실화면 캡처(3D 변경을 눈으로 확인) ※IMGUI는 안 잡힘
+- `Assets/Editor/LiveSceneCapture.cs` - 배치모드 실화면 캡처(3D 변경을 눈으로 확인) ※IMGUI는 안 잡힘. `-captureHour 0~24`·`-captureWeather clear|rain|fog|wind|snow`로 시각·날씨를 붙잡고 찍는다 — 기본은 정오·맑음(전후 비교가 같은 조명이 되게), `natural`이면 게임 그대로, 날씨 입자는 4초 이후
+- `Assets/Editor/ModelDesignCapture.cs` - 대표 곤충·플레이어·성인·아동 NPC의 표준 조명 3면 비교 캡처 ※IMGUI 제외
+- `Assets/Editor/VillageDesignCapture.cs` - 저장과 분리된 마을 건물 고정 구도 전후 캡처
+- `Assets/Editor/WorldMapDesignCapture.cs` - 실제 지형·소품·마을을 함께 생성한 전체 지역 격리 캡처
+- `Assets/Editor/FieldDesignTour.cs` - 실제 PlayScene으로 마을·리전·전초기지·서브에리어·NPC 전원을 한 번에 도는 전후 비교 캡처(`-tourOnly`·`-tourFilter`) ※IMGUI 제외 ※시계·날씨는 정오·맑음으로 붙잡는다(`-tourHour`·`-tourWeather`, `natural`이면 게임 그대로)
+- `Assets/Scripts/UI/WorldMapVisualCapture.cs` - 저장과 분리된 실제 지도/미니맵 IMGUI 촬영 fixture
+- `Assets/Scripts/Story/StoryDialogueCapture.cs` - 저장과 분리된 실제 대화 IMGUI 촬영 fixture
+- `Assets/Scripts/UI/OutfitVisualCapture.cs` - 의상 창·캐시샵·캐릭터 생성 화면의 실제 IMGUI 촬영 fixture(`-battleScenario outfit`) ※의상 소유·장착 PlayerPrefs는 스냅샷으로 복원, 입어보기·필터·확대는 창 상태를 리플렉션으로 주입
+- `Assets/Scripts/UI/BadgeVisualCapture.cs` - 저장과 분리된 실제 배지 획득 연출·배지 케이스 IMGUI 촬영 fixture(`-battleScenario badge`)
 - `Assets/Editor/BlightSiteDebugMenu.cs` - 오염 거점 육안 확인용 에디터 메뉴(이동·정화·초기화)
 
 ## 현재 비주얼 시스템
@@ -102,7 +157,16 @@ Legendary: 금색/주황
 경계 밖 수정이 필요하면 변경하지 말고 메인 모델에 보고하여 적절한 에이전트에 재위임.
 
 ## 설계 원칙
+- `Assets/Scripts/Battle/BattleVisualCapture.cs` — 저장 없는 독립 전투 화면 QA. 전투 연출 검수 인자: `-battleCamStyle off|punch|cinematic`(같은 장면을 카메라만 바꿔 비교), `-captureInterval 0.05`(히트스톱은 0.1초 간격으론 안 잡힌다), `-battleScenario elements`(속성 10종 임팩트 순환) · `raid-unite`(첫 차례에 합체공격) · `team-duel`(집게 팀 대결 — 상대 교체 등장 두 번) · `raid-forms`(이름 없는 사마귀 — 수문장 등장 컷 + 그림자 변신 두 번) · `guardian-intro`(숲의 수문장 등장 컷만) · `status-fx`(내 곤충 기절·공격 강화 + 상대 독·방어 강화를 한 장면에, 「연속 2!」·「기절 N턴」·「-8 독」) · `signature`(전용기 한 번 — 0.05 간격 권장) · `victory`(1대1 승리 포즈·카메라 반 바퀴, 결과 뒤 3.2초) · `species-motions`(사마귀·장수풍뎅이·호랑나비·일벌·왕거미 기본 공격 차례로 — 내 모델만 갈아 세운다), 레이드 승리는 `raid`의 끝 장면. 소리는 캡처되지 않으니 `BattleVoiceExport`로 WAV를 뽑아 듣는다
+- `Assets/Scripts/Battle/RaidVisualCapture.cs` — 실제 레이드 화면 QA
+- `Assets/Editor/BattleVisualCaptureBuilder.cs` — Windows 실제 IMGUI 검수 빌드
+- `Assets/Scripts/Core/SceneryMaterialVisualCapture.cs` — 월드 반투명·발광이 **플레이어 빌드에서** 살아 있는지 수치로 재는 촬영 fixture(`-battleScenario materials`, 줄무늬 벽 앞 구의 (r−b) 편차·발광 휘도차, 안개 Exp2 판 포함, README에 PASS/FAIL)
+- `Assets/Editor/ShaderVariantKeepers.cs` — `SceneryMaterials.BuildKeepers` 조합대로 `Resources/ShaderVariantKeepers/*.mat`을 만들어 Standard 반투명·발광 변형을 빌드에 남긴다(`-executeMethod …ShaderVariantKeepers.Ensure`) + 빌드 로그에 `[ShaderVariants]` 변형 수 보고
+- `Assets/Tests/EditMode/ShaderVariantKeeperTests.cs` — 런타임 키워드 조합이 전부 BuildKeepers에 있고 Resources 머티리얼이 그 키워드를 갖는지
 - 프리팹 없이 코드로 시각물 생성 (프로시저럴 우선)
 - CreatePrimitive 기반이지만 성능 주의 (배틀아레나: 24개 돌 구체)
 - GUI 색상 변경 후 반드시 원래값 복원
 - Screen 비율 기반 반응형 레이아웃
+
+- `Assets/Scripts/Core/WorldRouteLayout.cs` - 필드 길·단일 입구 공유 경로 정책
+- `Assets/Tests/EditMode/WorldRouteLayoutTests.cs` - 지역 입구와 필드 경로 통행 회귀 검사

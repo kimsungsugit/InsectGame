@@ -44,7 +44,7 @@ tools:
 - `Assets/Scripts/Core/PlayerInsectData.cs` - 개별 곤충 인스턴스 데이터
 - `Assets/Scripts/Core/InsectSizeCalculator.cs` - 개체 크기·무게 계산 ※기준값·배율 튜닝은 game-designer
 - `Assets/Scripts/Core/GameConstants.cs` - 전역 상수
-- `Assets/Scripts/Core/CharacterOutfitData.cs` - 의상 데이터 모델
+- `Assets/Scripts/Core/CharacterOutfitData.cs` - 의상 데이터 모델 ※`OutfitPart` 스키마(OutfitShapeLibrary.cs)는 2026-09-30에 `shape`/`shapeArgs`·`hasAnchor`/`anchor`가 늘었다 — 전부 기본값이 기존 동작(Primitive·레시피 앵커)이라 세이브·기존 레시피에 영향 없음
 - `Assets/Scripts/Data/StarterInsectCatalog.cs` - 첫 파트너 곤충 선택지 + PlayerPrefs 오버라이드 ※ResolveChoice의 화이트리스트는 조작 방어다(빼면 임의 곤충을 1레벨에 받는다). 지급은 여전히 ch1_intro 비트가 한다
 - `Assets/Scripts/Data/CharacterAppearanceConfig.cs` - 캐릭터 외형 SO(색 팔레트·프리셋). 선택적 오버라이드이며 에셋이 없는 게 정상 경로 — 코드 폴백을 반드시 유지
 - `Assets/Scripts/Core/CharacterPresetLibrary.cs` - 생성 화면 프리셋의 단일 출처(코드 기본값 + SO 오버라이드) ※인덱스는 Character.OutfitPreset으로 저장되므로 순서 불변
@@ -75,6 +75,17 @@ tools:
 - `Assets/Scripts/Story/StoryBeat.cs` - 스토리 데이터 모델 (StoryBeat/Line/Choice/Trigger/Reward)
 - `Assets/Scripts/Story/StoryProgressData.cs` - 스토리 진행 세이브 모델
 - `Assets/Scripts/Story/CutsceneData.cs` - 컷신 샷 데이터 모델 + 타임라인 순수부(CutsceneTimeline)
+
+### 나의 섬 (세이브·데이터)
+- `Assets/Scripts/Core/IslandData.cs` - 섬 데이터 모델(물건 정의·`IslandSave`·공개용 `IslandSnapshot`) ※수치는 game-designer(`IslandCatalog`)
+- `Assets/Scripts/Core/IslandManager.cs` - 섬 상태·세이브(island.json)·구매·배치·방목·수확·가이드 진행 + 세이브 자가 복구(`IslandSaveRules`) ※가격·생산 수치는 game-designer, 퀘스트 통지 호출부 포함
+- `Assets/Scripts/Core/IslandGrid.cs` - 섬 격자 순수 규칙(차지 칸·경계·겹침·도착 칸 보호·빈 칸)
+- `Assets/Scripts/Core/IslandShareClient.cs` - 섬 공개·방문·좋아요 서버 통신(`socialPvpApi` 액션) + 받은 스냅샷 정리 ※서버는 `functions/island.js`
+- `Assets/Scripts/Core/FirestoreDocParser.cs` - Firestore REST 문서 필드 파서(공백 없는 형식·들여쓰기 형식 둘 다) — `CloudSaveManager` 복원이 쓴다
+- `Assets/Tests/EditMode/IslandGridTests.cs` - 격자 규칙(경계·도착 칸·겹침·옮기기·확장 후 좌표 유효)
+- `Assets/Tests/EditMode/IslandManagerTests.cs` - 섬 상태 흐름(변경 전 정산·수확 소수점 보존·상한·방목 슬롯·유령 id 정리·안내 첫 선물 1회·스냅샷에 instanceId 없음)
+- `Assets/Tests/EditMode/IslandSaveRulesTests.cs` - 섬 세이브 호환(빈 JSON·자가 복구·모르는 id 보존)·방문 스냅샷 정리·안내 단계
+- `Assets/Tests/EditMode/FirestoreDocParserTests.cs` - 클라우드 문서 파서(두 형식·이스케이프·블롭 안 동명 키)
 
 ## 세이브 파일 구조
 | 파일 | 내용 | 서비스 |

@@ -28,6 +28,8 @@ namespace InsectGame.UI
             BossAttack,
             UniteAttack,
             TeamTurnAnnounce,
+            // 보스가 모습을 바꾸는 짧은 단계(입력 없음, BossTransformDuration) — RaidBossForms. TryEnterBossTransform 참조.
+            BossTransform,
             Result
         }
 
@@ -75,9 +77,28 @@ namespace InsectGame.UI
         // 5인 팀이면 3명의 착탄·데미지 숫자와 폭발·TOTAL이 통째로 렌더되지 않았다(아레나 코루틴은
         // 0.42+0.28=0.70s에 끝나 `teamAnimationComplete`가 먼저 서고, 2D 폴백은 아예 즉시 true라
         // 두 경로 모두 정확히 상한에서 이탈한다). 오버레이는 3D 아레나 위에도 그려지므로 공통 문제다.
-        private const float UniteRushMinDuration = 2.5f;
+        // 이제 아레나와 오버레이가 같은 표를 쓴다 — 값은 RaidUniteTimeline.Total(2.5초) 한 곳에서 바꾼다.
+        private const float UniteRushMinDuration = RaidUniteTimeline.Total;
         private const float BossTelegraphDuration = 0.72f;
         private const float BossImpactMinDuration = 0.8f;
+        // 쓰러짐 대기 — 아레나 쓰러짐(BattleArenaController.FaintSeconds 0.6초: 눕고·가라앉고·투명해져 꺼진다)이 다 끝나고
+        // 빈자리가 한 박자(0.15초) 보인 뒤에 다음 전이(결과·다음 차례·팀 턴 배너)로 넘어간다. 1v1의 쓰러짐 대기
+        // (BattleScreenUI.FinishFaintPresentation, 0.7초)와 같은 박자다. 둘 다 연출 시계(BattlePresentation.DeltaTime)로 잰다 —
+        // 마무리 일격의 슬로모션이 쓰러짐을 늦추면 대기도 같이 늘어난다. 예전엔 보스 공격 최소 길이(0.8초)를 빌려 썼다.
+        private const float FaintHoldDuration = BattleArenaController.FaintSeconds + 0.15f;
+        // 인트로 길이(연출 시계 초). 수문장 레이드는 아레나의 등장 컷(올려다보며 다가가기 → 포효 → 원래 구도)만큼 0.6초 길다 —
+        // 그 길이의 단일 출처는 BattleStaging.GuardianIntroSeconds다. 등장 배너(ui-dev)도 이 동안 그린다.
+        private const float RaidIntroSeconds = 2f;
+        private float IntroSeconds => raidController != null && !string.IsNullOrEmpty(raidController.BossGuardianRegionId)
+            ? BattleStaging.GuardianIntroSeconds
+            : RaidIntroSeconds;
+
+        // ── 쓰러짐 대기 ──
+        // 행동은 커맨드 순간에 해결돼 HP 0이 먼저 정해지지만, 쓰러지는 모습은 공격 연출이 끝난 뒤에 보여야 한다.
+        // 연출 한 단계(팀원 공격·합체공격·보스 공격)가 끝나는 자리에서 한 번 쓸고(faintSwept), 누가 쓰러지기 시작했으면
+        // 그동안(faintHoldTimer) 다음 전이 — 결과(RAID CLEAR/FAILED)·다음 차례·팀 턴 배너 — 를 미룬다.
+        private bool faintSwept;
+        private float faintHoldTimer;
 
         private float displayBossHp;
         private float[] displayTeamHp;
@@ -130,9 +151,8 @@ namespace InsectGame.UI
                 raidController.RaidTeamRushResolved -= OnRaidTeamRushResolved;
                 raidController.RaidBossResponseResolved -= OnRaidBossResponseResolved;
                 raidController.RaidRoundCompleted -= OnRaidRoundCompleted;
+                raidController.BossFormChanged -= OnRaidBossFormChanged;
             }
-            // timeScale 안전 복구 (다른 시스템이 변경한 채 종료된 경우 대비)
-            if (Time.timeScale < 0.99f) Time.timeScale = 1f;
         }
 
         private void OnRaidUpdated()
@@ -158,9 +178,15 @@ namespace InsectGame.UI
                 bossAnimationComplete = false;
                 bossResponseRequested = false;
                 presentationCompletionRequested = false;
+                faintSwept = false;
+                faintHoldTimer = 0f;
+                bossFormPending = false;
+                pendingBossTransform = null;
+                activeBossTransform = null;
                 if (AudioManager.Instance != null)
                 {
-                    AudioManager.Instance.PlayBGM(BgmType.RaidBattle);
+                    // 수문장 레이드면 수문장 곡(BossGuardianRegionId는 StartRaid가 RaidUpdated 전에 세운 스냅샷이다).
+                    AudioManager.Instance.PlayBGM(BattleMusic.Raid(raidController.BossGuardianRegionId));
                     AudioManager.Instance.PlaySFX(SfxType.BossAppear);
                 }
 
@@ -177,8 +203,10 @@ namespace InsectGame.UI
                     int[] teamLevels3d = new int[count];
                     for (int tl = 0; tl < count; tl++)
                         teamLevels3d[tl] = raidController.TeamStats[tl] != null ? raidController.TeamStats[tl].Level : 1;
+                    // 시작부터 기절해 있던 팀원은 아레나에 세우지 않는다(TeamDownAtStart — 전투 중 쓰러진 팀원과 같게 보인다).
                     if (bossData3d != null)
-                        arena.SetupRaidBattle(bossData3d, bossLevel3d, bossShiny3d, teamData3d, teamLevels3d, bossWorldPos);
+                        arena.SetupRaidBattle(bossData3d, bossLevel3d, bossShiny3d, teamData3d, teamLevels3d, bossWorldPos,
+                            TeamDownAtStart(), raidController.BossGuardianRegionId);   // 수문장이면 등장 컷(visual-dev)
                 }
                 else if (cameraFollower != null && bossEnt != null)
                 {
@@ -225,6 +253,7 @@ namespace InsectGame.UI
             bossAnimationComplete = false;
             bossResponseRequested = false;
             presentationCompletionRequested = false;
+            faintSwept = false;
             phase = Phase.PlayerAttack;
             phaseTimer = 0f;
             uniteAnimTimer = 0f;
@@ -241,7 +270,8 @@ namespace InsectGame.UI
             arena.PlayRaidVolley(
                 new[] { action.SourceSlot },
                 new[] { action.Element },
-                () => { teamAnimationComplete = true; });
+                () => { teamAnimationComplete = true; },
+                BuildMemberCue(action));   // 기술명 외치기 + 피해에 맞춘 타격감
         }
 
         /// <summary>
@@ -271,6 +301,7 @@ namespace InsectGame.UI
             bossAnimationComplete = false;
             bossResponseRequested = false;
             presentationCompletionRequested = false;
+            faintSwept = false;
             phaseTimer = 0f;
             uniteAnimTimer = 0f;
             phase = Phase.UniteAttack;
@@ -281,11 +312,9 @@ namespace InsectGame.UI
 
             if (arena == null || !arena.IsActive) return;
 
-            arena.PlayUniteAttackAnimation(() =>
-            {
-                teamAnimationComplete = true;
-                if (cameraFollower != null) cameraFollower.Shake(0.5f, 0.6f);
-            });
+            // 흔들림은 아레나가 합동 일격 순간에 건다(RaidUniteTimeline.FinalStrike). 여기서 또 흔들면
+            // 팀원이 제자리로 돌아온 **뒤에** 화면이 흔들렸다.
+            arena.PlayUniteAttackAnimation(() => { teamAnimationComplete = true; });
         }
 
         private void OnRaidBossResponseResolved(RaidRoundResult round)
@@ -298,12 +327,13 @@ namespace InsectGame.UI
             lastAoe = bossAction != null && bossAction.Kind == RaidActionKind.BossArea;
             lastHitSlot = bossAction != null ? bossAction.TargetSlot : -1;
             actionText = bossAction != null && !string.IsNullOrEmpty(bossAction.DisplayName)
-                ? bossAction.DisplayName
+                ? (bossAction.Critical ? bossAction.DisplayName + " — 치명타!" : bossAction.DisplayName)
                 : round.BossResponseSkipped ? "보스가 기절해 움직이지 못한다!" : "";
             actionTimer = 2f;
             bossAnimationComplete = arena == null || !arena.IsActive
                 || round.BossResponseSkipped || bossAction == null;
             presentationCompletionRequested = false;
+            faintSwept = false;
             phase = Phase.BossAttack;
             phaseTimer = 0f;
 
@@ -320,7 +350,8 @@ namespace InsectGame.UI
                 bossAction.Element,
                 lastAoe,
                 lastHitSlot,
-                () => { bossAnimationComplete = true; });
+                () => { bossAnimationComplete = true; },
+                BuildBossCue(round, lastAoe ? -1 : lastHitSlot));
         }
 
         private void OnRaidRoundCompleted(RaidRoundResult round)
@@ -359,12 +390,15 @@ namespace InsectGame.UI
         {
             resultShown = true;
             resultTimer = 0f;
+            ResetResultClose();
             phase = Phase.Result;
             if (AudioManager.Instance != null)
             {
                 AudioManager.Instance.PlaySFX(playerWon ? SfxType.Victory : SfxType.Defeat);
                 AudioManager.Instance.PlayBGM(playerWon ? BgmType.Victory : BgmType.Defeat);
             }
+            // 승리 연출(visual-dev) — 팀 전원 점프 + 팀을 담는 카메라, BattleFlourish.VictorySeconds. 패배는 그대로.
+            if (playerWon && arena != null && arena.IsActive) arena.PlayRaidVictory();
             if (playerWon)
             {
                 // 레이드 진행은 TutorialQuestManager가 raidController.RaidEnded를 직접 구독(OnRaidEnded)해
@@ -395,18 +429,24 @@ namespace InsectGame.UI
         private void Update()
         {
             if (phase == Phase.None) return;
+            // 전투 화면이 떠 있는 동안 플레이어를 계속 묶어 둔다 — SetFrozen(true)는 PlayerMovement의 자동 해제 시계(AutoUnfreezeTime 20초)를
+            // 0으로 되돌린다. 안 그러면 20초 넘는 전투나 ESC 뒤에 고정이 풀려, 기술 버튼을 누른 탭이 숨은 플레이어의 클릭-이동으로 샌다
+            // (결과 화면만 막던 것을 전투 전체로 넓혔다 — 2026-10-04).
+            if (playerMovement != null) playerMovement.SetFrozen(true);
 
-            phaseTimer += Time.deltaTime;
-            introTimer += Time.deltaTime;
-            if (actionTimer > 0) actionTimer -= Time.deltaTime;
-            if (bossShake > 0) bossShake -= Time.deltaTime;
-            if (resultShown) resultTimer += Time.deltaTime;
+            // 읽는 단계(인트로·그림자 변신)는 배속을 덜 탄다 — 배율은 RaidBattleUI.Flow(BattleReadPacing). 1배속이면 1이다.
+            phaseTimer += BattlePresentation.DeltaTime * PhaseClockScale;
+            introTimer += BattlePresentation.DeltaTime * IntroClockScale;
+            if (actionTimer > 0) actionTimer -= BattlePresentation.DeltaTime;
+            if (faintHoldTimer > 0f) faintHoldTimer -= BattlePresentation.DeltaTime;
+            if (bossShake > 0) bossShake -= BattlePresentation.DeltaTime;
+            if (resultShown) resultTimer += BattlePresentation.DeltaTime;
 
             if (teamShake != null)
                 for (int i = 0; i < teamShake.Length; i++)
-                    if (teamShake[i] > 0) teamShake[i] -= Time.deltaTime;
+                    if (teamShake[i] > 0) teamShake[i] -= BattlePresentation.DeltaTime;
 
-            float hpSpeed = 80f * Time.deltaTime;
+            float hpSpeed = 80f * BattlePresentation.DeltaTime;
             if (raidController.BossStats != null)
                 displayBossHp = Mathf.MoveTowards(displayBossHp, raidController.BossStats.CurrentHp, hpSpeed);
             if (raidController.TeamStats != null && displayTeamHp != null)
@@ -423,7 +463,7 @@ namespace InsectGame.UI
                 AudioManager.Instance.SetBattleIntensity(intensity);
             }
 
-            if (phase == Phase.Intro && introTimer > 2f)
+            if (phase == Phase.Intro && introTimer > IntroSeconds)
             {
                 phase = Phase.SelectSkill;
                 phaseTimer = 0f;
@@ -458,7 +498,7 @@ namespace InsectGame.UI
                     wantUnite = false;
                 }
 
-                if (wantMouseClick || Input.GetMouseButtonDown(0))
+                if ((wantMouseClick || Input.GetMouseButtonDown(0)) && !IsSpeedControlPointerHit)
                 {
                     Vector2 mp = wantMouseClick ? guiMousePos :
                         UIScale.VirtualMousePosition;
@@ -497,39 +537,24 @@ namespace InsectGame.UI
             if (phase == Phase.UniteAttack || phase == Phase.PlayerAttack)
             {
                 if (phase == Phase.UniteAttack)
-                    uniteAnimTimer += Time.deltaTime;
+                    uniteAnimTimer += BattlePresentation.DeltaTime;
                 float minDuration = phase == Phase.UniteAttack
                     ? UniteRushMinDuration
                     : TeamRushMinDuration;
-                bool animationReady = teamAnimationComplete || phaseTimer > 2.4f;
-                if (animationReady && phaseTimer >= minDuration)
+                bool animationReady = teamAnimationComplete || arena == null || !arena.IsActive;
+                // 마지막 일격으로 보스가 쓰러졌으면 결과(RAID CLEAR)보다 쓰러짐이 먼저 보인다.
+                if (animationReady && phaseTimer >= minDuration && !HoldForFaints())
                 {
-                    // 순서가 중요하다: **남은 팀원이 먼저다.** 아직 행동하지 않은 곤충이 있으면
-                    // 보스 턴이 아니라 다음 곤충의 스킬 화면으로 돌아간다.
-                    if (raidController.CanSubmitTeamCommand)
-                    {
-                        if (autoPilotRemaining)
-                        {
-                            TryAutoOne();   // 전원 자동 — 다음 한 마리의 연출로 곧바로 이어진다
-                        }
-                        else
-                        {
-                            phase = Phase.SelectSkill;
-                            phaseTimer = 0f;
-                            selectedSlot = raidController.ActiveSlot;
-                        }
-                    }
-                    else if (raidController.IsAwaitingBossResponse)
-                    {
-                        phase = Phase.BossTelegraph;
-                        phaseTimer = 0f;
-                        bossResponseRequested = false;
-                    }
-                    else
-                    {
-                        TryCompleteRoundPresentation();
-                    }
+                    // 이 공격이 보스의 모습을 바꿨으면 다음 차례 전에 변신 단계를 끼운다(쓰러졌으면 변신 없이 쓰러짐).
+                    if (!TryEnterBossTransform())
+                        AdvanceAfterTeamPresentation();
                 }
+            }
+
+            if (phase == Phase.BossTransform && phaseTimer >= BossTransformDuration)
+            {
+                activeBossTransform = null;
+                AdvanceAfterTeamPresentation();
             }
 
             if (phase == Phase.BossTelegraph
@@ -544,14 +569,15 @@ namespace InsectGame.UI
 
             if (phase == Phase.BossAttack)
             {
-                bool animationReady = bossAnimationComplete || phaseTimer > 2.4f;
-                if (animationReady && phaseTimer >= BossImpactMinDuration)
+                bool animationReady = bossAnimationComplete || arena == null || !arena.IsActive;
+                // 보스 공격에 쓰러진 팀원이 눕는 동안 기다린다 — 전멸이면 RAID FAILED가 그 위를 덮지 않게.
+                if (animationReady && phaseTimer >= BossImpactMinDuration && !HoldForFaints())
                     TryCompleteRoundPresentation();
             }
 
             if (phase == Phase.TeamTurnAnnounce)
             {
-                announceTimer -= Time.deltaTime;
+                announceTimer -= BattlePresentation.DeltaTime;
                 if (wantMouseClick) announceTimer = 0f;   // 탭으로 즉시 스킵(소거는 아래 말미가 담당)
                 if (announceTimer <= 0f)
                 {
@@ -561,8 +587,9 @@ namespace InsectGame.UI
                 }
             }
 
-            if (phase == Phase.Result && resultTimer > 5f)
-                EndRaid();
+            // 결과 화면은 탭·클릭·Space/Enter로만 닫힌다(처음 0.6초는 안 받는다) — RaidBattleUI.Flow.
+            if (phase == Phase.Result)
+                TickResultClose();
 
             // 탭 래치 차단 — `Input.GetMouseButtonDown`과 같은 한 프레임 수명으로 맞춘다.
             // `wantMouseClick`은 OnGUI(:MouseDown)가 세우는데 소거를 조작 분기 **안**에서만 하면,
@@ -570,6 +597,124 @@ namespace InsectGame.UI
             // 지난 라운드 Rect로 소비된다(스킬을 보기도 전에 하나가 눌린다). 순차 턴은 라운드마다
             // 조작 지점이 팀원 수만큼 생겨 이 창이 더 자주 열리므로 여기서 매 프레임 비운다.
             wantMouseClick = false;
+        }
+
+        /// <summary>
+        /// 연출 한 단계가 끝난 자리에서 HP 0인 쪽을 쓰러뜨리고(<see cref="RaidBattleController.PresentPendingFaints"/>),
+        /// 쓰러지는 동안 true를 돌려 호출부의 전이를 미룬다. 단계마다 한 번만 쓴다(<c>faintSwept</c>).
+        /// 길이는 <see cref="FaintHoldDuration"/> — 아레나 쓰러짐(<see cref="BattleArenaController.FaintSeconds"/>)에서 파생된다.
+        /// </summary>
+        private bool HoldForFaints()
+        {
+            if (!faintSwept)
+            {
+                faintSwept = true;
+                if (raidController != null && raidController.PresentPendingFaints())
+                    faintHoldTimer = FaintHoldDuration;
+            }
+            return faintHoldTimer > 0f;
+        }
+
+        /// <summary>
+        /// 팀원 한 마리(또는 합체공격)의 연출이 끝난 자리의 다음 단계. <b>남은 팀원이 먼저다</b> — 아직 행동하지 않은 곤충이 있으면
+        /// 보스 턴이 아니라 다음 곤충의 스킬 화면으로 돌아간다. 변신 단계가 끝난 뒤에도 여기로 온다.
+        /// </summary>
+        private void AdvanceAfterTeamPresentation()
+        {
+            if (raidController == null) return;
+            if (raidController.CanSubmitTeamCommand)
+            {
+                if (autoPilotRemaining)
+                {
+                    TryAutoOne();   // 전원 자동 — 다음 한 마리의 연출로 곧바로 이어진다
+                }
+                else
+                {
+                    phase = Phase.SelectSkill;
+                    phaseTimer = 0f;
+                    selectedSlot = raidController.ActiveSlot;
+                }
+            }
+            else if (raidController.IsAwaitingBossResponse)
+            {
+                phase = Phase.BossTelegraph;
+                phaseTimer = 0f;
+                bossResponseRequested = false;
+                BeginBossTelegraphPresentation();   // 3D 예고 — 기 모으기·경고 고리·포효
+            }
+            else
+            {
+                TryCompleteRoundPresentation();
+            }
+        }
+
+        // ── 보스 변신(RaidBossForms) ──
+        // 컨트롤러는 임계를 넘긴 그 행동 안에서 이미 모습을 바꿨다(속성·기술). 화면은 그 공격의 연출과 쓰러짐 대기를
+        // 마친 뒤에 변신 단계를 한 번 끼운다 — 한 행동에 임계 둘을 넘겨도 컨트롤러 이벤트가 한 번이라 단계도 한 번이다.
+        // 아직 단계로 못 들어간 사이에 이벤트가 또 와도(자동 위임 등) 깃발 하나로 합쳐 마지막 모습만 보인다.
+
+        /// <summary>
+        /// 변신 단계 길이(배속 시간 — 1배속 실제 초). 이 동안 입력을 받지 않는다. 연출(visual-dev)·문구(ui-dev)가 이 길이에 맞춘다.
+        /// 문구를 읽어야 하는 단계라 2배속이어도 실제 <see cref="BattleReadPacing.BossTransformMinSeconds"/>(1.0초) 밑으로는 줄지 않는다
+        /// (단계 시계가 덜 빨라진다 — RaidBattleUI.Flow). 같은 실제 시간에 끝나는 연출 길이는 <see cref="BossTransformStagingSeconds"/>.
+        /// </summary>
+        public const float BossTransformDuration = 1.5f;
+
+        /// <summary>지금 보스가 모습을 바꾸는 중인가(변신 단계).</summary>
+        public bool IsBossTransforming => phase == Phase.BossTransform;
+
+        /// <summary>
+        /// 변신 단계 진행률 0~1(단계 밖이면 0). 아레나 보스 모델은 진행률 <c>BattleStaging.TransformSwap</c>(0.5, 연기가 가장 짙을 때)에
+        /// 새 모습으로 바뀌고 <c>TransformRoar</c>(0.6)에 울부짖는다 — 문구를 그 박자에 맞추려면 이 값을 읽는다.
+        /// </summary>
+        public float BossTransformProgress => phase == Phase.BossTransform ? Mathf.Clamp01(phaseTimer / BossTransformDuration) : 0f;
+
+        /// <summary>변신 단계의 표시 한 줄("그림자가 호랑나비의 모습을 빌렸다!"). 단계 밖이면 빈 문자열.</summary>
+        public string BossTransformLine => phase == Phase.BossTransform && raidController != null
+            ? raidController.BossFormLine ?? string.Empty
+            : string.Empty;
+
+        /// <summary>
+        /// 지금 단계에서 보여 주는 변신(바뀌기 전·후 모습과 번호). 단계 밖이면 null. 이벤트가 합쳐졌으면 마지막 것이다 —
+        /// 바뀐 뒤 모습은 늘 <c>raidController.BossFormData</c>와 같다.
+        /// </summary>
+        public RaidBossFormChange ActiveBossTransform => phase == Phase.BossTransform ? activeBossTransform : null;
+
+        private bool bossFormPending;
+        private RaidBossFormChange pendingBossTransform;
+        private RaidBossFormChange activeBossTransform;
+
+        private void OnRaidBossFormChanged(RaidBossFormChange change)
+        {
+            if (change == null || phase == Phase.None) return;
+            bossFormPending = true;
+            pendingBossTransform = change;
+        }
+
+        /// <summary>
+        /// 변신이 걸려 있으면 변신 단계로 들어가고 true. <b>보스가 쓰러졌으면 변신 없이 쓰러진다</b>(깃발만 버리고 false) —
+        /// 쓰러짐은 이미 <see cref="HoldForFaints"/>가 보여 줬다.
+        /// </summary>
+        private bool TryEnterBossTransform()
+        {
+            if (!bossFormPending) return false;
+            bossFormPending = false;
+            RaidBossFormChange change = pendingBossTransform;
+            pendingBossTransform = null;
+            if (raidController == null || raidController.BossStats == null || raidController.BossStats.CurrentHp <= 0)
+                return false;
+
+            phase = Phase.BossTransform;
+            phaseTimer = 0f;
+            activeBossTransform = change;
+            if (arena != null && arena.IsActive)
+            {
+                InsectEntity bossEnt = raidController.BossEntity;
+                // 모델 교체는 연출 한가운데(연기가 가장 짙을 때) 아레나가 한다 — 그림자 변신(visual-dev).
+                arena.PlayBossTransform(raidController.BossFormData, raidController.BossStats.Level,
+                    bossEnt != null && bossEnt.IsShiny, BossTransformStagingSeconds);   // 단계와 같은 실제 시간에 끝나는 길이(2배속 하한)
+            }
+            return true;
         }
 
         private void TryCompleteRoundPresentation()
@@ -656,12 +801,29 @@ namespace InsectGame.UI
         // 기능 손실은 없다 — 새 경로 `OnRaidBossResponseResolved`가 `arena.PlayRaidBossAttack(..., lastHitSlot, ...)`로
         // 피격 슬롯을 인자로 직접 넘긴다. 즉 대상 지정이 필드에서 매개변수로 옮겨간 것뿐이다.
 
+        private GUIStyle speedControlStyle;
+        private bool ShowSpeedControl => phase != Phase.None && phase != Phase.Intro && !resultShown;
+        private Rect SpeedControlRect => UISafeLayout.TopPanel(132f, 56f, UISafeLayout.HAlign.Right);
+        private bool IsSpeedControlPointerHit => ShowSpeedControl && SpeedControlRect.Contains(UIScale.VirtualMousePosition);
+
+        private void DrawSpeedControl()
+        {
+            if (!ShowSpeedControl) return;
+            if (speedControlStyle == null)
+                speedControlStyle = new GUIStyle(GUI.skin.label) { fontSize = 24, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            speedControlStyle.normal.textColor = UITheme.Instance.textPrimary;
+            if (UISurface.Button(SpeedControlRect, $"속도 {BattlePresentation.Speed:0}×", UITheme.Instance.surfaceRaised, speedControlStyle))
+                BattlePresentation.Speed = BattlePresentation.Speed < 1.5f ? 2f : 1f;
+        }
+
         private void OnGUI()
         {
             if (phase == Phase.None) return;
 
             UIScale.Begin();
             InitStyles();
+            // 레이드는 사전 컷인이 없다 — 전용기 이름은 아레나 머리 위 말풍선이 알린다(1대1 화면이 끈 정적 표지를 되살린다, RaidBattleUI.Feel).
+            BattleArenaController.ShowSignatureCallout = true;
             Event evt = Event.current;
             if (evt != null && evt.type == EventType.KeyDown)
             {
@@ -691,8 +853,9 @@ namespace InsectGame.UI
                         evt.Use(); break;
                 }
             }
+            CaptureResultKey(evt);   // 결과 화면의 Space/Enter(RaidBattleUI.Flow)
 
-            if (evt != null && evt.type == EventType.MouseDown && evt.button == 0)
+            if (evt != null && evt.type == EventType.MouseDown && evt.button == 0 && !IsSpeedControlPointerHit)
             {
                 wantMouseClick = true;
                 guiMousePos = evt.mousePosition;
@@ -719,15 +882,22 @@ namespace InsectGame.UI
                 DrawBossTelegraph();
             else if (phase == Phase.TeamTurnAnnounce)
                 DrawTeamTurnAnnounce();
+            else if (phase == Phase.BossTransform)
+                DrawBossTransform();   // 「그림자가 ○○의 모습을 빌렸다!」 — RaidBattleUI.Stage
 
             if (actionTimer > 0)
                 DrawActionText();
+
+            // 기술 이름 외치기·비명·의성어 — 1v1과 같은 오버레이. 결과 패널보다 먼저(아래에).
+            BattleShoutOverlay.Draw(arena);
 
             if (resultShown)
                 DrawResult();
 
             // 전투 문구는 1v1과 같은 오버레이를 쓴다 — 아레나가 픽셀 좌표로 그리던 자리.
             BattleEffectTextOverlay.Draw(arena);
+
+            DrawSpeedControl();
 
             UIScale.End();
         }
@@ -750,6 +920,7 @@ namespace InsectGame.UI
             phaseTimer = 0f;
             introTimer = 0f;
             resultTimer = 0f;
+            ResetResultClose();
             uniteAnimTimer = 0f;
             announceTimer = 0f;
             displayTeamHp = null;
@@ -763,6 +934,11 @@ namespace InsectGame.UI
             bossAnimationComplete = false;
             bossResponseRequested = false;
             presentationCompletionRequested = false;
+            faintSwept = false;
+            faintHoldTimer = 0f;
+            bossFormPending = false;
+            pendingBossTransform = null;
+            activeBossTransform = null;
             // 입력 표면도 함께 비운다 — 남겨두면 지난 레이드의 버튼 Rect가 다음 레이드 첫 프레임의
             // 히트 테스트에 그대로 쓰인다(위 `wantMouseClick` 프레임 스코프화와 같은 결함 계열).
             raidSkillCount = 0;
@@ -794,6 +970,7 @@ namespace InsectGame.UI
                 raidController.RaidTeamRushResolved -= OnRaidTeamRushResolved;
                 raidController.RaidBossResponseResolved -= OnRaidBossResponseResolved;
                 raidController.RaidRoundCompleted -= OnRaidRoundCompleted;
+                raidController.BossFormChanged -= OnRaidBossFormChanged;
             }
 
             if (raidController == null || raidController != rc)
@@ -820,12 +997,14 @@ namespace InsectGame.UI
             raidController.RaidTeamRushResolved -= OnRaidTeamRushResolved;
             raidController.RaidBossResponseResolved -= OnRaidBossResponseResolved;
             raidController.RaidRoundCompleted -= OnRaidRoundCompleted;
+            raidController.BossFormChanged -= OnRaidBossFormChanged;
             raidController.RaidUpdated += OnRaidUpdated;
             raidController.RaidEnded += OnRaidEnded;
             raidController.RaidMemberActionResolved += OnRaidMemberActionResolved;
             raidController.RaidTeamRushResolved += OnRaidTeamRushResolved;
             raidController.RaidBossResponseResolved += OnRaidBossResponseResolved;
             raidController.RaidRoundCompleted += OnRaidRoundCompleted;
+            raidController.BossFormChanged += OnRaidBossFormChanged;
         }
 
         // 전투가 끝났다고 알려 줄 곳. 없어도 레이드는 그대로 돌아간다 — 스토리 쪽이 12초 뒤

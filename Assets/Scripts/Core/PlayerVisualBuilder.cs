@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using UnityEngine;
 
 namespace InsectGame.Core
@@ -14,7 +14,9 @@ namespace InsectGame.Core
     /// CharacterModelPreviewRenderer.FocusNodesFor. 틀리면 예외 없이 그냥 동작하지 않는다.
     /// Body/Shirt/Neck/Head/HeadPivot/ArmL/ArmR/HandL/HandR/
     /// LegLPivot/LegRPivot/LegL/LegR/BootL/BootR/
-    /// Backpack/BackpackStrap/NetHandle/NetRing/Cap/CapBrim/HatRoot.
+    /// Backpack/BackpackStrap/NetHandle/NetRing/Cap/CapBrim/HatRoot,
+    /// 그리고 2026-09-30에 더한 ShoulderL/ShoulderR(팔 자식, ApplyToCharacter가 칠함)·HairCrown(모자가 숨김)·Mouth(얼굴 애니메이터).
+    /// <b>ArmL/ArmR의 localPosition은 어깨 관절이다</b> — 걷기가 그 점을 축으로 팔·손·도구를 돌린다.
     /// </summary>
     public class PlayerVisualBuilder : MonoBehaviour
     {
@@ -279,6 +281,66 @@ namespace InsectGame.Core
         }
 
         /// <summary>
+        /// <see cref="UnitCapsule"/>과 모양은 같고 <b>위 반구의 중심이 원점</b>인 캡슐 — 어깨에서 도는 팔용.
+        /// <paramref name="shoulderDrop"/>은 옛 중심 원점에서 새 원점까지의 거리(단위 메시 기준)라,
+        /// 호출부가 <c>옛 y + drop × scale.y</c>에 놓으면 쉬는 자세가 예전과 한 치도 다르지 않다.
+        /// </summary>
+        private static Mesh UnitCapsuleHanging(float taper, out float shoulderDrop)
+        {
+            float rTop = 0.5f;
+            float rBottom = 0.5f * taper;
+            float height = 2f - rTop - rBottom;
+            shoulderDrop = height * 0.5f;
+            return ProcMeshLibrary.TaperedCapsule(rTop, rBottom, height, 8, 10, -shoulderDrop);
+        }
+
+        /// <summary>
+        /// 몸통 폭 프로필(아래·가운데·위 배율). <b>위는 1 고정</b> — 팔이 ±0.29에 묶여 있어 어깨가 좁아지면
+        /// 팔과 몸통 사이가 뜬다. 여자는 몸통 자체가 0.44로 좁아 이미 어깨선이 팔 안쪽에 맞닿는다.
+        /// </summary>
+        internal static void GetTorsoProfile(int gender, out float bottom, out float mid, out float top)
+        {
+            if (gender == 1) { bottom = 1.00f; mid = 0.88f; top = 1.00f; }   // 허리 들어가고 골반
+            else { bottom = 0.93f; mid = 0.96f; top = 1.00f; }               // 어깨 → 허리로 살짝 좁게
+        }
+
+        /// <summary>
+        /// 열린 자켓의 라펠 둘(셔츠 판 위쪽 양옆, 위가 바깥으로 벌어진 V) + 목 뒤로 선 옷깃.
+        /// 색·표시는 <c>CharacterOutfitManager.SetJacketTrim</c>이 겉옷 형태에 따라 정한다(열린 자켓만 보인다).
+        /// 머티리얼은 인스턴스로 칠해지므로 여기선 자리만 잡는다.
+        /// </summary>
+        private void BuildJacketTrim(Transform body, float frontZ)
+        {
+            Material trimMat = MakeMaterial(new Color(0.14f, 0.28f, 0.6f), SurfaceKind.Cloth);
+            Mesh lapel = ProcMeshLibrary.RoundedBox(new Vector3(0.07f, 0.2f, 0.014f), 0.006f, 1);
+            ProcMeshLibrary.CreateNode("LapelL", body, lapel, trimMat,
+                new Vector3(-0.14f, 0.11f, frontZ + 0.024f), Quaternion.Euler(0f, 0f, 17f));   // 윗끝이 바깥(−X)으로
+            ProcMeshLibrary.CreateNode("LapelR", body, lapel, trimMat,
+                new Vector3(0.14f, 0.11f, frontZ + 0.024f), Quaternion.Euler(0f, 0f, -17f));  // 윗끝이 바깥(+X)으로
+            // 목 뒤를 감싸 선 깃 — 늘어진 천(원통 조각)을 짧게 세워 둔다. 원점이 윗변이라 몸통 위(0.23)보다 올려 단다.
+            Part("Collar", body, ProcMeshLibrary.DrapeShell(210f, 1.12f, 0, 0f, 2), trimMat,
+                new Vector3(0f, 0.285f, -0.01f), new Vector3(0.30f, 0.075f, 0.27f));
+        }
+
+        /// <summary>
+        /// 어깨 둥근 캡. 둥근 몸통 모서리와 팔 위 반구 사이에 V자 홈이 생겨 팔이 몸에 "꽂힌" 게 아니라
+        /// 옆에 "세워 둔" 것처럼 보였다. 팔의 자식이라 흔들어도 관절에 붙어 있다. 팔의 비균일 스케일을
+        /// 되갚아 구가 찌그러지지 않게 한다(자식에 회전이 없으면 축 배율만 곱해진다).
+        /// 색은 <c>CharacterOutfitManager.ApplyToCharacter</c>가 팔과 같이 칠한다(ShoulderL/R).
+        /// </summary>
+        private void BuildShoulderCaps(Vector3 armScale)
+        {
+            const float Diameter = 0.15f;
+            const float Inset = 0.03f;   // 몸통 쪽으로
+            Vector3 local = new Vector3(Diameter / armScale.x, Diameter / armScale.y, Diameter / armScale.z);
+            Mesh capMesh = UnitSphere(6, 10);
+            Part("ShoulderL", outerwearArmL.transform, capMesh, outerwearMat,
+                new Vector3(Inset / armScale.x, 0f, 0f), local);
+            Part("ShoulderR", outerwearArmR.transform, capMesh, outerwearMat,
+                new Vector3(-Inset / armScale.x, 0f, 0f), local);
+        }
+
+        /// <summary>
         /// 지름 1 원판(+Z를 향한다). 눈·동공·하이라이트·홍조가 쓰던 <b>눌린 구체</b>를 대신한다 —
         /// 그 8개가 캐릭터 정점의 40%였다. bulge는 z 스케일에 함께 눌리므로 넉넉히 잡아 둔다.
         /// </summary>
@@ -328,14 +390,13 @@ namespace InsectGame.Core
         /// </summary>
         private Material MakeMaterial(Color color, SurfaceKind kind)
         {
-            // Unity 6 + Built-in Pipeline 환경 가정. Standard 못 찾으면 URP/Unlit 순으로 fallback.
-            // 최종 fallback도 실패하면 캐릭터가 검정/마젠타 → 진단 로그로 알림.
-            Shader shader = Shader.Find("Standard");
-            string usedName = "Standard";
-            if (shader == null) { shader = Shader.Find("Universal Render Pipeline/Lit"); usedName = "URP/Lit"; }
-            if (shader == null) { shader = Shader.Find("Unlit/Color"); usedName = "Unlit/Color"; }
-            if (shader == null) { shader = Shader.Find("Sprites/Default"); usedName = "Sprites/Default"; }
-            if (shader == null)
+            // Unity 6 + Built-in Pipeline 환경 가정. 폴백 체인(Standard → URP Lit → Unlit/Color →
+            // Sprites/Default → 에러 셰이더)은 SceneryMaterials.LitShader가 단일 출처다 — 여기선 진단만 한다.
+            // 최종 fallback까지 떨어지면 캐릭터가 검정/마젠타 → 진단 로그로 알림.
+            // 광택은 공유하지 않는다: 부위별 재질은 아래 CharacterPalette.ApplySurface가 정한다(무광 마감 X).
+            Shader shader = SceneryMaterials.LitShader;
+            string usedName = shader != null ? shader.name : "(없음)";
+            if (shader == null || usedName == "Hidden/InternalErrorShader")
             {
                 if (!shaderDiagLogged)
                 {
@@ -344,7 +405,6 @@ namespace InsectGame.Core
                         + "ProjectSettings → Graphics에서 Standard/URP shader가 Always Included Shaders에 포함되어 있는지 확인하세요.");
                     shaderDiagLogged = true;
                 }
-                shader = Shader.Find("Hidden/InternalErrorShader");
             }
             else if (!shaderDiagLogged && usedName != "Standard")
             {
@@ -361,6 +421,15 @@ namespace InsectGame.Core
             CharacterPalette.ApplySurface(mat, kind);
             runtimeMaterials.Add(mat);
             return mat;
+        }
+
+        // Shared anatomical anchors; node names remain stable for outfit binding.
+        public static readonly Vector3 HeadAnchor = new Vector3(0f, 1.22f, 0.03f);
+        public static readonly Vector3 CapSize = new Vector3(0.76f, 0.34f, 0.73f);
+        public static readonly Vector3 CapBrimSize = new Vector3(0.68f, 0.045f, 0.43f);
+        public static Vector3 RotateAttachment(Vector3 restPosition, Vector3 pivot, float angle)
+        {
+            return pivot + Quaternion.Euler(angle, 0f, 0f) * (restPosition - pivot);
         }
 
         private void BuildAll()
@@ -395,20 +464,35 @@ namespace InsectGame.Core
 
             Transform t = transform;
 
-            // ── 몸통 (자켓 외피) — Cube로 변경: 미리보기 직사각형 비례와 정합. ──
-            // Y 0.7 → 0.78 (조금 길게). 위치 1.40 유지 (Y range 1.01~1.79).
-            // 90° 모서리 Cube였다 — 벽돌을 얹은 것처럼 보이던 가장 큰 원인이다.
-            // 둥근 상자는 크기를 메시에 굽고 스케일을 걸지 않는다(모서리 반경 왜곡 방지).
-            BoxPart("Body", t, outerwearMat, new Vector3(0f, 0.77f, 0f),
-                new Vector3(bodyScaleX, 0.46f, bodyScaleZ), 0.085f, 3);
+            // ── 몸통 (자켓 외피) ──
+            // 90° 모서리 Cube였다 — 벽돌을 얹은 것처럼 보이던 가장 큰 원인이다. 둥근 상자로 바꾼 뒤에도
+            // 위아래 폭이 같아 "빵 한 덩어리"였다. 폭을 높이별로 준다: 남자는 어깨에서 허리로 조금 좁아지고,
+            // 여자는 허리가 들어가고 골반이 나온다(성별 차이가 속눈썹뿐이던 걸 실루엣으로 옮긴다).
+            // 위쪽 배율은 1로 둔다 — 팔이 x ±0.29에 고정이라(손·도구 좌표가 거기 묶여 있다) 어깨가
+            // 좁아지면 팔과 몸 사이가 뜬다. 크기는 메시에 굽고 스케일을 걸지 않는다(모서리 반경 왜곡 방지).
+            GetTorsoProfile(gender, out float torsoBottom, out float torsoMid, out float torsoTop);
+            ProcMeshLibrary.CreateNode("Body", t,
+                ProcMeshLibrary.ProfiledRoundedBox(new Vector3(bodyScaleX, 0.46f, bodyScaleZ), 0.085f, 4,
+                    torsoBottom, torsoMid, torsoTop),
+                outerwearMat, new Vector3(0f, 0.77f, 0f));
 
             // ── 셔츠 (Top) — Body 안쪽 면적으로 살짝 작게, 자켓 열린 사이로 보이는 영역 ──
             // 셔츠는 자켓 사이로 <b>살짝</b> 보이는 가슴 패널이다. 옛 값(z 0.15 / 폭 0.34)은
             // 몸통 앞면(z 0.19)보다 0.06 앞으로 튀어나오고 폭도 몸통의 71%라, 흰 판이 앞을 통째로
             // 덮고 자켓은 양옆에만 남았다 — 측면에서 보면 판때기를 붙인 것처럼 보였다.
             // 좁히고 몸통 안으로 넣어 자켓이 앞을 덮게 한다.
-            shirtRoot = BoxPart("Shirt", t, topMat, new Vector3(0f, 0.83f, 0.10f),
-                new Vector3(0.24f, 0.36f, 0.20f), 0.05f, 2);
+            // Keep the inset panel ahead of the jacket surface: intersecting rounded
+            // volumes produced a jagged white patch and depth fighting in the gallery.
+            //
+            // 2026-09-30: 자켓을 **앞이 열린** 형태로 바꿨다 — 판을 0.16 → 0.27로 넓히고 라펠·옷깃을 달아 상의가
+            // 자켓 사이로 제대로 보이게 한다(예전엔 상의 14벌이 가슴의 좁은 색 조각이라 서로 구분되지 않았다).
+            // 판은 **몸통의 자식**이다 — 걷기에서 몸통만 위아래로 튀므로(PlayerMovement bob) 루트 자식이면
+            // 걸을 때 판이 몸통 앞에서 미끄러졌다. 겉옷을 벗으면 ApplyToCharacter가 판을 숨긴다(몸통이 곧 상의).
+            Transform bodyT = t.Find("Body");
+            float frontZ = bodyScaleZ * 0.5f;
+            shirtRoot = BoxPart("Shirt", bodyT, topMat, new Vector3(0f, 0.05f, frontZ + 0.006f),
+                new Vector3(0.27f, 0.30f, 0.026f), 0.012f, 3);
+            BuildJacketTrim(bodyT, frontZ);
 
             // ── 목 ──
             GameObject neck = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
@@ -422,7 +506,7 @@ namespace InsectGame.Core
             // ── 머리 ──
             GameObject headPivot = new GameObject("HeadPivot");
             headPivot.transform.SetParent(t, false);
-            headPivot.transform.localPosition = new Vector3(0f, 1.22f, 0.03f);
+            headPivot.transform.localPosition = HeadAnchor;
             headPivot.transform.localScale = Vector3.one * headPivotScale;
 
             // 치비 둥근 머리: 옛 (−0.10, +0.12, −0.04) 달걀형(세로로 긺) → X/Y를 거의 균등하게.
@@ -436,19 +520,19 @@ namespace InsectGame.Core
             hatRoot.transform.SetParent(headPivot.transform, false);
             hatRoot.transform.localPosition = Vector3.zero;
 
-            GameObject cap = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+            GameObject cap = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             cap.name = "Cap";
             cap.transform.SetParent(hatRoot.transform, false);
-            cap.transform.localPosition = new Vector3(0f, 0.3f, -0.02f);
-            cap.transform.localScale = new Vector3(0.30f, 0.12f, 0.30f);
+            cap.transform.localPosition = new Vector3(0f, 0.24f, -0.02f);
+            cap.transform.localScale = CapSize;
             cap.GetComponent<MeshRenderer>().material = hatMat;
             Object.Destroy(cap.GetComponent<Collider>());
 
-            GameObject brim = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            GameObject brim = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             brim.name = "CapBrim";
             brim.transform.SetParent(hatRoot.transform, false);
-            brim.transform.localPosition = new Vector3(0f, 0.14f, 0.28f);
-            brim.transform.localScale = new Vector3(0.28f, 0.03f, 0.14f);
+            brim.transform.localPosition = new Vector3(0f, 0.16f, 0.29f);
+            brim.transform.localScale = CapBrimSize;
             brim.GetComponent<MeshRenderer>().material = hatMat;
             Object.Destroy(brim.GetComponent<Collider>());
 
@@ -464,24 +548,31 @@ namespace InsectGame.Core
             hairMat = MakeMaterial(CharacterPalette.Hair(hairColorIdx), SurfaceKind.Hair);
             BuildHair(headPivot, hairStyle, gender, hairMat);
 
-            // ── 팔 (어깨 ±0.29 / Y 1.40 / 캡슐 길이 0.50 / 회전 0°) ──
-            // 옛 Y=1.55 + 길이 0.50 → 상단 1.80m로 Body 상단(1.79)과 일치하나 시각적으로 어깨가 여전히 높음.
-            // Y 1.40 + 길이 0.50 → 캡슐 범위 1.15~1.65m로 Body(1.01~1.79) 중간 → 자연스러운 인체 비례.
-            // 머리(2.20) 영역과 충분히 분리. X ±0.29 Body 가장자리 겹침, Z=0° 수직, swing은 X만.
-            // 굵기가 일정한 캡슐이라 사지가 파이프처럼 보였다 — 어깨에서 손목으로 가늘어지게.
-            Mesh armMesh = UnitCapsule(0.72f);
-            outerwearArmL = Part("ArmL", t, armMesh, outerwearMat,
-                new Vector3(-0.29f, 0.78f, 0f), new Vector3(0.135f, 0.23f, 0.135f));
-            outerwearArmR = Part("ArmR", t, armMesh, outerwearMat,
-                new Vector3(0.29f, 0.78f, 0f), new Vector3(0.135f, 0.23f, 0.135f));
+            // ── 팔 — 원점이 **어깨**다 ──
+            // 걷기(PlayerMovement)와 NPC 보행은 팔 Transform을 제자리에서 돌리고, 손·도구는
+            // RotateAttachment(…, arm.localPosition, 각도)로 따라 돈다. 즉 **팔의 localPosition이 곧 관절**이다.
+            // 예전엔 캡슐 중심(y 0.78)이 원점이라 팔이 한가운데서 돌았다 — 흔들 때마다 윗부분이 몸통
+            // 뒤로 빠져 어깨에서 떨어져 보였다. 캡슐을 아래로 밀어(위 반구 중심 = 원점) 원점을 어깨로
+            // 옮겼다. 쉬는 자세의 팔 모양·길이는 예전과 같다(0.566~1.026). 손 쉬는 자리(±0.29, 0.52)도 그대로다.
+            Mesh armMesh = UnitCapsuleHanging(0.72f, out float shoulderDrop);
+            Vector3 armScale = new Vector3(0.135f, 0.23f, 0.135f);
+            float shoulderY = 0.78f + shoulderDrop * armScale.y;
+            outerwearArmL = Part("ArmL", t, armMesh, outerwearMat, new Vector3(-0.29f, shoulderY, 0f), armScale);
+            outerwearArmR = Part("ArmR", t, armMesh, outerwearMat, new Vector3(0.29f, shoulderY, 0f), armScale);
+            BuildShoulderCaps(armScale);
 
-            // ── 손 (팔 끝점: y = 1.40 - 0.25 = 1.15. 손목/손바닥 자연 매달림 = 0.95) ──
-            // 구체 하나라 주먹이라기보다 공에 가까웠다. 손가락은 만들지 않는다 —
-            // 손 지름이 0.115m라 치비 스케일에서 손가락은 1~2픽셀이다. 대신 세로로 길고
-            // 앞뒤로 납작한 미튼(벙어리장갑) 형태가 같은 비용에 확실히 손처럼 보인다.
+            // ── 손 ──
+            // 손가락은 만들지 않는다 — 손 지름이 0.1m라 치비 스케일에서 손가락은 1~2픽셀이다. 세로로 길고
+            // 앞뒤로 납작한 미튼(벙어리장갑)에 **엄지 하나**를 붙이면 같은 비용으로 확실히 손이 된다
+            // (엄지가 없을 땐 "흰 비누"처럼 보였다). 엄지는 손의 자식이라 걷기 회전을 그대로 따른다.
             Vector3 handSize = new Vector3(0.105f, 0.135f, 0.095f);
-            BoxPart("HandL", t, skinMat, new Vector3(-0.29f, 0.52f, 0f), handSize, 0.042f, 2);
-            BoxPart("HandR", t, skinMat, new Vector3(0.29f, 0.52f, 0f), handSize, 0.042f, 2);
+            GameObject handL = BoxPart("HandL", t, skinMat, new Vector3(-0.29f, 0.52f, 0f), handSize, 0.042f, 2);
+            GameObject handR = BoxPart("HandR", t, skinMat, new Vector3(0.29f, 0.52f, 0f), handSize, 0.042f, 2);
+            Mesh thumbMesh = UnitSphere(5, 7);
+            Part("ThumbL", handL.transform, thumbMesh, skinMat, new Vector3(0.045f, 0.012f, 0.03f),
+                new Vector3(0.05f, 0.075f, 0.05f), new Vector3(0f, 0f, -25f));
+            Part("ThumbR", handR.transform, thumbMesh, skinMat, new Vector3(-0.045f, 0.012f, 0.03f),
+                new Vector3(0.05f, 0.075f, 0.05f), new Vector3(0f, 0f, 25f));
 
             // ── 다리 + 부츠 (LegPivot으로 묶어 회전 시 발도 함께 움직이도록) ──
             // 옛은 BootL/R이 Player 직접 자식이라 PlayerMovement.AnimateWalk의 LegL/R 회전이 발에 전파 안 됨
@@ -512,13 +603,14 @@ namespace InsectGame.Core
                 new Vector3(0f, -0.36f, 0.07f), bootSize, bootRadius, 2);
 
             // ── 배낭 (Backpack) ──
-            backpackRoot = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            // 몸통의 자식 — 걸을 때 몸통과 함께 튄다(루트 자식이던 때는 몸통이 가방 앞에서 위아래로 미끄러졌다).
+            // 가방 레시피도 OutfitAnchor.Body 좌표(몸통 중심 y 0.77 기준)다.
+            backpackRoot = Part("Backpack", bodyT, ProcMeshLibrary.RoundedBox(Vector3.one, 0.16f, 2), backpackMat, Vector3.zero, Vector3.one);
             backpackRoot.name = "Backpack";
-            backpackRoot.transform.SetParent(t, false);
-            backpackRoot.transform.localPosition = new Vector3(0f, 0.80f, -0.22f);
+            backpackRoot.transform.localPosition = new Vector3(0f, 0.80f - 0.77f, -0.22f);
             backpackRoot.transform.localScale = new Vector3(0.30f, 0.34f, 0.16f);
             backpackRoot.GetComponent<MeshRenderer>().material = backpackMat;
-            Object.Destroy(backpackRoot.GetComponent<Collider>());
+
 
             backpackStrap = GameObject.CreatePrimitive(PrimitiveType.Cube);
             backpackStrap.name = "BackpackStrap";
@@ -536,20 +628,16 @@ namespace InsectGame.Core
             toolHandle = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
             toolHandle.name = "NetHandle";
             toolHandle.transform.SetParent(t, false);
-            toolHandle.transform.localPosition = new Vector3(0.29f, 0.74f, 0.02f);
+            toolHandle.transform.localPosition = new Vector3(0.29f, 0.74f, 0f);
             toolHandle.transform.localScale = new Vector3(0.04f, 0.40f, 0.04f);
-            toolHandle.transform.localRotation = Quaternion.Euler(20f, 0f, -15f);
+            toolHandle.transform.localRotation = Quaternion.identity;
             toolHandle.GetComponent<MeshRenderer>().material = toolMat;
             Object.Destroy(toolHandle.GetComponent<Collider>());
 
-            toolRing = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-            toolRing.name = "NetRing";
-            toolRing.transform.SetParent(t, false);
-            toolRing.transform.localPosition = new Vector3(0.34f, 1.14f, 0.06f);
-            toolRing.transform.localScale = new Vector3(0.20f, 0.02f, 0.20f);
-            toolRing.transform.localRotation = Quaternion.Euler(-20f, 0f, 0f);
-            toolRing.GetComponent<MeshRenderer>().material = toolRingMat;
-            Object.Destroy(toolRing.GetComponent<Collider>());
+            // 머리 = 세운 테 + 그물(원점 = 테 아래 끝 = 자루 끝). 기본 잠자리채 레시피와 같은 메시·좌표다.
+            toolRing = ProcMeshLibrary.CreateNode("NetRing", t, ProcMeshLibrary.NetHead(0.05f, 0.85f), toolRingMat,
+                new Vector3(0.29f, 1.14f, 0f), Quaternion.Euler(-25f, 0f, 0f));
+            toolRing.transform.localScale = new Vector3(0.22f, 0.22f, 0.22f);
 
             // 악세서리는 미리 만들지 않는다 — OutfitShapeLibrary의 레시피가 장착 시점에
             // 루트 아래 OP_Accessory 컨테이너로 필요한 파츠만 만든다.
@@ -573,7 +661,9 @@ namespace InsectGame.Core
         [System.Diagnostics.Conditional("UNITY_EDITOR")]
         private void LogVertexBudget()
         {
-            const int Budget = 3500;
+            // 3500 → 3800 → 4200(2026-09-30): 머리 스타일 4종(앞머리 껍질·옆머리·긴머리 가닥)과 입·눈꺼풀·어깨·엄지로
+            // +300~500, 열린 자켓의 옷깃·라펠과 잠자리채 그물 머리로 +300. 그래도 프리미티브 시절(10,400)의 40% 수준이다.
+            const int Budget = 4200;
 
             int total = 0;
             MeshFilter[] filters = GetComponentsInChildren<MeshFilter>(true);
@@ -595,101 +685,145 @@ namespace InsectGame.Core
             }
         }
 
+        // ── 얼굴 ────────────────────────────────────────────
+        //
+        // 머리 구의 반지름(HeadPivot 공간). 얼굴 부품을 **머리 표면 위에** 놓는 데 쓴다 — 예전엔 z를 상수로
+        // 박아서 머리가 큰 여자 얼굴에서는 입(0.32)이 표면(≈0.32) 안으로 반쯤 파묻혔다.
+        private Vector3 headRadii;
+
+        /// <summary>눈썹 높이. 앞머리 끝(y ≈ 0.105~0.115)보다 아래여야 눈썹이 가려지지 않는다.</summary>
+        private const float BrowY = 0.092f;
+
+        /// <summary>머리 표면의 z(앞면). (x, y)가 머리 밖이면 0.</summary>
+        private float FaceZ(float x, float y)
+        {
+            float u = x / headRadii.x;
+            float v = y / headRadii.y;
+            return headRadii.z * Mathf.Sqrt(Mathf.Max(0f, 1f - u * u - v * v));
+        }
+
+        /// <summary>눈썹·속눈썹 색 — 머리색을 어둡게. 예전엔 고정 갈색이라 금발·파랑 머리에 갈색 눈썹이 붙었다(2D 초상은 이미 머리색을 따랐다).</summary>
+        internal static Color BrowTone(Color hair)
+        {
+            return new Color(hair.r * 0.55f + 0.04f, hair.g * 0.55f + 0.03f, hair.b * 0.55f + 0.03f);
+        }
+
         private void BuildFace(GameObject headPivot, float headScale, int gender)
         {
-            Material eyeMat = MakeMaterial(Color.white, SurfaceKind.Wet);
-            Material pupilMat = MakeMaterial(new Color(0.12f, 0.08f, 0.05f), SurfaceKind.Wet);
+            Transform h = headPivot.transform;
+            headRadii = new Vector3((headScale - 0.02f) * 0.5f, (headScale - 0.04f) * 0.5f, (headScale - 0.04f) * 0.5f);
 
-            // 치비 큰 눈: 옛 0.11 → 0.15/0.17(세로로 큰 동그란 눈), 살짝 아래·바깥(귀여운 인상).
-            // 눌린 구체(515정점)에서 원판(17정점)으로 — 이 얼굴 8노드가 캐릭터 정점의 40%였다.
+            Material eyeMat = MakeMaterial(Color.white, SurfaceKind.Wet);
+            Material pupilMat = MakeMaterial(new Color(0.16f, 0.10f, 0.07f), SurfaceKind.Wet);
+            Material hlMat = MakeMaterial(new Color(1f, 1f, 1f, 0.9f), SurfaceKind.Wet);
+            Color browColor = BrowTone(CharacterPalette.Hair(look.hairColor));
+            Material browMat = MakeMaterial(browColor, SurfaceKind.Hair);
+            Material lidMat = MakeMaterial(new Color(0.10f, 0.07f, 0.06f), SurfaceKind.Hair);
+
+            // 치비 큰 눈 — 노드 이름·좌표는 CharacterFaceAnimator가 깜빡임에 쓰므로 그대로 둔다.
             Mesh eyeMesh = UnitDisc(16);
-            Part("EyeL", headPivot.transform, eyeMesh, eyeMat,
-                new Vector3(-0.12f, -0.03f, 0.32f), new Vector3(0.15f, 0.17f, 0.06f));
-            Part("EyeR", headPivot.transform, eyeMesh, eyeMat,
-                new Vector3(0.12f, -0.03f, 0.32f), new Vector3(0.15f, 0.17f, 0.06f));
+            GameObject eyeL = Part("EyeL", h, eyeMesh, eyeMat, new Vector3(-0.12f, -0.03f, 0.32f), new Vector3(0.15f, 0.17f, 0.06f));
+            GameObject eyeR = Part("EyeR", h, eyeMesh, eyeMat, new Vector3(0.12f, -0.03f, 0.32f), new Vector3(0.15f, 0.17f, 0.06f));
 
             Mesh pupilMesh = UnitDisc(12);
-            Part("PupilL", headPivot.transform, pupilMesh, pupilMat,
-                new Vector3(-0.12f, -0.04f, 0.35f), new Vector3(0.09f, 0.11f, 0.02f));
-            Part("PupilR", headPivot.transform, pupilMesh, pupilMat,
-                new Vector3(0.12f, -0.04f, 0.35f), new Vector3(0.09f, 0.11f, 0.02f));
+            GameObject pupilL = Part("PupilL", h, pupilMesh, pupilMat, new Vector3(-0.12f, -0.04f, 0.35f), new Vector3(0.10f, 0.12f, 0.02f));
+            GameObject pupilR = Part("PupilR", h, pupilMesh, pupilMat, new Vector3(0.12f, -0.04f, 0.35f), new Vector3(0.10f, 0.12f, 0.02f));
 
-            Material hlMat = MakeMaterial(new Color(1f, 1f, 1f, 0.9f), SurfaceKind.Wet);
             Mesh hlMesh = UnitDisc(8);
-            Part("HighlightL", headPivot.transform, hlMesh, hlMat,
-                new Vector3(-0.10f, 0.01f, 0.36f), new Vector3(0.045f, 0.045f, 0.01f));
-            Part("HighlightR", headPivot.transform, hlMesh, hlMat,
-                new Vector3(0.10f, 0.01f, 0.36f), new Vector3(0.045f, 0.045f, 0.01f));
+            Part("HighlightL", h, hlMesh, hlMat, new Vector3(-0.10f, 0.01f, 0.36f), new Vector3(0.045f, 0.045f, 0.01f));
+            Part("HighlightR", h, hlMesh, hlMat, new Vector3(0.10f, 0.01f, 0.36f), new Vector3(0.045f, 0.045f, 0.01f));
+            // 아래쪽 작은 반사 — 동공의 자식이라 깜빡일 때 동공과 함께 눌린다(애니메이터 목록을 늘리지 않는다).
+            Part("GlintL", pupilL.transform, hlMesh, hlMat, new Vector3(-0.22f, -0.26f, 0.6f), new Vector3(0.18f, 0.15f, 0.5f));
+            Part("GlintR", pupilR.transform, hlMesh, hlMat, new Vector3(-0.22f, -0.26f, 0.6f), new Vector3(0.18f, 0.15f, 0.5f));
 
-            int faceType = look.faceType;
-            Material browMat = MakeMaterial(new Color(0.2f, 0.15f, 0.1f), SurfaceKind.Hair);
-            GameObject browL = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            browL.name = "BrowL";
-            browL.transform.SetParent(headPivot.transform, false);
-            browL.transform.localPosition = new Vector3(-0.12f, 0.11f, 0.32f);
-            browL.transform.localScale = new Vector3(0.09f, 0.016f, 0.02f);
-            browL.GetComponent<MeshRenderer>().material = browMat;
-            Object.Destroy(browL.GetComponent<Collider>());
+            // 윗눈꺼풀 선 — 눈의 **자식**이라 깜빡이면 눈과 함께 눌려 감은 눈의 선이 된다.
+            // 선 하나가 흰 원판을 "눈"으로 읽히게 하는 가장 싼 장치다(예전 남자 눈은 흰 원 + 점이라 멍해 보였다).
+            // 여자는 더 두껍고 바깥으로 길게 뻗는다(속눈썹). 옛 LashL/R 큐브는 이걸로 대신한다.
+            float lidThick = gender == 1 ? 0.20f : 0.13f;
+            float lidOuter = gender == 1 ? 8f : 22f;    // 바깥 끝 각도(작을수록 길다)
+            Part("LidL", eyeL.transform, ProcMeshLibrary.Arc(0.5f, lidThick, 180f - lidOuter, 35f, 10), lidMat,
+                new Vector3(0f, 0f, 0.75f), Vector3.one);
+            Part("LidR", eyeR.transform, ProcMeshLibrary.Arc(0.5f, lidThick, lidOuter, 145f, 10), lidMat,
+                new Vector3(0f, 0f, 0.75f), Vector3.one);
 
-            GameObject browR = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            browR.name = "BrowR";
-            browR.transform.SetParent(headPivot.transform, false);
-            browR.transform.localPosition = new Vector3(0.12f, 0.11f, 0.32f);
-            browR.transform.localScale = new Vector3(0.09f, 0.016f, 0.02f);
-            browR.GetComponent<MeshRenderer>().material = browMat;
-            Object.Destroy(browR.GetComponent<Collider>());
+            // 눈썹 — 둥근 막대. 머리색을 따른다.
+            Mesh browMesh = ProcMeshLibrary.RoundedBox(new Vector3(0.10f, gender == 1 ? 0.018f : 0.024f, 0.02f), 0.008f, 1);
+            ProcMeshLibrary.CreateNode("BrowL", h, browMesh, browMat, new Vector3(-0.12f, BrowY, FaceZ(-0.12f, BrowY) + 0.008f));
+            ProcMeshLibrary.CreateNode("BrowR", h, browMesh, browMat, new Vector3(0.12f, BrowY, FaceZ(0.12f, BrowY) + 0.008f));
 
-            // 코는 몸의 피부 머티리얼을 그대로 쓴다. 예전엔 여기서 같은 색으로 **하나 더** 만들면서
-            // 이름까지 필드와 같아(지역 변수가 필드를 가림) 피부색을 한 곳에서 바꾸려 하면
-            // 코만 옛 색으로 남는 함정이었다. BuildAll이 이 메서드보다 먼저 필드를 채운다.
-            // 치비: 코는 작은 점으로 (큰 눈 강조). 위치도 눈 아래로 내림.
-            Part("Nose", headPivot.transform, UnitSphere(4, 6), skinMat,
-                new Vector3(0f, -0.10f, 0.35f), new Vector3(0.024f, 0.022f, 0.02f));
+            // 코는 몸의 피부 머티리얼을 그대로 쓴다(BuildAll이 먼저 채운다). 치비: 작은 점.
+            Part("Nose", h, UnitSphere(4, 6), skinMat, new Vector3(0f, -0.10f, FaceZ(0f, -0.10f)), new Vector3(0.024f, 0.022f, 0.02f));
 
-            Material mouthMat = MakeMaterial(new Color(0.8f, 0.4f, 0.35f), SurfaceKind.Skin);
-            GameObject mouth = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            mouth.name = "Mouth";
-            mouth.transform.SetParent(headPivot.transform, false);
-            float mouthWidth = 0.04f;
-            float mouthY = -0.05f;
-            switch (faceType)
-            {
-                case 0: mouthWidth = 0.04f; mouthY = -0.05f; break;
-                case 1: mouthWidth = 0.05f; mouthY = -0.06f; break;
-                case 2: mouthWidth = 0.03f; mouthY = -0.04f; break;
-                case 3: mouthWidth = 0.02f; mouthY = -0.045f; break;
-            }
-            // 치비: 큰 눈/작은 코에 맞춰 입을 아래로 내려 균형 (옛 위치는 코와 겹쳐 답답).
-            mouth.transform.localPosition = new Vector3(0f, mouthY - 0.08f, 0.32f);
-            mouth.transform.localScale = new Vector3(mouthWidth, 0.015f, 0.015f);
-            mouth.GetComponent<MeshRenderer>().material = mouthMat;
-            Object.Destroy(mouth.GetComponent<Collider>());
+            BuildMouth(h, look.faceType);
 
             if (gender == 1)
             {
                 Material blushMat = MakeMaterial(new Color(1f, 0.6f, 0.6f, 0.4f), SurfaceKind.Skin);
                 Mesh blushMesh = UnitDisc(10);
-                Part("BlushL", headPivot.transform, blushMesh, blushMat,
-                    new Vector3(-0.16f, -0.10f, 0.30f), new Vector3(0.08f, 0.05f, 0.02f));
-                Part("BlushR", headPivot.transform, blushMesh, blushMat,
-                    new Vector3(0.16f, -0.10f, 0.30f), new Vector3(0.08f, 0.05f, 0.02f));
+                Part("BlushL", h, blushMesh, blushMat, new Vector3(-0.17f, -0.11f, FaceZ(-0.17f, -0.11f) + 0.004f), new Vector3(0.08f, 0.05f, 0.02f));
+                Part("BlushR", h, blushMesh, blushMat, new Vector3(0.17f, -0.11f, FaceZ(0.17f, -0.11f) + 0.004f), new Vector3(0.08f, 0.05f, 0.02f));
+            }
+        }
 
-                Material lashMat = MakeMaterial(new Color(0.1f, 0.08f, 0.05f), SurfaceKind.Hair);
-                GameObject lashL = GameObject.CreatePrimitive(PrimitiveType.Cube);
-                lashL.name = "LashL";
-                lashL.transform.SetParent(headPivot.transform, false);
-                lashL.transform.localPosition = new Vector3(-0.12f, 0.07f, 0.31f);
-                lashL.transform.localScale = new Vector3(0.09f, 0.006f, 0.01f);
-                lashL.GetComponent<MeshRenderer>().material = lashMat;
-                Object.Destroy(lashL.GetComponent<Collider>());
+        /// <summary>
+        /// 표정별 입 — 모양이 달라야 네 가지가 구분된다. 예전엔 폭 0.02~0.05의 납작한 상자 하나라
+        /// 어떤 표정을 골라도 화면에선 점 하나였다(2D 초상화는 크기 순서까지 반대였다).
+        /// <b>노드는 "Mouth" 하나</b>다 — CharacterFaceAnimator가 그 x 스케일을 표정에 따라 곱한다.
+        /// </summary>
+        private void BuildMouth(Transform h, int faceType)
+        {
+            MouthShape(faceType, out MouthKind kind, out Vector2 size, out float bottomY);
+            Material lineMat = MakeMaterial(new Color(0.42f, 0.17f, 0.15f), SurfaceKind.Skin);
 
-                GameObject lashR = GameObject.CreatePrimitive(PrimitiveType.Cube);
-                lashR.name = "LashR";
-                lashR.transform.SetParent(headPivot.transform, false);
-                lashR.transform.localPosition = new Vector3(0.12f, 0.07f, 0.31f);
-                lashR.transform.localScale = new Vector3(0.09f, 0.006f, 0.01f);
-                lashR.GetComponent<MeshRenderer>().material = lashMat;
-                Object.Destroy(lashR.GetComponent<Collider>());
+            GameObject mouth;
+            switch (kind)
+            {
+                case MouthKind.Open:
+                {
+                    // 윗변이 평평한 반원(D) + 혀. 원점 = 윗변 중앙.
+                    Material openMat = MakeMaterial(new Color(0.55f, 0.16f, 0.17f), SurfaceKind.Skin);
+                    float z = FaceZ(0f, bottomY + size.y) + 0.006f;
+                    mouth = Part("Mouth", h, ProcMeshLibrary.Sector(0.5f, 1f, 180f, 360f, 12), openMat,
+                        new Vector3(0f, bottomY + size.y, z), new Vector3(size.x, size.y, 1f));
+                    Material tongueMat = MakeMaterial(new Color(0.96f, 0.55f, 0.55f), SurfaceKind.Skin);
+                    Part("MouthTongue", mouth.transform, ProcMeshLibrary.Sector(0.5f, 1f, 180f, 360f, 10), tongueMat,
+                        new Vector3(0f, -0.55f, 0.002f), new Vector3(0.62f, 0.45f, 1f));
+                    break;
+                }
+                case MouthKind.Line:
+                {
+                    float y = bottomY + size.y * 0.5f;
+                    mouth = Part("Mouth", h, UnitDisc(10), lineMat,
+                        new Vector3(0f, y, FaceZ(0f, y) + 0.006f), new Vector3(size.x, size.y, 0.01f));
+                    break;
+                }
+                default:
+                {
+                    // 미소 곡선 — 원의 아래쪽 호. 원점 = 원 중심이라 곡선 바닥이 bottomY에 오게 올린다.
+                    // z는 **원점 높이**의 표면에서 잡는다 — 곡선은 전부 그보다 아래(적도에서 먼 쪽)라 표면이
+                    // 그보다 뒤에 있다. 바닥 기준으로 잡으면 입꼬리가 머리 속으로 파묻힌다.
+                    float y = bottomY + 0.5f * size.y;
+                    mouth = Part("Mouth", h, ProcMeshLibrary.Arc(0.5f, 0.24f, 205f, 335f, 10), lineMat,
+                        new Vector3(0f, y, FaceZ(0f, y) + 0.006f), new Vector3(size.x, size.y, 1f));
+                    break;
+                }
+            }
+        }
+
+        internal enum MouthKind { Smile, Open, Line }
+
+        /// <summary>
+        /// 표정(생성 화면 라벨: 미소·활짝·차분·무표정) → 입 모양. 순수 표라 테스트가 네 표정이 서로 다른지를 고정한다.
+        /// <paramref name="size"/>는 노드 스케일(폭, 높이), <paramref name="bottomY"/>는 입 아래 끝의 HeadPivot y.
+        /// </summary>
+        internal static void MouthShape(int faceType, out MouthKind kind, out Vector2 size, out float bottomY)
+        {
+            switch (faceType)
+            {
+                case 1: kind = MouthKind.Open; size = new Vector2(0.115f, 0.075f); bottomY = -0.205f; break;   // 활짝
+                case 2: kind = MouthKind.Smile; size = new Vector2(0.075f, 0.045f); bottomY = -0.175f; break;  // 차분
+                case 3: kind = MouthKind.Line; size = new Vector2(0.06f, 0.014f); bottomY = -0.172f; break;    // 무표정
+                default: kind = MouthKind.Smile; size = new Vector2(0.11f, 0.075f); bottomY = -0.18f; break;   // 미소
             }
         }
 
@@ -702,146 +836,145 @@ namespace InsectGame.Core
                 new Vector3(0.34f, -0.02f, 0f), new Vector3(0.05f, 0.08f, 0.06f));
         }
 
-        private void BuildHair(GameObject headPivot, int style, int gender, Material hairMat)
+        // ── 머리카락 ────────────────────────────────────────
+        //
+        // 예전 네 스타일은 전부 정수리를 덮는 "헬멧" 하나에 옆·뒤 덩어리만 달랐고, 긴머리조차 뒤로만
+        // 늘어져 **정면에서는 넷이 같은 머리**였다. 정면에서 읽히는 요소로 스타일을 가른다:
+        //   짧은 = 삐친 앞머리 / 중간 = 턱까지 오는 옆머리 / 긴 = 어깨 앞으로 내려오는 머리 / 올림 = 정수리 위 형태.
+        // 정수리 덮개(HairTop)는 모든 스타일이 공유하고 **모자 속에 들어가는 크기**로 둔다 —
+        // 기본 캡(반지름 0.38×0.17×0.365, 중심 y 0.24)보다 위로 나오면 모든 모자가 머리를 뚫는다.
+
+        private void BuildHair(GameObject headPivot, int style, int gender, Material mat)
         {
+            Transform h = headPivot.transform;
+            // 정수리 덮개 — 머리보다 조금 크고 위·뒤로 치우친 타원체. 얼굴(눈 높이)은 드러내고
+            // 정수리·옆·뒤통수를 덮는다. 짧은 머리 남자는 폭을 줄여 귀가 보이게 한다.
+            float skullW = (style == 0 && gender == 0) ? headRadii.x * 2f + 0.02f : headRadii.x * 2f + 0.045f;
+            Part("HairTop", h, UnitSphere(10, 14), mat, new Vector3(0f, 0.075f, -0.045f),
+                new Vector3(skullW, 0.66f, headRadii.z * 2f + 0.05f));   // 높이는 고정 — 머리가 큰 여자도 캡(꼭대기 0.41) 밑
+
+            // 모자 선 위로 솟는 부분(올림머리 스파이크·번)은 한 컨테이너에 모은다. 정수리를 덮는 모자를 쓰면
+            // CharacterOutfitManager가 이걸 통째로 숨긴다 — 안 그러면 스파이크가 캡·헬멧을 뚫고 나온다.
+            // 스타일과 무관하게 **항상 만든다**(빈 컨테이너여도) — 모자 레시피의 hideNodes가 이름으로 찾는다.
+            hairCrown = new GameObject(OutfitShapeLibrary.HairCrownNode).transform;
+            hairCrown.SetParent(h, false);
+
             switch (style)
             {
-                case 0: BuildShortHair(headPivot, gender, hairMat); break;
-                case 1: BuildMediumHair(headPivot, gender, hairMat); break;
-                case 2: BuildLongHair(headPivot, gender, hairMat); break;
-                case 3: BuildUpHair(headPivot, gender, hairMat); break;
+                case 1: BuildMediumHair(h, gender, mat); break;
+                case 2: BuildLongHair(h, gender, mat); break;
+                case 3: BuildUpHair(h, gender, mat); break;
+                default: BuildShortHair(h, gender, mat); break;
             }
+        }
+
+        private Transform hairCrown;
+
+        /// <summary>가닥용 저폴리 캡슐(6링×8) — 앞머리만 5~6개라 몸통 팔다리용(8×10)을 쓰면 정점이 두 배로 는다.</summary>
+        private static Mesh StrandMesh(float taper)
+        {
+            float rTop = 0.5f, rBottom = 0.5f * taper;
+            return ProcMeshLibrary.TaperedCapsule(rTop, rBottom, 2f - rTop - rBottom, 6, 8);
         }
 
         /// <summary>
-        /// 여성 앞머리. 스타일마다 두께가 다르다.
+        /// 앞머리 — 이마 곡면을 따라 붙인 **한 장**(<see cref="ProcMeshLibrary.FringeShell"/>)이고 아래 끝만 모양이 다르다.
+        /// 남자는 한쪽으로 쓸린 톱니, 여자는 둥근 물결 + 관자놀이까지 내려오는 옆머리.
         ///
-        /// 예전엔 이 블록이 <see cref="BuildShortHair"/> 안에만 있었는데, <see cref="BuildLongHair"/>가
-        /// 그 메서드를 부른 뒤 <b>자기 앞머리를 또 만들었다</b> — 여성+긴머리에서 "HairBangs"라는
-        /// 같은 이름의 Cube 둘(두께 0.08 / 0.10)이 같은 자리에 겹쳐 z-fighting이 났다.
-        /// 생성 지점을 하나로 모으고 호출을 한 번씩만 두어 구조적으로 막는다.
+        /// 시안 둘을 버렸다: 타원 한 덩어리는 모자 챙처럼 보였고, 캡슐 가닥을 늘어놓으면 가닥마다 음영이
+        /// 따로 져서 "이빨"이나 "꼰 끈"이 됐다. 끝은 눈썹(y ≈ 0.10) 바로 위에서 멈춘다 — 눈썹이 가리면 표정이 죽는다.
+        /// 윗변은 정수리 덮개(HairTop) 밑으로 들어가게 높게 잡아 이음매가 안 보이게 한다.
         /// </summary>
-        private void BuildBangs(GameObject headPivot, Material mat, float thickness)
+        private void BuildBangs(Transform h, int gender, Material mat)
         {
-            GameObject bangs = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            bangs.name = "HairBangs";
-            bangs.transform.SetParent(headPivot.transform, false);
-            bangs.transform.localPosition = new Vector3(0f, 0.18f, 0.16f);
-            bangs.transform.localScale = new Vector3(0.4f, thickness, 0.1f);
-            bangs.GetComponent<MeshRenderer>().material = mat;
-            Object.Destroy(bangs.GetComponent<Collider>());
+            const float Gap = 0.016f;   // 머리 표면에서 띄우는 두께 — 붙이면 z-fighting, 크면 떠 보인다
+            float r = Mathf.Max(headRadii.x, headRadii.z) + Gap;
+            float ry = headRadii.y + Gap;
+            Mesh shell = gender == 1
+                ? ProcMeshLibrary.FringeShell(r, ry, 62f, 62f, 16f, 9f, 22f, 6, 0.5f, true)
+                : ProcMeshLibrary.FringeShell(r, ry, 52f, 62f, 17f, 19f, 4f, 4, 0.8f, false);
+            ProcMeshLibrary.CreateNode("HairBangs", h, shell, mat, Vector3.zero);
         }
 
-        /// <param name="withBangs">
-        /// 긴머리는 자기 두께의 앞머리를 따로 만들므로 false로 부른다 — 앞머리 노드 중복 방지.
-        /// </param>
-        private void BuildShortHair(GameObject headPivot, int gender, Material mat, bool withBangs = true)
+        private void BuildShortHair(Transform h, int gender, Material mat)
         {
-            Mesh cap = UnitSphere(8, 12);      // 머리를 덮는 큰 덩어리
-            Mesh tuft = UnitSphere(6, 8);      // 옆·뒤 작은 덩어리
-
-            Part("HairTop", headPivot.transform, cap, mat,
-                new Vector3(0f, 0.22f, -0.02f), new Vector3(0.62f, 0.34f, 0.60f));
-            Part("HairSideL", headPivot.transform, tuft, mat,
-                new Vector3(-0.2f, 0.05f, -0.02f), new Vector3(0.12f, 0.2f, 0.35f));
-            Part("HairSideR", headPivot.transform, tuft, mat,
-                new Vector3(0.2f, 0.05f, -0.02f), new Vector3(0.12f, 0.2f, 0.35f));
-            Part("HairBack", headPivot.transform, tuft, mat,
-                new Vector3(0f, 0.08f, -0.15f), new Vector3(0.45f, 0.28f, 0.2f));
-
-            if (gender == 1 && withBangs) BuildBangs(headPivot, mat, 0.08f);
-        }
-
-        private void BuildMediumHair(GameObject headPivot, int gender, Material mat)
-        {
-            BuildShortHair(headPivot, gender, mat);
-
-            Mesh strandMesh = UnitCapsule(0.85f);   // 끝으로 갈수록 살짝 가늘어지는 머리 다발
-
-            Part("HairExtL", headPivot.transform, strandMesh, mat,
-                new Vector3(-0.2f, -0.1f, -0.05f), new Vector3(0.1f, 0.18f, 0.12f));
-            Part("HairExtR", headPivot.transform, strandMesh, mat,
-                new Vector3(0.2f, -0.1f, -0.05f), new Vector3(0.1f, 0.18f, 0.12f));
-            Part("HairBackExt", headPivot.transform, strandMesh, mat,
-                new Vector3(0f, -0.08f, -0.18f), new Vector3(0.35f, 0.2f, 0.15f));
-        }
-
-        private void BuildLongHair(GameObject headPivot, int gender, Material mat)
-        {
-            // 앞머리는 아래에서 긴머리 두께(0.10)로 직접 만든다 — 여기서 받으면 둘이 겹친다.
-            BuildShortHair(headPivot, gender, mat, withBangs: false);
-
-            Mesh longStrandMesh = UnitCapsule(0.8f);
-
-            for (int i = 0; i < 3; i++)
-            {
-                float x = (i - 1) * 0.12f;
-                Part($"HairLong_{i}", headPivot.transform, longStrandMesh, mat,
-                    new Vector3(x, -0.3f, -0.12f), new Vector3(0.12f, 0.35f, 0.1f));
-            }
-
-            Part("HairFrontL", headPivot.transform, longStrandMesh, mat,
-                new Vector3(-0.18f, -0.12f, 0.1f), new Vector3(0.06f, 0.22f, 0.06f));
-            Part("HairFrontR", headPivot.transform, longStrandMesh, mat,
-                new Vector3(0.18f, -0.12f, 0.1f), new Vector3(0.06f, 0.22f, 0.06f));
+            BuildBangs(h, gender, mat);
+            // 뒤통수를 둥글게 — 덮개만으로는 목덜미 위가 각져 보인다.
+            Part("HairBack", h, UnitSphere(6, 10), mat, new Vector3(0f, -0.06f, -0.2f), new Vector3(0.5f, 0.3f, 0.26f));
 
             if (gender == 1)
             {
-                BuildBangs(headPivot, mat, 0.10f);
-
-                for (int i = 0; i < 2; i++)
-                {
-                    float x = (i == 0) ? -0.08f : 0.08f;
-                    Part($"HairVeryLong_{i}", headPivot.transform, longStrandMesh, mat,
-                        new Vector3(x, -0.55f, -0.12f), new Vector3(0.1f, 0.3f, 0.08f));
-                }
+                // 짧은 단발 — 광대까지 오는 옆머리.
+                Mesh side = UnitSphere(6, 10);
+                Part("HairSideL", h, side, mat, new Vector3(-0.29f, -0.05f, 0.02f), new Vector3(0.15f, 0.30f, 0.36f));
+                Part("HairSideR", h, side, mat, new Vector3(0.29f, -0.05f, 0.02f), new Vector3(0.15f, 0.30f, 0.36f));
             }
         }
 
-        private void BuildUpHair(GameObject headPivot, int gender, Material mat)
+        private void BuildMediumHair(Transform h, int gender, Material mat)
         {
-            Part("HairTop", headPivot.transform, UnitSphere(8, 12), mat,
-                new Vector3(0f, 0.26f, -0.02f), new Vector3(0.55f, 0.30f, 0.52f));
+            BuildBangs(h, gender, mat);
+            // 턱선까지 내려오는 옆머리 — 정면에서 얼굴을 양옆으로 감싸는 것이 짧은 머리와의 차이다.
+            Mesh side = UnitSphere(6, 9);
+            Part("HairSideL", h, side, mat, new Vector3(-0.29f, -0.09f, 0.01f), new Vector3(0.17f, 0.44f, 0.42f));
+            Part("HairSideR", h, side, mat, new Vector3(0.29f, -0.09f, 0.01f), new Vector3(0.17f, 0.44f, 0.42f));
+            Part("HairBack", h, UnitSphere(6, 9), mat, new Vector3(0f, -0.11f, -0.2f), new Vector3(0.64f, 0.48f, 0.36f));
+        }
 
+        private void BuildLongHair(Transform h, int gender, Material mat)
+        {
+            BuildMediumHair(h, gender, mat);
+
+            // 어깨 **앞으로** 늘어지는 머리 — 긴머리가 정면에서 읽히는 유일한 자리다(예전엔 전부 뒤로만 늘어졌다).
+            // 남자는 어깨선까지, 여자는 가슴까지.
+            // 턱 옆(z 0.08)에서 시작해 가슴 앞(몸통 앞면 월드 z 0.19 ≈ HeadPivot z 0.28)으로 내려오게 앞으로 기울인다 —
+            // 곧게 내리면 가슴 높이에서 몸통 속에 파묻힌다.
+            float len = gender == 1 ? 0.30f : 0.20f;
+            float topZ = 0.08f, bottomZ = gender == 1 ? 0.31f : 0.27f;
+            float lean = -Mathf.Asin(Mathf.Clamp((bottomZ - topZ) / (2f * len), -1f, 1f)) * Mathf.Rad2Deg;
+            Vector3 lockCenter = new Vector3(0.25f, -0.12f - len, (topZ + bottomZ) * 0.5f);
+            Mesh lockMesh = StrandMesh(0.7f);
+            Part("HairLongL", h, lockMesh, mat, new Vector3(-lockCenter.x, lockCenter.y, lockCenter.z),
+                new Vector3(0.15f, len, 0.12f), new Vector3(lean, 0f, -4f));
+            Part("HairLongR", h, lockMesh, mat, lockCenter, new Vector3(0.15f, len, 0.12f), new Vector3(lean, 0f, 4f));
+
+            // 등으로 내려오는 뒷머리. 몸통 등판(월드 z −0.19)보다 뒤에 있어야 파묻히지 않는다.
+            float backLen = gender == 1 ? 0.34f : 0.22f;
+            Part("HairLongBack", h, StrandMesh(0.85f), mat, new Vector3(0f, -0.14f - backLen, -0.40f),
+                new Vector3(0.56f, backLen, 0.18f), new Vector3(-8f, 0f, 0f));
+        }
+
+        private void BuildUpHair(Transform h, int gender, Material mat)
+        {
             if (gender == 0)
             {
-                // 스파이크는 끝이 뾰족할수록 좋다 — 테이퍼를 세게 준다.
-                Mesh spikeMesh = UnitCapsule(0.35f);
-
-                Part("HairSpike", headPivot.transform, spikeMesh, mat,
-                    new Vector3(0f, 0.35f, 0.05f), new Vector3(0.15f, 0.18f, 0.12f),
-                    new Vector3(-20f, 0f, 0f));
-
-                for (int side = -1; side <= 1; side += 2)
-                {
-                    Part($"HairSideSpike_{(side > 0 ? "R" : "L")}", headPivot.transform, spikeMesh, mat,
-                        new Vector3(side * 0.15f, 0.28f, 0f), new Vector3(0.08f, 0.12f, 0.08f),
-                        new Vector3(0f, 0f, -side * 30f));
-                }
+                // 삐죽 올린 머리 — 이마를 드러내고(앞머리 없음) 정수리에서 방사형으로 솟는다.
+                // 앞머리가 없다는 것 자체가 정면에서 짧은 머리와 가르는 가장 큰 차이다.
+                // 첫 시안(지름 0.11~0.17)은 정수리 덮개에 묻혀 곰 귀처럼 보였다 — 굵고 길게.
+                // 전부 HairCrown 아래 — 정수리를 덮는 모자를 쓰면 통째로 숨는다.
+                Mesh spike = StrandMesh(0.25f);
+                Part("HairSpike", hairCrown, spike, mat, new Vector3(0f, 0.33f, 0.17f), new Vector3(0.22f, 0.16f, 0.17f), new Vector3(-50f, 0f, 0f));
+                Part("HairSpike_L", hairCrown, spike, mat, new Vector3(-0.15f, 0.36f, 0.03f), new Vector3(0.17f, 0.17f, 0.15f), new Vector3(-12f, 0f, 30f));
+                Part("HairSpike_R", hairCrown, spike, mat, new Vector3(0.15f, 0.36f, 0.03f), new Vector3(0.17f, 0.17f, 0.15f), new Vector3(-12f, 0f, -30f));
+                Part("HairSpike_T", hairCrown, spike, mat, new Vector3(0f, 0.40f, -0.07f), new Vector3(0.18f, 0.18f, 0.16f), new Vector3(12f, 0f, 0f));
+                Part("HairSpike_BL", hairCrown, spike, mat, new Vector3(-0.11f, 0.32f, -0.2f), new Vector3(0.15f, 0.15f, 0.13f), new Vector3(40f, 0f, 22f));
+                Part("HairSpike_BR", hairCrown, spike, mat, new Vector3(0.11f, 0.32f, -0.2f), new Vector3(0.15f, 0.15f, 0.13f), new Vector3(40f, 0f, -22f));
+                Part("HairBack", h, UnitSphere(6, 10), mat, new Vector3(0f, -0.06f, -0.2f), new Vector3(0.48f, 0.28f, 0.24f));
+                return;
             }
-            else
-            {
-                Part("HairBun", headPivot.transform, UnitSphere(7, 10), mat,
-                    new Vector3(0f, 0.15f, -0.22f), new Vector3(0.22f, 0.22f, 0.22f));
 
-                Material ribbonMat = MakeMaterial(new Color(0.9f, 0.3f, 0.4f), SurfaceKind.Cloth);
-                GameObject ribbon = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-                ribbon.name = "HairRibbon";
-                ribbon.transform.SetParent(headPivot.transform, false);
-                ribbon.transform.localPosition = new Vector3(0f, 0.15f, -0.22f);
-                ribbon.transform.localScale = new Vector3(0.24f, 0.02f, 0.24f);
-                ribbon.GetComponent<MeshRenderer>().material = ribbonMat;
-                Object.Destroy(ribbon.GetComponent<Collider>());
-
-                BuildBangs(headPivot, mat, 0.08f);
-
-                Mesh sideHairMesh = UnitCapsule(0.8f);
-                for (int side = -1; side <= 1; side += 2)
-                {
-                    Part($"HairSide_{(side > 0 ? "R" : "L")}", headPivot.transform, sideHairMesh, mat,
-                        new Vector3(side * 0.2f, -0.05f, 0.05f), new Vector3(0.06f, 0.15f, 0.06f));
-                }
-            }
+            // 올림머리 — 정수리 뒤 높은 번(bun) + 리본. 번을 뒤통수에 붙이면(예전) 정면에서 안 보인다.
+            BuildBangs(h, gender, mat);
+            Part("HairBun", hairCrown, UnitSphere(7, 10), mat, new Vector3(0f, 0.33f, -0.2f), new Vector3(0.28f, 0.26f, 0.28f));
+            Material ribbonMat = MakeMaterial(new Color(0.92f, 0.34f, 0.44f), SurfaceKind.Cloth);
+            Mesh bow = UnitSphere(5, 8);
+            Part("HairRibbonL", hairCrown, bow, ribbonMat, new Vector3(-0.09f, 0.25f, -0.09f), new Vector3(0.12f, 0.08f, 0.05f), new Vector3(0f, 20f, 25f));
+            Part("HairRibbonR", hairCrown, bow, ribbonMat, new Vector3(0.09f, 0.25f, -0.09f), new Vector3(0.12f, 0.08f, 0.05f), new Vector3(0f, -20f, -25f));
+            // 귀 앞으로 내린 잔머리 두 가닥.
+            Mesh tendril = StrandMesh(0.6f);
+            Part("HairSide_L", h, tendril, mat, new Vector3(-0.28f, -0.1f, 0.11f), new Vector3(0.06f, 0.15f, 0.06f), new Vector3(0f, 0f, -6f));
+            Part("HairSide_R", h, tendril, mat, new Vector3(0.28f, -0.1f, 0.11f), new Vector3(0.06f, 0.15f, 0.06f), new Vector3(0f, 0f, 6f));
+            Part("HairBack", h, UnitSphere(6, 10), mat, new Vector3(0f, -0.04f, -0.2f), new Vector3(0.48f, 0.28f, 0.24f));
         }
 
         // ──────────────────────────────────────────────

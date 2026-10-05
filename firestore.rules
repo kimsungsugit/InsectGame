@@ -52,5 +52,11 @@ service cloud.firestore {
     match /worlds/{document=**} {
       allow read, write: if false;
     }
+
+    // 나의 섬 공유(islands/{uid} + likes 서브컬렉션)는 socialPvpApi(Admin SDK)만 읽고 쓴다.
+    // 비공개 섬·차단 관계를 우회해 읽거나 좋아요·방문 수를 직접 올리지 못하게 모두 차단한다.
+    match /islands/{document=**} {
+      allow read, write: if false;
+    }
   }
 }

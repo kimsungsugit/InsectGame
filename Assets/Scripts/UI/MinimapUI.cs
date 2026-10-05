@@ -1,4 +1,4 @@
-using InsectGame.Spawning;
+﻿using InsectGame.Spawning;
 using UnityEngine;
 
 namespace InsectGame.UI
@@ -28,6 +28,12 @@ namespace InsectGame.UI
         /// <summary>미니맵 좌변 x. 아래에 붙는 HUD가 좌변을 맞추는 데 쓴다.</summary>
         public static float LeftX => UIScale.VirtualSafeLeft + 16f;
 
+        /// <summary>미니맵 판의 자리 — 순수 계산(전수 겹침 검사가 부른다).</summary>
+        public static Rect PanelRect(HudFrame f)
+        {
+            return new Rect(f.SafeLeft + 16f, f.ContentTop + TopOffset, PanelSize, PanelSize);
+        }
+
         /// <summary>
         /// 좌측 스택(미니맵·퀘스트 칩·목표 행)이 지금 가려져 있는가.
         /// <see cref="PlayerStatusHUD"/>의 펼침 패널이 이 영역을 통째로 덮으므로, 덮였으면
@@ -41,6 +47,17 @@ namespace InsectGame.UI
 
         [SerializeField] private float worldRadius = 45f; // 미니맵이 커버하는 월드 반경(m)
 
+        private InsectGame.Core.RegionManager regionManager;
+        private InsectGame.NPC.NpcManager npcManager;
+        public void AutoWire(InsectGame.Core.RegionManager manager)
+        {
+            if (regionManager == null) regionManager = manager;
+        }
+        public void AutoWire(InsectGame.NPC.NpcManager manager)
+        {
+            if (npcManager == null) npcManager = manager;
+        }
+
         private Transform player;
         private InsectEntity[] insects;
         private float refreshTimer;
@@ -49,7 +66,9 @@ namespace InsectGame.UI
         private InsectGame.Story.StoryObjectiveTracker objectiveTracker;
 
         private GUIStyle labelStyle;
+        private GUIStyle legendStyle;
         private GUIStyle wedgeStyle;
+        private GUIStyle taleMarkStyle;   // 의뢰 주민 원 안의 !/?
         private Texture2D dotTex;
         private bool ready;
 
@@ -75,10 +94,14 @@ namespace InsectGame.UI
             ready = true;
             labelStyle = new GUIStyle(GUI.skin.label)
             { fontSize = 16, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            labelStyle.normal.textColor = new Color(0.7f, 0.85f, 1f);
+            labelStyle.normal.textColor = UITheme.Instance.textSecondary;
+            legendStyle = new GUIStyle(labelStyle) { alignment = TextAnchor.MiddleLeft };
             wedgeStyle = new GUIStyle(GUI.skin.label)
             { fontSize = 22, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             wedgeStyle.normal.textColor = UITheme.Instance.accentAmber;
+            taleMarkStyle = new GUIStyle(GUI.skin.label)
+            { fontSize = 15, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            taleMarkStyle.normal.textColor = UITheme.Instance.surfaceBase;
             // 소프트 디스크는 UIShapes가 소유한다 — 여기 있던 MakeDisc는 하드 엣지라
             // 확대 시 계단이 보였다(RegionMapUI 사본은 소프트였다). 공용판으로 통일.
             dotTex = UIShapes.Disc;
@@ -103,17 +126,17 @@ namespace InsectGame.UI
         {
             if (player == null) return;
             // 전체화면 모달(도감/배틀/포획선택 등)이 열려 있으면 숨김 — 필드 탐험 중에만.
-            if (ModalUIRegistry.IsAnyOpen()) return;
+            if (ModalUIRegistry.IsAnyOpen() || InsectGame.Core.DreamPrologueState.Active) return;
             // 좌상단 상태 패널이 펼쳐져 있으면 그 아래에 완전히 덮인다 — 그리지 않는다.
             if (LeftStackOccluded) return;
 
             EnsureAssets();
             UIScale.Begin();
 
-            float size = PanelSize;
-            float x = LeftX;
-            float y = UISafeLayout.ContentTop + TopOffset; // 좌상단 HUD(ContentTop) 닫힘 탭 아래
-            Rect rect = new Rect(x, y, size, size);
+            Rect rect = PanelRect(HudFrame.Current);   // 좌상단 HUD(ContentTop) 닫힘 탭 아래
+            float size = rect.width;
+            float x = rect.x;
+            float y = rect.y;
             float cx = x + size / 2f;
             float cy = y + size / 2f;
             float mapRadius = size / 2f - 12f;
@@ -127,7 +150,7 @@ namespace InsectGame.UI
             UISurface.HudCard(rect);
 
             GUI.color = Color.white;
-            GUI.Label(new Rect(x, y + 6f, size, 24f), "미니맵", labelStyle);
+            UIHelper.LabelFit(new Rect(x, y + 6f, size, 24f), "주변 탐색", labelStyle);
 
             // 곤충 점 (월드 +Z = 미니맵 위쪽)
             Vector3 pp = player.position;
@@ -147,7 +170,15 @@ namespace InsectGame.UI
             }
 
             // 메인퀘스트 목표 쐐기 — 곤충 점 위, 플레이어 아래에 그려 셋이 겹쳐도 읽힌다.
-            DrawObjectiveWedge(cx, cy, mapRadius);
+            DrawWorldLandmarks(cx, cy, mapRadius);
+            if (regionManager == null || regionManager.CurrentSubArea == null)
+            {
+                DrawObjectiveWedge(cx, cy, mapRadius);
+                DrawLegend(x, y + size - 32f, size);
+            }
+            else
+                UIHelper.LabelFit(new Rect(x + 8f, y + size - 30f, size - 16f, 24f),
+                    "출구로 돌아가기", labelStyle);
 
             // 플레이어(중심) + 진행방향 점
             GUI.color = new Color(0.4f, 0.85f, 1f, 1f);
@@ -166,9 +197,82 @@ namespace InsectGame.UI
         }
 
         /// <summary>
+        /// 범례 — 색 점 + 짧은 말. 예전엔 "노랑 주민·의뢰 · 민트 입구"를 한 줄 글자로 넣어
+        /// 204px 상자에 맞추느라 LabelFit이 글자를 읽을 수 없는 크기까지 줄였다(세로 화면 캡처에서
+        /// 자모가 뭉개져 보였다). 색 이름을 글로 쓰는 대신 그 색 점을 직접 보여 준다.
+        /// </summary>
+        private void DrawLegend(float x, float y, float size)
+        {
+            UITheme t = UITheme.Instance;
+            const float dot = 12f;
+            float itemW = (size - 24f) * 0.5f;
+            float lx = x + 12f;
+            GUI.color = t.accentAmber;
+            GUI.DrawTexture(new Rect(lx, y + 6f, dot, dot), dotTex);
+            GUI.color = Color.white;
+            UIHelper.LabelFit(new Rect(lx + dot + 4f, y, itemW - dot - 8f, 24f), "주민·의뢰", legendStyle);
+            lx += itemW;
+            GUI.color = t.accentMint;
+            GUI.DrawTexture(new Rect(lx, y + 6f, dot, dot), dotTex);
+            GUI.color = Color.white;
+            UIHelper.LabelFit(new Rect(lx + dot + 4f, y, itemW - dot - 8f, 24f), "입구", legendStyle);
+        }
+
+        /// <summary>
         /// 목표 방향 쐐기. 미니맵 반경(worldRadius) 안이면 실제 위치에, 밖이면 <b>테두리에 붙여</b>
         /// 방향만 알려 준다 — 밖에 있다고 안 그리면 "목표가 멀 때는 아무 안내도 없는" 상태가 된다.
         /// </summary>
+        private void DrawWorldLandmarks(float cx, float cy, float mapRadius)
+        {
+            if (regionManager != null && regionManager.CurrentSubArea != null) return;
+            if (npcManager != null)
+            {
+                foreach (var npc in npcManager.Villagers)
+                    if (npc != null && npc.gameObject.activeInHierarchy)
+                        DrawLandmark(npc.transform.position, cx, cy, mapRadius, UITheme.Instance.accentAmber);
+                foreach (var npc in npcManager.StoryNpcs)
+                {
+                    if (npc == null || !npc.gameObject.activeInHierarchy) continue;
+                    // 의뢰 주민·본편 대상은 네모 대신 !/? 원 — 지도 배지·머리 위 표식과 같은 기호다.
+                    InsectGame.NPC.QuestMark mark = objectiveTracker != null
+                        ? objectiveTracker.QuestMarkOf(npc) : InsectGame.NPC.QuestMark.None;
+                    if (mark != InsectGame.NPC.QuestMark.None) DrawTaleMark(npc.transform.position, cx, cy, mapRadius, mark);
+                    else DrawLandmark(npc.transform.position, cx, cy, mapRadius, UITheme.Instance.accentAmber);
+                }
+            }
+            if (regionManager == null || regionManager.Regions == null) return;
+            foreach (var region in regionManager.Regions)
+            {
+                if (region == null || region.subAreas == null || !regionManager.IsRegionAccessible(region)) continue;
+                foreach (var sub in region.subAreas)
+                    if (sub != null)
+                        DrawLandmark(sub.centerPosition, cx, cy, mapRadius, UITheme.Instance.accentMint);
+            }
+        }
+
+        private void DrawLandmark(Vector3 position, float cx, float cy, float mapRadius, Color color)
+        {
+            if (!MapMarkerProjection.TryRadarOffset(player.position, position, worldRadius, mapRadius, out Vector2 offset)) return;
+            GUI.color = color;
+            GUI.DrawTexture(new Rect(cx + offset.x - 5f, cy + offset.y - 5f, 10f, 10f), Texture2D.whiteTexture);
+            GUI.color = Color.white;
+        }
+
+        private void DrawTaleMark(Vector3 position, float cx, float cy, float mapRadius, InsectGame.NPC.QuestMark mark)
+        {
+            if (!MapMarkerProjection.TryRadarOffset(player.position, position, worldRadius, mapRadius, out Vector2 offset)) return;
+            bool report = mark == InsectGame.NPC.QuestMark.Report;
+            // 본편 대상은 한 단 크고 민트다 — 여러 의뢰 사이에서 "지금 갈 사람"이 먼저 보이게(지도 배지와 같은 색).
+            bool main = mark == InsectGame.NPC.QuestMark.Main;
+            float half = main ? 11f : 9f;
+            Rect r = new Rect(cx + offset.x - half, cy + offset.y - half, half * 2f, half * 2f);
+            // 의뢰는 !·? 모두 호박색이고 기호로 가른다(지도 배지와 같은 규칙).
+            GUI.color = main ? UITheme.Instance.accentMint : UITheme.Instance.accentAmber;
+            GUI.DrawTexture(r, dotTex);
+            GUI.color = Color.white;
+            GUI.Label(r, report ? "?" : "!", taleMarkStyle);
+        }
+
         private void DrawObjectiveWedge(float cx, float cy, float mapRadius)
         {
             if (objectiveTracker == null || !objectiveTracker.HasObjective
@@ -179,6 +283,12 @@ namespace InsectGame.UI
 
             // 월드 +Z가 미니맵 위쪽이므로 화면 벡터는 (x, -z)다.
             float dist = objectiveTracker.DistanceToTarget;
+
+            // 반경 안의 표식 달린 주민이면 쐐기를 겹치지 않는다 — 그 자리에 이미 !·?가 있다.
+            InsectGame.NPC.VillagerNpc targetNpc = objectiveTracker.TargetNpc;
+            if (dist <= worldRadius && targetNpc != null
+                && objectiveTracker.QuestMarkOf(targetNpc) != InsectGame.NPC.QuestMark.None) return;
+
             float mapped = Mathf.Min(dist, worldRadius) / worldRadius * mapRadius;
             float wx = cx + dir.x * mapped;
             float wy = cy - dir.z * mapped;
@@ -186,8 +296,8 @@ namespace InsectGame.UI
             // 위를 향한 "▲"를 목표 쪽으로 돌린다. GUI 회전은 시계방향이 양수라 atan2(x, z)가 그대로 각도.
             float angle = Mathf.Atan2(dir.x, dir.z) * Mathf.Rad2Deg;
             Matrix4x4 saved = GUI.matrix;
-            GUIUtility.RotateAroundPivot(angle, new Vector2(wx, wy));
-            GUI.Label(new Rect(wx - 14f, wy - 14f, 28f, 28f), "▲", wedgeStyle);
+            GUI.matrix = MapMarkerProjection.PivotMatrix(saved, new Vector2(wx, wy), angle);
+            GUI.Label(new Rect(-14f, -14f, 28f, 28f), "▲", wedgeStyle);
             GUI.matrix = saved;
         }
     }

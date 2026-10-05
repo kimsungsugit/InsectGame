@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using InsectGame.Capture;
 using InsectGame.Data;
 using InsectGame.Dex;
@@ -37,44 +37,46 @@ namespace InsectGame.Core
         private PlayerStartPose initialPlayerStartPose = PlayerStartPlacement.FallbackPose;
         private bool initialPlayerStartResolved;
         private bool initialSpawnApplied;
+        private Mesh regionGroundMesh;
+        private Data.RegionData[] sceneryRouteRegions;
+
+        private Mesh GetRegionGroundMesh()
+        {
+            if (regionGroundMesh != null) return regionGroundMesh;
+            const int segments = 64;
+            var vertices = new Vector3[segments + 1];
+            var triangles = new int[segments * 3];
+            var uv = new Vector2[segments + 1];
+            uv[0] = new Vector2(.5f, .5f);
+            for (int i = 0; i < segments; i++)
+            {
+                float angle = i * Mathf.PI * 2 / segments;
+                vertices[i + 1] = new Vector3(Mathf.Cos(angle), 0, Mathf.Sin(angle)) * 5f;
+                uv[i + 1] = new Vector2(vertices[i + 1].x / 10 + .5f, vertices[i + 1].z / 10 + .5f);
+                triangles[i * 3] = 0;
+                triangles[i * 3 + 1] = (i + 1) % segments + 1;
+                triangles[i * 3 + 2] = i + 1;
+            }
+            regionGroundMesh = new Mesh { name = "RegionCircularGround", vertices = vertices, triangles = triangles, uv = uv };
+            regionGroundMesh.RecalculateNormals();
+            regionGroundMesh.RecalculateBounds();
+            return regionGroundMesh;
+        }
 
         /// <summary>
-        /// 셰이더 폴백 4단계를 거쳐 머티리얼을 만든다. <b>알파 &lt; 1이면 투명 렌더로 전환한다.</b>
+        /// 셰이더 폴백·무광 마감은 <see cref="SceneryMaterials.Create"/>가 한다. <b>알파 &lt; 1이면 투명 렌더로 전환한다.</b>
         ///
         /// Standard 셰이더는 기본이 Opaque라 <c>mat.color</c>에 알파를 넣어도 **무시된다** —
-        /// 렌더 모드·블렌드·ZWrite·렌더큐를 함께 세워야 실제로 비친다. 그 설정이 없어서
+        /// 렌더 모드·블렌드·ZWrite·렌더큐를 함께 세워야 실제로 비친다(<see cref="SceneryMaterials.MakeFade"/>). 그 설정이 없어서
         /// 반투명을 의도한 10곳(물웅덩이·호수·물결·거미줄·분수·늪안개·발광체·구름·수문장 아우라)이
         /// 전부 **불투명 덩어리**로 그려지고 있었다. 수문장 아우라(알파 0.15)는 지름 5m 불투명
         /// 빨간 구체가 되어 그 안의 수문장 곤충을 통째로 가렸다.
         /// </summary>
         private static Material CreateSafeMaterial(Color color)
         {
-            Shader shader = Shader.Find("Standard");
-            if (shader == null) shader = Shader.Find("Universal Render Pipeline/Lit");
-            if (shader == null) shader = Shader.Find("Unlit/Color");
-            if (shader == null) shader = Shader.Find("Sprites/Default");
-            Material mat = shader != null ? new Material(shader) : new Material(Shader.Find("Hidden/InternalErrorShader"));
-            mat.color = color;
-
-            if (color.a < 0.999f) MakeTransparent(mat);
+            Material mat = SceneryMaterials.Create(color);
+            if (SceneryMaterials.IsTranslucent(color)) SceneryMaterials.MakeFade(mat);
             return mat;
-        }
-
-        /// <summary>
-        /// Standard 셰이더를 Fade 모드로 돌린다 — Unity 표준 머티리얼 인스펙터가 하는 것과 같은 설정이다.
-        /// 프로퍼티가 없는 폴백 셰이더(Unlit/Color 등)에서는 <c>HasProperty</c> 가드가 조용히 넘어간다.
-        /// </summary>
-        private static void MakeTransparent(Material mat)
-        {
-            if (mat == null) return;
-            if (mat.HasProperty("_Mode")) mat.SetFloat("_Mode", 2f);   // 2 = Fade
-            if (mat.HasProperty("_SrcBlend")) mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
-            if (mat.HasProperty("_DstBlend")) mat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
-            if (mat.HasProperty("_ZWrite")) mat.SetInt("_ZWrite", 0);
-            mat.DisableKeyword("_ALPHATEST_ON");
-            mat.EnableKeyword("_ALPHABLEND_ON");
-            mat.DisableKeyword("_ALPHAPREMULTIPLY_ON");
-            mat.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
         }
 
         private void Awake()
@@ -433,6 +435,7 @@ namespace InsectGame.Core
             InsectGame.UI.CollectionUI collectionUi = EnsureComponent<InsectGame.UI.CollectionUI>("UI/CollectionUI");
             collectionUi.AutoWire(insectCollection, candyInventory, progress);
             collectionUi.AutoWire(battleTeam);   // 목록에서 배틀팀을 맨 위로 올리기 위한 조회 + TeamChanged 구독
+            dexScreen.AutoWire(collectionUi);    // 도감 보유 카드에서 동일 개체의 상세로 이동
 
             InsectGame.UI.CapturePopupUI capturePopup = EnsureComponent<InsectGame.UI.CapturePopupUI>("UI/CapturePopup");
             capturePopup.AutoWire(capture);
@@ -447,6 +450,7 @@ namespace InsectGame.Core
             socialPvpUi.AutoWire(socialPvp);
 
             Data.RegionData[] regionDefs = RegionDefinitions.CreateAll();
+            sceneryRouteRegions = regionDefs;
             RegionManager regionMgr = EnsureComponent<RegionManager>("World/RegionManager");
             regionMgr.Initialize(regionDefs);
             regionMgr.AutoWire(progress);
@@ -461,6 +465,14 @@ namespace InsectGame.Core
 
             SubAreaEnvironment subAreaEnv = EnsureComponent<SubAreaEnvironment>("World/SubAreaEnvironment");
             subAreaEnv.AutoWire(regionMgr);
+            // 낮밤·날씨 하늘 보정 — 메인 필드와 나의 섬에서만 걸린다(시계·날씨는 위 World 단계에서 만들어졌다).
+            subAreaEnv.AutoWire(worldState);
+            WeatherEffects weatherFx = EnsureComponent<WeatherEffects>("World/WeatherEffects");
+            weatherFx.AutoWire(worldState, regionMgr);
+            // 야생 전투의 낮·밤·날씨 보정 — 리전 기준 날씨를 읽으므로 RegionManager가 생긴 여기서 잇는다.
+            battleController.AutoWire(worldState, regionMgr);
+            // 습격 판정 — 깨어 있는 습격형이 다가와 닿으면 「습격!」 창을 연다(rules/world-environment.md 「습격」).
+            inputController.AutoWire(worldState, regionMgr);
 
             SubAreaWorldBuilder subAreaWorld = EnsureComponent<SubAreaWorldBuilder>("World/SubAreaWorld");
             subAreaWorld.AutoWire(regionMgr, camFollower);
@@ -512,6 +524,7 @@ namespace InsectGame.Core
             InsectGame.UI.QuickAccessBarUI quickBar = EnsureComponent<InsectGame.UI.QuickAccessBarUI>("UI/QuickAccessBar");
             quickBar.AutoWire(dexScreen, battleTeamUi, trainingUi, collectionUi, mapUi);
             quickBar.AutoWire(socialPvpUi);
+            quickBar.AutoWire(accountSettingsUi);
             quickBar.AutoWire(battleScreen, raidBattleUi, playerMov);
 
             // 가방(IMGUI) — 보유 아이템을 보고 쓰는 화면. 퀵바 [I]가 유일한 진입점이다.
@@ -532,6 +545,10 @@ namespace InsectGame.Core
             // 좌상단 소형 미니맵(플레이어 중심 레이더, 곤충 위치) — 곤충 탐색은 자기 충족형이고,
             // 메인퀘스트 목표 쐐기만 아래쪽 StoryObjectiveTracker에서 주입받는다.
             InsectGame.UI.MinimapUI minimapUi = EnsureComponent<InsectGame.UI.MinimapUI>("UI/Minimap");
+
+            // 우측 열 맨 아래의 시각·날씨 칩과 변화 알림 — 시계·날씨는 위 World 단계에서 이미 만들어져 있다.
+            InsectGame.UI.WorldClockHUD clockHud = EnsureComponent<InsectGame.UI.WorldClockHUD>("UI/WorldClockHUD");
+            clockHud.AutoWire(worldState, regionMgr, playerMov);
 
             CharacterOutfitManager outfitManager = EnsureComponent<CharacterOutfitManager>("World/CharacterOutfit");
             outfitManager.AutoWire(wallet);
@@ -558,6 +575,8 @@ namespace InsectGame.Core
             // 스스로 찾을 수 없다 — 렌더러가 생긴 이 시점에 넘긴다.
             // (배선이 없으면 LoginUI가 2D 초상화로 물러나므로 실패해도 회귀는 아니다.)
             loginUI.AutoWire(characterPreview);
+            // 결투 컷인의 "나"도 같은 3D로(2D 도트는 모자·겉옷·도구 대부분을 못 그렸다).
+            battleScreen.AutoWire(characterPreview);
 
             if (buildWorld)
             {
@@ -573,6 +592,8 @@ namespace InsectGame.Core
             questManager.AutoWire(insectCollection, candyInventory, progress, itemInventory,
                 battleController, raidController, dex, trainingMgr, battleTeam, regionMgr);
             cloudSave.RegisterReloadable(questManager);
+            // 조건부 의상(지역 도달·레벨·퀘스트) 해금 — 퀘스트 매니저가 서야 배선할 수 있다.
+            outfitManager.AutoWireUnlockSources(regionMgr, progress, questManager);
 
             // 주간 크기 대결 — 매주 저레어 종 하나를 지정하고 그 종 포획 시 기록이 자동 갱신된다.
             // 기록은 저장하지 않고 player_insects.json의 capturedUnix로 파생하므로 별도 세이브가 없다.
@@ -599,6 +620,9 @@ namespace InsectGame.Core
             InsectGame.Story.StoryDirector storyDirector =
                 EnsureComponent<InsectGame.Story.StoryDirector>("World/StoryDirector");
             storyDirector.AutoWire(regionMgr, battleController, progress, insectCollection, questManager);
+            // 필드 스포너의 스토리 포획 보조 — 발화를 기다리는 종 지정 포획 비트의 종을 리전별로 묻는다(시간 기반 재생이라
+            // 리전을 오가며 다시 굴릴 수 없다). 스포닝이 스토리를 직접 참조하지 않게 정적 훅이다(도주 방지 훅과 같은 형태).
+            InsectSpawner.StoryCaptureTargetProvider = storyDirector.CollectPendingCaptureSpecies;
                 // RegionCleansed 트리거 소스 — DexController와 같은 이유로 Start 전에 주입한다.
                 storyDirector.AutoWire(blight);
             storyDirector.AutoWire(candyInventory, itemInventory);
@@ -609,10 +633,46 @@ namespace InsectGame.Core
             // **전투 화면이 떠 있는지**를 알려 주는 유일한 신호. 이게 없으면 전투 승리와 같은
             // 프레임에 갱신되는 LevelReach·DexProgress·QuestComplete가 결과 화면 위로 대사를 띄운다.
             storyDirector.AutoWire(camFollower);
+            // 결과 화면이 떠 있는가 — 눌러야 닫혀서(BattleResultRules) 미뤄 둔 대사·컷신·영상의 "굳은 화면" 상한이 그 시간을
+            // 세지 않게 한다(StoryBattleWait). Story가 UI 타입을 모르도록 함수 하나로 넘긴다. 아래 컷신·영상 지휘자도 같은 것을 받는다.
+            System.Func<bool> battleResultShowing = () =>
+                (battleScreen != null && battleScreen.ResultShownSeconds > 0f)
+                || (raidBattleUi != null && raidBattleUi.ResultShownSeconds > 0f);
+            storyDirector.AutoWire(battleResultShowing);
             cloudSave.RegisterReloadable(storyDirector);
             // 전투 결과 화면이 닫힌 뒤에 BattleWin·GuardianDefeat 비트를 띄우기 위한 통지 경로.
             battleScreen.AutoWire(storyDirector);
             raidBattleUi.AutoWire(storyDirector);
+
+            // 필드 소식 — 레벨업·이야기 보상·라온과의 내기·첫 색다른 조우. 넣는 쪽(World/)과 그리는 쪽(UI/)이
+            // 대기열 하나(FieldMomentFeed)로만 이어진다. 마을/NPC 블록 밖에 둔다 — 그쪽이 예외로 건너뛰어도
+            // 보상 알림은 살아 있어야 한다.
+            FieldMomentFeed momentFeed = EnsureComponent<FieldMomentFeed>("World/FieldMomentFeed");
+            momentFeed.AutoWire(itemDatabase);
+            storyDirector.AutoWire(momentFeed);
+            InsectGame.Story.RivalRaceController rivalRace =
+                EnsureComponent<InsectGame.Story.RivalRaceController>("World/RivalRaceController");
+            rivalRace.AutoWire(storyDirector, insectCollection, candyInventory, itemInventory, playerMov, momentFeed);
+            FirstShinyEncounter firstShiny = EnsureComponent<FirstShinyEncounter>("World/FirstShinyEncounter");
+            firstShiny.AutoWire(spawner, questManager, regionMgr, playerMov, player.transform, momentFeed);
+            InsectGame.UI.FieldMomentsUI momentsUi =
+                EnsureComponent<InsectGame.UI.FieldMomentsUI>("UI/FieldMomentsUI");
+            momentsUi.AutoWire(momentFeed, progress, rivalRace, playerMov);
+
+            // 수문장 배지 — 배지는 격파 기록에서 파생하고(저장 없음), 이정표 보상 수령 상태만 계정 스코프로 둔다.
+            // 클라우드 재로드는 RegionManager 뒤에 등록돼야 한다(여기는 이미 뒤다).
+            GuardianBadgeService badgeService = EnsureComponent<GuardianBadgeService>("World/GuardianBadgeService");
+            badgeService.AutoWire(regionMgr, itemInventory);
+            cloudSave.RegisterReloadable(badgeService);
+            // 획득 연출 — 전투 화면이 닫히는 순간, 스토리 대사보다 먼저 뜬다(StoryDirector.BattlePresentationClosed).
+            InsectGame.UI.BadgeCeremonyUI badgeCeremony =
+                EnsureComponent<InsectGame.UI.BadgeCeremonyUI>("UI/BadgeCeremony");
+            badgeCeremony.AutoWire(badgeService, regionMgr, itemDatabase);
+            badgeCeremony.AutoWire(storyDirector, camFollower, playerMov);
+            // 배지 케이스 — 퀵메뉴 [배지](K).
+            InsectGame.UI.BadgeCaseUI badgeCase = EnsureComponent<InsectGame.UI.BadgeCaseUI>("UI/BadgeCase");
+            badgeCase.AutoWire(badgeService, regionMgr, itemDatabase);
+            quickBar.AutoWire(badgeCase);
 
             // 캐시 상점 + 가챠 시스템
             CashShopManager cashShop = EnsureComponent<CashShopManager>("World/CashShop");
@@ -625,9 +685,50 @@ namespace InsectGame.Core
             gachaBox.AutoWire(database); // PickRandomInsect 결과 검증 + DisplayName 캐싱
 
             InsectGame.UI.CashShopUI cashShopUI = EnsureComponent<InsectGame.UI.CashShopUI>("UI/CashShopUI");
+            cashShopUI.AutoWire(characterPreview);   // 왼쪽 캐릭터 칸 = 지금 장착한 3D
 
             quickBar.AutoWire(outfitUi, cashShopUI);
             quickBar.AutoWire(questUi);
+
+            // 나의 섬 — 상태·규칙(IslandManager) → 월드(IslandWorld) → 화면 여섯 개.
+            // 병원 UI와 같은 이유로 **buildWorld·try 밖**에 둔다: 마을 빌더가 예외를 던져도 탐험 메뉴의 [내 섬]은 살아 있어야 한다.
+            // 클라우드 재로드는 곤충 컬렉션 뒤에 등록돼야 한다(방목 목록이 instanceId로 그쪽을 본다 — 이미 위에서 등록됐다).
+            IslandManager islandManager = EnsureComponent<IslandManager>("World/IslandManager");
+            islandManager.AutoWire(insectCollection, wallet, candyInventory, database);
+            cloudSave.RegisterReloadable(islandManager);
+            // 섬 퀘스트의 코인·섬 물건 보상 지급처. 진행 통지는 IslandManager가 Notify___로 직접 한다.
+            questManager.AutoWire(wallet, islandManager);
+
+            IslandWorldBuilder islandWorld = EnsureComponent<IslandWorldBuilder>("World/IslandWorld");
+            islandWorld.AutoWire(regionMgr, islandManager, camFollower, playerMov, database);
+            clockHud.AutoWire(islandWorld);   // 섬에서의 시계 칩 자리 — 섬 HUD 열을 피한다
+            // 밤·비·안개에 찾아오는 손님 곤충과 방목 곤충의 시간·날씨 행동(rules/island.md 「손님 곤충」)
+            islandWorld.AutoWire(spawner, worldState);
+            IslandShareClient islandShare = EnsureComponent<IslandShareClient>("World/IslandShare");
+            islandShare.AutoWire(islandManager);
+
+            InsectGame.UI.IslandEditUI islandEditUi = EnsureComponent<InsectGame.UI.IslandEditUI>("UI/IslandEdit");
+            islandEditUi.AutoWire(islandManager, islandWorld, islandShare);
+            InsectGame.UI.IslandShopUI islandShopUi = EnsureComponent<InsectGame.UI.IslandShopUI>("UI/IslandShop");
+            islandShopUi.AutoWire(islandManager, wallet);
+            InsectGame.UI.IslandInsectUI islandInsectUi = EnsureComponent<InsectGame.UI.IslandInsectUI>("UI/IslandInsects");
+            islandInsectUi.AutoWire(islandManager, insectCollection);
+            InsectGame.UI.IslandGuideUI islandGuideUi = EnsureComponent<InsectGame.UI.IslandGuideUI>("UI/IslandGuide");
+            islandGuideUi.AutoWire(islandManager, islandWorld, islandEditUi);
+            InsectGame.UI.IslandHudUI islandHudUi = EnsureComponent<InsectGame.UI.IslandHudUI>("UI/IslandHud");
+            islandHudUi.AutoWire(islandManager, islandWorld, playerMov, islandShare);
+            InsectGame.UI.IslandVisitUI islandVisitUi = EnsureComponent<InsectGame.UI.IslandVisitUI>("UI/IslandVisit");
+            islandVisitUi.AutoWire(islandManager, islandWorld, islandShare, socialPvp, islandHudUi);
+            islandHudUi.AutoWire(islandEditUi, islandShopUi, islandInsectUi, islandVisitUi, islandGuideUi);
+            quickBar.AutoWire(islandVisitUi);
+
+            // 「챔피언의 꿈」 프롤로그 — 새 계정이 처음 필드에 서면 한 번 도는 연출(설정에서 다시 볼 수 있다).
+            // 섬·전투·퀘스트·소식 대기열이 다 만들어진 뒤여야 하고, World/ 아래에 둔다(UI 루트는 오프닝 다시보기가 끈다).
+            InsectGame.Story.DreamPrologueDirector dreamPrologue =
+                EnsureComponent<InsectGame.Story.DreamPrologueDirector>("World/DreamPrologueDirector");
+            dreamPrologue.AutoWire(questManager, playerMov, player.transform, regionMgr, islandWorld,
+                battleController, battleScreen, database, momentFeed);
+            accountSettingsUi.AutoWire(dreamPrologue);
 
             // 마스터 계정이면 보석 99999 지급 ("특권 없이" 모드에서는 주지 않는다)
             if (AuthManager.Instance != null && AuthManager.Instance.MasterPrivilegesActive)
@@ -666,12 +767,21 @@ namespace InsectGame.Core
                     worldInteract.RegisterPoints(villageResult.interactions);
                 }
 
+                // 본 마을 나루터 — 탐험 메뉴의 [내 섬]과 같은 창을 여는 두 번째 입구.
+                worldInteract.AutoWire(islandVisitUi);
+                InteractionPointDef islandDock = islandWorld.BuildVillageDock(regionDefs);
+                if (islandDock != null)
+                    worldInteract.RegisterPoints(new List<InteractionPointDef> { islandDock });
+
                 // [E] 삼자 충돌 해소 — 서브에리어 진입은 포획·상호작용에 양보한다(전용 버튼이 있다).
                 subAreaWorld.AutoWire(worldInteract, inputController);
 
                 InsectGame.NPC.NpcManager npcManager =
                     EnsureComponent<InsectGame.NPC.NpcManager>("World/NpcManager");
                 npcManager.AutoWire(spawner, regionMgr, player.transform);
+                mapUi.AutoWire(npcManager);
+                minimapUi.AutoWire(npcManager);
+                minimapUi.AutoWire(regionMgr);
                 worldInteract.AutoWire(npcManager);
                 worldInteract.AutoWire(storyDirector);   // 스토리 NPC 대화 → NpcTalk 트리거
 
@@ -688,6 +798,10 @@ namespace InsectGame.Core
                 cloudSave.RegisterReloadable(npcDuel);
                 worldInteract.AutoWire(npcDuel);
                 storyDirector.AutoWire(npcDuel);   // DuelWin 트리거 소스 — Start 전(같은 프레임)이라 구독이 걸린다
+                // 라온 라이벌 단계의 열림·닫힘 — 조회 함수만 넘긴다(StoryDirector가 이미 npcDuel을 참조해 역참조는 순환).
+                npcDuel.AutoWireStoryGate(storyDirector.HasSeen);
+                // 이야기 잠금 — 서릿길·잿불 골짜기는 앞 수문장에 더해 간부(집게·저울)를 이겨야 열린다. Core가 NPC를 모르게 조회 함수만.
+                regionMgr.AutoWireDuelGate(npcDuel.IsBossDefeated);
 
                 // 오염 거점 비주얼 — 구조물·안개·지면 탈색, 정화 시 붕괴.
                 // NpcManager가 필요해 여기(NPC 생성 뒤)에 둔다: 거점 좌표를 하수 실물에서
@@ -699,6 +813,7 @@ namespace InsectGame.Core
                     EnsureComponent<InsectGame.UI.NpcDialogueUI>("UI/NpcDialogueUI");
                 npcDialogue.AutoWire(playerMov);
                 npcDialogue.AutoWire(storyDirector); // 스토리 비트 lines[] 모달 렌더 + 닫힘 시 완료 콜백
+                npcDialogue.AutoWire(npcDuel);       // 라온 라이벌 대결 [승부하기] 버튼
                 worldInteract.AutoWire(npcDialogue);
 
                 // 스토리 저널 — 챕터별 진행 열람 + 다시 읽기(NpcDialogueUI 렌더러 재사용).
@@ -716,6 +831,7 @@ namespace InsectGame.Core
                 // 목표 문구 구체화 — 곤충 표시명·퀘스트 제목·현재 레벨/도감 종수.
                 // 없어도 목표는 나오지만 "모험을 이어가세요"로 뭉개진다.
                 objectiveTracker.AutoWire(progress, dex, questManager, database);
+                npcDialogue.AutoWire(objectiveTracker);
                 questUi.AutoWire(objectiveTracker);      // 퀘스트 칩 아래 목표 행
                 questUi.AutoWire(mapUi);                 // 목표가 타 리전이면 지도를 그 리전으로 연다
                 minimapUi.AutoWire(objectiveTracker);    // 미니맵 목표 방향 쐐기
@@ -727,6 +843,16 @@ namespace InsectGame.Core
                 InsectGame.Story.CutsceneDirector cutscene =
                     EnsureComponent<InsectGame.Story.CutsceneDirector>("World/CutsceneDirector");
                 cutscene.AutoWire(storyDirector, camFollower, playerMov, player.transform);
+                cutscene.AutoWire(battleResultShowing);
+
+                // 스토리 영상(mp4) — 컷신과 같은 시점(StoryBeatCompleted)에 화면을 통째로 덮는다.
+                // **World/ 아래여야 한다** — UI 루트 자식이면 오프닝 다시보기가 루트를 끌 때 함께 죽어 복구가 안 된다.
+                InsectGame.Story.StoryVideoDirector storyVideo =
+                    EnsureComponent<InsectGame.Story.StoryVideoDirector>("World/StoryVideoDirector");
+                storyVideo.AutoWire(storyDirector, camFollower, playerMov);
+                storyVideo.AutoWire(battleResultShowing);
+                // 저널 「▶ 영상」 다시보기 — 스토리 부수효과 없이 같은 재생기로 튼다(StoryVideoDirector.PlayReplay).
+                storyJournal.AutoWire(storyVideo);
 
                 // NPC 연출 지휘 — 조우 접근(규칙)과 등장/퇴장(저작)을 한 컴포넌트가 맡는다.
                 // 둘 다 같은 VillagerNpc의 Scripted 상태를 쓰므로 나누면 명령이 서로 덮인다.
@@ -734,8 +860,16 @@ namespace InsectGame.Core
                 InsectGame.Story.StoryStageDirector stageDirector =
                     EnsureComponent<InsectGame.Story.StoryStageDirector>("World/StoryStageDirector");
                 stageDirector.AutoWire(storyDirector, objectiveTracker, npcManager, playerMov, player.transform);
-                // 대사 앞 연출 게이트 — stageEnterId가 있으면 모달보다 먼저 돌린다.
-                npcDialogue.AutoWire(stageDirector);
+                // 대사 앞 연출 게이트 — 대화창의 슬롯은 하나라 고리로 잇는다: 영상(introVideoId) → NPC 등장 연출(stageEnterId).
+                // 영상이 설명하고, 인물이 걸어 들어와, (장을 여는 비트면 「지난 이야기」 카드 뒤) 짧게 말한다.
+                npcDialogue.AutoWire(new InsectGame.Story.StoryPreludeChain(storyVideo, stageDirector));
+
+                // 대사 직후 대결(StoryBeat.duelAfter) — 영상·컷신·연출·선택 결과가 다 끝난 첫 순간에 간부전·라온전을 연다.
+                InsectGame.Story.StoryDuelLauncher duelLauncher =
+                    EnsureComponent<InsectGame.Story.StoryDuelLauncher>("World/StoryDuelLauncher");
+                duelLauncher.AutoWire(storyDirector, npcDuel, regionMgr, camFollower, playerMov);
+                // 대화창 마지막 버튼을 「승부!」로 — 선택 결과 대사처럼 자기 duelAfter가 빈 비트 뒤의 대기 대결도 본다.
+                npcDialogue.AutoWire(duelLauncher);
 
                 // 스폰은 배선 완료 후 (컬링 타깃/예약 시스템이 준비된 상태에서)
                 if (villageResult != null)
@@ -820,7 +954,16 @@ namespace InsectGame.Core
         private void EnsureLight()
         {
             // 그늘(그림자 지는 곳)이 새까매지지 않도록 그림자 강도를 낮추고 환경광을 약간 올린다.
-            // 메인 필드는 Skybox 환경광이라 ambientIntensity가 그늘 밝기에 직접 기여.
+            //
+            // **Skybox 환경광을 쓰지 않는다.** 이 씬엔 라이팅 데이터(LightingDataAsset)가 없어
+            // 하늘에서 구운 환경광 프로브가 비어 있다 — ambientIntensity를 아무리 올려도 0에 곱해진다.
+            // 배치 캡처에서 해를 등진 벽과 NPC 정면이 완전한 검정으로 찍혔다(NPC 70명 전원이 실루엣).
+            // Trilight는 프로브 없이 색 세 개로 바로 비추므로 굽기 없이도 그늘이 산다.
+            // 서브에리어 진입 시 SubAreaEnvironment가 Flat으로 바꿨다가 이 모드로 되돌린다.
+            RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Trilight;
+            RenderSettings.ambientSkyColor = new Color(0.50f, 0.55f, 0.62f);
+            RenderSettings.ambientEquatorColor = new Color(0.42f, 0.43f, 0.41f);
+            RenderSettings.ambientGroundColor = new Color(0.26f, 0.24f, 0.21f);
             RenderSettings.ambientIntensity = Mathf.Max(RenderSettings.ambientIntensity, 1.25f);
 
             Light existing = FindFirstObjectByType<Light>();
@@ -966,11 +1109,14 @@ namespace InsectGame.Core
             for (int ri = 0; ri < regionDefs.Length; ri++)
             {
                 var region = regionDefs[ri];
-                Color col = region.themeColor;
-                Material mat = CreateSafeMaterial(new Color(col.r * 0.5f + 0.1f, col.g * 0.5f + 0.1f, col.b * 0.4f + 0.08f));
+                // 바닥색은 RegionPalette가 단일 출처 — 옛 공식(themeColor × 0.5)은 서릿길을 회녹색,
+                // 연못을 리전 전체가 파란 "물"로 칠했다.
+                Material mat = CreateSafeMaterial(RegionPalette.Ground(region.regionId, region.themeColor));
                 GameObject regionGround = GameObject.CreatePrimitive(PrimitiveType.Plane);
                 regionGround.name = $"Region_{region.regionId}";
-                regionGround.transform.position = region.centerPosition + new Vector3(0f, 0.08f, 0f);
+                regionGround.transform.position = region.centerPosition + new Vector3(0f, 0.08f + ri * 0.001f, 0f);
+                regionGround.GetComponent<MeshFilter>().sharedMesh = GetRegionGroundMesh();
+                regionGround.GetComponent<MeshCollider>().sharedMesh = GetRegionGroundMesh();
                 float s = region.radius / 5f;
                 regionGround.transform.localScale = new Vector3(s, 1f, s);
                 regionGround.GetComponent<MeshRenderer>().material = mat;
@@ -988,19 +1134,26 @@ namespace InsectGame.Core
                 {
                     float ba = Mathf.PI * 2f * bi / barrierCount;
                     Vector3 bPos = region.centerPosition + new Vector3(Mathf.Cos(ba) * bRad, 0f, Mathf.Sin(ba) * bRad);
+                    if (WorldRouteLayout.IsOnRoute(regionDefs, bPos, 2f)) continue;
+                    // 겹친 리전(초원·습지 약 42m)에서 남의 리전 울타리 줄 안에 떨어지는 것은 짓지 않는다 — 울타리 기둥과 같은
+                    // 판정(RegionTerrainBuilder.IsInsideOtherRegionFence). 경계가 아니라 0.85R 고리 장식이다(45° 간격, 통행 차단 없음).
+                    bool inOtherRegion = RegionTerrainBuilder.IsInsideOtherRegionFence(regionDefs, region, bPos);
 
                     if (bi % 3 == 0)
                     {
+                        // 크기 난수는 짓지 않아도 뽑는다 — 전역 난수 줄기라 건너뛰면 뒤따르는 필드 소품이 전부 밀린다
+                        float bs = Random.Range(1.2f, 2f);
+                        if (inOtherRegion) continue;
                         // Large boulder barrier
                         GameObject boulder = GameObject.CreatePrimitive(PrimitiveType.Sphere);
                         boulder.name = $"Barrier_{region.regionId}_{bi}_Rock";
-                        float bs = Random.Range(1.2f, 2f);
                         boulder.transform.position = bPos + new Vector3(0f, bs * 0.2f, 0f);
                         boulder.transform.localScale = new Vector3(bs * 1.5f, bs * 0.6f, bs);
                         boulder.GetComponent<MeshRenderer>().material = barrierRockMat;
                     }
                     else
                     {
+                        if (inOtherRegion) continue;   // 말뚝은 난수를 안 쓴다
                         // Low fence post
                         GameObject fPost = GameObject.CreatePrimitive(PrimitiveType.Cube);
                         fPost.name = $"Barrier_{region.regionId}_{bi}_Post";
@@ -1012,12 +1165,7 @@ namespace InsectGame.Core
                 }
             }
 
-            // --- Paths (gravel style) ---
-            Material pathMat = CreateSafeMaterial(new Color(0.6f, 0.5f, 0.35f));
-
-            CreatePath(pathMat, Vector3.zero, regionDefs[1].centerPosition, 2.5f);
-            CreatePath(pathMat, Vector3.zero, regionDefs[2].centerPosition, 2.5f);
-            CreatePath(pathMat, Vector3.zero, regionDefs[3].centerPosition, 2.5f);
+            // WorldTerrainBuilder owns inter-region paths and shares routes with the map.
 
             // 단계별 격리: 한 빌더의 예외가 나머지 지형/수문장 생성을 막지 않도록 + 어느 단계가 실패했는지 로깅.
             GroundStep("AddSceneryObjects", () => AddSceneryObjects(baseMat));
@@ -1031,14 +1179,26 @@ namespace InsectGame.Core
             });
 
             // 리전별 게임 필드 지형 (언덕, 길, 바위, 나무 등)
+            RegionTerrainBuilder regionTerrain = null;
             GroundStep("RegionTerrainBuilder", () =>
             {
-                RegionTerrainBuilder regionTerrain = new GameObject("RegionTerrainBuilder").AddComponent<RegionTerrainBuilder>();
+                regionTerrain = new GameObject("RegionTerrainBuilder").AddComponent<RegionTerrainBuilder>();
                 regionTerrain.BuildAllRegions(regionDefs);
             });
 
+            // 리전 표면 장식(바닥 얼룩·발밑 디테일·호수·울타리 밖 테두리). 마을·전초기지를 피해야 해서
+            // 실제 배치는 그것들이 지어진 뒤(Start)에 한다 — 여기선 설정만 건넨다.
+            GroundStep("RegionDressingBuilder", () =>
+                new GameObject("RegionDressingBuilder").AddComponent<RegionDressingBuilder>().Configure(regionDefs, regionTerrain));
+
+            // 원경 — 리전·길을 피해 월드 둘레에 산맥, 하늘에 뭉게구름
+            GroundStep("WorldBackdropBuilder", () =>
+                new GameObject("WorldBackdropBuilder").AddComponent<WorldBackdropBuilder>().Build(regionDefs));
+
             // 수문장은 BuildSystems에서 database와 함께 생성
             GroundStep("CreateSubAreaEntries", () => CreateSubAreaEntries(regionDefs));
+            GroundStep("SubAreaGateBuilder", () =>
+                new GameObject("SubAreaGateBuilder").AddComponent<SubAreaGateBuilder>().Build(regionDefs));
         }
 
         // 지형 생성 단계 격리 실행 — 실패 시 해당 단계명+예외를 로그/배너로 남기고 다음 단계 진행.
@@ -1162,7 +1322,7 @@ namespace InsectGame.Core
                 }
                 else if (r.regionId == "pond")
                 {
-                    AddPondScenery(c, rad);
+                    AddPondScenery(c, rad, r.radius);
                 }
                 else if (r.regionId == "forest")
                 {
@@ -1425,7 +1585,9 @@ namespace InsectGame.Core
             Object.Destroy(puddle.GetComponent<Collider>());
         }
 
-        private void AddPondScenery(Vector3 c, float rad)
+        /// <param name="rad">소품 배치 반경(리전 반경 × 0.7 — AddRegionScenery가 넘긴다)</param>
+        /// <param name="regionRadius">리전 반경 그대로 — 호수 윤곽(RegionDressingBuilder.PondLake)이 이 값의 배율로 잡혀 있다</param>
+        private void AddPondScenery(Vector3 c, float rad, float regionRadius)
         {
             Material waterMat = CreateSafeMaterial(new Color(0.2f, 0.4f, 0.7f, 0.6f));
             Material reedMat = CreateSafeMaterial(new Color(0.35f, 0.55f, 0.2f));
@@ -1446,6 +1608,10 @@ namespace InsectGame.Core
             water.transform.position = c + new Vector3(0f, 0.05f, 0f);
             water.transform.localScale = new Vector3(15f, 0.05f, 15f);
             water.GetComponent<MeshRenderer>().material = waterMat;
+            // A flattened primitive capsule still blocks the walking corridor.
+            Collider waterCollider = water.GetComponent<Collider>();
+            waterCollider.enabled = false;
+            Object.Destroy(waterCollider);
 
             // --- Existing reeds (10) ---
             for (int i = 0; i < 10; i++)
@@ -1522,6 +1688,10 @@ namespace InsectGame.Core
                 GameObject rock = GameObject.CreatePrimitive(PrimitiveType.Sphere);
                 rock.name = $"Pond_ShoreRock_{i}";
                 float rs = Random.Range(0.4f, 0.9f);
+                // 커진 호수(RegionDressingBuilder.PondLake — 중심이 남동으로 옮겨 앉았다)에 잠기는 바위(0°·300° 쪽)는 같은
+                // 방위의 진흙 띠 바깥 가장자리로 옮긴다. 자리만 바꾸고 난수는 그대로 뽑는다(뒤따르는 소품이 밀리지 않게).
+                // 몸 반경은 스케일 긴 축(1.2rs)의 절반.
+                rockPos = RegionDressingBuilder.PondShoreSpot(c, regionRadius, rockPos, rs * 0.6f);
                 rock.transform.position = rockPos + new Vector3(0f, rs * 0.2f, 0f);
                 rock.transform.localScale = new Vector3(rs * 1.2f, rs * 0.5f, rs);
                 rock.GetComponent<MeshRenderer>().material = shoreMat;
@@ -1978,35 +2148,40 @@ namespace InsectGame.Core
                 Object.Destroy(bigPetal.GetComponent<Collider>());
             }
 
-            // --- NEW: Fountain (center) ---
+            // Keep the landmark beside the shared entrance road.
+            RegionData gardenRegion = WorldRouteLayout.Find(sceneryRouteRegions, "garden");
+            Vector3 entranceDirection = gardenRegion != null
+                ? (WorldRouteLayout.GetGateway(gardenRegion, sceneryRouteRegions) - c).normalized
+                : Vector3.forward;
+            Vector3 fountainCenter = c + Vector3.Cross(Vector3.up, entranceDirection) * 6f;
             GameObject fountainBase = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
             fountainBase.name = "Garden_Fountain_Base";
-            fountainBase.transform.position = c + new Vector3(0f, 0.3f, 0f);
+            fountainBase.transform.position = fountainCenter + new Vector3(0f, 0.3f, 0f);
             fountainBase.transform.localScale = new Vector3(2.5f, 0.3f, 2.5f);
             fountainBase.GetComponent<MeshRenderer>().material = fountainStoneMat;
 
             GameObject fountainPillar = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
             fountainPillar.name = "Garden_Fountain_Pillar";
-            fountainPillar.transform.position = c + new Vector3(0f, 1.2f, 0f);
+            fountainPillar.transform.position = fountainCenter + new Vector3(0f, 1.2f, 0f);
             fountainPillar.transform.localScale = new Vector3(0.4f, 0.9f, 0.4f);
             fountainPillar.GetComponent<MeshRenderer>().material = fountainStoneMat;
 
             GameObject fountainBowl = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
             fountainBowl.name = "Garden_Fountain_Bowl";
-            fountainBowl.transform.position = c + new Vector3(0f, 2.2f, 0f);
+            fountainBowl.transform.position = fountainCenter + new Vector3(0f, 2.2f, 0f);
             fountainBowl.transform.localScale = new Vector3(1.5f, 0.15f, 1.5f);
             fountainBowl.GetComponent<MeshRenderer>().material = fountainStoneMat;
 
             GameObject fountainWater = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             fountainWater.name = "Garden_Fountain_Water";
-            fountainWater.transform.position = c + new Vector3(0f, 2.6f, 0f);
+            fountainWater.transform.position = fountainCenter + new Vector3(0f, 2.6f, 0f);
             fountainWater.transform.localScale = new Vector3(0.5f, 0.8f, 0.5f);
             fountainWater.GetComponent<MeshRenderer>().material = fountainWaterMat;
             Object.Destroy(fountainWater.GetComponent<Collider>());
 
             GameObject fountainTop = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             fountainTop.name = "Garden_Fountain_Top";
-            fountainTop.transform.position = c + new Vector3(0f, 3.1f, 0f);
+            fountainTop.transform.position = fountainCenter + new Vector3(0f, 3.1f, 0f);
             fountainTop.transform.localScale = new Vector3(0.3f, 0.3f, 0.3f);
             fountainTop.GetComponent<MeshRenderer>().material = fountainStoneMat;
             Object.Destroy(fountainTop.GetComponent<Collider>());
@@ -2532,8 +2707,6 @@ namespace InsectGame.Core
             Material bushDarkMat = CreateSafeMaterial(new Color(0.12f, 0.4f, 0.1f));
             Material logMat = CreateSafeMaterial(new Color(0.4f, 0.28f, 0.12f));
             Material grassTuftMat = CreateSafeMaterial(new Color(0.3f, 0.6f, 0.2f));
-            Material cloudMat = CreateSafeMaterial(new Color(1f, 1f, 1f, 0.4f));
-            Material mountainMat = CreateSafeMaterial(new Color(0.35f, 0.42f, 0.3f));
             Material lampPostMat = CreateSafeMaterial(new Color(0.3f, 0.3f, 0.3f));
             Material lampGlowMat = CreateSafeMaterial(new Color(1f, 0.92f, 0.6f));
 
@@ -2547,6 +2720,8 @@ namespace InsectGame.Core
 
             for (int i = 0; i < treePositions.Length; i++)
             {
+                float s = Random.Range(1.8f, 2.8f);
+                if (WorldRouteLayout.IsOnRoute(sceneryRouteRegions, treePositions[i], s * .5f)) continue;
                 GameObject trunk = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
                 trunk.name = $"Tree_{i}_Trunk";
                 trunk.transform.position = treePositions[i] + new Vector3(0f, 1.5f, 0f);
@@ -2556,7 +2731,6 @@ namespace InsectGame.Core
                 GameObject leaves = GameObject.CreatePrimitive(PrimitiveType.Sphere);
                 leaves.name = $"Tree_{i}_Leaves";
                 leaves.transform.position = treePositions[i] + new Vector3(0f, 4f, 0f);
-                float s = Random.Range(1.8f, 2.8f);
                 leaves.transform.localScale = new Vector3(s, s * 0.8f, s);
                 leaves.GetComponent<MeshRenderer>().material = treeLeafMat;
             }
@@ -2574,9 +2748,10 @@ namespace InsectGame.Core
 
             for (int i = 0; i < rockPositions.Length; i++)
             {
+                float rs = Random.Range(0.5f, 1.4f);
+                if (WorldRouteLayout.IsOnRoute(sceneryRouteRegions, rockPositions[i], rs * .65f)) continue;
                 GameObject rock = GameObject.CreatePrimitive(PrimitiveType.Sphere);
                 rock.name = $"Rock_{i}";
-                float rs = Random.Range(0.5f, 1.4f);
                 rock.transform.position = rockPositions[i] + new Vector3(0f, rs * 0.3f, 0f);
                 rock.transform.localScale = new Vector3(rs * 1.3f, rs * 0.6f, rs);
                 rock.GetComponent<MeshRenderer>().material = rockMat;
@@ -2621,38 +2796,8 @@ namespace InsectGame.Core
                 CreateMushroom(pos, Random.Range(0.3f, 0.6f), $"Mushroom_{i}");
             }
 
-            // --- NEW: Distant mountains/hills (background, flattened Spheres far out) ---
-            Vector3[] mountainPositions = {
-                new Vector3(160f, 0f, 0f), new Vector3(-150f, 0f, 50f),
-                new Vector3(0f, 0f, 170f), new Vector3(100f, 0f, -140f)
-            };
-            float[] mountainScales = { 40f, 35f, 45f, 30f };
-            for (int i = 0; i < mountainPositions.Length; i++)
-            {
-                GameObject mountain = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                mountain.name = $"Scenery_Mountain_{i}";
-                float ms = mountainScales[i];
-                mountain.transform.position = mountainPositions[i] + new Vector3(0f, ms * 0.15f, 0f);
-                mountain.transform.localScale = new Vector3(ms * 2f, ms * 0.6f, ms * 2f);
-                mountain.GetComponent<MeshRenderer>().material = mountainMat;
-                Object.Destroy(mountain.GetComponent<Collider>());
-            }
-
-            // --- NEW: Clouds (high altitude, white translucent Spheres) ---
-            for (int i = 0; i < 5; i++)
-            {
-                float cx = Random.Range(-80f, 80f);
-                float cz = Random.Range(-80f, 80f);
-                float cy = Random.Range(50f, 60f);
-
-                GameObject cloud = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                cloud.name = $"Scenery_Cloud_{i}";
-                float cs = Random.Range(8f, 14f);
-                cloud.transform.position = new Vector3(cx, cy, cz);
-                cloud.transform.localScale = new Vector3(cs * 2f, cs * 0.4f, cs);
-                cloud.GetComponent<MeshRenderer>().material = cloudMat;
-                Object.Destroy(cloud.GetComponent<Collider>());
-            }
+            // 원경(먼 산·구름)은 WorldBackdropBuilder가 짓는다 — 여기 박혀 있던 좌표는 월드를 1.5배로
+            // 넓히기 전 값이라 「먼 산」이 꽃밭·유적·연못 옆 필드 안쪽을 올리브색 돔으로 덮었다.
 
             // --- NEW: Street lamps along paths (4) ---
             Vector3[] lampPositions = {
@@ -2960,12 +3105,12 @@ namespace InsectGame.Core
             foreach (InsectSkill skill in skills)
             {
                 if (skill == null) continue;
-                // **요구 레벨을 비용에 태운다.** 옛 `power / 2`만 쓰면 위력을 낮춘 이번 재배치에서
-                // 비용까지 함께 싸져(파멸의 독침 37 → 20) 상위기가 오히려 접근하기 쉬워진다.
+                // 회당 비용 = 가치/2 + 요구 레벨(TrainingPricing이 정본). **요구 레벨을 태우는 이유**: `power / 2`만
+                // 쓰면 위력을 낮춘 재배치에서 비용까지 싸져(파멸의 독침 37 → 20) 상위기가 더 쉬워진다.
+                // 가치는 상태기도 효과 크기로 센다 — 위력 칸(1)으로 셌을 땐 광폭화가 26캔디 1회였다.
                 // 누적 훈련이 회차마다 이 값을 받으므로 총비용은 여기에 필요 횟수를 곱한 만큼이다.
                 // 기술 디스크 방식은 이 값을 **읽지 않는다** — GetTrainingCost가 method.candyCost만 돌려준다.
-                // 스킬 단가(여기)와 방식 단가(디스크) 두 출처가 공존하는 건 의도다.
-                skill.trainingCost = Mathf.Max(5, skill.power / 2 + skill.requiredLevel);
+                skill.trainingCost = TrainingPricing.SessionCost(skill, skill.requiredLevel);
                 skill.description = "훈련을 통해 익힐 수 있는 범용 기술";
 
                 switch (skill.skillId)
@@ -3423,8 +3568,15 @@ namespace InsectGame.Core
             return learnset.ToArray();
         }
 
+        /// <summary>
+        /// learnset 한 칸. <b>교체 훈련 단가를 여기서 굽는다</b> — 종족기의 해금 레벨은 learnset에만 있어서
+        /// (범용기의 <c>requiredLevel</c> 자리) 기술을 만드는 시점엔 모른다. 같은 기술(속성×단계 캐시)은
+        /// 어느 종에서나 같은 레벨에 열리므로 덮어써도 값이 같다. 옛 손 상수(연타 4·집중 8·특성 12·
+        /// 폭발/붕괴 14·폭풍 22·전용기 35/50)는 효과를 안 봐서 회복·기절 특성기가 연타보다 쌌다.
+        /// </summary>
         private InsectLearnableSkill CreateLearnableSkill(InsectSkill skill, int level)
         {
+            if (skill != null) skill.trainingCost = TrainingPricing.SessionCost(skill, level);
             return new InsectLearnableSkill
             {
                 skillId = skill != null ? skill.skillId : string.Empty,
@@ -3532,7 +3684,6 @@ namespace InsectGame.Core
 
             InsectSkill skill = CreateTypedSkillInternal(
                 cacheKey, displayName, element, effectType, power, 2, effectValue, 3);
-            skill.trainingCost = 12;
             skill.description = "곤충의 생태와 신체 특징을 살린 종족 기술";
             generatedSkillCache[cacheKey] = skill;
             return skill;
@@ -3614,7 +3765,6 @@ namespace InsectGame.Core
             InsectSkill signature = CreateTypedSkillInternal(
                 skillId, name, element, SkillEffectType.Damage, power, cooldown, 0.2f, 2);
             signature.isSignatureSkill = true;
-            signature.trainingCost = data != null && data.rarity == InsectRarity.Legendary ? 50 : 35;
             signature.description = "이 종만 사용할 수 있는 전용 필살기";
             generatedSkillCache[skillId] = signature;
             return signature;
@@ -3664,31 +3814,25 @@ namespace InsectGame.Core
             {
                 case "jab":
                     skill = CreateTypedSkillInternal($"{element.ToString().ToLowerInvariant()}_jab", $"{label} 연타", element, SkillEffectType.Damage, 12, 0, 0.2f, 2);
-                    skill.trainingCost = 4;
                     return skill;
                 case "boost":
                     if (UsesBuffSkill(element))
                         skill = CreateTypedSkillInternal($"{element.ToString().ToLowerInvariant()}_boost", $"{label} 집중", element, SkillEffectType.BuffAttack, 1, 3, 0.3f, 3);
                     else
                         skill = CreateTypedSkillInternal($"{element.ToString().ToLowerInvariant()}_boost", $"{label} 압박", element, SkillEffectType.DebuffAttack, 1, 3, 0.25f, 3);
-                    skill.trainingCost = 8;
                     return skill;
                 case "burst":
                     skill = CreateTypedSkillInternal($"{element.ToString().ToLowerInvariant()}_burst", $"{label} 폭발", element, SkillEffectType.Damage, 26, 2, 0.2f, 2);
-                    skill.trainingCost = 14;
                     return skill;
                 case "break":
                     skill = CreateTypedSkillInternal($"{element.ToString().ToLowerInvariant()}_break", $"{label} 붕괴", element, SkillEffectType.DebuffAttack, 1, 3, 0.3f, 2);
-                    skill.trainingCost = 14;
                     return skill;
                 case "storm":
                     skill = CreateTypedSkillInternal($"{element.ToString().ToLowerInvariant()}_storm", $"{label} 폭풍", element, SkillEffectType.Damage, 42, 4, 0.2f, 2);
-                    skill.trainingCost = 22;
                     skill.accuracy = 0.9f;   // 고위력 스킬은 명중 트레이드오프
                     return skill;
                 default:
                     skill = CreateTypedSkillInternal($"{element.ToString().ToLowerInvariant()}_nova", $"{label} 노바", element, SkillEffectType.Damage, 52, 5, 0.2f, 2);
-                    skill.trainingCost = 28;
                     skill.accuracy = 0.85f;  // 최고위력 스킬은 더 낮은 명중
                     return skill;
             }
@@ -4974,6 +5118,7 @@ namespace InsectGame.Core
 
         private void OnDestroy()
         {
+            if (regionGroundMesh != null) Destroy(regionGroundMesh);
             if (guardianRegionMgr != null) guardianRegionMgr.GuardianDefeated -= OnGuardianSealBroken;
         }
 
@@ -5065,6 +5210,9 @@ namespace InsectGame.Core
                 if (region.subAreas == null) continue;
                 foreach (var sub in region.subAreas)
                 {
+                    // 테마 입구는 SubAreaGateBuilder가 짓는다(2막·안개·정상·신전·지하 등 표식이 없던 곳 +
+                    // environmentType이 cave라 동굴 석문이 서던 개미귀신 구덩이).
+                    if (SubAreaGateBuilder.Handles(sub.subAreaId)) continue;
                     Vector3 c = sub.centerPosition;
                     switch (sub.environmentType)
                     {

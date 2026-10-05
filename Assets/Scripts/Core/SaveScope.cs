@@ -33,6 +33,12 @@ namespace InsectGame.Core
             GameConstants.PrefsKeys.TutorialHidden,
             GameConstants.PrefsKeys.WeeklyContestClaimed,
             GameConstants.PrefsKeys.BlightCleansed,
+            GameConstants.PrefsKeys.BadgeMilestonesClaimed,
+            // 따라가는 마을 이야기. 계정 스코프 키가 생긴 뒤에 도입돼 옮겨 올 옛 전역 값이 없으므로
+            // MigrationVersion은 그대로 두고 **삭제 목록**으로서만 여기 있다 — 빠지면 계정 삭제 후
+            // 같은 uid로 재로그인했을 때 옛 계정의 따라가기가 새 게임에 되살아난다.
+            // (로그인 전 순간엔 ScopedKey가 전역 키를 돌려주지만 로컬 편의 상태라 진행과 무관하다.)
+            GameConstants.PrefsKeys.TrackedTale,
             "InsectGame.UnlockedRegions",
             "InsectGame.DefeatedGuardians",
             // 위 5개와 정확히 같은 결함이었다 — `SaveScope.PrefsKey`를 거치면서도 이 목록에
@@ -72,7 +78,8 @@ namespace InsectGame.Core
         //    WeeklyContestClaimed). 올려야 기존 기기의 전역 키가 계정 스코프로 이전된다.
         // 6: BlightCleansed(신규) + DefeatedLedgerBosses(누락분) 추가.
         // 8: 가챠 천장 카운터 3키(int) 추가.
-        private const int MigrationVersion = 8;
+        // 9: 배지 이정표 보상 수령 상태(BadgeMilestonesClaimed) 추가.
+        private const int MigrationVersion = 9;
 
         private static readonly string[] ScopedFiles =
         {
@@ -84,6 +91,9 @@ namespace InsectGame.Core
             GameConstants.SaveFiles.BattleTeam,
             GameConstants.SaveFiles.DexSave,
             GameConstants.SaveFiles.StoryProgress,
+            // 섬은 계정 스코프 경로가 생긴 뒤에 도입돼 옮겨 올 전역 파일이 없다 — MigrationVersion은 그대로 두고
+            // **삭제 목록**으로서 여기 있다. 빠지면 계정을 지우고 같은 uid로 다시 로그인했을 때 옛 섬이 되살아난다.
+            GameConstants.SaveFiles.Island,
         };
 
         private const string LocalOwnerKey = "InsectGame.LocalOwnerUid";

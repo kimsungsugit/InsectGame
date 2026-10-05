@@ -44,16 +44,29 @@ namespace InsectGame.Spawning
             }
         }
 
+        /// <summary>
+        /// 지면 위로 떠 있는 높이(m). 옛 절대 높이 0.8 = 둔덕 밖 지면(<see cref="FieldGround.FloorY"/> 0.1) + 0.7이라
+        /// 평지에선 그대로고, 사구·재 더미 위에서는 그 윗면에서 0.7 뜬다.
+        /// </summary>
+        internal const float HoverHeight = 0.7f;
+
+        /// <summary>플레이어에서 이만큼(m)은 떨어져 놓는다(옛 지역 변수 minDist 그대로).</summary>
+        private const float MinSpawnDistance = 8f;
+
         private void SpawnRandomItem()
         {
             CaptureItemData chosen = PickWeighted();
             if (chosen == null) return;
 
             Vector3 center = playerTransform != null ? playerTransform.position : Vector3.zero;
-            Vector2 off = Random.insideUnitCircle * spawnRadius;
-            float minDist = 8f;
-            if (off.magnitude < minDist) off = off.normalized * minDist;
-            Vector3 pos = center + new Vector3(off.x, 0.8f, off.y);
+            Vector3 pos = PickItemPosition(() =>
+            {
+                Vector2 off = Random.insideUnitCircle * spawnRadius;
+                // 원점에서 normalized는 0이라 플레이어 발밑에 떨어졌다 — 방향이 없으면 한쪽으로 둔다
+                if (off.magnitude < MinSpawnDistance)
+                    off = (off.sqrMagnitude > 1e-8f ? off.normalized : Vector2.right) * MinSpawnDistance;
+                return center + new Vector3(off.x, 0f, off.y);
+            });
 
             GameObject go = new GameObject($"Pickup_{chosen.displayName}");
             go.transform.position = pos;
@@ -62,6 +75,18 @@ namespace InsectGame.Spawning
             CaptureItemPickup pickup = go.AddComponent<CaptureItemPickup>();
             pickup.Initialize(chosen, inventory);
             activePickups.Add(go);
+        }
+
+        /// <summary>
+        /// 순수 판정 — 곤충 스폰과 <b>같은 자리 규칙</b>(<see cref="InsectSpawner.PickSpawnPosition"/>: 물 위 후보는 최대 8번
+        /// 다시 굴리고, 끝까지 물이면 물가로 밀어내고, 그 자리 둔덕 윗면에 세운다)을 지난 뒤 <see cref="HoverHeight"/>만큼 띄운다.
+        /// 옛 스폰은 반경 80m 어디든 놓아 연못 호수 한가운데에도 떴다.
+        /// </summary>
+        internal static Vector3 PickItemPosition(System.Func<Vector3> roll)
+        {
+            Vector3 p = InsectSpawner.PickSpawnPosition(roll);
+            p.y += HoverHeight;
+            return p;
         }
 
         private CaptureItemData PickWeighted()

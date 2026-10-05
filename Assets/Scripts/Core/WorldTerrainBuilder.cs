@@ -21,8 +21,9 @@ namespace InsectGame.Core
 
         private void ApplyElevation(RegionData[] regions)
         {
-            foreach (var r in regions)
+            for (int regionIndex = 0; regionIndex < regions.Length; regionIndex++)
             {
+                var r = regions[regionIndex];
                 float y = GetRegionElevation(r.regionId);
                 r.centerPosition = new Vector3(r.centerPosition.x, y, r.centerPosition.z);
 
@@ -34,7 +35,7 @@ namespace InsectGame.Core
 
                 GameObject regionObj = GameObject.Find($"Region_{r.regionId}");
                 if (regionObj != null)
-                    regionObj.transform.position = r.centerPosition + new Vector3(0f, 0.08f, 0f);
+                    regionObj.transform.position = r.centerPosition + new Vector3(0f, 0.08f + regionIndex * 0.001f, 0f);
             }
         }
 
@@ -81,6 +82,7 @@ namespace InsectGame.Core
 
         private void CreateSlope(string name, Vector3 from, Vector3 to, float fromY, float toY, float width, Material mat)
         {
+            if (Mathf.Approximately(fromY, toY)) return; // 평탄화된 필드에 가짜 중심 직선길을 남기지 않는다.
             Vector3 flatFrom = new Vector3(from.x, 0f, from.z);
             Vector3 flatTo = new Vector3(to.x, 0f, to.z);
             Vector3 dir = flatTo - flatFrom;
@@ -131,6 +133,7 @@ namespace InsectGame.Core
                     Vector3 perp = Vector3.Cross(dir, Vector3.up).normalized;
                     pos += perp * arcOffset;
 
+                    if (WorldRouteLayout.IsOnRoute(regions, pos, 3f)) continue;
                     GameObject cliff = GameObject.CreatePrimitive(PrimitiveType.Cube);
                     cliff.name = $"Cliff_ForestMountain_{i}";
                     cliff.transform.position = pos + new Vector3(0f, 3f, 0f);
@@ -157,6 +160,7 @@ namespace InsectGame.Core
                 Vector3 pos = mountainCenter + d * mRad;
                 pos.y = mountainCenter.y;
 
+                if (WorldRouteLayout.IsOnRoute(regions, pos, 4f)) continue;
                 GameObject wall = GameObject.CreatePrimitive(PrimitiveType.Cube);
                 wall.name = $"Cliff_Mountain_{i}";
                 wall.transform.position = pos + new Vector3(0f, 4f, 0f);
@@ -168,109 +172,77 @@ namespace InsectGame.Core
 
         private void BuildRiver(RegionData[] regions)
         {
-            Vector3 pondCenter = GetCenter(regions, "pond");
-            Vector3 meadowCenter = GetCenter(regions, "meadow");
-
-            // 강: pond에서 meadow 방향으로 흐름 (pond 리전 가장자리)
-            float pondRadius = GetRadius(regions, "pond");
-            Vector3 riverDir = (meadowCenter - pondCenter).normalized;
-            Vector3 riverStart = pondCenter + riverDir * (pondRadius * 0.5f);
-            Vector3 riverEnd = pondCenter + riverDir * (pondRadius + 15f);
-
+            RegionData pond = WorldRouteLayout.Find(regions, "pond");
+            if (pond == null) return;
+            Vector3 road = (WorldRouteLayout.GetGateway(pond, regions) - pond.centerPosition).normalized;
+            Vector3 across = Vector3.Cross(road, Vector3.up).normalized;
+            Vector3 center = pond.centerPosition + road * (pond.radius * 0.7f);
+            const float length = 26f;
+            const float width = 5f;
             Material waterMat = CreateMat(new Color(0.15f, 0.35f, 0.65f, 0.7f));
-            SetTransparent(waterMat);
-            Material bankMat = CreateMat(new Color(0.35f, 0.3f, 0.22f));
+            SceneryMaterials.MakeFade(waterMat);
+            GameObject water = GameObject.CreatePrimitive(PrimitiveType.Plane);
+            water.name = "River_Water_0";
+            water.transform.position = center + Vector3.up * 0.14f;
+            water.transform.rotation = Quaternion.LookRotation(across);
+            water.transform.localScale = new Vector3(width / 10f, 1f, length / 10f);
+            water.GetComponent<MeshRenderer>().sharedMaterial = waterMat;
+            DisableDecorationCollider(water);
 
-            int segments = 5;
-            float riverWidth = 5f;
-            float bridgeT = 0.5f;
-
-            for (int i = 0; i < segments; i++)
+            // 물은 다리 밑까지 연속, 통행 차단만 다리 양옆으로 나눈다.
+            const float passageHalfWidth = 2f;
+            float blockerLength = length * 0.5f - passageHalfWidth;
+            for (int side = -1; side <= 1; side += 2)
             {
-                float tStart = (float)i / segments;
-                float tEnd = (float)(i + 1) / segments;
-                float tMid = (tStart + tEnd) / 2f;
-
-                if (Mathf.Abs(tMid - bridgeT) < 0.12f) continue;
-
-                Vector3 from = Vector3.Lerp(riverStart, riverEnd, tStart);
-                Vector3 to = Vector3.Lerp(riverStart, riverEnd, tEnd);
-                Vector3 perp = Vector3.Cross(riverDir, Vector3.up).normalized;
-                float wave = Mathf.Sin(tMid * Mathf.PI * 2f) * 3f;
-                Vector3 mid = (from + to) / 2f + perp * wave;
-
-                Vector3 segDir = to - from;
-                float len = segDir.magnitude;
-                float angle = Mathf.Atan2(segDir.x, segDir.z) * Mathf.Rad2Deg;
-                float y = Mathf.Lerp(pondCenter.y, pondCenter.y + 1f, tMid);
-
-                GameObject water = GameObject.CreatePrimitive(PrimitiveType.Plane);
-                water.name = $"River_Water_{i}";
-                water.transform.position = new Vector3(mid.x, y + 0.05f, mid.z);
-                water.transform.rotation = Quaternion.Euler(0f, angle, 0f);
-                water.transform.localScale = new Vector3(riverWidth / 10f, 1f, (len + 2f) / 10f);
-                water.GetComponent<MeshRenderer>().material = waterMat;
-                Object.Destroy(water.GetComponent<Collider>());
-
-                GameObject blocker = new GameObject($"River_Blocker_{i}");
-                blocker.transform.position = new Vector3(mid.x, y + 0.5f, mid.z);
-                blocker.transform.rotation = Quaternion.Euler(0f, angle, 0f);
-                BoxCollider box = blocker.AddComponent<BoxCollider>();
-                box.size = new Vector3(riverWidth, 2f, len + 2f);
+                GameObject blocker = new GameObject("River_Blocker_" + side);
+                blocker.transform.position = center + across * side * (passageHalfWidth + blockerLength * 0.5f) + Vector3.up;
+                blocker.transform.rotation = Quaternion.LookRotation(across);
+                blocker.AddComponent<BoxCollider>().size = new Vector3(width, 2f, blockerLength);
             }
-
-            // 강둑 돌
-            for (int i = 0; i < 14; i++)
+            Material bankMat = CreateMat(new Color(0.35f, 0.3f, 0.22f));
+            for (int i = 0; i <= 12; i++)
             {
-                float t = (float)i / 14f;
-                Vector3 pos = Vector3.Lerp(riverStart, riverEnd, t);
-                Vector3 perp = Vector3.Cross(riverDir, Vector3.up).normalized;
-                float wave = Mathf.Sin(t * Mathf.PI * 2f) * 3f;
-                pos += perp * wave;
-                pos.y = Mathf.Lerp(pondCenter.y, pondCenter.y + 1f, t);
-
+                float distance = -length * 0.5f + length * i / 12f;
+                if (Mathf.Abs(distance) < passageHalfWidth) continue;
                 for (int side = -1; side <= 1; side += 2)
                 {
                     GameObject bank = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                    bank.name = $"River_Bank_{i}_{(side > 0 ? "R" : "L")}";
-                    float s = Random.Range(0.4f, 0.7f);
-                    bank.transform.position = pos + perp * (riverWidth * 0.5f + 0.5f) * side + new Vector3(0f, s * 0.15f, 0f);
-                    bank.transform.localScale = new Vector3(s * 1.5f, s * 0.4f, s);
-                    bank.GetComponent<MeshRenderer>().material = bankMat;
-                    Object.Destroy(bank.GetComponent<Collider>());
+                    bank.name = "River_Bank_" + i + "_" + side;
+                    bank.transform.position = center + across * distance + road * side * 2.8f + Vector3.up * 0.15f;
+                    bank.transform.localScale = new Vector3(0.7f, 0.3f, 0.7f);
+                    bank.GetComponent<MeshRenderer>().sharedMaterial = bankMat;
+                    DisableDecorationCollider(bank);
                 }
             }
         }
 
         private void BuildBridges(RegionData[] regions)
         {
-            Material woodMat = CreateMat(new Color(0.5f, 0.35f, 0.15f));
-            Material railMat = CreateMat(new Color(0.45f, 0.3f, 0.12f));
-            Material plankMat = CreateMat(new Color(0.55f, 0.4f, 0.2f));
+            RegionData pond = WorldRouteLayout.Find(regions, "pond");
+            if (pond != null)
+            {
+                Vector3 direction = (WorldRouteLayout.GetGateway(pond, regions) - pond.centerPosition).normalized;
+                Vector3 center = pond.centerPosition + direction * (pond.radius * 0.7f);
+                Material wood = CreateMat(new Color(0.5f, 0.35f, 0.15f));
+                Material rail = CreateMat(new Color(0.4f, 0.27f, 0.12f));
+                CreateBridge("Bridge_PondRiver", center, direction, 8f, 3f, wood, rail, wood);
+            }
+            RegionData mountain = WorldRouteLayout.Find(regions, "mountain");
+            if (mountain != null)
+            {
+                Vector3 direction = (WorldRouteLayout.GetGateway(mountain, regions) - mountain.centerPosition).normalized;
+                Material stone = CreateMat(new Color(0.5f, 0.48f, 0.42f));
+                CreateBridge("Bridge_MountainRuins", mountain.centerPosition + direction * mountain.radius * 0.7f,
+                    direction, 12f, 3.5f, stone, stone, stone);
+            }
+        }
 
-            // 다리 1: pond 강 위 (50% 지점)
-            Vector3 pondCenter = GetCenter(regions, "pond");
-            Vector3 meadowCenter = GetCenter(regions, "meadow");
-            float pondRadius = GetRadius(regions, "pond");
-            Vector3 riverDir = (meadowCenter - pondCenter).normalized;
-            Vector3 riverStart = pondCenter + riverDir * (pondRadius * 0.5f);
-            Vector3 riverEnd = pondCenter + riverDir * (pondRadius + 15f);
-            Vector3 bridgePos = Vector3.Lerp(riverStart, riverEnd, 0.5f);
-            bridgePos.y = pondCenter.y + 0.5f;
-            Vector3 bridgeDir = Vector3.Cross(riverDir, Vector3.up).normalized;
-
-            CreateBridge("Bridge_PondRiver", bridgePos, bridgeDir, 8f, 3f, woodMat, railMat, plankMat);
-
-            // 다리 2: mountain-ruins 연결
-            Material stoneBridgeMat = CreateMat(new Color(0.5f, 0.48f, 0.42f));
-            Material stoneRailMat = CreateMat(new Color(0.45f, 0.43f, 0.38f));
-            Vector3 mountainCenter = GetCenter(regions, "mountain");
-            Vector3 ruinsCenter = GetCenter(regions, "ruins");
-            Vector3 bridge2Dir = (ruinsCenter - mountainCenter).normalized;
-            Vector3 bridge2Pos = Vector3.Lerp(mountainCenter, ruinsCenter, 0.5f);
-            bridge2Pos.y = (mountainCenter.y + ruinsCenter.y) / 2f;
-
-            CreateBridge("Bridge_MountainRuins", bridge2Pos, bridge2Dir, 12f, 3.5f, stoneBridgeMat, stoneRailMat, stoneBridgeMat);
+        private static void DisableDecorationCollider(GameObject obj)
+        {
+            Collider collider = obj.GetComponent<Collider>();
+            if (collider == null) return;
+            collider.enabled = false;
+            Object.Destroy(collider);
         }
 
         private void CreateBridge(string name, Vector3 pos, Vector3 dir, float length, float width, Material floorMat, Material railMat, Material plankMat)
@@ -279,9 +251,9 @@ namespace InsectGame.Core
 
             GameObject floor = GameObject.CreatePrimitive(PrimitiveType.Cube);
             floor.name = $"{name}_Floor";
-            floor.transform.position = pos + new Vector3(0f, 0.15f, 0f);
+            floor.transform.position = pos + new Vector3(0f, 0.18f, 0f);
             floor.transform.rotation = Quaternion.Euler(0f, angle, 0f);
-            floor.transform.localScale = new Vector3(width, 0.3f, length);
+            floor.transform.localScale = new Vector3(width, 0.08f, length);
             floor.GetComponent<MeshRenderer>().material = floorMat;
 
             Vector3 perp = new Vector3(-dir.z, 0f, dir.x).normalized;
@@ -348,36 +320,41 @@ namespace InsectGame.Core
         private void BuildExtraPaths(RegionData[] regions)
         {
             Material pathMat = CreateMat(new Color(0.55f, 0.48f, 0.32f));
-            CreateSimplePath("Path_Meadow_Swamp", GetCenter(regions, "meadow"), GetCenter(regions, "swamp"), 2.5f, pathMat);
-            CreateSimplePath("Path_Meadow_Garden", GetCenter(regions, "meadow"), GetCenter(regions, "garden"), 2.5f, pathMat);
-
-            // ── 1막 진행 사슬 ── 2막 블록이 아래에서 하는 일을 1막에도 한다.
-            // 해금은 meadow→pond→forest→swamp→mountain→ruins 한 줄로 도는데, 그중 땅에 길이
-            // 깔린 건 mountain→ruins 하나뿐이었다. **`pond→forest`와 `swamp→mountain`은
-            // 지도 간선조차 없었다** — 다음 목적지로 가는 길만 골라서 안 보였다.
-            // (meadow→garden은 위에 이미 있다. 사슬이 아닌 공간 인접선은 지도에만 둔다 —
-            //  길로 깔면 사슬과 구분이 안 돼 오히려 엉뚱한 쪽으로 이끈다.)
-            CreateSimplePath("Path_Meadow_Pond", GetCenter(regions, "meadow"), GetCenter(regions, "pond"), 2.5f, pathMat);
-            CreateSimplePath("Path_Pond_Forest", GetCenter(regions, "pond"), GetCenter(regions, "forest"), 2.5f, pathMat);
-            CreateSimplePath("Path_Forest_Swamp", GetCenter(regions, "forest"), GetCenter(regions, "swamp"), 2.5f, pathMat);
-            CreateSimplePath("Path_Swamp_Mountain", GetCenter(regions, "swamp"), GetCenter(regions, "mountain"), 2.5f, pathMat);
-
-            Material stonePath = CreateMat(new Color(0.5f, 0.45f, 0.4f));
-            CreateSimplePath("Path_Mountain_Ruins", GetCenter(regions, "mountain"), GetCenter(regions, "ruins"), 3f, stonePath);
-
-            // ── 2막(ver2) 사슬 ── RegionMapUI.Connections와 같은 토폴로지를 월드에도 깐다.
-            // 지도에는 길이 있는데 땅에는 없으면 어디로 가야 할지 알 수 없다.
-            // 색을 바래게 둔 건 이 길들이 오래 방치된 땅으로 이어지기 때문이다.
-            Material fadedPath = CreateMat(new Color(0.46f, 0.44f, 0.38f));
-            string[,] act2Chain =
+            PlayerStartPose entrance = PlayerStartPlacement.ResolveMainVillageEntrance(regions);
+            if (!entrance.IsFallback)
             {
-                { "ruins", "hollow" }, { "hollow", "dunes" }, { "dunes", "frostline" },
-                { "frostline", "emberfall" }, { "emberfall", "canopy" }, { "canopy", "nameless" }
-            };
-            for (int i = 0; i < act2Chain.GetLength(0); i++)
+                Vector3 meadowCenter = GetCenter(regions, "meadow");
+                Vector3 destination = entrance.Position;
+                destination.y = meadowCenter.y;
+                CreateSimplePath("Path_Meadow_VillageEntrance", meadowCenter, destination, 2.5f, pathMat);
+            }
+
+            var segments = new System.Collections.Generic.HashSet<(Vector3, Vector3)>();
+            var joints = new System.Collections.Generic.HashSet<Vector3>();
+            foreach (WorldRouteEdge edge in WorldRouteLayout.FieldConnections)
             {
-                string a = act2Chain[i, 0], b = act2Chain[i, 1];
-                CreateSimplePath($"Path_{a}_{b}", GetCenter(regions, a), GetCenter(regions, b), 2.5f, fadedPath);
+                Vector3[] points = WorldRouteLayout.BuildRoute(regions, edge.FromRegionId, edge.ToRegionId);
+                if (points.Length < 2)
+                {
+                    Debug.LogError("No safe field route: " + edge.FromRegionId + " -> " + edge.ToRegionId);
+                    continue;
+                }
+                for (int i = 1; i < points.Length; i++)
+                {
+                    if (segments.Contains((points[i], points[i - 1])) || !segments.Add((points[i - 1], points[i]))) continue;
+                    CreateSimplePath("Path_" + edge.FromRegionId + "_" + edge.ToRegionId + "_" + i,
+                        points[i - 1], points[i], WorldRouteLayout.RoadWidth, pathMat);
+                }
+                for (int i = 1; i < points.Length - 1; i++)
+                {
+                    if (!joints.Add(points[i])) continue;
+                    GameObject joint = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+                    joint.name = "Path_Join_" + joints.Count;
+                    joint.transform.position = points[i] + Vector3.up * 0.17f;
+                    joint.transform.localScale = new Vector3(WorldRouteLayout.RoadWidth, 0.01f, WorldRouteLayout.RoadWidth);
+                    joint.GetComponent<MeshRenderer>().sharedMaterial = pathMat;
+                    DisableDecorationCollider(joint);
+                }
             }
         }
 
@@ -406,7 +383,7 @@ namespace InsectGame.Core
                 path.transform.rotation = Quaternion.Euler(0f, angle, 0f);
                 path.transform.localScale = new Vector3(width / 10f, 1f, segLen / 10f);
                 path.GetComponent<MeshRenderer>().material = mat;
-                Object.Destroy(path.GetComponent<Collider>());
+                DisableDecorationCollider(path);
             }
         }
 
@@ -427,7 +404,7 @@ namespace InsectGame.Core
         /// <summary>
         /// 이 빌더가 만든 런타임 머티리얼 — <c>RegionTerrainBuilder</c>와 같은 이유로 회수한다
         /// (GameObject를 지워도 머티리얼은 남고, 로그아웃·계정삭제가 씬을 재로드한다).
-        /// 여기서 나온 것도 <c>SetTransparent</c>로 변형되므로 색상 캐시를 쓰지 않는다.
+        /// 여기서 나온 것도 <see cref="SceneryMaterials.MakeFade"/>로 변형되므로 색상 캐시를 쓰지 않는다.
         /// </summary>
         private readonly System.Collections.Generic.List<Material> runtimeMaterials =
             new System.Collections.Generic.List<Material>();
@@ -439,26 +416,12 @@ namespace InsectGame.Core
             runtimeMaterials.Clear();
         }
 
+        /// <summary>셰이더 폴백·무광 마감은 <see cref="SceneryMaterials.Create"/>가 한다 — 여기선 회수 목록에만 올린다.</summary>
         private Material CreateMat(Color color)
         {
-            Shader shader = Shader.Find("Standard");
-            if (shader == null) shader = Shader.Find("Universal Render Pipeline/Lit");
-            if (shader == null) shader = Shader.Find("Unlit/Color");
-            if (shader == null) shader = Shader.Find("Sprites/Default");
-            Material mat = shader != null ? new Material(shader) : new Material(Shader.Find("Hidden/InternalErrorShader"));
-            mat.color = color;
+            Material mat = SceneryMaterials.Create(color);
             runtimeMaterials.Add(mat);
             return mat;
-        }
-
-        private void SetTransparent(Material mat)
-        {
-            mat.SetFloat("_Mode", 3);
-            mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
-            mat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
-            mat.SetInt("_ZWrite", 0);
-            mat.EnableKeyword("_ALPHABLEND_ON");
-            mat.renderQueue = 3000;
         }
     }
 }

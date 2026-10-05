@@ -203,6 +203,40 @@ namespace InsectGame.Tests
         }
 
         [Test]
+        public void Format_CoinsAndIslandObject_AreShown()
+        {
+            // 섬 퀘스트 보상 — 코인과 섬 물건(카탈로그의 표시명으로).
+            TutorialQuest quest = Quest(exp: 20);
+            quest.rewardCoins = 100;
+            quest.rewardIslandObjectId = "f_lantern";
+            quest.rewardIslandObjectCount = 1;
+            Assert.AreEqual("경험치 20 + 코인 100 + 섬 물건 등불", QuestRewardFormatter.Format(quest, Resolver));
+
+            quest.rewardIslandObjectCount = 2;
+            StringAssert.Contains("섬 물건 등불 ×2", QuestRewardFormatter.Format(quest, Resolver));
+        }
+
+        [Test]
+        public void IslandObjectReward_UnknownIdOrZeroCount_IsNeitherShownNorCounted()
+        {
+            // 지급(GrantRewards)이 같은 술어를 쓴다 — 모르는 id는 "보이지도 않고 주지도 않는다".
+            TutorialQuest unknown = Quest();
+            unknown.rewardIslandObjectId = "x_typo";
+            unknown.rewardIslandObjectCount = 1;
+            Assert.IsFalse(QuestRewardFormatter.HasAny(unknown));
+            Assert.AreEqual(string.Empty, QuestRewardFormatter.Format(unknown, Resolver));
+
+            TutorialQuest zero = Quest();
+            zero.rewardIslandObjectId = "f_lantern";
+            zero.rewardIslandObjectCount = 0;
+            Assert.IsFalse(QuestRewardFormatter.HasAny(zero));
+
+            TutorialQuest coinsOnly = Quest();
+            coinsOnly.rewardCoins = 5;
+            Assert.IsTrue(QuestRewardFormatter.HasAny(coinsOnly));
+        }
+
+        [Test]
         public void Collect_ReusedBuffer_IsClearedBetweenCalls()
         {
             List<QuestRewardEntry> entries = new List<QuestRewardEntry>();

@@ -548,21 +548,26 @@ namespace InsectGame.Core
         }
 
         /// <summary>
-        /// 셰이더 폴백 체인 — 이 저장소의 다른 빌더들과 같은 순서다.
-        /// Built-in 파이프라인이라 Standard가 정상 해석되고 나머지는 방어선이다.
+        /// 불투명 구조물(기둥·가로대·상자·장부대·붕괴 조각) — 월드 소품과 같은 무광 마감이다
+        /// (<see cref="SceneryMaterials.Create"/>: 셰이더 폴백 + <see cref="SceneryMaterials.MatteGloss"/>).
+        ///
+        /// 예전엔 결과 픽셀을 바꾸지 않으려고 Standard 기본 광택(0.5)을 남겨 뒀는데, 그래서 거점만 무광 지형
+        /// 사이에서 플라스틱처럼 반짝였다(2026-09-29 광택 통일). 부품이 전부 나무·흙이라 광택 예외는 없다 —
+        /// 금속·유리 부품을 더하면 그 자리에서 <see cref="CharacterPalette.ApplySurface"/>로 재질을 명시할 것.
+        ///
+        /// <see cref="Transparent"/>도 이걸 거치지만 알파가 있는 색은 <see cref="SceneryMaterials.ApplyFinish"/>가
+        /// 건너뛰므로 그물·연무·정화 고리의 결과는 그대로다.
         /// </summary>
         private static Material Mat(Color color)
         {
-            Shader shader = Shader.Find("Standard");
-            if (shader == null) shader = Shader.Find("Universal Render Pipeline/Lit");
-            if (shader == null) shader = Shader.Find("Unlit/Color");
-            if (shader == null) shader = Shader.Find("Sprites/Default");
-            Material m = new Material(shader);
-            m.color = color;
-            if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", color);
-            return m;
+            return SceneryMaterials.Create(color);
         }
 
+        /// <summary>
+        /// 그물·연무·붕괴 고리 같은 이펙트성 반투명. 설정은 <see cref="SceneryMaterials.MakeFade"/>와 같은 Standard Fade다.
+        /// 한때 Standard의 투명 변형이 플레이어 빌드에서 통째로 빠져 불투명으로 그려졌는데(<c>BattleArenaController.CreateFxMaterial</c>
+        /// 주석), 지금은 <see cref="SceneryMaterials.BuildKeepers"/>가 그 변형을 빌드에 남긴다(2026-09-29 QA 빌드 실측).
+        /// </summary>
         private static Material Transparent(Color color)
         {
             Material m = Mat(color);

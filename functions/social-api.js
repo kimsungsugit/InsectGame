@@ -9,8 +9,13 @@ const {
   rankForRating,
   sanitizeTeam,
 } = require("./social-pvp");
+const {
+  buildIslandInfo, parseIslandPayload, resolveIslandTarget, utcDayKey,
+} = require("./island");
 
 const MAX_LIST_ITEMS = 50;
+// 배치 한도(500 쓰기) 안쪽. 섬 문서 삭제 1건을 같은 배치에 싣는다.
+const ISLAND_LIKES_DELETE_LIMIT = 400;
 const QUEUE_TTL_MS = 2 * 60 * 1000;
 const WORLD_MAX_PLAYERS = 5;
 const WORLD_STALE_MS = 45 * 1000;
@@ -815,6 +820,157 @@ async function leaderboard(db) {
   return { success: true, leaderboard: snapshot.docs.map((doc) => publicProfile(doc.id, doc.data())) };
 }
 
+// ── 나의 섬 공유 ─────────────────────────────────────────────────────────────
+// 저장: islands/{uid} + islands/{uid}/likes/{likerUid}. 클라이언트는 규칙상 타인 문서를
+// 못 읽으므로 공개·방문·좋아요가 전부 이 함수를 거친다. 검증은 ./island.js(순수).
+
+// 섬 주인 이름·친구 코드. syncProfile·joinWorld와 같은 규칙이다 — 프로필의 displayName이
+// 있으면 그것, 없으면 토큰의 name, 그것도 없으면 "탐험가". 클라이언트가 보낸 이름은 안 쓴다.
+function islandOwnerIdentity(uid, decoded, profileData = {}) {
+  return {
+    ownerName: safeText(profileData.displayName, safeText(decoded && decoded.name, "탐험가")),
+    friendCode: safeText(profileData.friendCode, friendCodeForUid(uid), 12),
+  };
+}
+
+function islandRefFor(db, ownerUid) {
+  // 문서 ID가 될 수 없는 값("/" 포함, ".", "..", "__x__")은 doc()·요청이 던진다(→ 500).
+  // 그런 uid는 있을 수 없으니 없는 섬으로 답한다.
+  if (!ownerUid || ownerUid.includes("/") || ownerUid === "." || ownerUid === ".."
+      || /^__.*__$/.test(ownerUid)) throw new Error("island_not_found");
+  return db.collection("islands").doc(ownerUid);
+}
+
+function hasPublishedIsland(snapshot) {
+  if (!snapshot.exists) return false;
+  const stored = snapshot.get("snapshot");
+  return typeof stored === "string" && stored.length > 0;
+}
+
+async function publishIsland(db, decoded, body) {
+  const uid = decoded.uid;
+  const snapshot = parseIslandPayload(body.island);
+  if (!snapshot) throw new Error("island_invalid");
+  const islandRef = db.collection("islands").doc(uid);
+  const profileSnap = await db.collection("socialProfiles").doc(uid).get();
+  const identity = islandOwnerIdentity(uid, decoded, profileSnap.exists ? profileSnap.data() : {});
+  let stored;
+  await db.runTransaction(async (transaction) => {
+    const islandSnap = await transaction.get(islandRef);
+    const current = islandSnap.exists ? islandSnap.data() : {};
+    const update = {
+      uid,
+      ownerName: identity.ownerName,
+      friendCode: identity.friendCode,
+      // 진짜 true만 공개다 — Boolean("false")가 true라서 형변환하지 않는다.
+      isPublic: body.isPublic === true,
+      snapshot: JSON.stringify(snapshot),
+      updatedAt: FieldValue.serverTimestamp(),
+      updatedAtMs: Date.now(),
+    };
+    // likes/visits는 다시 올려도 건드리지 않는다. 없을 때만 0으로 시작한다.
+    if (!Number.isFinite(current.likes)) update.likes = 0;
+    if (!Number.isFinite(current.visits)) update.visits = 0;
+    transaction.set(islandRef, update, { merge: true });
+    stored = { ...current, ...update };
+  });
+  return { success: true, island: buildIslandInfo(uid, stored, identity) };
+}
+
+async function getMyIsland(db, decoded) {
+  const uid = decoded.uid;
+  const islandSnap = await db.collection("islands").doc(uid).get();
+  if (islandSnap.exists) return { success: true, island: buildIslandInfo(uid, islandSnap.data()) };
+  // 아직 올린 적이 없어도 성공이다 — 이름·친구 코드만 계산해서 채운다.
+  const profileSnap = await db.collection("socialProfiles").doc(uid).get();
+  const identity = islandOwnerIdentity(uid, decoded, profileSnap.exists ? profileSnap.data() : {});
+  return { success: true, island: buildIslandInfo(uid, {}, identity) };
+}
+
+// targetUid가 있으면 그것, 없으면 친구 코드로 찾는다. 섬 문서가 친구 코드를 들고 있어
+// islands를 직접 조회한다 — 주인이 PVP 창을 한 번도 안 열어 socialProfiles가 없어도 찾힌다.
+// 빈 문자열은 없는 값이다(클라이언트가 늘 다섯 필드를 다 보낸다) — resolveIslandTarget 참조.
+async function resolveIslandOwnerUid(db, body) {
+  const target = resolveIslandTarget(body);
+  if (!target) throw new Error("island_target_required");
+  if (target.targetUid) return target.targetUid;
+  const query = await db.collection("islands").where("friendCode", "==", target.friendCode).limit(1).get();
+  if (query.empty) throw new Error("island_not_found");
+  return query.docs[0].id;
+}
+
+async function getIsland(db, uid, body) {
+  const ownerUid = await resolveIslandOwnerUid(db, body);
+  const islandRef = islandRefFor(db, ownerUid);
+  const isOwner = ownerUid === uid;
+  const today = utcDayKey();
+  let data;
+  let likedByMe = false;
+  await db.runTransaction(async (transaction) => {
+    const reads = [transaction.get(islandRef)];
+    if (!isOwner) {
+      reads.push(transaction.get(islandRef.collection("likes").doc(uid)));
+      reads.push(transaction.get(db.collection("socialBlocks").doc(blockDocId(uid, ownerUid))));
+    }
+    const [islandSnap, likeSnap, blockSnap] = await Promise.all(reads);
+    if (!hasPublishedIsland(islandSnap)) throw new Error("island_not_found");
+    data = islandSnap.data();
+    likedByMe = false;
+    if (isOwner) return;
+    if (data.isPublic !== true) throw new Error("island_private");
+    if (blockSnap.exists) throw new Error("user_blocked");
+    likedByMe = likeSnap.exists && likeSnap.get("dayKey") === today;
+    // 본인이 아닌 방문만 센다. 같은 사람이 여러 번 와도 매번 +1이다.
+    const visits = Math.max(0, Math.round(Number(data.visits) || 0)) + 1;
+    transaction.update(islandRef, { visits });
+    data = { ...data, visits };
+  });
+  return { success: true, island: buildIslandInfo(ownerUid, data, { likedByMe, includeSnapshot: true }) };
+}
+
+async function likeIsland(db, uid, body) {
+  // 좋아요는 uid로만 받는다 — friendCode는 무시한다. 빈 문자열·공백은 없는 값.
+  const target = resolveIslandTarget({ targetUid: body.targetUid });
+  if (!target) throw new Error("island_target_required");
+  const ownerUid = target.targetUid;
+  if (ownerUid === uid) throw new Error("cannot_like_self");
+  const islandRef = islandRefFor(db, ownerUid);
+  const likeRef = islandRef.collection("likes").doc(uid);
+  const blockRef = db.collection("socialBlocks").doc(blockDocId(uid, ownerUid));
+  const today = utcDayKey();
+  let data;
+  await db.runTransaction(async (transaction) => {
+    const [islandSnap, likeSnap, blockSnap] = await Promise.all([
+      transaction.get(islandRef), transaction.get(likeRef), transaction.get(blockRef),
+    ]);
+    if (!hasPublishedIsland(islandSnap)) throw new Error("island_not_found");
+    if (islandSnap.get("isPublic") !== true) throw new Error("island_private");
+    if (blockSnap.exists) throw new Error("user_blocked");
+    // 누른 사람당 문서 하나를 날마다 덮어쓴다 — 같은 UTC 날짜면 거부.
+    if (likeSnap.exists && likeSnap.get("dayKey") === today) throw new Error("already_liked_today");
+    const likes = Math.max(0, Math.round(Number(islandSnap.get("likes")) || 0)) + 1;
+    transaction.set(likeRef, { dayKey: today, likedAtMs: Date.now() });
+    transaction.update(islandRef, { likes });
+    data = { ...islandSnap.data(), likes };
+  });
+  return { success: true, island: buildIslandInfo(ownerUid, data, { likedByMe: true }) };
+}
+
+// 한계: likes 서브컬렉션은 앞 ISLAND_LIKES_DELETE_LIMIT(400)건까지만 섬 문서와 한 배치로
+// 지운다. 좋아요를 누른 사람이 그보다 많으면 나머지 likes 문서는 고아로 남는다(Firestore는
+// 부모를 지워도 서브컬렉션을 안 지운다). 남은 문서엔 누른 사람 uid(문서 ID)와 dayKey뿐이고
+// 규칙상 클라이언트가 읽을 수 없다. 완전 삭제가 필요해지면 recursiveDelete나 반복 배치로 바꿀 것.
+// 없는 문서를 지워도 성공이라 여러 번 불러도 안전하다(계정 삭제 흐름에서 호출).
+async function deleteIsland(db, uid) {
+  const islandRef = db.collection("islands").doc(uid);
+  const likesSnap = await islandRef.collection("likes").limit(ISLAND_LIKES_DELETE_LIMIT).get();
+  const batch = db.batch();
+  likesSnap.docs.forEach((doc) => batch.delete(doc.ref));
+  batch.delete(islandRef);
+  await batch.commit();
+  return { success: true };
+}
+
 function createSocialPvpHandler() {
   return async (request, response) => {
     if (request.method !== "POST") {
@@ -855,6 +1011,11 @@ function createSocialPvpHandler() {
         case "blockUser": result = await blockUser(db, decoded.uid, body); break;
         case "unblockUser": result = await unblockUser(db, decoded.uid, body); break;
         case "challengeWorldPlayer": result = await challengeWorldPlayer(db, decoded.uid, body); break;
+        case "publishIsland": result = await publishIsland(db, decoded, body); break;
+        case "getMyIsland": result = await getMyIsland(db, decoded); break;
+        case "getIsland": result = await getIsland(db, decoded.uid, body); break;
+        case "likeIsland": result = await likeIsland(db, decoded.uid, body); break;
+        case "deleteIsland": result = await deleteIsland(db, decoded.uid); break;
         default: throw new Error("unknown_action");
       }
       sendJson(response, 200, result);
@@ -864,6 +1025,7 @@ function createSocialPvpHandler() {
         "already_friends", "already_in_match", "request_not_pending", "challenge_not_pending",
         "not_your_turn", "match_not_active", "skill_on_cooldown", "invalid_switch",
         "world_full", "user_blocked", "world_invite_not_pending",
+        "island_private", "already_liked_today",
       ]);
       const clientErrors = new Set([
         "friend_code_required", "friend_not_found", "cannot_add_self", "profile_not_synced",
@@ -871,6 +1033,7 @@ function createSocialPvpHandler() {
         "not_friends", "not_match_player", "match_not_found", "action_identity_required",
         "invalid_skill", "invalid_active_insect", "unknown_action", "chat_message_required",
         "invalid_world_target", "not_in_world", "player_not_nearby", "world_not_found",
+        "island_invalid", "island_target_required", "island_not_found", "cannot_like_self",
       ]);
       console.error("socialPvpApi failed", { action: body.action, uid: decoded.uid, error });
       sendJson(response, conflicts.has(message) ? 409 : clientErrors.has(message) ? 400 : 500, {

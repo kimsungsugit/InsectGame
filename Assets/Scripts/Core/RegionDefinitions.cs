@@ -32,9 +32,20 @@ namespace InsectGame.Core
 
         public static RegionData[] CreateAll()
         {
+            // 리전 풀(insectIds)은 등급을 정하지 않는다 — 필드 스폰이 등급을 전역 표로 먼저 굴리고
+            // (FieldSpawnRules), 종만 이 풀에서 그 등급 안의 spawnWeight로 고른다. 리전 사이의 차이는
+            // 레벨 대역뿐이다(사용자 결정 2026-09-29).
+            // 그래서 **한 등급 안의 종 수가 곧 그 리전의 다양성**이다. 숲 일반이 2종이면 숲 스폰의 60%가
+            // 그 둘이고, 등급이 통째로 비면 FieldSpawnRules.Fallback이 이웃 등급으로 대신 굴린다(초원이
+            // 전설을 영영 못 낸다). 전 리전이 일반 4 · 고급 3 · 희귀 2 · 영웅 1 · 전설 1종 이상을 갖도록
+            // 기존 필드 종을 테마에 맞춰 나눠 넣었다(각 풀 끝의 「등급 보충」 줄). 새 종을 만들지 않는다.
+            // - 서브에리어 전용종은 그 서브에리어가 속한 리전 필드에 넣지 않는다 — 들어가는 순간 전용이 아니다.
+            // - 1막 리전에는 2막 종을 넣지 않는다. 2막은 1막 종을 빌려 오되 그 땅의 분위기에 맞는 것만.
+            // - 스토리 포획 목표(ch2_emperor 왕잠자리 · ch4_firefly 파란반딧불이)가 있는 영웅 칸은 넓히지
+            //   않는다. 같은 등급 종이 늘면 목표종 확률이 그만큼 줄어든다.
             RegionData[] regions = new RegionData[]
             {
-                // ── 초원: Lv.1~10, 입문 지역, Common/Uncommon 위주 ──
+                // ── 초원: Lv.1~10, 입문 지역 ──
                 new RegionData
                 {
                     regionId = "meadow",
@@ -50,7 +61,10 @@ namespace InsectGame.Core
                         "grasshopper_green", "ladybug_seven", "caterpillar_green", "aphid_colony",
                         "moth_brown", "beetle_dung",
                         // 확장 64종 — 초원 신규 4종 (C/U)
-                        "bee_bumble", "grasshopper_brown", "ladybug_harlequin", "antlion_pit"
+                        "bee_bumble", "grasshopper_brown", "ladybug_harlequin", "antlion_pit",
+                        // 등급 보충 — 희귀 2(방아벌레·배추흰나비는 원래 Meadow 태그다)·영웅 1(꿀벌 무리의 여왕)·
+                        // 전설 1(마을 고목의 태고매미 — 소리의 들판. 소리가 멎은 텅 빈 들과 짝이다)
+                        "butterfly_cabbage", "beetle_click", "bee_queen", "cicada_ancient"
                     },
                     guardianInsectId = "mantis_green",
                     guardianDisplayName = "초원의 수호자 사마귀",
@@ -100,7 +114,10 @@ namespace InsectGame.Core
                         // 확장 64종 — 연못 신규 9종 (C4/U3/R1/E1) + 습지와 공유 1종(fly_crane)
                         "mosquito_tiger", "fly_hover", "water_strider_stream", "diving_beetle_striped",
                         "damselfly_red", "dragonfly_scarlet", "diving_beetle_great",
-                        "dragonfly_jade", "firefly_marsh", "fly_crane"
+                        "dragonfly_jade", "firefly_marsh", "fly_crane",
+                        // 등급 보충 — 희귀 1(물웅덩이 사냥꾼 습지사마귀)·전설 1(고대잠자리, 원래 Pond 태그).
+                        // 영웅 칸은 왕잠자리(ch2_emperor) 확률을 지키려 그대로 둔다
+                        "mantis_swamp", "dragonfly_ancient"
                     },
                     guardianInsectId = "dragonfly_emperor",
                     guardianDisplayName = "연못의 파수꾼 왕잠자리",
@@ -150,7 +167,10 @@ namespace InsectGame.Core
                         "hornet_asian",
                         // 확장 64종 — 숲 신규 5종 (U2/R2/E1)
                         "beetle_longhorn_oak", "cricket_tree", "stag_beetle_saw",
-                        "mantis_bark", "rhinoceros_beetle_titan"
+                        "mantis_bark", "rhinoceros_beetle_titan",
+                        // 등급 보충 — 일반 2(썩은 나무 둘레 왕개미·가지 사이 무당거미)·
+                        // 전설 1(고목 수액의 황금사슴벌레 — 꽃밭 온실 전용종이지만 온실은 꽃밭 소속이다)
+                        "ant_soldier", "spider_garden", "beetle_golden_stag"
                     },
                     guardianInsectId = "beetle_hercules",
                     guardianDisplayName = "숲의 문지기 헤라클레스",
@@ -209,7 +229,10 @@ namespace InsectGame.Core
                         "mosquito_swamp", "centipede_red", "earwig_swamp", "pill_bug_mud",
                         "fly_crane", "dragonfly_swamp_hawker", "firefly_swamp", "spider_marsh",
                         "mantis_swamp", "centipede_venom", "wasp_night", "spider_bog_widow",
-                        "mosquito_tiger"
+                        "mosquito_tiger",
+                        // 등급 보충 — 전설 1(안개 위의 고대잠자리, 연못과 공유). 영웅 칸은 파란반딧불이
+                        // (ch4_firefly) 확률을 지키려 그대로 둔다
+                        "dragonfly_ancient"
                     },
                     guardianInsectId = "mantis_ghost",
                     guardianDisplayName = "습지의 유령 사마귀",
@@ -316,7 +339,10 @@ namespace InsectGame.Core
                         "wasp_paper", "butterfly_cabbage",
                         // 확장 64종 — 꽃밭 신규 6종 (C1/U2/R2/E1)
                         "aphid_rose", "bee_carpenter", "butterfly_peacock",
-                        "butterfly_glasswing", "moth_hummingbird", "bee_queen"
+                        "butterfly_glasswing", "moth_hummingbird", "bee_queen",
+                        // 등급 보충 — 일반 2(꽃을 찾는 일꿀벌·꽃등에)·전설 1(한밤 정원의 그믐황후나비).
+                        // 알렉산드라비단나비·황금사슴벌레는 이 리전 서브에리어(미로·온실)의 전용종이라 쓰지 않는다
+                        "bee_worker", "fly_hover", "butterfly_midnight"
                     },
                     guardianInsectId = "butterfly_swallowtail",
                     guardianDisplayName = "꽃밭의 문지기 호랑나비",
@@ -351,12 +377,14 @@ namespace InsectGame.Core
                         }
                     }
                 },
-                // ── 고대 유적: Lv.36~50, 전설급 (신규) ──
+                // ── 고대 유적: Lv.36~50, 1막의 끝 ──
                 new RegionData
                 {
                     regionId = "ruins",
                     displayName = "고대 유적",
-                    description = "잊혀진 문명의 유적 — 전설급 곤충만이 서식하는 최종 지역입니다.",
+                    // 옛 문구 「전설급 곤충만이 서식하는 최종 지역」은 둘 다 어긋났다 — 등급은 이제 전역 표를
+                    // 따르고(여기서도 60%가 일반), 2막이 붙어 최종 지역도 아니다.
+                    description = "잊혀진 문명의 유적 — 고대의 곤충들이 무너진 돌 틈에 잠들어 있습니다.",
                     themeColor = new Color(0.4f, 0.35f, 0.3f),
                     centerPosition = new Vector3(0f, 0f, 140f),
                     radius = 45f,
@@ -368,7 +396,11 @@ namespace InsectGame.Core
                         // 확장 64종 — 고대 유적 신규 11종 (U1/R4/E3/L3)
                         "cricket_tomb", "scarab_relic", "mantis_obsidian", "spider_tomb",
                         "centipede_ruin", "jewel_beetle_azure", "moth_shadow", "wasp_gold",
-                        "scarab_pharaoh", "butterfly_midnight", "hornet_emperor"
+                        "scarab_pharaoh", "butterfly_midnight", "hornet_emperor",
+                        // 등급 보충 — 일반 4 · 고급 2. 유적 종이 전부 밤·돌 틈이라 거기 맞췄다:
+                        // 돌 밑 집게벌레·공벌레, 돌무더기 귀뚜라미, 울타리 그늘 밤나방 / 왕지네, 처마 밑 모래의 개미귀신
+                        "earwig_common", "moth_brown", "cricket_stone", "pill_bug_rock",
+                        "centipede_common", "antlion_pit"
                     },
                     // 1막에는 수문장이 없어 유적이 종착지였다. 2막을 열려면 여기 고리가 필요하다 —
                     // RegionManager.DefeatGuardian이 유일한 리전 해금 경로이기 때문이다.
@@ -399,7 +431,7 @@ namespace InsectGame.Core
                         {
                             subAreaId = "ruins_underground",
                             displayName = "유적 지하",
-                            description = "유적 아래 봉인된 지하 — 고대 곤충이 잠들어 있습니다.",
+                            description = "신전 아래 지하 — 이름 벽이 이어지는 곳입니다.",
                             centerPosition = new Vector3(-10f, 0f, 135f),
                             radius = 10f,
                             exclusiveInsectIds = new[] { "beetle_hercules", "leaf_insect_phantom" },
@@ -437,7 +469,10 @@ namespace InsectGame.Core
                         "cricket_hush", "moth_ashen", "beetle_husk", "spider_threadbare",
                         "mantis_hollow", "moth_forgotten",
                         "moth_brown", "aphid_colony", "beetle_dung", "earwig_common",
-                        "pill_bug_garden", "stick_insect_long", "mantis_dead_leaf", "moth_shadow"
+                        "pill_bug_garden", "stick_insect_long", "mantis_dead_leaf", "moth_shadow",
+                        // 등급 보충도 재활용 원칙 그대로 — 초원에서 마른 땅의 개미귀신(고급)·죽은 척하는
+                        // 방아벌레(희귀), 이름 없는 자리와 함께 쓰는 그믐황후나비(전설)
+                        "antlion_pit", "beetle_click", "butterfly_midnight"
                     },
                     guardianInsectId = "mantis_hollow",
                     guardianDisplayName = "텅 빈 들의 사마귀",
@@ -486,7 +521,9 @@ namespace InsectGame.Core
                         "bee_digger", "antlion_dune", "grasshopper_locust",
                         "spider_camel", "scarab_sand", "wasp_hawk",
                         "centipede_sand", "hornet_dune",
-                        "grasshopper_rock", "pill_bug_rock"
+                        "grasshopper_rock", "pill_bug_rock",
+                        // 등급 보충 — 전설 1(모래에 묻힌 기록 곁의 파라오풍뎅이, 모래풍뎅이의 윗대)
+                        "scarab_pharaoh"
                     },
                     guardianInsectId = "hornet_dune",
                     guardianDisplayName = "모래언덕의 장수말벌",
@@ -535,7 +572,9 @@ namespace InsectGame.Core
                         "spider_frost", "stag_beetle_glacier", "butterfly_snowveil",
                         "mantis_icicle", "moth_aurora",
                         "beetle_hoarfrost", "katydid_snowfield", "bee_glacier",
-                        "centipede_frost", "butterfly_apollo"
+                        "centipede_frost", "butterfly_apollo",
+                        // 등급 보충 — 전설 1(얼음이 시간을 붙든 땅의 태고매미. 아폴로모시나비처럼 산에서 빌려 왔다)
+                        "cicada_ancient"
                     },
                     guardianInsectId = "moth_aurora",
                     guardianDisplayName = "서릿길의 오로라나방",
@@ -573,7 +612,7 @@ namespace InsectGame.Core
                 {
                     regionId = "emberfall",
                     displayName = "잿불 골짜기",
-                    description = "재가 식지 않는 골짜기 — 기록이 통째로 불타 빈칸이 가장 두껍게 겹친 곳입니다.",
+                    description = "재가 식지 않는 골짜기 — 이름이 불타 빈칸이 가장 많은 곳입니다.",
                     themeColor = new Color(0.62f, 0.28f, 0.22f),
                     // (120,255)에서 (128,262)로 옮겼다 — 옛 위치는 사슬상 이웃도 아닌 hollow와
                     // 0.8m 겹쳤다(거리 92.2 < 반경합 93). 겹치면 RegionManager.ContainsPoint가
@@ -588,7 +627,9 @@ namespace InsectGame.Core
                         "wasp_ash", "cicada_ember", "beetle_longhorn_char",
                         "mantis_ember", "hornet_magma",
                         "pill_bug_cinder", "cricket_slag", "moth_shadow",
-                        "beetle_scorch", "moth_smoulder"
+                        "beetle_scorch", "moth_smoulder",
+                        // 등급 보충 — 전설 1(용암말벌·잿말벌 위의 황제말벌. 그림자나방처럼 유적에서 빌려 왔다)
+                        "hornet_emperor"
                     },
                     guardianInsectId = "hornet_magma",
                     guardianDisplayName = "잿불 골짜기의 용암말벌",
@@ -687,7 +728,10 @@ namespace InsectGame.Core
                         "centipede_pale", "mantis_blank", "butterfly_erased",
                         "moth_effaced", "mantis_unnamed",
                         "mantis_hollow", "moth_forgotten", "spider_threadbare",
-                        "moth_shadow", "butterfly_midnight"
+                        "moth_shadow", "butterfly_midnight",
+                        // 등급 보충 — 텅 빈 들에서 넘어온 잿빛나방(일반)·껍질만 남은 딱정벌레(고급).
+                        // 전설 칸은 무명(fin_seal의 상대) 확률을 지키려 그대로 둔다
+                        "moth_ashen", "beetle_husk"
                     },
                     guardianInsectId = "mantis_unnamed",
                     guardianDisplayName = "이름 없는 사마귀",
@@ -710,7 +754,7 @@ namespace InsectGame.Core
                         {
                             subAreaId = "nameless_core",
                             displayName = "빈칸",
-                            description = "아무것도 새겨지지 않은 자리 — 그것이 서려던 곳입니다.",
+                            description = "울타리 끝의 빈칸 — 그림자가 숨은 곳입니다.",
                             centerPosition = new Vector3(-68f, 0f, 214f),
                             radius = 10f,
                             exclusiveInsectIds = new[] { "mantis_unnamed", "mantis_blank" },

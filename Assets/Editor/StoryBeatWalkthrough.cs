@@ -21,8 +21,8 @@ namespace InsectGame.EditorTools
     ///   -walkOut .claude/cache/story-walk.md [-walkRegion mountain] [-walkMode campaign]
     /// </code>
     ///
-    /// <c>-walkMode</c>는 <c>blight</c>(기본 · 오염 거점 아크)와 <c>campaign</c>(1막 본편 + 꽃밭)
-    /// 둘이다. 거점 모드는 <c>NpcTalk</c>·<c>CaptureInsect</c>·<c>BattleWin</c>·<c>RegionCleansed</c>만
+    /// <c>-walkMode</c>는 <c>blight</c>(기본 · 오염 거점 아크), <c>campaign</c>(1막 본편 + 꽃밭),
+    /// <c>town</c>(마을 이야기 + 지역 의뢰 + 따라가기) 셋이다. 거점 모드는 <c>NpcTalk</c>·<c>CaptureInsect</c>·<c>BattleWin</c>·<c>RegionCleansed</c>만
     /// 두드리므로, <b><c>SubAreaEnter</c>와 <c>GuardianDefeat</c>에 걸린 비트는 오래 사각지대였다</b>
     /// — 본편에서 가장 많이 쓰는 두 트리거인데도 그랬다. campaign 모드가 그 둘을 실제 경로로 두드린다
     /// (근접 → [E] 진입 → 이탈 / <c>RegionManager.DefeatGuardian</c>).
@@ -43,6 +43,8 @@ namespace InsectGame.EditorTools
     ///     영구 미발화 결함이라 FAIL로 잡는다)</item>
     ///   <item>정화 — <c>RegionBlightManager.CleanseByBoss</c> (승리 경로와 같은 함수)</item>
     ///   <item>대사 닫기 — <c>NpcDialogueUI.CloseModal</c> (플레이어가 닫는 그 경로. 보상·열람 기록이 여기서 난다)</item>
+    ///   <item>영상 건너뛰기 — <c>StoryVideoDirector.CloseModal</c> (「건너뛰기」·ESC와 같은 경로). 배치모드엔 디코더가 없다.
+    ///     대사 앞 영상(<c>introVideoId</c>)은 이걸로 끝나야 대사가 열린다 — 영상 → 등장 연출 → 대사 순서를 실제로 지난다.</item>
     /// </list>
     /// <b>선행 비트만</b> <c>CompleteBeat</c>로 채운다 — 여기서 검증하려는 건 <c>bl_*</c>이지
     /// 1막 82비트가 아니다. 무엇을 채웠는지는 보고서에 그대로 적는다.
@@ -179,9 +181,10 @@ namespace InsectGame.EditorTools
                 if (now < bootDeadline) return;
                 if (!Bootstrapped()) { bootDeadline = now + 1f; return; }
                 booted = true;
-                if (IsCampaign) BuildCampaignSteps(); else BuildSteps();
+                SuspendDuelLauncher();
+                if (IsCampaign) BuildCampaignSteps(); else if (IsTown) BuildTownSteps(); else BuildSteps();
                 if (steps.Count == 0) { Finish("걸어볼 것이 없다"); return; }
-                Log((IsCampaign ? "본편" : "거점 " + SiteCount() + "개")
+                Log((IsCampaign ? "본편" : IsTown ? "마을 이야기" : "거점 " + SiteCount() + "개")
                     + " · 걸음 " + steps.Count + "개 시작");
             }
 
@@ -197,6 +200,29 @@ namespace InsectGame.EditorTools
         /// </summary>
         private static void TickJanitor(float now)
         {
+            // 수문장 배지 연출 — 수문장 걸음마다 gd_* 대사보다 먼저 뜬다. 모달이라 닫지 않으면 대사가 영영 안 온다.
+            // 플레이어가 화면을 누르는 것처럼 닫고, 떴다는 사실을 보고서에 남긴다(순서 검증).
+            var ceremony = UnityEngine.Object.FindFirstObjectByType<InsectGame.UI.BadgeCeremonyUI>();
+            if (ceremony != null && ceremony.IsOpen)
+            {
+                Log("배지 연출 — " + ceremony.CurrentRegionId);
+                ceremony.CloseModal();
+                return;
+            }
+
+            // 스토리 영상 — 배치모드엔 디코더가 없어 영상은 준비 시간 초과(5초)까지 검은 화면으로 선다. 대사 **앞** 영상
+            // (introVideoId)이면 그동안 대사창이 안 열려 아래 ModalOpenWait 뒤 "직접 완료"로 새고, 그 뒤 영상이 끝나며 콜백이
+            // 같은 대사를 한 번 더 연다. 플레이어가 「건너뛰기」를 누르는 것처럼 닫는다 — Stop → 콜백 → (등장 연출) → 대사.
+            // 이 길이 곧 대사 앞 영상의 진짜 종료 경로라 걸음이 그것까지 검증한다. 떴다는 사실은 보고서에 남긴다(순서 검증).
+            // 파일이 아직 없는 영상은 지휘자가 시작도 안 하고(false) 대사가 곧바로 열린다 — 여기 안 온다.
+            var video = UnityEngine.Object.FindFirstObjectByType<StoryVideoDirector>();
+            if (video != null && video.IsPlaying)
+            {
+                Log((video.IsPlayingPrelude ? "영상(대사 앞) 건너뛰기 — " : "영상 건너뛰기 — ") + video.CurrentVideoId);
+                video.CloseModal();
+                return;
+            }
+
             if (closingId == null)
             {
                 if (toClose.Count == 0) return;
@@ -449,8 +475,22 @@ namespace InsectGame.EditorTools
             // 여기서 마지막 두 걸음이 갈린다: 잡몹을 이기면 엔딩이 **안 나야** 하고,
             // 이름 없는 사마귀를 이겨야 난다. 그 순서 그대로 걷는다.
             SubAreaBeat(fin, "nameless_ledger", "ch12_confront", "장부의 방(관장 대면)");
-            SubAreaBeat(fin, "nameless_core", "fin_unnamed", "빈칸(무명 대면·컷신)");
-            // 무명 대면의 선택지 — 고르는 것이 대사창을 닫고, 결과 leaf가 큐 맨 앞에서 곧바로 뜬다.
+            // **대사 직후 대결**(StoryBeat.duelAfter) — 대치가 끝나면 StoryDuelLauncher가 관장전을 대기열에 넣는다.
+            // 걸음은 진짜 전투를 열지 않는다(런처를 멈춰 뒀다 — SuspendDuelLauncher). 대기열에 들어갔는지 보고, 승리를
+            // 실제 구독 경로(BossDuelWon)로 흘린다. 2026-10-04부터 관장을 이겨야 빈칸(fin_unnamed)이 열린다.
+            steps.Add(new Step
+            {
+                site = fin,
+                label = "대사 직후 대결 대기열(관장)",
+                act = () => { },
+                until = () => DuelQueued("ledger_chief"),
+                maxTries = 1,
+            });
+            steps.Add(BeatStep(fin, "관장 대결 승리(대사 직후 대결)", "duel_chief_win",
+                () => WinBossDuel("ledger_chief"), 3));
+            // 대사 앞 영상(vid_fin_shadow)이 먼저 뜬다 — 청소부가 건너뛰기로 닫아야 대사(와 선택지)가 열린다(TickJanitor).
+            SubAreaBeat(fin, "nameless_core", "fin_unnamed", "빈칸(그림자 대면·대사 앞 영상)");
+            // 그림자 대면의 선택지 — 고르는 것이 대사창을 닫고, 결과 leaf가 큐 맨 앞에서 곧바로 뜬다.
             // 첫 항목(거절)이 기본, `-walkChoice last`면 수락 쪽(세라가 막는다). 둘 다 leaf라 진행은 같다.
             steps.Add(BeatStep(fin, walkChoiceLast ? "선택 결과(이름을 준다 → 세라가 막는다)" : "선택 결과(이름을 주지 않는다)",
                 walkChoiceLast ? "fin_named" : "fin_refuse", () => { }, 2));
@@ -468,7 +508,308 @@ namespace InsectGame.EditorTools
             // 1v1로 걸으면 게임에 없는 경로를 통과시키는 셈이 되고, 그게 이 결함을 놓친 이유다.
             Beat(fin, "이름 없는 사마귀 레이드 격파(엔딩)", "fin_seal",
                 () => WinRaidAgainst("mantis_unnamed"), 3);
-            Beat(fin, "전투 승리(관장 마지막 말)", "ch12_clash", WinBattle, 3);
+            // 관장의 마지막 말은 **추가 전투 없이 말을 걸어** 듣는다(StoryBible 0장 2026-09-19 연결성 보정 —
+            // 트리거가 BattleWin → NpcTalk ledger_chief). 걸음이 옛 트리거로 두드리면 3회 시도 뒤 FAIL이 난다.
+            Beat(fin, "말 걸기(관장 마지막 말)", "ch12_clash", () => Talk("ledger_chief"), 6);
+        }
+
+        private static bool IsTown { get { return walkMode == "town"; } }
+
+        // 마을 이야기 한 편 — (리전, 주민, 의뢰, 의뢰가 전투인가, 목표 수, 징후 종).
+        // 저작 데이터에서 파생하지 않고 적어 두는 이유: 이 표가 곧 **기대값**이다. 저작이 바뀌어
+        // 여기와 어긋나면 걸음이 FAIL로 알려 준다(TownTaleTests가 정적 정합을, 이 걸음이 발화를 본다).
+        private static readonly (string region, string npc, string quest, bool battle, int count, string sign)[] Tales =
+        {
+            ("meadow", "town_meadow", "s_town_meadow", false, 6, "ladybug_seven"),
+            ("pond", "town_pond", "s_town_pond", false, 5, "water_strider_pond"),
+            ("forest", "town_forest", "s_town_forest", true, 3, "cicada_summer"),
+            ("swamp", "town_swamp", "s_town_swamp", false, 5, "firefly_swamp"),
+            ("mountain", "town_mountain", "s_town_mountain", true, 4, "katydid_leaf"),
+            ("garden", "town_garden", "s_town_garden", false, 5, "butterfly_peacock"),
+            ("ruins", "town_ruins", "s_town_ruins", false, 3, "cricket_tomb"),
+            // 2막 — 후일담 게이트가 종장(fin_seal)까지 가므로 선행 채우기가 본편을 거의 다 채운다.
+            ("hollow", "town_hollow", "s_town_hollow", false, 5, "cricket_hush"),
+            ("dunes", "town_dunes", "s_town_dunes", false, 5, "bee_digger"),
+            ("frostline", "town_frostline", "s_town_frostline", true, 4, "beetle_hoarfrost"),
+            ("emberfall", "town_emberfall", "s_town_emberfall", false, 5, "cricket_ember"),
+            ("canopy", "town_canopy", "s_town_canopy", false, 3, "caterpillar_silk"),
+        };
+
+        /// <summary>
+        /// 마을 이야기 걸음(<c>-walkMode town</c>). 스토리 발화만이 아니라 <b>퀘스트·따라가기와 맞물리는 곳</b>을
+        /// 실제 진입점으로 본다 — 이 연작의 결함은 전부 그 이음매에서 조용히 난다:
+        /// <list type="bullet">
+        ///   <item>의뢰가 <b>다른 리전에서 세어지면</b> 안 된다(<c>QuestRegionGate</c>) — 리전 이동 전에 한 번 두드려 0인지 본다.</item>
+        ///   <item>의뢰 완료 → 매듭 비트의 <c>requiredQuestId</c> 게이트가 열리는가.</item>
+        ///   <item>따라가기가 만남 뒤 <c>[의뢰]</c> 목표를 잡고, 완료 뒤 <c>?</c> 표식과 "알리기"로 바뀌고,
+        ///     매듭 뒤 본편을 기다리는 단계가 되면 스스로 풀리는가(<c>StoryObjectiveTracker</c>).</item>
+        /// </list>
+        /// 배치에는 로그인이 없어 퀘스트 세션이 꺼져 있고(<c>NotifyAction</c>이 무시된다) 해금 리전은 로컬 설정에
+        /// 달려 있다 — 둘을 먼저 채우고 무엇을 채웠는지 보고서에 적는다(검증 대상 아님).
+        /// </summary>
+        private static void BuildTownSteps()
+        {
+            steps = new List<Step>();
+            steps.Add(new Step
+            {
+                site = "-",
+                label = "진행 기록 초기화(스토리 열람 + 수문장) + 의뢰 상태 채우기",
+                act = () => { ResetProgress(); SeedTownQuestState(); },
+                until = () => true,
+            });
+
+            for (int i = 0; i < Tales.Length; i++)
+            {
+                var t = Tales[i];
+                if (!string.IsNullOrEmpty(onlyRegion) && t.region != onlyRegion) continue;
+                string site = t.region + "(" + t.npc + ")";
+
+                // 리전 밖 행동은 세지 않는다 — 앞 리전에 선 채로 한 번 두드린다(초원은 시작 지점이라 뺀다).
+                if (i > 0)
+                {
+                    string quest = t.quest;
+                    bool battle = t.battle;
+                    steps.Add(new Step
+                    {
+                        site = site,
+                        label = "리전 밖 의뢰 행동 — 세지 않아야 한다",
+                        act = () => ErrandAction(battle, 1, quietBattle: true),
+                        until = () => TownQuests() != null && TownQuests().GetSideProgress(quest) == 0
+                            && !TownQuests().IsQuestCompleted(quest),
+                        maxTries = 1,
+                    });
+                }
+
+                Region(site, t.region);
+                Beat(site, "만남(말 걸기)", "town_" + t.region + "_meet", () => Talk(t.npc), 6);
+
+                string npc = t.npc;
+                steps.Add(new Step
+                {
+                    site = site,
+                    label = "따라가기 → [의뢰] 목표",
+                    act = () => { var tr = Tracker(); if (tr != null) tr.TrackTale(npc); },
+                    until = () => { var tr = Tracker(); return tr != null && tr.IsTrackingTale && tr.Label.StartsWith("[의뢰]"); },
+                    maxTries = 2,
+                });
+                // 같은 리전의 본편 포획 비트(chN, 순위 앞)가 먼저 나가면 한 번에 하나씩 밀린다 — 넉넉히 준다.
+                steps.Add(BeatStep(site, "징후(포획)", "town_" + t.region + "_sign", () => Capture(t.sign), 6));
+
+                string q = t.quest;
+                bool isBattle = t.battle;
+                int count = t.count;
+                steps.Add(new Step
+                {
+                    site = site,
+                    label = "의뢰 " + count + "회(" + (isBattle ? "전투 승리" : "포획") + ")",
+                    act = () => ErrandAction(isBattle, count, quietBattle: false),
+                    until = () => TownQuests() != null && TownQuests().IsQuestCompleted(q),
+                    maxTries = 2,
+                });
+                steps.Add(new Step
+                {
+                    site = site,
+                    label = "보고 표식(?) + '알리기' 목표",
+                    until = () =>
+                    {
+                        var tr = Tracker();
+                        return director != null && director.GetTaleStep(npc, out _) == TaleStepKind.Report
+                            && tr != null && HasMarker(tr, npc, InsectGame.NPC.QuestMark.Report)
+                            && tr.Label.Contains("알리기");
+                    },
+                });
+                steps.Add(BeatStep(site, "매듭(말 걸기)", "town_" + t.region + "_close", () => Talk(npc), 6));
+                // 매듭 뒤 — 후일담 게이트(본편 뒷 장면)가 아직이면 따라가기가 **스스로 풀려야** 하고,
+                // 이미 열려 있으면 **계속 따라가며** "말 걸기"를 가리켜야 한다. 둘 다 이 걸음에서 실제로 난다:
+                // 앞 마을의 후일담을 채우며 본편 사슬이 함께 채워지므로(연못 → ch8_confront의 조상에
+                // 습지 게이트 ch7_confront가, 초원 → ch7_arrive의 조상에 유적 게이트 ch7_opening이 있다).
+                steps.Add(new Step
+                {
+                    site = site,
+                    label = "매듭 뒤 — 대기면 따라가기 해제 / 후일담이 열려 있으면 계속",
+                    until = () =>
+                    {
+                        var tr = Tracker();
+                        if (tr == null || director == null) return false;
+                        TaleStepKind k = director.GetTaleStep(npc, out _);
+                        if (k == TaleStepKind.Waiting) return !tr.IsTrackingTale;
+                        return k == TaleStepKind.Talk && tr.IsTrackingTale && tr.Label.Contains("말 걸기");
+                    },
+                });
+                Beat(site, "후일담(말 걸기)", "town_" + t.region + "_after", () => Talk(npc), 6);
+                steps.Add(new Step
+                {
+                    site = site,
+                    label = "이야기 끝(Done) · 표식 없음",
+                    until = () =>
+                    {
+                        var tr = Tracker();
+                        return director != null && director.GetTaleStep(npc, out _) == TaleStepKind.Done
+                            && tr != null && !HasMarker(tr, npc, InsectGame.NPC.QuestMark.New)
+                            && !HasMarker(tr, npc, InsectGame.NPC.QuestMark.Report);
+                    },
+                });
+            }
+        }
+
+        private static TutorialQuestManager TownQuests()
+        {
+            return UnityEngine.Object.FindFirstObjectByType<TutorialQuestManager>();
+        }
+
+        private static StoryObjectiveTracker Tracker()
+        {
+            return UnityEngine.Object.FindFirstObjectByType<StoryObjectiveTracker>();
+        }
+
+        private static bool HasMarker(StoryObjectiveTracker tr, string npcId, InsectGame.NPC.QuestMark mark)
+        {
+            var marks = tr.TaleMarkers;
+            for (int i = 0; i < marks.Count; i++)
+                if (marks[i].Npc != null && marks[i].Npc.StoryNpcId == npcId && marks[i].Mark == mark) return true;
+            return false;
+        }
+
+        /// <summary>
+        /// 의뢰 행동 — 포획은 <c>CaptureController</c>가 부르는 <c>NotifyCapture</c>, 전투는 <c>BattleEnded</c>
+        /// 구독 경로(<see cref="WinBattle"/>) 그대로다. 리전 판정은 매니저 안에서 난다(그게 검증 대상이다).
+        /// <paramref name="quietBattle"/>이면 전투도 퀘스트 통지만 한다 — 리전 밖 확인에서 앞 리전의
+        /// 본편 전투 비트까지 흔들 이유가 없다(퀘스트가 BattleEnded에서 부르는 바로 그 함수다).
+        /// </summary>
+        private static void ErrandAction(bool battle, int count, bool quietBattle)
+        {
+            var qm = TownQuests();
+            for (int i = 0; i < count; i++)
+            {
+                if (!battle) { if (qm != null) qm.NotifyCapture(InsectGame.Data.InsectRarity.Uncommon); }
+                else if (quietBattle) { if (qm != null) qm.NotifyAction(QuestType.Battle); }
+                else WinBattle();
+            }
+        }
+
+        /// <summary>
+        /// 의뢰가 세어질 수 있는 상태를 만든다 — 퀘스트 세션 켜기, 마을 의뢰 진행 비우기, 선행 퀘스트·리전 해금.
+        /// 전부 인메모리이고, 퀘스트가 진행을 저장할 때 **배치 환경의 전역(비로그인) 키**에만 남는다 —
+        /// 그 키는 걸음 전 값으로 떠 두었다가 <see cref="Finish"/>가 되돌린다(<see cref="SnapshotPlayerState"/>).
+        /// </summary>
+        private static void SeedTownQuestState()
+        {
+            SnapshotPlayerState();
+            var qm = TownQuests();
+            var rm = UnityEngine.Object.FindFirstObjectByType<RegionManager>();
+            if (qm == null || rm == null) { Log("퀘스트/리전 매니저 없음 — 의뢰를 채울 수 없다"); return; }
+
+            const BindingFlags F = BindingFlags.Instance | BindingFlags.NonPublic;
+            typeof(TutorialQuestManager).GetField("tutorialSessionStarted", F).SetValue(qm, true);
+            var completed = (HashSet<string>)typeof(TutorialQuestManager).GetField("completedQuests", F).GetValue(qm);
+            var side = (Dictionary<string, int>)typeof(TutorialQuestManager).GetField("sideProgress", F).GetValue(qm);
+            var unlocked = (HashSet<string>)typeof(RegionManager).GetField("unlockedRegions", F).GetValue(rm);
+
+            foreach (var t in Tales)
+            {
+                completed.Remove(t.quest);
+                side.Remove(t.quest);
+                if (unlocked.Add(t.region)) seeded.Add("region:" + t.region);
+            }
+            foreach (string prereq in new[] { "q_capture3", "q_battle" })
+                if (completed.Add(prereq)) seeded.Add("quest:" + prereq);
+
+            // 따라가던 이야기가 남아 있으면 첫 걸음의 기대("따라가기 켜기")가 흐려진다.
+            var tr = Tracker();
+            if (tr != null) tr.StopTrackingTale();
+            Log("마을 의뢰 상태 채움 — 세션 켜기, 의뢰 " + Tales.Length + "개 비움, 선행·해금 " + seeded.Count + "건");
+        }
+
+        // ── 걸음 전 상태 원복 ──
+        // 걸음은 개발 PC의 **비로그인(전역) 세이브**를 그대로 쓴다. 진행 초기화(ResetProgress)가 스토리 세이브·
+        // 수문장 격파·정화 기록을 지우고, 걸음 자체가 포획 보상·퀘스트·해금·따라가기를 저장한다. 되돌리지 않으면
+        // 걸음 뒤 에디터에서 비로그인으로 플레이할 때 "해금됐는데 수문장은 안 쓰러진" 같은 섞인 상태가 남았다.
+        // 첫 초기화 직전의 세이브 파일 전부(GameConstants.SaveFiles — 목록을 박지 않고 리플렉션으로 읽는다)와
+        // 진행 키를 떠 두었다가 Finish에서 되돌린다. 설정 키(음량·그래픽)는 걸음이 건드리지 않아 빼 둔다.
+        private static readonly string[] WalkTouchedPrefs =
+        {
+            GameConstants.PrefsKeys.QuestProgress, GameConstants.PrefsKeys.QuestCompleted,
+            GameConstants.PrefsKeys.ActiveQuest, GameConstants.PrefsKeys.QuestSideProgress,
+            GameConstants.PrefsKeys.QuestSideRepeat, GameConstants.PrefsKeys.QuestUnseen,
+            GameConstants.PrefsKeys.TutorialHidden, GameConstants.PrefsKeys.WeeklyContestClaimed,
+            GameConstants.PrefsKeys.BlightCleansed, GameConstants.PrefsKeys.BadgeMilestonesClaimed,
+            GameConstants.PrefsKeys.TrackedTale, GameConstants.PrefsKeys.LastSubAreaId,
+            // RegionManager·RegionBlightManager의 private 키와 같은 문자열 — 어긋나면 원복이 조용히 빠진다.
+            "InsectGame.UnlockedRegions", "InsectGame.DefeatedGuardians", "InsectGame.DefeatedLedgerBosses",
+        };
+
+        private enum PrefKind { Absent, String, Int, Float }
+        private struct PrefSnap { public PrefKind kind; public string s; public int i; public float f; }
+
+        private static Dictionary<string, PrefSnap> prefsSnapshot;      // 스코프 키 → 걸음 전 값
+        private static Dictionary<string, byte[]> saveFileSnapshot;    // 파일 경로 → 걸음 전 내용(null = 없던 파일)
+
+        private static void SnapshotPlayerState()
+        {
+            if (prefsSnapshot != null) return;   // 첫 초기화 직전 값만 뜬다
+            prefsSnapshot = new Dictionary<string, PrefSnap>();
+            foreach (string baseKey in WalkTouchedPrefs)
+            {
+                string key = SaveScope.PrefsKey(baseKey);
+                prefsSnapshot[key] = TakePref(key);
+            }
+            saveFileSnapshot = new Dictionary<string, byte[]>();
+            foreach (FieldInfo f in typeof(GameConstants.SaveFiles).GetFields(BindingFlags.Public | BindingFlags.Static))
+            {
+                if (!f.IsLiteral || f.FieldType != typeof(string)) continue;
+                string path = SaveScope.FilePath((string)f.GetRawConstantValue());
+                try { saveFileSnapshot[path] = File.Exists(path) ? File.ReadAllBytes(path) : null; }
+                catch (Exception e) { Log("세이브 스냅숏 실패(" + path + "): " + e.Message); }
+            }
+            Log("걸음 전 상태를 떠 둠 — 키 " + prefsSnapshot.Count + "개, 세이브 파일 " + saveFileSnapshot.Count + "개");
+        }
+
+        // PlayerPrefs는 타입을 알려 주지 않는다 — 문자열 → 정수 → 실수 순으로 떠 본다(틀린 타입으로 읽으면 기본값이 온다).
+        // 정수를 문자열로 되돌리면 GetInt 판독부가 0을 읽는다(SaveScope의 v3 결함과 같은 함정).
+        private static PrefSnap TakePref(string key)
+        {
+            if (!PlayerPrefs.HasKey(key)) return new PrefSnap { kind = PrefKind.Absent };
+            const string Sentinel = "\u0001walk-sentinel";
+            string sv = PlayerPrefs.GetString(key, Sentinel);
+            if (sv != Sentinel) return new PrefSnap { kind = PrefKind.String, s = sv };
+            int iv = PlayerPrefs.GetInt(key, int.MinValue);
+            if (iv != int.MinValue) return new PrefSnap { kind = PrefKind.Int, i = iv };
+            return new PrefSnap { kind = PrefKind.Float, f = PlayerPrefs.GetFloat(key, 0f) };
+        }
+
+        private static void RestorePlayerState()
+        {
+            if (prefsSnapshot == null) return;
+            // 디바운스로 미뤄 둔 저장(PlayerInsectCollection 등)은 종료 중 OnDisable에서 flush된다 — 되돌린 뒤에
+            // 그게 오면 원복을 덮는다. 씬을 먼저 꺼서 지금 다 쓰게 하고(dirty가 내려간다) 그 위에 되돌린다.
+            if (Application.isPlaying)
+                foreach (GameObject root in UnityEngine.SceneManagement.SceneManager.GetActiveScene().GetRootGameObjects())
+                    if (root != null) root.SetActive(false);
+            foreach (KeyValuePair<string, PrefSnap> kv in prefsSnapshot)
+            {
+                switch (kv.Value.kind)
+                {
+                    case PrefKind.Absent: PlayerPrefs.DeleteKey(kv.Key); break;
+                    case PrefKind.String: PlayerPrefs.SetString(kv.Key, kv.Value.s); break;
+                    case PrefKind.Int: PlayerPrefs.SetInt(kv.Key, kv.Value.i); break;
+                    case PrefKind.Float: PlayerPrefs.SetFloat(kv.Key, kv.Value.f); break;
+                }
+            }
+            PlayerPrefs.Save();
+            int files = 0;
+            foreach (KeyValuePair<string, byte[]> kv in saveFileSnapshot)
+            {
+                try
+                {
+                    if (kv.Value != null) File.WriteAllBytes(kv.Key, kv.Value);
+                    else if (File.Exists(kv.Key)) File.Delete(kv.Key);
+                    files++;
+                }
+                catch (Exception e) { Log("세이브 원복 실패(" + kv.Key + "): " + e.Message); }
+            }
+            Log("걸음 전 상태로 되돌림 — 키 " + prefsSnapshot.Count + "개, 세이브 파일 " + files + "개");
+            prefsSnapshot = null;
+            saveFileSnapshot = null;
         }
 
         private static void Region(string site, string regionId)
@@ -608,8 +949,35 @@ namespace InsectGame.EditorTools
                 return;
             }
             d.Invoke(true);
-            // 결과 화면이 닫혔다고 알린다 — 안 알리면 미뤄 둔 트리거가 12초를 기다린다.
+            CloseResultScreens();
+            // 결과 화면이 닫혔다고 알린다 — 안 알리면 미뤄 둔 트리거가 12초를 기다린다(화면이 닫으며 이미 알렸으면 두 번째는 무해하다).
             if (director != null) director.NotifyBattlePresentationClosed();
+        }
+
+        /// <summary>
+        /// 승리 신호로 떠오른 결과 화면을 <b>플레이어가 닫는 길</b>(<c>BattleScreenUI.EndBattle</c>·<c>RaidBattleUI.EndRaid</c>)로 닫는다.
+        ///
+        /// 2026-10-04부터 결과 화면은 눌러야 닫힌다(<c>BattleResultRules</c> — 예전엔 4초·5초 뒤 저절로). 걸음은 탭하지 않으므로 그냥 두면
+        /// 화면이 결과 단계에 영원히 머물러 플레이어를 묶고(<c>TickResultClose</c>), 스토리 큐는 결과 화면 뒤로 계속 미룬다
+        /// (<c>StoryBattleWait</c>의 결과 화면 탐침) — 그 뒤 걸음이 전부 "발화 없음"이 된다.
+        /// </summary>
+        private static void CloseResultScreens()
+        {
+            const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
+            var screen = UnityEngine.Object.FindFirstObjectByType<InsectGame.UI.BattleScreenUI>();
+            if (screen != null && screen.IsBattleActive)
+            {
+                MethodInfo end = typeof(InsectGame.UI.BattleScreenUI).GetMethod("EndBattle", Private);
+                if (end != null) end.Invoke(screen, null);
+                else Log("**BattleScreenUI.EndBattle을 못 찾았다** — 결과 화면이 안 닫혀 뒤 걸음이 막힌다");
+            }
+            var raid = UnityEngine.Object.FindFirstObjectByType<InsectGame.UI.RaidBattleUI>();
+            if (raid != null && raid.IsRaidActive)
+            {
+                MethodInfo end = typeof(InsectGame.UI.RaidBattleUI).GetMethod("EndRaid", Private);
+                if (end != null) end.Invoke(raid, null);
+                else Log("**RaidBattleUI.EndRaid를 못 찾았다** — 결과 화면이 안 닫혀 뒤 걸음이 막힌다");
+            }
         }
 
         /// <summary>
@@ -653,6 +1021,7 @@ namespace InsectGame.EditorTools
                 return;
             }
             d.Invoke(true);
+            CloseResultScreens();
             if (director != null) director.NotifyBattlePresentationClosed();
         }
 
@@ -682,6 +1051,51 @@ namespace InsectGame.EditorTools
             }
             f.SetValue(bc, new InsectGame.Battle.InsectBattleStats(data, 60));
             return true;
+        }
+
+        /// <summary>
+        /// 대사 직후 대결 런처를 멈춘다 — 대기열에는 넣되 진짜 전투는 열지 않는다. 걸음의 선행 채우기가 대치 비트를
+        /// <c>CompleteBeat</c>로 채우는 순간마다 대결이 대기열에 들어오는데, 진짜로 열리면 전투 화면이 다음 행위를 막는다
+        /// (<c>SeatEnemy</c>가 <c>StartDuel</c>을 피하는 것과 같은 이유).
+        /// </summary>
+        private static void SuspendDuelLauncher()
+        {
+            var launcher = UnityEngine.Object.FindFirstObjectByType<StoryDuelLauncher>();
+            if (launcher == null) { Log("**StoryDuelLauncher 없음** — 대사 직후 대결이 배선되지 않았다"); return; }
+            launcher.Suspended = true;
+            Log("대사 직후 대결 런처 정지(대기열만 기록)");
+        }
+
+        /// <summary>대치 대사가 끝난 뒤 그 상대의 대결이 대기열에 들어왔는가.</summary>
+        private static bool DuelQueued(string npcId)
+        {
+            var launcher = UnityEngine.Object.FindFirstObjectByType<StoryDuelLauncher>();
+            bool queued = launcher != null && launcher.PendingNpcId == npcId;
+            if (!queued)
+                Log("**대사 직후 대결이 대기열에 없다** — 기대 " + npcId + ", 실제 "
+                    + (launcher != null ? "'" + launcher.PendingNpcId + "'" : "런처 없음"));
+            return queued;
+        }
+
+        /// <summary>
+        /// 간부 대결 승리를 실제 구독 경로로 흘린다 — <c>NpcDuelController.BossDuelWon</c>(StoryDirector의 <c>DuelWin</c> 소스).
+        /// <c>WinBattleAgainst</c>와 같은 방식이다: 이벤트를 밖에서 못 올리니 대리자를 꺼내 부르고, 구독이 비면 여기서 잡힌다.
+        /// 격파 기록은 적지 않는다 — 걸음이 보려는 건 승리 비트가 뜨는가이고, 기록은 걸음 뒤 원복 대상이다.
+        /// </summary>
+        private static void WinBossDuel(string npcId)
+        {
+            var duel = UnityEngine.Object.FindFirstObjectByType<InsectGame.NPC.NpcDuelController>();
+            if (duel == null) { Log("NpcDuelController 없음"); return; }
+            FieldInfo f = typeof(InsectGame.NPC.NpcDuelController)
+                .GetField("BossDuelWon", BindingFlags.Instance | BindingFlags.NonPublic);
+            var d = f != null ? f.GetValue(duel) as Action<string> : null;
+            if (d == null)
+            {
+                Log("**BossDuelWon 구독자가 없다** — 간부 승리 비트(duel_*_win)가 영영 발화하지 않는다");
+                return;
+            }
+            d.Invoke(npcId);
+            if (director != null) director.NotifyBattlePresentationClosed();
         }
 
         private static void Cleanse(string boss, string regionId)
@@ -810,6 +1224,7 @@ namespace InsectGame.EditorTools
 
         private static void ResetProgress()
         {
+            SnapshotPlayerState();   // 지우기 전에 뜬다 — 두 번째 호출부터는 아무것도 안 한다
             try
             {
                 string path = SaveScope.FilePath(GameConstants.SaveFiles.StoryProgress);
@@ -826,6 +1241,12 @@ namespace InsectGame.EditorTools
             // 키 문자열은 RegionManager.GuardianKey가 private이라 여기 한 번 더 적는다 —
             // 어긋나면 초기화가 조용히 아무것도 안 지운다.
             PlayerPrefs.DeleteKey(SaveScope.PrefsKey("InsectGame.DefeatedGuardians"));
+            // 간부 격파 기록 — 본편 걸음만 지운다. 남아 있으면 대치(ch12_confront)를 닫는 순간 자동 통과
+            // (StoryDirector.ResweepPersistentConditions의 DuelWin 재확인)로 승리 비트가 먼저 떠, 대사 직후 대결 걸음이
+            // 무엇을 검증했는지 흐려진다. 키는 NpcDuelController.DefeatedBossKey와 같은 문자열이다(스냅샷 목록에도 있다 — 원복된다).
+            if (IsCampaign) PlayerPrefs.DeleteKey(SaveScope.PrefsKey("InsectGame.DefeatedLedgerBosses"));
+            // 배지 이정표 수령 — 격파 기록을 지웠으니 함께 지워야 이정표 지급(4·8)이 다시 걸린다.
+            PlayerPrefs.DeleteKey(SaveScope.PrefsKey(GameConstants.PrefsKeys.BadgeMilestonesClaimed));
             PlayerPrefs.Save();
 
             if (director != null)
@@ -837,6 +1258,10 @@ namespace InsectGame.EditorTools
             if (blight != null) blight.ReloadFromDisk();
             var regions = UnityEngine.Object.FindFirstObjectByType<RegionManager>();
             if (regions != null) regions.ReloadFromDisk();
+            var badgeService = UnityEngine.Object.FindFirstObjectByType<GuardianBadgeService>();
+            if (badgeService != null) badgeService.ReloadFromDisk();
+            var duelController = UnityEngine.Object.FindFirstObjectByType<InsectGame.NPC.NpcDuelController>();
+            if (duelController != null) duelController.ReloadFromDisk();
             Log("진행 기록 초기화 완료");
         }
 
@@ -854,11 +1279,13 @@ namespace InsectGame.EditorTools
             EditorApplication.update -= Tick;
             if (director != null) director.StoryBeatTriggered -= OnBeatFired;
             SessionState.SetString(StageKey, "");
+            RestorePlayerState();
 
             bool allPassed = true;
             var sb = new StringBuilder();
             sb.AppendLine(IsCampaign
                 ? "# 1막 본편 + 꽃밭 스토리 비트 — 실제 발화 걸음"
+                : IsTown ? "# 마을 이야기 + 지역 의뢰 + 따라가기 — 실제 발화 걸음"
                 : "# 오염 거점 스토리 비트 — 실제 발화 걸음");
             sb.AppendLine();
             if (!string.IsNullOrEmpty(error))
@@ -866,7 +1293,7 @@ namespace InsectGame.EditorTools
                 sb.AppendLine("> **중단**: " + error);
                 sb.AppendLine();
             }
-            sb.AppendLine((IsCampaign ? "본편" : "거점 " + SiteCount() + "개")
+            sb.AppendLine((IsCampaign ? "본편" : IsTown ? "마을 이야기" : "거점 " + SiteCount() + "개")
                 + " · 걸음 " + (steps != null ? steps.Count : 0) + "개");
             sb.AppendLine();
             sb.AppendLine("| 구역 | 걸음 | 기대 비트 | 시도 | 결과 |");

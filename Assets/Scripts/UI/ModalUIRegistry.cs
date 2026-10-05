@@ -41,6 +41,20 @@ namespace InsectGame.UI
             return stack.Count > 0;
         }
 
+        /// <summary>
+        /// <paramref name="except"/> 타입을 뺀 다른 모달이 열려 있는가. 모달 안의 버튼이 "지금 다른
+        /// 연출(컷신·영상·대화)이 도는 중인가"를 물을 때 쓴다 — 자기 자신은 당연히 열려 있으므로.
+        /// </summary>
+        public static bool IsAnyOpenExcept(System.Type except)
+        {
+            for (int i = stack.Count - 1; i >= 0; i--)
+            {
+                if (stack[i] == null || !stack[i].IsOpen) { stack.RemoveAt(i); continue; }
+                if (except == null || !except.IsInstanceOfType(stack[i])) return true;
+            }
+            return false;
+        }
+
         public static IModalUI TopModal
         {
             get

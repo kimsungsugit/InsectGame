@@ -97,6 +97,8 @@ namespace InsectGame.UI
         private readonly List<QuestRewardEntry> rewardChipBuffer = new List<QuestRewardEntry>(4);
         // 아코디언으로 펼쳐진 퀘스트. 빈 문자열이면 모두 접힌 상태.
         private string expandedQuestId = string.Empty;
+        // 펼친 행에 [따라가기]가 붙는가 — DrawDetailPanel이 패스마다 한 번 정하고 DrawQuestRow가 읽는다.
+        private bool expandedRowTrackable;
 
         private float newQuestAnimTimer;
         private string newQuestTitle;
@@ -121,6 +123,7 @@ namespace InsectGame.UI
         private GUIStyle panelSurfaceBtnStyleCache; // 칩의 UISurface.Button용 (label 파생)
         private GUIStyle objectiveStyleCache;       // 목표 행 (label 파생 — UISurface.Button에 넘긴다)
         private GUIStyle objectiveStatusStyleCache; // 목표 행 아래 일시 안내
+        private GUIStyle objectiveWhyStyleCache;    // 목표 행 둘째 줄(「왜」) — 작고 흐리게
 
         // 메인퀘스트 목표 행. 위치·이름·거리는 전부 트래커가 풀어 준다(UI는 그리기만).
         private InsectGame.Story.StoryObjectiveTracker objectiveTracker;
@@ -129,7 +132,18 @@ namespace InsectGame.UI
         // 칩(또는 숨김 버튼)이 끝나는 y — 목표 행이 그 아래에 붙는다. 칩 높이가 상태마다
         // 달라(완료/숨김/진행 중) 상수로 둘 수 없어, 그린 쪽이 실제 값을 남긴다.
         private float objectiveRowTop;
+        private float objectiveRowLeft;
+        private float objectiveRowWidth;
         private bool objectiveRowVisible;
+
+        // 목표 행 높이 — 칩이 데스크톱에서 이만큼 자리를 비워 두고 위로 올라간다(그리기와 같은 값이어야 한다).
+        // 「왜」(트래커의 이유 한 줄)가 있으면 두 줄 높이다 — 칩 자리·그리기·등록이 같은 술어(HasObjectiveWhy)를 본다.
+        private float ObjectiveRowHeight => QuestChipLayout.RowHeightFor(HasObjectiveWhy);
+
+        /// <summary>목표 행에 「왜」 둘째 줄을 붙이는가 — 목표가 있고 트래커의 이유가 비어 있지 않을 때.</summary>
+        private bool HasObjectiveWhy =>
+            objectiveTracker != null && objectiveTracker.HasObjective && !string.IsNullOrEmpty(objectiveTracker.Why);
+
         // 목표 행 문자열 캐시 — OnGUI 매 프레임 보간 문자열 할당 차단.
         private string objectiveLabelCache;
         private string objectiveLabelSource;
@@ -162,20 +176,20 @@ namespace InsectGame.UI
         // 목록이 매 프레임 그려지므로 캐시하지 않으면 행마다 문자열 할당이 쌓인다.
         private readonly Dictionary<string, string> rewardTextCache = new Dictionary<string, string>();
 
-        private static readonly Color DoneTextCol = new Color(0.9f, 0.75f, 0.2f);
-        private static readonly Color QuestTitleCol = new Color(0.9f, 0.75f, 0.2f);
-        private static readonly Color QuestHintBaseCol = new Color(0.65f, 0.65f, 0.65f);
-        private static readonly Color CompHeaderBaseCol = new Color(0.2f, 1f, 0.4f);
-        private static readonly Color CompTitleBaseCol = new Color(1f, 0.95f, 0.8f);
-        private static readonly Color RewardBaseCol = new Color(1f, 0.85f, 0.5f);
-        private static readonly Color NewQuestBaseCol = new Color(0.7f, 0.85f, 1f);
-        private static readonly Color NewQuestDescCol = new Color(0.85f, 0.92f, 1f);
-        private static readonly Color NewQuestPromptCol = new Color(0.5f, 0.9f, 0.6f);
-        private static readonly Color RowCompletedCol = new Color(0.5f, 0.8f, 0.5f);
-        private static readonly Color RowLockedCol = new Color(0.45f, 0.45f, 0.5f);
-        private static readonly Color RowPendingCol = new Color(0.7f, 0.7f, 0.7f);
-        private static readonly Color StatusCompletedCol = new Color(0.4f, 0.75f, 0.4f);
-        private static readonly Color StatusActiveCol = new Color(0.9f, 0.85f, 0.3f);
+        private static Color DoneTextCol => UITheme.Instance.accentMint;
+        private static Color QuestTitleCol => UITheme.Instance.accentAmber;
+        private static Color QuestHintBaseCol => UITheme.Instance.textSecondary;
+        private static Color CompHeaderBaseCol => UITheme.Instance.accentMint;
+        private static Color CompTitleBaseCol => UITheme.Instance.textPrimary;
+        private static Color RewardBaseCol => UITheme.Instance.accentAmber;
+        private static Color NewQuestBaseCol => UITheme.Instance.accentCoral;
+        private static Color NewQuestDescCol => UITheme.Instance.textSecondary;
+        private static Color NewQuestPromptCol => UITheme.Instance.accentMint;
+        private static Color RowCompletedCol => UITheme.Instance.accentMint;
+        private static Color RowLockedCol => UITheme.Instance.textMuted;
+        private static Color RowPendingCol => UITheme.Instance.textSecondary;
+        private static Color StatusCompletedCol => UITheme.Instance.accentMint;
+        private static Color StatusActiveCol => UITheme.Instance.accentAmber;
 
         private void InitQuestPanelStyles()
         {
@@ -187,7 +201,7 @@ namespace InsectGame.UI
             doneStyleCache.normal.textColor = DoneTextCol;
 
             questTitleStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 34, fontStyle = FontStyle.Bold };
+            { fontSize = QuestChipLayout.TitleFontSize, fontStyle = FontStyle.Bold };
             questTitleStyleCache.normal.textColor = QuestTitleCol;
 
             questDescStyleCache = new GUIStyle(GUI.skin.label)
@@ -195,7 +209,7 @@ namespace InsectGame.UI
             questDescStyleCache.normal.textColor = Color.white;
 
             questProgStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 26, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
+            { fontSize = QuestChipLayout.ProgressFontSize, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
             questProgStyleCache.normal.textColor = Color.white;
 
             questHintStyleCache = new GUIStyle(GUI.skin.label)
@@ -213,12 +227,17 @@ namespace InsectGame.UI
             panelSurfaceBtnStyleCache.normal.textColor = UITheme.Instance.textPrimary;
 
             objectiveStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 27, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
+            { fontSize = QuestChipLayout.ObjectiveFontSize, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
             objectiveStyleCache.normal.textColor = UITheme.Instance.textPrimary;
 
             objectiveStatusStyleCache = new GUIStyle(GUI.skin.label)
             { fontSize = 23, alignment = TextAnchor.MiddleLeft, wordWrap = false };
             objectiveStatusStyleCache.normal.textColor = UITheme.Instance.accentAmber;
+
+            // 「왜」 줄 — 할 일보다 작고 흐리게. textMuted는 반투명 HUD 카드(밝은 월드 위)에서 대비가 모자라 보조 글자색을 쓴다.
+            objectiveWhyStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = QuestChipLayout.WhyFontSize, alignment = TextAnchor.MiddleLeft, wordWrap = false };
+            objectiveWhyStyleCache.normal.textColor = UITheme.Instance.textSecondary;
         }
 
         /// <summary>
@@ -234,23 +253,55 @@ namespace InsectGame.UI
             return Mathf.Ceil(style.fontSize * 1.35f);
         }
 
+        // 완료·다음 퀘스트 알림의 글자 크기 — 패널 높이가 여기서 나온다(아래 순수 배치와 스타일이 같은 값을 쓴다).
+        private const int DoneHeaderFont = 40;
+        private const int DoneTitleFont = 31;
+        private const int DoneRewardFont = 28;
+        private const int NextHeaderFont = 31;
+        private const int NextDescFont = 26;
+        private const int NextPromptFont = 24;
+        /// <summary>알림 패널이 바라는 폭 — 무대(<see cref="HudStage.Area"/>)가 좁으면 그 폭으로 줄어든다.</summary>
+        public const float NoticePanelWidth = 640f;
+
+        private static float LineH(int fontSize) => Mathf.Ceil(fontSize * 1.35f);
+
+        /// <summary>
+        /// 퀘스트 완료 알림의 자리 — 가운데 무대의 차례 항목(<see cref="HudStageItem.QuestDone"/>). 예전엔 화면 위 가운데(ContentTop)라
+        /// 리전 배너·내기 점수판·세로 화면의 단축 바와 미니맵을 덮었다.
+        /// </summary>
+        public static Rect QuestDoneRect(HudFrame f, bool hasReward)
+        {
+            float h = 12f + LineH(DoneHeaderFont) + 6f + LineH(DoneTitleFont)
+                      + (hasReward ? 6f + LineH(DoneRewardFont) : 0f) + 14f;
+            return HudStage.Place(f, HudStageItem.QuestDone, NoticePanelWidth, h);
+        }
+
+        /// <summary>다음 퀘스트 알림의 자리 — 가운데 무대의 차례 항목(<see cref="HudStageItem.QuestNext"/>).</summary>
+        public static Rect QuestNextRect(HudFrame f, bool hasDesc)
+        {
+            float h = hasDesc
+                ? 8f + LineH(NextHeaderFont) + 6f + LineH(NextDescFont) * 2f + 6f + LineH(NextPromptFont) + 10f
+                : 8f + LineH(NextHeaderFont) + 10f;
+            return HudStage.Place(f, HudStageItem.QuestNext, NoticePanelWidth, h);
+        }
+
         private void InitNotifStyles()
         {
             if (notifStylesReady) return;
             notifStylesReady = true;
 
             compHeaderStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 40, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            { fontSize = DoneHeaderFont, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             compTitleStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 31, alignment = TextAnchor.MiddleCenter };
+            { fontSize = DoneTitleFont, alignment = TextAnchor.MiddleCenter };
             rewardStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 28, alignment = TextAnchor.MiddleCenter };
+            { fontSize = DoneRewardFont, alignment = TextAnchor.MiddleCenter };
             newQuestStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 31, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            { fontSize = NextHeaderFont, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             newQuestDescStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 26, alignment = TextAnchor.MiddleCenter, wordWrap = true };
+            { fontSize = NextDescFont, alignment = TextAnchor.MiddleCenter, wordWrap = true };
             newQuestPromptStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 24, fontStyle = FontStyle.Italic, alignment = TextAnchor.MiddleCenter };
+            { fontSize = NextPromptFont, fontStyle = FontStyle.Italic, alignment = TextAnchor.MiddleCenter };
             // 모두 textColor는 alpha 동적이라 매 호출 갱신.
         }
 
@@ -430,16 +481,31 @@ namespace InsectGame.UI
             // (모달 위에 겹쳐 그리지 않는 이유는 이 파일에 GUI.depth가 없어 그리기 순서가
             //  불확정이고, 배너가 상점·도감 위를 덮는 건 더 나쁘기 때문이다.)
             if (ModalUIRegistry.IsAnyOpen()) return;
+            // 꿈 동안은 알림을 그리지 않으므로(OnGUI) 수명도 멈춘다 — 무대를 보이지 않는 카드가 차지하지 않게.
+            if (InsectGame.Core.DreamPrologueState.Active) return;
 
-            if (completionAnimTimer > 0f) completionAnimTimer -= Time.deltaTime;
+            // 두 알림은 가운데 무대(HudStage)에 선다 — 다른 카드(포획 결과·동굴 진입 알림 등)가 서 있으면 차례를 기다리고,
+            // 기다리는 동안은 수명을 태우지 않는다(모달과 같은 이유 — 기다리다 사라지면 못 본다).
+            bool doneShowing = completionAnimTimer > 0f && HudStage.Request(HudStageItem.QuestDone);
+            if (doneShowing) completionAnimTimer -= Time.deltaTime;
             if (rewardAnimTimer > 0f) rewardAnimTimer -= Time.deltaTime;
-            // 완료 알림이 끝나길 기다린 뒤(newQuestDelay) 새 퀘스트 배너 수명 소진.
-            if (newQuestDelay > 0f) newQuestDelay -= Time.deltaTime;
-            else if (newQuestAnimTimer > 0f) newQuestAnimTimer -= Time.deltaTime;
+            // 완료 알림이 끝나길 기다린 뒤(newQuestDelay) 새 퀘스트 배너 수명 소진. 완료 알림이 기다리는 동안은 지연도 멈춘다.
+            if (newQuestDelay > 0f)
+            {
+                if (completionAnimTimer <= 0f || doneShowing) newQuestDelay -= Time.deltaTime;
+            }
+            else if (newQuestAnimTimer > 0f)
+            {
+                // 숨김 중엔 그리지 않으니 무대도 잡지 않고 수명만 흐른다(예전과 같다).
+                if (tutorialHidden || HudStage.Request(HudStageItem.QuestNext)) newQuestAnimTimer -= Time.deltaTime;
+            }
         }
 
         private void OnGUI()
         {
+            // 「챔피언의 꿈」 동안은 퀘스트 칩·목표 행·알림을 모두 숨긴다 — 꿈 밖의 진행이 꿈속에 비치면 안 된다.
+            if (InsectGame.Core.DreamPrologueState.Active) return;
+
             // 형제 HUD(PlayerStatusHUD 등)와 동일한 가상 캔버스(1920x1080 / 1080x1920)에서 그려
             // 고DPI 기기에서도 폰트·패널 크기가 일관되게 보이도록 한다. 내부 좌표는 모두 가상 단위.
             UIScale.Begin();
@@ -484,20 +550,20 @@ namespace InsectGame.UI
 
             UITheme theme = UITheme.Instance;
             bool guideLock = guided != null && guided.IsGuiding;
-            // 미니맵과 좌변을 맞춘다 — 예전엔 20 vs 16으로 4px 어긋나 있었다.
-            float chipX = MinimapUI.LeftX;
+            // 자리는 QuestChipLayout(순수 계산)이 정한다 — 세로 모바일은 미니맵 아래, 가로 모바일은 미니맵 오른쪽(아래는 조이스틱
+            // 시작 영역이다), 데스크톱은 좌하단에서 단축 바 왼쪽 끝까지만 쓰고 목표 행 자리까지 비워 두고 바닥에서 위로 쌓는다.
+            HudFrame frame = HudFrame.Current;
+            float stackW = QuestChipLayout.StackWidth(frame);
+            float rowReserve = objectiveTracker != null && objectiveTracker.HasObjective ? ObjectiveRowHeight : 0f;
 
             // 숨김: 작은 복원 버튼만. 단 강제 가이드 중엔 숨김 무시(칩 강제 표시).
             if (tutorialHidden && !guideLock)
             {
-                float rW = UIScale.IsMobileLayout ? 230f : 190f;
-                float rH = UIScale.IsMobileLayout ? 56f : 40f;
-                float rY = UIScale.IsMobileLayout
-                    ? MinimapUI.StackBelowY        // 모바일: 미니맵 아래
-                    : UISafeLayout.BottomY(rH);    // 데스크톱: 좌하단
-                objectiveRowTop = rY + rH + UITheme.Space.XS;
+                Rect restoreRect = QuestChipLayout.RestoreRect(frame, rowReserve);
+                objectiveRowLeft = restoreRect.x;
+                objectiveRowWidth = stackW;
+                objectiveRowTop = QuestChipLayout.Row(restoreRect, stackW, rowReserve).y;
                 objectiveRowVisible = true;
-                Rect restoreRect = new Rect(chipX, rY, rW, rH);
                 FieldHudInput.RegisterBlockingRect(restoreRect);
                 if (UISurface.Button(restoreRect, "▼ 퀘스트 보기", theme.surfaceRaised, panelSurfaceBtnStyleCache))
                     SetTutorialHidden(false);
@@ -508,20 +574,16 @@ namespace InsectGame.UI
             bool done = act == null && questManager.AllCompleted;
             if (act == null && !done) return;
 
-            // 컴팩트 칩 — 제목+진행바만. 좌하단(조작법 제거로 빈 자리)/모바일은 미니맵 아래.
-            float chipW = UIScale.IsMobileLayout
-                ? Mathf.Min(500f, UIScale.VirtualScreenWidth - UIScale.VirtualSafeLeft - UIScale.VirtualSafeRight - 40f)
-                : 400f;
+            // 컴팩트 칩 — 제목+진행바만. 데스크톱 좌하단(조작법 제거로 빈 자리) / 모바일은 미니맵 곁(위 QuestChipLayout).
             float cpad = UITheme.Space.S;
             float ctitleH = RowH(questTitleStyleCache);
             float cbarH = done ? 0f : RowH(questProgStyleCache);
             float crowGap = done ? 0f : UITheme.Space.XS;
             float chipH = cpad + ctitleH + crowGap + cbarH + cpad;
-            float chipY = UIScale.IsMobileLayout
-                ? MinimapUI.StackBelowY            // 모바일: 미니맵 아래
-                : UISafeLayout.BottomY(chipH);     // 데스크톱: 좌하단
-            Rect chipRect = new Rect(chipX, chipY, chipW, chipH);
-            objectiveRowTop = chipRect.yMax + UITheme.Space.XS;
+            Rect chipRect = QuestChipLayout.ChipRect(frame, chipH, rowReserve);
+            objectiveRowLeft = chipRect.x;
+            objectiveRowWidth = stackW;
+            objectiveRowTop = QuestChipLayout.Row(chipRect, stackW, rowReserve).y;
             objectiveRowVisible = true;
 
             // **필드 위에 겹쳐 그리는 버튼은 자기 영역을 매 프레임 등록한다.**
@@ -602,13 +664,28 @@ namespace InsectGame.UI
             // 히트 테스트를 가르지 않는다).
             if (ModalUIRegistry.IsAnyOpen()) return;
 
+            // 자리·폭은 칩을 그릴 때 QuestChipLayout이 정해 둔 것을 쓴다(데스크톱은 칩이 이 행 높이만큼 올라가 있다).
+            DrawObjectiveRowAt(new Rect(objectiveRowLeft, objectiveRowTop, objectiveRowWidth, ObjectiveRowHeight));
+        }
+
+        /// <summary>
+        /// 검수 fixture 전용 — 로그인 세션(퀘스트 칩) 없이 목표 행만 칩 자리 아래에 그린다. 자리는 실제와 같은
+        /// <see cref="QuestChipLayout.Row"/>와 <see cref="ObjectiveRowHeight"/>(「왜」가 있으면 두 줄)다. OnGUI 안에서 부를 것.
+        /// </summary>
+        internal void DrawObjectiveRowForCapture(Rect chip, float width)
+        {
+            if (objectiveTracker == null || !objectiveTracker.HasObjective) return;
+            InitQuestPanelStyles();
+            objectiveRowLeft = chip.x;
+            objectiveRowWidth = width;
+            objectiveRowTop = QuestChipLayout.Row(chip, width, ObjectiveRowHeight).y;
+            DrawObjectiveRowAt(new Rect(objectiveRowLeft, objectiveRowTop, objectiveRowWidth, ObjectiveRowHeight));
+        }
+
+        private void DrawObjectiveRowAt(Rect row)
+        {
             UITheme theme = UITheme.Instance;
-            float x = MinimapUI.LeftX;
-            float w = UIScale.IsMobileLayout
-                ? Mathf.Min(500f, UIScale.VirtualScreenWidth - UIScale.VirtualSafeLeft - UIScale.VirtualSafeRight - 40f)
-                : 400f;
-            float h = Mathf.Ceil(objectiveStyleCache.fontSize * 1.35f) + UITheme.Space.S * 2f;
-            Rect row = new Rect(x, objectiveRowTop, w, h);
+            bool hasWhy = HasObjectiveWhy;
 
             // 칩과 같은 이유로 등록한다 — 여기는 더 나쁘다. 이 행을 누르면 자동 주행이 시작되는데
             // **같은 탭이 클릭-이동으로도 발화해** 목표로 달려가면서 동시에 탭 지점으로 걸어가려
@@ -639,27 +716,45 @@ namespace InsectGame.UI
             }
             string label = objectiveLabelCache;
 
+            // 의뢰를 따라가는 중이면 오른쪽 끝에 ✕(해제 → 본편 목표로 복귀)를 붙인다.
+            // **✕를 먼저 그린다** — IMGUI는 먼저 처리된 버튼이 MouseDown을 가져가므로, 행 버튼이
+            // 먼저면 ✕를 눌러도 자동 주행이 시작된다. 행은 ✕ 폭만큼 줄여 겹치지 않게 한다.
+            // ✕ 폭은 한 줄 행 높이로 고정한다 — 「왜」 줄로 행이 길어져도 정사각형으로 키우면 할 일 글자 폭만 줄어든다.
+            Rect body = row;
+            if (objectiveTracker.IsTrackingTale)
+            {
+                float closeW = Mathf.Min(row.height, QuestChipLayout.RowHeight);
+                Rect closeRect = new Rect(row.xMax - closeW, row.y, closeW, row.height);
+                body = new Rect(row.x, row.y, row.width - closeW - UITheme.Space.XS, row.height);
+                if (UISurface.Button(closeRect, "✕", theme.surfaceRaised, panelSurfaceBtnStyleCache))
+                {
+                    objectiveTracker.StopTrackingTale();
+                    return;   // 목표가 본편으로 바뀌었다 — 옛 라벨로 한 번 더 그리지 않는다
+                }
+            }
+
             if (canRun)
             {
                 Color bg = running ? theme.accentCoral : theme.surfaceRaised;
-                if (UISurface.Button(row, string.Empty, bg, panelSurfaceBtnStyleCache))
+                if (UISurface.Button(body, string.Empty, bg, panelSurfaceBtnStyleCache))
                     objectiveTracker.Toggle();
-                // 라벨은 좌측 정렬이라 UISurface.Button의 중앙 정렬 스타일을 쓰지 않고 따로 그린다.
-                UIHelper.LabelFit(
-                    new Rect(row.x + UITheme.Space.M, row.y, row.width - UITheme.Space.M * 2f, row.height),
-                    label, objectiveStyleCache);
             }
             else
             {
-                UISurface.HudCard(row);
-                UIHelper.LabelFit(
-                    new Rect(row.x + UITheme.Space.M, row.y, row.width - UITheme.Space.M * 2f, row.height),
-                    label, objectiveStyleCache);
+                UISurface.HudCard(body);
             }
+            // 라벨은 좌측 정렬이라 UISurface.Button의 중앙 정렬 스타일을 쓰지 않고 따로 그린다.
+            // 「왜」가 있으면 할 일은 윗줄, 이유는 그 아래 작고 흐린 한 줄(둘 다 넘치면 글자를 줄여 맞춘다).
+            UIHelper.LabelFit(QuestChipLayout.RowMainLine(body, hasWhy), label, objectiveStyleCache);
 
-            // 일시 안내(길 막힘 / 다른 리전) — 행 아래 한 줄.
+            // 일시 안내(길 막힘 / 다른 리전). 「왜」 줄이 있으면 그 줄을 잠깐 빌린다 — 행 아래에 한 줄을 더 내리면 두 줄 행 밑으로
+            // 무대(가운데 카드 자리) 윗변까지 닿는다(세로 화면). 안내가 사라지면 이유가 돌아온다. 이유가 없으면 예전처럼 행 아래 한 줄.
             string status = objectiveTracker.StatusMessage;
-            if (!string.IsNullOrEmpty(status))
+            bool statusInRow = hasWhy && !string.IsNullOrEmpty(status);
+            if (hasWhy)
+                UIHelper.LabelFit(QuestChipLayout.RowWhyLine(body), statusInRow ? status : objectiveTracker.Why,
+                    statusInRow ? objectiveStatusStyleCache : objectiveWhyStyleCache);
+            if (!statusInRow && !string.IsNullOrEmpty(status))
             {
                 UIHelper.LabelFit(
                     new Rect(row.x + UITheme.Space.XS, row.yMax + 2f,
@@ -792,28 +887,16 @@ namespace InsectGame.UI
         private void DrawCompletionNotification()
         {
             if (completionAnimTimer <= 0f) return;
+            if (!HudStage.Request(HudStageItem.QuestDone)) return;   // 무대에 다른 카드가 서 있다 — 차례를 기다린다
 
+            // 나타날 때는 위에서 미끄러지지 않고 제자리에서 밝아진다 — 무대 밖(리전 배너·내기 점수판)으로 삐져나오지 않게.
             float alpha;
-            float slideOffset;
-
             if (completionAnimTimer > 2.5f)
-            {
-                // Slide in (0..0.5s)
-                float t = (3f - completionAnimTimer) / 0.5f;
-                alpha = Mathf.Clamp01(t);
-                slideOffset = Mathf.Lerp(-60f, 0f, t);
-            }
+                alpha = Mathf.Clamp01((3f - completionAnimTimer) / 0.5f);
             else if (completionAnimTimer < 0.5f)
-            {
-                // Fade out
                 alpha = Mathf.Clamp01(completionAnimTimer / 0.5f);
-                slideOffset = 0f;
-            }
             else
-            {
                 alpha = 1f;
-                slideOffset = 0f;
-            }
 
             InitNotifStyles();
 
@@ -825,12 +908,12 @@ namespace InsectGame.UI
             float rewH = RowH(rewardStyleCache);
             bool hasReward = !string.IsNullOrEmpty(completedRewardText);
 
-            float availW = UIScale.VirtualScreenWidth - UIScale.VirtualSafeLeft - UIScale.VirtualSafeRight;
-            float panelW = Mathf.Min(640f, availW - 24f);
-            float panelH = UISafeLayout.ClampHeight(
-                12f + headH + 6f + titleH + (hasReward ? 6f + rewH : 0f) + 14f);
-            float panelX = UIScale.VirtualSafeLeft + (availW - panelW) * 0.5f;
-            float panelY = UISafeLayout.ContentTop + slideOffset;
+            Rect panel = QuestDoneRect(HudFrame.Current, hasReward);
+            HudStage.Request(HudStageItem.QuestDone, panel);   // 무대 안의 가운데 것들이 겹치면 비켜서게 자리를 알린다
+            float panelW = panel.width;
+            float panelH = panel.height;
+            float panelX = panel.x;
+            float panelY = panel.y;
 
             // Background
             GUI.color = new Color(0.15f, 0.12f, 0.02f, 0.9f * alpha);
@@ -851,7 +934,8 @@ namespace InsectGame.UI
 
             // Quest title
             compTitleStyleCache.normal.textColor = new Color(CompTitleBaseCol.r, CompTitleBaseCol.g, CompTitleBaseCol.b, alpha);
-            GUI.Label(new Rect(panelX, rowY, panelW, titleH),
+            // 제목 길이는 데이터가 정한다 — 무대가 좁은 화면(가로 모바일 섬)에서 잘리지 않게 줄여 맞춘다.
+            UIHelper.LabelFit(new Rect(panelX + 12f, rowY, panelW - 24f, titleH),
                 "\"" + (completedQuestTitle ?? "") + "\"", compTitleStyleCache);
             rowY += titleH + 6f;
 
@@ -859,7 +943,7 @@ namespace InsectGame.UI
             if (hasReward)
             {
                 rewardStyleCache.normal.textColor = new Color(RewardBaseCol.r, RewardBaseCol.g, RewardBaseCol.b, alpha);
-                GUI.Label(new Rect(panelX, rowY, panelW, rewH),
+                UIHelper.LabelFit(new Rect(panelX + 12f, rowY, panelW - 24f, rewH),
                     "\ubcf4\uc0c1: " + completedRewardText, rewardStyleCache);
             }
 
@@ -874,6 +958,7 @@ namespace InsectGame.UI
             if (tutorialHidden) return;           // \uc228\uae40 \uc911\uc5d4 \ub2e4\uc74c \ub2e8\uacc4 \uc548\ub0b4 \uc548 \ub744\uc6c0(\uc644\ub8cc \uc54c\ub9bc\uc740 \ubcc4\ub3c4 \uc720\uc9c0)
             if (newQuestDelay > 0f) return;       // \uc644\ub8cc \uc54c\ub9bc\uc774 \ub05d\ub0a0 \ub54c\uae4c\uc9c0 \ub300\uae30
             if (newQuestAnimTimer <= 0f) return;
+            if (!HudStage.Request(HudStageItem.QuestNext)) return;   // 무대 차례를 기다린다
 
             float alpha;
             if (newQuestAnimTimer > 3f)
@@ -893,19 +978,18 @@ namespace InsectGame.UI
             InitNotifStyles();
 
             bool hasDesc = !string.IsNullOrEmpty(newQuestDesc);
-            float availW = UIScale.VirtualScreenWidth - UIScale.VirtualSafeLeft - UIScale.VirtualSafeRight;
-            float panelW = Mathf.Min(640f, availW - 24f);
 
             // 높이는 전부 폰트에서 파생한다(RowH 주석 참조). 설명은 두 줄까지 잡는다 —
             // 길이가 데이터에서 오므로 wordWrap이 접히는 경우가 있다.
             float nqHeadH = RowH(newQuestStyleCache);
             float nqDescH = RowH(newQuestDescStyleCache) * 2f;
             float nqPromptH = RowH(newQuestPromptStyleCache);
-            float panelH = UISafeLayout.ClampHeight(
-                hasDesc ? 8f + nqHeadH + 6f + nqDescH + 6f + nqPromptH + 10f
-                        : 8f + nqHeadH + 10f);
-            float panelX = UIScale.VirtualSafeLeft + (availW - panelW) * 0.5f;
-            float panelY = UISafeLayout.ContentTop + 30f;   // 퀘스트 토스트(ContentTop) 아래로
+            Rect panel = QuestNextRect(HudFrame.Current, hasDesc);
+            HudStage.Request(HudStageItem.QuestNext, panel);
+            float panelW = panel.width;
+            float panelH = panel.height;
+            float panelX = panel.x;
+            float panelY = panel.y;
 
             GUI.color = new Color(0.08f, 0.15f, 0.3f, 0.92f * alpha);
             GUI.DrawTexture(new Rect(panelX, panelY, panelW, panelH), Texture2D.whiteTexture);
@@ -919,7 +1003,7 @@ namespace InsectGame.UI
             // 헤더: 다음 단계가 "무엇"인지
             float nqY = panelY + 8f;
             newQuestStyleCache.normal.textColor = new Color(NewQuestBaseCol.r, NewQuestBaseCol.g, NewQuestBaseCol.b, alpha);
-            GUI.Label(new Rect(panelX, nqY, panelW, nqHeadH),
+            UIHelper.LabelFit(new Rect(panelX + 12f, nqY, panelW - 24f, nqHeadH),
                 "다음 단계 \u2192 \"" + (newQuestTitle ?? "") + "\"", newQuestStyleCache);
             nqY += nqHeadH + 6f;
 
@@ -979,6 +1063,9 @@ namespace InsectGame.UI
             if (questManager == null) return;
 
             InitDetailStyles();
+            // [따라가기] 버튼이 칩과 같은 표면 스타일(panelSurfaceBtnStyleCache)을 쓴다 — 칩이 한 번도
+            // 안 그려진 채(가이드 숨김 등) 목록부터 열면 null이라 여기서도 보장한다(가드가 있어 1회뿐).
+            InitQuestPanelStyles();
 
             float panelW = UIScale.IsMobileLayout
                 ? Mathf.Min(860f, UIScale.VirtualScreenWidth - UIScale.VirtualSafeLeft - UIScale.VirtualSafeRight - 32f)
@@ -1034,7 +1121,15 @@ namespace InsectGame.UI
             float headH = QuestListLayout.SectionHeaderHeight;
             // 펼쳐진 행이 있으면 그만큼 콘텐츠가 길어진다(한 번에 하나만 펼친다).
             int expandedCount = string.IsNullOrEmpty(expandedQuestId) ? 0 : 1;
-            float contentH = QuestListLayout.GetContentHeight(story.Count, side.Count, expandedCount);
+            // [따라가기] 여부는 **이번 패스에 한 번만** 정한다 — 행 높이(DrawQuestRow)와 콘텐츠 높이가
+            // 같은 답을 봐야 스크롤 끝이 안 잘린다. 판정이 스토리 진행을 훑어서 매 행마다 부를 값도 아니다.
+            // Layout 패스에서만 정한다 — 판정이 이야기 비트 전체를 훑어서, Repaint·입력 패스마다 되풀이하면
+            // 행을 펼쳐 둔 동안 프레임마다 두세 번 돈다. 같은 프레임의 뒤 패스는 이 값을 그대로 쓴다.
+            if (Event.current.type == EventType.Layout)
+                expandedRowTrackable = expandedCount > 0 && objectiveTracker != null
+                    && (objectiveTracker.IsQuestTracked(expandedQuestId) || objectiveTracker.CanTrackQuestNow(expandedQuestId));
+            float contentH = QuestListLayout.GetContentHeight(story.Count, side.Count, expandedCount,
+                expandedRowTrackable ? 1 : 0);
             Rect listArea = new Rect(listX, listY, listW, listH);
             Rect viewRect = new Rect(0, 0, listW, contentH);
             detailDirectScroll.Handle(ref detailScroll, listArea, contentH, rowH);
@@ -1053,7 +1148,8 @@ namespace InsectGame.UI
 
             if (side.Count > 0)
             {
-                DrawQuestSectionHeader(viewRect.width, ref ry, headH, "\u25c6 \uc11c\ube0c (\ubc18\ubcf5 \uc2dc \ubaa9\ud45c \uc0c1\uc2b9)");
+                // \ub9c8\uc744 \uc758\ub8b0(1\ud68c)\uac00 \ud568\uaed8 \ub4e4\uc5b4\uc624\uba74\uc11c "\ubc18\ubcf5 \uc2dc \ubaa9\ud45c \uc0c1\uc2b9"\ub9cc\uc73c\ub85c\ub294 \uc124\uba85\uc774 \ubaa8\uc790\ub77c\ub2e4.
+                DrawQuestSectionHeader(viewRect.width, ref ry, headH, "\u25c6 \uc11c\ube0c \u00b7 \uc678\uc804 \u00b7 \ub9c8\uc744 \uc758\ub8b0");
                 for (int i = 0; i < side.Count; i++)
                     DrawQuestRow(side[i], viewRect.width, ref ry, rowH, i);
             }
@@ -1086,19 +1182,20 @@ namespace InsectGame.UI
 
             if (isSide)
             {
-                bool unlocked = string.IsNullOrEmpty(quest.prerequisiteQuestId)
-                    || questManager.IsQuestCompleted(quest.prerequisiteQuestId);
+                // 선행 퀘스트 + (지역 의뢰면) 리전 해금 — 진행을 세는 쪽과 같은 판정을 쓴다.
+                // prereq만 보면 잠긴 리전의 의뢰가 0/5 진행 중으로 떠 갈 수 없는 곳을 할 일처럼 보인다.
+                // 완료를 먼저 본다 — 끝낸 의뢰는 나중에 리전 접근이 꺼져도(마스터 특권 해제 등) 완료다.
                 tgt = questManager.EffectiveTarget(quest);
-                if (!unlocked)
-                {
-                    icon = "\ud83d\udd12 "; titleCol = RowLockedCol;
-                    statusText = "\ubbf8\ud574\uae08"; statusCol = RowLockedCol;
-                }
-                else if (!quest.repeatable && questManager.IsQuestCompleted(quest.questId))
+                if (!quest.repeatable && questManager.IsQuestCompleted(quest.questId))
                 {
                     icon = "\u2713 "; titleCol = RowCompletedCol;
                     statusText = "\uc644\ub8cc"; statusCol = StatusCompletedCol;
                     cur = tgt;
+                }
+                else if (!questManager.IsSideUnlocked(quest))
+                {
+                    icon = "\ud83d\udd12 "; titleCol = RowLockedCol;
+                    statusText = "\ubbf8\ud574\uae08"; statusCol = RowLockedCol;
                 }
                 else
                 {
@@ -1147,7 +1244,8 @@ namespace InsectGame.UI
             }
 
             bool expanded = !string.IsNullOrEmpty(quest.questId) && quest.questId == expandedQuestId;
-            float totalH = QuestListLayout.GetRowHeight(expanded);
+            bool trackable = expanded && expandedRowTrackable;
+            float totalH = QuestListLayout.GetRowHeight(expanded, trackable);
             UITheme t = UITheme.Instance;
 
             // \ubc30\uacbd(\uad50\ub300) + \ud65c\uc131 \uc2a4\ud1a0\ub9ac \ud558\uc774\ub77c\uc774\ud2b8 \u2014 \ud3bc\uce5c \uc601\uc5ed\uae4c\uc9c0 \ud568\uaed8 \uce60\ud55c\ub2e4.
@@ -1171,7 +1269,8 @@ namespace InsectGame.UI
             GUI.color = Color.white;
 
             detailRowStyleCache.normal.textColor = titleCol;
-            GUI.Label(new Rect(10f, ry, width * 0.46f, rowH), icon + QuestTitle(quest), detailRowStyleCache);
+            // 마을 의뢰 제목("◆ [잿불 골짜기] 타지 않은 기억")은 28pt에서 이 상자를 넘는다 — 줄여 맞춘다.
+            UIHelper.LabelFit(new Rect(10f, ry, width * 0.46f, rowH), icon + QuestTitle(quest), detailRowStyleCache);
 
             // \ubcf4\uc0c1 \uc694\uc57d \u2014 \ubaa9\ub85d\uc5d0\uc11c "\uc774\uac70 \uae68\uba74 \ubb58 \uc8fc\ub098"\uac00 \ubc14\ub85c \ubcf4\uc774\uac8c.
             string rewardText = GetRewardText(quest);
@@ -1229,6 +1328,28 @@ namespace InsectGame.UI
                 GUI.Label(new Rect(16f, ey, 60f, rewardRowH), "\ubcf4\uc0c1", detailRewardLabelStyleCache);
                 GUI.Label(new Rect(80f, ey, width - 96f, rewardRowH),
                     string.IsNullOrEmpty(rewardText) ? "\uc5c6\uc74c" : rewardText, detailRewardStyleCache);
+
+                // \ub9c8\uc744 \uc758\ub8b0 \u2014 [\ub530\ub77c\uac00\uae30]. \ub204\ub974\uba74 \ubaa9\ud45c \ud589\u00b7\ubbf8\ub2c8\ub9f5\u00b7\uc9c0\ub3c4\uac00 \uadf8 \uc8fc\ubbfc\uc758 \uc774\uc57c\uae30\ub97c \uac00\ub9ac\ud0a8\ub2e4.
+                // \ubc84\ud2bc \uc790\ub9ac\ub294 \ud589 \ub192\uc774 \uacc4\uc0b0(QuestListLayout.TrackButtonExtra)\uacfc \uac19\uc740 \ud310\uc815\uc73c\ub85c \ud655\ubcf4\ub3fc \uc788\ub2e4.
+                if (trackable)
+                {
+                    Rect btn = new Rect(16f,
+                        ry + QuestListLayout.RowHeight + QuestListLayout.ExpandedExtra + QuestListLayout.TrackButtonTopGap,
+                        Mathf.Min(360f, width - 32f), QuestListLayout.TrackButtonHeight);
+                    bool tracked = objectiveTracker.IsQuestTracked(quest.questId);
+                    Color btnBg = tracked ? t.accentCoral : t.accentMint;
+                    if (UISurface.Button(btn, tracked ? "\ub530\ub77c\uac00\uae30 \ud574\uc81c" : "\u25b6 \ub530\ub77c\uac00\uae30", btnBg, panelSurfaceBtnStyleCache)
+                        && !detailDirectScroll.IsDragging)
+                    {
+                        if (tracked) objectiveTracker.StopTrackingTale();
+                        else
+                        {
+                            objectiveTracker.TrackQuest(quest.questId);
+                            // \ubaa9\ub85d\uc744 \ub2eb\uc544 \ubc14\ub85c \ud544\ub4dc\uc640 \ubaa9\ud45c \ud589\uc744 \ubcf4\uac8c \ud55c\ub2e4 \u2014 \ub530\ub77c\uac00\uae30\ub97c \ucf1c \ub193\uace0 \ubaa9\ub85d\uc5d0 \uba38\ubb3c \uc774\uc720\uac00 \uc5c6\ub2e4.
+                            SetDetailOpen(false);
+                        }
+                    }
+                }
             }
 
             ry += totalH;
@@ -1301,6 +1422,198 @@ namespace InsectGame.UI
             if (itemDatabase == null) itemDatabase = database;
             // AutoWire가 첫 렌더보다 늦게 올 수 있다. 그 사이 ID 원문으로 굳은 캐시를 버린다.
             rewardTextCache.Clear();
+        }
+    }
+
+    /// <summary>퀘스트 칩 스택(칩·목표 행)이 서는 곳.</summary>
+    public enum QuestStackPlace
+    {
+        /// <summary>모바일 세로 — 미니맵 아래에서 아래로.</summary>
+        UnderMinimap,
+        /// <summary>모바일 가로 — 미니맵 오른쪽, 위쪽 가운데 코치 배너 띠 아래.</summary>
+        BesideMinimap,
+        /// <summary>데스크톱 — 좌하단, 단축 바 왼쪽 끝까지, 바닥에서 위로.</summary>
+        BottomLeft
+    }
+
+    /// <summary>
+    /// 퀘스트 칩·숨김 복원 버튼·목표 행의 자리 — <b>순수 계산</b>. <see cref="TutorialQuestUI"/>가 이걸로 그리고
+    /// <c>FieldHudInput</c>에 같은 Rect를 등록한다. 겹침 테스트(<c>WorldClockHudTests.QuestChip_*</c>)가 화면 크기별로 읽는다.
+    ///
+    /// <b>모바일 세로</b>: 미니맵 아래 좌측 스택(<c>MinimapUI.StackBelowY</c>)에서 아래로 — 칩, 그 아래 목표 행. 폭 최대 500.
+    /// <b>모바일 가로</b>: 미니맵 <b>오른쪽</b>(x = 미니맵 오른쪽 끝 + 10), 위쪽 가운데 코치 배너 띠(<c>ContentTop + 150~250</c>,
+    /// <see cref="GuidedTutorialController.CoachRect"/>) 바로 아래에서 아래로. 가로 화면은 미니맵 아래에 128px(412~540)밖에 안 남아
+    /// 칩(108) + 목표 행(57)이 화면 가운데 줄 아래 — 가상 조이스틱의 시작 영역(좌하단 사분면) — 으로 43px 내려갔다. 미니맵 오른쪽에 두면
+    /// 칩 아랫변이 미니맵 아랫변과 거의 맞고(400 vs 402) 목표 행이 y 463에서 끝난다. 미니맵 오른쪽 위 띠를 쓰지 않는 이유는 첫 가이드의
+    /// 코치 배너(가운데 폭 720)가 거기 서기 때문이다 — 1920 폭에서 x 600부터라 폭 500 칩(246~746)과 겹친다.
+    /// <b>데스크톱</b>: 좌하단, <b>단축 바 왼쪽 끝까지만</b> 쓴다(최대 400). 16:9(가상 폭 1920)에서 단축 바(폭 1200, 가운데)가
+    /// x 360에서 시작해 폭 400 칩(x 16~416)과 56px 겹쳤다 — 칩은 334로 줄고, 21:9(2560)처럼 넓으면 400 그대로다.
+    /// 그리고 <b>바닥에서 위로 쌓는다</b>: 목표 행이 뜰 거면 그 높이만큼 칩을 올린다. 예전엔 칩이 바닥에 붙고 목표 행이 그 <i>아래</i>
+    /// (안전 영역 밖, 1080 화면에서 y 1054~1111)에 그려져 거의 보이지 않았다.
+    /// 단축 바 옆에 280도 안 남는 화면(데스크톱 레이아웃의 세로에 가까운 창)에서는 단축 바 <i>위</i>에 쌓는다.
+    /// </summary>
+    public static class QuestChipLayout
+    {
+        public const float MobileMaxWidth = 500f;
+        public const float DesktopMaxWidth = 400f;
+        /// <summary>데스크톱에서 단축 바 옆에 칩을 둘 최소 폭 — 이보다 좁으면 단축 바 위로 올린다.</summary>
+        public const float DesktopMinBesideWidth = 280f;
+        public const float RestoreWidthMobile = 230f;
+        public const float RestoreHeightMobile = 56f;
+        public const float RestoreWidthDesktop = 190f;
+        public const float RestoreHeightDesktop = 40f;
+        /// <summary>칩 제목·진행·목표 행 글자 크기 — 칩과 목표 행의 높이가 여기서 나온다(한글 줄높이 ≈ 글자 × 1.35).</summary>
+        public const int TitleFontSize = 34;
+        public const int ProgressFontSize = 26;
+        public const int ObjectiveFontSize = 27;
+
+        private static float LineHeight(int fontSize) => Mathf.Ceil(fontSize * 1.35f);
+
+        /// <summary>진행 중인 퀘스트 칩 높이 — 여백 + 제목 + 간격 + 진행 줄 + 여백(108).</summary>
+        public static float ExpandedHeight => UITheme.Space.S + LineHeight(TitleFontSize) + UITheme.Space.XS
+                                              + LineHeight(ProgressFontSize) + UITheme.Space.S;
+
+        /// <summary>모두 끝난 칩 높이(진행 줄 없음, 66).</summary>
+        public static float DoneHeight => UITheme.Space.S + LineHeight(TitleFontSize) + UITheme.Space.S;
+
+        /// <summary>목표 행 높이(57) — 「왜」 줄이 없을 때.</summary>
+        public static float RowHeight => LineHeight(ObjectiveFontSize) + UITheme.Space.S * 2f;
+
+        /// <summary>목표 행 둘째 줄(「왜」 — <c>StoryObjectiveTracker.Why</c>)의 글자 크기. 할 일보다 작고 흐리다.</summary>
+        public const int WhyFontSize = 22;
+        /// <summary>「왜」 줄을 할 일 글자(▶·◈ 다음) 밑에 맞추는 들여쓰기.</summary>
+        public const float WhyIndent = 30f;
+
+        /// <summary>
+        /// 「왜」 줄이 붙은 목표 행 높이(87) — 여백 + 할 일 한 줄 + 이유 한 줄 + 여백. 데스크톱은 칩이 이만큼 더 올라가고,
+        /// 모바일은 행이 그만큼 아래로 길어진다. 가운데 무대(<see cref="HudStage.Area(HudFrame, bool)"/>)는 늘 이 큰 쪽을 피한다.
+        /// </summary>
+        public static float RowHeightWithWhy => LineHeight(ObjectiveFontSize) + LineHeight(WhyFontSize) + UITheme.Space.S * 2f;
+
+        /// <summary>목표 행 높이 — 「왜」가 있으면 두 줄. 칩이 비워 둘 자리·그리기·히트테스트·등록이 전부 이 값을 쓴다.</summary>
+        public static float RowHeightFor(bool hasWhy) => hasWhy ? RowHeightWithWhy : RowHeight;
+
+        /// <summary>
+        /// 목표 행 안 할 일 글자 자리. 「왜」가 없으면 행 전체(가운데 정렬 그대로), 있으면 윗줄.
+        /// <paramref name="body"/>는 행에서 ✕(의뢰 해제) 자리를 뺀 몸통이다.
+        /// </summary>
+        public static Rect RowMainLine(Rect body, bool hasWhy)
+        {
+            float x = body.x + UITheme.Space.M;
+            float w = Mathf.Max(1f, body.width - UITheme.Space.M * 2f);
+            return hasWhy
+                ? new Rect(x, body.y + UITheme.Space.S, w, LineHeight(ObjectiveFontSize))
+                : new Rect(x, body.y, w, body.height);
+        }
+
+        /// <summary>목표 행 둘째 줄(「왜」)의 자리 — 할 일 줄 바로 아래, 글리프 폭만큼 들여 쓴다.</summary>
+        public static Rect RowWhyLine(Rect body)
+        {
+            float x = body.x + UITheme.Space.M + WhyIndent;
+            float w = Mathf.Max(1f, body.width - UITheme.Space.M * 2f - WhyIndent);
+            return new Rect(x, body.y + UITheme.Space.S + LineHeight(ObjectiveFontSize), w, LineHeight(WhyFontSize));
+        }
+
+        /// <summary>
+        /// 가로 모바일 스택의 윗변 — 안전 영역 위에서 위쪽 가운데 줄(리전 배너·내기 점수판, 데스크톱 코치 배너 띠 높이) 아래까지(260).
+        /// 모바일 코치 배너는 이제 화면 가운데 줄에 서지만, 이 높이가 칩을 미니맵 아랫변과 맞추고 목표 행을 조이스틱 자리 위에서 끝낸다.
+        /// </summary>
+        public const float BesideMinimapTop =
+            GuidedTutorialController.CoachTopOffset + GuidedTutorialController.CoachHeight + UITheme.Space.S;
+
+        public static QuestStackPlace PlaceFor(bool mobileLayout, bool portrait)
+        {
+            if (!mobileLayout) return QuestStackPlace.BottomLeft;
+            return portrait ? QuestStackPlace.UnderMinimap : QuestStackPlace.BesideMinimap;
+        }
+
+        /// <summary>스택의 왼쪽 끝. <paramref name="minimapLeft"/>는 <c>MinimapUI.LeftX</c>.</summary>
+        public static float Left(QuestStackPlace place, float minimapLeft)
+        {
+            return place == QuestStackPlace.BesideMinimap ? minimapLeft + MinimapUI.PanelSize + UITheme.Space.S : minimapLeft;
+        }
+
+        /// <summary>
+        /// 칩·목표 행의 폭. <paramref name="minimapLeft"/>는 <c>MinimapUI.LeftX</c>,
+        /// <paramref name="quickBar"/>는 단축 바(<c>QuickAccessBarUI.ShortcutBarRect</c>).
+        /// </summary>
+        public static float Width(QuestStackPlace place, float screenWidth, float safeLeft, float safeRight, float minimapLeft,
+            Rect quickBar)
+        {
+            float room = screenWidth - safeLeft - safeRight - 40f;
+            if (place == QuestStackPlace.UnderMinimap) return Mathf.Min(MobileMaxWidth, room);
+            if (place == QuestStackPlace.BesideMinimap)
+                return Mathf.Min(MobileMaxWidth, Mathf.Max(1f, room - MinimapUI.PanelSize - UITheme.Space.S));
+            float beside = BesideBar(minimapLeft, quickBar);
+            return Mathf.Min(DesktopMaxWidth, beside >= DesktopMinBesideWidth ? beside : room);
+        }
+
+        /// <summary>모바일 스택의 윗변(데스크톱은 쓰지 않는다 — <see cref="DesktopBottom"/>에서 위로 쌓는다).</summary>
+        public static float MobileTop(QuestStackPlace place, float contentTop)
+        {
+            return place == QuestStackPlace.BesideMinimap
+                ? contentTop + BesideMinimapTop
+                : contentTop + MinimapUI.TopOffset + MinimapUI.PanelSize + UITheme.Space.S;   // = MinimapUI.StackBelowY
+        }
+
+        /// <summary>데스크톱 스택(칩 + 목표 행)의 바닥 — 단축 바 옆에 서면 안전 영역 바닥, 아니면 단축 바 위.</summary>
+        public static float DesktopBottom(float minimapLeft, Rect quickBar, float contentBottom)
+        {
+            return BesideBar(minimapLeft, quickBar) >= DesktopMinBesideWidth ? contentBottom : quickBar.y - UITheme.Space.S;
+        }
+
+        /// <summary>
+        /// 칩(또는 숨김 복원 버튼). 모바일은 <paramref name="mobileTop"/>에서 아래로. <paramref name="rowHeight"/>가 0보다 크면
+        /// 그 아래 목표 행 자리를 비워 둔다 — 데스크톱은 바닥(<paramref name="desktopBottom"/>)에서 위로 쌓으므로 칩이 그만큼 올라간다.
+        /// </summary>
+        public static Rect Chip(QuestStackPlace place, float x, float width, float height, float rowHeight, float mobileTop,
+            float desktopBottom)
+        {
+            if (place != QuestStackPlace.BottomLeft) return new Rect(x, mobileTop, width, height);
+            float stack = height + (rowHeight > 0f ? UITheme.Space.XS + rowHeight : 0f);
+            return new Rect(x, desktopBottom - stack, width, height);
+        }
+
+        /// <summary>목표 행 — 칩(또는 복원 버튼) 바로 아래, 칩 폭(<see cref="Width"/>).</summary>
+        public static Rect Row(Rect chip, float width, float rowHeight)
+        {
+            return new Rect(chip.x, chip.yMax + UITheme.Space.XS, width, rowHeight);
+        }
+
+        private static float BesideBar(float minimapLeft, Rect quickBar)
+        {
+            return quickBar.x - UITheme.Space.S - minimapLeft;
+        }
+
+        // ── 화면 한 장(HudFrame)에서 ──
+
+        /// <summary>칩·목표 행 폭(화면 한 장 기준).</summary>
+        public static float StackWidth(HudFrame f)
+        {
+            QuestStackPlace place = PlaceFor(f.Mobile, f.Portrait);
+            return Width(place, f.Width, f.SafeLeft, f.SafeRight, f.SafeLeft + 16f, QuickAccessBarUI.ShortcutBarRectFor(f));
+        }
+
+        /// <summary>칩(높이 <paramref name="height"/>)의 자리 — <paramref name="rowHeight"/> &gt; 0이면 그 아래 목표 행 자리를 비운다.</summary>
+        public static Rect ChipRect(HudFrame f, float height, float rowHeight)
+        {
+            return StackRect(f, StackWidth(f), height, rowHeight);
+        }
+
+        /// <summary>숨김 상태의 복원 버튼 자리.</summary>
+        public static Rect RestoreRect(HudFrame f, float rowHeight)
+        {
+            float w = Mathf.Min(f.Mobile ? RestoreWidthMobile : RestoreWidthDesktop, StackWidth(f));
+            return StackRect(f, w, f.Mobile ? RestoreHeightMobile : RestoreHeightDesktop, rowHeight);
+        }
+
+        private static Rect StackRect(HudFrame f, float width, float height, float rowHeight)
+        {
+            QuestStackPlace place = PlaceFor(f.Mobile, f.Portrait);
+            float minimapLeft = f.SafeLeft + 16f;   // = MinimapUI.LeftX
+            Rect bar = QuickAccessBarUI.ShortcutBarRectFor(f);
+            return Chip(place, Left(place, minimapLeft), width, height, rowHeight, MobileTop(place, f.ContentTop),
+                DesktopBottom(minimapLeft, bar, f.ContentBottom));
         }
     }
 }

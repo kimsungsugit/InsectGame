@@ -33,7 +33,11 @@ namespace InsectGame.Core
         // **전투 계열이면 IsCombatBgm**. 앞의 셋만 하면 소리는 나지만 긴장 램프(피치)가 빠진다 —
         // 실제로 이 보스 2종이 그렇게 새어 2026-08-08 audit에서 잡혔다.
         BossLedger,
-        BossFinal
+        BossFinal,
+        // 전용 테마 — 수문장 레이드(느리고 무거운 북·낮은 금관)와 라온 대결(밝고 빠른 놀림 주제).
+        // 등록 4지점은 위와 같다. 곡은 ProceduralAudioGenerator.Music.cs.
+        Guardian,
+        Rival
     }
 
     public enum SfxType
@@ -83,6 +87,8 @@ namespace InsectGame.Core
 
         private float masterVolume;
         private float bgmVolume;
+        // 스토리 영상 같은 전면 연출이 BGM을 잠깐 낮추는 배율(1 = 원음). 볼륨 계산 전부에 곱한다.
+        private float bgmDuck = 1f;
         private float sfxVolume;
 
         private BgmType? currentBgmType;
@@ -189,7 +195,9 @@ namespace InsectGame.Core
             => type == BgmType.Battle
             || type == BgmType.RaidBattle
             || type == BgmType.BossLedger
-            || type == BgmType.BossFinal;
+            || type == BgmType.BossFinal
+            || type == BgmType.Guardian
+            || type == BgmType.Rival;
 
         public void PlayBGM(BgmType type)
         {
@@ -242,6 +250,16 @@ namespace InsectGame.Core
             ApplyVolumes();
         }
 
+        /// <summary>
+        /// BGM·환경음을 잠깐 낮춘다(전면 영상 재생 등). <paramref name="factor"/> 1이면 원복.
+        /// 크로스페이드 중이면 그 코루틴이 자기 목표값(더킹 반영)으로 끝내므로 여기서 억지로 잡지 않는다.
+        /// </summary>
+        public void SetBgmDuck(float factor)
+        {
+            bgmDuck = Mathf.Clamp01(factor);
+            if (crossfadeCoroutine == null) ApplyVolumes();
+        }
+
         // ── SFX ──
 
         public void PlaySFX(SfxType type)
@@ -284,7 +302,7 @@ namespace InsectGame.Core
             AudioSource oldSrc = useSecondaryAmbient ? ambientSource2 : ambientSource;
             useSecondaryAmbient = !useSecondaryAmbient;
 
-            float targetVol = masterVolume * bgmVolume * 0.4f;
+            float targetVol = masterVolume * bgmVolume * bgmDuck * 0.4f;
             newSrc.clip = clip;
             newSrc.volume = 0f;
             newSrc.Play();
@@ -397,13 +415,13 @@ namespace InsectGame.Core
         private void ApplyVolumes()
         {
             if (bgmSource != null)
-                bgmSource.volume = masterVolume * bgmVolume;
+                bgmSource.volume = masterVolume * bgmVolume * bgmDuck;
             if (sfxSource != null)
                 sfxSource.volume = masterVolume * sfxVolume;
             if (ambientSource != null)
-                ambientSource.volume = masterVolume * bgmVolume * 0.4f;
+                ambientSource.volume = masterVolume * bgmVolume * bgmDuck * 0.4f;
             if (ambientSource2 != null)
-                ambientSource2.volume = masterVolume * bgmVolume * 0.4f;
+                ambientSource2.volume = masterVolume * bgmVolume * bgmDuck * 0.4f;
         }
 
         private IEnumerator CrossfadeBGM(AudioClip newClip, float duration)
@@ -425,7 +443,7 @@ namespace InsectGame.Core
             bgmSource.Play();
 
             // 페이드 인
-            float targetVolume = masterVolume * bgmVolume;
+            float targetVolume = masterVolume * bgmVolume * bgmDuck;
             elapsed = 0f;
             while (elapsed < duration * 0.5f)
             {
@@ -517,6 +535,8 @@ namespace InsectGame.Core
                 case BgmType.ExploreNameless: return "explore_nameless";
                 case BgmType.BossLedger: return "boss_ledger";
                 case BgmType.BossFinal: return "boss_final";
+                case BgmType.Guardian: return "guardian";
+                case BgmType.Rival: return "rival";
                 default: return "explore";
             }
         }
@@ -573,6 +593,19 @@ namespace InsectGame.Core
             if (clip == null) clip = GetOrCreateSfxClip(SfxType.SkillUse);
             if (clip != null)
                 sfxSource.PlayOneShot(clip, masterVolume * sfxVolume);
+        }
+
+        /// <summary>
+        /// 전투 중 곤충 울음·비명 — 키는 <c>cry_계열</c>/<c>hurt_계열</c>(계열 분류는 BattleShout.CryFor).
+        /// 효과음보다 살짝 작게 — 타격음을 덮으면 "맞았다"가 흐려진다.
+        /// </summary>
+        public void PlayCry(string key)
+        {
+            EnsureInitialized();
+            if (string.IsNullOrEmpty(key)) return;
+            AudioClip clip = ProceduralAudioGenerator.GetSFX(key);
+            if (clip != null)
+                sfxSource.PlayOneShot(clip, masterVolume * sfxVolume * 0.8f);
         }
 
         private static string ElementToString(InsectGame.Data.InsectElement element)

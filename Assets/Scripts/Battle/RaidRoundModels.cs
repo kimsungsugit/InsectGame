@@ -81,6 +81,22 @@ namespace InsectGame.Battle
         public int Damage { get; internal set; }
         public int Healing { get; internal set; }
         public bool Missed { get; internal set; }
+        /// <summary>
+        /// 이 행동의 피해가 치명타(×<c>GameConstants.Battle.CritMultiplier</c>)였다. 리졸버가 치명타 줄기를 받았을 때만
+        /// 켜질 수 있다 — 피해기(리더·서포트 스킬 피해, 지원 공격, 보스 단일·전체 공격)만, 합체공격·독·버프·회복·기절은 아니다.
+        /// </summary>
+        public bool Critical { get; internal set; }
+        /// <summary>
+        /// 이 행동이 쓴 기술(<see cref="Skill"/>)이 <b>시전자의 전용기</b>였다(<see cref="SignatureSkills.IsSignature"/> — 1대1과 같은 기준).
+        /// 팀원은 그 곤충, 보스는 <b>지금 모습</b>(<c>CombatData</c>)의 learnset으로 잰다. 빗나가도 true다(전용기를 꺼낸 것 자체가 연출거리).
+        /// 기술이 없는 행동(지원 공격·합체공격·기술 없는 보스 공격)은 false.
+        /// </summary>
+        public bool IsSignature { get; internal set; }
+        /// <summary>
+        /// 피해가 <b>들어간</b> 상성 등급(<see cref="ElementMatchup.Describe"/>). 팀 → 보스는 보스의 지금 모습, 보스 단일 공격은 맞은 팀원으로 잰다.
+        /// 피해기가 아니거나 빗나갔거나 상성을 안 타는 공격(보스 전체공격·독 일괄딜)이면 <see cref="Matchup.Neutral"/>.
+        /// </summary>
+        public Matchup Matchup { get; internal set; }
         public bool KnockedOut { get; internal set; }
         // 버프·디버프가 스택 상한(GameConstants.Battle.MaxBuffStacks)에 걸려 값이 바뀌지 않았음.
         // 턴은 이미 소비됐으므로 UI가 "이미 최대치"를 알려야 한다.

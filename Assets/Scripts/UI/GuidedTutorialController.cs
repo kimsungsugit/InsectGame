@@ -19,7 +19,8 @@ namespace InsectGame.UI
             // q_approach("곤충에게 다가가 E 키로 포획해보세요!")는 사용자 요청으로 제거 — 그 강제 배너/프리즈 미표시.
             // 퀘스트 진행 자체는 TutorialQuestManager가 처리하므로 안내만 빠지고 흐름은 유지된다.
             { "q_battle", "야생 곤충에게 B 키로 배틀을 걸어보세요!" },
-            { "q_team", "T 키로 배틀 팀을 편성하세요!" },
+            // q_team(팀 편성)은 「둘러보기」 서브 과제로 옮겨졌다 — 서브는 활성화 이벤트가 없어 강제 가이드에
+            // 걸리지도 않고, 걸려서도 안 된다(안 해도 되는 일로 화면을 막지 않는다).
         };
 
         private string activeGuidedQuestId;   // 현재 가이드 중인 questId (없으면 null)
@@ -121,11 +122,30 @@ namespace InsectGame.UI
         {
             if (!IsGuiding) return;
             if (ModalUIRegistry.IsAnyOpen()) return;   // 다른 모달 위로 안 겹치게
+            if (DreamPrologueState.Active) return;     // 꿈 밖의 안내가 꿈속에 비치지 않게(다시 보기는 가이드 중에도 열린다)
+            if (YieldsNow(HudFrame.Current)) return;
 
             UIScale.Begin();
             InitStyles();
             DrawCoach();
             UIScale.End();
+        }
+
+        /// <summary>
+        /// 코치 배너가 지금 비켜서는가 — 가운데 무대에 선 카드와 겹치거나(<see cref="HudStage.OccupiedOver"/>), 섬 안내 배너가 같은 자리에
+        /// 섰거나, 대화 버튼·동굴 입구 버튼이 이 배너와 겹치는 자리에 섰을 때. 배너는 행동 안내라 버튼·카드에 자리를 내준다
+        /// (가이드는 퀘스트를 마칠 때까지 남아 있어 잠깐 비켜도 다시 뜬다).
+        /// </summary>
+        private static bool YieldsNow(HudFrame f)
+        {
+            Rect coach = CoachRect(f);
+            if (HudStage.OccupiedOver(coach)) return true;
+            if (HudPresence.IsShowing(HudPresenceItem.IslandGuide)) return true;
+            if (HudPresence.IsShowing(HudPresenceItem.Talk) && coach.Overlaps(WorldInteractionController.TalkRect(f)))
+                return true;
+            if (HudPresence.IsShowing(HudPresenceItem.Nearby) && coach.Overlaps(WorldFieldMultiplayerUI.NearbyRect(f)))
+                return true;
+            return HudPresence.IsShowing(HudPresenceItem.Gate) && coach.Overlaps(SubAreaWorldBuilder.GateRect(f));
         }
 
         private void InitStyles()
@@ -140,14 +160,37 @@ namespace InsectGame.UI
             hintStyle.normal.textColor = new Color(0.8f, 0.9f, 1f);
         }
 
+        /// <summary>코치 배너의 윗변 — 안전 영역 위에서 이만큼(상단 리전 배너·알림 아래).</summary>
+        public const float CoachTopOffset = 150f;
+        public const float CoachHeight = 100f;
+        public const float CoachMaxWidth = 720f;
+
+        /// <summary>
+        /// 코치 배너의 자리 — <b>순수 계산</b>. <b>데스크톱</b>은 위쪽 가운데(리전 배너·내기 점수판 아래, ContentTop+150).
+        /// <b>모바일</b>은 섬 안내 배너와 같은 가운데 줄(세로 59%·가로 64%, 캐릭터 발밑) — 위쪽은 세로 화면에서 미니맵·단축 바가
+        /// 양옆을 차지해 폭 720 배너가 둘 다 덮었다. 가로 모바일의 퀘스트 칩(<see cref="QuestChipLayout"/>)은 데스크톱 띠 높이 아래에 선다.
+        /// </summary>
+        public static Rect CoachRect(HudFrame f)
+        {
+            if (!f.Mobile)
+            {
+                float availW = f.Width - f.SafeLeft - f.SafeRight;
+                float w = Mathf.Min(CoachMaxWidth, availW - 24f);
+                return new Rect(f.SafeLeft + (availW - w) * 0.5f, f.ContentTop + CoachTopOffset, w, CoachHeight);
+            }
+            float mw = Mathf.Min(CoachMaxWidth, f.ContentWidth);
+            float y = Mathf.Clamp(f.Height * (f.Portrait ? 0.59f : 0.64f), f.ContentTop, f.ContentBottom - CoachHeight);
+            return new Rect(f.ContentLeft + (f.ContentWidth - mw) * 0.5f, y, mw, CoachHeight);
+        }
+
         private void DrawCoach()
         {
-            // 상단 중앙 코치 배너 — 펄스 강조. 가이드 중엔 숨길 수 없음(강제).
-            float availW = UIScale.VirtualScreenWidth - UIScale.VirtualSafeLeft - UIScale.VirtualSafeRight;
-            float w = Mathf.Min(720f, availW - 24f);
-            float h = 100f;
-            float x = UIScale.VirtualSafeLeft + (availW - w) * 0.5f;
-            float y = UISafeLayout.ContentTop + 150f;   // 상단 리전 배너(ContentTop)·알림 아래
+            // 코치 배너 — 펄스 강조. 가이드 중엔 숨길 수 없음(강제). 자리는 CoachRect(순수 계산).
+            Rect coach = CoachRect(HudFrame.Current);
+            float w = coach.width;
+            float h = coach.height;
+            float x = coach.x;
+            float y = coach.y;
 
             float pulse = 0.5f + 0.5f * Mathf.Sin(Time.time * 3f);
             GUI.color = new Color(0.1f, 0.08f, 0.02f, 0.9f);

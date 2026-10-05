@@ -741,6 +741,7 @@ namespace InsectGame.Tests
             RaidBattleController controller =
                 controllerObject.AddComponent<RaidBattleController>();
             controller.SetRandomSource(random ?? new FixedRaidRandomSource());
+            controller.SetCritSource(null);   // 치명타는 별개 줄기 — 피해를 정확히 단언하므로 끈다
 
             int[] levels = Enumerable.Repeat(10, teamData.Length).ToArray();
             InsectSkill[][] skills = new InsectSkill[teamData.Length][];

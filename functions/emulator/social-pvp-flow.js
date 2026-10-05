@@ -80,6 +80,152 @@ async function callApiExpectError(user, action, expectedError, values = {}) {
   const body = await response.json();
   assert.equal(response.ok, false, `${action} should fail`);
   assert.equal(body.error, expectedError);
+  return response.status;
+}
+
+// 클라이언트(JsonUtility)는 액션과 무관하게 섬 요청의 다섯 필드를 전부 보낸다.
+function islandRequest(values = {}) {
+  return { island: "", isPublic: false, friendCode: "", targetUid: "", ...values };
+}
+
+const ISLAND_INFO_KEYS = [
+  "ownerUid", "ownerName", "friendCode", "isPublic", "likes", "visits",
+  "likedByMe", "updatedAtMs", "snapshot",
+];
+
+// 섬 공유 — 차단 구간 전까지. player1이 주인, player2가 방문자다.
+async function islandFlow(owner, visitor, ownerProfile) {
+  const empty = await callApi(owner, "getMyIsland", islandRequest());
+  assert.deepEqual(Object.keys(empty.island), ISLAND_INFO_KEYS);
+  assert.deepEqual(empty.island, {
+    ownerUid: owner.uid, ownerName: ownerProfile.displayName, friendCode: ownerProfile.friendCode,
+    isPublic: false, likes: 0, visits: 0, likedByMe: false, updatedAtMs: 0, snapshot: "",
+  });
+  assert.equal(await callApiExpectError(visitor, "getIsland", "island_not_found",
+    islandRequest({ targetUid: owner.uid })), 400);
+  assert.equal(await callApiExpectError(visitor, "getIsland", "island_not_found",
+    islandRequest({ friendCode: ownerProfile.friendCode })), 400);
+
+  assert.equal(await callApiExpectError(owner, "publishIsland", "island_invalid",
+    islandRequest({ isPublic: true })), 400);
+  await callApiExpectError(owner, "publishIsland", "island_invalid",
+    islandRequest({ island: "{not json", isPublic: true }));
+  await callApiExpectError(owner, "publishIsland", "island_invalid",
+    islandRequest({ island: "[]", isPublic: true }));
+  await callApiExpectError(owner, "publishIsland", "island_invalid",
+    islandRequest({ island: JSON.stringify({ pad: "x".repeat(48000) }), isPublic: true }));
+  await callApiExpectError(owner, "publishIsland", "island_invalid", { island: { sizeLevel: 1 }, isPublic: true });
+
+  const island = JSON.stringify({
+    version: 7,
+    ownerName: "가짜 이름",
+    sizeLevel: 2,
+    comfort: 120,
+    placed: [
+      { id: "f_bench", x: -3, z: 2, rot: 0 },
+      { id: "Bad-Id", x: 0, z: 0, rot: 0 },
+      { id: "f_lamp", x: 99, z: -99, rot: -1, extra: true },
+    ],
+    insects: [
+      { insectId: "stag_beetle", level: 12, shiny: false },
+      { insectId: "morpho", level: 500, shiny: true },
+    ],
+  });
+  const expectedSnapshot = {
+    version: 1,
+    sizeLevel: 2,
+    comfort: 120,
+    placed: [
+      { id: "f_bench", x: -3, z: 2, rot: 0 },
+      { id: "f_lamp", x: 15, z: -16, rot: 3 },
+    ],
+    insects: [
+      { insectId: "stag_beetle", level: 12, shiny: false },
+      { insectId: "morpho", level: 80, shiny: true },
+    ],
+  };
+
+  const hidden = await callApi(owner, "publishIsland", islandRequest({ island, isPublic: false }));
+  assert.deepEqual(Object.keys(hidden.island), ISLAND_INFO_KEYS);
+  assert.equal(hidden.island.isPublic, false);
+  assert.equal(hidden.island.ownerName, ownerProfile.displayName);
+  assert.equal(hidden.island.snapshot, "");
+  assert.ok(hidden.island.updatedAtMs > 0);
+  assert.equal(await callApiExpectError(visitor, "getIsland", "island_private",
+    islandRequest({ targetUid: owner.uid })), 409);
+  assert.equal(await callApiExpectError(visitor, "likeIsland", "island_private",
+    islandRequest({ targetUid: owner.uid })), 409);
+  const ownView = await callApi(owner, "getIsland", islandRequest({ targetUid: owner.uid }));
+  assert.equal(ownView.island.visits, 0, "the owner's own visit is not counted");
+  assert.deepEqual(JSON.parse(ownView.island.snapshot), expectedSnapshot);
+
+  const shown = await callApi(owner, "publishIsland", islandRequest({ island, isPublic: true }));
+  assert.equal(shown.island.isPublic, true);
+
+  assert.equal(await callApiExpectError(visitor, "getIsland", "island_target_required",
+    islandRequest({ targetUid: "  ", friendCode: " " })), 400);
+  await callApiExpectError(visitor, "getIsland", "island_not_found", islandRequest({ friendCode: "ZZZZZZZZ" }));
+  await callApiExpectError(visitor, "getIsland", "island_not_found", islandRequest({ targetUid: "no/such/uid" }));
+
+  // 빈 targetUid + 소문자·공백 섞인 친구 코드.
+  const visit1 = await callApi(visitor, "getIsland",
+    islandRequest({ friendCode: ` ${ownerProfile.friendCode.toLowerCase()} ` }));
+  assert.deepEqual(Object.keys(visit1.island), ISLAND_INFO_KEYS);
+  assert.equal(visit1.island.ownerUid, owner.uid);
+  assert.equal(visit1.island.ownerName, ownerProfile.displayName);
+  assert.equal(visit1.island.friendCode, ownerProfile.friendCode);
+  assert.equal(visit1.island.visits, 1);
+  assert.equal(visit1.island.likes, 0);
+  assert.equal(visit1.island.likedByMe, false);
+  assert.deepEqual(JSON.parse(visit1.island.snapshot), expectedSnapshot);
+
+  assert.equal(await callApiExpectError(visitor, "likeIsland", "island_target_required",
+    islandRequest({ friendCode: ownerProfile.friendCode })), 400);
+  assert.equal(await callApiExpectError(owner, "likeIsland", "cannot_like_self",
+    islandRequest({ targetUid: owner.uid })), 400);
+  await callApiExpectError(visitor, "likeIsland", "island_not_found", islandRequest({ targetUid: visitor.uid + "x" }));
+  const liked = await callApi(visitor, "likeIsland", islandRequest({ targetUid: owner.uid }));
+  assert.deepEqual(Object.keys(liked.island), ISLAND_INFO_KEYS);
+  assert.equal(liked.island.likes, 1);
+  assert.equal(liked.island.likedByMe, true);
+  assert.equal(liked.island.snapshot, "");
+  assert.equal(await callApiExpectError(visitor, "likeIsland", "already_liked_today",
+    islandRequest({ targetUid: owner.uid })), 409);
+
+  // targetUid와 friendCode가 둘 다 있으면 targetUid가 이긴다.
+  const visit2 = await callApi(visitor, "getIsland",
+    islandRequest({ targetUid: owner.uid, friendCode: "ZZZZZZZZ" }));
+  assert.equal(visit2.island.visits, 2);
+  assert.equal(visit2.island.likes, 1);
+  assert.equal(visit2.island.likedByMe, true);
+
+  // 다시 올려도 likes/visits는 그대로다.
+  const republished = await callApi(owner, "publishIsland", islandRequest({ island, isPublic: true }));
+  assert.equal(republished.island.likes, 1);
+  assert.equal(republished.island.visits, 2);
+  assert.ok(republished.island.updatedAtMs >= shown.island.updatedAtMs);
+  const mine = await callApi(owner, "getMyIsland", islandRequest());
+  assert.equal(mine.island.isPublic, true);
+  assert.equal(mine.island.likes, 1);
+  assert.equal(mine.island.visits, 2);
+  assert.equal(mine.island.likedByMe, false);
+  assert.equal(mine.island.snapshot, "");
+}
+
+// 프로필을 동기화한 적 없는 계정도 섬을 올리고 친구 코드로 찾힌다.
+async function islandWithoutProfileFlow(visitor, stamp) {
+  const loner = await signUp(`island-loner-${stamp}@example.test`);
+  const mine = await callApi(loner, "getMyIsland", islandRequest());
+  assert.match(mine.island.friendCode, /^[A-F0-9]{8}$/);
+  assert.equal(mine.island.ownerName, "탐험가");
+  await callApi(loner, "publishIsland", islandRequest({ island: "{}", isPublic: true }));
+  const visit = await callApi(visitor, "getIsland", islandRequest({ friendCode: mine.island.friendCode }));
+  assert.equal(visit.island.ownerUid, loner.uid);
+  assert.equal(visit.island.ownerName, "탐험가");
+  assert.deepEqual(JSON.parse(visit.island.snapshot),
+    { version: 1, sizeLevel: 0, comfort: 0, placed: [], insects: [] });
+  const deleted = await callApi(loner, "deleteIsland", islandRequest());
+  assert.deepEqual(deleted, { success: true });
 }
 
 async function main() {
@@ -193,6 +339,9 @@ async function main() {
   assert.equal(board.leaderboard.length, 6);
   assert.ok(board.leaderboard[0].rating >= board.leaderboard[1].rating);
 
+  await islandFlow(player1, player2, synced1.profile);
+  await islandWithoutProfileFlow(player2, stamp);
+
   await callApi(player1, "blockUser", { targetUid: player2.uid });
   const blockedSocial = await callApi(player1, "getSocial");
   assert.equal(blockedSocial.blockedUsers.length, 1);
@@ -203,9 +352,32 @@ async function main() {
   await callApiExpectError(player2, "challengeWorldPlayer", "user_blocked", {
     targetUid: player1.uid,
   });
+  assert.equal(await callApiExpectError(player2, "getIsland", "user_blocked",
+    islandRequest({ targetUid: player1.uid })), 409);
+  await callApiExpectError(player2, "getIsland", "user_blocked",
+    islandRequest({ friendCode: synced1.profile.friendCode }));
+  await callApiExpectError(player2, "likeIsland", "user_blocked",
+    islandRequest({ targetUid: player1.uid }));
   await callApi(player1, "unblockUser", { targetUid: player2.uid });
   const unblockedSocial = await callApi(player1, "getSocial");
   assert.equal(unblockedSocial.blockedUsers.length, 0);
+
+  // 차단 중 거부된 방문은 세지 않았다(2 → 3). 삭제는 likes까지 지워 같은 날 다시 누를 수 있다.
+  const afterUnblock = await callApi(player2, "getIsland", islandRequest({ targetUid: player1.uid }));
+  assert.equal(afterUnblock.island.visits, 3);
+  assert.deepEqual(await callApi(player1, "deleteIsland", islandRequest()), { success: true });
+  await callApiExpectError(player2, "getIsland", "island_not_found", islandRequest({ targetUid: player1.uid }));
+  await callApiExpectError(player2, "likeIsland", "island_not_found", islandRequest({ targetUid: player1.uid }));
+  const clearedIsland = await callApi(player1, "getMyIsland", islandRequest());
+  assert.equal(clearedIsland.island.isPublic, false);
+  assert.equal(clearedIsland.island.likes, 0);
+  assert.equal(clearedIsland.island.visits, 0);
+  assert.equal(clearedIsland.island.updatedAtMs, 0);
+  await callApi(player1, "publishIsland", islandRequest({ island: "{}", isPublic: true }));
+  const likedAgain = await callApi(player2, "likeIsland", islandRequest({ targetUid: player1.uid }));
+  assert.equal(likedAgain.island.likes, 1);
+  await callApi(player1, "deleteIsland", islandRequest());
+  await callApi(player1, "deleteIsland", islandRequest());
   await callApi(player1, "leaveWorld", { worldId: joined1.world.worldId });
   await callApi(player2, "leaveWorld", { worldId: joined1.world.worldId });
   for (const player of extraPlayers) {
@@ -224,6 +396,7 @@ async function main() {
     proximityChat: "passed",
     fieldBattle: "passed",
     blockEnforcement: "passed",
+    islandShare: "passed",
     ratings: [final1.profile.rating, final2.profile.rating],
   }, null, 2));
 }

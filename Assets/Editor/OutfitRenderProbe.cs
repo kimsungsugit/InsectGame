@@ -58,6 +58,9 @@ namespace InsectGame.EditorTools
             UnityEditor.SceneManagement.EditorSceneManager.OpenScene(
                 ScenePath, UnityEditor.SceneManagement.OpenSceneMode.Single);
             SessionState.SetString(StageKey, outDir);
+            // 플레이 모드 진입의 도메인 리로드가 static을 지운다 — 스위치도 outDir처럼 넘긴다.
+            SessionState.SetBool(StageKey + ".All", galleryAll);
+            SessionState.SetBool(StageKey + ".Looks", galleryLooks);
             EditorApplication.EnterPlaymode();
         }
 
@@ -70,6 +73,8 @@ namespace InsectGame.EditorTools
 
             SessionState.EraseString(StageKey);
             outDir = stage;
+            galleryAll = SessionState.GetBool(StageKey + ".All", false);
+            galleryLooks = SessionState.GetBool(StageKey + ".Looks", false);
             failures = 0;
             shots = 0;
             Report.Length = 0;
@@ -141,7 +146,117 @@ namespace InsectGame.EditorTools
                 yield return ProbeItem(id, baseline);
             }
 
+            if (galleryAll) yield return GalleryAll();
+            if (galleryLooks) yield return GalleryLooks();
+
             CleanupRig();
+        }
+
+        // ── 갤러리(판정 없음, 눈으로 보는 용도) ──
+        //
+        // 위 표본 판정은 "그려지는가"만 본다. 의상·외형을 **고칠 때는** 전후를 같은 조명·구도로
+        // 나란히 봐야 한다 — 그래서 카탈로그 전량과 외형 조합을 한 실행에 찍는 모드를 둔다.
+        // 파일명 접두사(g_·look_)로 표본 컷과 갈라 두어 시트를 만드는 스크립트가 고르기 쉽게 한다.
+
+        private static bool galleryAll;
+        private static bool galleryLooks;
+
+        /// <summary>새 계정이 처음 입는 조합 — CharacterOutfitManager.LoadEquipment의 기본 장착과 같다.</summary>
+        private static OutfitLoadout StarterLoadout()
+        {
+            OutfitLoadout lo = new OutfitLoadout();
+            lo.Set(OutfitSlot.Hat, "hat_cap");
+            lo.Set(OutfitSlot.Top, "top_shirt");
+            lo.Set(OutfitSlot.Bottom, "bot_pants");
+            lo.Set(OutfitSlot.Outerwear, "outer_jacket");
+            lo.Set(OutfitSlot.Shoes, "shoe_boots");
+            lo.Set(OutfitSlot.Backpack, "bag_basic");
+            lo.Set(OutfitSlot.Tool, "tool_net");
+            lo.Set(OutfitSlot.Accessory, "acc_none");
+            return lo;
+        }
+
+        /// <summary>
+        /// 카탈로그 전량을 기본 복장 위에 한 벌씩 입혀 앞(3/4)·뒤(3/4) 두 컷. 실제 플레이어가 보는 건
+        /// 맨몸 위의 한 벌이 아니라 **다른 옷과 섞인 모습**이라 기본 복장을 바탕으로 깐다.
+        /// </summary>
+        private static IEnumerator GalleryAll()
+        {
+            CharacterOutfitManager mgr = CharacterOutfitManager.Instance;
+            OutfitSlot[] slots = (OutfitSlot[])Enum.GetValues(typeof(OutfitSlot));
+            for (int s = 0; s < slots.Length; s++)
+            {
+                OutfitItem[] items = mgr.GetItemsForSlot(slots[s]);
+                for (int i = 0; i < items.Length; i++)
+                {
+                    OutfitLoadout lo = StarterLoadout();
+                    lo.Set(slots[s], items[i].itemId);
+                    string stem = string.Format("g_{0}_{1:00}_{2}", (int)slots[s], i, items[i].itemId);
+                    yield return Shoot(lo, stem + "_a", _ => { }, CharacterModelPreviewRenderer.FrontYaw - 25f);
+                    yield return Shoot(lo, stem + "_b", _ => { }, 35f);
+                    // 상의는 겉옷을 벗은 모습도 — 자켓을 입으면 앞섶 사이 판으로만 보이고, 벗으면 몸통 전체가 된다.
+                    if (slots[s] == OutfitSlot.Top)
+                    {
+                        lo.Set(OutfitSlot.Outerwear, "outer_none");
+                        yield return Shoot(lo, stem + "_t", _ => { }, CharacterModelPreviewRenderer.FrontYaw - 25f);
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// 외형 조합 — 성별 × 머리 모양(모자 벗김), 성별 × 얼굴형, 피부색, 머리색.
+        /// 마네킹을 외형마다 다시 짓는다(외형은 빌드 시점에 굳는다 — 실제 게임도 RebuildFromPrefs로 다시 짓는다).
+        /// </summary>
+        private static IEnumerator GalleryLooks()
+        {
+            OutfitLoadout lo = StarterLoadout();
+            lo.Set(OutfitSlot.Hat, "hat_none");
+
+            for (int g = 0; g < 2; g++)
+                for (int h = 0; h < 4; h++)
+                    yield return ShootLook(new AppearanceSpec { gender = g, hairStyle = h }, lo,
+                        string.Format("look_hair_g{0}_h{1}", g, h));
+
+            for (int g = 0; g < 2; g++)
+                for (int f = 0; f < 4; f++)
+                    yield return ShootLook(new AppearanceSpec { gender = g, faceType = f, hairStyle = 1 }, lo,
+                        string.Format("look_face_g{0}_f{1}", g, f));
+
+            for (int k = 0; k < CharacterPalette.SkinCount; k++)
+                yield return ShootLook(new AppearanceSpec { gender = k % 2, skinColor = k, hairStyle = 1 }, lo,
+                    string.Format("look_skin_{0}", k));
+
+            for (int c = 0; c < CharacterPalette.HairCount; c++)
+                yield return ShootLook(new AppearanceSpec { gender = c % 2, hairColor = c, hairStyle = 2 }, lo,
+                    string.Format("look_haircol_{0}", c));
+
+            // 머리 × 모자 — 모자 선 위로 솟는 머리(HairCrown)가 덮는 모자에선 숨고 열린 모자(머리띠·바이저)에선
+            // 남는지, 긴 머리가 챙을 뚫지 않는지.
+            string[] hats = { "hat_cap", "hat_straw", "hat_military", "hat_butterfly_wing", "hat_cyber_visor" };
+            int[,] looks = { { 0, 3 }, { 1, 3 }, { 1, 2 } };   // (성별, 머리)
+            for (int k = 0; k < looks.GetLength(0); k++)
+            {
+                for (int i = 0; i < hats.Length; i++)
+                {
+                    OutfitLoadout withHat = StarterLoadout();
+                    withHat.Set(OutfitSlot.Hat, hats[i]);
+                    yield return ShootLook(new AppearanceSpec { gender = looks[k, 0], hairStyle = looks[k, 1] }, withHat,
+                        string.Format("look_hat_g{0}_h{1}_{2}", looks[k, 0], looks[k, 1], hats[i]));
+                }
+            }
+        }
+
+        private static IEnumerator ShootLook(AppearanceSpec spec, OutfitLoadout lo, string stem)
+        {
+            if (mannequin != null) UnityEngine.Object.Destroy(mannequin);
+            mannequin = null;
+            yield return null;                          // Destroy는 프레임 끝 — 새 몸과 한 컷에 겹치지 않게
+            BuildMannequin(spec);
+            yield return null;
+            yield return Shoot(lo, stem + "_a", _ => { }, CharacterModelPreviewRenderer.FrontYaw - 20f);
+            yield return Shoot(lo, stem + "_face", _ => { }, CharacterModelPreviewRenderer.FrontYaw - 20f, headOnly: true);
+            yield return Shoot(lo, stem + "_b", _ => { }, 35f);
         }
 
         /// <summary>
@@ -206,16 +321,19 @@ namespace InsectGame.EditorTools
 
         // ── 리그 ──
 
-        private static void BuildRig()
+        private static void BuildMannequin(AppearanceSpec spec)
         {
-            AppearanceSpec spec = AppearanceSpec.FromPlayerPrefs();
-
             GameObject go = new GameObject("OutfitProbeMannequin");
             go.SetActive(false);                       // Awake 억제 — PlayerPrefs 외형으로 먼저 지어지지 않게
             go.transform.position = RigOrigin;
             go.AddComponent<PlayerVisualBuilder>().BuildForPreview(spec);
             go.SetActive(true);
             mannequin = go;
+        }
+
+        private static void BuildRig()
+        {
+            BuildMannequin(AppearanceSpec.FromPlayerPrefs());
 
             GameObject camGo = new GameObject("OutfitProbeCam");
             camGo.transform.rotation = Quaternion.Euler(6f, 0f, 0f);
@@ -245,7 +363,8 @@ namespace InsectGame.EditorTools
         }
 
         /// <summary>의상을 입히고 한 장 찍어 PNG로 남긴다. 픽셀 배열도 돌려줘 비교에 쓴다.</summary>
-        private static IEnumerator Shoot(OutfitLoadout loadout, string name, Action<byte[]> onDone)
+        private static IEnumerator Shoot(OutfitLoadout loadout, string name, Action<byte[]> onDone,
+            float yaw = CharacterModelPreviewRenderer.FrontYaw, bool headOnly = false)
         {
             CharacterOutfitManager mgr = CharacterOutfitManager.Instance;
             if (mgr != null) mgr.ApplyToCharacter(mannequin, loadout);
@@ -253,18 +372,23 @@ namespace InsectGame.EditorTools
             // 회전 0°는 **뒤통수**다(캐릭터가 +Z를 향하고 카메라는 −Z에 있다).
             // 안경·아이패치 같은 얼굴 파츠는 그 각도에서 보이지 않으므로 정면으로 돌린다 —
             // CharacterModelPreviewRenderer가 같은 이유로 FrontYaw를 둔다.
-            mannequin.transform.rotation =
-                Quaternion.Euler(0f, CharacterModelPreviewRenderer.FrontYaw, 0f);
+            mannequin.transform.rotation = Quaternion.Euler(0f, yaw, 0f);
 
             // 레시피가 새로 만든 spawn 파츠는 레이어가 0이라 여기서 다시 칠하지 않으면 안 잡힌다
             // (CharacterModelPreviewRenderer가 같은 이유로 같은 일을 한다).
             SetLayerRecursive(mannequin, ProbeLayer);
             yield return null;
 
-            // 마네킹 전체가 프레임에 들어오게
-            Bounds b = new Bounds(mannequin.transform.position, Vector3.one);
+            // 마네킹 전체가 프레임에 들어오게(headOnly면 머리만)
+            Transform frameRoot = mannequin.transform;
+            if (headOnly)
+            {
+                Transform head = OutfitShapeLibrary.FindDeep(mannequin.transform, "HeadPivot");
+                if (head != null) frameRoot = head;
+            }
+            Bounds b = new Bounds(frameRoot.position, Vector3.one);
             bool any = false;
-            foreach (Renderer r in mannequin.GetComponentsInChildren<Renderer>(false))
+            foreach (Renderer r in frameRoot.GetComponentsInChildren<Renderer>(false))
             {
                 if (r == null) continue;
                 if (!any) { b = r.bounds; any = true; }
@@ -348,6 +472,12 @@ namespace InsectGame.EditorTools
             string[] args = Environment.GetCommandLineArgs();
             for (int i = 0; i < args.Length - 1; i++)
                 if (args[i] == "-outfitOut") outDir = args[i + 1];
+            // 스위치는 값을 안 받으므로 마지막 인자까지 본다.
+            for (int i = 0; i < args.Length; i++)
+            {
+                if (args[i] == "-outfitAll") galleryAll = true;
+                if (args[i] == "-outfitLooks") galleryLooks = true;
+            }
         }
 
         private static void Log(string msg) { Debug.Log("[OUTFIT-PROBE] " + msg); }

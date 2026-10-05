@@ -100,6 +100,37 @@ namespace InsectGame.UI
         public Color gradeC = new Color(0.3f, 0.8f, 0.3f);
         public Color gradeD = new Color(0.6f, 0.6f, 0.6f);
 
+        // 기술 효과 종류별 색 — 1v1 배틀·레이드·훈련소가 같은 기술을 같은 색으로 칠한다.
+        // 예전엔 BattleScreenUI와 RaidBattleUI.Draw가 같은 7색을 각자 들고 있었고, 훈련소는 3색만 알아서
+        // 회복·기절·독·방어 기술이 회색 레일에 "ATK DOWN"으로 적혔다.
+        [Header("Skill Effect")]
+        public Color skillDamage = new Color(0.9f, 0.35f, 0.3f);
+        public Color skillBuff = new Color(0.3f, 0.8f, 0.4f);
+        public Color skillDebuff = new Color(0.7f, 0.4f, 0.9f);
+        public Color skillHeal = new Color(0.35f, 0.92f, 0.62f);
+        public Color skillDefense = new Color(0.35f, 0.68f, 1f);
+        public Color skillStun = new Color(1f, 0.86f, 0.25f);
+        public Color skillPoison = new Color(0.68f, 0.35f, 0.88f);
+
+        private void OnEnable() => SynchronizeLegacyTokens();
+        private void OnValidate() => SynchronizeLegacyTokens();
+        private void SynchronizeLegacyTokens()
+        {
+            panelBg = surfaceBase;
+            panelHeaderBg = surfaceRaised;
+            tabNormal = surfaceCard;
+            tabSelected = accentCoral;
+            btnPrimary = accentMint;
+            btnSecondary = surfaceRaised;
+            btnDanger = accentCoral;
+            btnDisabled = surfaceBorder;
+            titleColor = textPrimary;
+            labelColor = textPrimary;
+            coinColor = accentAmber;
+            accentColor = accentCoral;
+            bonusColor = accentMint;
+        }
+
         public Color GetInsectRarityColor(InsectRarity rarity)
         {
             switch (rarity)
@@ -149,6 +180,28 @@ namespace InsectGame.UI
             float val = 0.7f + (int)rarity * 0.06f;
 
             return Color.HSVToRGB(hue, Mathf.Clamp01(sat), Mathf.Clamp01(val));
+        }
+
+        /// <summary>HP 막대 색 — 절반 위 민트, 20% 위 앰버, 그 아래 코랄. 배틀팀·포획 출전 창이 같은 기준을 쓴다.</summary>
+        public Color GetHpColor(float ratio)
+        {
+            if (ratio > 0.5f) return accentMint;
+            return ratio > 0.2f ? accentAmber : accentCoral;
+        }
+
+        public Color GetSkillColor(SkillEffectType type)
+        {
+            switch (type)
+            {
+                case SkillEffectType.Damage: return skillDamage;
+                case SkillEffectType.BuffAttack: return skillBuff;
+                case SkillEffectType.DebuffAttack: return skillDebuff;
+                case SkillEffectType.Heal: return skillHeal;
+                case SkillEffectType.DefenseBuff: return skillDefense;
+                case SkillEffectType.Stun: return skillStun;
+                case SkillEffectType.PoisonDot: return skillPoison;
+                default: return textMuted;
+            }
         }
 
         public Color GetGradeColor(IVGrade grade)

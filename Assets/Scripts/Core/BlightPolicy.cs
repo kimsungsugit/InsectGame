@@ -45,11 +45,11 @@ namespace InsectGame.Core
         public const float DrainBrightness = 0.62f;
 
         /// <summary>
-        /// 이 리전의 동시 출현 상한. 오염이면 <see cref="ScarcityDivisor"/>로 나누되
+        /// 이 리전의 곤충 수 상한. 오염이면 <see cref="ScarcityDivisor"/>로 나누되
         /// <see cref="MinActive"/> 아래로는 내려가지 않는다.
         ///
-        /// <paramref name="baseMax"/>를 상수로 가정하지 않는다 — 스포너의 기본값은 10이고
-        /// <c>ApplyTuning</c>이 프로파일 값으로 덮는다.
+        /// <paramref name="baseMax"/>를 상수로 가정하지 않는다 — 스포너는 리전마다 설 수 있는 땅 × 밀도로 정한
+        /// 슬롯 수(<c>FieldSpawnRules.SlotCountFor</c>, 8~40)를 넘긴다.
         /// </summary>
         public static int MaxActiveFor(bool blighted, int baseMax)
         {
@@ -59,9 +59,8 @@ namespace InsectGame.Core
             // 하한을 그대로 돌려주면 <b>오염된 리전이 멀쩡한 리전보다 곤충이 많아진다</b> —
             // 줄이는 정책이 늘리는 정책이 된다. baseMax=1에서 실제로 2를 돌려주고 있었다.
             //
-            // 도달 가능한 값이다: <c>GameplayTuningProfile.maxActivePerRegion</c>이
-            // <c>[Range(1, 15)]</c>라 인스펙터에서 1을 넣을 수 있고,
-            // <c>InsectSpawner.ApplyTuning</c>이 <c>Mathf.Max(1, …)</c>로 그대로 받는다.
+            // 당시엔 도달 가능한 값이었다(튜닝 프로파일 maxActivePerRegion이 [Range(1, 15)]).
+            // 지금 스포너는 8 이상을 넘기지만 정의역 전체에서 지키는 규칙이라 그대로 둔다.
             return Mathf.Min(baseMax, Mathf.Max(MinActive, baseMax / ScarcityDivisor));
         }
 

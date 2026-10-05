@@ -15,6 +15,30 @@ namespace InsectGame.Tests
     [TestFixture]
     public class RaidCameraFramingTests
     {
+        [Test]
+        public void BossMarker_IsGroundRing_NotAnEnclosingOpaqueSurface()
+        {
+            var root = new GameObject("BossMarkerTest");
+            try
+            {
+                var arena = root.AddComponent<BattleArenaController>();
+                var boss = new GameObject("Boss");
+                boss.transform.SetParent(root.transform);
+                boss.transform.position = new Vector3(0f, 2f, 0f);
+                boss.transform.localScale = Vector3.one * 2f;
+                typeof(BattleArenaController).GetMethod("CreateBossAura",
+                    System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+                    .Invoke(arena, new object[] { boss.transform });
+                var marker = boss.transform.Find("BossAura");
+                Assert.IsNotNull(marker);
+                Assert.IsNull(marker.GetComponent<MeshRenderer>(), "A closed surface must not cover the boss.");
+                LineRenderer ring = marker.GetComponent<LineRenderer>();
+                Assert.IsTrue(ring.loop);
+                for (int i = 0; i < ring.positionCount; i++)
+                    Assert.AreEqual(0.055f, marker.TransformPoint(ring.GetPosition(i)).y, 0.001f);
+            }
+            finally { Object.DestroyImmediate(root); }
+        }
         // 실제 아레나 배치(BattleArenaController.SetupRaidBattle)와 같은 상대 좌표.
         private static readonly Vector3 TeamPos = new Vector3(0f, 0.5f, -2f);
         private static readonly Vector3 BossPos = new Vector3(0f, 2.2f, 3f);

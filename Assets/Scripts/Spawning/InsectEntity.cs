@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using InsectGame.Data;
 using UnityEngine;
 
@@ -10,9 +10,12 @@ namespace InsectGame.Spawning
         [SerializeField] private int level = 1;
 
         private Action<InsectEntity> onDespawn;
-        private SpawnPoint ownerPoint;
+        // 소속 리전(필드 곤충). 서브에리어·배틀·수문장 개체는 빈 문자열.
+        private string regionId = string.Empty;
         private float bobPhase;
         private Vector3 basePosition;
+        // basePosition 자리의 둔덕 윗면(FieldGround.SurfaceY) — 이동 중 높이를 그 자리 지면만큼 오르내리는 기준(GroundRise)
+        private float baseSurfaceY = Core.FieldGround.FloorY;
         private float wingPhase;
         private bool shiny;
         private bool erased;   // 「지워진 개체」 — IsErased 요약 참조
@@ -42,6 +45,9 @@ namespace InsectGame.Spawning
         private float alertGraceTimer;        // 경계 직후 도주 유예(반응 시간 보장)
         private Vector3 fleeDir;
         private float fleeTimer;
+        // 도주로 갈 수 있는 수평 거리와 지금까지 간 거리 — 장애물 앞에서 멈추게 한다(FleePath 주석).
+        private float fleeAllowed;
+        private float fleeTravelled;
         private bool engaged;                 // 포획 상호작용 중 — 절대 도주 안 함
         // 플레이어 추적(전 곤충 공유, 프레임당 1회 계산)
         private static Transform cachedPlayer;
@@ -51,9 +57,72 @@ namespace InsectGame.Spawning
         // 아이템 도주 방지 확률 제공자 — 부트스트랩이 세팅(itemEffects.GetFleePreventChance). null이면 0(방지 없음).
         // InsectEntity는 풀링 객체라 AutoWire/provider 참조가 없어 static 훅으로 주입.
         public static System.Func<float> FleePreventChanceProvider;
+
+        // ── 습격(AmbushRules) ──
+        // 깨어 있는 습격형은 플레이어를 알아채면 달아나는 대신 멈칫 → 다가간다. 경계·도주와 같은 칸(alertState)을 쓴다 —
+        // 3이 습격이고 IsAlerted가 참이라 스포너가 그동안 거두거나 바꾸지 않는다. CanBeEngaged의 뜻은 그대로다(다가오는 중에도 [E]로 말을 걸 수 있다).
+        private const int AmbushState = 3;
+        private bool ambusherSpecies;     // 이 종이 습격형인가 — 몸을 지을 때 한 번 정한다(온순한 종은 판정을 묻지도 않는다)
+        private float ambushReadyTime;    // 이 몸이 다시 습격할 수 있는 시각(Time.time) — 개체 쿨다운(AmbushRules.EntityCooldownSeconds)
+        private float ambushHesitate;     // 남은 멈칫(초). 0 이하면 다가가는 중
+        private float ambushChaseTime;    // 다가간 시간(기다린 시간 제외)
+        private float ambushReplanTimer;
+        private float ambushStuckTime;
+        private float ambushSide = 1f;
+        private Vector3 ambushDir;
+        private float ambushLegAllowed;
+        private float ambushLegTravelled;
+        private bool ambushAnnounced;
+        // 풀 더미가 서 있는 자리 — 습격으로 몸이 자리를 옮겨도(RebaseHere) 풀은 처음 자리에 남는다.
+        private Vector3 grassAnchor;
+
+        // 도주가 나갈 수 없는 구역 — (출발점, 방향) → 그 방향으로 구역 안에서 갈 수 있는 거리(m). null이면 제약 없음(필드).
+        // 섬 손님 곤충이 쓴다(SetFleeArea): 물리 측정은 벽·건물만 보고 "빈 칸"을 모르므로, 그대로 두면 꽃밭 너머·섬 가장자리 너머로 달아난다.
+        private Func<Vector3, Vector3, float> fleeArea;
+
+        /// <summary>
+        /// 습격 판정 — 이 곤충이 지금 습격할 수 있는가(막혔다면 까닭). <c>CaptureInputController</c>가 세운다. 풀 객체라 AutoWire가 없어
+        /// <see cref="FleePreventChanceProvider"/>와 같은 static 훅이다. <b>null이면 습격이 없다</b> — 모든 곤충이 예전처럼 달아나기만 한다.
+        /// </summary>
+        public static Func<InsectEntity, AmbushRefusal> AmbushGate;
+
+        /// <summary>습격형이 멈칫을 끝내고 발을 뗐다 — 필드 경고 문구가 듣는다.</summary>
+        public static event Action<InsectEntity> AmbushStarted;
+
+        /// <summary>
+        /// 습격형이 플레이어에게 닿았다 — 받는 쪽이 「습격!」 창을 연다(<c>SetEngaged(true)</c>). 아무도 안 열면 이 곤충은 맴돌지 않고 물러난다.
+        /// </summary>
+        public static event Action<InsectEntity> AmbushReached;
+
         private bool despawnedThisCycle; // Despawn 다중 호출 가드 (Battle/Capture 동시 호출 시 풀 중복 반환 차단)
         // 수문장 표식 — 기본은 빈 문자열(야생). 풀 재사용마다 반드시 지운다(GuardianRegionId 주석 참조).
         private string guardianRegionId = string.Empty;
+        // 몸을 새로 지을 때마다 오르는 번호 — SpawnSerial 요약 참조.
+        private int spawnSerial;
+        private static int nextSpawnSerial;
+
+        /// <summary>
+        /// 필드 곤충이 「색다른 개체」로 나올 확률. 스포너가 슬롯에 개체를 들일 때 한 번 굴려 기록한다 —
+        /// 몸을 다시 세울 때마다 굴리면 멀어졌다 돌아온 같은 곤충의 색이 바뀐다. (gacha_sim이 이 상수를 읽는다.)
+        /// </summary>
+        internal const float FieldShinyChance = 0.01f;
+
+        // 도주 경로 측정 — 도주를 시작할 때만 쏜다(매 프레임이 아니다). 전 곤충이 한 스레드에서 번갈아 쓰므로 정적 버퍼 하나로 족하다.
+        /// <summary>
+        /// 이번 퇴장이 놓침 도주의 끝인가(<see cref="Despawn"/> 직전에 선다). 스포너가 본다 — 도주는 개체가 죽은 게 아니라
+        /// 달아난 것이라, 자리를 비우고 1~2분 기다리는 대신 같은 개체를 플레이어 눈 밖 다른 자리로 옮긴다.
+        /// </summary>
+        internal bool Fled => fled;
+        private bool fled;
+
+        // NonAlloc 결과는 거리순이 아니다 — 버퍼가 차면 가장 가까운 벽이 빠졌을 수 있어 그 방향은 막힌 것으로 친다.
+        private static readonly RaycastHit[] fleeProbeHits = new RaycastHit[32];
+        private static Vector3 fleeProbeOrigin;
+        private static Func<Vector3, float> fleeClearanceProbe;
+        private static Func<Vector3, float> approachClearanceProbe;   // 습격 접근용(울타리 층 포함) — 한 번만 묶는다
+        /// <summary>도주 경로 측정 높이(발 위 m)와 굵기 — 낮은 풀·돌턱은 넘고 벽·줄기·바위 옆면에는 걸린다.</summary>
+        private const float FleeProbeHeight = 0.6f;
+        private const float FleeProbeRadius = 0.3f;
 
         // Camera.main은 매 호출마다 FindGameObjectWithTag — 최대 20마리×매 프레임 핫패스 회피.
         private static Camera cachedMainCam;
@@ -101,17 +170,39 @@ namespace InsectGame.Spawning
         /// </summary>
         public bool CanBeEngaged =>
             (!forBattle || IsGuardian) && !engaged && alertState != 2 && !despawnedThisCycle;
-        public SpawnPoint OwnerPoint => ownerPoint;
-        public string RegionId => ownerPoint != null ? ownerPoint.regionId : string.Empty;
+        /// <summary>소속 리전 ID(필드 곤충). 서브에리어·배틀·수문장 개체는 빈 문자열.</summary>
+        public string RegionId => regionId;
+
+        /// <summary>포획·전투에 붙잡혀 있는가. 스포너는 이 개체를 거두거나 바꾸지 않는다.</summary>
+        public bool IsEngaged => engaged;
+
+        /// <summary>플레이어를 알아챘거나(경계) 달아나는 중인가. 스포너가 수명 교체를 미룬다.</summary>
+        public bool IsAlerted => alertState != 0;
+
+        /// <summary>
+        /// 습격 중인가(멈칫해 노려보거나 다가오는 중). 연출(경계 포즈·붉은 기운)이 읽을 자리다 — 모양·색은 visual-dev 영역이라 여기서 칠하지 않는다.
+        /// </summary>
+        public bool IsAmbushing => alertState == AmbushState;
+
+        /// <summary>이 몸의 습격 쿨다운이 끝날 때까지 남은 시간(초, 0 이상).</summary>
+        public float AmbushCooldownLeft => AmbushRules.Remaining(Time.time, ambushReadyTime);
+
+        /// <summary>
+        /// 몸을 지을 때마다(<see cref="Initialize(InsectData,int,string,Action{InsectEntity},bool,bool)"/>·
+        /// <see cref="BuildForBattle"/>) 새로 붙는 번호. 풀 객체는 같은 참조가 다른 개체로 되살아나므로,
+        /// 참조를 쥔 쪽(지도 레이드 마커)이 "아직 그 개체인가"를 이걸로 묻는다 — 활성 여부만 보면
+        /// 한 프레임 안에 거뒀다 다시 꺼낸 몸을 옛 개체로 착각한다.
+        /// </summary>
+        public int SpawnSerial => spawnSerial;
 
         /// <summary>
         /// 이 개체가 <b>어느 리전의 수문장인가</b>. 수문장이 아니면 빈 문자열이다.
         ///
         /// <b>왜 좌표가 아니라 정체성인가.</b> 예전엔 격파 판정이 "수문장 자리에서 15m 안이었나"를
-        /// 봤는데, 그 반경은 야생 스폰이 그대로 들어온다 — <c>InsectSpawner.RelocateSpawnPoints</c>가
-        /// 현재 리전 포인트를 <b>플레이어로부터 10~43m</b> 나선 위로 끌어오고, 거기서 다시
-        /// <c>SpawnPoint.radius</c>(5m)만큼 흩어진다. 최근접 스폰이 플레이어에서 5m다.
-        /// 수문장과 싸우려면 그 앞에 서야 하니 <b>야생이 반경 안에 들어오는 건 우연이 아니라 구조</b>고,
+        /// 봤는데, 그 반경은 야생 스폰이 그대로 들어왔다 — 당시 스포너는 현재 리전 스폰 포인트를
+        /// <b>플레이어로부터 10~43m</b> 나선 위로 끌어오고 거기서 다시 5m만큼 흩었다. 최근접 스폰이 플레이어에서 5m였다.
+        /// 지금은 야생이 리전 원판 전체에 흩어져 기록되지만(<c>FieldPopulation</c>) 수문장 앞이라고 비켜 두지 않으니
+        /// <b>야생이 반경 안에 들어오는 건 여전히 구조</b>고,
         /// 13곳 중 9곳은 수문장 종이 자기 리전 야생 풀에도 있어 종·레벨 조건까지 함께 맞는다.
         ///
         /// 그래서 "그 자리였나"가 아니라 <b>"바로 그 개체였나"</b>를 묻는다. 수문장은
@@ -128,16 +219,35 @@ namespace InsectGame.Spawning
             guardianRegionId = string.IsNullOrEmpty(regionId) ? string.Empty : regionId;
         }
 
+        /// <summary>
+        /// 색다름·지워짐을 여기서 굴려 세운다 — 기록 없이 한 번 쓰고 마는 개체용(옛 진입점, 테스트).
+        /// 필드 곤충은 스포너가 슬롯에 굴려 둔 값을 넘기는 아래 오버로드를 쓴다.
+        /// </summary>
         public void Initialize(InsectData insectData, int insectLevel, SpawnPoint point,
             Action<InsectEntity> despawnCallback, float erasedChance = 0f)
         {
+            bool rolledShiny = UnityEngine.Random.value < FieldShinyChance;
+            // 지워진 개체 — 확률은 스폰너가 리전에서 정해 넘긴다(여기에 리전 목록을 두지 않는다).
+            bool rolledErased = erasedChance > 0f && UnityEngine.Random.value < erasedChance;
+            Initialize(insectData, insectLevel, point != null ? point.regionId : null, despawnCallback,
+                rolledShiny, rolledErased);
+        }
+
+        /// <summary>
+        /// <b>기록된 개체를 그대로</b> 세운다 — 종·레벨·색다름·지워짐을 굴리지 않는다. 스포너가 슬롯(<c>FieldSlot</c>)에
+        /// 적어 둔 값을 넘기므로, 멀어졌다 돌아와 몸을 다시 세워도 같은 곤충이다. 자리는 호출 전에 옮겨 둔다
+        /// (<c>transform.position</c>이 곧 배회·풀 더미의 기준 <c>basePosition</c>이 된다).
+        /// </summary>
+        public void Initialize(InsectData insectData, int insectLevel, string homeRegionId,
+            Action<InsectEntity> despawnCallback, bool isShiny, bool isErased)
+        {
             data = insectData;
             level = insectLevel;
-            ownerPoint = point;
+            regionId = homeRegionId ?? string.Empty;
             onDespawn = despawnCallback;
-            shiny = UnityEngine.Random.value < 0.01f; // 1% 확률 색다른 곤충
-            // 지워진 개체 — 확률은 스폰너가 리전에서 정해 넘긴다(여기에 리전 목록을 두지 않는다).
-            erased = erasedChance > 0f && UnityEngine.Random.value < erasedChance;
+            shiny = isShiny;
+            erased = isErased;
+            spawnSerial = ++nextSpawnSerial;
             // 풀 재사용 회귀 방지: BuildForBattle에서 true로 설정된 forBattle이 남아있으면
             // 다음 Update에서 회전 안 하는 정적 곤충이 됨. 매 Initialize마다 명시적 false.
             forBattle = false;
@@ -154,9 +264,16 @@ namespace InsectGame.Spawning
             nameLabelResolved = false;
             alertState = 0;
             fleeTimer = 0f;
+            fleeAllowed = 0f;
+            fleeTravelled = 0f;
             engaged = false;
             despawnedThisCycle = false;
+            fled = false;
             guardianRegionId = string.Empty;   // 풀에서 왔다면 직전 개체의 표식을 물려받지 않는다
+            // 습격 — 풀에서 왔다면 직전 개체의 쿨다운·쫓기를 물려받지 않는다. 종이 습격형인지는 여기서 한 번만 본다.
+            ResetAmbush();
+            ambusherSpecies = data != null && InsectHabits.For(data).Temperament == InsectTemperament.Ambusher;
+            fleeArea = null;                   // 풀 재사용 — 섬 손님이던 몸이 필드에서 섬 경계를 물려받지 않게
 
             ClearChildren();
             BuildModel();
@@ -166,6 +283,8 @@ namespace InsectGame.Spawning
             float scale = GetRarityScale();
             transform.localScale = Vector3.one * scale;
             basePosition = transform.position;
+            grassAnchor = basePosition;
+            baseSurfaceY = Core.FieldGround.SurfaceY(basePosition.x, basePosition.z);
             bobPhase = UnityEngine.Random.Range(0f, Mathf.PI * 2f);
             wingPhase = UnityEngine.Random.Range(0f, Mathf.PI * 2f);
         }
@@ -179,6 +298,8 @@ namespace InsectGame.Spawning
             // 풀 재사용 회귀 방지 — 명시하지 않으면 직전 개체의 erased가 남아 도감 프리뷰까지 검게 나온다.
             erased = erasedOverride;
             forBattle = true;
+            regionId = string.Empty;
+            spawnSerial = ++nextSpawnSerial;
             cachedNameLabel = null;
             cachedShinySparkle = null;
             cachedShinyShift = -1f;
@@ -191,13 +312,20 @@ namespace InsectGame.Spawning
             nameLabelResolved = false;
             alertState = 0;
             fleeTimer = 0f;
+            fleeAllowed = 0f;
+            fleeTravelled = 0f;
             engaged = false;
             despawnedThisCycle = false;
+            fled = false;
             guardianRegionId = string.Empty;   // 풀에서 왔다면 직전 개체의 표식을 물려받지 않는다
+            ResetAmbush();
+            ambusherSpecies = false;           // 아레나·전시·수문장 몸은 덤벼들지 않는다
+            fleeArea = null;
 
             ClearChildren();
             BuildModel();
             basePosition = transform.position;
+            grassAnchor = basePosition;
             bobPhase = UnityEngine.Random.Range(0f, Mathf.PI * 2f);
             wingPhase = UnityEngine.Random.Range(0f, Mathf.PI * 2f);
         }
@@ -247,19 +375,18 @@ namespace InsectGame.Spawning
         private void UpdateMovement()
         {
             float t = Time.time;
-            if (forBattle)
-            {
-                // 배틀: 전투 포즈 유지 — 가벼운 상하만(회전·드리프트·경계 없음)
-                float bs = 1.6f + (bobPhase % 1.5f);
-                transform.position = basePosition + new Vector3(0f, Mathf.Sin(t * bs + bobPhase) * 0.25f, 0f);
-                return;
-            }
+            // The arena owns battle root translation and rotation (lunge, recoil,
+            // grounded idle). Wing animation still runs separately in Update.
+            if (forBattle) return;
 
             EnsureMoveStyle();
             UpdatePlayerTracking();
             float dt = Time.deltaTime;
 
             // ===== 도주 진행 (이동 방식별로 다른 도주 모션) =====
+            // 도주는 1.1초에 최대 8m를 간다 — 높이를 스폰 자리(basePosition.y)에 묶어 두면 사구·재 더미를 지날 때 몸이
+            // 둔덕 속에 묻히고, 둔덕 위에서 내려오면 허공에 뜬다. 세 모션 모두 지금 자리 지면만큼 오르내린다(GroundRise).
+            // 수평으로는 도주를 시작할 때 잰 거리(fleeAllowed)까지만 간다 — 벽·건물·줄기를 뚫지 않고 그 앞에 멈춘다(BeginFlee).
             if (alertState == 2)
             {
                 fleeTimer -= dt;
@@ -267,8 +394,8 @@ namespace InsectGame.Spawning
                 if (cachedMoveStyle == 1)
                 {
                     // 비행: 날개로 날아오르며 멀어짐 — 점점 고도 상승(하늘로 사라짐)
-                    Vector3 p = transform.position + fleeDir * 7.5f * dt;
-                    p.y = basePosition.y + 0.55f + elapsed * 2.8f;
+                    Vector3 p = transform.position + FleeStep(7.5f * dt);
+                    p.y = basePosition.y + GroundRise(baseSurfaceY, p.x, p.z) + 0.55f + elapsed * 2.8f;
                     transform.position = p;
                     FaceFlee(dt, 8f);
                 }
@@ -277,21 +404,28 @@ namespace InsectGame.Spawning
                     // 점프: 큰 포물선 도약으로 튀어 달아남 — 공중에 뜬 동안 더 멀리, 착지 땐 멈칫
                     float ph = (elapsed % 0.45f) / 0.45f;
                     float hop = Mathf.Sin(ph * Mathf.PI);
-                    Vector3 p = transform.position + fleeDir * (6.5f * (0.3f + hop)) * dt;
-                    p.y = basePosition.y + hop * 0.75f;
+                    Vector3 p = transform.position + FleeStep(6.5f * (0.3f + hop) * dt);
+                    p.y = basePosition.y + GroundRise(baseSurfaceY, p.x, p.z) + hop * 0.75f;
                     transform.position = p;
                     FaceFlee(dt, 11f);
                 }
                 else
                 {
                     // 기어다님: 지면에 낮게 빠르게 허둥지둥
-                    Vector3 p = transform.position + fleeDir * 6.0f * dt;
-                    p.y = basePosition.y + 0.05f + Mathf.Abs(Mathf.Sin(elapsed * 24f)) * 0.07f;
+                    Vector3 p = transform.position + FleeStep(6.0f * dt);
+                    p.y = basePosition.y + GroundRise(baseSurfaceY, p.x, p.z) + 0.05f + Mathf.Abs(Mathf.Sin(elapsed * 24f)) * 0.07f;
                     transform.position = p;
                     FaceFlee(dt, 12f);
                 }
                 AnchorGrass();
-                if (fleeTimer <= 0f) Despawn(); // 놓침 — 사라짐
+                if (fleeTimer <= 0f) { fled = true; Despawn(); } // 놓침 — 눈앞에서 사라짐(스포너가 개체를 다른 자리로 옮긴다)
+                return;
+            }
+
+            // ===== 습격 진행 — 멈칫 → 다가가기(AmbushRules). 붙잡히면(engaged) 아래 경계 분기가 받는다 =====
+            if (alertState == AmbushState && !engaged)
+            {
+                UpdateAmbush(dt, t);
                 return;
             }
 
@@ -304,6 +438,12 @@ namespace InsectGame.Spawning
             if (engaged)
             {
                 alertState = 1; // 포획 중 — 경계 포즈 유지, 도주 분기 진입 안 함
+            }
+            else if (ambusherSpecies && dist < AmbushRules.NoticeRadius && TryBeginAmbush())
+            {
+                // 깨어 있는 습격형 — 달아나지 않고 덤벼든다. 판정이 막으면(잠잠·쿨다운·싸울 곤충 없음 등) 아래로 내려가 온순한 곤충처럼 군다.
+                UpdateAmbush(dt, t);
+                return;
             }
             else if (dist < alertR)
             {
@@ -323,10 +463,7 @@ namespace InsectGame.Spawning
                     }
                     else
                     {
-                        alertState = 2;
-                        Vector3 away = transform.position - cachedPlayer.position; away.y = 0f;
-                        fleeDir = away.sqrMagnitude > 0.01f ? away.normalized : Vector3.forward;
-                        fleeTimer = 1.1f;
+                        BeginFlee(transform.position - cachedPlayer.position);
                         return;
                     }
                 }
@@ -380,13 +517,28 @@ namespace InsectGame.Spawning
                 rotSpeed = 8f;
             }
 
-            transform.position = basePosition + offset;
+            Vector3 pos = basePosition + offset;
+            // 수평으로 떠도는 건 비행 드리프트(±0.55m)·경계 떨림뿐이다 — 재 더미 가장자리(턱 0.33m)에서는 그만큼으로도
+            // 둔덕 속을 드나든다. 제자리 모션(기어다님·점프)은 xz가 0이라 둔덕 조회를 건너뛴다.
+            if (offset.x != 0f || offset.z != 0f)
+                pos.y += GroundRise(baseSurfaceY, pos.x, pos.z);
+            transform.position = pos;
             if (rotSpeed > 0f)
                 transform.Rotate(Vector3.up, rotSpeed * Time.deltaTime, Space.World);
 
+            // 오르내린 지면만큼은 마커도 따라간다 — 상쇄는 모션 높이(offset.y)만(마커는 발밑 지면에 붙는다)
             AnchorGroundMarker(offset.y);
             AnchorGrass();
         }
+
+        /// <summary>
+        /// (x, z) 지면이 스폰 자리 지면(<paramref name="baseSurfaceY"/>)보다 얼마나 높은가(m, 음수면 낮다). 둔덕은 콜라이더가
+        /// 없어 <see cref="Core.FieldGround"/>에 묻는다 — 스폰(<c>InsectSpawner.PickSpawnPosition</c>)과 같은 지면이다.
+        /// 서브에리어는 (2000,·,2000) 너머라 둔덕이 없어 늘 0이다. 스폰 자리가 둔덕 밖 콜라이더(물가 바위 등) 위였다면
+        /// 그 높이는 옛날처럼 이동 내내 유지된다 — 콜라이더를 매 프레임 쏘지 않는다.
+        /// </summary>
+        internal static float GroundRise(float baseSurfaceY, float x, float z)
+            => Core.FieldGround.SurfaceY(x, z) - baseSurfaceY;
 
         // 이동 스타일 1회 판정(캐시): grasshopper/cricket/katydid=점프, WingL 보유=비행, 그 외=일반.
         // 지상 곤충(기어다님/점프)은 풀숲 은신 더미 생성(비행 곤충은 공중이라 제외).
@@ -408,8 +560,14 @@ namespace InsectGame.Spawning
         // 진입 시 인내심·유예 리셋 → 포획 취소 직후 즉시 도망가지 않게(관대).
         public void SetEngaged(bool value)
         {
+            bool wasEngaged = engaged;
+            // 다가오던 몸이 붙잡혔다(습격 창·[E]·아이 NPC) — 지금 자리를 기준으로 삼는다. 안 그러면 경계 포즈(basePosition 기준)가
+            // 몸을 스폰 자리로 순간이동시킨다(창 뒤에서, 그리고 전투 아레나가 그 자리를 적 위치로 읽는다).
+            if (value && alertState == AmbushState) RebaseHere();
             engaged = value;
             if (value) { alertState = 1; patience = 2.6f; alertGraceTimer = 0.6f; }
+            // 풀려났다(포획 창 취소·습격 도망 등) — 한동안 덤벼들지 않는다. 창을 닫자마자 바로 옆에서 다시 닿지 않게.
+            else if (wasEngaged) ambushReadyTime = Mathf.Max(ambushReadyTime, Time.time + AmbushRules.EntityCooldownSeconds);
         }
 
         public void ScareAway()
@@ -417,13 +575,277 @@ namespace InsectGame.Spawning
             if (!CanBeEngaged) return;
 
             UpdatePlayerTracking();
-            alertState = 2;
-            Vector3 away = cachedPlayer != null
+            BeginFlee(cachedPlayer != null
                 ? transform.position - cachedPlayer.position
-                : transform.forward;
-            away.y = 0f;
-            fleeDir = away.sqrMagnitude > 0.01f ? away.normalized : Vector3.forward;
+                : transform.forward);
+        }
+
+        /// <summary>
+        /// 도주를 시작한다 — 도주가 시작되는 두 곳(인내 소진·<see cref="ScareAway"/>)이 함께 쓴다.
+        ///
+        /// 플레이어 반대쪽부터 좌우로 벌려 가며 몸 높이에서 장애물을 재고(<see cref="FleePath.Choose"/>) 뚫린 방향을 고른다.
+        /// 다 막혔으면 가장 멀리 가는 쪽으로 <b>장애물 앞까지만</b> 간다. 곤충은 몸 콜라이더가 없어 물리가 막아 주지
+        /// 않으므로 여기서 재지 않으면 벽·건물·바위·나무 줄기, 서브에리어 방 벽을 그대로 뚫고 나간다.
+        /// 측정은 도주 시작 때 한 번이다(최대 7방향) — 매 프레임 쏘지 않는다.
+        /// </summary>
+        private void BeginFlee(Vector3 away)
+        {
+            alertState = 2;
             fleeTimer = 1.1f;
+            fleeTravelled = 0f;
+            away.y = 0f;
+            if (away.sqrMagnitude <= 0.01f) away = Vector3.forward;
+
+            if (fleeClearanceProbe == null) fleeClearanceProbe = MeasureFleeClearance;
+            fleeProbeOrigin = new Vector3(transform.position.x, basePosition.y + FleeProbeHeight, transform.position.z);
+            float side = UnityEngine.Random.value < 0.5f ? -1f : 1f;
+            Func<Vector3, float> probe = fleeClearanceProbe;
+            if (fleeArea != null)
+            {
+                // 구역이 정해진 몸(섬 손님) — 벽까지의 거리와 구역 끝까지의 거리 중 짧은 쪽. 도주를 시작할 때만 만든다.
+                Func<Vector3, Vector3, float> area = fleeArea;
+                Vector3 origin = fleeProbeOrigin;
+                probe = dir => Mathf.Min(MeasureFleeClearance(dir), area(origin, dir));
+            }
+            fleeDir = FleePath.Choose(away, side, probe, out fleeAllowed);
+        }
+
+        /// <summary>
+        /// 도주가 이 구역 밖으로 나가지 않게 한다 — <paramref name="areaRun"/>은 (출발점, 방향) → 그 방향으로 구역 안에서 갈 수 있는
+        /// 거리(m). 나의 섬 손님 곤충이 "빈 칸 위에서만" 달아나게 쓴다(물리 측정은 벽·건물만 본다). <see cref="Initialize(InsectData,int,string,Action{InsectEntity},bool,bool)"/>와
+        /// <see cref="BuildForBattle"/>이 지우므로 몸을 세운 <b>뒤에</b> 부를 것.
+        /// </summary>
+        public void SetFleeArea(Func<Vector3, Vector3, float> areaRun)
+        {
+            fleeArea = areaRun;
+        }
+
+        /// <summary>
+        /// <c>fleeProbeOrigin</c>에서 <paramref name="dir"/>로 막히지 않고 갈 수 있는 거리(m). 트리거(NPC 몸통·줍기 구)는
+        /// 장애물이 아니고, 곤충·플레이어 몸도 아니다. 위를 향한 면(바닥·바위 윗면)은 올라타는 곳이지 벽이 아니다.
+        /// </summary>
+        private static float MeasureFleeClearance(Vector3 dir) => MeasureClearance(dir, Physics.DefaultRaycastLayers);
+
+        /// <summary>
+        /// 습격 접근용 — 도주 측정과 같되 <b>Ignore Raycast 층도 본다</b>. 울타리 난간 차단(<c>RegionTerrainBuilder.AddRailBlocker</c>)이
+        /// 카메라·탭 레이를 피하려고 그 층에 있어서, 기본 층만 쏘면 플레이어를 향해 울타리를 뚫고 온다. 플레이어 몸도 그 층이지만 아래에서 거른다.
+        /// </summary>
+        private static float MeasureApproachClearance(Vector3 dir) => MeasureClearance(dir, Physics.AllLayers);
+
+        private static float MeasureClearance(Vector3 dir, int layerMask)
+        {
+            float length = FleePath.ProbeLength;
+            int n = Physics.SphereCastNonAlloc(fleeProbeOrigin, FleeProbeRadius, dir, fleeProbeHits, length,
+                layerMask, QueryTriggerInteraction.Ignore);
+            if (n >= fleeProbeHits.Length) return 0f;   // 버퍼가 찼다 — 빠진 충돌 중 벽이 있을 수 있다
+            float nearest = length;
+            for (int i = 0; i < n; i++)
+            {
+                RaycastHit hit = fleeProbeHits[i];
+                Collider c = hit.collider;
+                if (c == null) continue;
+                if (c.GetComponentInParent<InsectEntity>() != null) continue;
+                if (c.GetComponentInParent<Core.PlayerMovement>() != null) continue;
+                // 시작부터 겹친 콜라이더는 거리 0으로 온다 — 그 방향은 막힌 것이다(법선을 믿지 않는다).
+                if (hit.distance > 0f && hit.normal.y > 0.7f) continue;
+                if (hit.distance < nearest) nearest = hit.distance;
+            }
+            return nearest;
+        }
+
+        /// <summary>이번 프레임 도주 이동 — 시작 때 잰 허용 거리를 넘지 않는다(장애물 앞에서 멈춤).</summary>
+        private Vector3 FleeStep(float wanted)
+        {
+            float step = FleePath.StepDistance(wanted, fleeAllowed, fleeTravelled);
+            fleeTravelled += step;
+            return fleeDir * step;
+        }
+
+        // ── 습격(AmbushRules) ──────────────────────────────────────────────
+
+        private void ResetAmbush()
+        {
+            ambushReadyTime = 0f;
+            ambushHesitate = 0f;
+            ambushChaseTime = 0f;
+            ambushReplanTimer = 0f;
+            ambushStuckTime = 0f;
+            ambushLegAllowed = 0f;
+            ambushLegTravelled = 0f;
+            ambushAnnounced = false;
+        }
+
+        /// <summary>
+        /// 깨어 있는 습격형이 플레이어를 알아챘다 — 판정(<see cref="AmbushGate"/>)이 허가하면 습격을 시작한다(멈칫부터).
+        /// 막히면 false — 호출부가 온순한 곤충의 경계·도주로 내려간다.
+        /// </summary>
+        private bool TryBeginAmbush()
+        {
+            if (forBattle || IsGuardian || despawnedThisCycle || cachedPlayer == null) return false;
+            if (Time.time < ambushReadyTime) return false;   // 판정도 보지만, 묻기 전에 싸게 거른다
+            if (AmbushGate == null || AmbushGate(this) != AmbushRefusal.None) return false;
+
+            alertState = AmbushState;
+            ambushHesitate = AmbushRules.HesitateSeconds;
+            ambushChaseTime = 0f;
+            ambushReplanTimer = 0f;
+            ambushStuckTime = 0f;
+            ambushLegAllowed = 0f;
+            ambushLegTravelled = 0f;
+            ambushAnnounced = false;
+            // 한 습격 동안 같은 쪽으로 돌아간다 — 벽 앞에서 좌우로 흔들리지 않게(늘 같은 쪽이면 곤충들이 한쪽으로만 돈다).
+            ambushSide = UnityEngine.Random.value < 0.5f ? -1f : 1f;
+            return true;
+        }
+
+        /// <summary>
+        /// 습격 한 프레임 — 판정을 다시 묻고(대화·메뉴면 기다리고, 그 밖에 막히면 물러난다) 멈칫 → 다가가기 → 닿기.
+        /// 다가가는 길은 <see cref="AmbushRules.ReplanSeconds"/>마다 몸 높이에서 장애물을 재어 고른다 — 곤충은 몸 콜라이더가 없어
+        /// 물리가 막아 주지 않으므로, 재지 않으면 벽·건물·바위·울타리를 그대로 뚫고 온다(도주와 같은 이유).
+        /// </summary>
+        private void UpdateAmbush(float dt, float t)
+        {
+            if (cachedPlayer == null) { GiveUpAmbush(); return; }
+            AmbushRefusal gate = AmbushGate != null ? AmbushGate(this) : AmbushRefusal.NotAwake;
+            if (gate != AmbushRefusal.None)
+            {
+                if (AmbushRules.IsPauseOnly(gate)) HoldAmbushPose(dt, t);   // 대화·메뉴 — 그 자리에서 노려보며 기다린다
+                else GiveUpAmbush();
+                return;
+            }
+
+            Vector3 toPlayer = cachedPlayer.position - transform.position;
+            toPlayer.y = 0f;
+            float planar = toPlayer.magnitude;
+
+            if (ambushHesitate > 0f)
+            {
+                ambushHesitate -= dt;
+                HoldAmbushPose(dt, t);
+                if (AmbushRules.HasReached(planar)) ReachPlayer();   // 멈칫하는 사이 플레이어가 먼저 다가와 닿았다
+                return;
+            }
+
+            if (!ambushAnnounced)
+            {
+                ambushAnnounced = true;
+                RaiseAmbushEvent(AmbushStarted);
+                if (engaged || alertState != AmbushState) return;    // 듣는 쪽이 이 곤충을 붙잡았다
+            }
+
+            if (AmbushRules.HasReached(planar)) { ReachPlayer(); return; }
+
+            ambushChaseTime += dt;
+            if (AmbushRules.ShouldGiveUp(planar, ambushChaseTime)) { GiveUpAmbush(); return; }
+
+            // 길은 일정 간격으로만 다시 잰다. 걸음을 다 써도 바로 재지 않는다 — 막혀서 조금씩만 열리는 곳에서 매 프레임 쏘지 않게.
+            ambushReplanTimer -= dt;
+            if (ambushReplanTimer <= 0f)
+            {
+                PlanAmbushLeg(toPlayer, planar);
+                ambushReplanTimer = AmbushRules.ReplanSeconds;
+            }
+
+            float step = FleePath.StepDistance(AmbushRules.ApproachSpeed * dt, ambushLegAllowed, ambushLegTravelled);
+            ambushLegTravelled += step;
+            if (step <= 1e-4f)
+            {
+                ambushStuckTime += dt;
+                if (ambushStuckTime > AmbushRules.StuckGiveUpSeconds) { GiveUpAmbush(); return; }
+            }
+            else
+            {
+                ambushStuckTime = 0f;
+            }
+
+            Vector3 p = transform.position + ambushDir * step;
+            float hover = AmbushMotionHeight(t, true);
+            p.y = basePosition.y + GroundRise(baseSurfaceY, p.x, p.z) + hover;
+            transform.position = p;
+            if (ambushDir.sqrMagnitude > 0.01f)
+                transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.LookRotation(ambushDir), dt * 10f);
+            AnchorGroundMarker(hover);
+            AnchorGrass();
+        }
+
+        /// <summary>이번 걸음의 방향과 거리를 잰다 — 몸 높이(지금 자리 지면 + <see cref="FleeProbeHeight"/>)에서 플레이어 쪽부터.</summary>
+        private void PlanAmbushLeg(Vector3 toPlayer, float planar)
+        {
+            if (approachClearanceProbe == null) approachClearanceProbe = MeasureApproachClearance;
+            Vector3 pos = transform.position;
+            fleeProbeOrigin = new Vector3(pos.x, basePosition.y + GroundRise(baseSurfaceY, pos.x, pos.z) + FleeProbeHeight, pos.z);
+            ambushDir = AmbushRules.ChooseApproach(toPlayer, planar, ambushSide, approachClearanceProbe, out ambushLegAllowed);
+            ambushLegTravelled = 0f;
+        }
+
+        /// <summary>
+        /// 멈칫·기다림 — 지금 자리에서 고개를 들고 떨며 플레이어를 노려본다. 높이는 경계 포즈와 같고, 기준은 스폰 자리가 아니라
+        /// <b>지금 자리</b>다(다가오던 도중에 멈춰도 제자리로 튀지 않는다).
+        /// </summary>
+        private void HoldAmbushPose(float dt, float t)
+        {
+            Vector3 p = transform.position;
+            float hover = AmbushMotionHeight(t, false);
+            p.y = basePosition.y + GroundRise(baseSurfaceY, p.x, p.z) + hover + Mathf.Sin(t * 27f) * 0.02f;
+            transform.position = p;
+            if (cachedPlayer != null)
+            {
+                Vector3 look = cachedPlayer.position - p;
+                look.y = 0f;
+                if (look.sqrMagnitude > 0.01f)
+                    transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.LookRotation(look), dt * 8f);
+            }
+            AnchorGroundMarker(hover);
+            AnchorGrass();
+        }
+
+        /// <summary>습격 중 몸 높이(지면 위 m). 노려볼 때는 경계 포즈 높이, 다가올 때는 날것은 떠서·뛰는 것은 뛰며·기는 것은 낮게 빠르게.</summary>
+        private float AmbushMotionHeight(float t, bool approaching)
+        {
+            if (cachedMoveStyle == 1) return 0.55f + Mathf.Sin(t * 5f) * (approaching ? 0.12f : 0.18f);
+            if (!approaching) return 0.34f + Mathf.Abs(Mathf.Sin(t * 6f)) * 0.06f;
+            if (cachedMoveStyle == 2) return Mathf.Sin(((t % 0.45f) / 0.45f) * Mathf.PI) * 0.6f;
+            return 0.06f + Mathf.Abs(Mathf.Sin(t * 20f)) * 0.06f;
+        }
+
+        /// <summary>
+        /// 닿았다 — 듣는 쪽이 「습격!」 창을 열면 <see cref="SetEngaged"/>로 경계 상태가 된다. 아무도 안 열었으면(창이 다른 일로 막혔다)
+        /// 닿은 채 매 프레임 다시 쏘지 않도록 물러난다.
+        /// </summary>
+        private void ReachPlayer()
+        {
+            RaiseAmbushEvent(AmbushReached);
+            if (!engaged && alertState == AmbushState) GiveUpAmbush();
+        }
+
+        /// <summary>
+        /// 쫓기를 접고 물러난다 — 놓침 도주와 같은 길이다(스포너가 같은 개체를 플레이어 눈 밖 다른 자리로 옮긴다). 다가오며 스폰 자리를
+        /// 떠난 몸을 제자리로 순간이동시키지 않고 치우는 가장 단순한 길이다. 몸에는 쿨다운을 걸어 둔다.
+        /// </summary>
+        private void GiveUpAmbush()
+        {
+            ambushReadyTime = Mathf.Max(ambushReadyTime, Time.time + AmbushRules.EntityCooldownSeconds);
+            alertState = 1;
+            BeginFlee(cachedPlayer != null ? transform.position - cachedPlayer.position : transform.forward);
+        }
+
+        /// <summary>
+        /// 지금 자리를 배회·경계 포즈의 기준으로 삼는다 — 습격으로 스폰 자리를 떠난 몸이 붙잡혔을 때. 높이 기준도 지금 자리 지면으로 옮긴다
+        /// (<see cref="GroundRise"/>가 새 자리에서 0이 되게). 풀 더미는 처음 자리(<c>grassAnchor</c>)에 남는다.
+        /// </summary>
+        private void RebaseHere()
+        {
+            Vector3 p = transform.position;
+            basePosition = new Vector3(p.x, basePosition.y + GroundRise(baseSurfaceY, p.x, p.z), p.z);
+            baseSurfaceY = Core.FieldGround.SurfaceY(p.x, p.z);
+        }
+
+        private void RaiseAmbushEvent(Action<InsectEntity> handler)
+        {
+            if (handler == null) return;
+            // 듣는 쪽이 던져도 이 곤충의 Update가 매 프레임 같은 예외로 멈추지 않게 — 닿기는 물러나기로 정리된다.
+            try { handler(this); }
+            catch (Exception ex) { Debug.LogException(ex); }
         }
 
         // 플레이어 위치/속도 추적 — 프레임당 1회만 계산(전 곤충 공유).
@@ -484,7 +906,7 @@ namespace InsectGame.Spawning
         private void AnchorGrass()
         {
             if (cachedGrass == null) return;
-            cachedGrass.position = basePosition;
+            cachedGrass.position = grassAnchor;
             cachedGrass.rotation = Quaternion.identity;
         }
 
@@ -672,6 +1094,8 @@ namespace InsectGame.Spawning
                 BuildClickBeetle(col, dark);
             else
                 BuildGenericBeetle(col, dark);
+
+            BindWingSurfaces();
         }
 
         private void BuildGenericBeetle(Color body, Color dark)
@@ -685,10 +1109,6 @@ namespace InsectGame.Spawning
             MakePart("Prothorax", PrimitiveType.Sphere, new Vector3(0f, 0.12f, 0.32f), new Vector3(0.5f, 0.34f, 0.32f), dark);
             MakePart("Head", PrimitiveType.Sphere, new Vector3(0f, 0.05f, 0.56f), new Vector3(0.46f, 0.42f, 0.42f), dark);
             MakeEyes(0.68f, 0.13f);
-            MakePart("FrontLegL", PrimitiveType.Capsule, new Vector3(-0.28f, -0.15f, 0.3f), new Vector3(0.06f, 0.22f, 0.06f),
-                dark, Quaternion.Euler(0f, 0f, 25f));
-            MakePart("FrontLegR", PrimitiveType.Capsule, new Vector3(0.28f, -0.15f, 0.3f), new Vector3(0.06f, 0.22f, 0.06f),
-                dark, Quaternion.Euler(0f, 0f, -25f));
             MakeLegs(dark, 3, 0f);
             MakeAntennae(dark, 0.45f);
         }
@@ -718,49 +1138,39 @@ namespace InsectGame.Spawning
             Color jaw = new Color(dark.r * 0.85f + 0.04f, dark.g * 0.72f + 0.03f, dark.b * 0.6f + 0.03f);
             MakePart("Body", PrimitiveType.Sphere, Vector3.zero, new Vector3(0.78f, 0.46f, 1.0f), body);
             MakeTopGloss(Vector3.zero, new Vector3(0.78f, 0.46f, 1.0f), 0.12f);
-            MakePart("Shell", PrimitiveType.Sphere, new Vector3(0f, 0.18f, -0.08f), new Vector3(0.72f, 0.3f, 0.86f), dark);
-            MakePart("ShellLineL", PrimitiveType.Cylinder, new Vector3(-0.14f, 0.26f, -0.08f), new Vector3(0.015f, 0.01f, 0.7f), body);
-            MakePart("ShellLineR", PrimitiveType.Cylinder, new Vector3(0.14f, 0.26f, -0.08f), new Vector3(0.015f, 0.01f, 0.7f), body);
+            MakeSculpture("ShellL", InsectSculptureMeshes.Shape.ElytronLeft, body);
+            MakeSculpture("ShellR", InsectSculptureMeshes.Shape.ElytronRight, body);
             // 각진 전흉(pronotum) — 사슴벌레 특유의 넓적한 가슴판
             MakePart("Pronotum", PrimitiveType.Sphere, new Vector3(0f, 0.14f, 0.42f), new Vector3(0.62f, 0.3f, 0.4f), dark);
             MakePart("Head", PrimitiveType.Sphere, new Vector3(0f, 0.1f, 0.68f), new Vector3(0.42f, 0.32f, 0.4f), dark);
-            // === 큰 집게턱 (좌우 대칭, 3분절 곡선) ===
-            MakePart("MandBaseL", PrimitiveType.Capsule, new Vector3(-0.17f, 0.12f, 0.86f), new Vector3(0.06f, 0.17f, 0.06f),
-                jaw, Quaternion.Euler(72f, 0f, 26f));
-            MakePart("MandBaseR", PrimitiveType.Capsule, new Vector3(0.17f, 0.12f, 0.86f), new Vector3(0.06f, 0.17f, 0.06f),
-                jaw, Quaternion.Euler(72f, 0f, -26f));
-            MakePart("MandMidL", PrimitiveType.Capsule, new Vector3(-0.29f, 0.13f, 1.06f), new Vector3(0.05f, 0.15f, 0.05f),
-                jaw, Quaternion.Euler(82f, 0f, 44f));
-            MakePart("MandMidR", PrimitiveType.Capsule, new Vector3(0.29f, 0.13f, 1.06f), new Vector3(0.05f, 0.15f, 0.05f),
-                jaw, Quaternion.Euler(82f, 0f, -44f));
-            // 안쪽 돌기(이빨) — 사슴벌레 턱 안쪽의 톱니
-            MakePart("MandToothL", PrimitiveType.Capsule, new Vector3(-0.2f, 0.13f, 1.12f), new Vector3(0.03f, 0.08f, 0.03f),
-                jaw, Quaternion.Euler(90f, 0f, -54f));
-            MakePart("MandToothR", PrimitiveType.Capsule, new Vector3(0.2f, 0.13f, 1.12f), new Vector3(0.03f, 0.08f, 0.03f),
-                jaw, Quaternion.Euler(90f, 0f, 54f));
-            // 끝 — 안쪽으로 굽어 마주봄
-            MakePart("MandTipL", PrimitiveType.Capsule, new Vector3(-0.16f, 0.14f, 1.26f), new Vector3(0.04f, 0.13f, 0.04f),
-                jaw, Quaternion.Euler(96f, 0f, 72f));
-            MakePart("MandTipR", PrimitiveType.Capsule, new Vector3(0.16f, 0.14f, 1.26f), new Vector3(0.04f, 0.13f, 0.04f),
-                jaw, Quaternion.Euler(96f, 0f, -72f));
-            MakePart("MandPointL", PrimitiveType.Sphere, new Vector3(-0.07f, 0.14f, 1.34f), Vector3.one * 0.04f, jaw);
-            MakePart("MandPointR", PrimitiveType.Sphere, new Vector3(0.07f, 0.14f, 1.34f), Vector3.one * 0.04f, jaw);
-            MakePart("ClawL", PrimitiveType.Cube, new Vector3(-0.28f, -0.24f, 0.28f), new Vector3(0.05f, 0.08f, 0.11f), dark);
-            MakePart("ClawR", PrimitiveType.Cube, new Vector3(0.28f, -0.24f, 0.28f), new Vector3(0.05f, 0.08f, 0.11f), dark);
+            MakeSculpture("MandBaseL", InsectSculptureMeshes.Shape.StagJawLeft, jaw);
+            MakeSculpture("MandBaseR", InsectSculptureMeshes.Shape.StagJawRight, jaw);
+            foreach (int sign in new[] { -1, 1 })
+                MakeSegment("MandTooth" + (sign < 0 ? "L" : "R"), new Vector3(sign * .29f, .13f, 1.03f),
+                    new Vector3(sign * .16f, .13f, 1.08f), .042f, jaw);
+            // The short front tarsal claws begin at the front feet. The old
+            // cubes floated beneath the face in the gallery's front view.
+            MakeSegment("ClawL", new Vector3(-.46f, -.39f, .344f), new Vector3(-.48f, -.42f, .40f), .018f, dark);
+            MakeSegment("ClawR", new Vector3(.46f, -.39f, .344f), new Vector3(.48f, -.42f, .40f), .018f, dark);
             MakeEyes(0.78f, 0.11f, 0.18f);
             MakeLegs(dark, 3, 0f);
         }
 
         private void BuildButterfly(Color body, Color dark)
         {
+            string id = data != null ? data.insectId ?? "" : "";
             MakePart("Body", PrimitiveType.Capsule, Vector3.zero, new Vector3(0.18f, 0.34f, 0.18f), dark,
                 Quaternion.Euler(90f, 0f, 0f));
+            MakePart("Thorax", PrimitiveType.Sphere, new Vector3(0f, .025f, .19f), new Vector3(.20f, .21f, .26f), dark);
             MakePart("Head", PrimitiveType.Sphere, new Vector3(0f, 0.05f, 0.45f), new Vector3(0.3f, 0.3f, 0.28f), dark);
-            Color wingCol = new Color(body.r, body.g, body.b, 0.85f);
+            float wingAlpha = id.Contains("glasswing") || id.Contains("snowveil") ? .38f : .90f;
+            Color wingCol = new Color(body.r, body.g, body.b, wingAlpha);
             Color wingSpot = new Color(Mathf.Min(1, body.r + 0.3f), Mathf.Min(1, body.g + 0.3f), body.b * 0.5f);
             Color wingEdge = new Color(dark.r, dark.g, dark.b, 0.7f);
-            MakeWing("WingL", new Vector3(-0.5f, 0.1f, 0f), new Vector3(0.7f, 0.02f, 0.6f), wingCol);
-            MakeWing("WingR", new Vector3(0.5f, 0.1f, 0f), new Vector3(0.7f, 0.02f, 0.6f), wingCol);
+            MakeSculpture("WingL", InsectSculptureMeshes.Shape.ButterflyForewing, wingCol,
+                new Vector3(-.49f, .10f, .04f), new Vector3(.90f, 1f, .72f));
+            MakeSculpture("WingR", InsectSculptureMeshes.Shape.ButterflyForewing, wingCol,
+                new Vector3(.49f, .10f, .04f), new Vector3(.90f, 1f, .72f));
             MakePart("SpotL1", PrimitiveType.Sphere, new Vector3(-0.45f, 0.12f, 0.1f), new Vector3(0.15f, 0.02f, 0.15f), wingSpot);
             MakePart("SpotR1", PrimitiveType.Sphere, new Vector3(0.45f, 0.12f, 0.1f), new Vector3(0.15f, 0.02f, 0.15f), wingSpot);
             MakePart("SpotL2", PrimitiveType.Sphere, new Vector3(-0.55f, 0.12f, 0f), new Vector3(0.12f, 0.02f, 0.12f), wingSpot);
@@ -769,8 +1179,16 @@ namespace InsectGame.Spawning
             MakePart("SpotR3", PrimitiveType.Sphere, new Vector3(0.4f, 0.12f, -0.1f), new Vector3(0.1f, 0.02f, 0.1f), wingSpot);
             MakePart("WingTipL", PrimitiveType.Sphere, new Vector3(-0.88f, 0.1f, 0.05f), new Vector3(0.18f, 0.025f, 0.24f), wingEdge);
             MakePart("WingTipR", PrimitiveType.Sphere, new Vector3(0.88f, 0.1f, 0.05f), new Vector3(0.18f, 0.025f, 0.24f), wingEdge);
-            MakePart("WingLB", PrimitiveType.Sphere, new Vector3(-0.35f, 0.08f, -0.25f), new Vector3(0.45f, 0.02f, 0.4f), wingCol);
-            MakePart("WingRB", PrimitiveType.Sphere, new Vector3(0.35f, 0.08f, -0.25f), new Vector3(0.45f, 0.02f, 0.4f), wingCol);
+            MakeSculpture("WingLB", InsectSculptureMeshes.Shape.ButterflyHindwing, wingCol,
+                new Vector3(-.37f, .08f, -.18f), new Vector3(.65f, 1f, .55f));
+            MakeSculpture("WingRB", InsectSculptureMeshes.Shape.ButterflyHindwing, wingCol,
+                new Vector3(.37f, .08f, -.18f), new Vector3(.65f, 1f, .55f));
+            MakeFlightLegs(dark);
+            if (id.Contains("swallowtail") || id.Contains("birdwing"))
+            {
+                MakeSegment("HindTailL", new Vector3(-.58f, .07f, -.38f), new Vector3(-.68f, .05f, -.66f), .018f, wingEdge);
+                MakeSegment("HindTailR", new Vector3(.58f, .07f, -.38f), new Vector3(.68f, .05f, -.66f), .018f, wingEdge);
+            }
             MakeAntennae(dark, 0.35f);
             MakePart("AntBallL", PrimitiveType.Sphere, new Vector3(-0.15f, 0.42f, 0.57f), Vector3.one * 0.06f, dark);
             MakePart("AntBallR", PrimitiveType.Sphere, new Vector3(0.15f, 0.42f, 0.57f), Vector3.one * 0.06f, dark);
@@ -787,8 +1205,15 @@ namespace InsectGame.Spawning
             MakePart("Head", PrimitiveType.Sphere, new Vector3(0f, 0.05f, 0.4f), new Vector3(0.3f, 0.28f, 0.28f), dark);
             Color wingCol = new Color(body.r * 0.8f, body.g * 0.7f, body.b * 0.6f);
             Color eyeSpotCol = new Color(Mathf.Min(1, body.r + 0.1f), body.g * 0.4f, body.b * 0.3f);
-            MakeWing("WingL", new Vector3(-0.55f, 0.05f, 0.05f), new Vector3(0.8f, 0.02f, 0.7f), wingCol);
-            MakeWing("WingR", new Vector3(0.55f, 0.05f, 0.05f), new Vector3(0.8f, 0.02f, 0.7f), wingCol);
+            MakeSculpture("WingL", InsectSculptureMeshes.Shape.ButterflyForewing, wingCol,
+                new Vector3(-.53f, .06f, .06f), new Vector3(.98f, 1f, .65f));
+            MakeSculpture("WingR", InsectSculptureMeshes.Shape.ButterflyForewing, wingCol,
+                new Vector3(.53f, .06f, .06f), new Vector3(.98f, 1f, .65f));
+            MakeSculpture("WingLB", InsectSculptureMeshes.Shape.ButterflyHindwing, wingCol,
+                new Vector3(-.38f, .04f, -.19f), new Vector3(.69f, 1f, .51f));
+            MakeSculpture("WingRB", InsectSculptureMeshes.Shape.ButterflyHindwing, wingCol,
+                new Vector3(.38f, .04f, -.19f), new Vector3(.69f, 1f, .51f));
+            MakeFlightLegs(dark);
             MakePart("EyeSpotL", PrimitiveType.Sphere, new Vector3(-0.5f, 0.07f, 0.05f), new Vector3(0.18f, 0.02f, 0.18f), eyeSpotCol);
             MakePart("EyeSpotR", PrimitiveType.Sphere, new Vector3(0.5f, 0.07f, 0.05f), new Vector3(0.18f, 0.02f, 0.18f), eyeSpotCol);
             MakePart("EyeSpotCoreL", PrimitiveType.Sphere, new Vector3(-0.5f, 0.08f, 0.05f), new Vector3(0.08f, 0.02f, 0.08f), Color.black);
@@ -825,27 +1250,27 @@ namespace InsectGame.Spawning
 
         private void BuildMantis(Color body, Color dark)
         {
-            MakePart("Body", PrimitiveType.Capsule, new Vector3(0f, 0f, -0.15f), new Vector3(0.2f, 0.5f, 0.2f), body,
-                Quaternion.Euler(80f, 0f, 0f));
-            MakePart("Thorax", PrimitiveType.Sphere, new Vector3(0f, 0.15f, 0.15f), new Vector3(0.25f, 0.2f, 0.25f), body);
-            MakePart("Head", PrimitiveType.Sphere, new Vector3(0f, 0.3f, 0.25f), new Vector3(0.38f, 0.28f, 0.25f), dark);
-            MakePart("HeadCrest", PrimitiveType.Cube, new Vector3(0f, 0.38f, 0.22f), new Vector3(0.12f, 0.06f, 0.12f), dark);
-            MakePart("ArmUpperL", PrimitiveType.Capsule, new Vector3(-0.22f, 0.15f, 0.3f), new Vector3(0.08f, 0.2f, 0.08f),
-                body, Quaternion.Euler(-10f, 0f, 20f));
-            MakePart("ArmUpperR", PrimitiveType.Capsule, new Vector3(0.22f, 0.15f, 0.3f), new Vector3(0.08f, 0.2f, 0.08f),
-                body, Quaternion.Euler(-10f, 0f, -20f));
-            MakePart("ArmLowerL", PrimitiveType.Capsule, new Vector3(-0.28f, 0.28f, 0.42f), new Vector3(0.06f, 0.18f, 0.06f),
-                body, Quaternion.Euler(-40f, 0f, 15f));
-            MakePart("ArmLowerR", PrimitiveType.Capsule, new Vector3(0.28f, 0.28f, 0.42f), new Vector3(0.06f, 0.18f, 0.06f),
-                body, Quaternion.Euler(-40f, 0f, -15f));
-            MakePart("ClawL", PrimitiveType.Cube, new Vector3(-0.3f, 0.38f, 0.55f), new Vector3(0.05f, 0.18f, 0.04f), dark);
-            MakePart("ClawR", PrimitiveType.Cube, new Vector3(0.3f, 0.38f, 0.55f), new Vector3(0.05f, 0.18f, 0.04f), dark);
-            Color wingFold = new Color(body.r * 0.7f, body.g * 0.8f, body.b * 0.6f, 0.5f);
-            MakePart("WingFoldL", PrimitiveType.Cube, new Vector3(-0.08f, 0.12f, -0.2f), new Vector3(0.15f, 0.01f, 0.4f), wingFold);
-            MakePart("WingFoldR", PrimitiveType.Cube, new Vector3(0.08f, 0.12f, -0.2f), new Vector3(0.15f, 0.01f, 0.4f), wingFold);
-            MakeLegs(dark, 2, -0.15f);
-            MakeAntennae(dark, 0.3f);
-            MakeEyes(0.3f, 0.22f);
+            Color leaf = Color.Lerp(body, new Color(.32f, .49f, .16f), .72f);
+            Color vein = Color.Lerp(leaf, new Color(.14f, .24f, .07f), .50f);
+            MakePart("Body", PrimitiveType.Sphere, new Vector3(0f, -.035f, -.30f), new Vector3(.24f, .15f, .68f), vein);
+            MakeSculpture("Thorax", InsectSculptureMeshes.Shape.MantisThorax, leaf);
+            MakeSculpture("Head", InsectSculptureMeshes.Shape.MantisHead, leaf);
+            foreach (int sign in new[] { -1, 1 })
+            {
+                string side = sign < 0 ? "L" : "R";
+                MakeSculpture("ArmUpper" + side, sign < 0 ? InsectSculptureMeshes.Shape.MantisFemurLeft : InsectSculptureMeshes.Shape.MantisFemurRight, leaf);
+                MakeSculpture("Claw" + side, sign < 0 ? InsectSculptureMeshes.Shape.MantisBladeLeft : InsectSculptureMeshes.Shape.MantisBladeRight, vein);
+                // Eyes sit on the corners of the triangular head, not below it.
+                MakePart("Eye" + side, PrimitiveType.Sphere, new Vector3(sign * .18f, .38f, .33f), new Vector3(.13f, .12f, .12f), new Color(.51f, .64f, .24f));
+                MakePart("EyeGlint" + side, PrimitiveType.Sphere, new Vector3(sign * .17f, .405f, .38f), Vector3.one * .023f, new Color(.94f, .96f, .80f));
+                MakeSegment("Antenna" + side, new Vector3(sign * .09f, .38f, .28f), new Vector3(sign * .16f, .66f, .37f), .015f, vein);
+            }
+            // Folded opaque tegmina read as two tapered leaves; no transparent boards.
+            MakeSculpture("WingFoldL", InsectSculptureMeshes.Shape.Wing, leaf,
+                new Vector3(-.062f, .035f, -.25f), new Vector3(.55f, .040f, .18f), Quaternion.Euler(0f, 90f, 0f));
+            MakeSculpture("WingFoldR", InsectSculptureMeshes.Shape.Wing, leaf,
+                new Vector3(.062f, .035f, -.25f), new Vector3(.55f, .040f, .18f), Quaternion.Euler(0f, 90f, 0f));
+            MakeLegs(vein, 2, -.15f);
         }
 
         private void BuildDragonfly(Color body, Color dark)
@@ -859,20 +1284,21 @@ namespace InsectGame.Spawning
             MakePart("Head", PrimitiveType.Sphere, new Vector3(0f, 0.08f, 0.35f), new Vector3(0.35f, 0.25f, 0.3f), dark);
             Color wingCol = new Color(0.8f, 0.9f, 1f, 0.4f);
             Color veinCol = new Color(0.3f, 0.3f, 0.3f, 0.5f);
-            MakeWing("WingL", new Vector3(-0.45f, 0.1f, 0.15f), new Vector3(0.7f, 0.01f, 0.15f), wingCol);
-            MakeWing("WingR", new Vector3(0.45f, 0.1f, 0.15f), new Vector3(0.7f, 0.01f, 0.15f), wingCol);
-            MakePart("VeinFL", PrimitiveType.Cylinder, new Vector3(-0.45f, 0.11f, 0.15f), new Vector3(0.01f, 0.01f, 0.13f), veinCol,
-                Quaternion.Euler(0f, 0f, 85f));
-            MakePart("VeinFR", PrimitiveType.Cylinder, new Vector3(0.45f, 0.11f, 0.15f), new Vector3(0.01f, 0.01f, 0.13f), veinCol,
-                Quaternion.Euler(0f, 0f, -85f));
-            MakePart("WingLB", PrimitiveType.Cube, new Vector3(-0.4f, 0.08f, -0.05f), new Vector3(0.6f, 0.01f, 0.13f), wingCol);
-            MakePart("WingRB", PrimitiveType.Cube, new Vector3(0.4f, 0.08f, -0.05f), new Vector3(0.6f, 0.01f, 0.13f), wingCol);
-            MakePart("VeinBL", PrimitiveType.Cylinder, new Vector3(-0.4f, 0.09f, -0.05f), new Vector3(0.01f, 0.01f, 0.11f), veinCol,
-                Quaternion.Euler(0f, 0f, 85f));
-            MakePart("VeinBR", PrimitiveType.Cylinder, new Vector3(0.4f, 0.09f, -0.05f), new Vector3(0.01f, 0.01f, 0.11f), veinCol,
-                Quaternion.Euler(0f, 0f, -85f));
+            MakeSculpture("WingL", InsectSculptureMeshes.Shape.DragonflyWing, wingCol,
+                new Vector3(-.43f, .12f, .25f), new Vector3(.76f, 1f, .85f));
+            MakeSculpture("WingR", InsectSculptureMeshes.Shape.DragonflyWing, wingCol,
+                new Vector3(.43f, .12f, .25f), new Vector3(.76f, 1f, .85f));
+            MakeSegment("VeinFL", new Vector3(-.09f, .134f, .25f), new Vector3(-.77f, .134f, .25f), .008f, veinCol);
+            MakeSegment("VeinFR", new Vector3(.09f, .134f, .25f), new Vector3(.77f, .134f, .25f), .008f, veinCol);
+            MakeSculpture("WingLB", InsectSculptureMeshes.Shape.DragonflyWing, wingCol,
+                new Vector3(-.40f, .10f, .08f), new Vector3(.72f, 1f, .92f));
+            MakeSculpture("WingRB", InsectSculptureMeshes.Shape.DragonflyWing, wingCol,
+                new Vector3(.40f, .10f, .08f), new Vector3(.72f, 1f, .92f));
+            MakeSegment("VeinBL", new Vector3(-.09f, .114f, .08f), new Vector3(-.73f, .114f, .08f), .008f, veinCol);
+            MakeSegment("VeinBR", new Vector3(.09f, .114f, .08f), new Vector3(.73f, .114f, .08f), .008f, veinCol);
             MakePart("EyeL", PrimitiveType.Sphere, new Vector3(-0.15f, 0.15f, 0.4f), Vector3.one * 0.16f, new Color(0.2f, 0.8f, 0.3f));
             MakePart("EyeR", PrimitiveType.Sphere, new Vector3(0.15f, 0.15f, 0.4f), Vector3.one * 0.16f, new Color(0.2f, 0.8f, 0.3f));
+            MakeLegs(dark, 3, 0.18f);
         }
 
         private void BuildBee(Color body, Color dark)
@@ -976,17 +1402,27 @@ namespace InsectGame.Spawning
             MakePart("Neck", PrimitiveType.Capsule, new Vector3(0f, 0.03f, 0.18f), new Vector3(0.06f, 0.06f, 0.06f), dark,
                 Quaternion.Euler(90f, 0f, 0f));
             MakePart("Head", PrimitiveType.Sphere, new Vector3(0f, 0.05f, 0.3f), new Vector3(0.3f, 0.28f, 0.28f), dark);
-            MakePart("MandibleL", PrimitiveType.Cube, new Vector3(-0.08f, 0f, 0.45f), new Vector3(0.06f, 0.04f, 0.1f), body);
-            MakePart("MandibleR", PrimitiveType.Cube, new Vector3(0.08f, 0f, 0.45f), new Vector3(0.06f, 0.04f, 0.1f), body);
+            // Paired hooked mandibles emerge from the head and curve inward.
+            // Keep the MandibleL/R node contract used by model inspections.
+            foreach (int sign in new[] { -1, 1 })
+            {
+                string side = sign < 0 ? "L" : "R";
+                Vector3 root = new Vector3(sign * .08f, -.025f, .40f);
+                Vector3 bend = new Vector3(sign * .15f, -.07f, .51f);
+                Vector3 tip = new Vector3(sign * .05f, -.065f, .56f);
+                MakeSegment("Mandible" + side, root, bend, .027f, body);
+                MakeSegment("MandibleTip" + side, bend, tip, .017f, body);
+            }
             MakeLegs(dark, 3, -0.05f);
-            MakePart("ElbowAntL", PrimitiveType.Capsule, new Vector3(-0.1f, 0.2f, 0.45f), new Vector3(0.03f, 0.15f, 0.03f),
-                dark, Quaternion.Euler(-50f, 0f, 15f));
-            MakePart("ElbowAntR", PrimitiveType.Capsule, new Vector3(0.1f, 0.2f, 0.45f), new Vector3(0.03f, 0.15f, 0.03f),
-                dark, Quaternion.Euler(-50f, 0f, -15f));
-            MakePart("ElbowAntL2", PrimitiveType.Capsule, new Vector3(-0.14f, 0.35f, 0.52f), new Vector3(0.025f, 0.12f, 0.025f),
-                dark, Quaternion.Euler(-10f, 0f, 5f));
-            MakePart("ElbowAntR2", PrimitiveType.Capsule, new Vector3(0.14f, 0.35f, 0.52f), new Vector3(0.025f, 0.12f, 0.025f),
-                dark, Quaternion.Euler(-10f, 0f, -5f));
+            foreach (int sign in new[] { -1, 1 })
+            {
+                string side = sign < 0 ? "L" : "R";
+                Vector3 basePoint = new Vector3(sign * 0.09f, 0.13f, 0.38f);
+                Vector3 elbow = new Vector3(sign * 0.18f, 0.29f, 0.51f);
+                MakeSegment("ElbowAnt" + side, basePoint, elbow, 0.027f, dark);
+                MakeSegment("ElbowAnt" + side + "2", elbow,
+                    new Vector3(sign * 0.29f, 0.30f, 0.67f), 0.021f, dark);
+            }
             MakeEyes(0.3f, 0.1f);
         }
 
@@ -1057,31 +1493,31 @@ namespace InsectGame.Spawning
 
         private void BuildRhinocerosBeetle(Color body, Color dark)
         {
-            Color gloss = new Color(Mathf.Min(1, body.r + 0.15f), Mathf.Min(1, body.g + 0.1f), body.b * 0.8f);
-            MakePart("Body", PrimitiveType.Sphere, Vector3.zero, new Vector3(0.9f, 0.55f, 1.1f), body);
-            MakePart("Shell", PrimitiveType.Sphere, new Vector3(0f, 0.2f, -0.05f), new Vector3(0.82f, 0.3f, 0.95f), dark);
-            MakePart("ShellGloss", PrimitiveType.Sphere, new Vector3(0f, 0.25f, -0.05f), new Vector3(0.7f, 0.12f, 0.8f),
-                new Color(1f, 1f, 1f, 0.12f));
-            MakePart("Head", PrimitiveType.Sphere, new Vector3(0f, 0.12f, 0.6f), new Vector3(0.55f, 0.45f, 0.5f), dark);
-            MakePart("HornMain", PrimitiveType.Cylinder, new Vector3(0f, 0.45f, 0.7f), new Vector3(0.1f, 0.35f, 0.1f), body,
-                Quaternion.Euler(25f, 0f, 0f));
-            // 3분절 곡선으로 뿔이 부드럽게 휨(옛 직선 실린더 2개 = 뚝뚝 끊김)
-            MakePart("HornCurve", PrimitiveType.Cylinder, new Vector3(0f, 0.6f, 0.82f), new Vector3(0.08f, 0.18f, 0.08f), body,
-                Quaternion.Euler(40f, 0f, 0f));
-            MakePart("HornMid", PrimitiveType.Sphere, new Vector3(0f, 0.62f, 0.88f), Vector3.one * 0.09f, body);
-            MakePart("HornTip", PrimitiveType.Cylinder, new Vector3(0f, 0.72f, 0.96f), new Vector3(0.06f, 0.13f, 0.06f), gloss,
-                Quaternion.Euler(52f, 0f, 0f));
-            // 끝 분기(Y자 뿔) — 장수풍뎅이 시그니처 실루엣
-            MakePart("HornForkL", PrimitiveType.Cylinder, new Vector3(-0.05f, 0.78f, 1.0f), new Vector3(0.04f, 0.1f, 0.04f), gloss,
-                Quaternion.Euler(50f, 0f, 12f));
-            MakePart("HornForkR", PrimitiveType.Cylinder, new Vector3(0.05f, 0.78f, 1.0f), new Vector3(0.04f, 0.1f, 0.04f), gloss,
-                Quaternion.Euler(50f, 0f, -12f));
-            MakePart("HornSmall", PrimitiveType.Cylinder, new Vector3(0f, 0.3f, 0.55f), new Vector3(0.07f, 0.15f, 0.07f), dark,
-                Quaternion.Euler(15f, 0f, 0f));
-            MakePart("ClawL", PrimitiveType.Cube, new Vector3(-0.3f, -0.25f, 0.3f), new Vector3(0.06f, 0.08f, 0.12f), dark);
-            MakePart("ClawR", PrimitiveType.Cube, new Vector3(0.3f, -0.25f, 0.3f), new Vector3(0.06f, 0.08f, 0.12f), dark);
-            MakeEyes(0.78f, 0.14f, 0.22f);
-            MakeLegs(dark, 3, 0f);
+            Color chitin = Color.Lerp(body, new Color(.24f, .13f, .075f), .72f);
+            Color underside = Color.Lerp(chitin, Color.black, .42f);
+            MakePart("Body", PrimitiveType.Sphere, new Vector3(0f, -.045f, -.08f), new Vector3(.90f, .36f, .95f), underside);
+            MakeSculpture("ShellL", InsectSculptureMeshes.Shape.ElytronLeft, chitin);
+            MakeSculpture("ShellR", InsectSculptureMeshes.Shape.ElytronRight, chitin);
+            Color forebody = Color.Lerp(chitin, underside, .22f);
+            MakeSculpture("Pronotum", InsectSculptureMeshes.Shape.RhinoPronotum, forebody);
+            MakePart("Head", PrimitiveType.Sphere, new Vector3(0f, .10f, .61f), new Vector3(.48f, .31f, .38f), forebody);
+            MakeSculpture("HornMain", InsectSculptureMeshes.Shape.RhinoHorn, chitin);
+            MakeSculpture("HornForkL", InsectSculptureMeshes.Shape.RhinoForkLeft, chitin);
+            MakeSculpture("HornForkR", InsectSculptureMeshes.Shape.RhinoForkRight, chitin);
+            MakeSculpture("HornSmall", InsectSculptureMeshes.Shape.ThoraxHorn, underside);
+            MakeEyes(.73f, .09f, .19f);
+            MakeLegs(underside, 3, 0f);
+            // Keep the short clubbed antennae ahead of the head. The old tall
+            // antenna roots crossed the horn and looked like a dark cut at its base.
+            foreach (int sign in new[] { -1, 1 })
+            {
+                string side = sign < 0 ? "L" : "R";
+                Vector3 elbow = new Vector3(sign * .28f, .11f, .79f);
+                Vector3 tip = new Vector3(sign * .28f, .18f, .85f);
+                MakeSegment("AntBase" + side, new Vector3(sign * .18f, .08f, .68f), elbow, .025f, underside);
+                MakeSegment("AntMid" + side, elbow, tip, .02f, underside);
+                MakePart("AntTip" + side, PrimitiveType.Sphere, tip, new Vector3(.055f, .03f, .045f), underside);
+            }
         }
 
         private void BuildOrchidMantis(Color body, Color dark)
@@ -1358,8 +1794,8 @@ namespace InsectGame.Spawning
             Color wingCol = new Color(0.85f, 0.92f, 1f, 0.35f);
             MakeWing("WingL", new Vector3(-0.3f, 0.08f, 0.05f), new Vector3(0.5f, 0.01f, 0.1f), wingCol);
             MakeWing("WingR", new Vector3(0.3f, 0.08f, 0.05f), new Vector3(0.5f, 0.01f, 0.1f), wingCol);
-            MakePart("WingLB", PrimitiveType.Cube, new Vector3(-0.28f, 0.06f, -0.08f), new Vector3(0.45f, 0.01f, 0.08f), wingCol);
-            MakePart("WingRB", PrimitiveType.Cube, new Vector3(0.28f, 0.06f, -0.08f), new Vector3(0.45f, 0.01f, 0.08f), wingCol);
+            MakePart("WingLB", PrimitiveType.Sphere, new Vector3(-0.28f, 0.06f, -0.08f), new Vector3(0.45f, 0.01f, 0.08f), wingCol);
+            MakePart("WingRB", PrimitiveType.Sphere, new Vector3(0.28f, 0.06f, -0.08f), new Vector3(0.45f, 0.01f, 0.08f), wingCol);
             MakePart("EyeL", PrimitiveType.Sphere, new Vector3(-0.1f, 0.12f, 0.35f), Vector3.one * 0.12f, new Color(0.3f, 0.7f, 0.9f));
             MakePart("EyeR", PrimitiveType.Sphere, new Vector3(0.1f, 0.12f, 0.35f), Vector3.one * 0.12f, new Color(0.3f, 0.7f, 0.9f));
             MakeLegs(dark, 3, 0.1f);
@@ -1511,79 +1947,137 @@ namespace InsectGame.Spawning
             return part;
         }
 
+        private GameObject MakeSculpture(string name, InsectSculptureMeshes.Shape shape, Color color,
+            Vector3? position = null, Vector3? scale = null, Quaternion? rotation = null)
+        {
+            var part = new GameObject(name);
+            part.transform.SetParent(transform, false);
+            part.transform.localPosition = position ?? Vector3.zero;
+            part.transform.localScale = scale ?? Vector3.one;
+            part.transform.localRotation = rotation ?? Quaternion.identity;
+            part.AddComponent<MeshFilter>().sharedMesh = InsectSculptureMeshes.Get(shape);
+            part.AddComponent<MeshRenderer>();
+            ApplyColor(part, color);
+            return part;
+        }
+
         private void MakeWing(string name, Vector3 pos, Vector3 scale, Color color)
         {
-            GameObject wing = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            wing.name = name;
-            wing.transform.SetParent(transform, false);
-            wing.transform.localPosition = pos;
-            wing.transform.localScale = scale;
-            Collider col = wing.GetComponent<Collider>();
-            if (col != null) UnityEngine.Object.Destroy(col);
-            ApplyColor(wing, color);
+            // An ellipsoid gives a tapered membrane rather than a rectangular plank.
+            scale.x = Mathf.Max(scale.x, 2f * (Mathf.Abs(pos.x) - 0.06f));
+            MakeSculpture(name, InsectSculptureMeshes.Shape.Wing, color, pos, scale);
+        }
+
+        private void BindWingSurfaces()
+        {
+            // Keep WingL/R as the animation contract, but rotate at the thorax.
+            // Spots, veins and hindwings must follow the same hinge.
+            foreach (string side in new[] { "L", "R" })
+            {
+                Transform surface = transform.Find("Wing" + side);
+                if (surface == null) continue;
+                Vector3 center = surface.localPosition;
+                surface.name = "WingSurface" + side;
+                Transform hinge = new GameObject("Wing" + side).transform;
+                hinge.SetParent(transform, false);
+                hinge.localPosition = new Vector3(side == "L" ? -0.07f : 0.07f, center.y, center.z);
+                var attached = new System.Collections.Generic.List<Transform> { surface };
+                for (int i = 0; i < transform.childCount; i++)
+                {
+                    Transform child = transform.GetChild(i);
+                    string n = child.name;
+                    if (child == surface || child == hinge) continue;
+                    bool decoration = n.StartsWith("Spot") || n.StartsWith("EyeSpot") || n.StartsWith("Vein")
+                        || n.StartsWith("Wing") || n.StartsWith("HindTail") || n.StartsWith("TailCurl");
+                    if (decoration && (side == "L" ? child.localPosition.x < 0f : child.localPosition.x > 0f))
+                        attached.Add(child);
+                }
+                foreach (Transform child in attached) child.SetParent(hinge, true);
+            }
+        }
+
+        private GameObject MakeSegment(string name, Vector3 from, Vector3 to, float width, Color color)
+        {
+            Vector3 delta = to - from;
+            return MakePart(name, PrimitiveType.Capsule, (from + to) * 0.5f,
+                new Vector3(width, delta.magnitude * 0.5f, width), color,
+                Quaternion.FromToRotation(Vector3.up, delta.normalized));
         }
 
         private void MakeLegs(Color color, int pairs, float zOffset)
         {
-            Color joint = new Color(color.r * 0.7f + 0.03f, color.g * 0.7f + 0.03f, color.b * 0.7f + 0.03f);
+            Color joint = Color.Lerp(color, Color.black, 0.22f);
+            // Attach to the narrow thorax on slender species, the shell on beetles.
+            Transform thorax = transform.Find("Thorax");
+            MeshFilter thoraxMesh = thorax != null ? thorax.GetComponent<MeshFilter>() : null;
+            float thoraxWidth = thoraxMesh != null && thoraxMesh.sharedMesh != null
+                ? thoraxMesh.sharedMesh.bounds.size.x * thorax.localScale.x : .55f;
+            float hipX = Mathf.Clamp(thoraxWidth * .4f, .07f, .22f);
             for (int i = 0; i < pairs; i++)
             {
                 float z = zOffset + (i - (pairs - 1) * 0.5f) * 0.2f;
-                // 앞·중·뒷다리 각도 변주(기계적 동일각 해소) + z 부채꼴 펼침
-                float zSpread = (i - (pairs - 1) * 0.5f) * 0.04f;
-                float upAng = 26f + i * 4f;
-                float loAng = 8f + i * 3f;
-                // 대퇴 (상단)
-                MakePart($"LegUL{i}", PrimitiveType.Capsule, new Vector3(-0.22f, -0.1f, z + zSpread),
-                    new Vector3(0.055f, 0.12f, 0.055f), color, Quaternion.Euler(0f, 0f, upAng));
-                MakePart($"LegUR{i}", PrimitiveType.Capsule, new Vector3(0.22f, -0.1f, z + zSpread),
-                    new Vector3(0.055f, 0.12f, 0.055f), color, Quaternion.Euler(0f, 0f, -upAng));
-                // 관절
-                MakePart($"KneeL{i}", PrimitiveType.Sphere, new Vector3(-0.3f, -0.2f, z + zSpread),
-                    Vector3.one * 0.05f, joint);
-                MakePart($"KneeR{i}", PrimitiveType.Sphere, new Vector3(0.3f, -0.2f, z + zSpread),
-                    Vector3.one * 0.05f, joint);
-                // 경절 (하단)
-                MakePart($"LegLL{i}", PrimitiveType.Capsule, new Vector3(-0.32f, -0.3f, z + zSpread),
-                    new Vector3(0.038f, 0.12f, 0.038f), color, Quaternion.Euler(0f, 0f, loAng));
-                MakePart($"LegLR{i}", PrimitiveType.Capsule, new Vector3(0.32f, -0.3f, z + zSpread),
-                    new Vector3(0.038f, 0.12f, 0.038f), color, Quaternion.Euler(0f, 0f, -loAng));
-                // 발끝(tarsus) — 접지감(옛엔 발끝 없어 공중에 뜬 느낌)
-                MakePart($"FootL{i}", PrimitiveType.Sphere, new Vector3(-0.345f, -0.4f, z + zSpread),
-                    Vector3.one * 0.03f, joint);
-                MakePart($"FootR{i}", PrimitiveType.Sphere, new Vector3(0.345f, -0.4f, z + zSpread),
-                    Vector3.one * 0.03f, joint);
+                float fan = (i - (pairs - 1) * 0.5f) * 0.09f;
+                foreach (int sign in new[] { -1, 1 })
+                {
+                    string side = sign < 0 ? "L" : "R";
+                    Vector3 hip = new Vector3(sign * hipX, -0.055f, z);
+                    Vector3 knee = new Vector3(sign * (hipX + 0.18f), -0.16f, z + fan);
+                    Vector3 foot = new Vector3(sign * (hipX + 0.24f), -0.39f, z + fan * 1.6f);
+                    MakeSegment($"LegU{side}{i}", hip, knee, 0.055f, color);
+                    MakePart($"Knee{side}{i}", PrimitiveType.Sphere, knee, Vector3.one * 0.056f, joint);
+                    MakeSegment($"LegL{side}{i}", knee, foot, 0.035f, color);
+                    MakePart($"Foot{side}{i}", PrimitiveType.Sphere, foot,
+                        new Vector3(0.06f, 0.028f, 0.065f), joint);
+                }
             }
         }
 
         private void MakeAntennae(Color color, float zBase, bool feathered = false)
         {
-            // 2분절 굴절로 부드러운 S곡선(옛 직선 캡슐 1개 = 막대기 느낌 해소).
-            MakePart("AntBaseL", PrimitiveType.Capsule, new Vector3(-0.1f, 0.18f, zBase + 0.13f),
-                new Vector3(0.03f, 0.14f, 0.03f), color, Quaternion.Euler(-38f, 0f, 16f));
-            MakePart("AntBaseR", PrimitiveType.Capsule, new Vector3(0.1f, 0.18f, zBase + 0.13f),
-                new Vector3(0.03f, 0.14f, 0.03f), color, Quaternion.Euler(-38f, 0f, -16f));
-            MakePart("AntMidL", PrimitiveType.Capsule, new Vector3(-0.15f, 0.36f, zBase + 0.2f),
-                new Vector3(0.025f, 0.12f, 0.025f), color, Quaternion.Euler(-10f, 0f, 8f));
-            MakePart("AntMidR", PrimitiveType.Capsule, new Vector3(0.15f, 0.36f, zBase + 0.2f),
-                new Vector3(0.025f, 0.12f, 0.025f), color, Quaternion.Euler(-10f, 0f, -8f));
-            float tipScale = feathered ? 0.08f : 0.055f;
-            MakePart("AntTipL", PrimitiveType.Sphere, new Vector3(-0.17f, 0.46f, zBase + 0.23f), Vector3.one * tipScale, color);
-            MakePart("AntTipR", PrimitiveType.Sphere, new Vector3(0.17f, 0.46f, zBase + 0.23f), Vector3.one * tipScale, color);
-            if (feathered)
+            // Explicit shared endpoints avoid the gaps made by independently
+            // rotated capsules (most visible on the butterfly side portrait).
+            for (int sign = -1; sign <= 1; sign += 2)
             {
-                // 나방/모기 깃털 더듬이 — 끝에 양옆 작은 깃
-                MakePart("AntFeatherL", PrimitiveType.Cube, new Vector3(-0.16f, 0.40f, zBase + 0.22f),
-                    new Vector3(0.07f, 0.012f, 0.03f), color, Quaternion.Euler(0f, 0f, 20f));
-                MakePart("AntFeatherR", PrimitiveType.Cube, new Vector3(0.16f, 0.40f, zBase + 0.22f),
-                    new Vector3(0.07f, 0.012f, 0.03f), color, Quaternion.Euler(0f, 0f, -20f));
+                string side = sign < 0 ? "L" : "R";
+                Vector3 root = new Vector3(sign * .085f, .145f, zBase + .08f);
+                Vector3 elbow = new Vector3(sign * .145f, .30f, zBase + .17f);
+                Vector3 tip = new Vector3(sign * .205f, .43f, zBase + .25f);
+                MakeSegment("AntBase" + side, root, elbow, .022f, color);
+                MakeSegment("AntMid" + side, elbow, tip, .016f, color);
+                MakePart("AntTip" + side, PrimitiveType.Sphere, tip,
+                    Vector3.one * (feathered ? .066f : .046f), color);
+                if (feathered)
+                    MakeSegment("AntFeather" + side, elbow + new Vector3(0f, .035f, 0f),
+                        elbow + new Vector3(sign * .10f, .015f, .015f), .012f, color);
+            }
+        }
+
+        private void MakeFlightLegs(Color color)
+        {
+            // Six narrow hanging legs on moths and butterflies. They remain
+            // tucked beneath the thorax so wing portraits keep the focal shape.
+            for (int i = 0; i < 3; i++)
+            {
+                float z = .17f - i * .12f;
+                for (int sign = -1; sign <= 1; sign += 2)
+                {
+                    string side = sign < 0 ? "L" : "R";
+                    Vector3 hip = new Vector3(sign * .075f, -.065f, z);
+                    Vector3 knee = new Vector3(sign * .16f, -.17f, z - .025f);
+                    Vector3 foot = new Vector3(sign * .20f, -.26f, z + .01f);
+                    MakeSegment("LegU" + side + i, hip, knee, .017f, color);
+                    MakeSegment("LegL" + side + i, knee, foot, .012f, color);
+                }
             }
         }
 
         private void MakeEyes(float zPos, float size, float xSpread = 0.12f)
         {
-            MakePart("EyeL", PrimitiveType.Sphere, new Vector3(-xSpread, 0.15f, zPos), Vector3.one * size, Color.white);
-            MakePart("EyeR", PrimitiveType.Sphere, new Vector3(xSpread, 0.15f, zPos), Vector3.one * size, Color.white);
+            string id = data != null ? data.insectId ?? "" : "";
+            bool armored = id.Contains("beetle") || id.Contains("stag") || id.StartsWith("ant") || id.Contains("_ant");
+            Color eyeColor = armored ? new Color(0.055f, 0.075f, 0.09f) : new Color(0.76f, 0.87f, 0.67f);
+            MakePart("EyeL", PrimitiveType.Sphere, new Vector3(-xSpread, 0.15f, zPos), Vector3.one * size, eyeColor);
+            MakePart("EyeR", PrimitiveType.Sphere, new Vector3(xSpread, 0.15f, zPos), Vector3.one * size, eyeColor);
             // 큰 동공 (치비 톤: 64%)
             float pupilSize = size * 0.64f;
             MakePart("PupilL", PrimitiveType.Sphere, new Vector3(-xSpread, 0.15f, zPos + 0.04f), Vector3.one * pupilSize, new Color(0.05f, 0.05f, 0.08f));
@@ -1598,13 +2092,16 @@ namespace InsectGame.Spawning
             MakePart("GlintR", PrimitiveType.Sphere, new Vector3(xSpread - 0.025f, 0.115f, zPos + 0.05f), Vector3.one * glintSize, new Color(1f, 1f, 1f, 0.8f));
         }
 
-        // 곤충 등껍질 상단 흰색 반투명 글로스 — 입체 광택(딱정벌레/풍뎅이류 1줄 호출).
+        // Use the actual shell surface for gloss; no floating transparent white blob.
         private void MakeTopGloss(Vector3 bodyCenter, Vector3 bodyScale, float intensity = 0.14f)
         {
-            MakePart("TopGloss", PrimitiveType.Sphere,
-                bodyCenter + new Vector3(0f, bodyScale.y * 0.35f, bodyScale.z * 0.05f),
-                new Vector3(bodyScale.x * 0.7f, bodyScale.y * 0.18f, bodyScale.z * 0.75f),
-                new Color(1f, 1f, 1f, intensity));
+            Transform body = transform.Find("Body");
+            Renderer renderer = body != null ? body.GetComponent<Renderer>() : null;
+            Material mat = renderer != null ? renderer.sharedMaterial : null;
+            if (mat == null) return;
+            float smoothness = Mathf.Clamp01(0.48f + intensity);
+            if (mat.HasProperty("_Glossiness")) mat.SetFloat("_Glossiness", smoothness);
+            if (mat.HasProperty("_Smoothness")) mat.SetFloat("_Smoothness", smoothness);
         }
 
         // 모델 파츠 색칠 — shiny면 종별 색변환을 거쳐 전 파츠(하드코딩 색 포함)가 이로치 팔레트로 바뀜.
@@ -1638,19 +2135,28 @@ namespace InsectGame.Spawning
         {
             Renderer r = go.GetComponent<Renderer>();
             if (r == null) return;
-            Shader shader = Shader.Find("Standard");
-            if (shader == null) shader = Shader.Find("Universal Render Pipeline/Lit");
-            if (shader == null) shader = Shader.Find("Unlit/Color");
-            if (shader == null) shader = Shader.Find("Sprites/Default");
-            if (shader == null) return;
+            // 셰이더 폴백 체인은 SceneryMaterials.LitShader가 단일 출처다. 광택·반투명은 공유하지 않는다 —
+            // 아래 키틴·눈·막 광택이 곤충의 외형이고(무광 마감 ApplyFinish를 쓰면 전 종이 점토가 된다),
+            // 반투명 경로엔 날개뿐 아니라 샤이니 반짝임·오라·바닥 마커 같은 이펙트가 섞여 있다.
+            // 공유 체인의 마지막 방어선(에러 셰이더)은 칠하지 않는다 — 옛 체인은 Sprites/Default에서 멈추고
+            // 못 찾으면 프리미티브의 기본 머티리얼을 그대로 두었다.
+            Shader shader = InsectGame.Core.SceneryMaterials.LitShader;
+            if (shader == null || shader.name == "Hidden/InternalErrorShader") return;
             Material mat = new Material(shader);
             mat.color = color;
+            if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", color);
             // PBR 광택: 옛 ApplyColor는 색만 칠해 전 곤충이 무광 점토처럼 보였음(품질 저하 핵심).
             // Standard/URP Lit에서만 _Glossiness/_Metallic 설정(Unlit/Sprites fallback은 프로퍼티 없어 가드).
             bool pbr = shader.name == "Standard" || shader.name.Contains("Lit");
             if (color.a < 1f)
             {
-                mat.SetFloat("_Mode", 3);
+                if (mat.HasProperty("_Mode")) mat.SetFloat("_Mode", 3);
+                if (mat.HasProperty("_Surface"))
+                {
+                    mat.SetFloat("_Surface", 1f);
+                    mat.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+                }
+                mat.SetOverrideTag("RenderType", "Transparent");
                 mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
                 mat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
                 mat.SetInt("_ZWrite", 0);
@@ -1659,14 +2165,23 @@ namespace InsectGame.Spawning
                 mat.DisableKeyword("_ALPHAPREMULTIPLY_ON");
                 mat.renderQueue = 3000;
                 // 날개/반투명: 막·천 느낌(번들거림 억제)
-                if (pbr) { mat.SetFloat("_Glossiness", 0.2f); mat.SetFloat("_Smoothness", 0.2f); mat.SetFloat("_Metallic", 0f); }
+                if (pbr)
+                {
+                    if (mat.HasProperty("_Glossiness")) mat.SetFloat("_Glossiness", .18f);
+                    if (mat.HasProperty("_Smoothness")) mat.SetFloat("_Smoothness", .18f);
+                    if (mat.HasProperty("_Metallic")) mat.SetFloat("_Metallic", 0f);
+                }
             }
             else if (pbr)
             {
                 // 외골격 키틴 광택 + 미세 금속감 — 전 34종 동시 개선
-                mat.SetFloat("_Glossiness", 0.55f);
-                mat.SetFloat("_Smoothness", 0.55f);
-                mat.SetFloat("_Metallic", 0.15f);
+                bool eye = go.name.Contains("Eye") || go.name.Contains("Pupil");
+                bool membrane = go.name.StartsWith("Wing") || go.name.StartsWith("Fur");
+                bool chitin = go.name.StartsWith("Shell") || go.name.StartsWith("Horn") || go.name.StartsWith("Mand");
+                float smoothness = eye ? .78f : membrane ? .18f : chitin ? .52f : .32f;
+                if (mat.HasProperty("_Glossiness")) mat.SetFloat("_Glossiness", smoothness);
+                if (mat.HasProperty("_Smoothness")) mat.SetFloat("_Smoothness", smoothness);
+                if (mat.HasProperty("_Metallic")) mat.SetFloat("_Metallic", chitin ? .025f : 0f);
             }
             r.material = mat;
         }
@@ -1932,7 +2447,7 @@ namespace InsectGame.Spawning
 
         public void Despawn()
         {
-            // 수문장은 풀 객체가 아니다(onDespawn·ownerPoint 둘 다 없음) — 아래 래치를 걸면 아무것도
+            // 수문장은 풀 객체가 아니다(onDespawn도 소속 리전도 없음) — 아래 래치를 걸면 아무것도
             // 반환·파괴되지 않은 채 CanBeEngaged만 영구 false가 돼, **한 번 지거나 도주하면 눈앞에
             // 서 있는 수문장에게 다시 말을 걸 수 없고 리전이 영영 잠긴다**(2026-09-09). 격파 시 실제
             // 제거는 PlaySceneBootstrap.RemoveGuardianSeal이 한다. 여기서는 교전만 풀어 준다.
@@ -1949,9 +2464,24 @@ namespace InsectGame.Spawning
 
             // 풀 반환 전 진행 중 코루틴 정리 (다음 인스턴스 사용 시 잔존 영향 방지)
             StopAllCoroutines();
-            if (ownerPoint != null)
-                ownerPoint.NotifyDespawned();
             onDespawn?.Invoke(this);
+        }
+
+        /// <summary>
+        /// 스포너가 몸만 <b>조용히 거둔다</b>(플레이어가 멀어짐·서브에리어 전환) — 게임플레이 퇴장이 아니다.
+        /// <see cref="Despawn"/>과 달리 콜백을 부르지 않는다: 콜백은 "그 자리가 비었다"(재생 지연 시작)는 뜻이라,
+        /// 거리로 거둔 것까지 그 길로 보내면 멀어졌다 돌아올 때마다 새 곤충이 된다(옛 리전 이동 리롤).
+        /// 다중 호출 가드는 같이 건다 — 이 참조를 쥔 쪽(아이 NPC 등)이 뒤늦게 <c>Despawn</c>을 불러도 no-op이다.
+        /// 거뒀으면 true(호출부가 풀에 돌린다). 수문장·이미 퇴장한 몸은 false.
+        /// </summary>
+        internal bool Recall()
+        {
+            if (IsGuardian || despawnedThisCycle) return false;
+            despawnedThisCycle = true;
+            engaged = false;
+            alertState = 0;
+            StopAllCoroutines();
+            return true;
         }
     }
 }

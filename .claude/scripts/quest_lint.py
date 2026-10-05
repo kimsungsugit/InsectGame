@@ -54,6 +54,29 @@ def extract_boss_duel_rewards():
     if not out:
         raise ExtractorBroken(
             "NpcBossDuels에서 대결을 하나도 못 읽었다 — 표 구조가 바뀌었는지 확인할 것")
+    return out + extract_rival_duel_rewards()
+
+
+def extract_rival_duel_rewards():
+    """`NpcRivalDuels`(라온 라이벌 단계)의 (stageId, rewardItemId) 목록.
+
+    간부 표와 같은 함정이다 — 첫 승리 보상이 오타면 조용히 사라진다. 파일이 있는데 0건이면
+    표 구조가 바뀐 것이므로 `ExtractorBroken`(빈 목록을 "위반 0건"으로 읽지 않는다).
+    """
+    path = os.path.join("Assets", "Scripts", "NPC", "NpcRivalDuels.cs")
+    if not os.path.exists(path):
+        return []
+    with io.open(path, encoding="utf-8", errors="replace") as f:
+        src = f.read()
+    out = []
+    for block in re.findall(r"new\s+Stage\s*\{(.*?)\}", src, re.S):
+        stage = re.search(r'stageId\s*=\s*"([^"]+)"', block)
+        item = re.search(r'rewardItemId\s*=\s*"([^"]+)"', block)
+        if stage and item:
+            out.append((stage.group(1), item.group(1)))
+    if not out:
+        raise ExtractorBroken(
+            "NpcRivalDuels에서 단계를 하나도 못 읽었다 — 표 구조가 바뀌었는지 확인할 것")
     return out
 
 
@@ -147,7 +170,7 @@ def evaluate_signals() -> list:
     # (여러 소스의 합집합이라 C# 쪽에서 다시 모으면 사본이 생긴다) 검사도 여기 둔다.
     boss_rewards = extract_boss_duel_rewards()
     bad_boss = [f"{npc}:{item}" for npc, item in boss_rewards if item not in item_ids]
-    signals.append(("보스 대결 보상 아이템 ID 존재", "0건 미존재",
+    signals.append(("보스·라이벌 대결 보상 아이템 ID 존재", "0건 미존재",
                     f"{len(bad_boss)}건 ({bad_boss})" if bad_boss
                     else f"0건 (대결 {len(boss_rewards)}건 대조)",
                     "FAIL" if bad_boss else "PASS"))
@@ -297,6 +320,74 @@ def evaluate_signals() -> list:
     signals.append(("questId 구분자 금지 (, : 공백 — 세이브 병합 포맷)", "0건",
                     f"{len(sep_bad)}건 ({sep_bad})" if sep_bad else f"0건 ({len(ids)}개)",
                     "FAIL" if sep_bad else "PASS"))
+
+    # 12. 지역 의뢰(requiredRegionId) 정합 — 세 가지가 전부 무증상이다.
+    #     ① 리전 ID 오타: IsSideUnlocked가 GetRegionById null로 영원히 닫혀 **의뢰가 목록에서 잠긴 채**
+    #        남는다(예외도 경고도 없다). ② Story 카테고리에 달면: 스토리 체인(ActivateNextQuest·
+    #        NotifyAction의 ActiveQuest 경로)은 이 필드를 보지 않아 **어디서든 세어진다** — 적어 둔
+    #        한정이 거짓이 된다. ③ 위치가 없는 목표 타입(LevelUp·OpenDex 등)에 달면 "그 리전에서
+    #        레벨업"처럼 우연에 기대는 목표가 된다 — 행동이 일어난 곳이 곧 리전인 타입만 허용한다.
+    region_types = {"Capture", "CaptureRare", "CaptureRarity", "Battle", "RaidBattle",
+                    "VisitSubArea", "NpcDuel", "CaptureTrait", "BattleFeat"}
+    region_bad = []
+    region_quests = [q for q in quests if q.get("region")]
+    for q in region_quests:
+        if q["region"] not in region_ids:
+            region_bad.append(f"{q['questId']}:{q['region']}(리전 없음)")
+        if q.get("category", "Story") != "Side":
+            region_bad.append(f"{q['questId']}(Story 퀘스트엔 리전 한정이 적용되지 않는다)")
+        if q.get("type") not in region_types:
+            region_bad.append(f"{q['questId']}:{q.get('type')}(위치 없는 목표 타입)")
+    signals.append(("지역 의뢰 정합 (리전 실재 · Side 전용 · 위치 있는 목표)", "0건",
+                    f"{len(region_bad)}건 ({region_bad})" if region_bad
+                    else f"0건 (지역 의뢰 {len(region_quests)}개)",
+                    "FAIL" if region_bad else "PASS"))
+
+    # 13. 조건부 퀘스트(CaptureTrait / BattleFeat) 정합 — 넷 다 무증상이다.
+    #     ① 조건이 하나도 없으면 무엇이든 센다 — Capture/Battle과 같은데 이름만 다른 퀘스트가 된다.
+    #     ② 다른 쪽 조건 필드는 판정이 읽지 않아 **조용히 무시된다** — CaptureTrait에 maxTurns를 쓰면
+    #        그 조건이 사라져 퀘스트가 저작보다 쉬워진다(조건부 타입이 아닌 퀘스트에 쓴 것도 같다).
+    #     ③ Story에 달면 선형 체인(NotifyCapture/OnBattleEnded의 활성 퀘스트 경로)이 이 타입을 세지 않아
+    #        **영구 정지**한다. 조건부 타입은 서브 전용이다.
+    #     ④ 하한이 상한보다 크면 영원히 안 찬다. resetOnLoss는 전투 승리 연속이라 BattleFeat에서만 뜻이 있다.
+    trait_types = {"CaptureTrait", "BattleFeat"}
+    shared = set(game_facts.TRAIT_SHARED_FIELDS)
+    allowed = {
+        "CaptureTrait": set(game_facts.TRAIT_CAPTURE_FIELDS) | shared,
+        "BattleFeat": set(game_facts.TRAIT_BATTLE_FIELDS) | shared,
+    }
+
+    def _num(raw):
+        try:
+            return float(raw.rstrip("f"))
+        except ValueError:
+            return None
+
+    trait_bad = []
+    trait_count = 0
+    for q in quests:
+        fields = q.get("trait_fields") or {}
+        qt = q.get("type")
+        if qt not in trait_types:
+            if fields:
+                trait_bad.append(f"{q['questId']}({qt}에 조건 필드 {sorted(fields)} — 조건부 타입이 아니라 무시된다)")
+            continue
+        trait_count += 1
+        if q.get("category", "Story") != "Side":
+            trait_bad.append(f"{q['questId']}(조건부 타입은 Side 전용 — Story면 영구 정지)")
+        if not fields:
+            trait_bad.append(f"{q['questId']}(조건 없음 — {qt}가 아니라 기본 타입으로 쓸 것)")
+        stray = sorted(set(fields) - allowed[qt])
+        if stray:
+            trait_bad.append(f"{q['questId']}({qt}에 {stray} — 그 타입 판정이 읽지 않아 무시된다)")
+        for lo, hi in (("minSizeMm", "maxSizeMm"), ("minSizeRatio", "maxSizeRatio")):
+            lo_v, hi_v = _num(fields.get(lo, "")), _num(fields.get(hi, ""))
+            if lo_v is not None and hi_v is not None and lo_v > hi_v:
+                trait_bad.append(f"{q['questId']}({lo} {lo_v:g} > {hi} {hi_v:g} — 영원히 안 찬다)")
+    signals.append(("조건부 퀘스트 정합 (Side 전용 · 조건 있음 · 타입에 맞는 필드 · 하한≤상한)", "0건",
+                    f"{len(trait_bad)}건 ({trait_bad})" if trait_bad
+                    else f"0건 (조건부 {trait_count}개)",
+                    "FAIL" if trait_bad else "PASS"))
 
     return signals
 

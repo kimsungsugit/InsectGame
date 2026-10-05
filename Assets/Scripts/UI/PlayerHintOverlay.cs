@@ -45,49 +45,60 @@ namespace InsectGame.UI
             // 두 문구 모두 모달 뒤에 숨는다. 잠금 안내는 위 이유로, 차단 문구는 **대화창·컷신 위에
             // 겹쳐 뜨기 때문**이다(스토리 NPC가 걸어와 말을 거는 지금 구조에선 리전에서 튕긴 직후
             // 2초 창이 자주 열린다). 타이머 자체는 `PlayerMovement`의 frozen 분기가 줄인다.
+            // 「챔피언의 꿈」에서는 둘 다 띄우지 않는다 — 꿈의 잠금은 연출이라 ESC 안내가 틀리고, 꿈속엔 리전 경계가 없다.
+            if (DreamPrologueState.Active) return;
             bool modalOpen = ModalUIRegistry.IsAnyOpen();
             bool showFrozen = playerMovement.IsFrozen && !modalOpen;
             float blockedAlpha = playerMovement.BlockedMessageAlpha;
+            // 차단 문구는 가운데 무대(HudStage)의 마지막 차례다. 시간은 PlayerMovement가 쥐고 있어 기다리게 할 수 없으니
+            // 앞 차례(포획 결과·퀘스트 알림 등)가 서 있으면 이번엔 건너뛴다 — 다시 부딪히면 또 뜬다.
             bool showBlocked = blockedAlpha > 0f && !modalOpen
-                               && !string.IsNullOrEmpty(playerMovement.BlockedMessage);
+                               && !string.IsNullOrEmpty(playerMovement.BlockedMessage)
+                               && HudStage.Request(HudStageItem.RegionLock);
             if (!showFrozen && !showBlocked) return;
 
             EnsureStyles();
             UIScale.Begin();
+            HudFrame frame = HudFrame.Current;
 
             if (showFrozen)
             {
-                const float h = 40f;
-                // **퀵액세스 바 위로 올린다.** `BottomY(h)` 그대로 두면 바(`BottomY(64)` + 배경
-                // 여백 8)의 **안쪽에 통째로** 들어가 가운데 버튼 위에 글자가 찍혔다 — 이 문구가
-                // 뜨는 조건(모달 없음)이 곧 바가 보이는 조건이라 겹침이 100%였다.
-                // x도 `ContentLeft`로 맞춘다. 예전엔 x만 `VirtualSafeLeft`(마진 미포함)이고 폭은
-                // `ContentWidth`(마진 24 제외분)라, 가운데 정렬이 다른 UI 대비 24px 왼쪽으로 쏠렸다.
-                float y = UISafeLayout.BottomY(h) - QuickAccessBarUI.BarReservedHeight;
-                UIHelper.LabelFit(
-                    new Rect(UISafeLayout.ContentLeft, y, UISafeLayout.ContentWidth, h),
-                    "ESC를 누르면 이동 잠금을 해제합니다", frozenStyle);
+                UIHelper.LabelFit(FrozenRect(frame), "ESC를 누르면 이동 잠금을 해제합니다", frozenStyle);
             }
 
             if (showBlocked)
             {
-                // 화면 아래쪽 6할 — 비율 배치는 금지가 아니지만(rules/ui-layout.md) 고정 높이
-                // 상자를 놓으므로 안전 영역 안으로 가둔다.
-                const float h = 40f;
-                float y = Mathf.Clamp(UIScale.VirtualScreenHeight * 0.6f,
-                    UISafeLayout.ContentTop, UISafeLayout.ContentBottom - h);
-
                 Color col = BlockTextCol;
                 col.a = blockedAlpha;
                 blockStyle.normal.textColor = col;   // 알파가 매 프레임 바뀐다(struct라 할당 아님)
                 // 리전 이름 + 수문장 이름이 길이를 정하는데 상자는 고정이다(최장 30자쯤:
                 // "이름 없는 자리 — 우듬지의 세계수나비에게 이겨야 열립니다"). 넘치면 글자를 줄여 맞춘다.
-                UIHelper.LabelFit(
-                    new Rect(UISafeLayout.ContentLeft, y, UISafeLayout.ContentWidth, h),
-                    playerMovement.BlockedMessage, blockStyle);
+                Rect blocked = BlockedRect(frame);
+                HudStage.Request(HudStageItem.RegionLock, blocked);
+                UIHelper.LabelFit(blocked, playerMovement.BlockedMessage, blockStyle);
             }
 
             UIScale.End();
+        }
+
+        public const float LineHeight = 40f;
+        public const float BlockedWidth = 900f;
+
+        /// <summary>
+        /// 이동 잠금 안내의 자리 — 순수 계산. 동굴 입구 버튼 자리의 아랫줄이다: 잠긴 동안은 그 버튼도, 단축 바·잡기 버튼도
+        /// 숨으니(모두 IsFrozen에서 물러난다) 비어 있는 자리다. 예전엔 바 높이만큼 위(BottomY−바)였는데, 바 높이가 바뀌자
+        /// 데스크톱 퀘스트 칩·동굴 입구 버튼과 같은 줄이 됐다.
+        /// </summary>
+        public static Rect FrozenRect(HudFrame f)
+        {
+            Rect gate = SubAreaWorldBuilder.GateRect(f);
+            return new Rect(gate.x, gate.yMax - LineHeight, gate.width, LineHeight);
+        }
+
+        /// <summary>잠긴 리전 차단 문구 — 가운데 무대의 마지막 차례(<see cref="HudStageItem.RegionLock"/>).</summary>
+        public static Rect BlockedRect(HudFrame f)
+        {
+            return HudStage.Place(f, HudStageItem.RegionLock, BlockedWidth, LineHeight);
         }
 
         private void EnsureStyles()

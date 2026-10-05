@@ -179,7 +179,11 @@ namespace InsectGame.UI
         public static bool Button(Rect rect, string label, Color background, GUIStyle style, bool selected = false)
         {
             Color body = selected ? Color.Lerp(background, Color.white, 0.32f) : background;
-            if (rect.Contains(UIScale.VirtualMousePosition))
+            // 호버는 지금 GUI 좌표계의 마우스로 잰다 — 스크롤 뷰·그룹·GUI.matrix가 반영돼 rect와 같은 공간이다.
+            // 가상 화면 좌표(UIScale.VirtualMousePosition)로 재면 스크롤 뷰 안 버튼(퀘스트 목록 [따라가기])은
+            // 버튼이 아니라 스크롤 원점 기준의 엉뚱한 자리에서 밝아졌다.
+            Event e = Event.current;
+            if (e != null && rect.Contains(e.mousePosition))
             {
                 body = Color.Lerp(body, Color.white, 0.16f);
             }
@@ -188,6 +192,18 @@ namespace InsectGame.UI
             Rounded(rect, body);
             GUI.Label(rect, label, style);
             return GUI.Button(rect, string.Empty, GUIStyle.none);
+        }
+
+        /// <summary>
+        /// 얇은 진행 막대(HP·경험치) — 트랙과 채움 모두 각진 채로 그린다. 20px 안팎이라 둥근
+        /// 9-slice를 쓰면 테두리 폭이 높이를 넘겨 뭉개진다(<see cref="Flat"/>의 규칙과 같다).
+        /// </summary>
+        public static void Meter(Rect rect, float ratio, Color fill)
+        {
+            // 트랙은 surfaceBase보다 한 단 어둡게 — 흐리게 가라앉힌 행(바탕이 surfaceBase)에서도 보이게.
+            Flat(rect, Color.Lerp(UITheme.Instance.surfaceBase, Color.black, 0.4f));
+            float r = Mathf.Clamp01(ratio);
+            if (r > 0f) Flat(new Rect(rect.x, rect.y, rect.width * r, rect.height), fill);
         }
 
         /// <summary>등급·속성·보상 등을 담는 작은 알약 배지.</summary>

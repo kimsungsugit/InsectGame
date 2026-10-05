@@ -242,12 +242,14 @@ namespace InsectGame.Battle
             return count;
         }
 
+        // 보스의 **지금 모습**(CombatData)으로 잰다 — 리졸버의 피해 계산과 같은 속성을 봐야 AI가 고른 기술이 실제로 세다.
         private static float Effectiveness(InsectElement element, InsectBattleStats boss)
         {
+            InsectData form = boss.CombatData;
             return InsectTypeChart.GetEffectiveness(
                 element,
-                boss.Data != null ? boss.Data.primaryType : InsectElement.None,
-                boss.Data != null ? boss.Data.secondaryType : InsectElement.None);
+                form != null ? form.primaryType : InsectElement.None,
+                form != null ? form.secondaryType : InsectElement.None);
         }
 
         private static float SameTypeBonus(InsectElement element, InsectBattleStats attacker)
