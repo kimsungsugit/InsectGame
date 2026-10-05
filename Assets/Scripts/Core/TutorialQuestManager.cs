@@ -1042,7 +1042,7 @@ namespace InsectGame.Core
                 },
                 new TutorialQuest
                 {
-                    questId = "s_town_frostline", title = "[서릿길] 두 벌의 필사",
+                    questId = "s_town_frostline", title = "[서릿길] 얼음 벽의 글씨",
                     description = "누군가 얼음 서고 앞의 곤충들을 들쑤셔 필사생 서리가 벽에 다가가지 못합니다. 서릿길에서 전투 4번을 이긴 뒤 서리에게 알려 주세요.",
                     hint = "서릿길 얼음 움막(모닥불 옆)의 필사생 서리를 찾아가세요",
                     type = QuestType.Battle, targetCount = 4,

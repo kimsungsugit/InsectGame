@@ -1060,8 +1060,8 @@ def evaluate_signals() -> list:
 
     # ── 31~34: 초등 고학년이 읽는 이야기 (2026-10-04 다시 쓰기) ──────────────────────────
     # 대사·목표 이유·장 요약의 **길이와 말**을 본다. 규칙의 단일 출처는 Docs/StoryBible.md다 —
-    # 여기 상수는 그 규칙을 강제할 뿐이다. 대상은 본편(ch1~ch12·fin)과 명부회 아크(bl)·곁이야기(side·npc)이고,
-    # 마을 이야기(town)는 이번 다시 쓰기의 대상이 아니라 뺀다.
+    # 여기 상수는 그 규칙을 강제할 뿐이다. 대상은 본편(ch1~ch12·fin)과 명부회 아크(bl)·곁이야기(side·npc)·
+    # 마을 이야기(town — 2026-10-05에 같은 규칙으로 다시 썼다)다.
     #
     # 길이는 **화면이 아니라 읽는 사람** 기준이다. 대사창은 LabelFit이 글자를 줄여서라도 다 넣으므로
     # 긴 줄이 잘리지는 않는다 — 대신 18pt까지 작아진 세 줄짜리 문장이 된다. 예외도 경고도 없다.
@@ -1355,8 +1355,8 @@ def evaluate_signals() -> list:
 
 
 # ── 31~34의 기준 — 규칙의 단일 출처는 Docs/StoryBible.md, 여기는 강제할 뿐이다 ──
-# 다시 쓰기 대상 장. 마을 이야기(town)는 이번 대상이 아니다.
-STORY_REWRITE_CHAPTERS = frozenset({f"ch{i}" for i in range(1, 13)} | {"fin", "bl", "side", "npc"})
+# 다시 쓰기 대상 장. 마을 이야기(town)는 2026-10-05에 같은 규칙으로 다시 쓰고 넣었다.
+STORY_REWRITE_CHAPTERS = frozenset({f"ch{i}" for i in range(1, 13)} | {"fin", "bl", "side", "npc", "town"})
 MAX_LINE_CHARS = 40            # 대사 한 줄(공백 포함 len). 목표는 30자 안팎.
 MAX_SCENE_LINES = 7            # 한 장면(비트)의 lines
 MAX_STAGED_SCENE_LINES = 10    # 연출(stageEnterId·cutsceneId·videoId·introVideoId)이나 선택지가 붙은 비트
@@ -1446,7 +1446,7 @@ def main():
     print("  파일 미배치는 WARN — 영상은 렌더러(Tools/Video/storybook)가 따로 만들고, 없으면 런타임이 건너뛰어 진행은 산다")
     print("  (대사 앞 영상이면 대사가 곧바로 열린다). 배포 전에는 0건이어야 한다.")
     print("- 검사 36은 introVideoId가 붙은 비트의 lines 수만 센다(1~6줄). 한 줄 길이는 검사 31이 본다.")
-    print("- 검사 31·32는 ch1~ch12·fin·bl·side·npc만 본다(town 제외). 글자 수는 공백 포함 len(text)이고")
+    print("- 검사 31·32는 ch1~ch12·fin·bl·side·npc·town을 본다. 글자 수는 공백 포함 len(text)이고")
     print("  한글 음절은 C# string.Length와 같은 값이다. 줄 번호는 lines[i]의 0부터 센 배열 위치다.")
     print("- 검사 33의 필수 대상은 C# CompareObjectivePriority의 0급(스파인 ∪ 종장) − 선택지 결과 − Immediate,")
     print("  그중 본편(ch*·fin)이다. 같은 기준을 StoryObjectiveResolver.IsObjectiveThread와 C# 테스트가 쓴다.")
