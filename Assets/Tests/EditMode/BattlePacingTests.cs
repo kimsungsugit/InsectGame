@@ -44,6 +44,7 @@ namespace InsectGame.Tests
             var go = new GameObject("BattlePacingFixture");
             objects.Add(go);
             var controller = go.AddComponent<InsectBattleController>();
+            controller.SetCritSource(null);   // 치명타(1/16)가 끼면 정확한 피해·라운드 단언이 들쭉날쭉해진다
             controller.StartDuel(data, level, data, level, (p, e) => { player = p; enemy = e; });
             if (wild) typeof(InsectBattleController).GetField("duelMode", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(controller, false);
             return controller;

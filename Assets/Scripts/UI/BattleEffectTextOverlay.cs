@@ -36,6 +36,18 @@ namespace InsectGame.UI
         private const float RiseDistance = 40f;
 
         /// <summary>
+        /// <paramref name="index"/>번째 줄이 떠오르기 전 자리(가상 좌표) — 순수 계산. 화면 가운데, 높이 25%부터 아래로 쌓인다.
+        /// 25%인 이유: 35%였을 때 시네마틱 카메라가 대상을 화면 가운데로 당기면 이 문구가
+        /// 대상 머리 위 비명·피해 숫자와 한 자리에 겹쳤다(속성 10종 QA 캡처).
+        /// 전투 HUD 겹침 검사(<c>DuelHudLayoutTests</c>)가 같은 함수를 부른다.
+        /// </summary>
+        internal static Rect RowRect(HudFrame f, int index)
+        {
+            float width = Mathf.Min(MaxWidth, f.ContentWidth);
+            return new Rect(f.Width * 0.5f - width * 0.5f, f.Height * 0.25f + index * RowSpacing, width, RowHeight);
+        }
+
+        /// <summary>
         /// 호출부는 <c>UIScale.Begin()</c>과 <c>UIScale.End()</c> <b>사이</b>에서 불러야 한다 —
         /// 좌표가 가상 캔버스 기준이다.
         /// </summary>
@@ -58,11 +70,7 @@ namespace InsectGame.UI
             }
 
             float now = Time.time;
-            float centerX = UIScale.VirtualScreenWidth * 0.5f;
-            // 화면 높이 25% — 35%였을 때 시네마틱 카메라가 대상을 화면 가운데로 당기면 이 문구가
-            // 대상 머리 위 비명·피해 숫자와 한 자리에 겹쳤다(속성 10종 QA 캡처).
-            float baseY = UIScale.VirtualScreenHeight * 0.25f;
-            float width = Mathf.Min(MaxWidth, UIScale.ContentWidth());
+            HudFrame frame = HudFrame.Current;
 
             Color previous = GUI.color;
             for (int i = 0; i < texts.Count; i++)
@@ -71,8 +79,8 @@ namespace InsectGame.UI
                 if (entry == null) continue;
 
                 float alpha = 1f - Mathf.Clamp01((now - entry.startTime) / Mathf.Max(0.0001f, entry.duration));
-                float y = baseY + i * RowSpacing - RiseDistance * (1f - alpha);
-                Rect rect = new Rect(centerX - width * 0.5f, y, width, RowHeight);
+                Rect rect = RowRect(frame, i);
+                rect.y -= RiseDistance * (1f - alpha);
 
                 // 스킬 이름이 그대로 들어오므로(`{skill.displayName}!`) 길이를 데이터가 정한다 —
                 // 가운데 정렬이라 넘치면 앞뒤가 같이 잘린다. LabelFit이 폭·높이를 함께 본다.

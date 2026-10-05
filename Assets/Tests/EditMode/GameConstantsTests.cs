@@ -139,7 +139,8 @@ namespace InsectGame.Tests
         [Test]
         public void Battle_RaidBossHpMultiplier_MatchesCurrentDamageMath()
         {
-            Assert.AreEqual(4.5f, GameConstants.Battle.RaidBossHpMultiplier);
+            // 4.5(전투 길이 3종에서 파생) × 치명타 기대 이득 1.031 → 4.65. 치명타를 바꾸면 함께 다시 잰다.
+            Assert.AreEqual(4.65f, GameConstants.Battle.RaidBossHpMultiplier);
         }
 
         // ── 전투 길이 3종 ──

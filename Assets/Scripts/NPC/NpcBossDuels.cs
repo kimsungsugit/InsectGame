@@ -8,7 +8,8 @@ namespace InsectGame.NPC
     /// 간부는 <b>고정 상대·고정 레벨</b>이라야 서사의 벽으로 기능한다 — 준비가 덜 되면 진다.
     ///
     /// 순수 데이터라 MonoBehaviour 밖에 둔다(EditMode 테스트가 씬 없이 표를 검증한다).
-    /// 곤충 ID·아이템 ID는 각각 InsectExpansion2Definitions / ItemDatabase에 실재해야 한다.
+    /// 곤충 ID(팀 곤충 포함)·아이템 ID는 각각 곤충 DB(1막 부트스트랩 + 확장 정의 둘) / ItemDatabase에 실재해야 한다.
+    /// 간부는 <b>팀으로 싸운다</b>(<see cref="BossDuel.teamInsectIds"/> → <c>InsectBattleController.StartTeamDuel</c>).
     /// <b>고정하는 곳이 둘로 나뉜다</b>: 곤충·레벨·앵커·유일성은 <c>NpcBossDuelTests</c>가,
     /// <b>보상 아이템 실재성은 <c>quest_lint.py</c></b>가 본다(아이템 ID가 캡처아이템·상점
     /// 진열/지급·ItemDatabase 네 소스의 합집합이라 그 레지스트리를 이미 모으는 쪽에 붙였다 —
@@ -50,7 +51,42 @@ namespace InsectGame.NPC
             /// (<c>NpcBossDuelTests</c>가 전원 <c>MinThreshold</c> 이상을 강제한다).
             /// </summary>
             public int ledgerThreshold;
+
+            /// <summary>
+            /// 팀 대결의 상대 곤충 — <b>앞에서부터 내보내는 순서</b>, 마지막이 에이스다. 비어 있으면(하수) 한 마리 대결이다.
+            /// <b>에이스는 <see cref="insectId"/>·<see cref="level"/>과 같아야 한다</b>(<c>NpcBossDuelTests</c>) —
+            /// 표를 읽는 쪽(장부 프로브·위계 테스트·BGM 테스트)이 그 둘을 "이 인물의 대표 곤충"으로 읽는다.
+            /// 배열 초기화 대신 <c>Team(…)</c>·<c>Levels(…)</c>를 쓰는 이유: 검사기(quest_lint·blight_lint)가 표의 항목
+            /// 블록을 <b>첫 닫는 중괄호</b>에서 자른다 — 항목 안에 중괄호를 두면 그 뒤의 필드를 못 읽는다.
+            /// </summary>
+            public string[] teamInsectIds;
+
+            /// <summary><see cref="teamInsectIds"/>와 같은 순서·같은 길이의 레벨. 오름차순(에이스가 가장 높다).</summary>
+            public int[] teamLevels;
+
+            /// <summary>여러 마리를 차례로 내보내는 팀 대결인가.</summary>
+            public bool IsTeam => teamInsectIds != null && teamInsectIds.Length > 1;
+
+            /// <summary>내보내는 곤충 수 — 한 마리 대결이면 1.</summary>
+            public int RosterSize => IsTeam ? teamInsectIds.Length : 1;
+
+            /// <summary><paramref name="slot"/>번째로 내보내는 곤충(0부터). 한 마리 대결이면 <see cref="insectId"/>.</summary>
+            public string RosterInsectId(int slot)
+            {
+                if (!IsTeam) return insectId;
+                return slot >= 0 && slot < teamInsectIds.Length ? teamInsectIds[slot] : null;
+            }
+
+            /// <summary><paramref name="slot"/>번째 곤충의 레벨. 한 마리 대결이면 <see cref="level"/>.</summary>
+            public int RosterLevel(int slot)
+            {
+                if (!IsTeam) return level;
+                return teamLevels != null && slot >= 0 && slot < teamLevels.Length ? teamLevels[slot] : level;
+            }
         }
+
+        private static string[] Team(params string[] insectIds) => insectIds;
+        private static int[] Levels(params int[] levels) => levels;
 
         private const float RetryCooldown = 120f;
 
@@ -95,7 +131,11 @@ namespace InsectGame.NPC
                 // 실수해도 배울 여유가 있어야 한다 — 받아 적기만 하는 말단이라는 설정과도 맞는다.
                 ledgerThreshold = 9,
             },
-            // 집게 — 포획반장. 완력형이라 땅속을 헤집는 지네를 부린다.
+            // ── 간부는 팀으로 싸운다 ── 하수는 한 마리, 간부는 셋, 관장은 다섯 — 마릿수가 곧 계급이다.
+            // 레벨은 한 마리씩 오르고 마지막이 에이스(insectId·level과 같다). 장부(ledgerThreshold)는
+            // 곤충이 아니라 **인물의 것**이라 교체로 비워지지 않는다(InsectBattleController.SendOutNextEnemy).
+            //
+            // 집게 — 포획반장. 완력형이라 모래언덕 땅속을 헤집는 것들을 부린다 — 굴리고, 파고, 헤엄친다.
             new BossDuel
             {
                 storyNpcId = "ledger_grip", displayName = "집게",
@@ -103,8 +143,10 @@ namespace InsectGame.NPC
                 rewardItemId = "net_gold", rewardCount = 2,
                 retryCooldownSeconds = RetryCooldown,
                 ledgerThreshold = 6,
+                teamInsectIds = Team("scarab_sand", "antlion_dune", "centipede_sand"),
+                teamLevels = Levels(52, 53, 54),
             },
-            // 저울 — 분류관. 곤충을 수치로만 보는 사람답게 미동도 없는 사마귀를 세운다.
+            // 저울 — 분류관. 곤충을 수치로만 보는 사람답게 서릿길의 얼어붙은 것들을 세운다 — 마지막은 미동도 없는 사마귀.
             new BossDuel
             {
                 storyNpcId = "ledger_scale", displayName = "저울",
@@ -114,8 +156,11 @@ namespace InsectGame.NPC
                 // 분류관이라 **간부 중에서도 빠르다**(5). 곤충을 등급과 수치로만 보는 사람이니
                 // 플레이어의 수도 수로 본다 — 같은 수가 두 번 나오는 순간 적힌다.
                 ledgerThreshold = 5,
+                teamInsectIds = Team("beetle_rime", "stag_beetle_glacier", "mantis_icicle"),
+                teamLevels = Levels(56, 57, 58),
             },
-            // 관장 하월 — 이름이 지워진 나방을 데리고 다닌다. 그가 만든 빈칸의 산 증거다.
+            // 관장 하월 — 30년 동안 여러 지역에서 장부에 적어 온 곤충들. 마지막은 이름이 지워진 나방 —
+            // 장부 첫 장의 그것, 그가 만든 빈칸의 산 증거다.
             new BossDuel
             {
                 storyNpcId = "ledger_chief", displayName = "관장 하월",
@@ -126,6 +171,9 @@ namespace InsectGame.NPC
                 // 3,000종을 적은 손이다 — **가장 빠르다**(4). MinThreshold(3) 바로 위이고
                 // 더 내리면 피할 방법이 사라진다(반복 두 번이면 이미 터진다).
                 ledgerThreshold = 4,
+                teamInsectIds = Team("dragonfly_emperor", "beetle_golden_stag", "butterfly_apollo",
+                    "hornet_emperor", "moth_effaced"),
+                teamLevels = Levels(68, 69, 70, 71, 72),
             },
         };
 

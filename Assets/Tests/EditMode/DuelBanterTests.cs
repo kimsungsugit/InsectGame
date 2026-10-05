@@ -98,6 +98,82 @@ namespace InsectGame.Tests
         }
 
         [Test]
+        public void TeamBosses_HaveSendOutLines()
+        {
+            // 간부는 여럿을 데리고 싸운다(집게·저울 셋, 하월 다섯) — 교체 순간 한마디가 없으면 말없이 다음 곤충이 나온다.
+            var expectedAtLeast = new System.Collections.Generic.Dictionary<string, int>
+            {
+                ["ledger_grip"] = 2, ["ledger_scale"] = 2, ["ledger_chief"] = 4,
+            };
+            foreach (var pair in expectedAtLeast)
+            {
+                Assert.IsTrue(DuelBanter.TryGet(pair.Key, out DuelBanter.Lines l), pair.Key);
+                Assert.IsNotNull(l.sendOut, $"{pair.Key}: 교체 한마디 없음");
+                Assert.GreaterOrEqual(l.sendOut.Length, pair.Value, pair.Key);
+                foreach (string line in l.sendOut)
+                {
+                    Assert.IsFalse(string.IsNullOrWhiteSpace(line), $"{pair.Key}: 빈 교체 한마디");
+                    Assert.LessOrEqual(line.Length, 40, $"{pair.Key}: 너무 긴 교체 한마디 — {line}");
+                    Assert.IsFalse(line.Contains("무명"), pair.Key);
+                }
+            }
+        }
+
+        [Test]
+        public void SendOutLine_FirstInsectSilent_ThenInOrder_ThenRepeatsLast()
+        {
+            Assert.IsTrue(DuelBanter.TryGet("ledger_grip", out DuelBanter.Lines grip));
+            Assert.IsNull(DuelBanter.SendOutLine(grip, 0), "첫 곤충의 말은 컷인 도발이 맡는다");
+            Assert.AreEqual(grip.sendOut[0], DuelBanter.SendOutLine(grip, 1));
+            Assert.AreEqual(grip.sendOut[1], DuelBanter.SendOutLine(grip, 2));
+            Assert.AreEqual(grip.sendOut[grip.sendOut.Length - 1], DuelBanter.SendOutLine(grip, 9),
+                "팀이 준비한 줄보다 길면 마지막 줄을 되풀이한다");
+
+            Assert.IsTrue(DuelBanter.TryGet("rival_meadow", out DuelBanter.Lines raon));
+            Assert.IsNull(DuelBanter.SendOutLine(raon, 1), "한 마리만 내는 상대는 교체 한마디가 없다");
+        }
+
+        [TestCase(1, 0, true)]     // 한 마리 대결 — 늘 말한다
+        [TestCase(0, 0, true)]
+        [TestCase(3, 0, false)]    // 집게·저울의 첫 곤충
+        [TestCase(3, 1, false)]
+        [TestCase(3, 2, true)]     // 에이스
+        [TestCase(5, 3, false)]
+        [TestCase(5, 4, true)]     // 하월의 이름 잃은 나방
+        public void EnemyMomentsAllowed_OnlyTheAceInTeamDuels(int size, int index, bool expected)
+        {
+            Assert.AreEqual(expected, DuelBanter.EnemyMomentsAllowed(size, index));
+        }
+
+        [Test]
+        public void Next_TeamDuel_FirstInsectsStayQuiet_AceStartsFresh()
+        {
+            var t = new DuelBanter.Tracker();
+            // 첫 곤충이 위기까지 떨어져도 상대는 무너지는 소리를 하지 않는다 — 아직 둘이 남았다.
+            Assert.AreEqual(DuelBanter.Moment.None, DuelBanter.Next(ref t, 0.1f, 1f, 3, 0));
+            // 내 곤충이 몰리는 순간은 팀과 무관하다.
+            Assert.AreEqual(DuelBanter.Moment.Pressing, DuelBanter.Next(ref t, 0.1f, 0.2f, 3, 1));
+            // 에이스가 나오면 처음부터 센다 — 절반, 그다음 위기.
+            Assert.AreEqual(DuelBanter.Moment.None, DuelBanter.Next(ref t, 1f, 0.2f, 3, 2));
+            Assert.AreEqual(DuelBanter.Moment.Half, DuelBanter.Next(ref t, 0.45f, 0.2f, 3, 2));
+            Assert.AreEqual(DuelBanter.Moment.Crisis, DuelBanter.Next(ref t, 0.15f, 0.2f, 3, 2));
+        }
+
+        [Test]
+        public void TeamBosses_SendOutLinesCoverTheirTeams()
+        {
+            // 교체 한마디가 팀의 교체 횟수만큼 있어야 말이 되풀이되지 않는다(모자라면 마지막 줄을 되풀이한다).
+            foreach (NpcBossDuels.BossDuel d in NpcBossDuels.All())
+            {
+                if (d.teamInsectIds == null || d.teamInsectIds.Length <= 1) continue;
+                Assert.IsTrue(DuelBanter.TryGet(d.storyNpcId, out DuelBanter.Lines l), d.storyNpcId);
+                Assert.IsNotNull(l.sendOut, $"{d.storyNpcId}: 팀 대결인데 교체 한마디가 없다");
+                Assert.GreaterOrEqual(l.sendOut.Length, d.teamInsectIds.Length - 1,
+                    $"{d.storyNpcId}: 곤충 {d.teamInsectIds.Length}마리 — 교체 {d.teamInsectIds.Length - 1}번");
+            }
+        }
+
+        [Test]
         public void ActOneThugs_DoNotNameTheOrganization()
         {
             // 1막 하수는 정체가 밝혀지기 전이다(NpcDialogueDatabase.StorySpeakerName 주석) — 칭호로도 새면 안 된다.

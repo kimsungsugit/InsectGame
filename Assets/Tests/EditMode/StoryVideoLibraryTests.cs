@@ -122,19 +122,80 @@ namespace InsectGame.Tests
                 $"{videoId}가 {def.expectedDuration:F1}s로 자동 프리즈 해제({GameConstants.Player.AutoUnfreezeTime}s)에 너무 가깝다");
         }
 
+        /// <summary>
+        /// 맞닿은 큐(앞 큐의 끝 = 뒤 큐의 시작)는 저작 의도다(예: 9.8 + 2.4 = 12.2). float로 더하면 12.2000008이 되어
+        /// 12.2f보다 커지므로 그만큼은 겹침으로 치지 않는다 — 진짜 겹침(0.2초 등)은 그대로 잡는다.
+        /// </summary>
+        private const float TouchEpsilon = 1e-3f;
+
         [TestCaseSource(nameof(AllVideos))]
         public void Library_Cues_AreOrderedAndInsideVideo(string videoId)
         {
             Assert.IsTrue(StoryVideoLibrary.TryGet(videoId, out StoryVideoDefinition def));
+            Assert.Greater(def.cues.Length, 0, $"{videoId}에 자막이 하나도 없다");
             float lastEnd = 0f;
             for (int i = 0; i < def.cues.Length; i++)
             {
                 StoryVideoCue cue = def.cues[i];
                 Assert.IsFalse(string.IsNullOrWhiteSpace(cue.text), $"{videoId} 큐 {i}의 문구가 비었다");
                 Assert.Greater(cue.duration, 1f, $"{videoId} 큐 {i}가 읽기엔 너무 짧다");
-                Assert.GreaterOrEqual(cue.at, lastEnd, $"{videoId} 큐 {i}가 앞 큐와 겹친다");
-                Assert.LessOrEqual(cue.End, def.expectedDuration, $"{videoId} 큐 {i}가 영상 밖으로 나간다");
+                Assert.GreaterOrEqual(cue.at, 0f, $"{videoId} 큐 {i}가 영상 앞에서 시작한다");
+                Assert.GreaterOrEqual(cue.at, lastEnd - TouchEpsilon, $"{videoId} 큐 {i}가 앞 큐와 겹친다({cue.at:F2} < {lastEnd:F2})");
+                Assert.LessOrEqual(cue.End, def.expectedDuration + TouchEpsilon, $"{videoId} 큐 {i}가 영상 밖으로 나간다");
                 lastEnd = cue.End;
+            }
+        }
+
+        // ── 그림책 15편(2026-10-05) — 초등 고학년: 영상이 설명하고 대사는 짧게 ──
+
+        /// <summary>
+        /// 자막 한 줄 상한(공백·문장부호 포함 글자 수). 아이가 2~3초 안에 한 번에 읽는 길이 — 사양의 최장이
+        /// 「이름을 받으면, 울타리 안에 자리를 얻는다.」(24자)다. 이보다 길면 문장을 둘로 나눌 것.
+        /// </summary>
+        private const int MaxCueChars = 24;
+
+        /// <summary>대사 앞(introVideoId)에 붙는 네 편 — 새로 그렸다. 빠지면 그 비트가 영상 없이 짧은 대사만 남는다.</summary>
+        private static readonly string[] IntroVideos =
+        {
+            StoryVideoLibrary.Ch6Wall, StoryVideoLibrary.Ch7Fence, StoryVideoLibrary.FinShadow, StoryVideoLibrary.FinReturn,
+        };
+
+        [Test]
+        public void Library_HasFifteenStoryVideos_IncludingTheFourIntros()
+        {
+            Assert.AreEqual(15, AllVideos.Length, "그림책 영상은 15편이다(대사 뒤 11 · 대사 앞 4) — 늘리거나 줄였다면 이 수와 사양을 함께 고칠 것");
+            foreach (string id in IntroVideos)
+                CollectionAssert.Contains(AllVideos, id, $"대사 앞 영상 {id}가 상수로 없다");
+
+            Assert.IsTrue(StoryVideoLibrary.TryGet(StoryVideoLibrary.Ch6Wall, out StoryVideoDefinition wall));
+            Assert.AreEqual("ch6_wall.mp4", wall.fileName);
+            Assert.AreEqual(15f, wall.expectedDuration, 1e-4f);
+            Assert.IsTrue(StoryVideoLibrary.TryGet(StoryVideoLibrary.Ch7Fence, out StoryVideoDefinition fence));
+            Assert.AreEqual("ch7_fence.mp4", fence.fileName);
+            Assert.AreEqual(14f, fence.expectedDuration, 1e-4f);
+            Assert.IsTrue(StoryVideoLibrary.TryGet(StoryVideoLibrary.FinShadow, out StoryVideoDefinition shadow));
+            Assert.AreEqual("fin_shadow.mp4", shadow.fileName);
+            Assert.AreEqual(14.4f, shadow.expectedDuration, 1e-4f);
+            Assert.IsTrue(StoryVideoLibrary.TryGet(StoryVideoLibrary.FinReturn, out StoryVideoDefinition back));
+            Assert.AreEqual("fin_return.mp4", back.fileName);
+            Assert.AreEqual(14.6f, back.expectedDuration, 1e-4f);
+        }
+
+        [TestCaseSource(nameof(AllVideos))]
+        public void Library_Definitions_AreAtMostFifteenSeconds(string videoId)
+        {
+            Assert.IsTrue(StoryVideoLibrary.TryGet(videoId, out StoryVideoDefinition def));
+            Assert.LessOrEqual(def.expectedDuration, 15f + 1e-4f, $"{videoId}가 15초를 넘는다 — 아이가 기다리기엔 길다");
+        }
+
+        [TestCaseSource(nameof(AllVideos))]
+        public void Library_Cues_AreShortEnoughToReadAtOnce(string videoId)
+        {
+            Assert.IsTrue(StoryVideoLibrary.TryGet(videoId, out StoryVideoDefinition def));
+            foreach (StoryVideoCue cue in def.cues)
+            {
+                Assert.LessOrEqual(cue.text.Length, MaxCueChars, $"{videoId} 자막이 {cue.text.Length}자다: 「{cue.text}」");
+                StringAssert.DoesNotContain("\n", cue.text, $"{videoId} 자막은 한 줄이다 — 줄바꿈은 자막 띠 두 줄을 먹는다");
             }
         }
 
@@ -146,6 +207,55 @@ namespace InsectGame.Tests
             Assert.IsTrue(StoryVideoLibrary.TryGet(videoId, out StoryVideoDefinition def));
             foreach (StoryVideoCue cue in def.cues)
                 StringAssert.DoesNotContain("무명", cue.text, $"{videoId} 자막이 그것의 이름을 부른다");
+        }
+
+        /// <summary>
+        /// 쉬운 말로 바꾼 옛 말(story_lint 검사 32의 <c>RETIRED_WORDS</c>와 같은 목록) — 대사는 그 검사가 보지만 자막은
+        /// C#에 있어 거기 안 걸린다. 한 화면에서 대사는 「이름 벽」, 자막은 「봉인」이면 같은 것을 두 이름으로 부르게 된다.
+        /// </summary>
+        [TestCaseSource(nameof(AllVideos))]
+        public void Library_Cues_UseTheEasyWords(string videoId)
+        {
+            string[] retired = { "봉인", "무명", "지워진 개체", "예비 울타리" };
+            Assert.IsTrue(StoryVideoLibrary.TryGet(videoId, out StoryVideoDefinition def));
+            foreach (StoryVideoCue cue in def.cues)
+                foreach (string word in retired)
+                    StringAssert.DoesNotContain(word, cue.text, $"{videoId} 자막에 쓰지 않는 말 「{word}」");
+        }
+
+        /// <summary>
+        /// 실제 Story.json(JsonUtility)이 <c>introVideoId</c>를 읽는가 + 그 비트의 저작 규칙. story_lint 검사 25·13·36과 같은 규칙을
+        /// 런타임 파서 쪽에서 한 번 더 본다 — 필드 이름이 어긋나면 JsonUtility는 조용히 버리고 영상이 그냥 안 나온다.
+        /// </summary>
+        [Test]
+        public void RealStory_IntroVideoBeats_PointToLibraryAndStayShort()
+        {
+            var expected = new Dictionary<string, string>
+            {
+                ["ch6_secret"] = StoryVideoLibrary.Ch6Wall,
+                ["ch7_opening"] = StoryVideoLibrary.Ch7Fence,
+                ["fin_unnamed"] = StoryVideoLibrary.FinShadow,
+                ["fin_seal"] = StoryVideoLibrary.FinReturn,
+            };
+
+            int intros = 0;
+            foreach (StoryBeat beat in StoryService.AllBeats())
+            {
+                if (beat == null || string.IsNullOrEmpty(beat.introVideoId)) continue;
+                intros++;
+                Assert.IsTrue(StoryVideoLibrary.TryGet(beat.introVideoId, out _), $"{beat.beatId}: 모르는 introVideoId {beat.introVideoId}");
+                Assert.IsTrue(string.IsNullOrEmpty(beat.videoId), $"{beat.beatId}: 대사 앞·뒤 영상을 한 비트에 두지 않는다");
+                Assert.IsNotNull(beat.lines, beat.beatId);
+                Assert.That(beat.lines.Count, Is.InRange(1, 6), $"{beat.beatId}: 영상이 설명하므로 대사는 1~6줄");
+            }
+
+            foreach (KeyValuePair<string, string> pair in expected)
+            {
+                Assert.IsTrue(StoryService.TryGetBeat(pair.Key, out StoryBeat beat), $"{pair.Key}가 Story.json에 없다");
+                Assert.AreEqual(pair.Value, beat.introVideoId, $"{pair.Key}의 대사 앞 영상");
+                Assert.IsTrue(string.IsNullOrEmpty(beat.cutsceneId), $"{pair.Key}: 영상으로 옮긴 비트에 옛 컷신이 남았다");
+            }
+            Assert.GreaterOrEqual(intros, expected.Count);
         }
     }
 }

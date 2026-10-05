@@ -145,6 +145,42 @@ namespace InsectGame.UI
             return environmentChip ? top + EnvironmentChipHeight + UITheme.Space.S : top;
         }
 
+        /// <summary>대결 말풍선 높이(상대 쪽, <c>BattleScreenUI.DrawDuelBubble</c>).</summary>
+        internal const float BubbleHeight = 122f;
+
+        /// <summary>장부 게이지 — 상대 HP 카드 바로 아래 한 줄.</summary>
+        internal static Rect LedgerGauge(Rect card) => new Rect(card.x, card.yMax + UITheme.Space.S, card.width, LedgerGaugeHeight);
+
+        /// <summary>대결 말풍선 — 상대 HP 카드 폭 그대로, 장부 게이지·환경 칩 아래.</summary>
+        internal static Rect Bubble(Rect card, bool ledgerBelow, bool environmentChip) =>
+            new Rect(card.x, BubbleTop(card, ledgerBelow, environmentChip), card.width, BubbleHeight);
+
+        internal const float ComboBadgeWidth = 180f;
+        internal const float ComboBadgeHeight = 60f;
+        internal const float ComboPulseSeconds = 0.2f;
+        /// <summary>
+        /// 연속 배지가 처음 뜰 때의 크기 배율(가운데 축). 1.15를 넘기면 세로 화면의 꿈 챔피언전 안내 알약
+        /// (<c>DreamPrologueDirector.HintPillRect</c>, 720×1280에서 x 220부터)에 커진 배지가 닿는다.
+        /// </summary>
+        internal const float ComboPulsePeak = 1.15f;
+
+        /// <summary>
+        /// 연속 공격 배지 — <b>내</b> HP 카드 아래, 낮·밤·날씨 칩이 있으면 그 아래. 카드 바깥(왼쪽) 모서리에 붙인다.
+        /// 내 쪽에는 장부 게이지·대결 말풍선이 없다(둘 다 상대 쪽). 상대 쪽 쌓기와 좌우로 갈려 서로 닿지 않는다.
+        /// </summary>
+        internal static Rect ComboBadge(Rect playerCard, bool environmentChip)
+        {
+            float w = Mathf.Min(ComboBadgeWidth, Mathf.Max(1f, playerCard.width));
+            return new Rect(playerCard.x, BubbleTop(playerCard, false, environmentChip), w, ComboBadgeHeight);
+        }
+
+        /// <summary>배지가 뜬 뒤 <paramref name="sinceShown"/>초의 크기 배율 — 처음 0.2초 동안 1.15에서 1로 줄어들고, 그 뒤 1.</summary>
+        internal static float ComboPulse(float sinceShown, bool reducedMotion)
+        {
+            if (reducedMotion || sinceShown >= ComboPulseSeconds) return 1f;
+            return Mathf.Lerp(ComboPulsePeak, 1f, Mathf.Clamp01(sinceShown / ComboPulseSeconds));
+        }
+
         /// <summary>
         /// 처음 뜬 뒤 <paramref name="sinceShown"/>초의 크기 배율. 잠깐 기다렸다가 한 번 살짝(최대 +10%) 커졌다 돌아오고, 그 뒤로는 1이다.
         /// </summary>

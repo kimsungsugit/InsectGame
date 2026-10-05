@@ -6,8 +6,9 @@ namespace InsectGame.NPC
     /// 대결 상대가 전투 중에 하는 말 — 컷인(칭호·도발), 전투 중 한마디, 결과 한마디.
     ///
     /// 예전엔 간부전도 야생전과 똑같이 "○○와 마주쳤다" 한 줄로 시작해서, 관장과의 마지막 대결이
-    /// 필드의 인분무와 구별되지 않았다. 대사는 스토리 비트(대결 전 <c>talk_*</c>·대결 뒤 <c>duel_*_win</c>)가
-    /// 이미 들고 있으니 여기엔 <b>전투 한가운데에서만 할 수 있는 말</b>만 둔다 — 겹치면 같은 말을 두 번 듣는다.
+    /// 필드의 인분무와 구별되지 않았다. 대사는 스토리 비트(대결 전 대치 <c>chN_confront</c> — 그 마지막 줄의 도전 뒤
+    /// 곧바로 대결이 열린다(<c>StoryBeat.duelAfter</c>) — ·대결 뒤 <c>duel_*_win</c>)가 이미 들고 있으니 여기엔
+    /// <b>전투 한가운데에서만 할 수 있는 말</b>만 둔다 — 겹치면 같은 말을 두 번 듣는다.
     ///
     /// 키는 대결 ID다. 간부는 <c>storyNpcId</c> 그대로이고(<see cref="NpcBossDuels"/>), 한 인물이 여러 번
     /// 싸우는 경우(라이벌 단계)는 별도 키를 쓴다 — 그래서 초상 인물(<see cref="Lines.npcId"/>)을 따로 든다.
@@ -36,6 +37,13 @@ namespace InsectGame.NPC
             public string defeat;
             /// <summary>플레이어가 졌을 때 상대의 말.</summary>
             public string victory;
+            /// <summary>
+            /// <b>팀 대결의 교체 한마디</b> — 상대가 다음 곤충을 내보낼 때. [0]이 두 번째 곤충, [1]이 세 번째 곤충…
+            /// 명부회 간부는 여럿을 데리고 싸운다(집게·저울 셋, 하월 다섯 — <c>NpcBossDuels</c>). 한 마리만 내는 상대(하수·라온)는
+            /// 비워 둔다. 줄이 모자라면 마지막 줄을 되풀이한다 — <see cref="SendOutLine"/>이 고른다.
+            /// 그리기는 ui-dev(<c>BattleScreenUI.Duel</c>)가 교체 순간에 말풍선으로 띄운다.
+            /// </summary>
+            public string[] sendOut;
         }
 
         public enum Moment { None, Half, Crisis, Pressing }
@@ -82,6 +90,32 @@ namespace InsectGame.NPC
             return Moment.None;
         }
 
+        /// <summary>
+        /// 상대 HP로 정하는 순간(흔들림·위기)을 <b>지금 나와 있는 곤충</b>으로 말해도 되는가 — 팀 대결이면 <b>에이스(마지막 곤충)</b>에서만.
+        ///
+        /// 간부는 여럿을 데리고 싸운다(집게·저울 셋, 하월 다섯 — <c>NpcBossDuels.teamInsectIds</c>). 대사는 그 사람의 마지막 패를 두고 쓴
+        /// 말이라("이 손이… 밀린다고?", "삼십 년 전에도 이 아이는 이렇게 날았지"), 첫 곤충이 절반 아래로 떨어진 순간에 나오면 아직 셋이 남았는데
+        /// 무너지는 소리를 한다. 앞 곤충들 사이는 교체 한마디(<see cref="Lines.sendOut"/>)가 맡는다.
+        /// 내 곤충이 몰리는 순간(<see cref="Moment.Pressing"/>)은 상대 팀과 무관하다 — 막지 않는다.
+        /// </summary>
+        /// <param name="enemyTeamSize">상대 팀 크기(<c>InsectBattleController.EnemyTeamSize</c>). 1 이하면 한 마리 대결.</param>
+        /// <param name="enemyTeamIndex">지금 나와 있는 상대의 순번(0부터, <c>EnemyTeamIndex</c>).</param>
+        public static bool EnemyMomentsAllowed(int enemyTeamSize, int enemyTeamIndex)
+        {
+            if (enemyTeamSize <= 1) return true;
+            return enemyTeamIndex >= enemyTeamSize - 1;
+        }
+
+        /// <summary>
+        /// 팀 대결판 <see cref="Next(ref Tracker, float, float)"/> — 에이스가 나오기 전엔 상대 HP 순간을 건너뛴다(트래커도 건드리지 않아
+        /// 에이스가 나온 뒤 처음부터 센다). 그리기(<c>BattleScreenUI.Duel</c>)가 팀 크기·순번을 넘겨 부른다.
+        /// </summary>
+        public static Moment Next(ref Tracker tracker, float enemyRatio, float playerRatio, int enemyTeamSize, int enemyTeamIndex)
+        {
+            float enemy = EnemyMomentsAllowed(enemyTeamSize, enemyTeamIndex) ? enemyRatio : 1f;
+            return Next(ref tracker, enemy, playerRatio);
+        }
+
         public static string LineFor(Lines lines, Moment moment)
         {
             switch (moment)
@@ -91,6 +125,19 @@ namespace InsectGame.NPC
                 case Moment.Pressing: return lines.pressing;
                 default: return null;
             }
+        }
+
+        /// <summary>
+        /// 상대가 <paramref name="incomingIndex"/>번째 곤충(0부터 — 첫 곤충은 0, 처음 교체해 나오는 곤충이 1)을 내보낼 때의 한마디.
+        /// 첫 곤충(0)·줄이 없는 상대는 null이다(첫 곤충의 말은 컷인 도발 <see cref="Lines.intro"/>가 맡는다).
+        /// 준비한 줄보다 팀이 길면 마지막 줄을 쓴다 — 팀 크기가 바뀌어도 말이 끊기지 않게.
+        /// </summary>
+        public static string SendOutLine(Lines lines, int incomingIndex)
+        {
+            if (incomingIndex <= 0 || lines.sendOut == null || lines.sendOut.Length == 0) return null;
+            int i = incomingIndex - 1;
+            if (i >= lines.sendOut.Length) i = lines.sendOut.Length - 1;
+            return lines.sendOut[i];
         }
 
         public static bool TryGet(string duelId, out Lines lines)
@@ -145,6 +192,12 @@ namespace InsectGame.NPC
                 pressing = "그래, 그거다. 걸린 놈은 결국 이렇게 된다.",
                 defeat = "크윽… 지네가 먼저 물러서다니.",
                 victory = "봐라. 한 마리씩으로는 안 된다.",
+                sendOut = new[]
+                {
+                    "다음이다. 물러서지 마라.",
+                    // 셋째가 에이스 지네(centipede_sand)다 — 패배 한마디("지네가 먼저 물러서다니")와 이어진다.
+                    "마지막이다. 지네야, 끝까지 물고 늘어져라!",
+                },
             },
             ["ledger_scale"] = new Lines
             {
@@ -155,6 +208,11 @@ namespace InsectGame.NPC
                 pressing = "예상대로다. 네 곤충의 등급은 거기까지다.",
                 defeat = "……측정 종료.",
                 victory = "감상은 수치를 못 이긴다.",
+                sendOut = new[]
+                {
+                    "다음 표본. 수치는 거짓말을 안 한다.",
+                    "마지막 표본이다. 이번엔 틀림없이 잰다.",
+                },
             },
             ["ledger_chief"] = new Lines
             {
@@ -165,9 +223,28 @@ namespace InsectGame.NPC
                 pressing = "서두르게. 늦으면 전부 놓친다 — 나처럼.",
                 defeat = "그 손을… 놓지 말게.",
                 victory = "아직이군. …다시 오게.",
+                sendOut = new[]
+                {
+                    "다음 장을 넘기지.",
+                    "이 아이도 내 장부에 적힌 이름이다.",
+                    "삼십 년 치 장부다. 아직 남았네.",
+                    // 다섯째가 이름 잃은 나방(moth_effaced) — 대치의 "이 아이를 넘어 보게"가 가리킨 그 아이다.
+                    "마지막 장이다. 이름 잃은 아이야, 나가거라.",
+                },
             },
             // ── 라온 라이벌(NpcRivalDuels) ── 한 인물이 단계마다 싸우므로 키가 단계 ID다.
             // 이기고 지는 말이 적대가 아니라 장난스럽다 — 라온은 끝까지 "누가 더 구하나"의 경쟁자다.
+            // 초원은 **첫 전투**일 수 있다(첫 만남 대사 직후 곧바로 붙는다) — 말을 쉽고 짧게 둔다.
+            ["rival_meadow"] = new Lines
+            {
+                npcId = "catcher_rival", name = "라온", title = "초원의 라이벌",
+                intro = "첫 판이다! 내 여치, 얕보면 큰코다쳐!",
+                half = "어? 생각보다 세잖아!",
+                crisis = "잠깐, 잠깐! 아직이야!",
+                pressing = "봤지? 사흘 걸려 잡은 보람이 있다니까!",
+                defeat = "졌다! …그래도 재밌었어. 또 하자!",
+                victory = "이겼다! 다음엔 너도 더 세져서 와!",
+            },
             ["rival_pond"] = new Lines
             {
                 npcId = "catcher_rival", name = "라온", title = "초원의 라이벌",
@@ -188,6 +265,26 @@ namespace InsectGame.NPC
                 defeat = "하… 또 졌네. 너한테 지는 건 이상하게 안 분해.",
                 victory = "봤지? 나도 놀고만 있던 거 아니라고!",
             },
+            ["rival_hollow"] = new Lines
+            {
+                npcId = "catcher_rival", name = "라온", title = "텅 빈 들의 라이벌",
+                intro = "여기 너무 조용해. 우리가 시끄럽게 해 주자!",
+                half = "좋아, 이 소리! 들판이 깨어나는 것 같아.",
+                crisis = "버텨, 여치야! 여기서 지면 창피해!",
+                pressing = "조용한 데서는 내 여치가 더 잘 들어!",
+                defeat = "졌다. 그래도 들판에 소리가 났잖아.",
+                victory = "내가 이겼다! 들판아, 들었지?",
+            },
+            ["rival_dunes"] = new Lines
+            {
+                npcId = "catcher_rival", name = "라온", title = "모래언덕의 라이벌",
+                intro = "덥다! 빨리 끝내고 상자 열러 가자!",
+                half = "모래바람 속에서도 잘 버티네!",
+                crisis = "모래가 눈에… 아니, 핑계 아니야!",
+                pressing = "상자 생각하니까 힘이 나거든!",
+                defeat = "졌어. 이 힘은 상자 여는 데 쓸게.",
+                victory = "이겼다! 이 기세로 창고까지 가자!",
+            },
             ["rival_frost"] = new Lines
             {
                 npcId = "catcher_rival", name = "라온", title = "서릿길의 라이벌",
@@ -197,6 +294,16 @@ namespace InsectGame.NPC
                 pressing = "뒤만 보는 줄 알았지? 앞도 볼 줄 안다고!",
                 defeat = "졌다. …다음엔 네 옆에서 싸우는 쪽이 좋겠다.",
                 victory = "헤헤, 오늘은 내가 이겼다. 세라한테는 비밀!",
+            },
+            ["rival_ember"] = new Lines
+            {
+                npcId = "catcher_rival", name = "라온", title = "잿불의 라이벌",
+                intro = "땅이 뜨거워. 금방 끝내고 애들 구하러 가자!",
+                half = "역시 너야. 등 맡기기 딱 좋겠어.",
+                crisis = "아직 아니야! 갱도 가기 전에 한 방!",
+                pressing = "불 속에서도 내 여치는 안 물러서!",
+                defeat = "졌다. 됐어, 이제 진짜 구하러 가자.",
+                victory = "이겼다! 이 기분으로 갱도까지 간다!",
             },
             ["rival_final"] = new Lines
             {

@@ -733,14 +733,15 @@ namespace InsectGame.Core
         ///
         /// 조사는 "…에게"로 잇는다. 수문장 이름이 데이터에서 오는데 받침이 갈려서
         /// ("사마귀" / "장수말벌") 을/를 어느 쪽으로 고정해도 절반은 어색해진다.
+        ///
+        /// 문구는 <see cref="RegionManager.DescribeLock"/>이 만든다 — 수문장을 이미 이겼는데 이야기 대결(명부회 간부)이
+        /// 남은 리전(서릿길·잿불 골짜기)은 "집게에게 이겨야 열립니다"가 맞다. 여기서 수문장만 보면 이미 쓰러뜨린 수문장을
+        /// 다시 가리킨다. 지도·HUD 목표가 같은 판정을 읽는다.
         /// </summary>
         private string BuildBlockedMessage(Data.RegionData region)
         {
-            Data.RegionData gate = regionManager.GetGatekeeperRegion(region.regionId);
-            if (gate != null && !string.IsNullOrEmpty(gate.guardianDisplayName))
-                return $"{region.displayName} — {gate.guardianDisplayName}에게 이겨야 열립니다";
-
-            return $"{region.displayName} — 아직 갈 수 없습니다";
+            string message = regionManager.DescribeLock(region);
+            return string.IsNullOrEmpty(message) ? $"{region.displayName} — 아직 갈 수 없습니다" : message;
         }
 
         // F9 unstick — 끼임 escape. SubArea 안이면 SubAreaWorldBuilder의 FindSafeSpawnPosition과

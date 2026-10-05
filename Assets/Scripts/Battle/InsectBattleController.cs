@@ -30,19 +30,99 @@ namespace InsectGame.Battle
         public event Action<InsectBattleStats, InsectBattleStats> BattleUpdated;
         public event Action PlayerFainted;
 
+        /// <summary>
+        /// 팀 대결(<see cref="StartTeamDuel"/>)에서 상대 곤충이 쓰러지고 다음 곤충이 나왔다 — (나가는 곤충, 들어오는 곤충).
+        /// 그 라운드의 <see cref="BattleUpdated"/> <b>뒤에</b>, 같은 행동 처리 안에서 동기로 울린다. 이 이벤트 뒤에
+        /// <see cref="BattleUpdated"/>를 다시 쏘지 않는다 — 화면이 마지막 일격·쓰러짐을 마저 보여 주고 나서 들어오는 곤충으로
+        /// 바꾸도록(BattleScreenUI의 교체 단계). 들어온 곤충은 이 라운드에 행동하지 않는다 — 다음 내 행동부터 반격한다.
+        /// 마지막 곤충이 쓰러지면 울리지 않고 평소처럼 <see cref="BattleEnded"/>(true)가 한 번 울린다.
+        /// </summary>
+        public event Action<InsectBattleStats, InsectBattleStats> EnemySwitched;
+
         // 적이 직전 턴에 사용한 스킬(null=기본공격/쿨다운) — UI가 EnemyAttack 페이즈 연출에 사용.
         private IRaidRandomSource randomSource = new BattleRandomSource();
 
+        // 치명타 전용 줄기 — 명중·도주·포획 롤(randomSource)과 **따로 돈다.** 같은 줄기에서 뽑으면
+        // 피해기마다 롤이 하나 끼어 명중 롤 순서가 밀리고, 시드·스크립트 난수로 고정한 시나리오가 전부 바뀐다.
+        // null이면 치명타가 없다(결정적) — 피해·HP를 정확히 단언하는 테스트가 이걸로 끈다.
+        private IRaidRandomSource critSource = new BattleRandomSource();
+
+        /// <summary>명중·도주·포획 롤 줄기만 바꾼다. 치명타 줄기는 그대로다(<see cref="SetCritSource"/>).</summary>
         public void SetRandomSource(IRaidRandomSource source)
         {
             randomSource = source ?? new BattleRandomSource();
         }
 
-        /// <summary>Set before starting a deterministic fixture; never reads Unity's visual RNG.</summary>
+        /// <summary>
+        /// Set before starting a deterministic fixture; never reads Unity's visual RNG.
+        /// <b>두 줄기를 함께 시드한다</b> — 명중 줄기는 <paramref name="seed"/>, 치명타 줄기는 그 파생값.
+        /// 치명타를 끄려면 이 <b>뒤에</b> <see cref="SetCritSource"/>(null)을 부를 것.
+        /// </summary>
         public void SetRandomSeed(int seed)
         {
             randomSource = new BattleRandomSource(seed);
+            critSource = new BattleRandomSource(CritSeedFor(seed));
         }
+
+        /// <summary>치명타 줄기를 바꾼다. <c>null</c>이면 치명타가 아예 없다(굴리지도 않는다).</summary>
+        public void SetCritSource(IRaidRandomSource source)
+        {
+            critSource = source;
+        }
+
+        /// <summary>시드 고정 시 치명타 줄기의 시드 — 명중 줄기와 같은 수열이 되지 않게 비튼다.</summary>
+        public static int CritSeedFor(int seed) => unchecked(seed ^ 0x6C8E9CF5);
+
+        /// <summary>
+        /// 이번 라운드에 <b>내 곤충</b>의 행동이 치명타였는가. 행동을 시작할 때(<c>BeginResolvedRound</c>) 끈다 —
+        /// <see cref="BattleUpdated"/>에서 읽으면 방금 라운드 값이다. 피해기만 켤 수 있다(버프·회복·독·기절·빗나감·샌드박스 제외).
+        /// </summary>
+        public bool LastPlayerHitCritical { get; private set; }
+
+        /// <summary>이번 라운드에 <b>상대</b>의 반격이 치명타였는가. 규칙은 <see cref="LastPlayerHitCritical"/>과 같다.</summary>
+        public bool LastEnemyHitCritical { get; private set; }
+
+        // ── 마지막 행동의 전용기·상성(연출·문구가 읽는다) ──
+        // 치명타 표지와 같은 수명이다 — 행동을 시작할 때(BeginResolvedRound) 끄고, BattleUpdated에서 읽으면 방금 라운드 값이다.
+
+        /// <summary>이번 라운드에 <b>내 곤충</b>이 쓴 기술. 기본 공격·기절로 건너뛴 차례·도주면 null.</summary>
+        public InsectSkill LastPlayerSkill { get; private set; }
+
+        /// <summary>
+        /// 이번 라운드에 내 곤충이 쓴 기술이 <b>그 곤충의 전용기</b>였는가(<see cref="SignatureSkills.IsSignature"/>).
+        /// 빗나가도 true다 — 전용기를 꺼낸 것 자체가 연출거리다(맞았는지는 <see cref="LastPlayerHitMatchup"/>·피해로 본다).
+        /// </summary>
+        public bool LastPlayerSkillIsSignature { get; private set; }
+
+        /// <summary>
+        /// 이번 라운드 내 피해기가 상대에게 <b>들어갔을 때</b>의 상성 등급(<see cref="ElementMatchup.Describe"/>). 피해기가 아니거나
+        /// 빗나갔거나 기본 공격(상성 없음)이면 <see cref="Matchup.Neutral"/>. 화면은 이 값 하나로 피해 숫자 위 상성 표시를 띄운다
+        /// (위쪽 효과 문구로는 띄우지 않는다 — 한 타격에 두 번 보이지 않게).
+        /// </summary>
+        public Matchup LastPlayerHitMatchup { get; private set; }
+
+        /// <summary>이번 라운드 상대가 쓴 기술(<see cref="LastEnemySkill"/>)이 상대 곤충의 전용기였는가. 규칙은 <see cref="LastPlayerSkillIsSignature"/>와 같다.</summary>
+        public bool LastEnemySkillIsSignature { get; private set; }
+
+        /// <summary>이번 라운드 상대 피해기가 내 곤충에게 들어갔을 때의 상성 등급. 규칙은 <see cref="LastPlayerHitMatchup"/>과 같다.</summary>
+        public Matchup LastEnemyHitMatchup { get; private set; }
+
+        /// <summary>기절로 내 곤충이 건너뛸 남은 행동 수(0이면 정상). HP 카드의 기절 표시가 읽는다.</summary>
+        public int PlayerStunTurns => playerStunTurns;
+
+        /// <summary>기절로 상대가 건너뛸 남은 행동 수(0이면 정상).</summary>
+        public int EnemyStunTurns => enemyStunTurns;
+
+        /// <summary>
+        /// 이번 라운드 끝(<c>TickEffects</c>)에 독으로 <b>내 곤충</b>이 실제로 잃은 HP. 행동을 시작할 때 0으로 돌아간다.
+        /// 독 피해는 두 공격의 스냅샷(<see cref="PlayerHpAfterEnemyAction"/>) 뒤에 들어가므로, 연출 지연 모드에서도
+        /// 두 연출이 끝난 뒤(라운드 정리 단계) 이 값을 숫자로 띄우면 HP바 감소와 맞는다.
+        /// </summary>
+        public int PlayerPoisonDamageThisRound { get; private set; }
+
+        /// <summary>이번 라운드 끝에 독으로 <b>상대</b>가 실제로 잃은 HP. 규칙은 <see cref="PlayerPoisonDamageThisRound"/>와 같다.</summary>
+        public int EnemyPoisonDamageThisRound { get; private set; }
+
 
         public bool DeferPresentation { get; set; }
         public bool PlayerActedThisRound { get; private set; }
@@ -59,6 +139,15 @@ namespace InsectGame.Battle
             PlayerActedThisRound = false;
             EnemyActedThisRound = false;
             LastEnemySkill = null;
+            LastPlayerHitCritical = false;
+            LastEnemyHitCritical = false;
+            LastPlayerSkill = null;
+            LastPlayerSkillIsSignature = false;
+            LastPlayerHitMatchup = Matchup.Neutral;
+            LastEnemySkillIsSignature = false;
+            LastEnemyHitMatchup = Matchup.Neutral;
+            PlayerPoisonDamageThisRound = 0;
+            EnemyPoisonDamageThisRound = 0;
             resolvingEnemyAction = false;
             presentationTexts.Clear();
             SnapshotPlayerAction();
@@ -100,8 +189,9 @@ namespace InsectGame.Battle
         /// <c>BattleEnded</c>가 <c>Action&lt;bool&gt;</c>이라 "무엇을 이겼는가"를 못 싣는다.
         /// 시그니처를 바꾸면 구독자 셋(UI·튜토리얼 퀘스트·스토리)과 배치 검증 도구의 리플렉션이
         /// 함께 따라오므로, 대신 <b>발화 시점에 읽을 수 있는 상태</b>로 노출한다.
-        /// <c>enemyStats</c>는 <c>BeginBattleCommon</c>에서 한 번만 잡히고 전투 중 교체되지 않으므로
-        /// <c>BattleEnded</c> 시점에도 유효하다.
+        /// <c>enemyStats</c>는 <c>BeginBattleCommon</c>에서 잡히고, 바뀌는 건 팀 대결의 교체
+        /// (<see cref="EnemySwitched"/>)뿐이다 — 그래서 <c>BattleEnded</c> 시점엔 <b>마지막으로 싸운 상대</b>
+        /// (팀 대결이면 에이스)다.
         ///
         /// <c>StoryDirector</c>가 <c>BattleWin</c> 트리거의 종 지정에 쓴다 — 그쪽은 결과 화면
         /// 뒤로 발화를 <b>미루므로</b> 이 값을 그때 다시 읽으면 늦다. 미룰 때 param에 실어야 한다.
@@ -140,6 +230,12 @@ namespace InsectGame.Battle
         public string DuelOpponentId { get; private set; } = string.Empty;
         private bool enemyShinyAtStart; // 시작 시점 스냅샷 — 도주/풀 재사용된 라이브 참조로 보상 오등록 방지
         private bool duelMode;          // NPC 대결 — 포획 롤·야생 아이템 드랍 없음(StartDuel 참조)
+
+        /// <summary>
+        /// 이번(또는 마지막) 전투가 NPC 대결(아이·간부·라온 — <see cref="StartDuel"/>·<see cref="StartTeamDuel"/>)인가.
+        /// 야생·수문장·샌드박스면 false. 다음 전투를 시작할 때까지 값을 지킨다. 종류 판정은 <see cref="BattleKinds.Classify"/>.
+        /// </summary>
+        public bool IsDuel => duelMode;
 
         // 이번 전투에서 내가 행동해 **차례가 넘어간** 횟수 — 조건부 퀘스트(BattleFeat "N번 안에 이기기")의 입력.
         // 스턴으로 건너뛴 차례도 센다(턴은 흘렀다). 입력이 거절돼 차례가 안 넘어간 호출은 세지 않는다.
@@ -200,6 +296,8 @@ namespace InsectGame.Battle
         private const int PersistentPoisonTurns = 3;
         private readonly List<ActiveEffect> effects = new List<ActiveEffect>();
         private int lastCandyReward;
+        // 이번 승리에 준 코인 — 승리 화면 보상 줄이 읽는다(지급은 AddCoins가 한다).
+        private int lastCoinReward;
         private int lastExpReward;
         // 종료 가드 — 승리/패배 처리(보상 지급·BattleEnded)를 1회로 제한.
         // 없으면 종료 후 액션이 한 번 더 들어올 때(rapid tap/입력 큐) 보상 이중 지급.
@@ -263,6 +361,175 @@ namespace InsectGame.Battle
             onStarted?.Invoke(playerStats, enemyStats);
             BattleUpdated?.Invoke(playerStats, enemyStats);
             return true;
+        }
+
+        // ── 상대 팀(간부 팀 대결) ──
+        // null이면 한 마리 전투다(야생·아이·라온·하수·샌드박스). BeginBattleCommon이 매번 비운다 —
+        // 남으면 다음 아이 대결이 간부의 남은 곤충을 이어 내보낸다(sandbox 표지와 같은 계열).
+        private InsectData[] enemyTeamData;
+        private int[] enemyTeamLevels;
+        private bool[] enemyTeamFainted;
+        private int enemyTeamIndex;
+
+        /// <summary>상대 팀 크기 — 한 마리 전투면 1, 전투를 시작한 적이 없으면 0.</summary>
+        public int EnemyTeamSize => enemyTeamData != null ? enemyTeamData.Length : (enemyStats != null ? 1 : 0);
+
+        /// <summary>여러 마리를 차례로 내보내는 팀 대결인가(<see cref="StartTeamDuel"/>, 2마리 이상).</summary>
+        public bool IsEnemyTeamBattle => enemyTeamData != null && enemyTeamData.Length > 1;
+
+        /// <summary>지금 나와 있는 상대가 팀의 몇 번째인가(0부터). 한 마리 전투면 0.</summary>
+        public int EnemyTeamIndex => enemyTeamData != null ? enemyTeamIndex : 0;
+
+        /// <summary>아직 쓰러지지 않은 상대 수 — 지금 나와 있는 곤충을 포함한다. 마지막 곤충이 쓰러지면 0.</summary>
+        public int EnemiesRemaining
+        {
+            get
+            {
+                if (enemyTeamData == null) return enemyStats != null && enemyStats.CurrentHp > 0 ? 1 : 0;
+                int count = 0;
+                for (int i = 0; i < enemyTeamFainted.Length; i++)
+                    if (!enemyTeamFainted[i]) count++;
+                return count;
+            }
+        }
+
+        /// <summary><paramref name="slot"/>번째 상대가 쓰러졌는가. 범위 밖이면 false.</summary>
+        public bool IsEnemyTeamMemberFainted(int slot)
+        {
+            if (enemyTeamData == null) return slot == 0 && enemyStats != null && enemyStats.CurrentHp <= 0;
+            return slot >= 0 && slot < enemyTeamFainted.Length && enemyTeamFainted[slot];
+        }
+
+        /// <summary><paramref name="slot"/>번째로 나오는(나왔던) 상대 곤충. 한 마리 전투면 0번이 지금 상대다.</summary>
+        public InsectData GetEnemyTeamInsect(int slot)
+        {
+            if (enemyTeamData == null) return slot == 0 && enemyStats != null ? enemyStats.Data : null;
+            return slot >= 0 && slot < enemyTeamData.Length ? enemyTeamData[slot] : null;
+        }
+
+        /// <summary><paramref name="slot"/>번째 상대의 레벨(0이면 없음).</summary>
+        public int GetEnemyTeamLevel(int slot)
+        {
+            if (enemyTeamData == null) return slot == 0 && enemyStats != null ? enemyStats.Level : 0;
+            return slot >= 0 && slot < enemyTeamLevels.Length ? Mathf.Max(1, enemyTeamLevels[slot]) : 0;
+        }
+
+        /// <summary>
+        /// 팀 대결 — 상대가 <paramref name="enemyTeam"/>을 <b>앞에서부터 차례로</b> 내보낸다(마지막이 에이스).
+        /// 상대 곤충이 쓰러져도 남은 곤충이 있으면 전투가 끝나지 않고 다음 곤충이 나온다(<see cref="EnemySwitched"/>).
+        /// 마지막 곤충이 쓰러져야 승리이고, 그때 <see cref="BattleEnded"/>·<see cref="DuelEnded"/>가 <b>한 번</b> 울린다.
+        ///
+        /// 나머지는 <see cref="StartDuel"/>과 같다 — 포획·도감·야생 드랍 없음, 낮·밤·날씨 보정 없음.
+        /// 보상(캔디·EXP·코인)은 <b>쓰러뜨린 상대마다</b> 한 마리 대결과 같은 식으로 계산해 합산하고 이겼을 때만 준다.
+        /// 장부(<see cref="ArmLedger"/>)·상대 표지(<see cref="SetDuelOpponent"/>)는 이 호출 <b>뒤에</b> 건다(StartDuel과 같다).
+        /// 지면 다음 도전은 처음부터다 — 진행 중이던 팀을 기억하지 않는다.
+        /// </summary>
+        /// <returns>팀이 비었거나 빈 칸·레벨 누락이 있거나 내 곤충이 기절했으면 false(상태를 건드리지 않는다).</returns>
+        public bool StartTeamDuel(InsectData playerInsect, int playerLevel, InsectData[] enemyTeam, int[] enemyLevels,
+            Action<InsectBattleStats, InsectBattleStats> onStarted = null, InsectSkill[] equippedSkills = null,
+            Core.PlayerInsectData playerPid = null)
+        {
+            if (playerInsect == null || enemyTeam == null || enemyTeam.Length == 0) return false;
+            if (enemyLevels == null || enemyLevels.Length < enemyTeam.Length) return false;
+            for (int i = 0; i < enemyTeam.Length; i++)
+                if (enemyTeam[i] == null) return false;
+            if (playerPid != null && playerPid.IsFainted) return false;
+
+            BeginBattleCommon(playerInsect, playerLevel, enemyTeam[0], enemyLevels[0], equippedSkills, playerPid);
+            enemyTeamData = (InsectData[])enemyTeam.Clone();
+            enemyTeamLevels = new int[enemyTeam.Length];
+            System.Array.Copy(enemyLevels, enemyTeamLevels, enemyTeam.Length);
+            enemyTeamFainted = new bool[enemyTeam.Length];
+            enemyTeamIndex = 0;
+            enemyEntity = null;
+            enemyShinyAtStart = false;
+            EnemyGuardianRegionId = string.Empty;  // NPC 대결은 수문장이 아니다
+            duelMode = true;
+            onStarted?.Invoke(playerStats, enemyStats);
+            BattleUpdated?.Invoke(playerStats, enemyStats);
+            return true;
+        }
+
+        // 지금 상대 뒤에 아직 안 쓰러진 곤충이 있는가. 샌드박스는 팀을 쓰지 않는다.
+        private bool HasNextEnemy()
+        {
+            if (enemyTeamData == null || sandbox) return false;
+            for (int i = enemyTeamIndex + 1; i < enemyTeamData.Length; i++)
+                if (!enemyTeamFainted[i]) return true;
+            return false;
+        }
+
+        /// <summary>
+        /// 쓰러진 상대를 거두고 다음 곤충을 내보낸다 — <see cref="CheckEnd"/>가 지금 상대의 HP가 0이고 뒤가 남았을 때 부른다.
+        /// <b>상대 쪽만 새 곤충 기준으로 초기화한다</b>: 상대에게 걸린 버프·디버프·독(효과 목록의 상대 몫)·기절·쿨다운.
+        /// <b>내 곤충의 버프·독·기절·쿨다운은 그대로</b>, 장부도 그대로다 — 장부는 곤충이 아니라 인물의 것이다.
+        /// </summary>
+        private void SendOutNextEnemy()
+        {
+            InsectBattleStats outgoing = enemyStats;
+            enemyTeamFainted[enemyTeamIndex] = true;
+            int next = enemyTeamIndex + 1;
+            while (next < enemyTeamData.Length && enemyTeamFainted[next]) next++;
+            if (next >= enemyTeamData.Length) return;   // HasNextEnemy가 막는다 — 방어선
+
+            TryPlayFaint(false);   // 연출 지연 모드(BattleScreenUI)에서는 화면이 직접 눕힌다 — 여기선 no-op
+            enemyTeamIndex = next;
+            enemyStats = new InsectBattleStats(enemyTeamData[next], enemyTeamLevels[next]);
+            effects.RemoveAll(e => !e.targetIsPlayer);
+            enemyStunTurns = 0;
+            enemyCooldown = 0;
+            // 대결은 낮·밤·날씨 보정이 꺼져 있다 — 켜져 있는 전투라면 들어온 곤충도 같은 하늘로 잰다(교체와 같은 규칙).
+            if (environmentActive)
+            {
+                EnemyEnvironment = BattleEnvironment.NoteFor(enemyStats.Data, environmentState);
+                enemyStats.ApplyEnvironment(EnemyEnvironment.Multiplier);
+            }
+            else
+            {
+                EnemyEnvironment = BattleEnvironmentNote.None;
+            }
+            RecalculateBonuses();
+            // 구독자 예외 격리 — 여기서 던지면 같은 라운드의 내 기절 처리(CheckEnd)가 건너뛰어져 대결이 멈춘다(PlayerFainted와 같은 이유).
+            try
+            {
+                EnemySwitched?.Invoke(outgoing, enemyStats);
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning($"[InsectBattle] EnemySwitched 핸들러 예외: {e.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 대결 승리 보상 — 상대 팀의 곤충마다 한 마리 대결과 같은 식(캔디·EXP·코인)으로 계산해 합산하고 지급한다.
+        /// 한 마리 대결이면 지금 상대 하나다(예전과 같은 값). 곤충마다 반올림한 뒤 더한다 — 세 마리 팀의 보상이
+        /// 같은 세 곤충과 따로 싸운 대결 셋의 합과 정확히 같다. 캐릭터 레벨은 <b>지급 전</b> 값 하나로 잰다.
+        /// </summary>
+        private void GrantDuelVictoryRewards()
+        {
+            float duelCandyMul = (itemEffects != null ? itemEffects.GetCandyMultiplier() : 1f)
+                                * (outfitBonus != null ? outfitBonus.GetCandyMultiplier() : 1f);
+            float duelExpMul = (itemEffects != null ? itemEffects.GetExpMultiplier() : 1f)
+                              * (outfitBonus != null ? outfitBonus.GetExpMultiplier() : 1f);
+            int duelTrainerLevel = playerProgress != null ? playerProgress.Level : playerStats.Level;
+
+            int opponents = enemyTeamData != null ? enemyTeamData.Length : 1;
+            int candy = 0;
+            int exp = 0;
+            for (int i = 0; i < opponents; i++)
+            {
+                InsectData data = enemyTeamData != null ? enemyTeamData[i] : enemyStats.Data;
+                int level = enemyTeamData != null ? Mathf.Max(1, enemyTeamLevels[i]) : enemyStats.Level;
+                candy += Mathf.RoundToInt(InsectRewardCalculator.GetCandyReward(data) * duelCandyMul);
+                exp += Mathf.RoundToInt(InsectRewardCalculator.GetExpReward(data, level, duelTrainerLevel) * duelExpMul);
+            }
+
+            lastCandyReward = candy;
+            lastExpReward = exp;
+            candyInventory?.AddCandy(lastCandyReward);
+            playerProgress?.GainXp(lastExpReward);
+            lastCoinReward = BattleVictoryCoins * opponents;
+            wallet?.AddCoins(lastCoinReward);
         }
 
         /// <summary>
@@ -332,6 +599,7 @@ namespace InsectGame.Battle
             DuelOpponentId = string.Empty;   // 장부와 같은 이유 — 다음 야생 전투가 간부 컷인을 물려받지 않게
             lastCandyReward = 0;
             lastExpReward = 0;
+            lastCoinReward = 0;
             lastItemId = string.Empty;
             lastItemCount = 0;
             lastPlayerWon = false;
@@ -343,6 +611,11 @@ namespace InsectGame.Battle
             sandbox = false;   // StartSandbox가 공통 초기화 뒤에 다시 세운다 — 야생·대결이 이전 샌드박스 표지를 물려받지 않게
             sandboxPlayerActions = 0;
             playerActionCount = 0;   // 이전 전투의 횟수를 물려받으면 "N번 안에 이기기"가 조용히 어긋난다
+            // 상대 팀도 sandbox 표지와 같은 이유로 여기서 끈다 — StartTeamDuel만 공통 초기화 뒤에 다시 세운다.
+            enemyTeamData = null;
+            enemyTeamLevels = null;
+            enemyTeamFainted = null;
+            enemyTeamIndex = 0;
             // 낮·밤·날씨 보정도 sandbox 표지와 같은 이유로 여기서 끈다 — 야생 전투 뒤 대결·꿈 챔피언전이 이전 칩을 물려받지 않게.
             // 야생 전투만 StartBattle이 공통 초기화 뒤에 다시 건다(ApplyWildEnvironment).
             environmentActive = false;
@@ -488,6 +761,8 @@ namespace InsectGame.Battle
                 if (sandbox) sandboxPlayerActions++;
                 InsectSkill[] skills = GetPlayerSkills();
                 InsectSkill skill = skills != null && skillIndex < skills.Length ? skills[skillIndex] : GetSkill(playerStats.Data, skillIndex);
+                LastPlayerSkill = skill;
+                LastPlayerSkillIsSignature = SignatureSkills.IsSignature(playerStats.Data, skill);
                 ApplySkill(playerStats, enemyStats, skill, true);
 
                 if (skill != null)
@@ -534,6 +809,7 @@ namespace InsectGame.Battle
                 PlayerActedThisRound = true;
                 if (sandbox) sandboxPlayerActions++;
                 int damage = Mathf.Max(1, Mathf.RoundToInt(playerStats.Attack * 0.7f));
+                damage = RollCriticalHit(damage, true);
                 ApplyDirectDamage(enemyStats, playerStats, damage);
                 TryPlayHitFlash(false);
 
@@ -679,7 +955,7 @@ namespace InsectGame.Battle
 
             if (skill == null)
             {
-                int damage = GetDamage(attacker, 10);
+                int damage = RollCriticalHit(GetDamage(attacker, 10), isPlayer);
                 ApplyDirectDamage(defender, attacker, damage);
                 TryPlayHitFlash(defenderIsPlayer);
                 return;
@@ -742,12 +1018,15 @@ namespace InsectGame.Battle
                         ? InsectTypeChart.GetSameTypeBonus(skill.element, attacker.Data.primaryType, attacker.Data.secondaryType)
                         : 1f;
                     int damage = Mathf.Max(1, Mathf.RoundToInt(GetDamage(attacker, baseDamage) * effectiveness * sameTypeBonus));
+                    // 들어간 피해기만 등급을 남긴다(빗나감은 위에서 이미 돌아갔다) — 화면의 상성 표시·스킬 카드 칩이 이 등급 하나를 읽는다.
+                    if (isPlayer) LastPlayerHitMatchup = ElementMatchup.Describe(effectiveness);
+                    else LastEnemyHitMatchup = ElementMatchup.Describe(effectiveness);
+                    damage = RollCriticalHit(damage, isPlayer);
                     ApplyDirectDamage(defender, attacker, damage);
                     TryPlayHitFlash(defenderIsPlayer);
-                    if (effectiveness > 1.05f)
-                        TryPlayEffectText("효과가 굉장했다!", new Color(1f, 0.55f, 0.2f));
-                    else if (effectiveness < 0.95f)
-                        TryPlayEffectText("효과가 별로인 듯하다...", new Color(0.55f, 0.65f, 0.8f));
+                    // 치명타도 상성도 여기서 문구로 띄우지 않는다 — 피해 숫자 위에 「치명타!」와 화살표 + 「아주 잘 통했다!」가 뜬다
+                    // (BattleScreenUI.Feel이 위의 LastPlayerHitMatchup/LastEnemyHitMatchup을 읽는다). 위쪽 효과 문구에도 띄우면
+                    // 한 타격에 같은 말이 두 번 보인다(예전 「효과가 굉장했다!」·「효과가 별로인 듯하다...」가 그 자리였다).
                     break;
             }
         }
@@ -811,6 +1090,43 @@ namespace InsectGame.Battle
             return RollHit(acc, 0f, randomSource.Next01());
         }
 
+        /// <summary>치명타 판정(순수, 주입 롤). <paramref name="roll"/>이 <c>CritChance</c>(1/16) <b>미만</b>이면 치명타.</summary>
+        public static bool RollCritical(float roll)
+        {
+            return roll < GameConstants.Battle.CritChance;
+        }
+
+        /// <summary>
+        /// 치명타 한 번 — 소스가 있으면 <b>한 번만</b> 굴려 맞으면 <c>CritMultiplier</c>를 곱한다(최소 1).
+        /// 소스가 null이면 굴리지 않고 그대로 돌려준다(결정적). 1v1과 레이드(<see cref="RaidRoundResolver"/>)가 함께 쓴다 —
+        /// <see cref="RollHit"/>을 함께 쓰는 것과 같은 이유다(두 모드의 판정이 갈리지 않게).
+        /// </summary>
+        public static int ApplyCritical(int damage, IRaidRandomSource critRandom, out bool critical)
+        {
+            critical = critRandom != null && RollCritical(critRandom.Next01());
+            return critical
+                ? Mathf.Max(1, Mathf.RoundToInt(damage * GameConstants.Battle.CritMultiplier))
+                : damage;
+        }
+
+        // 피해기 한 번의 치명타 — 샌드박스(꿈 챔피언전)는 굴리지 않는다: SandboxBattleRules가 3~4행동 길이를 규칙으로 지키고,
+        // 그 위에 무작위 1.5배가 얹히면 "마지막 일격" 전 행동의 하한 자르기가 매번 다른 숫자를 낸다.
+        private int RollCriticalHit(int damage, bool attackerIsPlayer)
+        {
+            int result = ApplyCritical(damage, sandbox ? null : critSource, out bool critical);
+            if (critical)
+            {
+                if (attackerIsPlayer) LastPlayerHitCritical = true;
+                else LastEnemyHitCritical = true;
+            }
+            return result;
+        }
+
+        private bool HitCritical(bool attackerIsPlayer)
+        {
+            return attackerIsPlayer ? LastPlayerHitCritical : LastEnemyHitCritical;
+        }
+
         private void UseEnemyTurn()
         {
             // 기절 상태면 적 행동 스킵.
@@ -847,6 +1163,7 @@ namespace InsectGame.Battle
             ledgerSpentThisTurn = false;
 
             LastEnemySkill = enemySkill;   // UI가 EnemyAttack 연출(속성·근접여부)에 사용
+            LastEnemySkillIsSignature = SignatureSkills.IsSignature(enemyStats.Data, enemySkill);
             ApplySkill(enemyStats, playerStats, enemySkill, false);
 
             if (ledgerSpentThisTurn)
@@ -954,7 +1271,11 @@ namespace InsectGame.Battle
                     InsectBattleStats target = effect.targetIsPlayer ? playerStats : enemyStats;
                     if (target != null && target.CurrentHp > 0)
                     {
+                        int hpBefore = target.CurrentHp;
                         target.ApplyDamage(dot);
+                        // 실제로 깎인 양(0에서 잘린 몫 제외) — UI가 독 숫자로 띄운다.
+                        if (effect.targetIsPlayer) PlayerPoisonDamageThisRound += hpBefore - target.CurrentHp;
+                        else EnemyPoisonDamageThisRound += hpBefore - target.CurrentHp;
                         TryPlayHitFlash(effect.targetIsPlayer);
                     }
                 }
@@ -1019,23 +1340,21 @@ namespace InsectGame.Battle
             // 독 같은 지속 피해는 ApplyDirectDamage를 거치지 않는다 — 샌드박스는 여기서 하한으로 되돌린다.
             if (sandbox) playerStats.RaiseHpTo(SandboxBattleRules.HpFloor(playerStats.MaxHp));
 
+            // 팀 대결 — 지금 상대가 쓰러졌어도 뒤에 남은 곤충이 있으면 끝나지 않고 다음이 나온다.
+            // 같은 라운드에 내 곤충도 쓰러졌을 수 있다(독 틱 등) — 그쪽은 한 마리 전투와 같은 길(교체 또는 패배)로 간다.
+            if (enemyStats.CurrentHp <= 0 && HasNextEnemy())
+            {
+                SendOutNextEnemy();
+                if (playerStats.CurrentHp <= 0) HandlePlayerFainted();
+                return;
+            }
+
             bool playerWon = enemyStats.CurrentHp <= 0 && playerStats.CurrentHp > 0;
             if (playerWon && duelMode)
             {
                 // NPC 대결 승리 — 상대는 NPC 소유라 포획도, 야생 드랍도 없다.
-                // 성장 재화(캔디·EXP)와 코인만 야생과 같은 계산으로 지급한다.
-                InsectData duelData = enemyStats.Data;
-                float duelCandyMul = (itemEffects != null ? itemEffects.GetCandyMultiplier() : 1f)
-                                    * (outfitBonus != null ? outfitBonus.GetCandyMultiplier() : 1f);
-                float duelExpMul = (itemEffects != null ? itemEffects.GetExpMultiplier() : 1f)
-                                  * (outfitBonus != null ? outfitBonus.GetExpMultiplier() : 1f);
-                int duelTrainerLevel = playerProgress != null ? playerProgress.Level : playerStats.Level;
-                lastCandyReward = Mathf.RoundToInt(InsectRewardCalculator.GetCandyReward(duelData) * duelCandyMul);
-                lastExpReward = Mathf.RoundToInt(
-                    InsectRewardCalculator.GetExpReward(duelData, enemyStats.Level, duelTrainerLevel) * duelExpMul);
-                candyInventory?.AddCandy(lastCandyReward);
-                playerProgress?.GainXp(lastExpReward);
-                wallet?.AddCoins(BattleVictoryCoins);
+                // 성장 재화(캔디·EXP)와 코인만 야생과 같은 계산으로 지급한다 — 팀 대결이면 상대마다 합산.
+                GrantDuelVictoryRewards();
 
                 lastItemId = string.Empty;
                 lastItemCount = 0;
@@ -1070,7 +1389,8 @@ namespace InsectGame.Battle
                 candyInventory?.AddCandy(candy);
                 playerProgress?.GainXp(exp);
                 // 승리 소량 코인 — 상점 코인결제/베이직 의상 지속 수급(반복 faucet). AddCoins가 세이브 트리거.
-                wallet?.AddCoins(BattleVictoryCoins);
+                lastCoinReward = BattleVictoryCoins;
+                wallet?.AddCoins(lastCoinReward);
                 if (!string.IsNullOrEmpty(itemId) && itemCount > 0)
                 {
                     itemInventory?.AddItem(itemId, itemCount);
@@ -1147,9 +1467,11 @@ namespace InsectGame.Battle
                 PersistActivePlayer();   // 승리 — 활성 곤충의 남은 HP·감염 영구 저장(전체치료 없음)
                 battleEnded = true;
                 lastPlayerWon = playerWon;
+                if (enemyTeamFainted != null) enemyTeamFainted[enemyTeamIndex] = true;
                 // 조건부 퀘스트(BattleFeat) — 야생·수문장·NPC 대결 승리가 모두 지나는 이 한 지점에서, 보상이 끝난 뒤
                 // BattleEnded 전에 직접 알린다(NotifyCapture와 같은 이유: 구독자 예외에 진행이 삼켜지면 안 된다).
                 // 내 곤충은 교체됐을 수 있어 **끝났을 때 싸우던** playerStats의 레벨·HP를 읽는다. 꿈속(샌드박스) 전투는 알리지 않는다.
+                // 팀 대결이면 enemyStats는 **마지막(에이스) 상대**이고, 내 행동 수(playerActionCount)는 전투 전체다.
                 // 통지가 던져도 전투 종료는 계속돼야 한다 — battleEnded는 이미 켜졌는데 BattleEnded가 안 울리면 결과 화면이
                 // 멈춘다. 진행은 매니저가 이벤트보다 먼저 저장하므로 예외를 삼켜도 잃는 것이 없다.
                 if (playerWon && !sandbox)
@@ -1170,37 +1492,44 @@ namespace InsectGame.Battle
             }
             else if (playerStats.CurrentHp <= 0)
             {
-                TryPlayFaint(true);
-                TryPlayEffectText("쓰러졌다!", new Color(0.9f, 0.2f, 0.2f));
-                // 죽은 곤충의 0 HP를 즉시 영구 저장(멱등) — 전멸 패배(교체 팀원 없음)에서 스왑·!fainted 경로가 모두
-                // 스킵돼 마지막 곤충이 무료 부활하던 누락을 차단. 교체 시 SwapPlayerInsect가 다시 0으로 persist(무해).
-                PersistActivePlayer();
-                // 핸들러 예외 격리 — 한 구독자 예외가 BattleEnded fallback을 차단하지 않게
-                bool fainted = false;
-                try
+                HandlePlayerFainted();
+            }
+        }
+
+        // 내 곤충이 쓰러졌다 — 교체를 맡을 화면이 있으면 넘기고, 없으면 패배로 끝낸다.
+        // CheckEnd의 한 마리 경로와 팀 대결의 "상대 교체와 같은 라운드에 나도 쓰러짐" 경로가 함께 쓴다.
+        private void HandlePlayerFainted()
+        {
+            TryPlayFaint(true);
+            TryPlayEffectText("쓰러졌다!", new Color(0.9f, 0.2f, 0.2f));
+            // 죽은 곤충의 0 HP를 즉시 영구 저장(멱등) — 전멸 패배(교체 팀원 없음)에서 스왑·!fainted 경로가 모두
+            // 스킵돼 마지막 곤충이 무료 부활하던 누락을 차단. 교체 시 SwapPlayerInsect가 다시 0으로 persist(무해).
+            PersistActivePlayer();
+            // 핸들러 예외 격리 — 한 구독자 예외가 BattleEnded fallback을 차단하지 않게
+            bool fainted = false;
+            try
+            {
+                if (PlayerFainted != null)
                 {
-                    if (PlayerFainted != null)
-                    {
-                        PlayerFainted.Invoke();
-                        fainted = true;
-                    }
+                    PlayerFainted.Invoke();
+                    fainted = true;
                 }
-                catch (System.Exception e)
-                {
-                    Debug.LogWarning($"[InsectBattle] PlayerFainted 핸들러 예외: {e.Message}");
-                }
-                // fainted=true: UI(SwapSelect)가 처리 — 팀원 교체로 배틀을 이어갈 수 있으므로
-                //   battleEnded/Despawn/BattleEnded를 보류해야 한다. (옛: battleEnded를 무조건 set해
-                //   교체 후 새 곤충이 액션 가드에 막혀 배틀이 멈추는 무한정지 버그.)
-                // !fainted: 교체 핸들러 없음 → 컨트롤러가 패배로 종료 + 적 Despawn(필드 잔존 방지).
-                if (!fainted)
-                {
-                    // (기절 0 HP는 위에서 이미 persist — 여기선 종료 처리만)
-                    battleEnded = true;
-                    ReleaseEnemyAfterBattle();
-                    BattleEnded?.Invoke(false);
-                    if (duelMode) DuelEnded?.Invoke(false);
-                }
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning($"[InsectBattle] PlayerFainted 핸들러 예외: {e.Message}");
+            }
+            // fainted=true: UI(SwapSelect)가 처리 — 팀원 교체로 배틀을 이어갈 수 있으므로
+            //   battleEnded/Despawn/BattleEnded를 보류해야 한다. (옛: battleEnded를 무조건 set해
+            //   교체 후 새 곤충이 액션 가드에 막혀 배틀이 멈추는 무한정지 버그.)
+            // !fainted: 교체 핸들러 없음 → 컨트롤러가 패배로 종료 + 적 Despawn(필드 잔존 방지).
+            if (!fainted)
+            {
+                // (기절 0 HP는 위에서 이미 persist — 여기선 종료 처리만)
+                battleEnded = true;
+                ReleaseEnemyAfterBattle();
+                BattleEnded?.Invoke(false);
+                if (duelMode) DuelEnded?.Invoke(false);
             }
         }
 
@@ -1424,6 +1753,12 @@ namespace InsectGame.Battle
         public int GetLastCandyReward()
         {
             return lastCandyReward;
+        }
+
+        /// <summary>이번 승리에 준 코인(팀 대결은 상대 수만큼). 지면 0.</summary>
+        public int GetLastCoinReward()
+        {
+            return lastCoinReward;
         }
 
         public bool GetLastPlayerWon()

@@ -128,7 +128,7 @@ namespace InsectGame.Capture
 
         private static string NameOf(InsectEntity target)
             => target != null && target.Data != null && !string.IsNullOrEmpty(target.Data.displayName)
-                ? target.Data.displayName : "이름 없는 것";
+                ? target.Data.displayName : "이름 모를 곤충";
 
         private void ShowPopup(string message)
         {

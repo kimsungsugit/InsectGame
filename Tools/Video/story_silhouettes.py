@@ -1,8 +1,12 @@
-"""스토리 영상 11편 렌더러 — 실루엣 삽화 화풍(Docs/StoryVideos.md §3·§4의 샷 리스트 그대로).
+"""(옛) 스토리 영상 11편 렌더러 — 실루엣 삽화 화풍. **게임에 들어가는 영상은 이제 이 스크립트가 만들지 않는다.**
+
+2026-10-05에 15편 전부를 그림책 화풍 + 소리로 다시 그렸다(`Tools/Video/storybook/render.py`, Docs/StoryVideos.md §4-1).
+이 스크립트는 비교용으로만 남겨 두고 **Artifacts/story-silhouettes/에 쓴다** — 예전처럼 StreamingAssets에 쓰면
+새 영상을 무음 실루엣으로 덮어쓴다. 자막 큐도 옛 시각 그대로다(지금 자막의 단일 출처는 StoryVideoLibrary.cs).
 
     python -X utf8 Tools/Video/story_silhouettes.py [이름,...] [--preview 0.5,3.0,...]
 
-산출: Assets/StreamingAssets/Video/<이름>.mp4 (1280×720 · 24fps · H.264 Main · ≤2 Mbps · 무음 · +faststart).
+산출: Artifacts/story-silhouettes/<이름>.mp4 (1280×720 · 24fps · H.264 Main · ≤2 Mbps · 무음 · +faststart).
 --preview면 영상 대신 지정 시각(영상 전체 기준 초)의 프레임을 Artifacts/story-silhouettes-preview/에 PNG로 떨군다.
 
 **길이와 샷 경계는 문서 §4 표와 같다** — 자막 큐(StoryVideoLibrary)가 그 시각에 맞춰 저작돼 있다.
@@ -25,7 +29,7 @@ import sil_act1 as A1  # noqa: E402
 import sil_act2 as A2  # noqa: E402
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-OUT_DIR = os.path.join(ROOT, "Assets", "StreamingAssets", "Video")
+OUT_DIR = os.path.join(ROOT, "Artifacts", "story-silhouettes")
 PREVIEW_DIR = os.path.join(ROOT, "Artifacts", "story-silhouettes-preview")
 FF = os.environ.get("FFMPEG", "C:/Users/kss11/AppData/Local/Programs/Python/Python312/Scripts/ffmpeg.exe")
 DISSOLVE = 0.6

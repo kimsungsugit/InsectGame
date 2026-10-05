@@ -65,11 +65,21 @@ namespace InsectGame.Battle
             Vector3 basePos, Quaternion baseRot, Vector3 attacker, Vector3 target,
             float impactWeight, bool support)
         {
+            return Evaluate(style, progress, durationSeconds, basePos, baseRot, attacker, target, impactWeight, support,
+                BattleMotion.ImpactProgress);
+        }
+
+        /// <param name="impactProgress">이 몸짓의 타격 진행률(<see cref="BattleMotion.ImpactOf"/>) — 계열마다 다르다(찌르기 0.36).</param>
+        public static Shot Evaluate(Style style, float progress, float durationSeconds,
+            Vector3 basePos, Quaternion baseRot, Vector3 attacker, Vector3 target,
+            float impactWeight, bool support, float impactProgress)
+        {
             float p = Mathf.Clamp01(progress);
             float weight = Mathf.Clamp01(impactWeight);
             if (style == Style.Off || p >= ReleaseEnd) return Shot.None;
+            float impactAt = Mathf.Clamp(impactProgress, WindupEnd + 0.02f, HoldEnd - 0.02f);
 
-            float sinceImpact = (p - BattleMotion.ImpactProgress) * Mathf.Max(0.1f, durationSeconds);
+            float sinceImpact = (p - impactAt) * Mathf.Max(0.1f, durationSeconds);
             Vector3 hitDir = target - attacker;
             hitDir.y = 0f;
             hitDir = hitDir.sqrMagnitude > 0.0001f ? hitDir.normalized : baseRot * Vector3.right;
@@ -110,9 +120,9 @@ namespace InsectGame.Battle
                 float w = Mathf.SmoothStep(0f, 1f, p / WindupEnd);
                 return new Shot(attackerPos, attackerRot, w);
             }
-            if (p < BattleMotion.ImpactProgress)
+            if (p < impactAt)
             {
-                float k = Mathf.SmoothStep(0f, 1f, (p - WindupEnd) / (BattleMotion.ImpactProgress - WindupEnd));
+                float k = Mathf.SmoothStep(0f, 1f, (p - WindupEnd) / (impactAt - WindupEnd));
                 return new Shot(Vector3.Lerp(attackerPos, targetPos, k),
                     Quaternion.Slerp(attackerRot, targetRot, k), 1f);
             }
@@ -164,6 +174,214 @@ namespace InsectGame.Battle
             float weight = since < releaseStart ? 1f
                 : 1f - Mathf.SmoothStep(0f, 1f, (since - releaseStart) / Mathf.Max(0.01f, releaseSpan));
             return new Shot(kicked, bossRot, weight);
+        }
+
+        // ── 등장·변신 연출 샷 — 시각표는 BattleStaging ──
+        // 셋 다 Style.Off면 걸지 않는다(구도 고정 비교용). 마지막엔 가중치가 0으로 내려가 배틀 구도가 그대로 돌아온다.
+
+        /// <summary>
+        /// 상대 교체 등장(1대1 팀 대결) — <b>앞 구도</b>(<paramref name="fromPos"/>, 교체 전 배틀 구도)에서 출발해 착지점 클로즈업으로
+        /// 옮겨 가고, 착지에 위아래로 튀고, <b>새 구도</b>(<paramref name="basePos"/>, 새 곤충 크기로 다시 잡은 배틀 구도)로 풀린다.
+        /// 첫 프레임이 앞 구도라서 새 곤충 크기에 맞춰 구도가 바뀌어도 화면이 튀지 않는다.
+        /// </summary>
+        /// <param name="progress">교체 단계 진행률 0~1.</param>
+        /// <param name="durationSeconds">교체 단계 길이(초) — 착지 반동의 진동수를 초 단위로 맞춘다.</param>
+        /// <param name="landing">새 곤충이 서는 자리의 몸 중심.</param>
+        /// <param name="opponent">내 곤충 몸 중심 — 시선을 그쪽으로 조금 당겨 두 곤충의 관계를 남긴다.</param>
+        public static Shot EvaluateEntrance(float progress, float durationSeconds, Vector3 fromPos, Quaternion fromRot,
+            Vector3 basePos, Quaternion baseRot, Vector3 landing, Vector3 opponent)
+        {
+            if (Current == Style.Off) return Shot.None;
+            float p = Mathf.Clamp01(progress);
+            if (p >= BattleStaging.EntranceCamReleaseEnd) return Shot.None;
+
+            Vector3 close = Vector3.Lerp(basePos, landing, BattleStaging.EntranceDolly) + Vector3.up * 0.1f;
+            Quaternion closeRot = LookAt(close, Vector3.Lerp(landing, opponent, 0.2f), baseRot);
+            float sinceLand = (p - BattleStaging.EntranceLand) * Mathf.Max(0.1f, durationSeconds);
+            Vector3 kicked = close + Kick(Vector3.down, sinceLand, 0.1f);
+
+            if (p < BattleStaging.EntranceCamIn)
+            {
+                float k = Mathf.SmoothStep(0f, 1f, p / BattleStaging.EntranceCamIn);
+                return new Shot(Vector3.Lerp(fromPos, close, k), Quaternion.Slerp(fromRot, closeRot, k), 1f);
+            }
+            if (p < BattleStaging.EntranceCamHoldEnd) return new Shot(kicked, closeRot, 1f);
+            float release = 1f - Mathf.SmoothStep(0f, 1f, (p - BattleStaging.EntranceCamHoldEnd)
+                / (BattleStaging.EntranceCamReleaseEnd - BattleStaging.EntranceCamHoldEnd));
+            return new Shot(kicked, closeRot, release);
+        }
+
+        /// <summary>
+        /// 그림자 변신(레이드) — 연기가 덮는 동안 보스 쪽으로 천천히 붙고, 새 모습이 울부짖을 때 뒤로 튀었다가, 원래 구도로 풀린다.
+        /// 레이드 기본 구도(팀 뒤 원경)에서 <see cref="BattleStaging.TransformDolly"/>만 붙는다 — 카메라가 팀 줄을 넘지 않는다.
+        /// </summary>
+        public static Shot EvaluateBossTransform(float progress, float durationSeconds, Vector3 basePos, Quaternion baseRot,
+            Vector3 bossCenter)
+        {
+            if (Current == Style.Off) return Shot.None;
+            float p = Mathf.Clamp01(progress);
+            if (p >= BattleStaging.TransformCamReleaseEnd) return Shot.None;
+
+            float push = Mathf.Lerp(BattleStaging.TransformDolly * 0.5f, BattleStaging.TransformDolly,
+                Mathf.SmoothStep(0f, 1f, p / BattleStaging.TransformSwap));
+            Vector3 pos = Vector3.Lerp(basePos, bossCenter, push);
+            Quaternion rot = Quaternion.Slerp(baseRot, LookAt(pos, bossCenter, baseRot), 0.55f);
+            Vector3 axis = bossCenter - basePos;
+            axis.y = 0f;
+            axis = axis.sqrMagnitude > 0.0001f ? axis.normalized : baseRot * Vector3.forward;
+            // 새 모습이 울부짖는 순간 뒤로 밀린다(보스에게서 멀어지는 쪽).
+            pos += Kick(-axis, (p - BattleStaging.TransformRoar) * Mathf.Max(0.1f, durationSeconds), 0.18f);
+
+            float weight;
+            if (p < BattleStaging.TransformCamIn) weight = Mathf.SmoothStep(0f, 1f, p / BattleStaging.TransformCamIn);
+            else if (p < BattleStaging.TransformCamHoldEnd) weight = 1f;
+            else weight = 1f - Mathf.SmoothStep(0f, 1f, (p - BattleStaging.TransformCamHoldEnd)
+                / (BattleStaging.TransformCamReleaseEnd - BattleStaging.TransformCamHoldEnd));
+            return new Shot(pos, rot, weight);
+        }
+
+        /// <summary>
+        /// 수문장 등장(레이드 인트로, <b>초</b>) — <paramref name="startPos"/>(낮고 먼 곳)에서 <paramref name="endPos"/>(수문장이 화면 위쪽
+        /// 창을 채우는 곳)로 감속하며 다가가고, 포효에 위로 튀고, 천천히 조금 더 붙었다가, 원래 구도로 풀린다. 회전은 내내
+        /// <paramref name="rotation"/>(올려다보는 각) 하나다 — 그래서 다가가는 동안 수문장이 화면 위쪽 창에서 벗어나지 않는다.
+        /// 첫 프레임 가중치가 1이라 인트로 첫 장면부터 이 샷이다.
+        /// </summary>
+        public static Shot EvaluateGuardianIntro(float seconds, Vector3 startPos, Vector3 endPos, Quaternion rotation)
+        {
+            if (Current == Style.Off || seconds < 0f || seconds >= BattleStaging.GuardianReleaseEnd) return Shot.None;
+            float a = Mathf.Clamp01(seconds / BattleStaging.GuardianApproachEnd);
+            float k = 1f - (1f - a) * (1f - a) * (1f - a);   // 감속 — 처음엔 성큼, 끝엔 조심스레
+            Vector3 forward = rotation * Vector3.forward;
+            float creep = Mathf.SmoothStep(0f, 1f, (seconds - BattleStaging.GuardianApproachEnd)
+                / (BattleStaging.GuardianReleaseEnd - BattleStaging.GuardianApproachEnd));
+            Vector3 pos = Vector3.Lerp(startPos, endPos, k) + forward * (BattleStaging.GuardianCreep * creep)
+                + Kick(Vector3.up, seconds - BattleStaging.GuardianRoarAt, BattleStaging.GuardianRoarKick);
+            float weight = seconds < BattleStaging.GuardianReleaseStart ? 1f
+                : 1f - Mathf.SmoothStep(0f, 1f, (seconds - BattleStaging.GuardianReleaseStart)
+                    / (BattleStaging.GuardianReleaseEnd - BattleStaging.GuardianReleaseStart));
+            return new Shot(pos, rotation, weight);
+        }
+
+        // ── 전투 체감 샷 — 전용기·승리·진입. 시각표는 BattleFlourish ──
+
+        /// <summary>
+        /// 전용기 — 첫 프레임에 시전자 클로즈업으로 <b>끊어</b> 들어가(0.08초) 컷인 동안(<see cref="BattleFlourish.SignatureCutInEndFor"/>) 천천히 더 붙고
+        /// 옆으로 조금 돈다 → 컷인이 끝나면 대상 쪽으로 휘돌아 넘어가 타격 순간 대상 클로즈업(시네마틱보다 가깝다) → 반동 → 원래 구도.
+        /// 강화·회복 전용기는 시전자만 담고 풀린다. <see cref="Style.Off"/>면 걸지 않는다.
+        /// </summary>
+        /// <param name="progress">스킬 타임라인 0..1.</param>
+        /// <param name="durationSeconds">타임라인 길이(연출 시계 초).</param>
+        /// <param name="impactProgress">타격 진행률(<see cref="BattleMotion.ImpactOf"/>).</param>
+        public static Shot EvaluateSignature(float progress, float durationSeconds, Vector3 basePos, Quaternion baseRot,
+            Vector3 attacker, Vector3 target, float impactWeight, bool support, float impactProgress)
+        {
+            if (Current == Style.Off) return Shot.None;
+            float p = Mathf.Clamp01(progress);
+            if (p >= ReleaseEnd) return Shot.None;
+            float dur = Mathf.Max(0.1f, durationSeconds);
+            float impactAt = Mathf.Clamp(impactProgress, WindupEnd + 0.02f, HoldEnd - 0.02f);
+            float seconds = p * dur;
+            float impactSeconds = impactAt * dur;
+            float cutEnd = BattleFlourish.SignatureCutInEndFor(impactSeconds);
+            float weight = Mathf.Clamp01(impactWeight);
+
+            Vector3 toCaster = attacker - basePos;
+            toCaster.y = 0f;
+            Vector3 side = toCaster.sqrMagnitude > 0.0001f ? Vector3.Cross(Vector3.up, toCaster.normalized) : baseRot * Vector3.right;
+            float c = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(seconds / cutEnd));
+            Vector3 casterPos = Vector3.Lerp(Vector3.Lerp(basePos, attacker, BattleFlourish.SignatureCasterDollyStart),
+                Vector3.Lerp(basePos, attacker, BattleFlourish.SignatureCasterDollyEnd), c) + Vector3.up * 0.12f + side * (0.3f * c);
+            Quaternion casterRot = LookAt(casterPos, attacker + Vector3.up * 0.05f, baseRot);
+            float snapIn = Mathf.SmoothStep(0f, 1f, seconds / 0.08f);
+
+            if (support)
+            {
+                if (seconds < cutEnd) return new Shot(casterPos, casterRot, snapIn);
+                float release = 1f - Mathf.SmoothStep(0f, 1f, (p - cutEnd / dur) / Mathf.Max(0.01f, HoldEnd - cutEnd / dur));
+                return release <= 0f ? Shot.None : new Shot(casterPos, casterRot, release);
+            }
+
+            Vector3 hitDir = target - attacker;
+            hitDir.y = 0f;
+            hitDir = hitDir.sqrMagnitude > 0.0001f ? hitDir.normalized : baseRot * Vector3.right;
+            Vector3 targetPos = Vector3.Lerp(basePos, target, BattleFlourish.SignatureTargetDolly + 0.06f * weight);
+            Quaternion targetRot = LookAt(targetPos, Vector3.Lerp(target, attacker, 0.12f), baseRot);
+
+            if (seconds < cutEnd) return new Shot(casterPos, casterRot, snapIn);
+            if (p < impactAt)
+            {
+                float k = Mathf.SmoothStep(0f, 1f, (seconds - cutEnd) / Mathf.Max(0.01f, impactSeconds - cutEnd));
+                return new Shot(Vector3.Lerp(casterPos, targetPos, k), Quaternion.Slerp(casterRot, targetRot, k), 1f);
+            }
+            Vector3 kicked = targetPos + Kick(hitDir, seconds - impactSeconds, 0.2f + 0.16f * weight);
+            if (p < HoldEnd) return new Shot(kicked, targetRot, 1f);
+            float fade = 1f - Mathf.SmoothStep(0f, 1f, (p - HoldEnd) / (ReleaseEnd - HoldEnd));
+            return new Shot(kicked, targetRot, fade);
+        }
+
+        /// <summary>
+        /// 승리 — 주인공(<paramref name="pivot"/>, 1대1 내 곤충·레이드 팀 한가운데) 둘레를 <paramref name="orbitDegrees"/>만큼 돌며
+        /// 다가가 <paramref name="endDistance"/>·<paramref name="endHeight"/>(주인공 중심 기준)에 선다. <b>얼굴 쪽</b>(<paramref name="face"/>)으로 돈다 —
+        /// 1대1은 상대가 있던 쪽에서 내 곤충의 얼굴을 비스듬히 본다. 0.3초에 걸쳐 원래 구도에서 넘어오고, 다 돈 뒤엔 그 자리에 머문다
+        /// (시각 <see cref="BattleFlourish.VictorySeconds"/>를 넘겨도 마지막 샷).
+        /// </summary>
+        public static Shot EvaluateVictoryOrbit(float seconds, Vector3 basePos, Quaternion baseRot, Vector3 pivot, Vector3 face,
+            float orbitDegrees, float endDistance, float endHeight)
+        {
+            if (Current == Style.Off || seconds < 0f) return Shot.None;
+            Vector3 off = basePos - pivot;
+            Vector3 flat = new Vector3(off.x, 0f, off.z);
+            float r0 = flat.magnitude;
+            Vector3 d0 = r0 > 0.01f ? flat / r0 : FlatOr(baseRot * Vector3.back, Vector3.back);
+            r0 = Mathf.Max(0.5f, r0);
+            Vector3 faceFlat = FlatOr(face, d0);
+            float sign = Mathf.Sign(Vector3.Cross(d0, faceFlat).y);
+            if (Mathf.Abs(Vector3.Cross(d0, faceFlat).y) < 0.0001f) sign = 1f;
+
+            float u = Mathf.Clamp01(seconds / BattleFlourish.VictorySeconds);
+            float e = Mathf.SmoothStep(0f, 1f, u);
+            Vector3 dir = Quaternion.AngleAxis(sign * orbitDegrees * e, Vector3.up) * d0;
+            float r = Mathf.Lerp(r0, Mathf.Max(0.5f, endDistance), e);
+            float h = Mathf.Lerp(off.y, endHeight, e);
+            Vector3 pos = pivot + dir * r + Vector3.up * h;
+            Quaternion rot = LookAt(pos, pivot + Vector3.up * 0.1f, baseRot);
+            return new Shot(pos, rot, Mathf.SmoothStep(0f, 1f, seconds / 0.3f));
+        }
+
+        /// <summary>
+        /// 전투 진입(<b>실제 초</b>) — 상대(<paramref name="subject"/>) 바로 옆 낮은 자리, 배틀 구도에서 상대 쪽으로 <see cref="BattleFlourish.OpeningSwingDegrees"/>
+        /// 돌아간 곳에서 상대를 보며 시작해, 감속하며 크게 휘돌아 물러나 배틀 구도에 정확히 내려앉는다(<see cref="BattleFlourish.OpeningShotSeconds"/>).
+        /// 첫 프레임 가중치 1 — 전투가 이 샷으로 열린다. 끝나면 <see cref="Shot.None"/>(같은 자리라 튀지 않는다).
+        /// </summary>
+        /// <param name="focus">배틀 구도가 담는 한가운데(두 곤충·팀과 보스의 경계 중심).</param>
+        public static Shot EvaluateOpening(float seconds, Vector3 basePos, Quaternion baseRot, Vector3 focus, Vector3 subject)
+        {
+            if (Current == Style.Off || seconds < 0f || seconds >= BattleFlourish.OpeningShotSeconds) return Shot.None;
+            float u = Mathf.Clamp01(seconds / BattleFlourish.OpeningShotSeconds);
+            float e = 1f - (1f - u) * (1f - u) * (1f - u);   // 크게 휘돌다 감속하며 내려앉는다
+            Vector3 off = basePos - focus;
+            Vector3 flat = new Vector3(off.x, 0f, off.z);
+            float r0 = flat.magnitude;
+            Vector3 d0 = r0 > 0.01f ? flat / r0 : FlatOr(baseRot * Vector3.back, Vector3.back);
+            r0 = Mathf.Max(0.5f, r0);
+            Vector3 toSubject = FlatOr(subject - focus, -d0);
+            float cross = Vector3.Cross(d0, toSubject).y;
+            float sign = Mathf.Abs(cross) < 0.0001f ? 1f : Mathf.Sign(cross);
+
+            Vector3 pivot = Vector3.Lerp(subject, focus, e);
+            Vector3 dir = Quaternion.AngleAxis(sign * BattleFlourish.OpeningSwingDegrees * (1f - e), Vector3.up) * d0;
+            float r = Mathf.Lerp(r0 * BattleFlourish.OpeningStartDistance, r0, e);
+            float h = Mathf.Lerp(off.y * BattleFlourish.OpeningStartHeight, off.y, e);
+            Vector3 pos = pivot + dir * r + Vector3.up * h;
+            Quaternion look = LookAt(pos, Vector3.Lerp(subject, focus, e * e), baseRot);
+            Quaternion rot = Quaternion.Slerp(look, baseRot, Mathf.SmoothStep(0f, 1f, (u - 0.45f) / 0.55f));
+            return new Shot(pos, rot, 1f);
+        }
+
+        private static Vector3 FlatOr(Vector3 v, Vector3 fallback)
+        {
+            v.y = 0f;
+            return v.sqrMagnitude > 0.0001f ? v.normalized : fallback;
         }
 
         /// <summary>

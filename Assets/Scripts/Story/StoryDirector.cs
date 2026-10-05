@@ -78,7 +78,15 @@ namespace InsectGame.Story
         // 부류라 이 트리거를 쓰는 비트는 **leaf 전용**이다. 어떤 비트의 prerequisiteBeatId도
         // 되어선 안 된다. 스파인에 걸면 그 순간 prereq가 미충족인 세이브는 캠페인이 영구 정지한다.
         internal const string TriggerGuardianDefeat = "GuardianDefeat";
-        /// <summary>명부회 간부 대결 승리. param = 간부의 storyNpcId. 소스는 <c>NpcDuelController.BossDuelWon</c>.</summary>
+        /// <summary>
+        /// 명부회 간부 대결 승리. param = 간부의 storyNpcId. 소스는 <c>NpcDuelController.BossDuelWon</c>.
+        ///
+        /// <b>재발화형이다 — 스파인에 걸어도 된다</b>(2026-10-04부터 <c>duel_grip_win</c>·<c>duel_scale_win</c>·<c>duel_chief_win</c>이
+        /// 다음 장 도착·최종장의 선행이다). 이긴 순간의 이벤트는 일생 1회지만, <see cref="ResweepPersistentConditions"/>가
+        /// <b>격파 기록</b>(<c>NpcDuelController.IsBossDefeated</c> — 저장·클라우드 동기)을 보고 시작·리전 이동·비트 완료·클라우드
+        /// 재적재 때마다 다시 흘린다. 그래서 그 순간을 놓친 세이브(앱 종료·선행 미충족)도, 이 비트를 필수로 바꾸기 전에 이미
+        /// 그 간부를 이긴 세이브도 다음 재확인에서 자동으로 통과한다. story_lint 검사 8이 이 재확인 줄을 소스에서 확인한다.
+        /// </summary>
         internal const string TriggerDuelWin = "DuelWin";
         // 도감에 이름을 새긴 종 수가 임계에 닿으면 발화. param=정수 임계값.
         // LevelReach와 같은 누적형이라 **재발화 트리거다** — 임계를 넘긴 뒤 도감이 갱신될 때마다
@@ -207,6 +215,10 @@ namespace InsectGame.Story
 
         // 누적 조건은 선행 대화보다 먼저 달성할 수 있다. 다음 레벨업/포획/재대결을
         // 요구하지 않고 현재 저장 상태로 재평가한다. 이동·포획·승리 이벤트는 재현하지 않는다.
+        //
+        // **간부 대결 승리(DuelWin)의 자동 통과가 여기다.** 이긴 기록이 있는데 승리 비트를 아직 안 봤으면 다시 흘린다 —
+        // 간부전이 본편 필수가 되면서(duel_*_win이 다음 장의 선행) 이 줄이 캠페인 정지를 막는 유일한 회복 경로가 됐다.
+        // 지우면 story_lint 검사 8이 FAIL을 낸다(DuelWin 스파인의 재발화 근거가 사라진다).
         private void ResweepPersistentConditions()
         {
             if (progressController != null && HasUnseenBeatOfType(TriggerLevelReach))
@@ -227,6 +239,16 @@ namespace InsectGame.Story
 
         public bool HasDefeatedStoryNpc(string npcId) =>
             !string.IsNullOrEmpty(npcId) && duelController != null && duelController.IsBossDefeated(npcId);
+
+        /// <summary>
+        /// 이야기가 아직 할 말을 들고 있는가 — 대사가 떠 있거나(<c>pendingBeatId</c>), 렌더러를 기다리는 비트가 있거나,
+        /// 미뤄 둔 트리거가 큐에 남아 있다(선택지 결과·전투 뒤 대사·재확인).
+        ///
+        /// <c>StoryDuelLauncher</c>가 묻는다 — 모달 판정만으로는 <b>영상이 끝난 프레임과 큐가 다음 대사를 여는 프레임 사이</b>가
+        /// 비어 보여서, 선택지 결과 대사(<c>ch9_confront</c>)보다 대결이 먼저 열린다. 큐는 막힌 게 없으면 몇 프레임 안에 빈다
+        /// (1회성 트리거도 <see cref="MaxDrainRetries"/>번 뒤 버려진다).
+        /// </summary>
+        public bool IsBusy => !string.IsNullOrEmpty(pendingBeatId) || deferredBeat != null || pendingTriggers.Count > 0;
 
         public bool IsRegionCleansed(string regionId) =>
             !string.IsNullOrEmpty(regionId) && blight != null && blight.IsCleansed(regionId);
@@ -339,20 +361,15 @@ namespace InsectGame.Story
 
         /// <summary>
         /// <b>이기자마자 대사를 띄우지 않는다.</b> <c>BattleEnded</c>는 KO 순간에 울리는데
-        /// 전투 결과 화면은 그로부터 4초를 더 떠 있다(연출 페이즈가 끼면 6초 가까이). 그 위로
+        /// 전투 결과 화면은 그 뒤로 플레이어가 누를 때까지 떠 있다(2026-10-04 전엔 4초 뒤 저절로 닫혔다). 그 위로
         /// 대화 모달이 열리면 <b>획득 EXP·캔디가 적힌 보상 패널을 통째로 덮는다</b> — 무엇을
         /// 얻었는지 못 본 채 대사를 읽게 된다. <c>BattleWin</c> 비트 12개 전부에 해당한다.
         ///
-        /// 그래서 결과 화면이 스스로 닫힐 때(<c>BattleScreenUI.EndBattle</c>)까지 미룬다.
+        /// 그래서 결과 화면이 닫힐 때(<c>BattleScreenUI.EndBattle</c>)까지 미룬다 — 얼마나 오래 보든.
         /// 같은 판단을 <c>CutsceneDirector</c>가 컷신에 대해 이미 하고 있다 — 거기서는
         /// 카메라의 배틀 모드를 신호로 쓴다(BattleScreenUI는 IModalUI가 아니라 레지스트리로
         /// 알 수 없다). 이쪽은 화면 쪽이 끝났다고 <b>알려 주는</b> 형태다: UI가 스토리를 아는
         /// 방향은 허용되지만 그 반대는 의존 방향에 어긋난다.
-        /// </summary>
-        /// <summary>
-        /// <b>이기자마자 대사를 띄우지 않는다.</b> <c>BattleEnded</c>는 KO 순간에 울리는데
-        /// 전투 결과 화면은 그로부터 4초를 더 떠 있다(연출 페이즈가 끼면 6초 가까이). 그 위로
-        /// 대화 모달이 열리면 <b>획득 EXP·캔디가 적힌 보상 패널을 통째로 덮는다</b>.
         /// </summary>
         private void OnBattleEnded(bool playerWon)
         {
@@ -452,16 +469,28 @@ namespace InsectGame.Story
         // 전투 화면이 닫혔다는 통지를 받았다 — 그 뒤로는 모달만 기다리면 되고 시간은 안 센다.
         private bool presentationClosed;
 
+        // 상한 둘은 StoryBattleWait에 있다(컷신·영상과 같은 대기 시계 규칙).
+        //  - DialogueFallbackSeconds(12): 카메라가 **배선되지 않았을 때만** 쓴다. 미뤄 둔 발화를 포기하지 않고 **그냥 쏘는**
+        //    시각이다 — 컷신·영상은 연출이라 버려도 되지만 여기는 이야기의 진행이라 버리면 안 된다. 전투 화면이 닫혔다고
+        //    알려 주지 않으면(미배선·예외로 EndBattle 중단·씬 교체) 보상 패널을 덮는 쪽이 진행이 멈추는 것보다 낫다.
+        //  - DialogueLongWaitWarnSeconds(60): 진단 경고뿐이다. **카메라 경로는 전투 화면 위로 대사를 쏘지 않는다** —
+        //    Update가 ShouldDeferNow에서 먼저 돌아가므로 이 값이 발화를 앞당긴 적은 없다(예전 주석은 "절대 상한"이라 적었다).
+        // 둘 다 결과 화면이 떠 있는 시간은 세지 않는다 — 결과 화면은 2026-10-04부터 눌러야 닫힌다(BattleResultRules).
+
+        // 1대1·레이드 결과 화면이 떠 있는가 — 부트스트랩이 넘긴다(Story가 UI를 모르게 함수 하나).
+        private Func<bool> battleResultShowing;
+
         /// <summary>
-        /// 미뤄 둔 발화를 포기하지 않고 <b>그냥 쏘는</b> 시각(초). 컷신의
-        /// <c>PendingGiveUpSeconds</c>와 같은 값이지만 처리가 반대다 — 저쪽은 연출이라 버려도
-        /// 되지만 <b>여기는 이야기의 진행이라 버리면 안 된다.</b> 전투 화면이 어떤 이유로든
-        /// 닫혔다고 알려 주지 않으면(미배선·예외로 EndBattle 중단·씬 교체) 보상 패널을 덮는
-        /// 쪽이 진행이 멈추는 것보다 훨씬 낫다.
+        /// 결과 화면 탐침 — <see cref="ShouldDeferNow"/>가 전투 화면으로 치고, 대기 시계는 그동안 멈춘다(<see cref="StoryBattleWait"/>).
+        /// 카메라가 배선돼 있으면 판정은 바뀌지 않는다(결과 화면 동안 카메라도 배틀 모드다). 카메라가 없을 때 12초 폴백이
+        /// 결과 화면 위로 대사를 띄우던 길을 막는다 — 결과 화면은 이제 눌러야 닫혀서 아이가 30초씩 본다.
         /// </summary>
-        private const float PendingGiveUpSeconds = 12f;
-        /// <summary>카메라가 배선돼 있어도 넘기지 않는 절대 상한(초).</summary>
-        private const float PendingAbsoluteGiveUpSeconds = 60f;
+        public void AutoWire(Func<bool> resultShowing)
+        {
+            if (battleResultShowing == null) battleResultShowing = resultShowing;
+        }
+
+        private bool BattleResultShowing => StoryBattleWait.ReadProbe(battleResultShowing);
 
         /// <summary>
         /// <b>지금 대사를 띄워도 되는가.</b> 안 되면 큐가 들고 있다가 전투·대화가 끝난 뒤 흘린다.
@@ -484,6 +513,7 @@ namespace InsectGame.Story
         private bool ShouldDeferNow()
         {
             if (InsectGame.UI.ModalUIRegistry.IsAnyOpen()) return true;   // 대화·컷신·상점·도감
+            if (BattleResultShowing) return true;                         // 결과 화면(카메라 미배선에도 안다)
             return cameraFollower != null && cameraFollower.InBattleMode; // 전투 화면(결과 포함)
         }
 
@@ -602,9 +632,18 @@ namespace InsectGame.Story
         private void Update()
         {
             if (pendingTriggers.Count == 0) return;
-
             // timeScale에 끌려다니면 안 된다 — 히트스톱·슬로모션이 결과 화면 직전까지 걸린다.
-            pendingSeconds += Time.unscaledDeltaTime;
+            TickPendingTriggers(Time.unscaledDeltaTime);
+        }
+
+        /// <summary>미뤄 둔 트리거의 한 프레임(<see cref="Update"/>가 부른다 — 테스트는 시간을 넣어 직접 부른다).</summary>
+        private void TickPendingTriggers(float deltaSeconds)
+        {
+            if (pendingTriggers.Count == 0) return;
+
+            // **결과 화면이 떠 있는 동안은 시계가 멈춘다**(StoryBattleWait). 결과 화면은 눌러야 닫히므로 보상을 천천히 보는
+            // 시간이 "통지가 안 온다"로 세어지면 안 된다 — 카메라가 없을 때 12초 폴백이 결과 화면 위로 대사를 띄웠다.
+            pendingSeconds = StoryBattleWait.Advance(pendingSeconds, deltaSeconds, BattleResultShowing);
 
             // 대사·컷신·전투 화면이 떠 있는 동안은 시간이 지나도 밀어 넣지 않는다(위 주석의 그 손실).
             // 12초 포기 타이머가 있어도 여기서 막히므로, 대화가 길어도 대사가 겹치지 않는다.
@@ -616,18 +655,19 @@ namespace InsectGame.Story
             // 아래 12초 타이머는 원래 "전투 화면이 떠 있는지 알 방법이 없어서" 둔 안전망인데,
             // 그대로 두면 **대화 때문에 미뤄 둔 트리거가 대화를 닫고도 12초를 더 기다린다.**
             //
-            // 카메라가 없을 때(미배선)만 옛 경로로 떨어진다 — 통지 아니면 12초.
+            // 카메라가 없을 때(미배선)만 옛 경로로 떨어진다 — 통지 아니면 12초(결과 화면 시간 제외).
             if (cameraFollower == null && !presentationClosed)
             {
-                if (pendingSeconds < PendingGiveUpSeconds) return;
+                if (pendingSeconds < StoryBattleWait.DialogueFallbackSeconds) return;
                 // 그게 끝내 안 오면 겹치더라도 쏜다 — 진행을 잃는 것보다 낫다.
                 Debug.LogWarning("[Story] 전투 화면 종료 통지가 없어 미뤄 둔 트리거를 그대로 발화한다");
             }
-            else if (cameraFollower != null && pendingSeconds >= PendingAbsoluteGiveUpSeconds)
+            else if (cameraFollower != null && pendingSeconds >= StoryBattleWait.DialogueLongWaitWarnSeconds)
             {
-                // 카메라 경로에는 상한이 없었다 — InBattleMode가 어떤 이유로든 true로 굳으면(컷신 복원
-                // 누락 등) 큐가 무기한 멈춘다. 훨씬 긴 절대 상한 하나를 남긴다.
-                Debug.LogWarning($"[Story] {PendingAbsoluteGiveUpSeconds:0}초 넘게 화면이 안 닫혀 미뤄 둔 트리거를 그대로 발화한다");
+                // 진단만 한다 — 여기 왔다는 건 화면이 이미 비었다는 뜻이고(ShouldDeferNow가 거짓), 어차피 지금 흘린다.
+                // 카메라 경로에는 발화를 앞당기는 상한이 없다: InBattleMode가 굳으면(컷신 복원 누락 등) 큐는 그 동안 기다린다.
+                // 결과 화면 밖에서 그렇게 오래 기다렸다면 카메라나 모달이 굳었던 것이다 — 로그로 남긴다.
+                Debug.LogWarning($"[Story] 미뤄 둔 트리거가 결과 화면 밖에서 {StoryBattleWait.DialogueLongWaitWarnSeconds:0}초 넘게 기다린 뒤 흐른다 — 전투 카메라·모달이 오래 안 풀렸다");
             }
 
             DrainPendingTriggers();
@@ -1037,8 +1077,13 @@ namespace InsectGame.Story
         {
             // 퀘스트 게이트를 함께 넘긴다 — 안 넘기면 튜토리얼 중에 "마을 어르신에게 말 걸기"를
             // 안내해 놓고 정작 가서 말을 걸면 아무 일도 안 일어난다.
+            //
+            // 스파인은 **아직 뒤가 남은 것만** 앞세운다(CollectLiveSpineBeatIds). 선행을 나중에 끼워 넣은 자리 —
+            // 간부 승리(duel_*_win)를 다음 장의 선행으로 바꾼 것 — 에서, 그 장을 이미 지나온 세이브는 뒤 비트를 다 봤는데도
+            // 끼워 넣은 스파인이 목표 1순위로 떠 HUD가 지난 장으로 되돌려 보냈다. 그런 비트는 leaf처럼 뒤로 민다.
             StoryBeat beat = StoryObjectiveResolver.SelectObjectiveBeat(
-                StoryService.AllBeats(), IsSeen, SpineBeatIds(),
+                StoryService.AllBeats(), IsSeen,
+                StoryObjectiveResolver.CollectLiveSpineBeatIds(StoryService.AllBeats(), IsSeen),
                 questManager != null ? questManager.IsQuestCompleted : (System.Func<string, bool>)null,
                 ChoiceTargetIds());
 

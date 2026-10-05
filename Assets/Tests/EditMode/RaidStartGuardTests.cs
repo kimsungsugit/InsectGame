@@ -122,6 +122,7 @@ namespace InsectGame.Tests
             GameObject controllerObject = Track(new GameObject("RaidGuardTestController"));
             RaidBattleController controller = controllerObject.AddComponent<RaidBattleController>();
             controller.SetRandomSource(new FixedRaidRandomSource());
+            controller.SetCritSource(null);   // 치명타는 별개 줄기 — 결정적으로 둔다
             return controller;
         }
 

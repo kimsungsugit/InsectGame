@@ -77,6 +77,66 @@ namespace InsectGame.Tests
             }
         }
 
+        // ── 간부 팀(StartTeamDuel) ──
+        // 하수는 한 마리, 간부는 셋, 관장은 다섯 — 마릿수가 곧 계급이다. 팀 곤충 ID가 틀리면 그 곤충만 조용히
+        // 빠진 채 대결이 열리고(NpcDuelController.ResolveBossTeam이 경고하고 건너뛴다), 에이스가 표의 insectId와 어긋나면
+        // 표를 "대표 곤충"으로 읽는 쪽(장부 프로브·위계 테스트)이 엉뚱한 곤충을 잰다.
+
+        [TestCase("ledger_grip", 3)]
+        [TestCase("ledger_scale", 3)]
+        [TestCase("ledger_chief", 5)]
+        public void Officer_FieldsATeamOfTheRightSize(string storyNpcId, int expected)
+        {
+            Assert.IsTrue(NpcBossDuels.TryGet(storyNpcId, out NpcBossDuels.BossDuel d), storyNpcId);
+            Assert.IsTrue(d.IsTeam, $"{storyNpcId}: 팀 대결이어야 한다");
+            Assert.AreEqual(expected, d.RosterSize, $"{storyNpcId}: 내보내는 곤충 수");
+            Assert.AreEqual(d.teamInsectIds.Length, d.teamLevels.Length, $"{storyNpcId}: 곤충과 레벨의 길이가 다르다");
+        }
+
+        [Test]
+        public void Thugs_StillFightAlone()
+        {
+            foreach (NpcBossDuels.BossDuel d in NpcBossDuels.All())
+            {
+                if (!d.storyNpcId.StartsWith("ledger_thug_")) continue;
+                Assert.IsFalse(d.IsTeam, $"{d.storyNpcId}: 하수는 한 마리다");
+                Assert.AreEqual(1, d.RosterSize);
+                Assert.AreEqual(d.insectId, d.RosterInsectId(0));
+                Assert.AreEqual(d.level, d.RosterLevel(0));
+            }
+        }
+
+        [Test]
+        public void EveryTeam_LevelsAscend_AndTheLastIsTheAce()
+        {
+            foreach (NpcBossDuels.BossDuel d in NpcBossDuels.All())
+            {
+                if (!d.IsTeam) continue;
+                for (int i = 1; i < d.RosterSize; i++)
+                    Assert.Greater(d.RosterLevel(i), d.RosterLevel(i - 1),
+                        $"{d.storyNpcId}: {i}번째 레벨이 앞보다 높지 않다 — 뒤로 갈수록 세져야 한다");
+                int last = d.RosterSize - 1;
+                Assert.AreEqual(d.insectId, d.RosterInsectId(last), $"{d.storyNpcId}: 에이스가 표의 insectId와 다르다");
+                Assert.AreEqual(d.level, d.RosterLevel(last), $"{d.storyNpcId}: 에이스 레벨이 표의 level과 다르다");
+            }
+        }
+
+        [Test]
+        public void EveryTeamInsect_Exists_AndIsNotRepeated()
+        {
+            HashSet<string> ids = AllInsectIds();
+            foreach (NpcBossDuels.BossDuel d in NpcBossDuels.All())
+            {
+                HashSet<string> seen = new HashSet<string>();
+                for (int i = 0; i < d.RosterSize; i++)
+                {
+                    string id = d.RosterInsectId(i);
+                    Assert.IsTrue(ids.Contains(id), $"{d.storyNpcId}: {i + 1}번째 곤충 {id}가 존재하지 않는다");
+                    Assert.IsTrue(seen.Add(id), $"{d.storyNpcId}: {id}를 두 번 내보낸다");
+                }
+            }
+        }
+
         [Test]
         public void EveryBoss_LevelWithinCap()
         {
@@ -85,6 +145,11 @@ namespace InsectGame.Tests
             {
                 Assert.Greater(d.level, 0, $"{d.storyNpcId}: 레벨이 0 이하");
                 Assert.LessOrEqual(d.level, cap, $"{d.storyNpcId}: 레벨 {d.level} > 상한 {cap}");
+                for (int i = 0; i < d.RosterSize; i++)
+                {
+                    Assert.Greater(d.RosterLevel(i), 0, $"{d.storyNpcId}: {i + 1}번째 레벨이 0 이하");
+                    Assert.LessOrEqual(d.RosterLevel(i), cap, $"{d.storyNpcId}: {i + 1}번째 레벨 > 상한 {cap}");
+                }
             }
         }
 

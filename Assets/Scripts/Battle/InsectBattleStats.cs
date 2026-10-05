@@ -6,7 +6,19 @@ namespace InsectGame.Battle
 {
     public class InsectBattleStats
     {
+        /// <summary>
+        /// 이 곤충의 <b>정체</b> — 도감·포획·보상·스토리 판정(<c>BattleWin</c> 종 지정)이 읽는다. 전투 중 바뀌지 않는다.
+        /// 상성·자속·기술은 <see cref="CombatData"/>로 잰다.
+        /// </summary>
         public InsectData Data { get; }
+
+        /// <summary>
+        /// 상성·자속·기술을 잴 때 쓰는 곤충 — 보통 <see cref="Data"/>와 같다. <b>모습을 바꾸는 레이드 보스만 다르다</b>
+        /// (<see cref="RaidBossStats.ChangeForm"/>, 표는 <see cref="RaidBossForms"/>). 이름 없는 사마귀가 나비의 모습을 빌려도
+        /// 이긴 상대는 사마귀다 — 그래서 <see cref="Data"/>를 갈아끼우지 않고 따로 둔다(갈아끼우면 레이드 승리가
+        /// 나비를 도감·컬렉션에 올리고, 최종장 <c>BattleWin</c> 비트가 사마귀를 못 알아본다).
+        /// </summary>
+        public InsectData CombatData { get; protected set; }
         public PlayerInsectData PlayerData { get; }
         public int Level { get; }
         public int MaxHp { get; protected set; }
@@ -53,6 +65,7 @@ namespace InsectGame.Battle
         public InsectBattleStats(InsectData data, int level, PlayerInsectData pid = null)
         {
             Data = data;
+            CombatData = data;
             PlayerData = pid;
             Level = Mathf.Max(1, level);
 

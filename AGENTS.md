@@ -110,7 +110,7 @@ AutoWire·이벤트·오브젝트 풀 패턴, 금지 사항이 전부 거기 있
 | `ui_layout_lint.py` | 패널 y·height 직접 계산 금지 (`UISafeLayout` 경유) | `rules/ui-layout.md` |
 | `subscription_lint.py` | `OnDisable`에서 해지한 구독을 `OnEnable`에서 되살릴 것 | `rules/ui-layout.md` |
 | `data_lint.py` | 곤충·아이템·리전 데이터 정합(ID 유일성, 참조 무결, 풀 배정) | 코드(`InsectDatabase` 등)와 스크립트 자신 |
-| `story_lint.py` | 스토리 비트 트리거·보상·리전키 정합 + 스토리 NPC 4중 등록(앰비언트·소개비트·표시명·외형) + 컷신·영상 ID 실재성 + 대사 화자·줄 연출 토큰 + 퀘스트 게이트의 1회 완료형 + 명부회 어휘(주인공 쪽이 「거둬들이다」를 안 쓴다) 30검사 | 코드(`StoryBeat`)와 스크립트 자신 |
+| `story_lint.py` | 스토리 비트 트리거·보상·리전키 정합 + 스토리 NPC 4중 등록(앰비언트·소개비트·표시명·외형) + 컷신·영상 ID 실재성 + 대사 화자·줄 연출 토큰 + 퀘스트 게이트의 1회 완료형 + 명부회 어휘(주인공 쪽이 「거둬들이다」를 안 쓴다) + 쉬운 이야기(대사 한 줄·장면 길이·쓰지 않는 말·HUD 목표 이유 why·장 「지난 이야기」) + 대사 직후 대결(`duelAfter` 상대·자리·라온 단계·런처 배선, 간부 승리 스파인의 재확인) + 대사 앞 영상(`introVideoId` 실재·`videoId`와 배타·대사 1~6줄) 36검사 | 코드(`StoryBeat`)와 스크립트 자신 |
 | `dex_grant_lint.py` | 곤충을 지급하면 도감에도 올릴 것(`AddCapturedInsect`↔`RegisterCapture`) | 코드(`DexController`)와 스크립트 자신 |
 | `blight_lint.py` | 명부회 아크 — 거점(보스·귀환종·비트·재도전 예외·스폰 하한·퀘스트 달성 가능성)과 「장부」 소모 지점 20검사 | 코드(`RegionData` 거점 필드)와 스크립트 자신 |
 | `singleton_lint.py` | 싱글턴이 `OnDestroy`에서 `Instance`를 비울 것 | 코드(`*Manager.cs`)와 스크립트 자신 |

@@ -173,7 +173,7 @@ namespace InsectGame.UI
         /// <b>데스크톱</b>: 왼쪽 상태 패널과 오른쪽 시각 알림 사이, 내기 점수판 아래 ~ 동굴 입구 버튼(섬: 섬 정보 줄) 위.
         /// <b>가로 모바일</b>: 미니맵 옆 퀘스트 칩 오른쪽 ~ 습격 경고·시각 알림 왼쪽, 내기 점수판과 단축 바 왼쪽 띠(필드: 필드 멀티 상태·대화 기록,
         /// 섬: 섬 HUD 판) 아래 ~ 동굴 입구 버튼 위.
-        /// <b>세로 모바일</b>: 퀘스트 목표 행과 오른쪽 열(단축 바 → 시각 칩·알림 → 필드 멀티 상태) 아래 ~ 동굴 입구 버튼·잡기 글자·상호작용 버튼 위.
+        /// <b>세로 모바일</b>: 퀘스트 목표 행(「왜」 줄이 붙은 두 줄 높이)과 오른쪽 열(단축 바 → 시각 칩·알림 → 필드 멀티 상태) 아래 ~ 동굴 입구 버튼·잡기 글자·상호작용 버튼 위.
         /// 필드는 왼쪽 끝 ~ 오른쪽 끝(화면 가운데에 선다), 섬은 왼쪽 끝 ~ 섬 HUD 열(과 그 아래 섬 시각 알림) 왼쪽.
         /// </summary>
         public static Rect Area(HudFrame f, bool islandHud)
@@ -193,7 +193,7 @@ namespace InsectGame.UI
             }
             else if (!f.Portrait)
             {
-                Rect quest = QuestChipLayout.ChipRect(f, QuestChipLayout.ExpandedHeight, QuestChipLayout.RowHeight);
+                Rect quest = QuestChipLayout.ChipRect(f, QuestChipLayout.ExpandedHeight, QuestChipLayout.RowHeightWithWhy);
                 x0 = quest.xMax + s;
                 x1 = Mathf.Min(CatchButtonLayout.WarnRect(f).x, fieldNotice.x) - s;
                 // 단축 바 왼쪽 띠 — 섬에서는 섬 HUD 두 칸 판, 필드에서는 같은 자리의 필드 멀티 상태 판과 그 아래 대화 기록(가로는 늘 선다).
@@ -205,8 +205,9 @@ namespace InsectGame.UI
             }
             else
             {
-                Rect quest = QuestChipLayout.ChipRect(f, QuestChipLayout.ExpandedHeight, QuestChipLayout.RowHeight);
-                Rect row = QuestChipLayout.Row(quest, quest.width, QuestChipLayout.RowHeight);
+                // 목표 행은 「왜」 둘째 줄이 붙은 큰 쪽(RowHeightWithWhy)을 피한다 — 칩을 펼친 쪽으로 재는 것과 같은 이유다.
+                Rect quest = QuestChipLayout.ChipRect(f, QuestChipLayout.ExpandedHeight, QuestChipLayout.RowHeightWithWhy);
+                Rect row = QuestChipLayout.Row(quest, quest.width, QuestChipLayout.RowHeightWithWhy);
                 x0 = f.ContentLeft;
                 if (islandHud)
                 {

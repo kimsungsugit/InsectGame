@@ -1,4 +1,5 @@
-﻿using InsectGame.Core;
+﻿using System.Collections.Generic;
+using InsectGame.Core;
 using InsectGame.NPC;
 using UnityEngine;
 
@@ -63,6 +64,29 @@ namespace InsectGame.UI
         private GUIStyle progressStyle;
         private readonly GUIContent namePlateContent = new GUIContent();
 
+        // ── 「지난 이야기」 카드 ── 장을 여는 비트가 **처음** 뜰 때(다시보기 아님) 첫 대사 앞에 한 장.
+        // 자리는 StoryRecapLayout(순수 계산)이 정하고, 줄 높이는 래핑으로 재서 (장, 화면 크기)마다 한 번 굽는다.
+        private InsectGame.Story.StoryChapter recapChapter;
+        private bool recapShowing;
+        private float recapShownAt;
+        private StoryRecapLayout.Plan recapPlan;
+        private InsectGame.Story.StoryChapter recapPlanChapter;
+        private float recapPlanW = -1f, recapPlanH = -1f;
+        private string[] recapLineTexts;
+        private GUIStyle recapTitleStyle;
+        private GUIStyle recapSectionStyle;
+        private GUIStyle recapBodyStyle;
+        private GUIStyle recapGoalStyle;
+        private GUIStyle recapHintStyle;
+
+        // 잡담 띠의 "다음 이야기 · 할 일 — 이유" — 할 일·이유가 바뀔 때만 잇는다(OnGUI 매 패스 문자열 할당 방지).
+        private string nextStoryCache;
+        private string nextStoryLabelSource;
+        private string nextStoryWhySource;
+
+        /// <summary>지금 「지난 이야기」 카드가 떠 있는가(첫 대사 앞).</summary>
+        public bool IsShowingRecap => isOpen && recapShowing;
+
         public bool IsOpen => isOpen;
 
         // 라이벌 대결 — 평소 대화에 [대결] 버튼을 붙인다(라온). 누르면 대화를 닫고 다음 Update에서 건다:
@@ -74,6 +98,27 @@ namespace InsectGame.UI
         public void AutoWire(InsectGame.NPC.NpcDuelController duel)
         {
             if (duelController == null) duelController = duel;
+        }
+
+        // 대사 직후 대결(StoryBeat.duelAfter) — 선택지 결과 대사처럼 자기 값이 빈 비트 뒤에도 대결이 기다리면
+        // 마지막 버튼을 「승부!」로 바꾼다. 대결을 여는 건 런처다(이 창은 평소처럼 닫기만 한다).
+        private InsectGame.Story.StoryDuelLauncher duelLauncher;
+        private GUIStyle duelButtonStyle;
+
+        public void AutoWire(InsectGame.Story.StoryDuelLauncher launcher)
+        {
+            if (duelLauncher == null) duelLauncher = launcher;
+        }
+
+        /// <summary>
+        /// 지금 떠 있는 스토리 대사가 끝나면 대결이 열리는가 — 비트 자신의 <c>duelAfter</c>, 또는 런처가 이미 기다리는 대결
+        /// (선택지를 단 비트가 끝나며 대기열에 넣었다). 다시보기·꿈은 대결을 열지 않는다.
+        /// </summary>
+        private bool StoryLeadsToDuel()
+        {
+            if (!storyMode || currentBeat == null) return false;
+            return DialogueDuelPrompt.LeadsToDuel(currentBeat.duelAfter,
+                duelLauncher != null && duelLauncher.HasPendingDuel, storyReplay, DreamPrologueState.Active);
         }
 
         public void AutoWire(PlayerMovement player)
@@ -132,23 +177,62 @@ namespace InsectGame.UI
         }
 
         // 스토리 비트를 대화 모달로 렌더 — lines[]를 순차 표시(speaker는 라인별). 닫으면 CompleteBeat 콜백.
+        // 장을 여는 비트면 첫 대사 앞에 「지난 이야기」 카드가 한 장 먼저 뜬다(StoryChapter.openingBeatId).
         public void ShowStory(InsectGame.Story.StoryBeat beat)
         {
+            OpenStory(beat, false);
+        }
+
+        /// <summary>
+        /// 스토리 대사를 연다. <paramref name="replay"/>(저널 다시보기)면 닫을 때 완료 처리를 건너뛰고 「지난 이야기」 카드도 띄우지 않는다 —
+        /// 카드는 그 장에 처음 들어설 때의 되짚기다. 대사 앞 연출이 붙은 비트는 연출이 끝나며 여기로 오므로 순서는
+        /// <b>대사 앞 영상(<c>introVideoId</c>) → 등장 연출(<c>stageEnterId</c>) → 「지난 이야기」 카드 → 첫 대사</b>다
+        /// (앞 둘은 <see cref="InsectGame.Story.StoryPreludeChain"/>이 차례로 돌리고, 카드는 여기서 선다 — 카드가 영상·연출과 겹치지 않는다).
+        /// 대사 <b>뒤</b> 영상(<c>videoId</c>)·컷신은 대사를 닫은 뒤(<c>StoryBeatCompleted</c>)에 돈다.
+        /// </summary>
+        private void OpenStory(InsectGame.Story.StoryBeat beat, bool replay)
+        {
             if (beat == null) return;
+
+            // **꺼진·파괴된 창으로는 열지 않는다.** 대사 앞 영상·등장 연출은 어떤 길로 끝나든 콜백(ShowStory)을 부르는데,
+            // 씬 재로드·로그아웃·UI 루트 토글(오프닝 다시보기)이 그 끝을 만들면 이 창이 먼저 꺼져 있을 수 있다. 그대로 열면
+            // static ModalUIRegistry에 열린 채 등록된다 — 꺼진 창은 OnGUI·OnDisable이 다시 안 돌아 닫힐 길이 없고, 파괴된 뒤에도
+            // IModalUI 참조 비교는 null이 아니라(IsAnyOpen의 정리가 못 거른다) 새 씬의 조작이 영영 막힌다.
+            // 그래서 비트를 쥐고만 있다가 다시 켜지면 연다(OnEnable). 씬째 사라지면 비트는 열람 표시 없이 남아 다음 부팅에 다시 뜬다 —
+            // 렌더러가 없을 때의 StoryDirector 정책(deferredBeat: 보류했다가 구독되면 띄우고, 끝내 없으면 seen 미마킹)과 같다.
+            // 다시보기는 쥐지 않는다 — 저널에서 다시 누르면 된다.
+            if (this == null) return;
+            if (!isActiveAndEnabled)
+            {
+                if (!replay) heldStoryBeat = beat;
+                return;
+            }
 
             // 대사 없음 — 표시 없이 즉시 완료(보상/seen 처리).
             if (beat.lines == null || beat.lines.Count == 0)
             {
-                if (storyDirector != null) storyDirector.CompleteBeat(beat.beatId);
+                if (!replay && storyDirector != null) storyDirector.CompleteBeat(beat.beatId);
                 return;
             }
 
             // 다른 모달(주민 대화)이 열려 있으면 정리 후 스토리로 전환.
             if (isOpen) CloseModal();
 
+            // 런처는 부트스트랩이 AutoWire로 잇는다. 배선이 빠졌을 때만 한 번 찾는다(비트를 열 때만 — 매 프레임 아님).
+            if (duelLauncher == null) duelLauncher = FindFirstObjectByType<InsectGame.Story.StoryDuelLauncher>();
+
             currentBeat = beat;
             storyMode = true;
-            storyReplay = false;
+            storyReplay = replay;
+            recapChapter = null;
+            recapShowing = false;
+            if (InsectGame.Story.StoryService.TryGetChapterOpenedBy(beat.beatId, out InsectGame.Story.StoryChapter chapter)
+                && StoryRecapLayout.ShouldShow(chapter, replay))
+            {
+                recapChapter = chapter;
+                recapShowing = true;
+                recapShownAt = Time.unscaledTime;
+            }
             storyLines = beat.lines.ToArray();
             lines = new string[storyLines.Length];
             for (int i = 0; i < storyLines.Length; i++)
@@ -181,8 +265,8 @@ namespace InsectGame.UI
                 return;
             }
 
-            ShowStory(beat);
-            storyReplay = true;   // ShowStory가 false로 돌려놓은 뒤에 켠다
+            // 다시보기 표지는 OpenStory가 열린 모달을 정리(CloseModal)한 **뒤에** 켠다 — 카드도 다시보기에선 뜨지 않는다.
+            OpenStory(beat, true);
         }
 
         /// <summary>대화 시작 — WorldInteractionController가 호출.</summary>
@@ -194,6 +278,8 @@ namespace InsectGame.UI
             storyReplay = false;
             currentBeat = null;
             storyLines = null;
+            recapChapter = null;
+            recapShowing = false;
             currentNpc = npc;
             // 스토리 인물은 전용 잡담이 있으면 그걸 쓴다 — 마을 주민 풀로 떨어지면
             // 명부회 간부가 날씨 이야기를 한다(비트를 아직 못 봤거나 전부 본 뒤의 경로).
@@ -239,6 +325,9 @@ namespace InsectGame.UI
             if (currentNpc != null) currentNpc.EndTalk();
             currentNpc = null;
             lines = null;
+            // 카드가 떠 있는 채 닫혀도(건너뛰기·ESC) 다음 열림에 남지 않게 — 카드는 OpenStory만 다시 세운다.
+            recapChapter = null;
+            recapShowing = false;
 
             // 스토리 비트였으면 완료 콜백(보상/seen). 상태를 먼저 비워 CompleteBeat 재진입에 안전.
             // 저널 다시보기(storyReplay)는 이미 열람·보상 완료된 비트라 콜백을 건너뛴다.
@@ -256,6 +345,17 @@ namespace InsectGame.UI
         }
 
         private bool choiceResolved;
+
+        // 꺼진 채 열려던 스토리 비트(OpenStory의 가드) — 다시 켜지면 그때 연다. 씬째 사라지면 같이 사라진다(비트는 미열람으로 남는다).
+        private InsectGame.Story.StoryBeat heldStoryBeat;
+
+        private void OnEnable()
+        {
+            if (heldStoryBeat == null || isOpen) return;
+            InsectGame.Story.StoryBeat beat = heldStoryBeat;
+            heldStoryBeat = null;
+            OpenStory(beat, false);
+        }
 
         private void OnDisable()
         {
@@ -322,7 +422,8 @@ namespace InsectGame.UI
             // **스토리는 무대, 잡담은 하단 띠.** 둘을 같은 모양으로 그리면 지금 보고 있는 것이
             // 이야기인지 잡담인지 구분되지 않는다 — 스토리는 딤 위에 인물이 서서 주고받고,
             // 잡담은 초상 없이 작은 검은 띠 하나다.
-            if (storyMode) DrawStoryStage(panelAlpha);
+            if (storyMode && recapShowing) DrawRecapCard(panelAlpha);
+            else if (storyMode) DrawStoryStage(panelAlpha);
             else DrawAmbient(panelAlpha);
 
             // 페이드 알파를 남기지 않는다 — GUI.color는 전역이라 다음 컴포넌트의 OnGUI까지 물든다.
@@ -362,8 +463,10 @@ namespace InsectGame.UI
             {
                 Color previousTextColor = lineStyle.normal.textColor;
                 lineStyle.normal.textColor = UITheme.Instance.textSecondary;
+                // 이유(「왜」)가 있으면 같은 줄 끝에 " — 이유"로 붙인다. 이 띠는 대사 줄과 버튼 줄 사이 한 줄뿐이라
+                // 둘째 줄을 들이면 대사 상자가 줄어든다 — 넘치면 LabelFit이 글자를 줄여 맞춘다.
                 UIHelper.LabelFit(new Rect(textX, py + panelH - 108f, textW, 32f),
-                    "다음 이야기 · " + objectiveTracker.Label, lineStyle);
+                    NextStoryLabel(objectiveTracker.Label, objectiveTracker.Why), lineStyle);
                 lineStyle.normal.textColor = previousTextColor;
             }
 
@@ -387,6 +490,25 @@ namespace InsectGame.UI
                 pendingRivalNpcId = currentNpc.StoryNpcId;
                 CloseModal();
             }
+        }
+
+        /// <summary>"다음 이야기 · 할 일" 또는 "다음 이야기 · 할 일 — 이유". 할 일·이유가 바뀔 때만 다시 잇는다.</summary>
+        private string NextStoryLabel(string label, string why)
+        {
+            if (nextStoryCache == null || !ReferenceEquals(label, nextStoryLabelSource) || !ReferenceEquals(why, nextStoryWhySource))
+            {
+                nextStoryLabelSource = label;
+                nextStoryWhySource = why;
+                nextStoryCache = ComposeNextStory(label, why);
+            }
+            return nextStoryCache;
+        }
+
+        /// <summary>잡담 띠의 다음 이야기 한 줄 — 순수. 이유가 비면 예전과 같다.</summary>
+        internal static string ComposeNextStory(string label, string why)
+        {
+            string head = "다음 이야기 · " + (label ?? string.Empty);
+            return string.IsNullOrEmpty(why) ? head : head + " — " + why;
         }
 
         // 문자열은 줄이 바뀔 때만 만든다 — OnGUI는 프레임당 여러 번 도는데 보간은 매번 새 문자열이다.
@@ -486,10 +608,9 @@ namespace InsectGame.UI
             UISurface.Dim((fx & StoryDialogueStaging.LineFx.Dark) != 0 ? 0.86f : 0.66f);
 
             // 상자는 아래, 인물은 그 위에 선다. 세로 화면은 폭이 좁아 대사가 여러 줄로 접히므로 상자를 키운다.
+            // 상자 자리는 「지난 이야기」 카드와 같은 순수 계산(StoryRecapLayout.DialogueBox) — 카드가 상자 위 판에 선다.
             bool portraitLayout = UIScale.IsPortrait;
-            float boxW = portraitLayout ? UISafeLayout.ContentWidth : Mathf.Min(1400f, UISafeLayout.ContentWidth);
-            float boxH = portraitLayout ? 500f : 350f;
-            Rect box = UISafeLayout.BottomPanel(boxW, boxH);
+            Rect box = StoryRecapLayout.DialogueBox(HudFrame.Current);
             box.x += StoryDialogueStaging.ShakeOffset(fx, since);
 
             // ── 인물 ── 발은 상자 뒤로 숨는다. 듣는 쪽을 먼저, 말하는 쪽을 나중에(앞에) 그린다.
@@ -581,16 +702,23 @@ namespace InsectGame.UI
             }
             else
             {
-                string advanceLabel = revealed && isLast ? "닫기" : "다음 ▶";
-                if (GUI.Button(new Rect(box.xMax - btnW - 24f, btnY, btnW, btnH), advanceLabel, buttonStyle))
+                // 대사 뒤 곧바로 대결이면 마지막 버튼이 「승부!」다(강조색) — 누르면 평소처럼 닫고, 대결은 런처가 연다.
+                bool duelNext = StoryLeadsToDuel();
+                Rect advanceRect = new Rect(box.xMax - btnW - 24f, btnY, btnW, btnH);
+                bool advance = DialogueDuelPrompt.IsDuelButton(revealed, isLast, duelNext)
+                    ? DrawDuelButton(advanceRect, DialogueDuelPrompt.DuelLabel)
+                    : GUI.Button(advanceRect, DialogueDuelPrompt.AdvanceLabel(revealed, isLast, duelNext), buttonStyle);
+                if (advance)
                 {
                     AdvanceStory();
                     if (!isOpen) return;
                 }
                 // 건너뛰기 — 장면 전체를 닫는다(비트는 완료 처리된다). 마지막 줄에선 위 버튼이 그 일을 한다.
                 // 선택지가 있는 비트는 건너뛸 수 없다 — CloseModal이 선택 전 닫기를 삼키므로 누르면 아무 일도 없다.
+                // 대결이 이어지면 「건너뛰고 승부」 — 건너뛰어도 싸움은 열린다는 걸 버튼이 말한다.
                 if (!isLast && !HasChoices
-                    && GUI.Button(new Rect(box.xMax - btnW * 2f - 40f, btnY, btnW, btnH), "건너뛰기", buttonStyle))
+                    && GUI.Button(new Rect(box.xMax - btnW * 2f - 40f, btnY, btnW, btnH),
+                        DialogueDuelPrompt.SkipButtonLabel(duelNext), buttonStyle))
                 {
                     CloseModal();
                     return;
@@ -617,6 +745,135 @@ namespace InsectGame.UI
             if (flash > 0f)
                 UISurface.Flat(new Rect(0f, 0f, UIScale.VirtualScreenWidth, UIScale.VirtualScreenHeight),
                     new Color(1f, 1f, 1f, flash * panelAlpha));
+        }
+
+        // ───────────────────────── 「지난 이야기」 카드 — 장을 여는 비트의 첫 대사 앞 ─────────────────────────
+
+        /// <summary>카드를 넘긴다 — 첫 대사를 지금부터(타자 효과·화자 등장 포함) 시작한다.</summary>
+        private void EndRecap()
+        {
+            recapShowing = false;
+            BeginStoryLine(0);
+        }
+
+        /// <summary>
+        /// 「지난 이야기」 카드 — 대사 상자 위 넓은 판(<see cref="StoryRecapLayout.Area"/>) 가운데. 아래 대사 상자 자리에는 같은 [다음 ▶]·[건너뛰기]가
+        /// 같은 자리에 서고, 화면 어디를 눌러도·Space/Enter도 넘긴다(대사와 같은 입력). 뜬 뒤 <see cref="StoryRecapLayout.InputDelay"/>초는
+        /// 입력을 받지 않는다 — 걷던 손가락이 카드를 바로 넘기지 않게. [건너뛰기]는 대사처럼 장면 전체를 닫는다(카드도 함께).
+        /// </summary>
+        private void DrawRecapCard(float panelAlpha)
+        {
+            if (recapChapter == null) { recapShowing = false; return; }
+            UITheme t = UITheme.Instance;
+            HudFrame f = HudFrame.Current;
+            UISurface.Dim(0.78f);
+
+            EnsureRecapPlan(f);
+            StoryRecapLayout.Plan p = recapPlan;
+
+            // ── 카드 ── 상단 액센트는 둥근 모서리를 뚫지 않게 긴 축을 반경만큼 물린다(rules/ui-layout.md).
+            UISurface.Card(p.Card, t.surfaceBase, t.accentAmber);
+            UISurface.Flat(new Rect(p.Card.x + UITheme.Radius.Card, p.Card.y + 3f, p.Card.width - UITheme.Radius.Card * 2f, 6f),
+                t.accentAmber);
+            string title = string.IsNullOrEmpty(recapChapter.title) ? recapChapter.chapterId : recapChapter.title;
+            UIHelper.LabelFit(p.Title, title, recapTitleStyle);
+
+            if (p.Recap != null && p.Recap.Length > 0)
+            {
+                recapSectionStyle.normal.textColor = t.textSecondary;
+                UIHelper.LabelFit(p.RecapHeader, "지난 이야기", recapSectionStyle);
+                for (int i = 0; i < p.Recap.Length && recapLineTexts != null && i < recapLineTexts.Length; i++)
+                    UIHelper.LabelFit(p.Recap[i], recapLineTexts[i], recapBodyStyle);
+                if (p.HasGoal) UISurface.Flat(p.Divider, t.surfaceBorder);
+            }
+            if (p.HasGoal)
+            {
+                recapSectionStyle.normal.textColor = t.accentMint;
+                UIHelper.LabelFit(p.GoalHeader, "이번 목표", recapSectionStyle);
+                UIHelper.LabelFit(p.Goal, recapChapter.goal, recapGoalStyle);
+            }
+
+            // ── 대사 상자 자리 ── 첫 대사가 설 자리에 같은 버튼을 세운다(누르던 자리 그대로 넘긴다).
+            bool portraitLayout = f.Portrait;
+            Rect box = StoryRecapLayout.DialogueBox(f);
+            UISurface.Card(box, t.surfaceBase, t.accentAmber);
+            UISurface.Flat(new Rect(box.x + UITheme.Radius.Card, box.y + 3f, box.width - UITheme.Radius.Card * 2f, 5f),
+                t.accentAmber);
+
+            bool ready = Time.unscaledTime - recapShownAt >= StoryRecapLayout.InputDelay;
+            float btnBandH = portraitLayout ? 112f : 100f;
+            Rect hintRect = new Rect(box.x + 40f, box.y + 40f, box.width - 80f, Mathf.Max(40f, box.height - 40f - btnBandH));
+            Color baseColor = GUI.color;
+            GUI.color = new Color(baseColor.r, baseColor.g, baseColor.b, baseColor.a * (ready ? 1f : 0.4f));
+            UIHelper.LabelFit(hintRect, "화면을 누르면 이야기가 시작돼요", recapHintStyle);
+            GUI.color = baseColor;
+
+            float btnW = portraitLayout ? 230f : 220f;
+            float btnH = 72f;
+            float btnY = box.yMax - btnH - 22f;
+            // 버튼을 먼저 — IMGUI는 먼저 처리된 컨트롤이 MouseDown을 가져간다. 화면 전체 넘기기는 그 뒤에 깐다.
+            if (GUI.Button(new Rect(box.xMax - btnW - 24f, btnY, btnW, btnH), "다음 ▶", buttonStyle) && ready)
+            {
+                EndRecap();
+                return;
+            }
+            // 선택지가 있는 비트는 건너뛸 수 없다(CloseModal이 선택 전 닫기를 삼킨다) — 대사 화면과 같은 규칙.
+            if (!HasChoices
+                && GUI.Button(new Rect(box.xMax - btnW * 2f - 40f, btnY, btnW, btnH),
+                    DialogueDuelPrompt.SkipButtonLabel(StoryLeadsToDuel()), buttonStyle) && ready)
+            {
+                CloseModal();
+                return;
+            }
+            if (GUI.Button(new Rect(0f, 0f, UIScale.VirtualScreenWidth, UIScale.VirtualScreenHeight), GUIContent.none, GUIStyle.none)
+                && ready)
+            {
+                EndRecap();
+                return;
+            }
+            Event e = Event.current;
+            if (e != null && e.type == EventType.KeyDown
+                && (e.keyCode == KeyCode.Space || e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter))
+            {
+                e.Use();
+                if (ready) EndRecap();
+            }
+        }
+
+        /// <summary>
+        /// 카드 배치를 (장, 화면 크기)마다 한 번 굽는다 — 줄 높이는 래핑으로 재야 해서(CalcHeight) OnGUI 안에서만 부른다.
+        /// 빈 줄은 건너뛴다. 줄머리에 "• "를 붙인다(아이가 줄을 하나씩 짚어 읽게).
+        /// </summary>
+        private void EnsureRecapPlan(HudFrame f)
+        {
+            if (recapLineTexts != null && ReferenceEquals(recapPlanChapter, recapChapter)
+                && recapPlanW == f.Width && recapPlanH == f.Height) return;
+            recapPlanChapter = recapChapter;
+            recapPlanW = f.Width;
+            recapPlanH = f.Height;
+
+            List<string> src = recapChapter.recap;
+            int n = 0;
+            if (src != null)
+                for (int i = 0; i < src.Count; i++)
+                    if (!string.IsNullOrWhiteSpace(src[i])) n++;
+            recapLineTexts = new string[n];
+            float[] heights = new float[n];
+            float cardW = StoryRecapLayout.CardWidth(f);
+            float textW = StoryRecapLayout.TextWidth(cardW);
+            int k = 0;
+            if (src != null)
+                for (int i = 0; i < src.Count; i++)
+                {
+                    if (string.IsNullOrWhiteSpace(src[i])) continue;
+                    recapLineTexts[k] = "• " + src[i].Trim();
+                    heights[k] = StoryRecapLayout.BodyHeight(UIHelper.MeasureWrappedHeight(recapBodyStyle, recapLineTexts[k], textW));
+                    k++;
+                }
+            string goal = recapChapter.goal;
+            float goalH = string.IsNullOrWhiteSpace(goal) ? 0f
+                : StoryRecapLayout.BodyHeight(UIHelper.MeasureWrappedHeight(recapGoalStyle, goal, textW));
+            recapPlan = StoryRecapLayout.Layout(StoryRecapLayout.Area(f), cardW, heights, goalH);
         }
 
         /// <summary>
@@ -759,6 +1016,26 @@ namespace InsectGame.UI
         }
 
         /// <summary>
+        /// 「승부!」 — 산호색 몸통에 호박색 테두리, 테두리가 숨 쉬듯 진해졌다 옅어진다(줄인 움직임 설정이면 멈춘다).
+        /// 선택 버튼과 같은 구조(서피스 + LabelFit + 투명 클릭)라 [다음 ▶]과 같은 자리·크기에 선다.
+        /// 맥동은 색이 아니라 알파로 준다 — 둥근 서피스는 색마다 텍스처를 구워 캐시하므로 색을 매 프레임 바꾸면 텍스처가 쌓인다.
+        /// </summary>
+        private bool DrawDuelButton(Rect r, string text)
+        {
+            UITheme t = UITheme.Instance;
+            float pulse = BattlePresentation.ReducedMotion ? 1f : 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 4f);
+            Color body = r.Contains(UIScale.VirtualMousePosition) ? Color.Lerp(t.accentCoral, Color.white, 0.16f) : t.accentCoral;
+            UISurface.Rounded(new Rect(r.x + 2f, r.y + 5f, r.width, r.height), t.surfaceShadow);
+            Color prev = GUI.color;
+            GUI.color = new Color(prev.r, prev.g, prev.b, prev.a * (0.55f + 0.45f * pulse));
+            UISurface.Rounded(new Rect(r.x - 4f, r.y - 4f, r.width + 8f, r.height + 8f), t.accentAmber);
+            GUI.color = prev;
+            UISurface.Rounded(r, body);
+            UIHelper.LabelFit(new Rect(r.x + 10f, r.y, r.width - 20f, r.height), text, duelButtonStyle);
+            return GUI.Button(r, string.Empty, GUIStyle.none);
+        }
+
+        /// <summary>
         /// 초상 한 장의 재료. 표(<see cref="GetStoryPortraitEntry"/>)는 성별·표정만 들고,
         /// 피부·머리색·머리 모양·몸통·모자는 전부 <b>월드 외형에서 받는다</b>(<see cref="ApplyWorldAppearance"/>).
         /// </summary>
@@ -876,6 +1153,15 @@ namespace InsectGame.UI
             };
             choiceStyle.normal.textColor = Color.white;
 
+            // 「승부!」 — 대사 버튼(72px)에 꽉 차게 크게. label 파생(서피스 위에 글자만 찍는다).
+            duelButtonStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 36,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleCenter
+            };
+            duelButtonStyle.normal.textColor = UITheme.Instance.textPrimary;
+
             // 무대 이름표 — 상자 윗변에 걸친 카드 안 가운데.
             namePlateStyle = new GUIStyle(GUI.skin.label)
             {
@@ -893,7 +1179,235 @@ namespace InsectGame.UI
             };
             progressStyle.normal.textColor = UITheme.Instance.textSecondary;
 
+            // 「지난 이야기」 카드 — 아이가 읽는 화면이라 본문을 대사 본문(가로 34·세로 36) 이상으로 둔다.
+            recapTitleStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = StoryRecapLayout.TitleFont,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleLeft
+            };
+            recapTitleStyle.normal.textColor = UITheme.Instance.accentAmber;
+            recapSectionStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = StoryRecapLayout.SectionFont,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleLeft
+            };
+            recapSectionStyle.normal.textColor = UITheme.Instance.textSecondary;
+            recapBodyStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = StoryRecapLayout.BodyFont,
+                alignment = TextAnchor.UpperLeft,
+                wordWrap = true
+            };
+            recapBodyStyle.normal.textColor = UITheme.Instance.textPrimary;
+            recapGoalStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = StoryRecapLayout.BodyFont,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.UpperLeft,
+                wordWrap = true
+            };
+            recapGoalStyle.normal.textColor = UITheme.Instance.textPrimary;
+            recapHintStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 30,
+                alignment = TextAnchor.MiddleCenter,
+                wordWrap = true
+            };
+            recapHintStyle.normal.textColor = UITheme.Instance.textSecondary;
+
             stylesInited = true;
+        }
+    }
+
+    /// <summary>
+    /// 스토리 대사 버튼의 문구 — <b>순수 계산</b>. 대사가 끝나면 곧바로 대결이 열리는 장면(<c>StoryBeat.duelAfter</c>, 또는
+    /// 선택지 결과 대사처럼 런처가 이미 대결을 기다리는 장면)이면 마지막 줄의 [닫기]가 「승부!」가 되고, [건너뛰기]는
+    /// 「건너뛰고 승부」가 된다 — 아이가 "닫으면 끝"이라고 읽고 지나가지 않게. 누르는 일은 그대로 닫기다(대결은 런처가 연다).
+    /// </summary>
+    internal static class DialogueDuelPrompt
+    {
+        public const string DuelLabel = "승부!";
+        public const string SkipToDuelLabel = "건너뛰고 승부";
+        public const string SkipLabel = "건너뛰기";
+        public const string CloseLabel = "닫기";
+        public const string NextLabel = "다음 ▶";
+
+        /// <summary>
+        /// 이 대사가 끝나면 대결이 열리는가. 비트의 <paramref name="duelAfter"/>가 대결 표에 있는 상대이거나
+        /// (<c>StoryDuelLauncher.KindOf</c> — 오타는 런처도 버린다), 런처가 이미 대결을 기다리면 참. 다시보기(저널)와 꿈은 대결을 열지 않는다.
+        /// </summary>
+        public static bool LeadsToDuel(string duelAfter, bool launcherPending, bool replay, bool dream)
+        {
+            if (replay || dream) return false;
+            if (!string.IsNullOrWhiteSpace(duelAfter)
+                && InsectGame.Story.StoryDuelLauncher.KindOf(duelAfter.Trim()) != InsectGame.Story.StoryDuelLauncher.DuelKind.None)
+                return true;
+            return launcherPending;
+        }
+
+        /// <summary>오른쪽 버튼이 「승부!」인가 — 마지막 줄이 다 나왔고 대결이 이어질 때만. 덜 나왔으면 [다음 ▶](줄을 마저 보인다).</summary>
+        public static bool IsDuelButton(bool revealed, bool isLast, bool duel) => revealed && isLast && duel;
+
+        /// <summary>오른쪽 버튼 문구.</summary>
+        public static string AdvanceLabel(bool revealed, bool isLast, bool duel) =>
+            revealed && isLast ? (duel ? DuelLabel : CloseLabel) : NextLabel;
+
+        /// <summary>왼쪽 [건너뛰기] 문구.</summary>
+        public static string SkipButtonLabel(bool duel) => duel ? SkipToDuelLabel : SkipLabel;
+    }
+
+    /// <summary>
+    /// 「지난 이야기」 카드의 자리 — <b>순수 계산</b>. 장을 여는 비트(<c>StoryChapter.openingBeatId</c>)가 처음 뜰 때 첫 대사 앞에 한 장 선다
+    /// (<see cref="NpcDialogueUI"/>). 대사 상자(<see cref="DialogueBox"/> — 대사 무대가 같은 함수를 쓴다) 위, 안전 영역 윗변까지의 판
+    /// (<see cref="Area"/>) 가운데에 선다.
+    ///
+    /// <b>가로</b>(가상 1920×1080): 상자 1400×350이 바닥에, 판은 그 위 24px까지(높이 약 640), 카드 폭 min(1200, 안전 폭).
+    /// <b>세로</b>(가상 1080×1920): 상자 안전 폭×500, 판 높이 약 1280, 카드 폭 = 안전 폭(1032).
+    /// 높이는 줄마다 잰 높이(래핑 — 세로에선 30자 한 줄이 두 줄로 접힌다)로 쌓고, 판보다 크면 본문 줄만 같은 비율로 줄인다
+    /// (그리기는 <c>UIHelper.LabelFit</c>이 글자를 줄여 맞춘다) — 줄 수가 늘어도 판 밖으로 나가지 않는다.
+    /// </summary>
+    public static class StoryRecapLayout
+    {
+        /// <summary>장 제목.</summary>
+        public const int TitleFont = 48;
+        /// <summary>「지난 이야기」·「이번 목표」 소제목.</summary>
+        public const int SectionFont = 28;
+        /// <summary>지난 이야기 줄·목표 — 대사 본문(가로 34·세로 36) 이상.</summary>
+        public const int BodyFont = 36;
+        public const float PadX = 40f;
+        public const float PadY = 30f;
+        /// <summary>가로 화면 카드 최대 폭 — 대사 상자(1400)보다 좁혀 한 줄을 눈으로 따라가기 쉽게.</summary>
+        public const float LandscapeMaxWidth = 1200f;
+        public const float DividerHeight = 2f;
+        /// <summary>카드가 뜬 뒤 입력을 받지 않는 시간(초) — 걷던 손가락이 카드를 바로 넘기지 않게.</summary>
+        public const float InputDelay = 0.4f;
+
+        // 대사 상자 — 무대(NpcDialogueUI.DrawStoryStage)와 카드가 같은 값을 쓴다.
+        public const float LandscapeBoxMaxWidth = 1400f;
+        public const float LandscapeBoxHeight = 350f;
+        public const float PortraitBoxHeight = 500f;
+
+        /// <summary>한 줄이 안 잘리는 상자 높이 — 한글 줄높이 ≈ 글자 × 1.35(rules/ui-layout.md).</summary>
+        public static float LineHeight(int fontSize) => Mathf.Ceil(fontSize * 1.35f);
+
+        /// <summary>
+        /// 카드를 띄우는가 — 다시보기(저널)가 아니고, 장 데이터가 있고, 지난 이야기에 비지 않은 줄이 하나라도 있을 때.
+        /// 1장처럼 지난 이야기가 없는 장은 카드 없이 곧바로 대사다.
+        /// </summary>
+        public static bool ShouldShow(InsectGame.Story.StoryChapter chapter, bool replay)
+        {
+            if (replay || chapter == null || chapter.recap == null) return false;
+            for (int i = 0; i < chapter.recap.Count; i++)
+                if (!string.IsNullOrWhiteSpace(chapter.recap[i])) return true;
+            return false;
+        }
+
+        /// <summary>스토리 대사 상자(가상 좌표) — 가로 min(1400, 안전 폭)×350, 세로 안전 폭×500, 안전 영역 바닥.</summary>
+        public static Rect DialogueBox(HudFrame f)
+        {
+            float w = f.Portrait ? f.ContentWidth : Mathf.Min(LandscapeBoxMaxWidth, f.ContentWidth);
+            return f.BottomPanel(w, f.Portrait ? PortraitBoxHeight : LandscapeBoxHeight);
+        }
+
+        /// <summary>카드가 설 판 — 안전 영역 윗변부터 대사 상자 위 24px까지, 안전 폭 전부.</summary>
+        public static Rect Area(HudFrame f)
+        {
+            Rect box = DialogueBox(f);
+            float top = f.ContentTop;
+            float bottom = Mathf.Max(top + 1f, box.y - UITheme.Space.L);
+            return new Rect(f.ContentLeft, top, f.ContentWidth, bottom - top);
+        }
+
+        public static float CardWidth(HudFrame f) => f.Portrait ? f.ContentWidth : Mathf.Min(LandscapeMaxWidth, f.ContentWidth);
+
+        /// <summary>카드 안 글자 폭 — 줄 높이를 이 폭으로 잰다.</summary>
+        public static float TextWidth(float cardWidth) => Mathf.Max(1f, cardWidth - PadX * 2f);
+
+        /// <summary>잰 높이(CalcHeight) → 본문 줄 상자 높이. 한 줄 높이(1.35배)보다 낮게 잡지 않는다.</summary>
+        public static float BodyHeight(float measured) => Mathf.Max(LineHeight(BodyFont), Mathf.Ceil(measured));
+
+        /// <summary>카드 한 장의 배치.</summary>
+        public struct Plan
+        {
+            public Rect Card;
+            public Rect Title;
+            public Rect RecapHeader;
+            /// <summary>지난 이야기 줄마다 하나.</summary>
+            public Rect[] Recap;
+            public Rect Divider;
+            public Rect GoalHeader;
+            public Rect Goal;
+            public bool HasGoal;
+            /// <summary>판보다 커서 본문 줄을 줄였다(그리기의 LabelFit이 글자를 줄여 맞춘다).</summary>
+            public bool Squeezed;
+        }
+
+        /// <summary>본문 줄이 아닌 것(여백·제목·소제목·간격·구분선)의 높이.</summary>
+        public static float FixedHeight(int recapCount, bool hasGoal)
+        {
+            float h = PadY + LineHeight(TitleFont) + UITheme.Space.S;
+            if (recapCount > 0)
+                h += LineHeight(SectionFont) + UITheme.Space.XS + UITheme.Space.XS * (recapCount - 1);
+            if (hasGoal)
+            {
+                if (recapCount > 0) h += UITheme.Space.M + DividerHeight + UITheme.Space.M;
+                h += LineHeight(SectionFont) + UITheme.Space.XS;
+            }
+            return h + PadY;
+        }
+
+        /// <summary>
+        /// 카드 배치 — <paramref name="area"/>(<see cref="Area"/>) 가운데에 <paramref name="cardWidth"/> 폭으로. 본문 줄 높이는 호출부가 잰 값
+        /// (<see cref="BodyHeight"/>)이고, <paramref name="goalHeight"/>가 0이면 목표 칸이 없다. 다 쌓은 높이가 판보다 크면 본문 줄만
+        /// 같은 비율로 줄여 카드가 판 안에 든다.
+        /// </summary>
+        public static Plan Layout(Rect area, float cardWidth, IReadOnlyList<float> recapHeights, float goalHeight)
+        {
+            int n = recapHeights != null ? recapHeights.Count : 0;
+            bool hasGoal = goalHeight > 0f;
+            float fixedH = FixedHeight(n, hasGoal);
+            float body = hasGoal ? goalHeight : 0f;
+            for (int i = 0; i < n; i++) body += Mathf.Max(0f, recapHeights[i]);
+
+            float room = Mathf.Max(1f, area.height);
+            float k = 1f;
+            if (fixedH + body > room && body > 0f) k = Mathf.Clamp01((room - fixedH) / body);
+            float cardH = Mathf.Min(room, fixedH + body * k);
+            float w = Mathf.Clamp(cardWidth, 1f, Mathf.Max(1f, area.width));
+
+            var p = new Plan { HasGoal = hasGoal, Squeezed = k < 1f, Recap = new Rect[n] };
+            p.Card = new Rect(area.x + (area.width - w) * 0.5f, area.y + (room - cardH) * 0.5f, w, cardH);
+            float x = p.Card.x + PadX;
+            float tw = TextWidth(w);
+            float y = p.Card.y + PadY;
+            p.Title = new Rect(x, y, tw, LineHeight(TitleFont));
+            y += p.Title.height + UITheme.Space.S;
+            if (n > 0)
+            {
+                p.RecapHeader = new Rect(x, y, tw, LineHeight(SectionFont));
+                y += p.RecapHeader.height + UITheme.Space.XS;
+                for (int i = 0; i < n; i++)
+                {
+                    float h = Mathf.Max(1f, Mathf.Max(0f, recapHeights[i]) * k);
+                    p.Recap[i] = new Rect(x, y, tw, h);
+                    y += h + (i < n - 1 ? UITheme.Space.XS : 0f);
+                }
+            }
+            if (hasGoal)
+            {
+                if (n > 0)
+                {
+                    y += UITheme.Space.M;
+                    p.Divider = new Rect(x, y, tw, DividerHeight);
+                    y += DividerHeight + UITheme.Space.M;
+                }
+                p.GoalHeader = new Rect(x, y, tw, LineHeight(SectionFont));
+                y += p.GoalHeader.height + UITheme.Space.XS;
+                p.Goal = new Rect(x, y, tw, Mathf.Max(1f, goalHeight * k));
+            }
+            return p;
         }
     }
 }

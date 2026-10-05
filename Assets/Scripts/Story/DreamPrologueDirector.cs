@@ -678,7 +678,7 @@ namespace InsectGame.Story
             switch (turns)
             {
                 case 0: return mobile ? "아래 기술 카드를 눌러 공격하세요" : "기술 카드를 누르거나 [1]~[4] 키로 공격하세요";
-                case 1: return "상성이 맞으면 '효과가 굉장했다!' — 기술마다 대기 시간이 있어요";
+                case 1: return "상성이 맞으면 '잘 통했다!'가 떠요 — 기술마다 대기 시간이 있어요";
                 case 2: return "마지막 일격! 가장 강한 기술을 써 보세요";
                 default: return "결승전, 마무리!";
             }

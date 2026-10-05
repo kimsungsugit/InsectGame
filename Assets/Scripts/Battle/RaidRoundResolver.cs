@@ -43,7 +43,8 @@ namespace InsectGame.Battle
             bool allowAreaAttack)
         {
             IRaidRandomSource source = random ?? SharedRandom;
-            InsectData bossData = boss != null ? boss.Data : null;
+            // 속성은 **지금 모습**으로 — 모습을 바꾸는 보스(RaidBossForms)는 정체(Data)와 모습(CombatData)이 다르다.
+            InsectData bossData = boss != null ? boss.CombatData : null;
 
             if (allowAreaAttack && roundsUntilAreaAttack <= 0)
             {
@@ -77,30 +78,48 @@ namespace InsectGame.Battle
                 targetSlot = aliveSlots[pick];
             }
 
-            bool hasSignature = signatureSkill != null;
-            return new RaidBossIntent
+            RaidBossIntent intent = new RaidBossIntent
             {
                 RoundNumber = roundNumber,
-                Kind = hasSignature ? RaidBossIntentKind.SignatureSkill : RaidBossIntentKind.SingleTarget,
-                TargetSlot = targetSlot,
-                Skill = signatureSkill,
-                Element = hasSignature
-                    ? signatureSkill.element
-                    : (bossData != null ? bossData.primaryType : InsectElement.Bug),
-                EffectType = hasSignature ? signatureSkill.effectType : SkillEffectType.Damage,
-                DisplayName = hasSignature && !string.IsNullOrEmpty(signatureSkill.displayName)
-                    ? signatureSkill.displayName
-                    : "공격"
+                TargetSlot = targetSlot
             };
+            ApplySingleTargetSkill(intent, signatureSkill, bossData);
+            return intent;
         }
 
+        /// <summary>
+        /// 단일 대상 예고에 기술을 싣는다 — 기술이 있으면 그 기술(이름·속성·효과), 없으면 보스 주속성의 「공격」.
+        /// <see cref="CreateBossIntent"/>와, 보스가 라운드 도중 모습을 바꿨을 때 이미 띄운 예고를 새 모습의 기술로
+        /// 고쳐 쓰는 <c>RaidBattleController</c>가 함께 쓴다(두 곳이 따로 채우면 예고 표기가 갈린다).
+        /// 대상 슬롯·라운드 번호는 건드리지 않는다 — 난수를 다시 굴리지 않기 위해서다.
+        /// </summary>
+        internal static void ApplySingleTargetSkill(RaidBossIntent intent, InsectSkill skill, InsectData bossData)
+        {
+            if (intent == null) return;
+            bool hasSkill = skill != null;
+            intent.Kind = hasSkill ? RaidBossIntentKind.SignatureSkill : RaidBossIntentKind.SingleTarget;
+            intent.Skill = skill;
+            intent.Element = hasSkill
+                ? skill.element
+                : (bossData != null ? bossData.primaryType : InsectElement.Bug);
+            intent.EffectType = hasSkill ? skill.effectType : SkillEffectType.Damage;
+            intent.DisplayName = hasSkill && !string.IsNullOrEmpty(skill.displayName)
+                ? skill.displayName
+                : "공격";
+        }
+
+        /// <param name="crit">
+        /// 치명타 줄기. <b>null이면 굴리지 않는다</b>(치명타 없음 — 결정적). 명중 줄기(<paramref name="random"/>)와
+        /// 따로 받는 이유는 <see cref="InsectBattleController.SetCritSource"/> 주석 참조 — 같은 줄기면 명중 롤 순서가 밀린다.
+        /// 게임 컨트롤러(<see cref="RaidBattleController"/>)만 진짜 줄기를 넘긴다.
+        /// </param>
         public static RaidActionResult ResolveLeaderSkill(int slot, int skillIndex,
             InsectBattleStats attacker, InsectBattleStats boss, InsectBattleStats[] team,
-            InsectSkill skill, IRaidRandomSource random)
+            InsectSkill skill, IRaidRandomSource random, IRaidRandomSource crit = null)
         {
             return ResolveTeamSkill(
                 RaidActionKind.LeaderSkill, 1f, slot, skillIndex,
-                attacker, boss, team, skill, random);
+                attacker, boss, team, skill, random, crit);
         }
 
         /// <summary>
@@ -109,12 +128,12 @@ namespace InsectGame.Battle
         /// </summary>
         public static RaidActionResult ResolveSupportSkill(int slot, int skillIndex,
             InsectBattleStats attacker, InsectBattleStats boss, InsectBattleStats[] team,
-            InsectSkill skill, IRaidRandomSource random)
+            InsectSkill skill, IRaidRandomSource random, IRaidRandomSource crit = null)
         {
             return ResolveTeamSkill(
                 RaidActionKind.SupportSkill,
                 GameConstants.Battle.RaidSupportSkillPowerMultiplier,
-                slot, skillIndex, attacker, boss, team, skill, random);
+                slot, skillIndex, attacker, boss, team, skill, random, crit);
         }
 
         /// <summary>
@@ -129,7 +148,7 @@ namespace InsectGame.Battle
         private static RaidActionResult ResolveTeamSkill(RaidActionKind kind,
             float powerMultiplier, int slot, int skillIndex,
             InsectBattleStats attacker, InsectBattleStats boss, InsectBattleStats[] team,
-            InsectSkill skill, IRaidRandomSource random)
+            InsectSkill skill, IRaidRandomSource random, IRaidRandomSource crit)
         {
             RaidActionResult result = new RaidActionResult
             {
@@ -142,7 +161,8 @@ namespace InsectGame.Battle
                 EffectType = skill != null ? skill.effectType : SkillEffectType.Damage,
                 DisplayName = skill != null && !string.IsNullOrEmpty(skill.displayName)
                     ? skill.displayName
-                    : "공격"
+                    : "공격",
+                IsSignature = attacker != null && SignatureSkills.IsSignature(attacker.Data, skill)
             };
 
             if (attacker == null || boss == null || skill == null)
@@ -157,7 +177,11 @@ namespace InsectGame.Battle
                         return result;
                     }
 
-                    int damage = CalculateSkillDamage(attacker, boss, skill, powerMultiplier);
+                    // 치명타는 **명중한 피해기에만** — 빗나감은 위에서 이미 돌아갔다(명중 롤 뒤에 굴린다).
+                    int damage = InsectBattleController.ApplyCritical(
+                        CalculateSkillDamage(attacker, boss, skill, powerMultiplier), crit, out bool critical);
+                    result.Critical = critical;
+                    result.Matchup = ElementMatchup.Of(skill.element, boss.CombatData);   // CalculateTeamDamage와 같은 상대(지금 모습)
                     result.Damage = ApplyDamageAndMeasure(
                         boss, damage, attacker.Attack, boss.Defense);
                     result.KnockedOut = result.Damage > 0 && boss.CurrentHp <= 0;
@@ -242,8 +266,9 @@ namespace InsectGame.Battle
             }
         }
 
+        /// <param name="crit">치명타 줄기 — null이면 굴리지 않는다(<see cref="ResolveLeaderSkill"/>와 같은 규칙).</param>
         public static RaidActionResult ResolveSupportAssist(int slot,
-            InsectBattleStats attacker, InsectBattleStats boss)
+            InsectBattleStats attacker, InsectBattleStats boss, IRaidRandomSource crit = null)
         {
             InsectElement element = attacker != null && attacker.Data != null
                 ? attacker.Data.primaryType
@@ -267,7 +292,10 @@ namespace InsectGame.Battle
             // 팀 편성(속성 매칭)이 레이드 전 유일한 결정인데 피해의 4/5가 그 결정을 무시했다.
             int basePower = Mathf.Max(
                 1, Mathf.RoundToInt(attacker.Attack * SupportAssistPowerMultiplier));
-            int baseDamage = CalculateTeamDamage(attacker, boss, element, basePower);
+            int baseDamage = InsectBattleController.ApplyCritical(
+                CalculateTeamDamage(attacker, boss, element, basePower), crit, out bool critical);
+            result.Critical = critical;
+            result.Matchup = ElementMatchup.Of(element, boss.CombatData);
             result.Damage = ApplyDamageAndMeasure(
                 boss, baseDamage, attacker.Attack, boss.Defense);
             result.KnockedOut = result.Damage > 0 && boss.CurrentHp <= 0;
@@ -295,6 +323,8 @@ namespace InsectGame.Battle
             if (attacker == null || boss == null || attacker.CurrentHp <= 0)
                 return result;
 
+            // 치명타는 굴리지 않는다 — 합체공격은 이미 ×1.5(UniteContributionMultiplier)인 연출의 정점이라
+            // 거기에 무작위 ×1.5가 얹히면 같은 게이지의 가치가 한 마리 단위로 들쭉날쭉해진다.
             // 합체공격도 상성·자속을 탄다. `result.Element`를 **표시**만 하고 계산엔 안 쓰던 자리 —
             // 화면엔 속성이 뜨는데 수식은 무속성이라 표시와 결과가 어긋나 있었다.
             int basePower = Mathf.Max(
@@ -302,6 +332,7 @@ namespace InsectGame.Battle
                 Mathf.RoundToInt((15 + attacker.Level * GameConstants.Battle.LevelDamageScale)
                     * UniteContributionMultiplier));
             int damage = CalculateTeamDamage(attacker, boss, element, basePower);
+            result.Matchup = ElementMatchup.Of(element, boss.CombatData);
             result.Damage = ApplyDamageAndMeasure(
                 boss, damage, attacker.Attack, boss.Defense);
             result.KnockedOut = result.Damage > 0 && boss.CurrentHp <= 0;
@@ -312,9 +343,12 @@ namespace InsectGame.Battle
         /// 격노(HP 절반 이하) 시 <b>단일 대상 피해</b>에만 곱한다. 전체공격은 그대로 두고 대신
         /// 간격이 짧아진다 — 둘 다 세지면 격노 진입이 곧 전멸이 된다(레이드엔 부활·교체가 없다).
         /// </param>
+        /// <param name="crit">
+        /// 치명타 줄기 — null이면 굴리지 않는다. 보스의 한 행동에 <b>한 번만</b> 굴린다(전체공격이면 맞는 전원에 같은 판정).
+        /// </param>
         public static RaidActionResult ResolveBossIntent(RaidBossIntent intent,
             InsectBattleStats boss, InsectBattleStats[] team, int[] damageBySlot,
-            float rageMultiplier = 1f)
+            float rageMultiplier = 1f, IRaidRandomSource crit = null)
         {
             RaidActionResult result = new RaidActionResult
             {
@@ -327,7 +361,9 @@ namespace InsectGame.Battle
                 Skill = intent != null ? intent.Skill : null,
                 Element = intent != null ? intent.Element : InsectElement.Bug,
                 EffectType = intent != null ? intent.EffectType : SkillEffectType.Damage,
-                DisplayName = intent != null ? intent.DisplayName : "공격"
+                DisplayName = intent != null ? intent.DisplayName : "공격",
+                // 빌린 모습의 전용기는 그 모습의 것이다 — 기술을 고른 쪽(PickBossSkill)과 같이 지금 모습으로 잰다.
+                IsSignature = intent != null && boss != null && SignatureSkills.IsSignature(boss.CombatData, intent.Skill)
             };
 
             if (intent == null || boss == null || team == null)
@@ -340,7 +376,9 @@ namespace InsectGame.Battle
 
             if (intent.IsArea)
             {
-                int areaDamage = Mathf.Max(1, bossDamage * 2 / 3);
+                int areaDamage = InsectBattleController.ApplyCritical(
+                    Mathf.Max(1, bossDamage * 2 / 3), crit, out bool areaCritical);
+                result.Critical = areaCritical;
                 bool knockedOutAny = false;
                 for (int i = 0; i < team.Length; i++)
                 {
@@ -378,19 +416,24 @@ namespace InsectGame.Battle
                     singleTarget.Data != null
                         ? singleTarget.Data.secondaryType
                         : InsectElement.None);
-                float sameTypeBonus = boss.Data != null
+                // 자속은 **지금 모습**의 속성으로 — 나비 모습을 빌린 보스는 나비의 바람 기술에 자속을 받는다.
+                InsectData bossForm = boss.CombatData;
+                float sameTypeBonus = bossForm != null
                     ? InsectTypeChart.GetSameTypeBonus(
                         intent.Skill.element,
-                        boss.Data.primaryType,
-                        boss.Data.secondaryType)
+                        bossForm.primaryType,
+                        bossForm.secondaryType)
                     : 1f;
                 singleTargetDamage = Mathf.Max(
                     1,
                     Mathf.RoundToInt(
                         (intent.Skill.power + boss.Level * GameConstants.Battle.LevelDamageScale)
                         * bossMultiplier * effectiveness * sameTypeBonus * rage));
+                result.Matchup = ElementMatchup.Describe(effectiveness);
             }
 
+            singleTargetDamage = InsectBattleController.ApplyCritical(singleTargetDamage, crit, out bool critical);
+            result.Critical = critical;
             result.Damage = ApplyDamageAndMeasure(
                 singleTarget, singleTargetDamage, boss.Attack, singleTarget.Defense);
             if (damageBySlot != null && slot < damageBySlot.Length)
@@ -484,10 +527,12 @@ namespace InsectGame.Battle
 
             float multiplier = Mathf.Clamp(1f + attacker.AttackBonus, 0.3f, 3f);
             int damage = Mathf.Max(1, Mathf.RoundToInt(basePower * multiplier));
+            // 상성은 보스의 **지금 모습**으로 잰다 — 모습이 바뀌면 약점이 바뀌어 팀이 대응을 바꿔야 한다(RaidBossForms).
+            InsectData bossForm = boss.CombatData;
             float effectiveness = InsectTypeChart.GetEffectiveness(
                 element,
-                boss.Data != null ? boss.Data.primaryType : InsectElement.None,
-                boss.Data != null ? boss.Data.secondaryType : InsectElement.None);
+                bossForm != null ? bossForm.primaryType : InsectElement.None,
+                bossForm != null ? bossForm.secondaryType : InsectElement.None);
             float sameTypeBonus = attacker.Data != null
                 ? InsectTypeChart.GetSameTypeBonus(
                     element,

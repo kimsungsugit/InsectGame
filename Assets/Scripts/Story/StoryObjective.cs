@@ -99,6 +99,28 @@ namespace InsectGame.Story
         }
 
         /// <summary>
+        /// <b>아직 뒤가 남은</b> 스파인 — 자기를 선행으로 무는 비트 중 <b>안 본 것이 하나라도 있는</b> 비트.
+        /// 목표 도출(<c>StoryDirector.RecomputeObjective</c>)이 <see cref="CollectSpineBeatIds"/> 대신 쓴다.
+        ///
+        /// 정상 진행에서는 둘이 같다 — 선행을 보기 전엔 뒤가 안 열리므로 "안 본 스파인"의 뒤는 늘 안 봤다.
+        /// 갈리는 것은 <b>선행을 나중에 끼워 넣었을 때</b>뿐이다: 간부 승리(<c>duel_grip_win</c>)를 서릿길 도착(<c>ch9_arrive</c>)의
+        /// 선행으로 바꾸자, 그 전에 서릿길을 지나온 세이브는 도착을 이미 봤는데도 간부 승리가 스파인 1순위로 떠 HUD가
+        /// 모래언덕으로 되돌려 보냈다. 뒤를 다 본 스파인은 leaf와 같은 급으로 내린다(목표에서 빠지지는 않는다).
+        /// </summary>
+        public static HashSet<string> CollectLiveSpineBeatIds(IEnumerable<StoryBeat> beats, System.Func<string, bool> isSeen)
+        {
+            var spine = new HashSet<string>();
+            if (beats == null) return spine;
+            foreach (StoryBeat beat in beats)
+            {
+                if (beat == null || string.IsNullOrEmpty(beat.prerequisiteBeatId)) continue;
+                if (isSeen != null && isSeen(beat.beatId)) continue;   // 뒤를 이미 봤다 — 이 선행은 더 잇는 것이 없다
+                spine.Add(beat.prerequisiteBeatId);
+            }
+            return spine;
+        }
+
+        /// <summary>
         /// 선택지 결과 집합(어떤 비트의 <c>choices[].nextBeatId</c>로 지목된 비트).
         ///
         /// 이 비트들은 <b>플레이어가 고른 순간에만</b> 발화한다 — 목표로 안내하지도, 시작 시
@@ -173,10 +195,10 @@ namespace InsectGame.Story
         /// 종장 leaf는 <c>fin_seal</c> 뒤에만 자격을 얻으므로(선택 결과는 목표에서 빠진다) 캠페인 도중의
         /// 목표는 그대로다. 본편 leaf 전체를 앞세우면 안 된다 — 놓친 1장 동굴(<c>ch1_cave</c>)이 에필로그를 가로챈다.
         ///
-        /// <b>발화 순서(<see cref="CompareBeatPriority"/>)에는 넣지 않는다.</b> 넣으면 엔딩 뒤 관장 하월에게
-        /// 말을 걸 때 화해(<c>ch12_clash</c>, 종장 leaf)가 도발(<c>talk_chief</c>, 12장 leaf)보다 먼저 떠
-        /// 서사가 거꾸로 흐른다. 그 경우 HUD가 가리킨 비트는 같은 행동을 한 번 더 하면 뜬다
-        /// (「한 걸음에 시도가 2회」 — rules/testing.md).
+        /// <b>발화 순서(<see cref="CompareBeatPriority"/>)에는 넣지 않는다.</b> 넣으면 같은 인물에게 걸린 12장 leaf와
+        /// 종장 leaf가 함께 자격을 가질 때 종장 쪽(화해)이 먼저 떠 서사가 거꾸로 흐른다(엔딩 뒤 관장 하월의 도발
+        /// <c>talk_chief</c>와 화해 <c>ch12_clash</c>가 그 예였다 — 도발은 2026-10-04에 대치 직후 대결로 바뀌며 지웠다).
+        /// 그 경우 HUD가 가리킨 비트는 같은 행동을 한 번 더 하면 뜬다(「한 걸음에 시도가 2회」 — rules/testing.md).
         /// </summary>
         public static int CompareObjectivePriority(StoryBeat a, StoryBeat b, HashSet<string> spineBeatIds)
         {
@@ -191,9 +213,34 @@ namespace InsectGame.Story
 
         // 0 = 이야기를 잇는 비트(스파인 또는 종장), 1 = leaf.
         private static int ObjectiveTier(StoryBeat beat, HashSet<string> spineBeatIds)
+            => IsObjectiveThread(beat, spineBeatIds) ? 0 : 1;
+
+        /// <summary>
+        /// 목표 도출에서 <b>먼저 뽑히는 급</b>(이야기를 잇는 비트 — 스파인 또는 종장)인가.
+        /// <see cref="CompareObjectivePriority"/>의 0급과 같은 판정이다. leaf는 이 급이 바닥난 뒤에만 뽑힌다.
+        ///
+        /// HUD 목표 이유(<see cref="StoryBeat.why"/>)를 꼭 써야 하는 비트가 이 급이다 — story_lint 검사 33과
+        /// 실제 데이터 테스트가 같은 기준으로 센다(선택지 결과·<c>Immediate</c>는 목표 행에 머무르지 않아 뺀다).
+        /// </summary>
+        public static bool IsObjectiveThread(StoryBeat beat, HashSet<string> spineBeatIds)
         {
-            if (spineBeatIds != null && spineBeatIds.Contains(beat.beatId)) return 0;
-            return beat.chapterId == FinaleChapterId ? 0 : 1;
+            if (beat == null) return false;
+            if (spineBeatIds != null && spineBeatIds.Contains(beat.beatId)) return true;
+            return beat.chapterId == FinaleChapterId;
+        }
+
+        /// <summary>
+        /// HUD 목표 행 두 번째 줄의 "왜" 한 줄. <b>순수 함수다</b> — 비트 조회는 호출부가 한다.
+        ///
+        /// 목표가 <b>잠긴 리전의 열쇠(앞 리전 수문장)로 바꿔 쳐졌으면</b> 빈 문자열이다. 이유는 원래 비트의 것이라
+        /// "숲으로 가려면 초원 수문장 격파" 아래에 "상자에 갇힌 곤충이 있대"가 붙으면 수문장 얘기처럼 읽힌다.
+        /// 비트가 없거나 why가 비어 있어도 빈 문자열이다 — null을 흘리지 않는다(HUD가 그대로 그린다).
+        /// </summary>
+        /// <param name="redirectedToGatekeeper">트래커가 목표를 앞 리전 수문장으로 바꿔 쳤는가.</param>
+        public static string WhyFor(StoryBeat beat, bool redirectedToGatekeeper)
+        {
+            if (redirectedToGatekeeper || beat == null || string.IsNullOrWhiteSpace(beat.why)) return string.Empty;
+            return beat.why.Trim();
         }
 
         // 급이 같을 때의 나머지 순서 — 두 비교가 공유한다.
@@ -351,6 +398,18 @@ namespace InsectGame.Story
                     ? $"{regionName} 수문장 격파 · 권장 Lv.{guardianLevel}"
                     : $"{regionName} 수문장 격파";
             return $"{regionName}(으)로";
+        }
+
+        /// <summary>
+        /// 목적지가 <b>이야기 대결</b>로 잠겨 있을 때의 문구 — "서릿길(으)로 가려면 집게에게 이기기".
+        /// 앞 리전 수문장은 이미 쓰러뜨렸고 남은 열쇠가 명부회 간부다(<c>RegionManager</c>의 이야기 잠금).
+        /// 수문장 문구(<see cref="DescribeRegionObjective"/>)로 떨어지면 이미 이긴 수문장을 다시 가리킨다.
+        /// 조사는 "…에게"로 잇는다 — 이름에 따라 을/를이 갈리는 것을 피한다(필드 차단 문구와 같은 이유).
+        /// </summary>
+        public static string DescribeDuelLockObjective(string regionName, string opponentName)
+        {
+            if (string.IsNullOrEmpty(opponentName)) return $"{regionName}(으)로";
+            return $"{regionName}(으)로 가려면 {opponentName}에게 이기기";
         }
 
         /// <summary>

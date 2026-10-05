@@ -9,7 +9,9 @@ namespace InsectGame.Tests
     {
         [TestCase("rhinoceros_beetle", true, false, BattleMotion.Kind.Charge)]
         [TestCase("stag_beetle", true, false, BattleMotion.Kind.Charge)]
-        [TestCase("bee_queen", true, false, BattleMotion.Kind.Flight)]
+        [TestCase("bee_queen", true, false, BattleMotion.Kind.Sting)]        // 4단계 — 벌은 찌르기 돌진(나는 종의 내리꽂기와 가른다)
+        [TestCase("spider_garden", true, false, BattleMotion.Kind.Pounce)]
+        [TestCase("ant_soldier", true, false, BattleMotion.Kind.Lunge)]
         [TestCase("RHINOCEROS_BEETLE", true, false, BattleMotion.Kind.Charge)]
         [TestCase(null, true, false, BattleMotion.Kind.Charge)]
         [TestCase("mantis", true, false, BattleMotion.Kind.Slash)]
@@ -30,6 +32,9 @@ namespace InsectGame.Tests
         [TestCase(BattleMotion.Kind.Flight)]
         [TestCase(BattleMotion.Kind.Projectile)]
         [TestCase(BattleMotion.Kind.Support)]
+        [TestCase(BattleMotion.Kind.Sting)]
+        [TestCase(BattleMotion.Kind.Pounce)]
+        [TestCase(BattleMotion.Kind.Lunge)]
         public void Evaluate_NormalizedSequence_IsFiniteAndReturnsHome(BattleMotion.Kind kind)
         {
             for (int sample = -10; sample <= 110; sample++)
@@ -67,6 +72,9 @@ namespace InsectGame.Tests
         [TestCase(BattleMotion.Kind.Charge)]
         [TestCase(BattleMotion.Kind.Slash)]
         [TestCase(BattleMotion.Kind.Flight)]
+        [TestCase(BattleMotion.Kind.Sting)]
+        [TestCase(BattleMotion.Kind.Pounce)]
+        [TestCase(BattleMotion.Kind.Lunge)]
         public void MeleeMotion_PreservesAnticipationAndRecovery(BattleMotion.Kind kind)
         {
             Assert.Less(BattleMotion.Evaluate(kind, 0.12f).Travel, 0f,

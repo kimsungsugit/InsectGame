@@ -125,25 +125,32 @@ namespace InsectGame.Tests
             // 단축 바(QuickAccessBarUI — IsInputBlocked: 조작이 묶이면 숨는다).
             Add("단축 바", QuickAccessBarUI.ShortcutBarRectFor(f), Ctx.Play, frozenHidden: true);
 
-            // 퀘스트 칩·목표 행·복원 버튼(TutorialQuestUI) — 한 번에 한 모양.
+            // 퀘스트 칩·목표 행·복원 버튼(TutorialQuestUI) — 한 번에 한 모양. 목표 행은 「왜」(트래커의 이유 한 줄)가 있으면 두 줄 높이다
+            // (QuestChipLayout.RowHeightFor) — 데스크톱은 칩이 그만큼 더 올라가고 모바일은 행이 아래로 길어지므로 두 높이를 다 잰다.
             float rowH = QuestChipLayout.RowHeight;
-            var chips = new (string name, float height, bool row)[]
+            float whyRowH = QuestChipLayout.RowHeightWithWhy;
+            var chips = new (string name, float height, float row)[]
             {
-                ("펼친 칩", QuestChipLayout.ExpandedHeight, true), ("펼친 칩·행 없음", QuestChipLayout.ExpandedHeight, false),
-                ("완료 칩", QuestChipLayout.DoneHeight, true), ("완료 칩·행 없음", QuestChipLayout.DoneHeight, false),
+                ("펼친 칩", QuestChipLayout.ExpandedHeight, rowH), ("펼친 칩·이유", QuestChipLayout.ExpandedHeight, whyRowH),
+                ("펼친 칩·행 없음", QuestChipLayout.ExpandedHeight, 0f),
+                ("완료 칩", QuestChipLayout.DoneHeight, rowH), ("완료 칩·이유", QuestChipLayout.DoneHeight, whyRowH),
+                ("완료 칩·행 없음", QuestChipLayout.DoneHeight, 0f),
             };
             for (int i = 0; i < chips.Length; i++)
             {
-                Rect chip = QuestChipLayout.ChipRect(f, chips[i].height, chips[i].row ? rowH : 0f);
+                Rect chip = QuestChipLayout.ChipRect(f, chips[i].height, chips[i].row);
                 Add("퀘스트 " + chips[i].name, chip, Ctx.Play, Kind.Quest, group: "퀘스트", variant: i);
-                if (chips[i].row)
-                    Add("목표 행(" + chips[i].name + ")", QuestChipLayout.Row(chip, QuestChipLayout.StackWidth(f), rowH), Ctx.Play,
+                if (chips[i].row > 0f)
+                    Add("목표 행(" + chips[i].name + ")", QuestChipLayout.Row(chip, QuestChipLayout.StackWidth(f), chips[i].row), Ctx.Play,
                         Kind.Quest, group: "퀘스트", variant: i);
             }
-            Rect restore = QuestChipLayout.RestoreRect(f, rowH);
-            Add("퀘스트 복원 버튼", restore, Ctx.Play, Kind.Quest, group: "퀘스트", variant: 10);
-            Add("목표 행(복원 버튼)", QuestChipLayout.Row(restore, QuestChipLayout.StackWidth(f), rowH), Ctx.Play, Kind.Quest,
-                group: "퀘스트", variant: 10);
+            foreach ((string tag, float h, int variant) in new[] { ("", rowH, 10), ("·이유", whyRowH, 12) })
+            {
+                Rect restore = QuestChipLayout.RestoreRect(f, h);
+                Add("퀘스트 복원 버튼" + tag, restore, Ctx.Play, Kind.Quest, group: "퀘스트", variant: variant);
+                Add("목표 행(복원 버튼" + tag + ")", QuestChipLayout.Row(restore, QuestChipLayout.StackWidth(f), h), Ctx.Play, Kind.Quest,
+                    group: "퀘스트", variant: variant);
+            }
             Add("퀘스트 복원 버튼·행 없음", QuestChipLayout.RestoreRect(f, 0f), Ctx.Play, Kind.Quest, group: "퀘스트", variant: 11);
 
             // 위 가운데 — 리전 배너(KeyGuideHUD)·내기 점수판(FieldMomentsUI — Hidden: 조작이 묶이면 숨는다).
@@ -495,7 +502,8 @@ namespace InsectGame.Tests
 
             var standingNames = new HashSet<string>
             {
-                "상태 탭", "미니맵", "단축 바", "퀘스트 펼친 칩", "목표 행(펼친 칩)", "리전 배너", "내기 점수판", "시각 칩", "변화 알림",
+                "상태 탭", "미니맵", "단축 바", "퀘스트 펼친 칩", "목표 행(펼친 칩)", "퀘스트 펼친 칩·이유", "목표 행(펼친 칩·이유)",
+                "리전 배너", "내기 점수판", "시각 칩", "변화 알림",
                 "섬 HUD 판", "섬 HUD 판(구경)", "섬 시각 칩", "섬 변화 알림", "섬 시각 칩(구경)", "섬 변화 알림(구경)", "잡기 버튼",
                 "설정 버튼", "멀티 필드 상태",
             };

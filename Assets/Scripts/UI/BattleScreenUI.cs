@@ -17,7 +17,8 @@ namespace InsectGame.UI
         [SerializeField] private TrainingManager trainingManager;
         [SerializeField] private BattleArenaController arena;
 
-        private enum Phase { None, Intro, PlayerTurn, PlayerAttack, EnemyAttack, TurnAnnounce, SwapSelect, Result }
+        // EnemySwitch — 팀 대결에서 상대가 쓰러진 뒤 다음 곤충이 나오는 짧은 단계(입력 없음, EnemySwitchSeconds). EnterEnemySwitch 참조.
+        private enum Phase { None, Intro, PlayerTurn, PlayerAttack, EnemyAttack, TurnAnnounce, SwapSelect, Result, EnemySwitch }
 
         private Phase phase = Phase.None;
         public bool IsBattleActive => phase != Phase.None;
@@ -66,13 +67,26 @@ namespace InsectGame.UI
                 }
             }
             battleController?.PresentResolvedAction(playerAction);
-            int hitDamage = playerAction ? lastDamageToEnemy : lastDamageToPlayer;
-            if (hitDamage > 0 && AudioManager.Instance != null)
-                AudioManager.Instance.PlaySFX(playerAction && lastWasCritical ? SfxType.CriticalHit : SfxType.Hit);
-            if (playerAction && lastWasCritical && !BattlePresentation.ReducedFlashes)
+            // 콤보 — 내 타격이 보이는 순간 띄우고, 반격이 나를 때리는 순간 끊는다(판정은 OnBattleUpdated가 이미 했다).
+            if (playerAction && lastDamageToEnemy > 0 && comboCount >= 2) comboDisplayTimer = ComboDisplaySeconds;
+            if (!playerAction && comboResetPending)
             {
+                comboCount = 0;
+                comboDisplayTimer = 0f;
+                comboResetPending = false;
+            }
+            int hitDamage = playerAction ? lastDamageToEnemy : lastDamageToPlayer;
+            bool criticalHit = hitDamage > 0 && (playerAction ? lastWasCritical : lastEnemyWasCritical);
+            // 타격음은 아레나(BattleArenaController.Impact)가 타격 세기에 맞춰 한 번 낸다 — 여기서도 내면
+            // 한 프레임에 두 번 겹친다. 아레나 없이 2D 카드로만 그릴 때만 여기서 낸다.
+            bool arenaPresents = arena != null && arena.IsActive;
+            if (hitDamage > 0 && !arenaPresents && AudioManager.Instance != null)
+                AudioManager.Instance.PlaySFX(criticalHit ? SfxType.CriticalHit : SfxType.Hit);
+            if (criticalHit && !BattlePresentation.ReducedFlashes)
+            {
+                // 내 치명타는 금빛, 맞은 치명타는 붉은빛 — 누가 크게 맞았는지 색으로 갈린다.
                 screenFlashTimer = 0.18f;
-                screenFlashColor = new Color(1f, 0.95f, 0.3f);
+                screenFlashColor = playerAction ? new Color(1f, 0.95f, 0.3f) : new Color(1f, 0.35f, 0.3f);
             }
         }
 
@@ -81,7 +95,8 @@ namespace InsectGame.UI
             // Residual damage/healing is a round-end step, distinct from either attack's impact.
             if (playerStats != null) revealPlayerHp = playerStats.CurrentHp;
             if (enemyStats != null) revealEnemyHp = enemyStats.CurrentHp;
-            if (!pendingResult && !pendingSwap) return true;
+            if (!faintStarted) BeginPoisonPopups();   // 독 숫자 — 위 HP 리빌과 같은 순간. 기절 연출 중 재호출은 faintStarted가 거른다
+            if (!pendingResult && !pendingSwap && !pendingEnemySwitch) return true;
             bool playerFainted = playerStats != null && playerStats.CurrentHp <= 0;
             bool enemyFainted = enemyStats != null && enemyStats.CurrentHp <= 0;
             if (!playerFainted && !enemyFainted) return true;
@@ -93,6 +108,10 @@ namespace InsectGame.UI
                 {
                     GameObject model = playerFainted ? arena.PlayerModel : arena.EnemyModel;
                     if (model != null) StartCoroutine(arena.PlayFaintCoroutine(model));
+                    // 팀 대결에서 둘이 함께 쓰러졌으면 상대도 눕힌다 — 다음 곤충이 그 자리에 선다(교체 단계).
+                    // 한 마리 전투의 동시 쓰러짐은 예전대로 내 곤충만 눕는다.
+                    if (playerFainted && enemyFainted && pendingEnemySwitch && arena.EnemyModel != null)
+                        StartCoroutine(arena.PlayFaintCoroutine(arena.EnemyModel));
                 }
             }
             return faintTimer >= 0.7f;
@@ -108,14 +127,42 @@ namespace InsectGame.UI
         private Phase announceNextPhase;   // 배너 종료 후 전이할 페이즈
         private bool announceTriggerEnemy; // 종료 후 EnemyAttack 연출을 발동할지
         private int lastDamageToEnemy;
+        // 치명타 표시는 컨트롤러의 진짜 판정을 그대로 옮긴다(InsectBattleController.LastPlayerHitCritical/LastEnemyHitCritical).
         private bool lastWasCritical;
+        private bool lastEnemyWasCritical;
         private int comboCount;
         private float comboDisplayTimer;
+        // 콤보 상자(DrawComboCounter)·"연속 N" 표시 길이 — 그리기 쪽 펄스가 이 길이(2.5초)를 기준으로 짜여 있다.
+        private const float ComboDisplaySeconds = 2.5f;
+        // 이번 라운드 상대 반격이 나를 때렸다 — 콤보는 그 반격이 **보이는 순간**(RevealImpact(false))에 끊는다.
+        // 판정 순간(OnBattleUpdated)에 끊으면 같은 호출 안에서 올린 콤보가 화면에 한 번도 못 뜬다.
+        private bool comboResetPending;
         private float screenFlashTimer;
         private Color screenFlashColor;
 
         private GUIStyle cachedComboNumStyle;
-        private GUIStyle cachedComboLblStyle;
+        // "연속 N!" — 숫자가 바뀔 때만 잇는다(OnGUI는 한 프레임에 여러 패스가 돈다).
+        private int comboLabelCount = -1;
+        private string comboLabel;
+
+        // 라운드 끝 독 숫자 "-N 독" — FinishFaintPresentation(두 공격 연출이 끝나 HP를 마저 드러내는 순간)이 연다.
+        // 문구는 열 때 한 번 잇고, 시각(Time.unscaledTime)으로 수명을 잰다 — 페이즈가 바뀌어도(턴 배너·교체창) 끝까지 떠오른다.
+        private const float PoisonPopupSeconds = 1.2f;
+        private float poisonPopupStartedAt = -1f;
+        private string playerPoisonPopup;
+        private string enemyPoisonPopup;
+
+        // HP 카드 상태 줄 — 내용(기절·독·버프 남은 턴)이 바뀔 때만 다시 잇고 잰다.
+        private sealed class StatusLineCache
+        {
+            public long Key = long.MinValue;
+            public float Width;
+            public string Text;
+        }
+        private readonly StatusLineCache playerStatusLine = new StatusLineCache();
+        private readonly StatusLineCache enemyStatusLine = new StatusLineCache();
+        private GUIContent statusMeasureContent;
+        private System.Func<string, float> statusMeasure;
 
         // OnGUI 매 프레임 호출되는 GUIStyle 캐싱 (PlayerStatusHUD 패턴)
         private bool stylesInitialized;
@@ -135,12 +182,10 @@ namespace InsectGame.UI
         private GUIStyle introPNameStyleCache;
         private GUIStyle introENameStyleCache;
         private GUIStyle introFightStyleCache;
-        private GUIStyle introEncounterStyleCache;
         private GUIStyle skillHeaderCache;
         private GUIStyle skillKeyNumCache;
         private GUIStyle skillNameStyleCache;
         private GUIStyle skillTypeLabelCache;
-        private GUIStyle skillEffLabelCache;   // 상성 배지(효과적/비효과)
         private GUIStyle skillInfoStyleCache;
         private GUIStyle skillCdStyleCache;
         private GUIStyle skillCdInfoCache;
@@ -152,7 +197,6 @@ namespace InsectGame.UI
         private GUIStyle critLblCache;
         private GUIStyle skillStyle3dCache;
         private GUIStyle skillNameAtkStyleCache;
-        private GUIStyle dmgStyleAtkCache;
         private GUIStyle effStyleAtkCache;
         private GUIStyle buffDebuffSkillStyleCache;
         private GUIStyle upStyleCache;
@@ -160,10 +204,8 @@ namespace InsectGame.UI
         private GUIStyle actionTextStyleCache;
         private GUIStyle victoryStyleCache;
         private GUIStyle rewardStyleCache;
-        private GUIStyle rewardValStyleCache;
         private GUIStyle defeatStyleCache;
         private GUIStyle defeatGuideStyleCache;
-        private GUIStyle defeatHintStyleCache;
         private GUIStyle phaseIndicatorStyleCache;
         private GUIStyle swapHeaderCache;
         private GUIStyle swapKeyStyleCache;
@@ -242,6 +284,7 @@ namespace InsectGame.UI
                 battleController.BattleUpdated -= OnBattleUpdated;
                 battleController.BattleEnded -= OnBattleEnded;
                 battleController.PlayerFainted -= OnPlayerFainted;
+                battleController.EnemySwitched -= OnEnemySwitched;
             }
         }
 
@@ -297,6 +340,8 @@ namespace InsectGame.UI
                 revealEnemyHp = enemy.CurrentHp;
                 pendingResult = false;
                 pendingSwap = false;
+                pendingEnemySwitch = false;
+                incomingEnemyStats = null;
                 announceTimer = 0f;
                 turnNumber = 0;
                 phase = Phase.Intro;
@@ -305,7 +350,9 @@ namespace InsectGame.UI
                 faintedInsectIds.Clear();
                 ResetDuelPresentation();
                 if (player.PlayerData != null) currentInsectId = player.PlayerData.instanceId;
-                if (AudioManager.Instance != null) AudioManager.Instance.PlayBGM(BgmType.Battle);
+                // 수문장은 1대1이어도 수문장 곡이다(레이드 수문장과 같은 곡) — 간부·라온 대결은 NpcDuelController가 같은 프레임에 덮는다.
+                if (AudioManager.Instance != null)
+                    AudioManager.Instance.PlayBGM(BattleMusic.OneVsOne(battleController != null ? battleController.EnemyGuardianRegionId : null));
 
                 DisableCanvasBattleUI();
 
@@ -324,6 +371,7 @@ namespace InsectGame.UI
                     arena.SetupNormalBattle(
                         player.Data, player.Level, enemy.Data, enemy.Level, enemyShiny3d,
                         pPos, ePos);
+                    arena.PlayBattleOpening();   // 진입 샷(visual-dev) — 상대 옆에서 휘돌아 구도로, BattleFlourish.OpeningShotSeconds
                 }
                 else if (cameraFollower != null && enemyEntity != null)
                 {
@@ -361,11 +409,15 @@ namespace InsectGame.UI
             lastDamageToEnemy = Mathf.Max(0, oldEnemyHp - battleController.EnemyHpAfterPlayerAction);
             lastDamageToPlayer = Mathf.Max(0, battleController.PlayerHpAfterPlayerAction - battleController.PlayerHpAfterEnemyAction);
 
-            // 크리티컬 판정: 적 MaxHp의 25% 이상 데미지
-            lastWasCritical = lastDamageToEnemy > 0 && enemy.MaxHp > 0 && lastDamageToEnemy >= enemy.MaxHp * 0.25f;
+            // 치명타는 컨트롤러가 굴린 판정이다. 예전엔 "적 MaxHp의 25% 이상"을 치명타로 **표시만** 했는데,
+            // 전투가 3~4라운드라 거의 매 타격이 그 선을 넘어 CRITICAL이 상시 떴다.
+            lastWasCritical = lastDamageToEnemy > 0 && battleController.LastPlayerHitCritical;
+            lastEnemyWasCritical = lastDamageToPlayer > 0 && battleController.LastEnemyHitCritical;
 
+            // 지난 라운드 반격의 콤보 끊기가 연출로 처리되지 못했으면(연출 중단 등) 여기서 마저 끊는다.
+            if (comboResetPending) { comboCount = 0; comboResetPending = false; }
             if (lastDamageToEnemy > 0) comboCount++;
-            if (lastDamageToPlayer > 0) comboCount = 0;
+            comboResetPending = lastDamageToPlayer > 0;
 
             phase = Phase.PlayerAttack;
             if (!battleController.PlayerActedThisRound)
@@ -462,6 +514,76 @@ namespace InsectGame.UI
             pendingSwap = false;
         }
 
+        // ── 상대 교체(팀 대결) ──
+        // 컨트롤러는 상대가 쓰러지는 그 행동 안에서 다음 곤충을 이미 내보냈다(EnemySwitched). 화면은 마지막 일격과
+        // 쓰러짐을 다 보여 준 뒤에야 들어오는 곤충으로 바꾼다 — 그때까지 enemyStats(HP 카드)는 쓰러진 곤충 그대로다.
+
+        /// <summary>
+        /// 교체 단계 길이(배속 시간 — 1배속 실제 초). 이 동안 입력을 받지 않는다. 문구를 읽어야 하는 단계라 2배속이어도 실제
+        /// <see cref="BattleReadPacing.EnemySwitchMinSeconds"/>(1.0초) 밑으로는 줄지 않는다(단계 시계가 덜 빨라진다 — BattleScreenUI.Flow).
+        /// 같은 실제 시간에 끝나는 등장 연출 길이는 <see cref="EnemySwitchStagingSeconds"/>.
+        /// </summary>
+        public const float EnemySwitchSeconds = 1.2f;
+
+        /// <summary>지금 상대가 다음 곤충을 내보내는 중인가(교체 단계). ui-dev가 「○○은(는) △△을(를) 내보냈다!」를 이 동안 그린다.</summary>
+        public bool IsEnemySwitching => phase == Phase.EnemySwitch;
+
+        /// <summary>교체 단계 진행률 0~1(단계 밖이면 0) — 배속 하한이 걸린 길이 전체에 걸쳐 0→1. 아레나 모델은 단계 <b>시작</b>에 이미 새 곤충으로 바뀌어 있다.</summary>
+        public float EnemySwitchProgress => phase == Phase.EnemySwitch ? Mathf.Clamp01(phaseTimer / EnemySwitchSeconds) : 0f;
+
+        /// <summary>교체 단계에서 들어온 상대(단계 밖이면 null). 단계가 시작되면 HP 카드도 이 곤충을 그린다.</summary>
+        public InsectBattleStats SwitchingInEnemy => phase == Phase.EnemySwitch ? enemyStats : null;
+
+        private bool pendingEnemySwitch;
+        private InsectBattleStats incomingEnemyStats;
+
+        private void OnEnemySwitched(InsectBattleStats outgoing, InsectBattleStats incoming)
+        {
+            if (phase == Phase.None || incoming == null) return;
+            incomingEnemyStats = incoming;
+            pendingEnemySwitch = true;
+        }
+
+        /// <summary>
+        /// 라운드 연출(공격·쓰러짐)이 끝난 자리의 다음 단계 — 상대 교체 → 내 교체창 → 결과 → 「당신의 턴」 순서.
+        /// 결과가 이미 정해졌으면(내가 졌다) 다음 상대를 세우지 않는다. 교체 단계가 끝나면 다시 여기로 온다.
+        /// </summary>
+        private void ContinueAfterRound()
+        {
+            if (pendingEnemySwitch && !pendingResult)
+            {
+                EnterEnemySwitch();
+                return;
+            }
+            pendingEnemySwitch = false;
+            incomingEnemyStats = null;
+            if (pendingSwap) EnterSwapSelect();
+            else if (pendingResult) EnterResult();
+            else BeginTurnAnnounce("당신의 턴", true, Phase.PlayerTurn, triggerEnemy: false);
+        }
+
+        // 들어오는 곤충으로 화면 상태를 바꾸고 아레나 모델을 다시 세운다(기능만 — 등장 연출은 visual-dev).
+        private void EnterEnemySwitch()
+        {
+            pendingEnemySwitch = false;
+            InsectBattleStats incoming = incomingEnemyStats;
+            incomingEnemyStats = null;
+            phase = Phase.EnemySwitch;
+            phaseTimer = 0f;
+            faintStarted = false;
+            if (incoming == null) return;
+
+            prevEnemyStats = enemyStats;
+            enemyStats = incoming;
+            displayEnemyHp = incoming.CurrentHp;
+            chipEnemyHp = incoming.CurrentHp;
+            revealEnemyHp = incoming.CurrentHp;
+            enemyShake = 0f;
+            battleEnemyShiny = false;   // 대결 상대는 이로치가 아니다(RestoreArenaAfterEnable이 이 값으로 다시 세운다)
+            if (arena != null && arena.IsActive)
+                arena.PlayEnemySwitchIn(incoming.Data, incoming.Level, false, EnemySwitchStagingSeconds);   // 다시 세우기 + 등장 연출(visual-dev) — 단계와 같은 실제 시간에 끝나는 길이
+        }
+
         // 마지막 공격 연출이 끝난 뒤 결과화면 진입 — 승패 SFX/BGM도 여기서(연출 도중 스포일 방지).
         private void EnterResult()
         {
@@ -475,6 +597,7 @@ namespace InsectGame.UI
             phase = Phase.Result;
             resultShown = true;
             resultTimer = 0f;
+            ResetResultClose();
             pendingResult = false;
 
             // 교체할 팀원이 없어 여기로 온 패배는 **컨트롤러가 아직 종료 처리를 못 했다** —
@@ -489,6 +612,8 @@ namespace InsectGame.UI
                 AudioManager.Instance.PlaySFX(lastWon ? SfxType.Victory : SfxType.Defeat);
                 AudioManager.Instance.PlayBGM(lastWon ? BgmType.Victory : BgmType.Defeat);
             }
+            // 승리 연출(visual-dev) — 내 곤충 포즈 + 카메라 반 바퀴, BattleFlourish.VictorySeconds. 패배·도망은 그대로.
+            if (lastWon && arena != null && arena.IsActive && (battleController == null || !battleController.DidEscape)) arena.PlayVictory();
         }
 
         private void Update()
@@ -498,9 +623,14 @@ namespace InsectGame.UI
 
             if (phase == Phase.None) return;
             RestoreArenaAfterEnable();
+            // 전투 화면이 떠 있는 동안 플레이어를 계속 묶어 둔다 — SetFrozen(true)는 PlayerMovement의 자동 해제 시계(AutoUnfreezeTime 20초)를
+            // 0으로 되돌린다. 안 그러면 20초 넘는 전투나 ESC 뒤에 고정이 풀려, 기술 버튼을 누른 탭이 숨은 플레이어의 클릭-이동으로 샌다
+            // (결과 화면만 막던 것을 전투 전체로 넓혔다 — 2026-10-04).
+            if (playerMovement != null) playerMovement.SetFrozen(true);
 
-            phaseTimer += BattlePresentation.DeltaTime;
-            introTimer += BattlePresentation.DeltaTime;
+            // 읽는 단계(상대 교체·진입 인트로·컷인)는 배속을 덜 탄다 — 배율은 BattleScreenUI.Flow(BattleReadPacing). 1배속이면 1이다.
+            phaseTimer += BattlePresentation.DeltaTime * PhaseClockScale;
+            introTimer += BattlePresentation.DeltaTime * IntroClockScale;
 
             if (actionTimer > 0) actionTimer -= BattlePresentation.DeltaTime;
             if (playerShake > 0) playerShake -= BattlePresentation.DeltaTime;
@@ -615,22 +745,18 @@ namespace InsectGame.UI
                 {
                     if (enemyStats != null) revealEnemyHp = enemyStats.CurrentHp;
                     if (playerStats != null) revealPlayerHp = playerStats.CurrentHp;
-                    if (pendingSwap) EnterSwapSelect();
-                    else if (pendingResult) EnterResult();
-                    else BeginTurnAnnounce("당신의 턴", true, Phase.PlayerTurn, triggerEnemy: false);
+                    ContinueAfterRound();
                 }
             }
 
             if (phase == Phase.EnemyAttack && PhaseAnimDone())
             {
                 RevealImpact(false);
-                if (FinishFaintPresentation())
-                {
-                    if (pendingSwap) EnterSwapSelect();
-                    else if (pendingResult) EnterResult();
-                    else BeginTurnAnnounce("당신의 턴", true, Phase.PlayerTurn, triggerEnemy: false);
-                }
+                if (FinishFaintPresentation()) ContinueAfterRound();
             }
+
+            if (phase == Phase.EnemySwitch && phaseTimer >= EnemySwitchSeconds)
+                ContinueAfterRound();
 
             if (phase == Phase.TurnAnnounce)
             {
@@ -640,10 +766,8 @@ namespace InsectGame.UI
                 if (announceTimer <= 0f) FinishTurnAnnounce();
             }
 
-            if (phase == Phase.Result && resultTimer > 4f)
-            {
-                EndBattle();
-            }
+            // 결과 화면은 탭·클릭·Space/Enter로만 닫힌다(처음 0.6초는 안 받는다, 꿈 챔피언전만 4초 뒤 저절로) — BattleScreenUI.Flow.
+            if (phase == Phase.Result) TickResultClose();
 
             // 탭 래치 차단 — `Input.GetMouseButtonDown`과 같은 한 프레임 수명으로 맞춘다.
             // `wantMouseClick`은 OnGUI(:MouseDown)가 세우는데 소거는 SwapSelect/PlayerTurn/TurnAnnounce
@@ -852,8 +976,6 @@ namespace InsectGame.UI
             { fontSize = 28, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
             introFightStyleCache = new GUIStyle(GUI.skin.label)
             { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            introEncounterStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 32, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
 
             // DrawSkillPanel
             // 아래 라벨들은 전부 세로 가운데 정렬이다. IMGUI 기본값(Upper*)은 글자를 상자 맨 위에
@@ -874,9 +996,7 @@ namespace InsectGame.UI
             };
             skillTypeLabelCache = new GUIStyle(GUI.skin.label)
             { fontSize = 20, alignment = TextAnchor.MiddleLeft };
-            // 상성 배지는 위력과 같은 줄의 오른쪽 칸이라 우측 정렬이다.
-            skillEffLabelCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 19, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleRight };
+            // 상성 칩은 BattleFeelDraw.MatchupChip이 자기 스타일로 그린다.
             skillInfoStyleCache = new GUIStyle(GUI.skin.label)
             { fontSize = 20, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
             skillCdStyleCache = new GUIStyle(GUI.skin.label)
@@ -912,8 +1032,6 @@ namespace InsectGame.UI
             skillStyle3dCache.normal.textColor = Color.white;
             skillNameAtkStyleCache = new GUIStyle(GUI.skin.label)
             { fontSize = 30, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            dmgStyleAtkCache = new GUIStyle(GUI.skin.label)
-            { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             effStyleAtkCache = new GUIStyle(GUI.skin.label)
             { fontSize = 20, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
 
@@ -934,14 +1052,10 @@ namespace InsectGame.UI
             { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             rewardStyleCache = new GUIStyle(GUI.skin.label)
             { fontSize = 24, alignment = TextAnchor.MiddleCenter };
-            rewardValStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 24, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             defeatStyleCache = new GUIStyle(GUI.skin.label)
             { fontSize = 50, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             defeatGuideStyleCache = new GUIStyle(GUI.skin.label)
             { fontSize = 22, alignment = TextAnchor.MiddleCenter };
-            defeatHintStyleCache = new GUIStyle(GUI.skin.label)
-            { fontSize = 18, alignment = TextAnchor.MiddleCenter };
 
             // DrawPhaseIndicator
             phaseIndicatorStyleCache = new GUIStyle(GUI.skin.label)
@@ -971,7 +1085,7 @@ namespace InsectGame.UI
 
         private GUIStyle speedControlStyle;
         private bool ShowSpeedControl => phase != Phase.None && phase != Phase.Intro && !resultShown;
-        private Rect SpeedControlRect => UISafeLayout.TopPanel(132f, 56f, UISafeLayout.HAlign.Right);
+        private Rect SpeedControlRect => DuelHudLayout.SpeedControl(HudFrame.Current);
         private bool IsSpeedControlPointerHit => ShowSpeedControl && SpeedControlRect.Contains(UIScale.VirtualMousePosition);
 
         private void DrawSpeedControl()
@@ -990,8 +1104,9 @@ namespace InsectGame.UI
 
             InitStyles();
             UIScale.Begin();
+            // 전용기 이름은 아래 컷인 띠(BattleScreenUI.Feel)가 크게 띄운다 — 아레나 머리 위 말풍선과 겹치지 않게 끈다(EndBattle이 되돌린다).
+            SuppressArenaSignatureCallout();
             DrawScreenFlash();
-            if (arena == null || !arena.IsActive) DrawComboCounter();
 
             Event evt = Event.current;
             if (evt != null && evt.type == EventType.KeyDown)
@@ -1025,6 +1140,7 @@ namespace InsectGame.UI
                         evt.Use(); break;
                 }
             }
+            CaptureResultKey(evt);   // 결과 화면의 Space/Enter(BattleScreenUI.Flow)
 
             if (evt != null && evt.type == EventType.MouseDown && evt.button == 0 && !IsSpeedControlPointerHit)
             {
@@ -1035,10 +1151,18 @@ namespace InsectGame.UI
             DrawBattleOverlay();
             DrawBattleField();
             DrawHpBars();
+            // 연속 공격 배지 — 내 HP 카드 아래 쌓기(BattleHudStack.ComboBadge). 2D 폴백에서만 그리던 것을
+            // 아레나 화면에도 그린다(오른쪽 위에 박혀 상대 HP 카드·배속 버튼과 겹쳐서 아레나에서 꺼 두었었다).
+            DrawComboCounter();
+            // 라운드 끝 독 숫자 — 페이즈와 무관하게 수명 동안 떠오른다(열리는 순간 페이즈가 턴 배너·교체창으로 넘어간다).
+            // 곤충 위에 붙는 숫자라 아래 패널(행동 패널·교체창·턴 배너)보다 먼저 그려 패널이 덮게 한다.
+            DrawPoisonPopups();
 
             if (phase == Phase.Intro)
             {
-                if (!DrawDuelCutIn()) DrawIntro();
+                // 진입 구간(화면 쓸기 + 「야생 ○○이(가) 나타났다!」 — BattleScreenUI.Feel) → 대결·수문장 컷인(진입 구간 뒤에만 그린다).
+                DrawEntry();
+                DrawDuelCutIn();
             }
             else if (phase == Phase.PlayerTurn)
                 DrawSkillPanel();
@@ -1056,6 +1180,12 @@ namespace InsectGame.UI
             }
             else if (phase == Phase.TurnAnnounce)
                 DrawTurnAnnounce();
+
+            // 전용기 컷인 띠 — 시전자 클로즈업 동안 화면을 가로지른다(BattleScreenUI.Feel).
+            DrawSignatureCutIn();
+
+            // 팀 대결 교체 문구 — 교체 단계와 이어지는 턴 배너 동안(BattleScreenUI.Duel).
+            DrawEnemySendOut();
 
             if (actionTimer > 0)
                 DrawActionText();
@@ -1086,12 +1216,13 @@ namespace InsectGame.UI
             // 3D 아레나 활성 시: 상단 턴 표시 바만 그리고 2D 배경 스킵
             if (arena != null && arena.IsActive)
             {
-                Rect heading = UISafeLayout.TopPanel(340f, 50f);
+                // 결과 화면은 위쪽을 「승리!」가 쓴다(BattleVictoryLayout) — 행동 수 띠를 걷는다.
+                if (resultShown) return;
+                Rect heading = DuelHudLayout.Heading(HudFrame.Current);
                 UISurface.Card(heading, UITheme.Instance.surfaceBase, UITheme.Instance.surfaceBorder);
                 turnStyle3dCache.normal.textColor = UITheme.Instance.textSecondary;
-                string turnLabel = $"탐험 전투  ·  {turnNumber + 1}번째 행동";
-                if (comboCount >= 2 && comboDisplayTimer > 0f) turnLabel += $"  ·  연속 {comboCount}";
-                UIHelper.LabelFit(heading, turnLabel, turnStyle3dCache);
+                // 연속 공격은 따로 배지로 뜬다(DrawComboCounter) — 여기에도 붙이면 같은 숫자가 두 번 보인다.
+                UIHelper.LabelFit(heading, $"탐험 전투  ·  {turnNumber + 1}번째 행동", turnStyle3dCache);
                 return;
             }
 
@@ -1813,13 +1944,15 @@ namespace InsectGame.UI
 
         private void DrawHpBars()
         {
-            if (playerStats == null || enemyStats == null) return;
+            // 결과 화면에서는 HP 카드 쌓기를 걷는다 — 위쪽 「승리!」·한마디와 겹치고(세로 화면은 카드가 폭을 다 쓴다), 결과가 이미 말해 준다.
+            if (playerStats == null || enemyStats == null || resultShown) return;
             Rect safe = UISafeLayout.Content;
             Rect player = DuelHudLayout.HpCard(safe, true);
             Rect enemy = DuelHudLayout.HpCard(safe, false);
             DrawHpBox(player.x, player.y, player.width, playerStats, displayPlayerHp, true);
             DrawHpBox(enemy.x, enemy.y, enemy.width, enemyStats, displayEnemyHp, false);
-            DrawLedgerGauge(enemy.x, enemy.yMax + UITheme.Space.S, enemy.width);
+            Rect ledger = BattleHudStack.LedgerGauge(enemy);
+            DrawLedgerGauge(ledger.x, ledger.y, ledger.width);
             DrawEnvironmentChips(player, enemy);   // 낮·밤·날씨 보정 칩 — BattleScreenUI.Environment.cs
         }
 
@@ -1873,7 +2006,10 @@ namespace InsectGame.UI
             UISurface.Card(card, theme.surfaceBase, theme.surfaceBorder);
             UISurface.Flat(new Rect(x + UITheme.Radius.Card, y + 3f, w - UITheme.Radius.Card * 2f, 3f), affiliation);
             hpMiniStatCache.normal.textColor = affiliation;
-            UIHelper.LabelFit(new Rect(x + 18f, y + 10f, w - 120f, 24f), isPlayer ? "내 파트너" : "상대 곤충", hpMiniStatCache);
+            // 팀 대결이면 상대 카드 윗줄 오른쪽에 남은 곤충 공(●●○)이 선다 — 글자는 그 앞에서 멈춘다(BattleScreenUI.Duel).
+            float tagW = isPlayer ? w - 120f : EnemyCardLabelWidth(card, w - 120f);
+            UIHelper.LabelFit(new Rect(x + 18f, y + 10f, tagW, 24f), isPlayer ? "내 파트너" : "상대 곤충", hpMiniStatCache);
+            if (!isPlayer) DrawEnemyTeamBalls(card);
             hpLvStyleCache.normal.textColor = theme.textSecondary;
             GUI.Label(new Rect(x + w - 102f, y + 12f, 84f, 30f), $"Lv. {stats.Level}", hpLvStyleCache);
             hpNameStyleCache.normal.textColor = theme.textPrimary;
@@ -1893,33 +2029,43 @@ namespace InsectGame.UI
             hpTextCache.alignment = TextAnchor.MiddleRight;
             GUI.Label(new Rect(x + w - 186f, y + 96f, 168f, 28f), $"{Mathf.CeilToInt(dispHp)} / {stats.MaxHp}", hpTextCache);
 
-            string status = ratio <= 0.2f ? "체력 위험" : "HP";
+            // 상태 줄 — 기절·중독·공격/방어 증감의 남은 턴. 같은 종류는 한 꼬리표로 모으고(가장 긴 남은 턴),
+            // 줄에 다 안 들어가면 앞쪽(기절·중독이 먼저)만 남기고 "외 N"으로 접는다(BattleStatusLine).
+            // 폭은 오른쪽 HP 숫자 자리(BattleStatusLine.HpNumberReserve)만 비우고 다 쓴다.
+            bool lowHp = ratio <= 0.2f;
+            int stunTurns = battleController == null ? 0
+                : isPlayer ? battleController.PlayerStunTurns : battleController.EnemyStunTurns;
             InsectBattleController.EffectSnapshot[] effects = battleController != null ? battleController.GetActiveEffects() : null;
-            if (effects != null)
-                foreach (var effect in effects)
-                {
-                    if (effect.targetIsPlayer != isPlayer) continue;
-                    string tag = effect.kind == InsectBattleController.EffectKind.DefBuff ? "방어↑"
-                        : effect.kind == InsectBattleController.EffectKind.Dot ? "중독"
-                        : effect.value >= 0 ? "공격↑" : "공격↓";
-                    status += $"  {tag} {effect.remainingTurns}턴";
-                }
-            hpEffStyleCache.normal.textColor = ratio <= 0.2f ? theme.accentAmber : theme.textSecondary;
-            UIHelper.LabelFit(new Rect(x + 18f, y + 96f, w - 216f, 30f), status, hpEffStyleCache);
+            BattleStatusLine.Turns turns = BattleStatusLine.Tally(stunTurns, effects, isPlayer);
+            Rect statusRect = new Rect(x + 18f, y + 96f, Mathf.Max(1f, w - 36f - BattleStatusLine.HpNumberReserve), 30f);
+            hpEffStyleCache.fontSize = 18;
+            hpEffStyleCache.normal.textColor = lowHp ? theme.accentAmber
+                : turns.Stun > 0 ? theme.skillStun : theme.textSecondary;
+            UIHelper.LabelFit(statusRect, StatusLineFor(isPlayer, lowHp, turns, statusRect.width), hpEffStyleCache);
         }
 
-        private void DrawIntro()
+        /// <summary>상태 줄 문구 — 내용·폭이 그대로면 지난 문자열을 그대로 쓴다.</summary>
+        private string StatusLineFor(bool isPlayer, bool lowHp, BattleStatusLine.Turns turns, float width)
         {
-            if (playerStats == null || enemyStats == null) return;
-            Rect panel = UISafeLayout.BottomPanel(720f, 144f);
-            UISurface.Card(panel, UITheme.Instance.surfaceBase, UITheme.Instance.surfaceBorder);
-            introEncounterStyleCache.normal.textColor = UITheme.Instance.textPrimary;
-            UIHelper.LabelFit(new Rect(panel.x + 24f, panel.y + 18f, panel.width - 48f, 50f),
-                $"{enemyStats.Data.displayName}와 마주쳤다", introEncounterStyleCache);
-            rewardStyleCache.normal.textColor = UITheme.Instance.textSecondary;
-            UIHelper.LabelFit(new Rect(panel.x + 24f, panel.y + 78f, panel.width - 48f, 40f),
-                "파트너의 기술과 상성을 살펴보세요", rewardStyleCache);
+            StatusLineCache cache = isPlayer ? playerStatusLine : enemyStatusLine;
+            long key = turns.Key(lowHp);
+            if (cache.Text != null && cache.Key == key && Mathf.Approximately(cache.Width, width)) return cache.Text;
+            if (statusMeasure == null)
+            {
+                statusMeasureContent = new GUIContent();
+                statusMeasure = s =>
+                {
+                    statusMeasureContent.text = s;
+                    return hpEffStyleCache.CalcSize(statusMeasureContent).x;
+                };
+            }
+            cache.Key = key;
+            cache.Width = width;
+            cache.Text = BattleStatusLine.Compose(lowHp, turns, statusMeasure, width);
+            return cache.Text;
         }
+
+        // 인트로 그리기(옛 아래쪽 「○○와 마주쳤다」 판)는 진입 구간의 큰 문구로 바뀌었다 — BattleScreenUI.Feel의 DrawEntry.
 
         private void DrawSkillPanel()
         {
@@ -1927,7 +2073,7 @@ namespace InsectGame.UI
             UITheme theme = UITheme.Instance;
             bool portrait = UIScale.IsPortrait;
             bool mobile = UIScale.IsMobileLayout;
-            Rect panel = UISafeLayout.BottomPanel(UISafeLayout.ContentWidth, portrait ? 610f : 300f);
+            Rect panel = DuelHudLayout.SkillDeck(HudFrame.Current);
             UISurface.Card(panel, theme.surfaceBase, theme.surfaceBorder);
             skillHeaderCache.normal.textColor = theme.textPrimary;
             skillHeaderCache.fontSize = 26;
@@ -1977,17 +2123,11 @@ namespace InsectGame.UI
                 skillCdStyleCache.alignment = TextAnchor.MiddleLeft;
                 skillCdStyleCache.normal.textColor = cd > 0 ? theme.accentAmber : theme.textSecondary;
                 UIHelper.LabelFit(new Rect(card.x + 14f, card.y + 162f, card.width - 28f, 28f), availability, skillCdStyleCache);
+                // 상성 칩 — 「아주 잘 통해요 ⬆⬆」·「잘 통해요 ⬆」·「안 통해요 ⬇」·「거의 안 통해요 ⬇⬇」(화살표는 도형, BattleFeelDraw).
+                // 등급은 타격 순간 표시와 같은 ElementMatchup — 칩과 「잘 통했다!」가 갈리지 않는다. 보통이면 칩이 없다.
                 if (skill.effectType == SkillEffectType.Damage && enemyStats != null && enemyStats.Data != null)
-                {
-                    float effectiveness = InsectTypeChart.GetEffectiveness(skill.element, enemyStats.Data.primaryType, enemyStats.Data.secondaryType);
-                    if (effectiveness > 1.05f || effectiveness < 0.95f)
-                    {
-                        skillEffLabelCache.alignment = TextAnchor.MiddleLeft;
-                        skillEffLabelCache.normal.textColor = effectiveness > 1f ? theme.accentMint : theme.accentCoral;
-                        UIHelper.LabelFit(new Rect(card.x + 14f, card.y + 194f, card.width - 28f, 28f),
-                            effectiveness > 1f ? "상성 유리 ↑" : "상성 불리 ↓", skillEffLabelCache);
-                    }
-                }
+                    BattleFeelDraw.MatchupChip(new Rect(card.x + 14f, card.y + 192f, card.width - 28f, MatchupHud.ChipHeight),
+                        ElementMatchup.Of(skill.element, enemyStats.Data), false, canUse);
             }
             basicAtkRect = DuelHudLayout.UtilityCard(panel, portrait, false);
             DrawUtilityAction(basicAtkRect, mobile ? "기본 공격" : "[F] 기본 공격", "매 턴 사용 가능", false);
@@ -2087,50 +2227,32 @@ namespace InsectGame.UI
             {
                 float t3d = 0.3f + Mathf.Clamp01(impactTimer / Mathf.Max(0.1f, attackDuration * 0.6f)) * 0.7f;
                 int dmg3d = isPlayerAttack ? lastDamageToEnemy : lastDamageToPlayer;
-                if (dmg3d > 0 && impactRevealed)
+                // 맞은 쪽 위에 — 내 공격이면 상대, 반격이면 내 곤충.
+                if (dmg3d > 0 && impactRevealed && TryDamageAnchor(!isPlayerAttack, out Vector2 anchor))
                 {
-                    float sw3d = UIScale.VirtualScreenWidth;
-                    float sh3d = UIScale.VirtualScreenHeight;
-                    Vector3 target = arena.GetCombatantScreenPosition(!isPlayerAttack);
-                    float dmgX = target.x / Mathf.Max(1, Screen.width) * sw3d;
-                    float dmgY = (1f - target.y / Mathf.Max(1, Screen.height)) * sh3d - 70f - (t3d - 0.3f) * 60f;
+                    float rise = (t3d - 0.3f) * 60f;
 
                     // 등장 팝(초반 확대 후 정착) + 후반 페이드아웃 — 데미지 숫자 저즈(2D 폴백 패턴 이식).
                     float dmgP = Mathf.Clamp01((t3d - 0.3f) / 0.7f);
                     float dmgAlpha = Mathf.Clamp01(1.15f - dmgP);
                     float popScale = 1f + Mathf.Sin(Mathf.Clamp01(dmgP * 2f) * Mathf.PI) * 0.3f;
 
-                    // 크리티컬이면 더 큰 폰트 + 펄스 + CRITICAL! 라벨
-                    bool isCrit = isPlayerAttack && lastWasCritical;
-                    float critPulse = isCrit ? 1f + Mathf.Abs(Mathf.Sin(Time.unscaledTime * 20f)) * 0.15f : 1f;
+                    // 치명타면 더 큰 숫자 + 펄스 + 「치명타!」 — 내 치명타는 금빛, 맞은 치명타는 붉은빛(화면 섬광과 같은 규칙).
+                    bool isCrit = isPlayerAttack ? lastWasCritical : lastEnemyWasCritical;
+                    float critPulse = isCrit && !BattlePresentation.ReducedMotion
+                        ? 1f + Mathf.Abs(Mathf.Sin(Time.unscaledTime * 20f)) * 0.15f : 1f;
                     int dmgFontSize = Mathf.RoundToInt((isCrit ? 64f * critPulse : 38f) * popScale);
-
-                    dmgStyle3dCache.fontSize = dmgFontSize;
-                    Color dmgTextCol = isCrit
-                        ? new Color(1f, 0.5f, 0.1f)
+                    Color dmgTextCol = isCrit ? CritNumberColor(isPlayerAttack)
                         : (isPlayerAttack ? new Color(1f, 0.9f, 0.3f) : new Color(1f, 0.3f, 0.3f));
-                    dmgTextCol.a = dmgAlpha;
-                    dmgStyle3dCache.normal.textColor = dmgTextCol;
 
-                    // 크리티컬 그림자 효과
-                    if (isCrit)
-                    {
-                        GUI.color = new Color(0f, 0f, 0f, 0.8f);
-                        GUI.Label(new Rect(dmgX - 147f, dmgY + 3, 300f, 80), $"-{dmg3d}", dmgStyle3dCache);
-                        GUI.color = Color.white;
-                    }
-                    GUI.Label(new Rect(dmgX - 150f, dmgY, 300f, 80), $"-{dmg3d}", dmgStyle3dCache);
-
-                    if (isCrit)
-                    {
-                        GUI.Label(new Rect(dmgX - 150f, dmgY - 36, 300f, 36), "★ CRITICAL! ★", critLblCache);
-                    }
+                    float numberY = anchor.y - rise;
+                    DrawDamageNumber(anchor.x, numberY, $"-{dmg3d}", dmgTextCol, dmgAlpha, dmgFontSize, isCrit);
+                    if (isCrit) DrawCritCaption(anchor.x, numberY, dmgFontSize, isPlayerAttack, dmgAlpha);
+                    // 상성 — 숫자(치명타면 「치명타!」) 바로 위에 화살표 + 「아주 잘 통했다!」(BattleScreenUI.Feel). 위쪽 효과 문구로는 안 띄운다.
+                    DrawImpactMatchup(isPlayerAttack, anchor.x, numberY, dmgFontSize, isCrit, dmgAlpha);
 
                     if (isPlayerAttack && !string.IsNullOrEmpty(lastSkillName))
-                    {
-                        float skillY = isCrit ? dmgY + 72 : dmgY + 45;
-                        GUI.Label(new Rect(dmgX - 150f, skillY, 300f, 30), lastSkillName, skillStyle3dCache);
-                    }
+                        UIHelper.LabelFit(new Rect(anchor.x - 150f, numberY + dmgFontSize * 0.5f + 4f, 300f, 30f), lastSkillName, skillStyle3dCache);
                 }
                 return;
             }
@@ -2216,23 +2338,31 @@ namespace InsectGame.UI
             if (dmg > 0 && impactRevealed)
             {
                 float dmgT = (t - 0.3f) / 0.7f;
+                bool isCrit = isPlayerAttack ? lastWasCritical : lastEnemyWasCritical;
+                float dmgAlpha = Mathf.Clamp01(1f - dmgT * 0.8f);
+                float dmgScale = 1f + Mathf.Sin(dmgT * Mathf.PI * 0.5f) * 0.35f;
+                int dmgFontSize = Mathf.RoundToInt((isCrit ? 60f : 44f) * dmgScale);
+                float numberY = tgtY + DamageAnchorLift2D - dmgT * 55f;
 
                 if (!string.IsNullOrEmpty(lastSkillName) && isPlayerAttack)
                 {
                     float skillAlpha = Mathf.Clamp01(1f - dmgT * 1.5f);
                     skillNameAtkStyleCache.normal.textColor = new Color(elemCol.r, elemCol.g, elemCol.b, skillAlpha);
                     GUI.color = Color.white;
-                    GUI.Label(new Rect(tgtX - 160, tgtY - 130 - dmgT * 25f, 320, 40), lastSkillName, skillNameAtkStyleCache);
+                    // 치명타면 숫자 위에 「치명타!」(40px 줄)가, 상성이 있으면 그 위에 상성 표시가 서므로 기술 이름은 그 위로 비켜선다.
+                    float skillTop = tgtY - 130f - dmgT * 25f;
+                    if (isCrit) skillTop = Mathf.Min(skillTop, CritCaptionCenterY(numberY, dmgFontSize) - 20f - 42f);
+                    if (ImpactMatchup(true) != Matchup.Neutral)
+                        skillTop = Mathf.Min(skillTop, MatchupHud.CaptionCenterY(numberY, dmgFontSize, isCrit)
+                            - MatchupHud.CaptionHeight * 0.5f - MatchupHud.CaptionGap - 40f);
+                    GUI.Label(new Rect(tgtX - 160, skillTop, 320, 40), lastSkillName, skillNameAtkStyleCache);
                 }
 
-                float dmgAlpha = Mathf.Clamp01(1f - dmgT * 0.8f);
-                float dmgScale = 1f + Mathf.Sin(dmgT * Mathf.PI * 0.5f) * 0.35f;
-                int dmgFontSize = (int)(44 * dmgScale);
-                dmgStyleAtkCache.fontSize = dmgFontSize;
-                Color dmgCol = isPlayerAttack ? new Color(1, 1, 0.3f, dmgAlpha) : new Color(1, 0.3f, 0.3f, dmgAlpha);
-                dmgStyleAtkCache.normal.textColor = dmgCol;
-                GUI.color = Color.white;
-                GUI.Label(new Rect(tgtX - 70, tgtY - 90 - dmgT * 55f, 140, 55), $"-{dmg}", dmgStyleAtkCache);
+                Color dmgCol = isCrit ? CritNumberColor(isPlayerAttack)
+                    : isPlayerAttack ? new Color(1f, 1f, 0.3f) : new Color(1f, 0.3f, 0.3f);
+                DrawDamageNumber(tgtX, numberY, $"-{dmg}", dmgCol, dmgAlpha, dmgFontSize, isCrit);
+                if (isCrit) DrawCritCaption(tgtX, numberY, dmgFontSize, isPlayerAttack, dmgAlpha);
+                DrawImpactMatchup(isPlayerAttack, tgtX, numberY, dmgFontSize, isCrit, dmgAlpha);
 
                 // Effectiveness text based on element
                 if (isPlayerAttack && dmgT < 0.5f)
@@ -2906,9 +3036,9 @@ namespace InsectGame.UI
 
         private void DrawActionText()
         {
-            if (string.IsNullOrEmpty(actionText) || phase == Phase.PlayerTurn || resultShown) return;
-            Rect footer = UISafeLayout.BottomPanel(720f, 132f);
-            Rect panel = new Rect(footer.x, footer.y, footer.width, 54f);
+            // 인트로 동안은 진입 문구가 화면을 쓴다 — 지난 전투에서 남은 행동 문구가 그 밑에 비치지 않게.
+            if (string.IsNullOrEmpty(actionText) || phase == Phase.PlayerTurn || phase == Phase.Intro || resultShown) return;
+            Rect panel = DuelHudLayout.ActionBar(HudFrame.Current);
             UISurface.Card(panel, UITheme.Instance.surfaceBase, UITheme.Instance.surfaceBorder);
             actionTextStyleCache.fontSize = 24;
             actionTextStyleCache.normal.textColor = UITheme.Instance.textPrimary;
@@ -2923,52 +3053,39 @@ namespace InsectGame.UI
         private void DrawResult()
         {
             UITheme theme = UITheme.Instance;
+            bool escaped = battleController != null && battleController.DidEscape;
+            bool sandbox = battleController != null && battleController.IsSandbox;
+            // 이겼으면 승리 화면 — 위쪽 큰 「승리!」, 아래 보상 판, 가운데는 아레나 승리 연출(BattleScreenUI.Feel).
+            if (lastWon && !escaped)
+            {
+                DrawVictory(sandbox);
+                return;
+            }
+            // 패배·도주는 예전 창 그대로 — 안내만 「눌러서 계속」(이제 눌러야 닫힌다 — BattleResultRules).
             UISurface.Dim(0.3f);
             Rect panel = UISafeLayout.CenteredPanel(680f, 320f);
             UISurface.Card(panel, theme.surfaceBase, theme.surfaceBorder);
-            bool escaped = battleController != null && battleController.DidEscape;
-            bool sandbox = battleController != null && battleController.IsSandbox;
-            Color accent = lastWon || escaped ? theme.accentMint : theme.accentCoral;
+            Color accent = escaped ? theme.accentMint : theme.accentCoral;
             UISurface.Flat(new Rect(panel.x + 16f, panel.y + 3f, panel.width - 32f, 4f), accent);
             victoryStyleCache.fontSize = 42;
             victoryStyleCache.normal.textColor = accent;
             UIHelper.LabelFit(new Rect(panel.x + 24f, panel.y + 26f, panel.width - 48f, 62f),
-                sandbox ? "챔피언 승리!" : escaped ? "무사히 이탈" : lastWon ? "전투 승리" : "다음 탐험을 준비해요", victoryStyleCache);
+                escaped ? "무사히 이탈" : "다음 탐험을 준비해요", victoryStyleCache);
             rewardStyleCache.normal.textColor = theme.textSecondary;
-            if (sandbox)
-            {
-                // 꿈속의 승리라 받는 것이 없다 — 0을 늘어놓는 보상 칸 대신 한 줄.
-                UIHelper.LabelFit(new Rect(panel.x + 32f, panel.y + 124f, panel.width - 64f, 90f),
-                    "관중석에서 함성이 쏟아진다", rewardStyleCache);
-                return;
-            }
-            if (lastWon && battleController != null)
-            {
-                string capture = GetCaptureResultMessage(battleController.GetLastCaptureAttempted(), battleController.GetLastCaptureSucceeded());
-                UIHelper.LabelFit(new Rect(panel.x + 24f, panel.y + 100f, panel.width - 48f, 40f),
-                    string.IsNullOrEmpty(capture) ? "파트너와 함께 성장했습니다" : capture, rewardStyleCache);
-                rewardValStyleCache.normal.textColor = theme.textPrimary;
-                UISurface.Rounded(new Rect(panel.x + 24f, panel.y + 158f, panel.width - 48f, 62f), theme.surfaceCard);
-                UIHelper.LabelFit(new Rect(panel.x + 32f, panel.y + 170f, (panel.width - 64f) * 0.5f, 38f),
-                    $"캔디  +{battleController.GetLastCandyReward()}", rewardValStyleCache);
-                UIHelper.LabelFit(new Rect(panel.center.x, panel.y + 170f, (panel.width - 64f) * 0.5f, 38f),
-                    $"경험치  +{battleController.GetLastExpReward()}", rewardValStyleCache);
-            }
-            else if (escaped)
+            if (escaped)
                 UIHelper.LabelFit(new Rect(panel.x + 32f, panel.y + 116f, panel.width - 64f, 64f),
                     "전투를 벗어났습니다.\n탐험을 계속할 수 있습니다.", rewardStyleCache);
             else
                 UIHelper.LabelFit(new Rect(panel.x + 32f, panel.y + 116f, panel.width - 64f, 64f),
                     "보유 곤충에서 팀과 기술을 확인하고\n훈련으로 파트너를 성장시켜 보세요", rewardStyleCache);
-            defeatHintStyleCache.normal.textColor = theme.textSecondary;
-            UIHelper.LabelFit(new Rect(panel.x + 24f, panel.y + 250f, panel.width - 48f, 32f),
-                "잠시 후 탐험으로 돌아갑니다", defeatHintStyleCache);
+            BattleFeelDraw.ContinueHintLine(new Rect(panel.x + 24f, panel.y + 246f, panel.width - 48f, 40f), ResultCanClose,
+                ResultShownSeconds - BattleResultRules.InputLockSeconds, BattlePresentation.ReducedMotion);
             DrawDuelResultQuote(panel);
         }
 
         private void DrawPhaseIndicator(string text)
         {
-            Rect panel = UISafeLayout.BottomPanel(720f, 62f);
+            Rect panel = DuelHudLayout.PhaseBanner(HudFrame.Current);
             UISurface.Card(panel, UITheme.Instance.surfaceBase, UITheme.Instance.surfaceBorder);
             phaseIndicatorStyleCache.normal.textColor = phase == Phase.EnemyAttack ? UITheme.Instance.accentCoral : UITheme.Instance.accentMint;
             UIHelper.LabelFit(new Rect(panel.x + 18f, panel.y + 10f, panel.width - 36f, 42f), text, phaseIndicatorStyleCache);
@@ -2976,7 +3093,7 @@ namespace InsectGame.UI
 
         private void DrawTurnAnnounce()
         {
-            Rect panel = UISafeLayout.BottomPanel(620f, 98f);
+            Rect panel = DuelHudLayout.TurnBanner(HudFrame.Current);
             UISurface.Card(panel, UITheme.Instance.surfaceBase, UITheme.Instance.surfaceBorder);
             introVsStyleCache.fontSize = 34;
             introVsStyleCache.normal.textColor = announceIsPlayer ? UITheme.Instance.accentMint : UITheme.Instance.accentCoral;
@@ -3074,11 +3191,17 @@ namespace InsectGame.UI
             // (영구 동결 회귀 방지).
             try
             {
+                // 1대1 화면이 끈 아레나의 전용기 머리 위 이름을 되돌린다(BattleScreenUI.Feel — 정적 표지).
+                BattleArenaController.ShowSignatureCallout = true;
                 if (arena != null)
                     arena.CleanupArena();
 
                 comboCount = 0;
                 comboDisplayTimer = 0f;
+                comboResetPending = false;
+                lastWasCritical = false;
+                lastEnemyWasCritical = false;
+                ResetResultClose();
 
                 if (AudioManager.Instance != null)
                 {
@@ -3103,13 +3226,15 @@ namespace InsectGame.UI
                 wantMouseClick = false;
                 faintedInsectIds.Clear();
                 currentInsectId = null;
+                pendingEnemySwitch = false;
+                incomingEnemyStats = null;
             }
             finally
             {
                 if (cameraFollower != null) cameraFollower.ExitBattleMode();
                 // **모달이 떠 있으면 풀지 않는다.** 프리즈는 bool 하나라 주인이 여럿이면
                 // 마지막에 쓴 쪽이 이긴다. 전투 승리로 스토리 비트가 뜨면 대화 모달이 먼저
-                // 프리즈를 걸어 두는데, 결과 화면은 그와 무관하게 4초 뒤 스스로 닫히며 여기서
+                // 프리즈를 걸어 두는데, 결과 화면은 그와 무관하게 닫히며(탭 — 꿈 챔피언전은 4초 뒤 저절로) 여기서
                 // 프리즈를 푼다 — **대사를 읽는 동안 캐릭터가 걸어다녔다**(BattleWin 비트 12개
                 // 전부 해당). 모달 쪽이 닫힐 때 자기가 푼다(NpcDialogueUI.CloseModal).
                 // 그쪽이 끝내 안 풀어도 PlayerMovement의 AutoUnfreezeTime(20s)이 받아낸다.
@@ -3124,70 +3249,194 @@ namespace InsectGame.UI
             }
         }
 
+        // 치명타 화면 섬광 — 시작 값은 RevealImpact가 넣는 screenFlashTimer(0.18초)와 같다.
+        private const float CritFlashSeconds = 0.18f;
+        // 3D 아레나 위에서는 아주 옅게만 — 모델 번쩍임·충격파가 이미 타격을 보여 주고, 화면이 하얗게 뜨면 곤충이 안 보인다.
+        private const float ArenaFlashPeak = 0.1f;
+
+        /// <summary>
+        /// 치명타 순간 화면 전체에 깔리는 틴트(내 치명타 금빛, 맞은 치명타 붉은빛 — 색은 RevealImpact가 고른다).
+        /// 예전엔 아레나가 켜져 있으면 그리지 않아, 실제 게임(늘 아레나)에선 치명타 섬광이 한 번도 안 보였다.
+        /// 밝은 섬광 줄이기(<see cref="BattlePresentation.ReducedFlashes"/>)면 그리지 않는다.
+        /// </summary>
         private void DrawScreenFlash()
         {
-            if (BattlePresentation.ReducedFlashes || screenFlashTimer <= 0f || (arena != null && arena.IsActive)) return;
-            float alpha = Mathf.Clamp01(screenFlashTimer / 0.3f) * 0.4f;
+            if (BattlePresentation.ReducedFlashes || screenFlashTimer <= 0f) return;
+            bool arenaActive = arena != null && arena.IsActive;
+            float alpha = arenaActive
+                ? Mathf.Clamp01(screenFlashTimer / CritFlashSeconds) * ArenaFlashPeak
+                : Mathf.Clamp01(screenFlashTimer / 0.3f) * 0.4f;
+            Color prev = GUI.color;
             GUI.color = new Color(screenFlashColor.r, screenFlashColor.g, screenFlashColor.b, alpha);
             GUI.DrawTexture(new Rect(0, 0, UIScale.VirtualScreenWidth, UIScale.VirtualScreenHeight), Texture2D.whiteTexture);
-            GUI.color = Color.white;
+            GUI.color = prev;
         }
 
+        /// <summary>
+        /// 연속 공격 배지 "연속 N!" — 내 HP 카드 아래(낮·밤·날씨 칩이 있으면 그 아래, <see cref="BattleHudStack.ComboBadge"/>).
+        /// 예전엔 화면 오른쪽 위 고정 좌표(y 100)에 박혀 상대 HP 카드(가로·세로 모두)와 배속 버튼(세로)을 덮었고,
+        /// 그래서 아레나 화면에서는 꺼 두어 실제 게임에서 거의 보이지 않았다.
+        /// 뜰 때 잠깐 컸다가(<see cref="BattleHudStack.ComboPulse"/>) 마지막 0.5초에 사라진다.
+        /// </summary>
         private void DrawComboCounter()
         {
-            if (comboCount < 2 || comboDisplayTimer <= 0f) return;
+            if (comboCount < 2 || comboDisplayTimer <= 0f || playerStats == null || resultShown) return;
+            UITheme theme = UITheme.Instance;
+            Rect playerCard = DuelHudLayout.HpCard(UISafeLayout.Content, true);
+            bool environmentChip = battleController != null && battleController.PlayerEnvironment.HasEffect;
+            Rect badge = BattleHudStack.ComboBadge(playerCard, environmentChip);
 
             float alpha = Mathf.Clamp01(comboDisplayTimer / 0.5f);
-            float scale = 1f + Mathf.Max(0f, (2.5f - comboDisplayTimer) * 2f) * 0.0f;
-            // 콤보 시작 직후 큰 펄스
-            float justAppeared = Mathf.Clamp01(2.5f - comboDisplayTimer) / 0.2f;
-            float pulse = justAppeared < 1f ? Mathf.Lerp(1.4f, 1f, justAppeared) : 1f;
-
-            float sw = UIScale.VirtualScreenWidth;
-            float boxW = 180f;
-            float boxH = 70f;
-            float bx = sw - boxW - 30f;
-            float by = 100f;
-
-            // 배경
-            GUI.color = new Color(0f, 0f, 0f, 0.55f * alpha);
-            GUI.DrawTexture(new Rect(bx, by, boxW, boxH), Texture2D.whiteTexture);
-
-            // 강조 라인 — 3개 정적 색 (combo 등급별). 매 프레임 new Color 회귀 차단을 위해 static.
-            Color comboCol = comboCount >= 5 ? ComboColHot :
-                             comboCount >= 3 ? ComboColWarm :
-                                                ComboColCool;
-            // Color는 struct(value)지만 alpha만 다르면 매번 new 대신 .a 갱신
-            Color tinted = comboCol;
-            tinted.a = alpha;
-            GUI.color = tinted;
-            GUI.DrawTexture(new Rect(bx, by, boxW, 3), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(bx, by + boxH - 3, boxW, 3), Texture2D.whiteTexture);
-
-            // 숫자 (펄스) — GUIStyle 캐싱
+            float pulse = BattleHudStack.ComboPulse(ComboDisplaySeconds - comboDisplayTimer, BattlePresentation.ReducedMotion);
+            if (comboLabelCount != comboCount)
+            {
+                comboLabelCount = comboCount;
+                comboLabel = $"연속 {comboCount}!";
+            }
             if (cachedComboNumStyle == null)
                 cachedComboNumStyle = new GUIStyle(GUI.skin.label)
-                { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            cachedComboNumStyle.fontSize = Mathf.RoundToInt(40f * pulse);
-            cachedComboNumStyle.normal.textColor = tinted;
-            GUI.color = Color.white;
-            GUI.Label(new Rect(bx, by - 4, boxW, boxH * 0.7f), $"{comboCount}", cachedComboNumStyle);
+                { fontSize = 32, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, wordWrap = false };
 
-            // "COMBO" 라벨 — GUIStyle 캐싱
-            if (cachedComboLblStyle == null)
-                cachedComboLblStyle = new GUIStyle(GUI.skin.label)
-                { fontSize = 16, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            Color lblCol = ComboLblBase;
-            lblCol.a = alpha * 0.9f;
-            cachedComboLblStyle.normal.textColor = lblCol;
-            UIHelper.LabelFit(new Rect(bx, by + boxH - 22, boxW, 18), "COMBO", cachedComboLblStyle);
+            // 세 번째부터는 금빛으로 한 단 더 눈에 띄게.
+            Color accent = comboCount >= 3 ? theme.accentAmber : theme.accentMint;
+            Matrix4x4 prevMatrix = GUI.matrix;
+            Color prevColor = GUI.color;
+            if (pulse > 1.0001f)
+            {
+                // 배지 가운데를 축으로 키운다 — RotateAroundPivot류는 UIScale≠1이면 피벗이 어긋나 행렬을 직접 곱한다.
+                Vector2 pivot = badge.center;
+                GUI.matrix = prevMatrix
+                    * Matrix4x4.TRS(new Vector3(pivot.x, pivot.y, 0f), Quaternion.identity, new Vector3(pulse, pulse, 1f))
+                    * Matrix4x4.TRS(new Vector3(-pivot.x, -pivot.y, 0f), Quaternion.identity, Vector3.one);
+            }
+            // 페이드는 GUI.color 알파로 — 카드 색에 알파를 섞으면 둥근 텍스처가 알파마다 새로 구워진다.
+            GUI.color = new Color(1f, 1f, 1f, prevColor.a * alpha);
+            UISurface.Card(badge, theme.surfaceBase, accent);
+            cachedComboNumStyle.fontSize = 32;
+            cachedComboNumStyle.normal.textColor = accent;
+            UIHelper.LabelFit(new Rect(badge.x + 12f, badge.y + 6f, badge.width - 24f, badge.height - 12f),
+                comboLabel, cachedComboNumStyle);
+            GUI.color = prevColor;
+            GUI.matrix = prevMatrix;
         }
 
-        // 콤보 표시 정적 색 — 매 OnGUI new Color 회귀 차단
-        private static readonly Color ComboColHot = new Color(1f, 0.4f, 0.2f);
-        private static readonly Color ComboColWarm = new Color(1f, 0.85f, 0.3f);
-        private static readonly Color ComboColCool = new Color(0.9f, 0.95f, 1f);
-        private static readonly Color ComboLblBase = new Color(1f, 1f, 1f);
+        // ── 피해 숫자 — 타격(내 공격·반격·치명타)과 라운드 끝 독이 같은 모양을 쓴다 ──
+
+        private const string CritLabel = "치명타!";
+        /// <summary>아레나: 피해 숫자의 가운데가 모델 화면 중심보다 이만큼 위(옛 80px 상자 — 중심 − 70의 가운데).</summary>
+        private const float DamageAnchorLift3D = -30f;
+        /// <summary>2D 폴백: 피해 숫자의 가운데가 곤충 그림 중심보다 이만큼 위(옛 55px 상자 — 중심 − 90의 가운데).</summary>
+        private const float DamageAnchorLift2D = -62.5f;
+
+        /// <summary>
+        /// 한쪽 곤충 위 피해 숫자 자리(떠오르기 전, 숫자의 가운데). 아레나면 모델의 화면 위치, 2D 폴백이면 그림 위치.
+        /// 카메라 뒤(또는 카메라·모델이 없음)면 false — 예전엔 그대로 (0,0) 근처에 그렸다.
+        /// </summary>
+        private bool TryDamageAnchor(bool playerSide, out Vector2 anchor)
+        {
+            float sw = UIScale.VirtualScreenWidth;
+            float sh = UIScale.VirtualScreenHeight;
+            if (arena != null && arena.IsActive)
+            {
+                Vector3 screen = arena.GetCombatantScreenPosition(playerSide);
+                if (screen.z <= 0f)
+                {
+                    anchor = Vector2.zero;
+                    return false;
+                }
+                anchor = new Vector2(screen.x / Mathf.Max(1, Screen.width) * sw,
+                    (1f - screen.y / Mathf.Max(1, Screen.height)) * sh + DamageAnchorLift3D);
+                return true;
+            }
+            float arenaTop = sh * 0.08f;
+            float arenaH = sh * 0.52f;
+            anchor = new Vector2(sw * (playerSide ? 0.22f : 0.72f),
+                arenaTop + arenaH * (playerSide ? 0.72f : 0.38f) + DamageAnchorLift2D);
+            return true;
+        }
+
+        /// <summary>치명타 숫자 색 — 내 치명타 금빛, 맞은 치명타 붉은빛(화면 섬광과 같은 규칙).</summary>
+        private static Color CritNumberColor(bool mine) => mine ? UITheme.Instance.accentAmber : UITheme.Instance.accentCoral;
+
+        /// <summary>
+        /// 피해 숫자 한 개. 상자는 가장 큰 글자(치명타 64pt × 펄스 × 팝 ≈ 96pt)의 한글 줄높이까지 잡아 위아래가 잘리지 않게 한다.
+        /// 글자 크기가 매 프레임 바뀌므로 LabelFit이 아니라 GUI.Label이다(LabelFit 캐시가 프레임마다 새 항목으로 찬다).
+        /// </summary>
+        private void DrawDamageNumber(float cx, float cy, string text, Color color, float alpha, int fontSize, bool shadow)
+        {
+            Rect r = new Rect(cx - 150f, cy - 65f, 300f, 130f);
+            dmgStyle3dCache.fontSize = Mathf.Max(1, fontSize);
+            Color prev = GUI.color;
+            GUI.color = Color.white;
+            if (shadow)
+            {
+                dmgStyle3dCache.normal.textColor = new Color(0f, 0f, 0f, 0.8f * alpha);
+                GUI.Label(new Rect(r.x + 3f, r.y + 3f, r.width, r.height), text, dmgStyle3dCache);
+            }
+            color.a = alpha;
+            dmgStyle3dCache.normal.textColor = color;
+            GUI.Label(r, text, dmgStyle3dCache);
+            GUI.color = prev;
+        }
+
+        /// <summary>「치명타!」 줄(40px)의 가운데 — 숫자의 윗변(글자 크기의 절반 남짓) 바로 위.</summary>
+        private static float CritCaptionCenterY(float numberCenterY, int numberFontSize) =>
+            numberCenterY - numberFontSize * 0.55f - 22f;
+
+        /// <summary>숫자 바로 위 「치명타!」 — 숫자 크기(펄스·팝)를 따라 위로 비켜선다.</summary>
+        private void DrawCritCaption(float cx, float numberCenterY, int numberFontSize, bool mine, float alpha)
+        {
+            float cy = CritCaptionCenterY(numberCenterY, numberFontSize);
+            Rect r = new Rect(cx - 150f, cy - 20f, 300f, 40f);
+            Color prev = GUI.color;
+            GUI.color = Color.white;
+            critLblCache.fontSize = 28;
+            critLblCache.normal.textColor = new Color(0f, 0f, 0f, 0.75f * alpha);
+            UIHelper.LabelFit(new Rect(r.x + 2f, r.y + 2f, r.width, r.height), CritLabel, critLblCache);
+            Color c = CritNumberColor(mine);
+            c.a = alpha;
+            critLblCache.normal.textColor = c;
+            UIHelper.LabelFit(r, CritLabel, critLblCache);
+            GUI.color = prev;
+        }
+
+        /// <summary>
+        /// 라운드 끝 독 숫자를 연다 — <see cref="FinishFaintPresentation"/>가 HP를 마저 드러내는 순간에 한 번.
+        /// 값은 컨트롤러가 그 라운드 독으로 실제로 깎은 HP(0에서 잘린 몫 제외)다.
+        /// </summary>
+        private void BeginPoisonPopups()
+        {
+            if (battleController == null) return;
+            int mine = battleController.PlayerPoisonDamageThisRound;
+            int theirs = battleController.EnemyPoisonDamageThisRound;
+            playerPoisonPopup = mine > 0 ? $"-{mine} 독" : null;
+            enemyPoisonPopup = theirs > 0 ? $"-{theirs} 독" : null;
+            poisonPopupStartedAt = mine > 0 || theirs > 0 ? Time.unscaledTime : -1f;
+        }
+
+        /// <summary>독 숫자 — 중독된 곤충 위에 보라색 "-N 독"이 떠오르며 사라진다. 배속이면 그만큼 빨리 지나간다.</summary>
+        private void DrawPoisonPopups()
+        {
+            if (poisonPopupStartedAt < 0f) return;
+            float p = (Time.unscaledTime - poisonPopupStartedAt) * Mathf.Max(1f, BattlePresentation.Speed) / PoisonPopupSeconds;
+            if (p < 0f || p >= 1f)
+            {
+                poisonPopupStartedAt = -1f;
+                return;
+            }
+            if (playerPoisonPopup != null) DrawPoisonPopup(true, playerPoisonPopup, p);
+            if (enemyPoisonPopup != null) DrawPoisonPopup(false, enemyPoisonPopup, p);
+        }
+
+        private void DrawPoisonPopup(bool playerSide, string text, float p)
+        {
+            if (!TryDamageAnchor(playerSide, out Vector2 anchor)) return;
+            float pop = BattlePresentation.ReducedMotion ? 1f : 1f + Mathf.Sin(Mathf.Clamp01(p * 3f) * Mathf.PI) * 0.25f;
+            float alpha = Mathf.Clamp01((1f - p) / 0.35f);
+            DrawDamageNumber(anchor.x, anchor.y - p * 50f, text, UITheme.Instance.skillPoison, alpha,
+                Mathf.RoundToInt(40f * pop), true);
+        }
+
         // DrawSwapSelect 헤더 펄스 색 — alpha만 동적, RGB는 static
         private static readonly Color SwapHeaderBase = new Color(1f, 0.4f, 0.3f);
 
@@ -3203,6 +3452,7 @@ namespace InsectGame.UI
                 battleController.BattleUpdated -= OnBattleUpdated;
                 battleController.BattleEnded -= OnBattleEnded;
                 battleController.PlayerFainted -= OnPlayerFainted;
+                battleController.EnemySwitched -= OnEnemySwitched;
             }
 
             if (battleController == null || battleController != bc)
@@ -3229,10 +3479,12 @@ namespace InsectGame.UI
             battleController.BattleUpdated -= OnBattleUpdated;
             battleController.BattleEnded -= OnBattleEnded;
             battleController.PlayerFainted -= OnPlayerFainted;
+            battleController.EnemySwitched -= OnEnemySwitched;
             battleController.DeferPresentation = true;
             battleController.BattleUpdated += OnBattleUpdated;
             battleController.BattleEnded += OnBattleEnded;
             battleController.PlayerFainted += OnPlayerFainted;
+            battleController.EnemySwitched += OnEnemySwitched;
         }
 
         public void AutoWire(BattleTeamManager team, PlayerInsectCollection col, TrainingManager training)
@@ -3282,6 +3534,33 @@ namespace InsectGame.UI
         {
             float width = Mathf.Min(460f, (safe.width - 32f) * 0.5f);
             return new Rect(player ? safe.x : safe.xMax - width, safe.y + 68f, width, HpCardHeight);
+        }
+
+        // ── 화면 한 장(HudFrame) 위의 고정 자리 — 그리는 쪽은 HudFrame.Current, 겹침 테스트는 HudFrame.ForScreen을 넘긴다 ──
+
+        /// <summary>안전 영역 콘텐츠(<c>UISafeLayout.Content</c>와 같은 값) — HP 카드의 기준.</summary>
+        internal static Rect Safe(HudFrame f) => new Rect(f.ContentLeft, f.ContentTop, f.ContentWidth, f.ContentHeight);
+
+        /// <summary>아레나 화면 맨 위 "탐험 전투 · N번째 행동".</summary>
+        internal static Rect Heading(HudFrame f) => f.TopPanel(340f, 50f);
+
+        /// <summary>오른쪽 위 배속 버튼.</summary>
+        internal static Rect SpeedControl(HudFrame f) => f.TopPanel(132f, 56f, UISafeLayout.HAlign.Right);
+
+        /// <summary>내 차례의 행동 패널(기술 카드 + 기본 공격·도망).</summary>
+        internal static Rect SkillDeck(HudFrame f) => f.BottomPanel(f.ContentWidth, f.Portrait ? 610f : 300f);
+
+        /// <summary>"당신의 턴 / 상대의 턴" 배너.</summary>
+        internal static Rect TurnBanner(HudFrame f) => f.BottomPanel(620f, 98f);
+
+        /// <summary>공격 연출 중 "내 곤충의 공격! / 적 곤충의 반격!".</summary>
+        internal static Rect PhaseBanner(HudFrame f) => f.BottomPanel(720f, 62f);
+
+        /// <summary>행동 문구 띠("○○의 △△!") — 아래 132px 자리의 윗줄.</summary>
+        internal static Rect ActionBar(HudFrame f)
+        {
+            Rect footer = f.BottomPanel(720f, 132f);
+            return new Rect(footer.x, footer.y, footer.width, 54f);
         }
         internal static Rect SkillCard(Rect panel, bool portrait, int index, int count)
         {
@@ -3417,6 +3696,128 @@ namespace InsectGame.UI
             Color readable = Color.Lerp(accent, Color.white, mix);
             readable.a = accent.a;
             return readable;
+        }
+    }
+
+    /// <summary>
+    /// HP 카드 상태 줄 — <b>순수 계산</b>. "체력 위험  기절 1턴  중독 3턴  공격↓ 2턴"처럼 남은 턴을 꼬리표로 잇는다.
+    ///
+    /// 같은 종류(공격↑ 둘 등)는 꼬리표 하나로 모아 가장 긴 남은 턴을 적는다 — 효과 목록은 겹쳐 건 만큼 항목이 따로 있어
+    /// 예전엔 "공격↑ 2턴  공격↑ 3턴"이 나란히 떴다. 순서는 기절 → 중독 → 하락 → 상승(지금 못 움직이는 것·HP가 새는 것이 먼저).
+    /// 줄에 다 안 들어가면 앞에서부터 들어가는 만큼만 남기고 "외 N"으로 접는다 — 글자를 줄이는 쪽(LabelFit)은
+    /// 18pt 하한에서 멈춰 그 뒤로는 꼬리가 그냥 잘렸다.
+    /// </summary>
+    internal static class BattleStatusLine
+    {
+        /// <summary>상태 줄 오른쪽에 비워 두는 HP 숫자("999 / 999", 20pt 굵게 ≈ 110px) 자리.</summary>
+        internal const float HpNumberReserve = 132f;
+        internal const string Gap = "  ";
+        internal const string LowHpLabel = "체력 위험";
+        internal const string IdleLabel = "HP";
+
+        /// <summary>종류별 남은 턴(0이면 없음).</summary>
+        internal struct Turns
+        {
+            public int Stun;
+            public int Poison;
+            public int AttackDown;
+            public int DefenseDown;
+            public int AttackUp;
+            public int DefenseUp;
+
+            public bool Any => Stun > 0 || Poison > 0 || AttackDown > 0 || DefenseDown > 0 || AttackUp > 0 || DefenseUp > 0;
+
+            /// <summary>내용이 같으면 같은 값 — 그리는 쪽이 이걸로 문구를 다시 잇고 잴지 고른다(각 칸 0~127턴).</summary>
+            public long Key(bool lowHp)
+            {
+                long k = lowHp ? 1L : 0L;
+                k = (k << 7) | (long)Mathf.Clamp(Stun, 0, 127);
+                k = (k << 7) | (long)Mathf.Clamp(Poison, 0, 127);
+                k = (k << 7) | (long)Mathf.Clamp(AttackDown, 0, 127);
+                k = (k << 7) | (long)Mathf.Clamp(DefenseDown, 0, 127);
+                k = (k << 7) | (long)Mathf.Clamp(AttackUp, 0, 127);
+                k = (k << 7) | (long)Mathf.Clamp(DefenseUp, 0, 127);
+                return k;
+            }
+        }
+
+        /// <summary>한쪽 곤충의 상태를 종류별로 모은다. 기절은 효과 목록이 아니라 컨트롤러의 따로 센 값이다.</summary>
+        internal static Turns Tally(int stunTurns, InsectBattleController.EffectSnapshot[] effects, bool forPlayer)
+        {
+            Turns t = new Turns { Stun = Mathf.Max(0, stunTurns) };
+            if (effects == null) return t;
+            for (int i = 0; i < effects.Length; i++)
+            {
+                InsectBattleController.EffectSnapshot e = effects[i];
+                if (e.targetIsPlayer != forPlayer || e.remainingTurns <= 0) continue;
+                switch (e.kind)
+                {
+                    case InsectBattleController.EffectKind.Dot:
+                        t.Poison = Mathf.Max(t.Poison, e.remainingTurns);
+                        break;
+                    case InsectBattleController.EffectKind.DefBuff:
+                        if (e.value >= 0f) t.DefenseUp = Mathf.Max(t.DefenseUp, e.remainingTurns);
+                        else t.DefenseDown = Mathf.Max(t.DefenseDown, e.remainingTurns);
+                        break;
+                    default:
+                        if (e.value >= 0f) t.AttackUp = Mathf.Max(t.AttackUp, e.remainingTurns);
+                        else t.AttackDown = Mathf.Max(t.AttackDown, e.remainingTurns);
+                        break;
+                }
+            }
+            return t;
+        }
+
+        /// <summary>
+        /// 상태 줄 문구. <paramref name="measure"/>는 그 문자열이 그려질 폭(같은 스타일의 CalcSize) — null이면 접지 않는다.
+        /// 꼬리표가 없으면 "HP"(체력 위험이면 그것만). 다 안 들어가면 ①머리말을 둔 채 뒤 꼬리표부터 "외 N"으로 접고,
+        /// ②그래도 안 되면 머리말("체력 위험" — HP 막대 색이 이미 말해 준다)을 빼고 다시 접는다.
+        /// </summary>
+        internal static string Compose(bool lowHp, Turns t, System.Func<string, float> measure, float maxWidth)
+        {
+            string head = lowHp ? LowHpLabel : null;
+            if (!t.Any) return head ?? IdleLabel;
+
+            var tags = new List<string>(6);
+            if (t.Stun > 0) tags.Add($"기절 {t.Stun}턴");
+            if (t.Poison > 0) tags.Add($"중독 {t.Poison}턴");
+            if (t.AttackDown > 0) tags.Add($"공격↓ {t.AttackDown}턴");
+            if (t.DefenseDown > 0) tags.Add($"방어↓ {t.DefenseDown}턴");
+            if (t.AttackUp > 0) tags.Add($"공격↑ {t.AttackUp}턴");
+            if (t.DefenseUp > 0) tags.Add($"방어↑ {t.DefenseUp}턴");
+
+            string full = Join(head, tags, tags.Count);
+            if (measure == null || measure(full) <= maxWidth) return full;
+            if (TryFold(head, tags, measure, maxWidth, out string folded)) return folded;
+            if (head != null && TryFold(null, tags, measure, maxWidth, out folded)) return folded;
+            return Join(null, tags, 1);   // 꼬리표 하나도 안 들어가는 폭 — 그리는 쪽 LabelFit에 맡긴다
+        }
+
+        private static bool TryFold(string head, List<string> tags, System.Func<string, float> measure, float maxWidth, out string text)
+        {
+            for (int keep = head == null ? tags.Count : tags.Count - 1; keep >= 1; keep--)
+            {
+                text = Join(head, tags, keep);
+                if (measure(text) <= maxWidth) return true;
+            }
+            text = null;
+            return false;
+        }
+
+        /// <summary>머리말 + 앞에서 <paramref name="keep"/>개 꼬리표, 남은 게 있으면 " 외 N".</summary>
+        private static string Join(string head, List<string> tags, int keep)
+        {
+            var sb = new System.Text.StringBuilder(48);
+            if (head != null) sb.Append(head);
+            int shown = Mathf.Clamp(keep, 0, tags.Count);
+            for (int i = 0; i < shown; i++)
+            {
+                if (sb.Length > 0) sb.Append(Gap);
+                sb.Append(tags[i]);
+            }
+            int rest = tags.Count - shown;
+            if (rest > 0) sb.Append(" 외 ").Append(rest);
+            return sb.ToString();
         }
     }
 }

@@ -58,14 +58,61 @@ namespace InsectGame.Story
         // 대사가 끝난 뒤 재생할 **영상 파일**(옵션). StoryVideoLibrary의 ID여야 한다 — story_lint 검사 25가
         // 실재성·switch 배선·파일 배치를 본다. **cutsceneId·stageExitId와 같은 비트에 두지 않는다**(검사 13) —
         // 셋 다 StoryBeatCompleted를 구독해 조작·모달을 뺏으므로 서로의 복구를 덮어쓴다.
+        // 대사 **뒤**의 마무리다 — "그 대사가 끝난 다음 화면에 무엇이 남아야 하는가". 대사 **앞**은 introVideoId.
         public string videoId;
+        // 대사 **앞**에 재생할 영상 파일(옵션) — 설명을 영상이 맡는다(초등 고학년 대상: "영상이 설명하고, 대사는 짧게").
+        // StoryVideoLibrary의 ID여야 한다(검사 25). 순서는 **영상 → NPC 등장 연출(stageEnterId) → 「지난 이야기」 카드 → 대사**다 —
+        // NpcDialogueUI의 연출 게이트(IStoryStagePrelude) 하나를 StoryPreludeChain이 영상·연출 차례로 이어 준다.
+        // 영상은 어떤 경로로 끝나든(끝·건너뛰기·파일 없음·디코더 오류·시간 초과·비활성) 대사를 연다 — 못 열면 그 비트가
+        // pendingBeatId에 갇혀 캠페인이 멈춘다(StoryVideoDirector.TryPlayPrelude).
+        // **videoId와 같은 비트에 두지 않는다**(검사 13 — 한 지휘자가 두 편을 한 비트에 틀 수 없다). 영상이 설명하므로
+        // 이 비트의 대사는 **6줄 이하**다(검사 36). 저널 다시보기에서는 대사를 다시 읽어도 이 영상이 앞에 붙지 않는다
+        // (「▶ 영상」 버튼이 따로 튼다). 비면 영상 없음 — 기존 비트는 전부 null로 호환된다.
+        public string introVideoId;
         // 대사 **앞**에 재생할 NPC 연출(옵션) — 등장·다가옴. StoryStageLibrary의 ID여야 한다.
         // 대사가 없는 비트에는 무의미하다(모달 자체가 안 뜨므로 게이트가 걸리지 않는다).
         public string stageEnterId;
         // 대사 **뒤**에 재생할 NPC 연출(옵션) — 퇴장·안내.
         // **cutsceneId와 같은 비트에 함께 두지 않는다** — 둘 다 조작·카메라를 뺏어 다툰다.
-        // story_lint 검사 13이 그 조합을 막는다.
+        // story_lint 검사 13이 그 조합을 막는다. **duelAfter와도 함께 두지 않는다**(검사 35 — 상대가 퇴장해 버린다).
         public string stageExitId;
+        // HUD 목표의 "왜"(옵션) — 이 비트가 다음 목표로 뽑혔을 때 할 일 아래에 붙는 짧은 이유 한 줄
+        // ("모래언덕으로" ← "상자에 갇힌 곤충이 있대"). 목표 문구는 트리거가 만들고(StoryObjectiveResolver),
+        // 이유만 저작한다. 스파인 비트에 비어 있으면 story_lint가 잡는다. 기존 비트는 null — 이유 없이 할 일만 뜬다.
+        public string why;
+        // 대사가 끝나면 **곧바로** 이 상대와 대결한다(옵션) — 값은 대결 상대의 storyNpcId다.
+        // 명부회 간부(NpcBossDuels)면 간부전, 라온(NpcRivalDuels)이면 그 자리에서 열 수 있는 라이벌 단계다.
+        // 예전엔 대치 대사가 "다시 말을 걸면 붙는다"(talk_*)로 끝나 이야기 속 싸움이 한 박자 뒤로 밀려 있었다.
+        //
+        // **순서**: 대사 → 이 비트의 영상·컷신·NPC 연출 → (선택지가 있으면) 고른 결과 대사 → 미뤄 둔 다른 대사 → 대결.
+        // StoryDuelLauncher가 StoryBeatCompleted에서 대기열에 넣었다가 모달·전투 화면·스토리 큐가 모두 빈 첫 순간에 연다.
+        // 시작하지 못하면(재도전 대기·출전 곤충 없음) 조용히 버린다 — 그 상대에게 다시 말을 걸면 시작되는 길이 따로 있다
+        // (간부: WorldInteractionController → TryStartBossDuel, 라온: 대화창 [승부하기]).
+        //
+        // **stageExitId와 함께 두지 않는다** — 퇴장 연출이 대결 상대를 걸어 나가게 한다. 대상이 대결 표에 있는지, 라온이면
+        // 이 비트를 본 직후 그 리전에서 단계가 열리는지는 story_lint 검사 35가 본다(오타는 런타임에 로그 한 줄로 조용히 사라진다).
+        // 대화창은 이 값을 읽어 마지막 버튼을 「승부!」로 바꿀 수 있다. 비면 대결 없음 — 기존 비트는 전부 null로 호환된다.
+        public string duelAfter;
+    }
+
+    /// <summary>
+    /// 장 하나의 「지난 이야기」 — 그 장을 여는 비트(<see cref="openingBeatId"/>)의 대사 **앞에** 카드로 뜨고,
+    /// 저널의 장 탭 머리에도 보인다. 플레이어가 며칠 만에 돌아와도 "어디까지 왔고 왜 여기 왔나"를 세 줄로 되짚게 한다.
+    /// 장 ID가 아니라 여는 비트로 거는 이유: 장의 첫 발화가 늘 도착 비트는 아니다 — <c>gd_ruins</c>(7장)는
+    /// 7장 개막보다 먼저 뜰 수 있어서, "처음 뜬 7장 비트"에 카드를 걸면 반전 전에 7장 요약이 나온다.
+    /// </summary>
+    [System.Serializable]
+    public class StoryChapter
+    {
+        public string chapterId;
+        /// <summary>"8장 · 모래언덕" — 저널 탭 라벨과 같은 형식.</summary>
+        public string title;
+        /// <summary>이 비트의 대사 앞에 카드를 띄운다. 비면 카드 없음(저널에만 보인다).</summary>
+        public string openingBeatId;
+        /// <summary>지난 이야기 — 세 줄 안팎, 한 줄 30자 안팎. 비면 카드 없음(1장처럼 지난 이야기가 없는 장).</summary>
+        public List<string> recap = new List<string>();
+        /// <summary>이번 장에서 할 일 한 줄.</summary>
+        public string goal;
     }
 
     [System.Serializable]
@@ -153,10 +200,12 @@ namespace InsectGame.Story
         }
     }
 
-    // JsonUtility 래퍼 — 루트 { "beats": [ ... ] } (InsectLoreList와 동형).
+    // JsonUtility 래퍼 — 루트 { "beats": [ ... ], "chapters": [ ... ] } (InsectLoreList와 동형).
     [System.Serializable]
     public class StoryList
     {
         public List<StoryBeat> beats = new List<StoryBeat>();
+        // 장별 「지난 이야기」. 배열 순서가 곧 장 순서다. 옛 JSON엔 없어 빈 목록으로 남는다.
+        public List<StoryChapter> chapters = new List<StoryChapter>();
     }
 }

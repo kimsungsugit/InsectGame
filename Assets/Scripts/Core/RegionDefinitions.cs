@@ -431,7 +431,7 @@ namespace InsectGame.Core
                         {
                             subAreaId = "ruins_underground",
                             displayName = "유적 지하",
-                            description = "유적 아래 봉인된 지하 — 고대 곤충이 잠들어 있습니다.",
+                            description = "신전 아래 지하 — 이름 벽이 이어지는 곳입니다.",
                             centerPosition = new Vector3(-10f, 0f, 135f),
                             radius = 10f,
                             exclusiveInsectIds = new[] { "beetle_hercules", "leaf_insect_phantom" },
@@ -612,7 +612,7 @@ namespace InsectGame.Core
                 {
                     regionId = "emberfall",
                     displayName = "잿불 골짜기",
-                    description = "재가 식지 않는 골짜기 — 기록이 통째로 불타 빈칸이 가장 두껍게 겹친 곳입니다.",
+                    description = "재가 식지 않는 골짜기 — 이름이 불타 빈칸이 가장 많은 곳입니다.",
                     themeColor = new Color(0.62f, 0.28f, 0.22f),
                     // (120,255)에서 (128,262)로 옮겼다 — 옛 위치는 사슬상 이웃도 아닌 hollow와
                     // 0.8m 겹쳤다(거리 92.2 < 반경합 93). 겹치면 RegionManager.ContainsPoint가
@@ -754,7 +754,7 @@ namespace InsectGame.Core
                         {
                             subAreaId = "nameless_core",
                             displayName = "빈칸",
-                            description = "아무것도 새겨지지 않은 자리 — 그것이 서려던 곳입니다.",
+                            description = "울타리 끝의 빈칸 — 그림자가 숨은 곳입니다.",
                             centerPosition = new Vector3(-68f, 0f, 214f),
                             radius = 10f,
                             exclusiveInsectIds = new[] { "mantis_unnamed", "mantis_blank" },

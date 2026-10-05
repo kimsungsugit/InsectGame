@@ -114,6 +114,28 @@ namespace InsectGame.Battle
             InsectData[] teamInsects, int[] teamLevels,
             Vector3 worldBossPos)
         {
+            SetupRaidBattle(bossInsect, bossLevel, bossShiny, teamInsects, teamLevels, worldBossPos, null);
+        }
+
+        /// <param name="teamDown">
+        /// 레이드를 시작할 때 이미 기절해 있던 슬롯(true) — 그 모델은 세우지 않는다(<c>HideMembersDownAtStart</c>).
+        /// null이면 전원을 세운다(옛 동작).
+        /// </param>
+        public void SetupRaidBattle(InsectData bossInsect, int bossLevel, bool bossShiny,
+            InsectData[] teamInsects, int[] teamLevels,
+            Vector3 worldBossPos, bool[] teamDown)
+        {
+            SetupRaidBattle(bossInsect, bossLevel, bossShiny, teamInsects, teamLevels, worldBossPos, teamDown, null);
+        }
+
+        /// <param name="guardianRegionId">
+        /// 수문장 레이드면 그 리전 ID(<c>RaidBattleController.BossGuardianRegionId</c>) — 인트로 동안 등장 컷을 건다
+        /// (<see cref="PlayGuardianIntro"/>, 길이 <see cref="BattleStaging.GuardianIntroSeconds"/>). 비면 없다.
+        /// </param>
+        public void SetupRaidBattle(InsectData bossInsect, int bossLevel, bool bossShiny,
+            InsectData[] teamInsects, int[] teamLevels,
+            Vector3 worldBossPos, bool[] teamDown, string guardianRegionId)
+        {
             CleanupArena();
 
             // 아레나를 필드와 완전 분리된 위치에 생성 (필드 오브젝트와 겹침 방지)
@@ -139,6 +161,9 @@ namespace InsectGame.Battle
 
             CreateBossRise();
             CreateBossAura(bossModel.transform);
+            // 모습을 빌리는 보스(이름 없는 사마귀)는 「그림자」다 — 원래 모습부터 검보라 톤·테두리·눈빛을 입는다(Staging partial).
+            shadowBossId = BattleStaging.IsShadowBoss(bossInsect.insectId) ? bossInsect.insectId : null;
+            if (shadowBossId != null) ApplyShadowLook(bossModel, false);
 
             int count = teamInsects != null ? teamInsects.Length : 0;
             teamModels = new GameObject[count];
@@ -158,7 +183,11 @@ namespace InsectGame.Battle
             }
 
             SetupBattleCamera();
+            HideMembersDownAtStart(teamDown);   // 구도를 잡은 뒤에 — 기절 수에 따라 구도가 흔들리지 않게
             isActive = true;
+            // 구도(기본 카메라)를 잡은 뒤에 — 등장 컷·진입 샷은 그 구도로 돌아온다. 수문장은 등장 컷이 진입 샷을 대신한다.
+            if (!string.IsNullOrEmpty(guardianRegionId)) PlayGuardianIntro();
+            else PlayBattleOpening();
         }
 
         private GameObject CreateBattleInsect(InsectData insectData, int level, bool isShiny, Vector3 position, float scale)
@@ -178,6 +207,7 @@ namespace InsectGame.Battle
         public void RebuildPlayerInsect(InsectData newInsect, int newLevel)
         {
             if (!isActive || arenaRoot == null || newInsect == null) return;
+            CompleteStagingNow();   // 상대 등장이 덜 끝났으면 끝 자세로 — 아래 배치가 그 자리를 기준으로 잡는다
 
             if (playerModel != null)
             {
@@ -194,6 +224,53 @@ namespace InsectGame.Battle
                 playerModel.transform.LookAt(enemyBattlePos);
             if (bossModel == null) ArrangeNormalCombatants();
             SetupBattleCamera();
+        }
+
+        /// <summary>
+        /// 팀 대결에서 상대가 다음 곤충을 내보낼 때 — 상대 모델을 새 곤충으로 다시 세운다(기능만).
+        /// 첫 상대를 세운 경로(<see cref="CreateBattleInsect"/> → 마주보기 → <c>ArrangeNormalCombatants</c> → 카메라)를 그대로 탄다.
+        /// 쓰러진 모델(쓰러짐 연출 끝에 꺼져 있다)은 버린다. <b>등장 연출·파티클은 없다</b> — visual-dev가 붙인다
+        /// (부르는 쪽: <c>BattleScreenUI</c>의 교체 단계 시작).
+        /// </summary>
+        public void RebuildEnemyInsect(InsectData newInsect, int newLevel, bool shiny)
+        {
+            if (!isActive || arenaRoot == null || newInsect == null) return;
+
+            if (enemyModel != null)
+            {
+                ForgetModel(enemyModel);
+                Destroy(enemyModel);
+                enemyModel = null;
+            }
+
+            enemyModel = CreateBattleInsect(newInsect, newLevel, shiny, enemyBattlePos, BattleInsectScale);
+            enemyModel.name = "BattleInsect_Enemy";
+            if (playerModel != null)
+            {
+                playerModel.transform.LookAt(enemyBattlePos);
+                enemyModel.transform.LookAt(playerModel.transform.position);
+            }
+            else
+            {
+                enemyModel.transform.LookAt(playerBattlePos);
+            }
+            if (bossModel == null) ArrangeNormalCombatants();
+            SetupBattleCamera();
+        }
+
+        /// <summary>
+        /// 모델을 갈아끼우기 전에 그 모델에 걸린 기록(반응 코루틴·원위치·렌더러 캐시)을 버린다 —
+        /// 남으면 파기된 오브젝트를 키로 쥔 채 반응이 끝날 때 원위치로 되돌리려 한다.
+        /// </summary>
+        private void ForgetModel(GameObject model)
+        {
+            if (model == null) return;
+            if (activeReacts.TryGetValue(model, out Coroutine running) && running != null) StopCoroutine(running);
+            activeReacts.Remove(model);
+            reactRestPoses.Remove(model);
+            rendererCache.Remove(model);
+            shadowStrength.Remove(model);
+            ForgetLife(model);   // 숨쉬기·상태 표시(Life partial)
         }
 
         private void ArrangeNormalCombatants()
@@ -481,11 +558,7 @@ namespace InsectGame.Battle
             if (cam == null) return;
 
             bool isRaid = bossModel != null;
-            Rect safe = Screen.safeArea;
-            Rect safeViewport = safe.width > 0f && safe.height > 0f
-                ? new Rect(safe.x / Mathf.Max(1, Screen.width), safe.y / Mathf.Max(1, Screen.height),
-                    safe.width / Mathf.Max(1, Screen.width), safe.height / Mathf.Max(1, Screen.height))
-                : new Rect(0f, 0f, 1f, 1f);
+            Rect safeViewport = SafeViewport();
             Vector3 camPos;
             Vector3 lookTarget;
 
@@ -514,17 +587,7 @@ namespace InsectGame.Battle
             // Move the backdrop with the framing instead of placing the camera behind a wall.
             float span = Mathf.Max(ArenaWallSpan, Mathf.Abs(camPos.x - arenaCenter.x) + 3f,
                 Mathf.Abs(camPos.z - arenaCenter.z) + 3f);
-            foreach (string wallName in new[] { "WallN", "WallS", "WallE", "WallW" })
-            {
-                Transform wall = arenaRoot.transform.Find(wallName);
-                if (wall == null) continue;
-                bool horizontal = wallName == "WallN" || wallName == "WallS";
-                float sign = wallName == "WallN" || wallName == "WallE" ? 1f : -1f;
-                wall.localPosition = horizontal ? new Vector3(0f, ArenaWallHeight * 0.5f, span * sign)
-                    : new Vector3(span * sign, ArenaWallHeight * 0.5f, 0f);
-                wall.localScale = horizontal ? new Vector3(span * 2f, ArenaWallHeight, 0.4f)
-                    : new Vector3(0.4f, ArenaWallHeight, span * 2f);
-            }
+            PlaceArenaWalls(span);   // 수문장 등장 컷도 같은 함수로 벽을 민다(Staging partial)
             framingAspect = cam.aspect;
             framingFov = cam.fieldOfView;
             framingSafeArea = Screen.safeArea;
@@ -539,7 +602,9 @@ namespace InsectGame.Battle
 
         private void Update()
         {
-            if (!isActive || playingSkill || Camera.main == null) return;
+            if (!isActive) return;
+            UpdateLife();   // 숨쉬기·상태 표시는 스킬 연출 중에도 돈다(Life partial)
+            if (playingSkill || Camera.main == null) return;
             if (Mathf.Abs(Camera.main.aspect - framingAspect) > 0.01f
                 || Mathf.Abs(Camera.main.fieldOfView - framingFov) > 0.01f || Screen.safeArea != framingSafeArea) SetupBattleCamera();
         }
@@ -629,20 +694,22 @@ namespace InsectGame.Battle
         public void PlaySkillEffect(bool isPlayerAttacking, InsectElement element, SkillEffectType effectType, System.Action onImpact, bool isMelee, float duration, HitCue cue)
         {
             if (!isActive) { onImpact?.Invoke(); return; }
+            CompleteStagingNow();   // 등장 연출이 남아 있으면 끝 자세로 — 돌진의 원위치가 공중에 잡히지 않게
 
             if (playingSkill) return;
             playingSkill = true;
             StartCoroutine(SkillAttackCoroutine(isPlayerAttacking, element, effectType, onImpact, isMelee, duration, cue));
         }
 
-        // 레이드 보스 공격 대상 팀 모델의 **폴백** — 첫 유효 팀 모델.
+        // 레이드 보스 공격 대상 팀 모델의 **폴백** — 첫 번째로 서 있는 팀 모델.
         // 피격 슬롯 지정은 호출부가 `PlayRaidBossAttack`의 targetSlot 인자로 넘기고 그쪽이 먼저 처리한다.
-        // 여기까지 오는 건 그 인자가 범위 밖이거나 해당 모델이 이미 파괴된 경우뿐이다.
+        // 여기까지 오는 건 그 인자가 범위 밖이거나 해당 모델이 이미 파괴됐거나 쓰러져 꺼진 경우뿐이다 —
+        // 꺼진 모델(쓰러짐 연출 끝·시작 때 기절)을 고르면 빈 자리를 때린다.
         private GameObject ResolveBossTarget()
         {
             if (teamModels == null) return null;
             for (int i = 0; i < teamModels.Length; i++)
-                if (teamModels[i] != null) return teamModels[i];
+                if (IsStanding(teamModels[i])) return teamModels[i];
             return null;
         }
 
@@ -665,14 +732,25 @@ namespace InsectGame.Battle
             Vector3 destination = target.transform.position;
             Vector3 contact = Vector3.Lerp(start, destination, .72f);
             InsectEntity entity = attacker.GetComponent<InsectEntity>();
-            BattleMotion.Kind motion = BattleMotion.Resolve(entity != null && entity.Data != null ? entity.Data.insectId : null, isMelee, support);
+            string species = entity != null && entity.Data != null ? entity.Data.insectId : null;
+            // 계열별 몸짓(사마귀 베기·딱정벌레 돌진·나는 종 내리꽂기·벌 찌르기·지네·거미 덮치기) — 타격 순간도 계열이 정한다.
+            // onImpact(피해 숫자·HP 감소)는 그 순간에 부르므로 숫자 시각이 따로 놀지 않는다.
+            BattleMotion.Family family = BattleMotion.FamilyOf(species);
+            BattleMotion.Kind motion = BattleMotion.Resolve(species, isMelee, support);
+            float impactAt = BattleMotion.ImpactOf(motion);
             Color color = GetElementColor3D(element);
             GameObject projectile = null;
             bool impacted = false;
+            bool preStruck = false;
             float elapsed = 0f;
             // 샷의 기준점은 출발 때 한 번 잰다(돌진하는 시전자를 쫓으면 카메라가 덜컹거린다).
             Vector3 attackerCenter = BattleFraming.ModelBounds(attacker).center;
             Vector3 targetCenter = BattleFraming.ModelBounds(target).center;
+            // 전용기 — 시전자 클로즈업 컷인 → 기 모으기 → 큰 이펙트(Flourish partial). 판정은 부르는 쪽(cue.Signature)이 했다.
+            bool signature = cue.Signature;
+            if (signature)
+                BeginSignature(attacker, element, cue, isPlayerAttacking, impactAt * duration,
+                    BattleFlourish.SignatureCutInEndFor(impactAt * duration));
             BeginSkillPresentation(attacker, element, cue);
             try
             {
@@ -680,40 +758,61 @@ namespace InsectGame.Battle
                 {
                     if (!isActive || arenaRoot == null || attacker == null || target == null) yield break;
                     elapsed += BattlePresentation.DeltaTime;
+                    if (signature)
+                    {
+                        signatureElapsed = elapsed;
+                        if (impacted && elapsed >= impactAt * duration + BattleFlourish.SignatureTailSeconds) EndSignature();
+                    }
                     float progress = Mathf.Clamp01(elapsed / duration);
-                    ApplyCameraShot(progress, duration, attackerCenter, targetCenter, cue.Weight, support);
-                    BattleMotion.Pose pose = BattleMotion.Evaluate(motion, progress);
+                    ApplyCameraShot(progress, duration, attackerCenter, targetCenter, cue.Weight, support, impactAt, signature);
+                    BattleMotion.Pose pose = BattleMotion.Evaluate(motion, family, progress);
                     float motionScale = BattlePresentation.ReducedMotion ? .18f : 1f;
                     attacker.transform.position = Vector3.LerpUnclamped(start, contact, pose.Travel * motionScale)
                         + Vector3.up * (pose.Lift * motionScale);
-                    attacker.transform.rotation = startRotation * Quaternion.Euler(pose.Pitch * motionScale, 0f, pose.Roll * motionScale);
+                    attacker.transform.rotation = startRotation
+                        * Quaternion.Euler(pose.Pitch * motionScale, pose.Yaw * motionScale, pose.Roll * motionScale);
+
+                    // 사마귀의 첫 번째 베기 — 칼날 궤적과 가벼운 움찔(숫자는 두 번째 베기에서 한 번).
+                    if (!preStruck && BattleMotion.HasPreStrike(motion) && progress >= BattleMotion.SlashFirstSwing)
+                    {
+                        preStruck = true;
+                        PlaySlashArc(attacker, target, color, true);
+                        if (!cue.Missed && cue.Weight > 0f)
+                            StartReact(target, HitReactCoroutine(target, SlashDirection(attacker, target), 0.1f, target == bossModel));
+                        if (AudioManager.Instance != null) AudioManager.Instance.PlaySFX(SfxType.Attack);
+                    }
 
                     // Projectile travel is independent of the caster's anticipation/recoil.
-                    if (motion == BattleMotion.Kind.Projectile && !impacted && progress >= .18f && progress < BattleMotion.ImpactProgress)
+                    if (motion == BattleMotion.Kind.Projectile && !impacted && progress >= .18f && progress < impactAt)
                     {
-                        float travel = Mathf.SmoothStep(0f, 1f, (progress - .18f) / (BattleMotion.ImpactProgress - .18f));
+                        float travel = Mathf.SmoothStep(0f, 1f, (progress - .18f) / (impactAt - .18f));
                         if (projectile == null) projectile = CreateElementProjectile(element, color);
                         projectile.transform.position = Vector3.Lerp(start + Vector3.up * .3f,
                             destination + Vector3.up * .3f, travel) + GetElementTrajectoryOffset(element, travel);
+                        if (signature) projectile.transform.localScale = Vector3.one * 1.6f;   // 전용기 탄은 크게
                     }
-                    if (!impacted && progress >= BattleMotion.ImpactProgress)
+                    if (!impacted && progress >= impactAt)
                     {
                         impacted = true;
                         if (projectile != null) { Destroy(projectile); projectile = null; }
                         onImpact?.Invoke();
                         // An impact handler may close the battle; never emit orphan effects.
                         if (!isActive || arenaRoot == null || attacker == null || target == null) yield break;
+                        if (motion == BattleMotion.Kind.Slash) PlaySlashArc(attacker, target, color, false);
                         if (support)
                         {
                             // 버프·회복은 쓴 쪽(제자리 = start), 약화는 맞는 쪽(destination)에 띄운다. 자리는 이 코루틴이
                             // 이미 고른 시전자·대상에서 받는다 — 예전엔 진영 bool로 모델을 다시 골랐는데 상대 쪽 분기도
                             // playerModel이라, 상대가 자기에게 건 버프가 내 곤충 위에 떴다(2026-10-02 기기 보고).
-                            if (self) PlayBuffEffect(start, element);
+                            // 회복은 초록 반짝임(Life partial), 강화는 고리·화살표 — 그 뒤로는 몸 표시(불꽃결·육각 막)가 남는다.
+                            if (effectType == SkillEffectType.Heal) PlayHealSparkle(attacker);
+                            else if (self) PlayBuffEffect(start, element);
                             else PlayDebuffEffect(destination);
                         }
                         else
                         {
                             if (!cue.Missed) CreateElementImpact3D(destination, element, color);
+                            if (signature && !cue.Missed) PlaySignatureBurst(targetCenter, element, SignatureBurstSize(target));
                             // 넉백·섬광·히트스톱·의성어·비명·흔들림 — 예전 ShakeModel(0.12m)+카메라 0.12를 대신한다.
                             PlayImpactFeel(attacker, target, targetCenter, element, color, cue);
                         }
@@ -726,9 +825,18 @@ namespace InsectGame.Battle
             {
                 if (projectile != null) Destroy(projectile);
                 if (attacker != null) attacker.transform.SetPositionAndRotation(start, startRotation);
+                if (signature) EndSignature();
                 ClearCameraShot();
                 playingSkill = false;
             }
+        }
+
+        /// <summary>시전자 → 대상 수평 방향(넉백·움찔 방향).</summary>
+        private static Vector3 SlashDirection(GameObject attacker, GameObject target)
+        {
+            Vector3 dir = target.transform.position - attacker.transform.position;
+            dir.y = 0f;
+            return dir.sqrMagnitude > 0.0001f ? dir.normalized : Vector3.forward;
         }
 
         private GameObject CreateElementProjectile(InsectElement element, Color color)
@@ -1845,10 +1953,18 @@ namespace InsectGame.Battle
         // 이 문구만 다른 UI보다 25% 작게 찍혔다. 그리기는 `BattleEffectTextOverlay`(UI)로 옮겼다.
         // 여기서 부를 수는 없다: UI가 이미 Battle을 참조하므로 반대 방향은 순환이 된다.
 
+        /// <summary>
+        /// 쓰러짐 연출 길이(연출 시계 초) — 옆으로 눕으며 가라앉고 투명해진 뒤 모델이 꺼진다. 레이드 UI의 쓰러짐 대기
+        /// (<c>RaidBattleUI.FaintHoldDuration</c>)가 이 값에서 파생된다 — 바꾸면 대기도 따라온다.
+        /// </summary>
+        public const float FaintSeconds = 0.6f;
+
         public IEnumerator PlayFaintCoroutine(GameObject model)
         {
             if (model == null) yield break;
             AnnounceFaint(model);
+            MarkFainting(model);     // 몸 밖에 서 있는 상태 표시(별·거품·막)를 곧바로 거둔다(Life partial)
+            BakeShadowTint(model);   // 그림자 톤(PropertyBlock)이 아래 알파 페이드를 덮지 않게 머티리얼에 굽는다
 
             Vector3 originalPos = model.transform.position;
             Quaternion originalRot = model.transform.rotation;
@@ -1875,7 +1991,7 @@ namespace InsectGame.Battle
                 }
             }
 
-            float duration = 0.6f;
+            float duration = FaintSeconds;
             float t = 0f;
             while (t < duration)
             {

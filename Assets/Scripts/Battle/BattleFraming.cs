@@ -23,6 +23,16 @@ namespace InsectGame.Battle
             ComputeWindow(bounds, aspect, fieldOfView, rotation, safeViewport, 0.40f, 0.84f, out position, out target);
         }
 
+        /// <summary>
+        /// <paramref name="window"/>(뷰포트 좌표의 창) 안에 경계를 맞춘다 — 위의 둘과 달리 HUD 여백 비율(아래 패널 몫)을 따로 두지 않고
+        /// 창을 그대로 쓴다(가로만 창 폭의 8%씩 안쪽). 수문장 등장 컷이 "화면 위쪽 2/3"을 창으로 넘긴다(<see cref="BattleStaging"/>).
+        /// </summary>
+        public static void ComputeInWindow(Bounds bounds, float aspect, float fieldOfView, Quaternion rotation,
+            Rect window, out Vector3 position, out Vector3 target)
+        {
+            ComputeWindow(bounds, aspect, fieldOfView, rotation, window, 0f, 1f, out position, out target);
+        }
+
         public static void ComputeDuel(Bounds bounds, float aspect, float fieldOfView, Quaternion rotation,
             Rect safeViewport, out Vector3 position, out Vector3 target)
         {

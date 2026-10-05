@@ -429,7 +429,7 @@ namespace InsectGame.UI
                         if (GUI.Button(new Rect(sc.x - hot, sc.y - hot, hot * 2f, hot * 2f), "", GUIStyle.none))
                         {
                             if (accessible) TeleportToSubArea(sub);
-                            else { errorMessage = $"먼저 {r.displayName}을(를) 해금하세요 (이전 지역의 수문장 격파)"; errorTimer = 3f; }
+                            else { errorMessage = LockMessage(r); errorTimer = 3f; }
                         }
                     }
                 }
@@ -857,7 +857,7 @@ namespace InsectGame.UI
             if (GUI.Button(new Rect(ix, btnY, halfW, btnH), "이동", btnStyle))
             {
                 if (accessible) { TeleportToRegion(region); CloseModal(); }
-                else { errorMessage = "잠긴 지역입니다 (이전 지역의 수문장 격파)"; errorTimer = 3f; }
+                else { errorMessage = LockMessage(region); errorTimer = 3f; }
             }
             GUI.backgroundColor = UITheme.Instance.btnSecondary;
             if (GUI.Button(new Rect(ix + halfW + 12f, btnY, halfW, btnH), "도감", btnStyle))
@@ -922,6 +922,18 @@ namespace InsectGame.UI
             GUI.DrawTexture(new Rect(0f, -thickness * 0.5f, len, thickness), Texture2D.whiteTexture);
             GUI.matrix = saved;
             GUI.color = Color.white;
+        }
+
+        /// <summary>
+        /// 잠긴 지역을 눌렀을 때의 안내 — 왜 잠겼는지를 리전 관리자가 말한다("서릿길 — 집게에게 이겨야 열립니다",
+        /// <c>RegionManager.DescribeLock</c>). 예전엔 "이전 지역의 수문장 격파"로 박혀 있어 이야기 대결로 잠긴 지역에서 거짓말이 됐다.
+        /// 문구가 비면(판정이 갈린 드문 경우) 그래도 한 줄은 띄운다 — 누르고 아무 반응이 없으면 고장으로 보인다.
+        /// </summary>
+        private string LockMessage(RegionData region)
+        {
+            string text = regionManager != null && region != null ? regionManager.DescribeLock(region) : null;
+            if (!string.IsNullOrEmpty(text)) return text;
+            return region != null ? $"{region.displayName} — 아직 갈 수 없습니다" : "아직 갈 수 없습니다";
         }
 
         private void DrawErrorToast()

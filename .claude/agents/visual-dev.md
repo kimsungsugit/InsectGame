@@ -26,17 +26,28 @@ OnGUI의 Rect 좌표와 레이아웃은 **ui-dev 영역**입니다. 여기서는
 - `Assets/Scripts/Battle/BattleArenaController.cs` - 배틀 아레나 환경 구축
 - `Assets/Scripts/Battle/BattleArenaController.Impact.cs` - 타격감 partial: 히트스톱·넉백·피격 섬광(PropertyBlock)·임팩트 버스트·외침 목록·연출 카메라 구동 ※반투명·빛 이펙트 머티리얼은 `CreateFxMaterial`이 단일 출처(Standard Fade는 빌드에서 불투명으로 그려진다)
 - `Assets/Scripts/Battle/BattleArenaController.Raid.cs` - 레이드 3D 연출 partial: 합체공격(차례 돌진·합동 일격), 팀원 한 마리 공격, 보스 공격 예고·보스 공격
-- `Assets/Scripts/Battle/BattleCameraDirector.cs` - 스킬 타임라인 → 연출 카메라 샷(시네마틱·펀치·합체공격) 순수 계산 ※1v1 기본은 시네마틱(2026-09-28 A/B 비교 후 결정)
+- `Assets/Scripts/Battle/BattleArenaController.Staging.cs` - 이야기 전투 등장·변신 partial: 상대 교체 등장(`PlayEnemySwitchIn` — 빛살·도약·착지 먼지), 그림자 변신(`PlayBossTransform` — 모델 교체는 연기가 가장 짙은 한가운데), 수문장 등장 컷(`PlayGuardianIntro`), 모습을 빌리는 보스의 그림자 모습(PropertyBlock 톤·뒤집힌 껍질 테두리·눈빛·김) ※연출은 한 번에 하나 — 다른 연출의 시작점이 `CompleteStagingNow`로 끝 상태에 접는다. 몸 색은 PropertyBlock, 빛·연기는 `CreateFxMaterial`뿐이라 Standard 변형(`BuildKeepers`)에 기대지 않는다
+- `Assets/Scripts/Battle/BattleArenaController.Life.cs` - 살아 있는 몸 partial: 대기 숨쉬기(배·몸통·마디 크기 + 더듬이 까딱 — 모델 루트는 안 건드린다), 상태이상·강화 몸 표시(독 거품·기절 별·공격 강화 불꽃결·방어 강화 육각 막·약화 내려가는 결), 회복 초록 반짝임 ※원천은 컨트롤러를 0.12초마다 읽는다(1대1 `PlayerStunTurns`·`GetActiveEffects`, 레이드 스택·건너뛴 보스 응답) — HP 카드 상태 줄과 같은 원천·규칙. 표시는 모델 밖(아레나 루트 아래)에 두고 몸을 따라간다. 머티리얼은 `CreateFxMaterial` 종류당 한 벌 + PropertyBlock 알파
+- `Assets/Scripts/Battle/BattleArenaController.Flourish.cs` - 전투 체감 partial: 전용기(시전자 클로즈업 컷인 → 기 모으기 → 속성 큰 이펙트 세 겹·조각 폭발 — 판정은 부르는 쪽 `HitCue.Signature`), 사마귀 칼날 궤적, 승리(1대1 포즈 + 카메라 반 바퀴 / 레이드 팀 점프 + 팀 샷), 전투 진입 샷 ※ui-dev가 읽는 공개 값: `IsSignaturePlaying`·`IsSignatureCutIn`·`SignatureCutInProgress`·`IsVictoryPlaying`·`VictoryFinished`·`IsOpeningPlaying`
+- `Assets/Scripts/Battle/BattleFlourish.cs` - 전투 체감 순수 규칙: 전용기 컷인 시각표(`SignatureCutInStart`~`SignatureCutInEnd`), 승리 포즈·길이(`VictorySeconds` 실제 초), 진입 샷 길이(`OpeningShotSeconds` 실제 초 — 1대1 진입 구간 `BattleReadPacing.EntryIntroSeconds` 안), 숨쉬기·더듬이 곡선
+- `Assets/Scripts/Battle/BattleStatusLook.cs` - 몸 상태 표시의 순수 규칙: 컨트롤러 상태 → `BattleStatusFlags`(1대1 효과 목록·레이드 스택·보스 기절), 상태 색, 거품·결·막 곡선
+- `Assets/Tests/EditMode/BattleFlourishTests.cs` - 계열 분류(진짜 곤충 ID)·계열 몸짓 타격 시각·전용기 컷인이 타격 전에 끝나는지·전용기/승리/진입 샷 첫·끝 프레임·상태 판정·숨쉬기 범위 검증
+- `Assets/Tests/EditMode/BattleMotionTests.cs` - 계열 몸짓 곡선(예비 동작·복귀·실루엣 구별)
+- `Assets/Scripts/Battle/BattleStaging.cs` - 등장·변신 연출의 순수 규칙(교체 등장·그림자 변신 진행률 시각표, 도약·착지·움츠림 곡선, 그림자 색, 수문장 샷 끝 자리·출발 자리) ※수문장 인트로 길이 `GuardianIntroSeconds`의 단일 출처 — `RaidBattleUI`가 읽는다
+- `Assets/Scripts/Battle/BattleCameraDirector.cs` - 스킬 타임라인 → 연출 카메라 샷(시네마틱·펀치·합체공격·상대 등장·그림자 변신·수문장 등장) 순수 계산 ※1v1 기본은 시네마틱(2026-09-28 A/B 비교 후 결정)
 - `Assets/Scripts/Battle/BattleShout.cs` - 외침 문구 표(기술명·비명·의성어)와 종 계열 울음 분류(ID 토막 단위) ※문구 톤은 game-designer와 상의
 - `Assets/Scripts/Battle/RaidUniteTimeline.cs` - 합체공격 타임라인 단일 출처 — 아레나 돌진·타격과 UI 슬롯 숫자·TOTAL이 공유
 - `Assets/Tests/EditMode/BattleImpactFeelTests.cs` - 연출 카메라 샷·히트스톱 시계·외침 분류·타격 세기·합체공격 타임라인 검증
+- `Assets/Tests/EditMode/BattleStagingTests.cs` - 등장·변신 시각표가 화면 단계 안에서 끝나는지, 샷 첫·끝 프레임, 수문장이 화면 위쪽 2/3에 서는지(화면비 4종), 그림자 색 검증
 - `Assets/Scripts/Battle/ForestBattleSet.cs` - 머티리얼별 병합 숲 공터 아레나 메시
-- `Assets/Scripts/Battle/BattleMotion.cs` - 종별 전투 준비·타격·복귀 포즈 곡선
+- `Assets/Scripts/Battle/BattleMotion.cs` - 계열별 전투 몸짓 곡선 — 사마귀 두 번 베기·딱정벌레 머리 숙여 돌진·나는 종 내리꽂기·벌 찌르기·지네·거미 덮치기·그 밖 돌진, 원거리 시전도 계열별 ※계열 판정(`FamilyOf`)은 `InsectEntity.BuildModel`의 분기 순서를 따른다. 타격 진행률은 `ImpactOf`(찌르기 0.36, 나머지 0.4) — 1대1은 그 순간 `onImpact`가 숫자를 띄우고, 레이드 볼리는 0.46초(`RaidVolleyImpactSeconds`) 안에 곡선을 눌러 담는다
 - `Assets/Scripts/Battle/BattleFraming.cs` - 모델 경계·안전 영역 기반 전투 카메라 프레이밍
 - `Assets/Scripts/Core/BattlePresentation.cs` - 전투 표시 배속·움직임·섬광 설정
 - `Assets/Tests/EditMode/BattleFramingTests.cs` - 화면 비율·모델 크기별 프레이밍 검증
 - `Assets/Scripts/Core/ProceduralAudioGenerator.cs` - 프로시저럴 오디오
 - `Assets/Scripts/Core/ProceduralAudioGenerator.Battle.cs` - 곤충 계열 울음·비명(`cry_*`/`hurt_*`)과 층 타격음 합성 ※폰 스피커 대역(300Hz~6kHz)에 에너지가 있어야 기기에서 들린다
+- `Assets/Scripts/Core/ProceduralAudioGenerator.Music.cs` - 전투 계열 곡 6곡(1대1·라온 대결·수문장·레이드·간부·최종전)의 작곡과 합성 — 음표 사건 악보 → 음마다 한 번 합성, 22.05kHz 모노, 48~60초 정수 마디, 곡 끝 여운·잔향을 첫머리에 감아 루프 이음매 없음, 300Hz 위 대역 RMS로 음량 맞춤 ※선율 문자열은 마디마다 4박을 검사해 틀리면 예외(테스트가 전곡을 합성하므로 바로 잡힌다). 새 곡은 `CombatSongKeys`·`ComposeCombatSong`·`GetBGM`의 전투 case 세 곳 + `AudioManager` 4지점. 합성은 순수 계산이라 작업 스레드에서 돈다 — 1대1 곡은 첫 탐험 곡 때 미리 굽고, 다른 곡은 `PrewarmBGM(key)`를 부르는 쪽이 정한다(곡당 4~5MB를 쥐므로 곧 쓸 때만)
+- `Assets/Tests/EditMode/CombatMusicTests.cs` - 전투 곡 등록 4지점(키·긴장 램프·작곡기 경로·GetBGM case), 정수 마디 45~64초, 클리핑·리미터 무릎, 폰 대역 에너지 비율(≥20%, 예전 보스 곡 8%), 루프 이음매, 작업 스레드 합성 결정성
 - `Assets/Editor/BattleVoiceExport.cs` - 전투 목소리를 WAV로 추출 — 소리는 화면 캡처로 못 보므로 귀로 검수
 - `Assets/Scripts/Core/AudioManager.cs` - 오디오 매니저 (싱글턴)
 - `Assets/Scripts/Core/UIAudioBinder.cs` - UI 버튼 자동 hover/click 사운드 부착
@@ -146,7 +157,7 @@ Legendary: 금색/주황
 경계 밖 수정이 필요하면 변경하지 말고 메인 모델에 보고하여 적절한 에이전트에 재위임.
 
 ## 설계 원칙
-- `Assets/Scripts/Battle/BattleVisualCapture.cs` — 저장 없는 독립 전투 화면 QA. 전투 연출 검수 인자: `-battleCamStyle off|punch|cinematic`(같은 장면을 카메라만 바꿔 비교), `-captureInterval 0.05`(히트스톱은 0.1초 간격으론 안 잡힌다), `-battleScenario elements`(속성 10종 임팩트 순환) · `raid-unite`(첫 차례에 합체공격). 소리는 캡처되지 않으니 `BattleVoiceExport`로 WAV를 뽑아 듣는다
+- `Assets/Scripts/Battle/BattleVisualCapture.cs` — 저장 없는 독립 전투 화면 QA. 전투 연출 검수 인자: `-battleCamStyle off|punch|cinematic`(같은 장면을 카메라만 바꿔 비교), `-captureInterval 0.05`(히트스톱은 0.1초 간격으론 안 잡힌다), `-battleScenario elements`(속성 10종 임팩트 순환) · `raid-unite`(첫 차례에 합체공격) · `team-duel`(집게 팀 대결 — 상대 교체 등장 두 번) · `raid-forms`(이름 없는 사마귀 — 수문장 등장 컷 + 그림자 변신 두 번) · `guardian-intro`(숲의 수문장 등장 컷만) · `status-fx`(내 곤충 기절·공격 강화 + 상대 독·방어 강화를 한 장면에, 「연속 2!」·「기절 N턴」·「-8 독」) · `signature`(전용기 한 번 — 0.05 간격 권장) · `victory`(1대1 승리 포즈·카메라 반 바퀴, 결과 뒤 3.2초) · `species-motions`(사마귀·장수풍뎅이·호랑나비·일벌·왕거미 기본 공격 차례로 — 내 모델만 갈아 세운다), 레이드 승리는 `raid`의 끝 장면. 소리는 캡처되지 않으니 `BattleVoiceExport`로 WAV를 뽑아 듣는다
 - `Assets/Scripts/Battle/RaidVisualCapture.cs` — 실제 레이드 화면 QA
 - `Assets/Editor/BattleVisualCaptureBuilder.cs` — Windows 실제 IMGUI 검수 빌드
 - `Assets/Scripts/Core/SceneryMaterialVisualCapture.cs` — 월드 반투명·발광이 **플레이어 빌드에서** 살아 있는지 수치로 재는 촬영 fixture(`-battleScenario materials`, 줄무늬 벽 앞 구의 (r−b) 편차·발광 휘도차, 안개 Exp2 판 포함, README에 PASS/FAIL)

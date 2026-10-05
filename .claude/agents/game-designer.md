@@ -39,8 +39,13 @@ tools:
 - `Assets/Scripts/Story/CutsceneLibrary.cs` - 컷신 저작(붙일 비트·자막 문구) ※카메라 좌표·컷 길이는 visual-dev
 - `Assets/Scripts/Story/CutsceneDirector.cs` - 컷신 재생·트리거·프리즈 복귀 ※카메라 워크는 visual-dev, 자막 렌더는 ui-dev
 - `Assets/Scripts/Story/StoryVideoData.cs` - 영상 정의·자막 큐 데이터 + 타임라인 순수부
-- `Assets/Scripts/Story/StoryVideoLibrary.cs` - 스토리 영상(mp4) 저작(붙일 비트·자막 문구·큐 타이밍) ※샷·프롬프트는 Docs/StoryVideos.md
-- `Assets/Scripts/Story/StoryVideoDirector.cs` - 영상 재생·트리거·프리즈 복귀 ※화면 그리기·건너뛰기는 ui-dev
+- `Assets/Scripts/Story/StoryVideoLibrary.cs` - 스토리 영상(mp4) 저작(붙일 비트·자막 문구·큐 타이밍, 그림책 15편 — 대사 뒤 11·대사 앞 4) ※샷·프롬프트는 Docs/StoryVideos.md, 그림·소리는 `Tools/Video/storybook/render.py`(이 파일을 정규식으로 읽는다)
+- `Assets/Scripts/Story/StoryVideoDirector.cs` - 영상 재생·트리거·프리즈 복귀 + 대사 앞 영상(`TryPlayPrelude` — 모든 종료 경로에서 대사를 한 번 연다) + 저널 다시보기(`PlayReplay`) ※화면 그리기·건너뛰기는 ui-dev
+- `Assets/Scripts/Story/StoryPreludeChain.cs` - 대사 앞 연출 고리(영상 → NPC 등장 연출 → 대사) — 대화창의 연출 슬롯 하나에 여럿을 차례로 잇는다(콜백 한 번 보장·고리 예외 흡수)
+- `Assets/Tests/EditMode/StoryPreludeTests.cs` - 대사 앞 영상의 종료 경로마다 콜백 한 번(끝·건너뛰기·ESC·디코더 오류·준비 초과·재생 초과·비활성·재진입) / 시작 못 하면 false·콜백 0 / 고리 순서·예외 / 다시보기 / 부트스트랩 배선
+- `Assets/Tests/EditMode/StoryVideoLibraryTests.cs` - 영상 저작(15편·길이 ≤15초·큐 순서·자막 한 줄 ≤24자·쓰지 않는 말) + 실제 Story.json의 대사 앞 영상 비트(1~6줄)
+- `Assets/Scripts/Story/StoryBattleWait.cs` - 전투 화면 뒤로 미룬 대사·컷신·영상의 대기 시계(결과 화면·모달 시간은 세지 않는다, 12초 포기·폴백) ※결과 화면 여부는 부트스트랩이 `Func<bool>`로 넘긴다
+- `Assets/Tests/EditMode/StoryBattleWaitTests.cs` - 결과 화면 30초 뒤에도 미뤄 둔 컷신·영상·대사가 나온다 / 결과 화면 밖에서 굳은 전투 화면은 여전히 상한 / 부트스트랩 배선
 - `Assets/Scripts/Story/StoryObjective.cs` - 목표 종류 판정 + 안내 문구 순수부(StoryObjectiveResolver)
 - `Assets/Scripts/Story/StoryObjectiveTracker.cs` - 목표 → 월드 좌표·자동 주행 해석
 - `Assets/Scripts/Story/RivalRaceController.cs` - 라온과의 포획 내기 (시간표·보상은 `RivalRaceRules`, `ch1_rival_intro` 뒤 1회)
@@ -53,6 +58,11 @@ tools:
 - `Assets/Scripts/NPC/NpcBossDuels.cs` - 명부회 간부 고정 상대·레벨·보상 표 ※isFinal의 BGM 분기는 battle-dev
 - `Assets/Scripts/NPC/DuelBanter.cs` - 대결 상대의 연출 대사(칭호·도발·전투 중 한마디·결과 한마디)와 순간 판정 ※그리기는 ui-dev(`BattleScreenUI.Duel`)
 - `Assets/Scripts/NPC/NpcRivalDuels.cs` - 라온 라이벌 단계 표(열림·닫힘 비트·리전·상대 곤충·레벨·첫 승리 보상)와 단계 선택 ※대결 진입·종료 처리는 `NpcDuelController`
+- `Assets/Scripts/Story/StoryDuelLauncher.cs` - 대사 직후 대결(`StoryBeat.duelAfter`) — 장면(영상·컷신·연출·선택 결과)이 다 끝난 첫 순간에 간부전·라온전을 연다 ※대결 진입 자체는 `NpcDuelController`(battle-dev), 「승부!」 버튼 그리기는 ui-dev
+- `Assets/Scripts/Core/GuardianIntros.cs` - 수문장 등장 화면의 별칭·등장 한 줄(리전별) ※그리기는 ui-dev(레이드 시작 화면)
+- `Assets/Tests/EditMode/StoryDuelFlowTests.cs` - 대사 직후 대결(대기열·꿈·오타)·간부 필수(승리 비트가 다음 장 선행)·이미 이긴 세이브의 자동 통과·나중에 끼운 스파인
+- `Assets/Tests/EditMode/RegionStoryLockTests.cs` - 이야기 잠금(서릿길 ← 집게, 잿불 골짜기 ← 저울)·저장된 해금 유지·잠김 문구
+- `Assets/Tests/EditMode/GuardianIntroTests.cs` - 수문장 등장 글의 리전 커버·길이·쓰지 않는 말
 - `Assets/Scripts/Core/GuardianBadges.cs` - 수문장 배지 표(리전·이름·새김글)와 4·8·13 이정표 보상 아이템·수량 ※그림은 `Tools/Badges/guardian_badges.py`
 - `Assets/Scripts/Core/OutfitUnlockRules.cs` - 조건부 의상 해금 판정(지역 도달·레벨·퀘스트 토큰) 순수부 ※소유 부여 배선은 `CharacterOutfitManager.EvaluateUnlocks`, 문구는 `CharacterOutfitUI.DescribeUnlockCondition`(ui-dev)
 - `Assets/Tests/EditMode/OutfitUnlockRulesTests.cs` - 해금 판정식 + 카탈로그 조건의 도달 가능성(리전·퀘스트 실재·만렙 이하·비매품)

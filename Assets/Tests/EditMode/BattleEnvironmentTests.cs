@@ -630,6 +630,7 @@ namespace InsectGame.Tests
         {
             InsectBattleController controller =
                 Track(new GameObject("EnvironmentBattleFixture")).AddComponent<InsectBattleController>();
+            controller.SetCritSource(null);   // 능력치 보정만 재도록 치명타는 끈다
             if (sky != null) controller.AutoWire(sky.Provider, sky.Regions);
             return controller;
         }

@@ -160,5 +160,67 @@ namespace InsectGame.UI
             Part(new Rect(rect.x - pad, rect.y - pad, rect.width + pad * 2f, rect.height + pad * 2f),
                 color, roundness);
         }
+
+        // ── 화살표(전투 상성 표시) ──
+
+        private const int TriangleSize = 64;
+        private static Texture2D triangleTex;
+
+        /// <summary>
+        /// 위를 가리키는 안티앨리어싱 삼각형 알파 텍스처(흰색) — 꼭짓점이 위 가운데, 밑변이 아래. 아래를 가리킬 때는
+        /// 텍스처 좌표를 뒤집어 그린다(<see cref="Arrow"/>). 글리프(⬆)는 기기 폰트에 없을 수 있어 도형으로 그린다.
+        /// </summary>
+        public static Texture2D Triangle
+        {
+            get
+            {
+                if (triangleTex != null) return triangleTex;
+                triangleTex = new Texture2D(TriangleSize, TriangleSize, TextureFormat.RGBA32, false)
+                {
+                    wrapMode = TextureWrapMode.Clamp
+                };
+                float edge = EdgePixels / TriangleSize;
+                float slant = Mathf.Sqrt(5f);   // 빗변 v = 1 − 2|u − ½|의 법선 길이
+                for (int y = 0; y < TriangleSize; y++)
+                {
+                    for (int x = 0; x < TriangleSize; x++)
+                    {
+                        float u = (x + 0.5f) / TriangleSize;
+                        float v = (y + 0.5f) / TriangleSize;   // 텍스처 v는 위로 증가 — 꼭짓점이 위
+                        float toSide = (1f - v - 2f * Mathf.Abs(u - 0.5f)) / slant;
+                        float alpha = Mathf.Clamp01(Mathf.Min(toSide, v) / edge);
+                        triangleTex.SetPixel(x, y, new Color(1f, 1f, 1f, alpha));
+                    }
+                }
+                triangleTex.Apply();
+                return triangleTex;
+            }
+        }
+
+        /// <summary>
+        /// 굵은 화살표 하나 — 위 58%가 머리(삼각형), 아래가 몸통(폭 40%). <paramref name="up"/>이 거짓이면 아래를 가리킨다.
+        /// </summary>
+        public static void Arrow(Rect rect, bool up, Color color)
+        {
+            if (rect.width <= 0f || rect.height <= 0f) return;
+            float headH = rect.height * 0.58f;
+            float stemW = rect.width * 0.4f;
+            float stemX = rect.x + (rect.width - stemW) * 0.5f;
+            Color prev = GUI.color;
+            GUI.color = prev * color;
+            if (up)
+            {
+                GUI.DrawTexture(new Rect(rect.x, rect.y, rect.width, headH), Triangle);
+                // 머리 밑변과 몸통이 1px 겹치게 — 사이가 벌어져 보이지 않게.
+                GUI.DrawTexture(new Rect(stemX, rect.y + headH - 1f, stemW, rect.height - headH + 1f), Texture2D.whiteTexture);
+            }
+            else
+            {
+                GUI.DrawTexture(new Rect(stemX, rect.y, stemW, rect.height - headH + 1f), Texture2D.whiteTexture);
+                GUI.DrawTextureWithTexCoords(new Rect(rect.x, rect.yMax - headH, rect.width, headH), Triangle,
+                    new Rect(0f, 1f, 1f, -1f));
+            }
+            GUI.color = prev;
+        }
     }
 }

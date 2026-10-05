@@ -235,6 +235,22 @@ namespace InsectGame.Core
             /// </summary>
             public const int MaxBuffStacks = 3;
 
+            // ── 치명타 ──────────────────────────────────────────────────────────
+            //
+            // 피해기(스킬 피해·기본 공격·레이드 팀원 스킬/지원 공격·보스 공격)에만 굴린다.
+            // 버프·회복·독·기절·빗나감, 샌드박스(꿈 챔피언전), 레이드 합체공격, 피해 추정치(서포트 AI)는 굴리지 않는다.
+            // 기대 피해는 1 + (1.5 − 1) / 16 = **+3.1%**뿐이다 — 전투 길이를 바꾸려는 값이 아니라
+            // "가끔 크게 들어가는 한 방"이라는 체감용 변동이다. 예전 화면은 "최대 HP의 25% 이상"을
+            // CRITICAL로 **표시만** 했는데 전투가 3~4라운드라 거의 매 타격이 그 선을 넘었다.
+            // 판정은 명중과 **다른 난수 줄기**로 한다(InsectBattleController/RaidBattleController.SetCritSource) —
+            // 같은 줄기면 명중 롤 순서가 밀려 시드 고정 시나리오가 전부 바뀐다.
+
+            /// <summary>피해기 한 번이 치명타일 확률(1/16). 롤이 이 값 <b>미만</b>이면 치명타다.</summary>
+            public const float CritChance = 1f / 16f;
+
+            /// <summary>치명타 피해 배율 — 공방 비율·야생 페이싱을 거치기 전 피해량에 곱한다.</summary>
+            public const float CritMultiplier = 1.5f;
+
             // ── 전투 길이 ────────────────────────────────────────────────────────
             //
             // 옛 값(레벨항 ×2 · 공방비 0.5~2.5 · HP +3/Lv)은 **양쪽이 서로를 한두 턴에
@@ -300,8 +316,13 @@ namespace InsectGame.Core
             /// 4.5는 그 길이를 <b>6/5/5턴</b>으로 되돌리는 값이다 — 위 문단과 같은 취지로
             /// <b>난이도를 올리지도 내리지도 않으려는</b> 값이지 새 밸런스가 아니다.
             /// 위 세 상수 중 하나라도 건드리면 이 값을 다시 계산할 것.
+            ///
+            /// <b>4.5 → 4.65 (2026-10-04, 치명타 도입과 짝).</b> <see cref="CritChance"/>·<see cref="CritMultiplier"/>가
+            /// 팀 화력 기대값을 ×1.031 올려 6턴 구간(Epic Lv20 vs Uncommon)이 중앙값 5턴으로 내려왔다 — 그 구간은
+            /// 원래 5.024턴(5턴 뒤 남는 HP 0.5%)으로 아슬아슬했다. 4.5 × 1.031을 올림한 4.65가 6/5/5를 되돌린다(4.6은 부족).
+            /// 치명타 확률·배율을 바꿔도 이 값을 다시 계산할 것.
             /// </summary>
-            public const float RaidBossHpMultiplier = 4.5f;
+            public const float RaidBossHpMultiplier = 4.65f;
 
             /// <summary>보스 HP가 이 비율 이하로 떨어지면 격노(1회 래치, 회복해도 풀리지 않는다).</summary>
             public const float RaidBossEnrageHpRatio = 0.5f;

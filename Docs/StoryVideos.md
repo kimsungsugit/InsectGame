@@ -1,12 +1,14 @@
 # 스토리 영상 — 제작·삽입 단일 출처
 
-스토리 시작·중간·끝에 넣는 **실제 영상 파일(mp4)** 11편의 샷 리스트·자막 큐·렌더(§4-1 실루엣 삽화)·
-AI 프롬프트(§5, 나중에 바꿀 때)·인코딩·검증 절차.
-자막 문구를 고치면 `Assets/Scripts/Story/StoryVideoLibrary.cs`도 함께 고친다(그쪽이 런타임 출처).
+스토리에 넣는 **실제 영상 파일(mp4)** 15편의 편성·샷·자막 큐·소리·렌더(§4-1 그림책 렌더러)·AI로 바꿀 때(§5)·검증 절차.
+자막 문구를 고치면 `Assets/Scripts/Story/StoryVideoLibrary.cs`도 함께 고친다(그쪽이 런타임 출처 — 렌더러도 그 파일을 읽는다).
 
-- 재생: `StoryVideoDirector` — 비트의 대사가 끝난 뒤(`StoryBeatCompleted`) 화면을 통째로 덮는다.
+- 재생: `StoryVideoDirector`가 화면을 통째로 덮고 영상 안의 소리를 튼다. 두 자리가 있다 —
+  **대사 앞**(`StoryBeat.introVideoId`, 4편 — 그 장면의 설명을 영상이 맡는다. `StoryPreludeChain`이 영상 → NPC 등장 연출 → 대사 순으로 잇는다)과
+  **대사 뒤**(`StoryBeat.videoId`, 11편 — 마무리, `StoryBeatCompleted`).
 - 파일: `Assets/StreamingAssets/Video/<videoId에서 vid_ 제거>.mp4` — `VideoPlayer.url` 스트리밍(임포터를 안 탄다).
-- 검증: `story_lint` 검사 25(ID·switch·파일 배치), `StoryVideoLibraryTests`(길이 상한·큐·금칙).
+- 다시 보기: 스토리 저널의 본 비트 행 「▶ 영상」(`StoryVideoDirector.PlayReplay`).
+- 검증: `story_lint` 검사 13·25·36, `StoryVideoLibraryTests`·`StoryPreludeTests`, QA 빌드 `-battleScenario story-video`(§6).
 
 ## 0. 오프닝 프롤로그 — 게임을 켜면 처음 보는 20초 (스토리 비트와 별개)
 
@@ -58,7 +60,7 @@ AI 프롬프트(§5, 나중에 바꿀 때)·인코딩·검증 절차.
 | 6.1 | **맞대결 번쩍** — 빛이 한 번 터지고 화면이 흔들린다 | 가장 큰 타격 + 환호 정점 + 금속성 울림 |
 | 7.2~8.0 | 암전 → 게임이 「챔피언 결정전」 카드를 얹는다 | 페이드아웃 |
 
-- 화풍은 오프닝·스토리 영상과 같은 실루엣 삽화(`silhouette_kit`) — 사람은 뒷모습뿐이고 글자는 굽지 않는다.
+- 화풍은 오프닝과 같은 실루엣 삽화(`silhouette_kit`) — 사람은 뒷모습뿐이고 글자는 굽지 않는다. (스토리 영상 15편은 2026-10-05에 그림책 화풍으로 바뀌었다 — §2.)
 - **세로 화면**은 가운데 약 32%(x 437~843)만 보인다. 맞대결 쌍(뿔 ↔ 머리)이 그 안에 들어가게 배치했다.
 - 길이를 바꾸면 `T_TOTAL`(영상 스크립트)과 `DreamPrologueData.IntroSeconds`를 함께 — `DreamIntroVideoTests`가 헤더로 잡는다.
 
@@ -67,356 +69,305 @@ AI 프롬프트(§5, 나중에 바꿀 때)·인코딩·검증 절차.
 | 제약 | 값 | 강제 지점 |
 |---|---|---|
 | 길이 | **≤ 15초** (목표 10~15) | `StoryVideoLibraryTests` — `AutoUnfreezeTime(20) − 4 − 1`. 넘으면 재생 중 조작이 살아난다 |
-| 해상도·코덱 | 1280×720, H.264 **Main** 프로파일, 24fps, ≤2 Mbps, AAC 96k, `+faststart` | minSdk 25 하드웨어 디코더. 편당 ≤4 MB, 11편 ≤45 MB |
-| 화면비 | 16:9 마스터 1본. 세로 화면은 **중앙 cover-crop** | `UIHelper.CalculateCoverUv` — 피사체를 중앙 세로 안전영역(가로 폭의 가운데 56%)에 둔다 |
-| 자막 | **영상에 굽지 않는다** — 게임이 IMGUI로 얹는다 | `StoryVideoLibrary` 큐. 프롬프트에 `no text, no letters, no captions` |
-| 금칙 | 자막에 「무명」 없음 | `Library_Cues_NeverNameTheNameless` |
-| 배타 | 같은 비트에 `cutsceneId`·`stageExitId`와 함께 두지 않는다 | `story_lint` 검사 13 |
-| 시점 | 컷신은 **마무리**다 — 직전 대사를 되풀이하지 않고 "그 대사가 끝난 다음 화면에 남을 것"을 보여준다 | StoryBible 7-1의 프롤로그 사고 |
-| 누락 | 파일이 없으면 경고 1줄 + 건너뜀(진행 유지) | `StoryVideoDirector.Play` / `errorReceived` |
+| 해상도·코덱 | 1280×720, H.264 **Main** 프로파일, 24fps, CRF 23(상한 2 Mbps), **AAC 96k 스테레오**, `+faststart` | minSdk 25 하드웨어 디코더. 편당 ≤4 MB(렌더러가 넘으면 실패로 끝낸다), 15편 약 30 MB |
+| 화면비 | 16:9 마스터 1본. 세로 화면은 **중앙 cover-crop** — 보이는 건 **가운데 약 32%(x 437~843)**다 | `UIHelper.CalculateCoverUv`. 각 샷의 주인공 피사체를 그 안에 둔다(예전 문서의 "가운데 56%"는 틀린 값이었다) |
+| 자막 | **영상에 굽지 않는다** — 게임이 IMGUI로 얹는다. 한 큐 ≤ 24자 | `StoryVideoLibrary` 큐 · `StoryVideoLibraryTests`. 아래 약 150px는 자막 띠라 중요한 것을 두지 않는다 |
+| 금칙 | 자막에 「무명」·「봉인」 등 쓰지 않는 말 없음 | `StoryVideoLibraryTests` |
+| 배타 | 한 비트에 `videoId`와 `introVideoId`를 함께 두지 않는다. `videoId`는 `cutsceneId`·`stageExitId`와 함께 두지 않는다 | `story_lint` 검사 13 |
+| 대사 앞 영상 | `introVideoId` 비트의 대사는 **1~6줄** — 설명은 영상이 맡는다 | `story_lint` 검사 36 |
+| 누락 | 파일이 없으면 경고 1줄 + 건너뜀(진행 유지). 대사 앞 영상이면 곧바로 대사가 열린다 | `StoryVideoDirector` · `StoryPreludeTests` |
 
-## 2. 공통 스타일 가이드 (프롬프트 접두)
+## 2. 화풍 — 그림책 (2026-10-05)
 
-```
-STYLE: painterly storybook illustration in motion, hand-painted textures, soft volumetric light,
-muted natural palette, gentle slow camera drift, 24fps, cinematic 16:9, subject centered in the
-middle 56% of the frame (portrait-safe). No text, no letters, no captions, no logos.
-No human faces shown frontally — silhouettes, backs, hands, objects only.
-Cross-dissolve between shots, final shot fades to black.
-```
+대상이 초등 고학년이라 **영상이 설명하고 대사는 짧게** 간다(StoryBible 7-1b). 영상 15편은 전부 같은 그림책 화풍이다 —
+0단계에서 두 화풍(그림자·그림책)을 같은 구도로 비교해 골랐다(`Tools/Video/sample_ch7_fence.py`).
 
-- **인게임 로우폴리와 의도적으로 다른 삽화 톤** — 회상·삽화로 읽히게 한다. 캐릭터 얼굴을 안 잡으므로 인게임 모델과 어긋날 일이 없다.
-- 챕터 팔레트: 초원 새벽 금빛 / 연못 청록 / 숲 이끼녹 / 습지 회갈 / 산 새벽보라 / 모래 황토 / 서릿길 청백 / 잿불 주홍 / 우듬지 신록 / 빈칸 무채색.
-- 글씨가 필요한 소품(장부·석판·표찰)은 `illegible ancient marks`, `unreadable scribbles`로만.
-- **그것(최종 보스)의 형체를 보여주지 않는다** — 빌린 곤충 실루엣이 겹쳐 흔들리는 그림자만. 이 11편에는 등장하지 않는다.
-- 배경음: 무음 또는 앰비언트(바람·물·불똥)만. 테마곡은 넣지 않는다(저작권·용량).
+- **진한 갈색 윤곽 + 밝은 단색 + 큰 눈의 곤충**, 종이 결, 약한 비네트. 무서운 장면도 아이용이다 — 겁주기보다 신비롭게.
+- **그림자(이름 잃은 것)**: 보랏빛으로 일렁이는 덩어리에 노란 눈 둘(세로 동공). 빌린 곤충 모습은 검보랏빛 몸 + 노란 눈. 그림자는
+  울타리 **바깥**에 산다 — 울타리 장면에서는 말뚝 뒤에서 엿본다.
+- **사람은 뒷모습·옆모습만**(얼굴 정면 금지). 인물 표지를 색으로도 구분한다 — 주인공(노란 모자·초록 티·채집망), 세라(긴 갈색 머리·크림 코트·어깨 가방),
+  라온(뾰족 머리·빨간 웃옷, 다친 뒤 팔걸이), 명부회(남색 코트·챙 모자), 먹(검은 코트·붉은 목도리), 하월(흰머리·지팡이), 어르신(흰 머리 쪽·초록 옷).
+- **글자 금지** — 이름·장부·수첩은 판독 불가 무늬(`glyphs`)·긁적임(`scribble`)·눈금뿐이다. 「이름을 줘」 같은 말도 자막이 한다.
+- **「이름」은 곤충 그림이다** — 이름 벽의 칸, 말뚝 이름표에 그 곤충의 작은 그림이 있다. 이름이 바래면 그림이 회색으로 바래고, 돌아오면 금빛으로 켜진다.
+- 회상은 세피아 색조 + 둥근 테두리, 「만약」 장면은 구름 모양 테두리 + 흐린 색.
+- **소리가 들어 있다** — 칼림바·종·오르골 같은 작은 소리, 부드러운 패드, 자연음(바람·물·새·풀벌레·불). 이름이 빛날 때·돌아올 때 쓰는
+  **「이름의 동기」**(칼림바 D5 F#5 A5 B5 A5)가 15편을 잇는다. 그림자는 낮은 단조 패드와 흐린 두 음. 외부 음원·테마곡은 쓰지 않는다(저작권·용량).
+  재생 중 월드 BGM은 0.2로 낮아진다(`StoryVideoDirector`).
 
 ## 3. 편성표
 
-| # | 비트 | videoId | 파일 | 길이 |
-|---|---|---|---|---|
-| 1 | `ch1_intro` (시작, `cs_story_prologue` 대체) | `vid_ch1_prologue` | `ch1_prologue.mp4` | 12s |
-| 2 | `ch2_watchers` | `vid_ch2_watchers` | `ch2_watchers.mp4` | 10s |
-| 3 | `ch3_reach_forest` | `vid_ch3_scholar` | `ch3_scholar.mp4` | 12s |
-| 4 | `ch4_harvest` | `vid_ch4_crates` | `ch4_crates.mp4` | 12s |
-| 5 | `ch5_summit` | `vid_ch5_summit` | `ch5_summit.mp4` | 12s |
-| 6 | `ch8_confront` | `vid_ch8_vault` | `ch8_vault.mp4` | 12s |
-| 7 | `ch9_confront` | `vid_ch9_archive` | `ch9_archive.mp4` | 14s |
-| 8 | `ch10_confront` | `vid_ch10_kiln` | `ch10_kiln.mp4` | 15s |
-| 9 | `ch11_confront` | `vid_ch11_crown` | `ch11_crown.mp4` | 12s |
-| 10 | `ch12_confront` | `vid_ch12_ledger` | `ch12_ledger.mp4` | 14s |
-| 11 | `fin_epilogue` (끝) | `vid_fin_epilogue` | `fin_epilogue.mp4` | 15s |
+**대사 앞**(`introVideoId`)은 그 장면의 설명을 맡는다 — 영상 → (NPC 등장 연출) → (장을 여는 비트면 「지난 이야기」 카드) → 짧은 대사.
+장을 여는 ch7·마지막 장은 드라마의 콜드 오픈처럼 영상이 카드보다 먼저 온다. **대사 뒤**(`videoId`)는 마무리다 — 직전 대사를 되풀이하지 않고
+그 다음 화면에 남을 것을 보여 준다.
 
-제외: ch6·ch7·`fin_unnamed`·`fin_seal`은 프로시저럴 컷신이 이미 대치→해소로 짝을 이뤄 포화. `ch5_blocked`·`ch4_bond`·ch8의 등장 자체는 무대 연출(`StoryStageLibrary`)이 잡고 있으므로 영상은 **NPC 몸짓이 못 보여주는 것**(상자 안쪽·창고 규모·회상·붕괴)만 맡는다.
+| # | 비트 | 언제 | videoId | 파일 | 길이 |
+|---|---|---|---|---|---|
+| 1 | `ch1_intro` | 대사 뒤 | `vid_ch1_prologue` | `ch1_prologue.mp4` | 12.0s |
+| 2 | `ch2_watchers` | 대사 뒤 | `vid_ch2_watchers` | `ch2_watchers.mp4` | 10.0s |
+| 3 | `ch3_reach_forest` | 대사 뒤 | `vid_ch3_scholar` | `ch3_scholar.mp4` | 12.0s |
+| 4 | `ch4_harvest` | 대사 뒤 | `vid_ch4_crates` | `ch4_crates.mp4` | 12.0s |
+| 5 | `ch5_summit` | 대사 뒤 | `vid_ch5_summit` | `ch5_summit.mp4` | 12.0s |
+| 6 | `ch6_secret` | **대사 앞** | `vid_ch6_wall` | `ch6_wall.mp4` | 15.0s |
+| 7 | `ch7_opening` | **대사 앞** | `vid_ch7_fence` | `ch7_fence.mp4` | 14.0s |
+| 8 | `ch8_confront` | 대사 뒤(→ 간부전) | `vid_ch8_vault` | `ch8_vault.mp4` | 12.0s |
+| 9 | `ch9_confront` | 대사 뒤(→ 간부전) | `vid_ch9_archive` | `ch9_archive.mp4` | 14.0s |
+| 10 | `ch10_confront` | 대사 뒤 | `vid_ch10_kiln` | `ch10_kiln.mp4` | 15.0s |
+| 11 | `ch11_confront` | 대사 뒤 | `vid_ch11_crown` | `ch11_crown.mp4` | 12.0s |
+| 12 | `duel_chief_win` | 대사 뒤 | `vid_ch12_ledger` | `ch12_ledger.mp4` | 14.0s |
+| 13 | `fin_unnamed` | **대사 앞**(→ 선택지) | `vid_fin_shadow` | `fin_shadow.mp4` | 14.4s |
+| 14 | `fin_seal` | **대사 앞**(최종전 결과 화면 뒤) | `vid_fin_return` | `fin_return.mp4` | 14.6s |
+| 15 | `fin_epilogue` | 대사 뒤 | `vid_fin_epilogue` | `fin_epilogue.mp4` | 15.0s |
+
+새 4편(6·7·13·14)은 예전 프로시저럴 컷신(`cs_seal_discovery`·`cs_seal_opening`·`cs_nameless_confront`·`cs_final_seal`)을 대신한다 —
+대사 뒤에 카메라가 같은 설명을 자막으로 되풀이하던 것을, 대사 앞의 그림 설명으로 바꾸고 대사를 10줄 안팎에서 5줄로 줄였다. 그 컷신 넷은 지웠다.
+저널에서 본 비트의 영상을 다시 볼 수 있다(「▶ 영상」 — `StoryJournalUI` → `StoryVideoDirector.PlayReplay`).
 
 ## 4. 편별 스토리보드
 
-각 편: 직전 대사(왜 이 그림이 그 다음인가) → 샷(초) → 프롬프트 → 자막 큐(`at` / `dur` / 문구).
-샷 길이 합 = 저작 길이. AI 도구는 샷 단위(4~8초 클립)로 생성하고 §5에서 이어붙인다.
+각 편: 직전(또는 뒤) 대사 → 샷(영상 전체 기준 초 — 샷 k≥1은 디졸브 0.6초만큼 앞당겨 시작) → 자막 큐(`at`, `dur`) → 소리.
+**자막·길이의 런타임 출처는 `StoryVideoLibrary.cs`다** — 여기를 고치면 그쪽도, 그 반대도. 렌더러가 그 파일을 읽어 미리보기 자막을 얹고 길이를 맞춰 본다.
 
-### 1. `vid_ch1_prologue` — 12s · 초원 새벽 금빛
-직전: 어르신이 첫 파트너와 은빛 그물을 주고 "풀밭으로 나가 보렴". 옛 컷신은 이 대사를 되풀이했다 — 되풀이하지 않는다.
+### 1. `vid_ch1_prologue` — 12.0s · 새벽 초원
+직전: 어르신 "곤충들이 하나둘 사라지고 있어 … 잦아듦 … 은빛 그물 … 그 아이와 함께 곤충을 만나 도감에 적어 주렴".
 | 샷 | 초 | 그림 |
 |---|---|---|
-| 1 | 3.5 | 새벽 초원 광각, 이슬 맺힌 풀. 카메라가 천천히 옆으로 흐른다 |
-| 2 | 3.0 | 풀잎 사이 곤충 서너 마리. 하나씩 안개처럼 흐려져 사라진다(디졸브) |
-| 3 | 2.5 | 손에 든 은빛 그물 클로즈업, 역광 |
-| 4 | 3.0 | 손등에 작은 곤충 한 마리가 앉는다. 페이드아웃 |
+| 1 | 0~3.5 | 새벽 초원 광각 — 둥근 언덕·해 뜨는 하늘. 곤충이 하나도 안 보이는 고요한 풀밭, 카메라가 옆으로 흐른다 |
+| 2 | 2.9~6.5 | 풀잎 위 곤충 셋이 하나씩 안개처럼 흐려져 사라진다 |
+| 3 | 5.9~9.0 | 은빛 채집망을 쥔 주인공 손(초록 소매), 역광 |
+| 4 | 8.4~12.0 | 펼친 손등에 작은 곤충이 내려앉는다 |
 
-```
-[STYLE] Shot 1: wide dawn meadow with dew on tall grass, warm golden backlight, slow lateral drift.
-Shot 2: macro of three small beetles among grass blades, one by one they dissolve into faint mist and vanish, quiet.
-Shot 3: close-up of a hand holding a silver butterfly net, rim-lit by sunrise.
-Shot 4: a tiny longhorn beetle lands on the back of a hand, gentle focus pull, fade to black.
-```
-| at | dur | 자막 |
-|---|---|---|
-| 0.8 | 3.2 | 풀밭은 이렇게 넓은데, 움직이는 것이 눈에 잘 띄지 않는다. |
-| 5.2 | 2.8 | 잡는 법은 몸이 먼저 익혔다. 그리고 이제 혼자가 아니다. |
-| 8.6 | 3.0 | 이 아이와 함께라면, 그 이유를 찾을 수 있을지도 모른다. |
+자막: (0.8, 2.6) 어제 있던 곤충이 오늘은 안 보인다. / (3.8, 2.6) 하나둘, 흐려지듯 사라지고 있다. / (6.4, 2.2) 그래서 이 그물을 받았다. / (9.0, 2.6) 이 아이와 함께 찾으러 가자.
+소리: 새벽 바람·멀리 새(**풀벌레 소리는 없다** — 조용함), 사라질 때 내려가는 종, 착지에 따뜻한 이름의 동기.
 
-### 2. `vid_ch2_watchers` — 10s · 연못 청록
-직전: 검은 옷의 사내가 종만 묻고 "곧 전부 장부에 오를 테니". 라온 "이름도 안 밝히고".
+### 2. `vid_ch2_watchers` — 10.0s · 연못
+직전: 검은 옷의 사내가 종만 묻고 "곧 전부 장부에 오를 테니". 라온 "잡은 곤충 숫자를 적는 책?". 사내가 돌아선다.
 | 샷 | 초 | 그림 |
 |---|---|---|
-| 1 | 3.0 | 연못 수면의 반영, 잠자리 한 마리가 스친다 |
-| 2 | 4.0 | 갈대 너머 검은 옷 실루엣(뒷모습 반쯤)이 작은 수첩에 무언가 적는다 |
-| 3 | 3.0 | 돌아서 안개 속으로 걸어 들어가 사라진다. 페이드아웃 |
+| 1 | 0~3.0 | 연못 — 연잎·갈대·물결, 잠자리가 스친다 |
+| 2 | 2.4~7.0 | 갈대 너머 명부회 뒷모습 — 작은 수첩에 눈금을 그어 센다 |
+| 3 | 6.4~10.0 | 사내가 돌아서 안개 속으로 걸어 들어가 흐려진다 |
 
-```
-[STYLE] Shot 1: still pond surface with teal reflections, a dragonfly skims across, soft ripples.
-Shot 2: through tall reeds, a figure in a long black coat seen from behind at three-quarter angle, writing in a small notebook with unreadable scribbles, face never visible.
-Shot 3: the figure turns away and walks into low mist until it dissolves, fade to black.
-```
-| at | dur | 자막 |
-|---|---|---|
-| 1.0 | 3.0 | 이름은 묻지 않았다. 종만 물었다. |
-| 5.6 | 3.4 | …곧 전부 장부에 오를 테니. |
+자막: (3.0, 3.0) 수첩에는 곤충 숫자만 가득했다. / (6.8, 2.6) 그는 안개 속으로 사라졌다.
+소리: 물·개구리·잠자리 날갯소리, 펜 긁는 소리, 걸음·빈 통 달각, 낮은 패드.
 
-### 3. `vid_ch3_scholar` — 12s · 숲 이끼녹
-직전: 세라 합류. "봉인에 금이 간 것과 무관하지 않아요… 기록 하나하나가 열쇠일지도".
+### 3. `vid_ch3_scholar` — 12.0s · 숲
+직전: 세라 합류. "곤충 이름이 잔뜩 새겨진 벽 … 이름이 바래면 곤충도 사라지는 것 같아요".
 | 샷 | 초 | 그림 |
 |---|---|---|
-| 1 | 3.0 | 숲 동굴 벽, 이끼 사이 고대 각인(판독 불가 문양) 클로즈업 |
-| 2 | 3.0 | 손끝이 문양을 훑는다. 먼지가 떨어진다 |
-| 3 | 3.0 | 문양 한 줄이 희미하게 빛났다가 잦아든다 |
-| 4 | 3.0 | 동굴 밖 숲 너머, 먼 산등성이에 유적의 윤곽이 실루엣으로. 페이드아웃 |
+| 1 | 0~3.0 | 이끼 바위에 새겨진 이름 무늬(칸마다 곤충 그림 + 무늬) |
+| 2 | 2.4~6.0 | 몇 칸은 회색으로 바래 있다. 세라 손끝이 무늬를 훑는다 |
+| 3 | 5.4~9.0 | 손끝이 닿은 칸이 금빛으로 반짝이고 그림이 또렷해진다 |
+| 4 | 8.4~12.0 | 숲 너머 산등성이 위 유적, 앞에 세라와 주인공 뒷모습 |
 
-```
-[STYLE] Shot 1: mossy cave wall inside a forest, ancient carved glyphs (illegible ancient marks), green filtered light.
-Shot 2: a scholar's fingertips trace the carving, dust falling, shallow depth of field.
-Shot 3: one line of glyphs glows faintly amber then fades.
-Shot 4: view from the cave mouth over the forest canopy toward a distant ruin silhouette on a ridge, fade to black.
-```
-| at | dur | 자막 |
-|---|---|---|
-| 1.0 | 3.0 | 유적 밖에서 나온 첫 각인이었다. |
-| 5.0 | 3.0 | 봉인에 금이 갔다. 사라지는 것들은 그 틈으로 빠져나가고 있다. |
-| 8.6 | 3.0 | 기록 하나하나가, 그 균열을 메우는 열쇠일지도 모른다. |
+자막: (0.8, 2.2) 바위에 곤충 이름이 새겨져 있다. / (3.2, 2.2) 바랜 이름도 군데군데 보였다. / (5.8, 2.6) 손끝이 닿자, 이름이 반짝였다. / (8.9, 2.6) 답은 저 너머 유적에 있다.
+무늬는 ch11 나무껍질과 **같은 씨앗**으로 그린다(「숲 바위와 같은 무늬」가 실제로 같은 모양이다).
 
-### 4. `vid_ch4_crates` — 12s · 습지 회갈
-직전: 사내가 상자를 내밀다 들킨다. "많은 건 세어도 티가 안 나거든". 세라 "상자가 열 개는 넘어 보였어요". 무대 연출이 "들킨 몸짓"을 이미 잡았으므로 영상은 **상자 안쪽**을 맡는다.
+### 4. `vid_ch4_crates` — 12.0s · 저녁 습지
+직전: 사내 등 뒤 상자에서 파닥이는 소리. "많은 건 세어도 티가 안 나거든". 세라 "상자가 열 개도 넘었어요".
 | 샷 | 초 | 그림 |
 |---|---|---|
-| 1 | 3.0 | 안개 낀 습지, 물 위 안개가 낮게 흐른다 |
-| 2 | 3.5 | 반쯤 잠긴 나무 상자들이 줄지어. 카메라가 줄을 따라 이동 |
-| 3 | 3.0 | 상자 틈으로 더듬이·날개가 미세하게 움직인다(매크로) |
-| 4 | 2.5 | 뚜껑에 못 박힌 표찰, 글씨는 판독 불가. 페이드아웃 |
+| 1 | 0~3.0 | 안개 낀 저녁 습지 |
+| 2 | 2.4~6.5 | 반쯤 잠긴 상자 여럿이 줄지어 — 카메라가 줄을 따라 |
+| 3 | 5.9~9.5 | 상자 틈 — 어둠 속 곤충의 큰 눈과 더듬이 |
+| 4 | 8.9~12.0 | 뚜껑의 이름표(무늬·눈금), 물방울 |
 
-```
-[STYLE] Shot 1: misty marsh at dusk, low fog drifting over dark water, grey-brown palette.
-Shot 2: a long row of half-submerged wooden crates, camera tracks slowly along the line.
-Shot 3: macro through a gap in a crate: antennae and wing edges moving slightly in darkness.
-Shot 4: a nailed paper tag on a crate lid with unreadable scribbles, water dripping, fade to black.
-```
-| at | dur | 자막 |
-|---|---|---|
-| 1.2 | 3.0 | 많은 건 세어도 티가 안 난다 — 그래서 여기부터라고 했다. |
-| 5.4 | 2.6 | 상자는 열 개가 넘었다. |
-| 8.6 | 3.0 | 저게 다 살아 있는 것이라면. |
+자막: (1.0, 2.6) 습지 곳곳에 상자가 숨겨져 있었다. / (6.2, 2.6) 틈 사이로 더듬이가 움직였다. / (9.2, 2.4) 모두 살아 있는 곤충이었다.
 
-### 5. `vid_ch5_summit` — 12s · 산 새벽보라
-직전: 세라 "안개 너머로 빛나는 게 고대 유적… 이제 마지막 장만 남았어요". 카메라 없이는 성립하지 않는 장면.
+### 5. `vid_ch5_summit` — 12.0s · 산 새벽
+직전: 라온 "지나온 데가 다 보여". 세라 "안개 너머로 빛나는 게 고대 유적 … 마지막 장만 남았어요".
 | 샷 | 초 | 그림 |
 |---|---|---|
-| 1 | 3.0 | 능선 위 두 실루엣의 뒷모습, 바람에 옷자락 |
-| 2 | 3.0 | 구름이 천천히 갈라진다 |
-| 3 | 3.5 | 안개 아래 골짜기에 고대 유적이 희미하게 빛난다 |
-| 4 | 2.5 | 유적으로 아주 느린 줌. 페이드아웃 |
+| 1 | 0~3.0 | 능선 위 세 사람 뒷모습(주인공·세라·라온), 멀리 지나온 초원·연못 |
+| 2 | 2.4~6.0 | 발아래 구름 바다가 갈라진다 |
+| 3 | 5.4~9.5 | 안개 아래 골짜기에 고대 유적이 금빛으로 빛난다 |
+| 4 | 8.9~12.0 | 유적으로 느린 줌 |
 
-```
-[STYLE] Shot 1: two silhouettes seen from behind on a windy mountain ridge at dawn, violet-blue sky.
-Shot 2: clouds slowly parting below the ridge.
-Shot 3: far below in the mist, an ancient stone ruin glowing faintly amber.
-Shot 4: very slow push-in toward the ruin, fade to black.
-```
-| at | dur | 자막 |
-|---|---|---|
-| 1.4 | 3.0 | 여기까지 온 채집가는 처음이라고 했다. |
-| 5.6 | 3.0 | 안개 너머로 빛나는 것 — 모든 사라짐의 근원. |
-| 9.0 | 2.6 | 이제 마지막 장만 남았다. |
+자막: (1.0, 2.6) 지나온 길이 모두 내려다보였다. / (5.6, 2.8) 안개 너머로 고대 유적이 빛난다. / (9.0, 2.6) 곤충 이름의 비밀이 저기 있다.
 
-### 6. `vid_ch8_vault` — 12s · 모래 황토
-직전: 집게 "빈칸을 메우는 거다… 전부, 지금 당장" / 세라 "몇이나 살아 있죠?" / "…장부에는 올라가 있다". 등장은 무대 연출이 맡았으므로 영상은 **창고의 규모**.
+### 6. `vid_ch6_wall` — 15.0s · 신전 — **대사 앞(설명)**
+뒤 대사: 세라 "보세요! 사라졌던 고대의 잠자리예요!" / 라온 "벽에서 나왔어! 이게 다 곤충 이름이야?" / 세라 "네. 여기가 '이름 벽'이에요." /
+라온 "그럼 잦아듦은 이름이 바래서 생긴 거였네!" / 세라 "맞아요. 그 빈칸을 당신 도감이 메웠어요."
 | 샷 | 초 | 그림 |
 |---|---|---|
-| 1 | 3.0 | 모래에 반쯤 묻힌 창고 입구, 안으로 들어가는 카메라 |
-| 2 | 3.5 | 천장까지 쌓인 상자들, 먼지 속 광선 |
-| 3 | 3.0 | 상자 줄을 따라 이동. 몇몇은 뚜껑이 열린 채 비어 있다 |
-| 4 | 2.5 | 상자 하나가 조용히 멈춰 있다(움직임 없음). 페이드아웃 |
+| 1 | 0~3.0 | 빛줄기 아래 거대한 이름 벽, 카메라가 올라가며 크기를 보여 준다. 아래에 세 사람이 작게 올려다본다 |
+| 2 | 2.4~6.2 | 옛날(세피아·둥근 테두리) — 옛사람의 손이 끌로 칸에 이름을 새기면 칸이 켜지고, 칸 속 나비가 빠져나와 날아간다 |
+| 3 | 5.6~9.2 | 한 칸이 회색으로 바래고, 아래 풀잎 위 딱정벌레가 흐려져 사라진다. 칸은 빈칸 |
+| 4 | 8.6~12.2 | 펼친 도감에 펜이 곤충을 그리면 금빛 실이 벽으로 날아가 빈칸이 다시 켜진다 |
+| 5 | 11.6~15.0 | 벽 한쪽이 크게 빛나고 날개 네 장 고대 잠자리가 빠져나와 날아오른다 |
 
-```
-[STYLE] Shot 1: entrance of a storehouse half-buried in sand dunes, camera moves inside, ochre light.
-Shot 2: crates stacked to the ceiling, dust motes in slanted light beams.
-Shot 3: tracking along rows of crates, some lids open and empty.
-Shot 4: one closed crate, completely still, no movement inside, fade to black.
-```
-| at | dur | 자막 |
-|---|---|---|
-| 1.0 | 3.2 | 빈칸을 메우기 위해 — 전부, 지금 당장. |
-| 5.4 | 2.8 | 그 안의 아이들은 지금 몇이나 살아 있을까. |
-| 8.8 | 2.8 | …장부에는 올라가 있다. |
+자막: (0.6, 2.2) 벽 가득, 곤충 이름이 새겨져 있다. / (3.0, 2.8) 옛사람들은 이름을 새겨 곤충을 지켰다. / (6.1, 2.6) 이름이 바래면, 그 곤충이 사라졌다. / (9.1, 2.6) 도감에 적으면, 이름이 다시 빛난다. / (12.1, 2.6) 그리고 사라졌던 곤충이 돌아온다!
 
-### 7. `vid_ch9_archive` — 14s · 서릿길 청백
-직전: 저울 "이 서고 목록을 만든 게 누구였더라?" / 세라 "…저였어요" / "무엇이 달라졌지?". 무대에는 배우가 저울 하나뿐이라 세라를 세우지 못했다 — 영상이 그 결손을 맡는다.
+### 7. `vid_ch7_fence` — 14.0s · 이름 벽 → 울타리 — **대사 앞(설명)**
+뒤 대사: 라온 "방금 봤어? 빈칸이 움직였어!" / 세라 "그림자가 이름 하나를 빼앗아 숨어 있던 거예요." / 라온 "벽이 다 차서 숨을 데가 없으니 들킨 거구나!" /
+세라 "빼앗긴 이름을 돌려주면 그림자는 밖으로 밀려나요." / 세라 "그림자는 '텅 빈 들'로 갔어요. 따라가요!"
 | 샷 | 초 | 그림 |
 |---|---|---|
-| 1 | 3.0 | 얼음 벽 속에 봉인된 곤충들, 청백 광 |
-| 2 | 3.0 | 얼음 벽 앞 두 실루엣이 마주 선다(옆모습, 얼굴 없음) |
-| 3 | 4.0 | 얼음 벽에 비친 회상: 젊은 손이 목록을 적는다(판독 불가), 따뜻한 색 |
-| 4 | 4.0 | 현재의 손이 그 반영 위를 덮는다. 페이드아웃 |
+| 1 | 0~2.6 | 이름 벽 — 금빛이 왼쪽에서 오른쪽으로 훑는다 |
+| 2 | 2.0~5.4 | 울타리 — 말뚝마다 곤충 그림 이름표. 안쪽은 볕 드는 풀밭, 바깥은 보랏빛 안개. 그림자가 울타리 너머에서 엿본다 |
+| 3 | 4.8~8.2 | 가운데 이름표가 바래고, 나비가 흩어지고, 말뚝이 쓰러진다(구멍) |
+| 4 | 7.6~11.0 | 그림자가 구멍으로 미끄러져 들어와 딱정벌레에 겹친다 — 벌레가 검게 바래고 노란 눈이 뜬다 |
+| 5 | 10.4~14.0 | 벽의 칸이 차례로 켜지는데 한 칸만 빈칸 — 그 빈칸이 옆으로 미끄러지고 눈을 뜬다 |
 
-```
-[STYLE] Shot 1: insects preserved inside a wall of clear blue ice, cold white-blue light.
-Shot 2: two silhouettes facing each other in profile in front of the ice wall, faces never visible.
-Shot 3: a reflection in the ice: a young hand writing a long list with unreadable marks, warm sepia tint, memory-like.
-Shot 4: a present-day gloved hand presses over the reflection, covering it, fade to black.
-```
-| at | dur | 자막 |
-|---|---|---|
-| 1.0 | 3.0 | 이 서고의 목록을 만든 것은 누구였나. |
-| 5.0 | 2.6 | …나였다. 부정하지 않는다. |
-| 8.4 | 2.4 | 얼음은 멈춰 세울 뿐이다. 자라지도, 죽지도 못하게. |
-| 11.2 | 2.5 | 달라진 것은 속도가 아니라 방향이다. |
+자막: (0.3, 2.3) 이름 벽은 사실 울타리였다. / (2.8, 2.5) 바깥의 그림자를 막는 울타리. / (5.4, 2.5) 이름이 바래면, 구멍이 난다. / (8.2, 2.6) 그림자는 그 구멍으로 숨어들었다. / (11.2, 2.6) 벽이 다 차자, 숨은 한 칸이 드러났다.
 
-### 8. `vid_ch10_kiln` — 15s · 잿불 주홍
-직전: 갱도 붕괴·라온 부상·먹의 구조가 **지문 한 줄**로만 처리된 비트. 이 편이 가장 크게 이득을 본다. 무대 연출은 먹의 조용한 등장만 맡는다.
+### 8. `vid_ch8_vault` — 12.0s · 모래 창고
+직전: 집게 "빈칸마다 구멍이 뚫린다. 그래서 전부 장부에 올린다" … "…장부에는 올라가 있다". 이 뒤 곧바로 간부전.
 | 샷 | 초 | 그림 |
 |---|---|---|
-| 1 | 3.0 | 잿불 갱도 내부, 불똥이 떠다닌다 |
-| 2 | 3.5 | 들보가 무너진다, 화면 흔들림과 먼지 |
-| 3 | 3.5 | 검은 소매의 손이 재 속에서 다른 팔을 붙잡아 끌어낸다 |
-| 4 | 2.5 | 재 위에 놓인 상자 하나 |
-| 5 | 2.5 | 들려 있던 두꺼운 장부가 천천히 덮인다. 페이드아웃 |
+| 1 | 0~3.0 | 모래언덕에 반쯤 묻힌 창고 입구 — 카메라가 안으로 |
+| 2 | 2.4~6.5 | 천장까지 쌓인 상자, 먼지 속 빛줄기 |
+| 3 | 5.9~9.5 | 상자 줄을 따라 — 몇 개는 뚜껑이 열린 채 비어 있다 |
+| 4 | 8.9~12.0 | 상자 하나가 조용히 놓여 있다(움직임 없음) |
 
-```
-[STYLE] Shot 1: inside a smoldering mine tunnel, ember sparks drifting, deep orange-red light.
-Shot 2: wooden beams collapse, camera shake, dust and sparks burst.
-Shot 3: a black-sleeved hand grips another arm and pulls it out of ash and rubble, no faces.
-Shot 4: a single wooden crate set down on grey ash, embers glowing around it.
-Shot 5: a thick ledger held open in a hand slowly closes, unreadable marks on pages, fade to black.
-```
-| at | dur | 자막 |
-|---|---|---|
-| 3.6 | 2.6 | 상자는 다 못 꺼냈다. 이 하나뿐이다. |
-| 7.4 | 3.4 | 나는 이름을 적는 사람이지, 가두는 사람이 아니었다. |
-| 11.6 | 2.8 | 여기서부턴, 둘이다. |
+자막: (1.0, 2.6) 창고 안은 끝이 보이지 않았다. / (4.2, 2.4) 천장까지 상자가 쌓여 있었다. / (6.6, 2.4) 어떤 상자는 텅 비어 있었다. / (9.4, 2.2) 이 상자는 너무 조용했다.
 
-### 9. `vid_ch11_crown` — 12s · 우듬지 신록
-직전: 세라 "울타리를 하나만 친 게 아니었어요… 두 칸을 남겼어요. 우리한테요". 무대 연출은 세라가 앞서 올라가 위를 가리키는 것까지 — 영상은 **가리킨 곳**.
+### 9. `vid_ch9_archive` — 14.0s · 얼음 서고
+직전: 저울 "이 서고 목록을 만든 게 너였지. 그럼 뭐가 달라졌지?" 세라가 대답하지 못한다. 이 뒤 저울과 대결 — **영상은 대답하지 않는다**.
 | 샷 | 초 | 그림 |
 |---|---|---|
-| 1 | 3.0 | 거대수 꼭대기, 신록 사이 빛 |
-| 2 | 3.0 | 나무껍질에 새겨진 문양 클로즈업(ch3 각인과 같은 형태) |
-| 3 | 3.0 | 시선이 아래로 내려가 멀리 유리온실(꽃밭)이 반짝인다 |
-| 4 | 3.0 | 나무와 온실이 한 화면에, 둘 다 살아 있다. 페이드아웃 |
+| 1 | 0~3.0 | 얼음 벽 속에 멈춘 곤충들 |
+| 2 | 2.4~6.0 | 얼음 벽 앞 세라와 저울이 옆모습으로 마주 선다 |
+| 3 | 5.4~10.0 | 얼음에 비친 회상(세피아) — 어린 세라의 손이 긴 목록을 적는다 |
+| 4 | 9.4~14.0 | 지금의 세라 손이 반영에 닿다가 멈춘다 |
 
-```
-[STYLE] Shot 1: crown of a giant tree, fresh green leaves, sunlight flickering through.
-Shot 2: close-up of ancient glyphs carved into the bark, same illegible marks as a ruin.
-Shot 3: camera tilts down over the canopy to a distant glass greenhouse glinting in a flower field.
-Shot 4: wide frame holding both the great tree and the greenhouse, both alive and green, fade to black.
-```
-| at | dur | 자막 |
-|---|---|---|
-| 1.0 | 3.0 | 울타리는 하나가 아니었다. |
-| 5.0 | 3.2 | 실패할 것을 알면서 울타리를 치고, 실패한 뒤를 위해 두 칸을 남겼다. |
-| 9.0 | 2.6 | 우리에게. |
+자막: (1.0, 2.6) 얼음 속에 곤충들이 멈춰 있다. / (3.6, 2.2) 세라와 저울이 마주 섰다. / (6.0, 3.0) 예전에 이 목록을 적은 건 세라였다. / (10.2, 3.0) 세라는 아직 대답하지 못했다.
 
-### 10. `vid_ch12_ledger` — 14s · 빈칸 무채색
-직전: 하월 "삼천 종… 절반이 창고에서 죽었다… 빈칸을 메우겠다고 빈칸을 만들었어… 길을 비켜 주마". 무대 연출은 몸짓 없는 등장뿐.
+### 10. `vid_ch10_kiln` — 15.0s · 잿불 갱도
+직전: 라온이 뛰어들고 천장이 무너진다. 먹이 라온을 끌어낸다. 먹 "상자는 하나밖에 못 꺼냈다 … 나는 이름을 적는 사람이지, 가두는 사람이 아니었다".
 | 샷 | 초 | 그림 |
 |---|---|---|
-| 1 | 3.0 | 빈 석판들이 원형으로 둘러선 방, 회색 |
-| 2 | 3.5 | 벽면을 가득 채운 장부 선반(글씨 판독 불가) |
-| 3 | 3.5 | 선반 절반이 먼지에 덮여 빛바래 있다 |
-| 4 | 4.0 | 노인의 뒷모습이 옆으로 비켜서고, 안쪽 어둠으로 시선이 간다. 페이드아웃 |
+| 1 | 0~3.0 | 갱도 안, 불똥이 떠다닌다 |
+| 2 | 2.4~6.5 | 들보가 무너진다 — 흔들림·먼지 |
+| 3 | 5.9~10.0 | 먹의 검은 소매 손이 돌무더기 속 라온의 팔(빨간 소매)을 끌어낸다 |
+| 4 | 9.4~12.5 | 재 위에 놓인 상자 하나 |
+| 5 | 11.9~15.0 | 먹의 손이 두꺼운 장부를 덮는다 |
 
-```
-[STYLE] Shot 1: a circular chamber of blank standing stone slabs, desaturated grey palette.
-Shot 2: walls lined floor to ceiling with shelves of ledgers, spines with unreadable marks.
-Shot 3: half of the shelves covered in dust, pages faded and grey.
-Shot 4: an old man seen from behind steps aside from a doorway, camera looks past him into deep darkness, fade to black.
-```
-| at | dur | 자막 |
-|---|---|---|
-| 1.0 | 2.8 | 삼천 종. 삼십 년. |
-| 4.8 | 2.8 | 그중 절반이 창고에서 죽었다. |
-| 8.4 | 3.0 | 빈칸을 메우겠다고, 빈칸을 만들었다. |
-| 11.6 | 2.0 | 길이 열렸다. 안쪽에서 그것이 기다린다. |
+자막: (2.8, 2.6) 천장이 무너져 내렸다. / (6.2, 3.0) 먹이 라온을 끌어냈다. / (9.8, 2.4) 꺼낸 상자는 하나뿐이었다. / (12.2, 2.4) 먹은 장부를 덮었다.
 
-### 11. `vid_fin_epilogue` — 15s · 초원 새벽 금빛(1편과 수미상관)
-직전: 세라의 후일담 5줄(하월·라온·먹·"빈칸은 사라지지 않았어요"·"계속 만나요"). 몽타주. 마지막 컷에는 자막을 두지 않는다.
+### 11. `vid_ch11_crown` — 12.0s · 우듬지
+직전: 세라 "이 나무 껍질에도 이름이 … 꽃밭과 여기. '비상 울타리'예요".
 | 샷 | 초 | 그림 |
 |---|---|---|
-| 1 | 3.0 | 노인의 뒷모습이 들판에서 손을 펴 곤충 하나를 놓아준다 |
-| 2 | 3.0 | 초원의 두 실루엣(한쪽은 팔을 감싼 채) |
-| 3 | 3.0 | 새 장부에 펜이 움직인다 — 이름 칸만 있고 수량 칸이 없다(판독 불가) |
-| 4 | 3.0 | 빈 석판 하나가 여전히 비어 있다 |
-| 5 | 3.0 | 새벽 초원, 그물 없이 손을 뻗는 손. 곤충이 다가온다. 페이드아웃 |
+| 1 | 0~3.0 | 거대한 나무 꼭대기, 신록 사이 햇살 |
+| 2 | 2.4~6.0 | 나무껍질의 이름 무늬 — ch3 바위와 **같은 무늬**가 금빛으로 빛난다 |
+| 3 | 5.4~9.0 | 시선이 내려가 멀리 꽃밭 유리 온실이 반짝인다 |
+| 4 | 8.4~12.0 | 나무와 온실이 한 화면, 둘 다 금빛 테 |
 
-```
-[STYLE] Shot 1: an old man seen from behind in a field opens his palm and releases a beetle into the air.
-Shot 2: two silhouettes walking through a dawn meadow, one with an arm in a sling.
-Shot 3: a pen writing in a fresh ledger with a single column of unreadable marks, warm lamplight.
-Shot 4: one blank standing stone slab in grey light, still empty.
-Shot 5: dawn meadow, a bare hand reaching out without a net, a small insect approaching it, fade to black.
-```
-| at | dur | 자막 |
+자막: (1.0, 2.4) 나무 꼭대기에도 이름이 있었다. / (3.8, 2.2) 숲 바위와 같은 무늬였다. / (6.0, 2.6) 저 멀리 꽃밭 온실에도. / (9.0, 2.6) 둘 다 비상 울타리였다.
+
+### 12. `vid_ch12_ledger` — 14.0s · 이름 없는 자리
+직전: 하월과의 대결에서 이긴 뒤(`duel_chief_win`) "스승 노릇은 여기까지다 … 길을 비켜 주마. 안쪽에서 그림자가 기다린다". 고백은 대결 앞
+`ch12_confront`가 했다 — 노인이 비켜서는 그림이 대결 앞에 오면 이야기가 거꾸로 가서 이긴 뒤로 옮겼다(2026-10-04).
+| 샷 | 초 | 그림 |
 |---|---|---|
-| 1.0 | 3.0 | 장부는 전부 넘겨졌다. 이름들을 한 종씩 찾아다니는 데 남은 평생이 걸릴 것이다. |
-| 4.8 | 2.6 | 새 장부에는 수량 칸이 없다. |
-| 8.0 | 2.8 | 빈칸은 사라지지 않았다. 종이 사라지면 자리는 또 생긴다. |
-| 11.2 | 2.6 | 그러니까 계속 만나요. 한 마리씩, 계속. |
+| 1 | 0~3.0 | 빈 석판들이 둥글게 둘러선 방 |
+| 2 | 2.4~6.5 | 벽면 가득 장부 선반 |
+| 3 | 5.9~10.0 | 선반 절반이 먼지에 덮여 빛바래 있다 |
+| 4 | 9.4~14.0 | 하월이 옆으로 비켜서고, 안쪽 문 너머 보랏빛 어둠에 노란 눈 둘 |
 
-## 4-1. 지금 들어 있는 것 — 실루엣 삽화 영상 (2026-09-28)
+자막: (1.0, 2.6) 삼십 년 동안 쓴 장부들. / (4.2, 2.6) 그 속 곤충의 절반이 죽었다. / (7.4, 2.6) 지키려다, 오히려 잃었다. / (10.6, 2.6) 이제 안쪽으로 가는 길이 열렸다.
 
-`Assets/StreamingAssets/Video/`의 11편은 **Python으로 그린 실루엣 삽화 영상**이다. §4의 샷 리스트·길이·
-팔레트를 그대로 따르고, 자막 큐도 그 시각에 맞춰져 있다(총 길이 = 샷 합, 디졸브 0.6초는 뒤 샷을 앞당겨 겹친다).
-옛 색면 자리표시(`.claude/scripts/story_video_placeholders.py`)를 대체했다.
+### 13. `vid_fin_shadow` — 14.4s · 텅 빈 들 — **대사 앞(설명)**
+뒤 대사(5줄 + 선택지): 세라 "저게 그림자예요. 모습을 계속 바꾸고 있어요." / "전부 그림자가 빼앗은 이름들이에요." / 지문 "'이름을 줘.'" /
+세라 "절대 주지 마세요. 울타리 안에 자리를 얻게 돼요." / 지문 "그림자가 다시 묻는다." → [이름을 주지 않는다 / 이름을 준다]
+| 샷 | 초 | 그림 |
+|---|---|---|
+| 1 | 0~2.8 | 색이 빠진 들판, 울타리 맨 끝 빠진 말뚝 자리에 그림자. 주인공과 파트너가 작게 |
+| 2 | 2.2~5.8 | 그림자가 사마귀 → 나비 → 반딧불이로 모습을 바꾼다 |
+| 3 | 5.2~8.6 | 그림자가 다가와 빈 이름표를 내민다(노란 눈이 크게) |
+| 4 | 8.0~11.6 | 「만약」(구름 테두리·흐린 색) — 빈 이름표에 그림자 무늬가 새겨지자 그림자가 울타리 안쪽에서 부풀어 풀밭을 덮는다 |
+| 5 | 11.0~14.4 | 다시 지금 — 주인공 뒤로 만난 곤충들이 빛나며 울타리 칸을 채운다. 마지막 한 칸만 남고 주인공이 그림자를 마주 선다 |
+
+자막: (0.5, 2.2) 울타리의 맨 끝, 마지막 빈칸. / (2.8, 2.6) 그림자는 빼앗은 모습으로 바뀐다. / (5.6, 2.4) 그리고 묻는다. '이름을 줘.' / (8.4, 2.8) 이름을 받으면, 울타리 안에 자리를 얻는다. / (11.4, 2.6) 그러니 절대, 이름을 주지 않는다.
+
+### 14. `vid_fin_return` — 14.6s · 텅 빈 들 → 색이 돌아온 들 — **대사 앞(최종전 결과 화면 뒤)**
+뒤 대사: 세라 "마지막 칸이 메워졌어요!" / "그림자는 밖으로 밀려났어요. 다시 들어올 틈도 없어요." / 지문 "텅 빈 들에 다시 풀벌레 소리가 들린다." /
+지문 "남은 자리에 초록 사마귀 한 마리가 앉아 있다." / 세라 "이름을 되찾았네요. 당신이 데려가 주세요."
+`BattleWin`은 늘 대기열을 거치고, 대기열은 결과 화면·전투 카메라·모달이 모두 내려간 뒤에만 흐르므로 영상이 결과 화면 위에 뜨지 않는다.
+| 샷 | 초 | 그림 |
+|---|---|---|
+| 1 | 0~2.8 | 그림자에서 빌린 모습들이 빛으로 빠져나온다. 그림자가 쪼그라든다 |
+| 2 | 2.2~5.8 | 빛들이 들판으로 흩어지고, 말뚝 이름표가 하나씩 금빛으로 켜진다 |
+| 3 | 5.2~8.8 | 작아진 그림자가 울타리 바깥 안개로 밀려나 사라진다 |
+| 4 | 8.2~11.8 | 마지막 구멍 자리에 새 말뚝이 서고 이름표가 빛난다 — 들판에 색이 퍼진다 |
+| 5 | 11.2~14.6 | 그 자리 풀잎 위 초록 사마귀, 해가 뜬다(자막 없음) |
+
+자막: (0.5, 2.2) 빼앗긴 이름들이 빠져나온다. / (2.9, 2.6) 이름은 하나씩 주인에게 돌아갔다. / (5.9, 2.6) 그림자는 울타리 밖으로 밀려났다. / (8.9, 2.6) 마지막 구멍까지, 이제 다 메워졌다.
+
+### 15. `vid_fin_epilogue` — 15.0s · 초원 새벽(1편과 수미상관)
+직전: 세라의 후일담 — 하월은 장부의 곤충을 평생 찾아다님, 라온은 어르신을 도우러 초원에, 먹은 숫자 칸 없는 새 장부, "곤충이 사라지면 빈칸은 또 생겨요", "계속 만나요".
+| 샷 | 초 | 그림 |
+|---|---|---|
+| 1 | 0~3.0 | 하월이 들판에서 손을 펴 딱정벌레를 놓아준다 |
+| 2 | 2.4~6.0 | 초원에서 라온(팔걸이)과 어르신이 나란히 걷는다 |
+| 3 | 5.4~9.0 | 먹의 손이 새 장부에 이름 칸만 쓴다(숫자 칸 없음) |
+| 4 | 8.4~12.0 | 꽃 핀 들판 속 빈 석판 하나 |
+| 5 | 11.4~15.0 | 새벽 초원, 그물 없이 뻗은 주인공 손에 작은 곤충이 앉는다(자막 없음) |
+
+자막: (1.0, 2.6) 하월은 곤충을 하나씩 놓아주었다. / (4.0, 2.6) 라온은 어르신 곁으로 돌아갔다. / (7.0, 2.6) 새 장부에는 숫자 칸이 없다. / (10.0, 2.6) 빈칸은 또 생길지도 모른다.
+소리: 1편과 같은 새벽 — **이번엔 풀벌레 소리가 있다**(돌아왔다).
+
+## 4-1. 렌더러 — `Tools/Video/storybook/`
 
 ```
-python -X utf8 Tools/Video/story_silhouettes.py                      # 11편 전부(약 30분)
-python -X utf8 Tools/Video/story_silhouettes.py ch9_archive          # 한 편
-python -X utf8 Tools/Video/story_silhouettes.py ch9_archive --preview 1.5,8.0   # 프레임만 PNG로(Artifacts/story-silhouettes-preview/)
+python -X utf8 Tools/Video/storybook/render.py all                                  # 15편 전부(편당 약 2분)
+python -X utf8 Tools/Video/storybook/render.py ch6_wall                             # 한 편 → StreamingAssets/Video/ch6_wall.mp4
+python -X utf8 Tools/Video/storybook/render.py ch6_wall --sheet --subs              # 샷마다 두 장 + 자막(미리보기에만) → Artifacts/storybook-preview/
+python -X utf8 Tools/Video/storybook/render.py ch6_wall --sheet --subs --portrait   # 세로 화면(가운데 32%)으로 잘라 본다
+python -X utf8 Tools/Video/storybook/render.py ch6_wall --preview 3.0,9.5           # 그 시각 프레임만
 ```
 
 | 파일 | 맡는 것 |
 |---|---|
-| `Tools/Video/silhouette_kit.py` | 부품 — 2배 슈퍼샘플 마스크, 하늘·안개·빛살·입자, 능선·봉우리·숲띠, 인물(뒷모습·옆모습, 채집망·가방·챙 모자), 옆모습 손·주먹, 곤충, 상자·장부·긁적임·새김 문양, 물 반영 |
-| `Tools/Video/sil_act1.py` | ch1~ch5 샷 |
-| `Tools/Video/sil_act2.py` | ch8~ch12·종장 샷 |
-| `Tools/Video/story_silhouettes.py` | 편성(파일명·샷 길이·색조)·디졸브·페이드·인코딩 |
+| `kit.py` | 그림 부품 — 윤곽 칠(`paint`), 하늘·구름·언덕·풀밭·물·갈대·나무·돌벽·빛줄기, 곤충 9종(`draw_insect`·`InsectSprite`), 그림자(`draw_shadow`·`shadow_insect`·`draw_eyes`), 이름 벽(`NameWall`), 울타리·이름표, 인물 8명(`draw_person`), 손(`draw_hand`), 상자·장부·석판·반짝임, 정적 층 굽기(`bake_layer`·`put_layer`) |
+| `sound.py` | 소리 부품 — 뜯는 소리(칼림바·종·실로폰·오르골)·패드·멜로디, 효과음(쿵·휙·부서짐·발소리·책장·긁기·물방울·눈 깜빡), 바탕음(바람·물·새·풀벌레·불·실내), 잔향 |
+| `render.py` | 편성(`NAMES`)·디졸브·페이드·종이 결·인코딩(영상 + 소리), 미리보기·시트·세로 크롭. **StoryVideoLibrary.cs를 읽어** 길이가 다르면 멈추고 자막을 미리보기에 얹는다 |
+| `v_<이름>.py` | 편 하나 — `DURS`(샷 길이, 합 = 저작 길이)·`SHOTS`·`TINT`·`score(sc)`·`CUES`(라이브러리와 같은 자막 — 다르면 렌더러가 알린다) |
+| `bk_v1~v4.py` | 편들이 함께 쓰는 장면 도우미(넷이 나눠 그리며 생긴 것) |
 
-**화풍**: 겹겹의 실루엣(먼 것일수록 옅고 하늘색에 섞인다) + 역광 테두리 + 빛 번짐·빛살·안개·떠다니는 입자.
-인물은 뒷모습·옆모습 실루엣뿐이라 얼굴이 없고, 글씨는 판독 불가 긁적임뿐이다(§2 스타일 가이드와 같은 규칙).
-인게임 로우폴리와 일부러 다른 삽화 톤이다 — 회상·삽화로 읽힌다.
+옛 실루엣 렌더러(`Tools/Video/story_silhouettes.py`·`sil_act1/2.py`)는 비교용으로만 남았고 이제 `Artifacts/story-silhouettes/`에 쓴다
+(StreamingAssets에 쓰면 새 영상을 무음 실루엣으로 덮는다). 실루엣 부품(`silhouette_kit.py`)은 오프닝·꿈 영상과 그림책 키트의 기초 도형이 계속 쓴다.
 
-**§4 샷 리스트와 다르게 푼 자리**(그림으로 읽히게 하려고 바꾼 것 — 자막·길이는 그대로):
-- 인물 표지 — 주인공은 어깨에 채집망, 세라는 긴 머리와 가방, 명부회는 챙 넓은 모자. 실루엣만으로 누군지 알게 한다.
-- ch2 잠자리는 수면이 아니라 **밝은 수평선 앞**을 스친다 — 어두운 물 위에서는 막대처럼 보였다.
-- ch9 "마주 선 옆모습"은 코끝·턱을 붙여 옆모습으로 읽히게 했다. 저울은 명부회 모자를 쓴다.
-- ch3·ch11의 새김 문양은 **같은 씨앗**(`GLYPH_SEED`)으로 그린다 — "유적과 같은 문양"이 실제로 같은 모양이다.
-- 종장 둘째 샷의 두 실루엣은 팔을 감싼 라온과 검은 코트(먹)다.
+## 5. AI 영상으로 바꿀 때
 
-**고르며 버린 것**(실측 — 시안 프레임을 보고 고쳤다): 사인파 능선은 물결로 읽혀 중점 변위 봉우리로,
-대칭 신전은 은행 아이콘처럼 읽혀 한쪽이 무너진 유적으로, 막대 팔·사다리꼴 몸통은 로봇처럼 읽혀 곡선 어깨·
-굽은 팔꿈치로, 손등이 보이는 네모 손은 장갑처럼 읽혀 옆모습 손으로 바꿨다.
-
-나중에 AI 영상(§5)이 나오면 **같은 파일명으로 덮어쓴다** — 코드는 안 바뀐다.
-
-## 5. AI 영상으로 바꿀 때 — 제작 절차 (편당)
-
-1. §4의 프롬프트로 **샷 단위** 생성(도구: Veo / Sora / Runway 등). 샷당 2~3안 뽑아 고른다.
-   고를 때 볼 것: 글자가 찍히지 않았는가 / 얼굴이 정면으로 나오지 않았는가 / 피사체가 중앙 56% 안에 있는가.
-2. 이어붙이기 + 디졸브 + 페이드아웃 + 인코딩(ffmpeg, 두 샷 예시):
+1. §4의 샷 표로 **샷 단위** 생성(도구: Veo / Sora / Runway 등) — 프롬프트 접두:
    ```
-   ffmpeg -i s1.mp4 -i s2.mp4 -filter_complex \
+   STYLE: children's picture book illustration in motion, bold dark-brown outlines, bright flat colors, big-eyed cute insects,
+   paper texture, gentle slow camera, 24fps, 16:9, main subject inside the central third of the frame (portrait-safe).
+   No text, no letters, no captions, no logos. People only from behind or in profile, never front faces.
+   ```
+   고를 때 볼 것: 글자가 찍히지 않았는가 / 얼굴이 정면으로 나오지 않았는가 / 피사체가 가운데 32% 안에 있는가.
+2. 이어붙이기 + 디졸브 + 페이드아웃 + 소리 + 인코딩(ffmpeg) — 소리는 렌더러가 남기는 `Artifacts/storybook-preview/<이름>.wav`를 그대로 써도 된다
+   (사건 시각이 샷 경계에 맞춰져 있다):
+   ```
+   ffmpeg -i s1.mp4 -i s2.mp4 -i ch2_watchers.wav -filter_complex \
      "[0:v]scale=1280:720,fps=24,setsar=1[a];[1:v]scale=1280:720,fps=24,setsar=1[b];\
-      [a][b]xfade=transition=dissolve:duration=0.6:offset=2.9[v];[v]fade=t=out:st=9.4:d=0.6[vo]" \
-     -map "[vo]" -an -c:v libx264 -profile:v main -level 4.0 -pix_fmt yuv420p \
-     -b:v 1800k -maxrate 2000k -bufsize 4000k -movflags +faststart ch2_watchers.mp4
+      [a][b]xfade=transition=dissolve:duration=0.6:offset=2.4[v];[v]fade=t=out:st=9.4:d=0.6[vo]" \
+     -map "[vo]" -map 2:a -c:v libx264 -profile:v main -level 4.0 -pix_fmt yuv420p -crf 23 -maxrate 2000k -bufsize 4000k \
+     -c:a aac -b:a 96k -movflags +faststart ch2_watchers.mp4
    ```
-   앰비언트를 넣으면 `-an` 대신 `-c:a aac -b:a 96k`. `offset` = 앞 샷 길이 − 디졸브 길이.
-   **디졸브는 총 길이를 그만큼 깎는다** — 샷을 디졸브 길이만큼 길게 뽑아 합이 `expectedDuration`과 같게
-   맞춘다(실루엣 렌더러가 그렇게 한다). 짧아지면 마지막 자막 큐가 영상 밖으로 나간다.
-3. 길이·크기 확인 → `expectedDuration`과 자막 큐가 실제 길이 안인지 맞춘다:
-   ```
-   ffprobe -v error -show_entries format=duration:stream=codec_name,profile,width,height -of default=nw=1 ch2_watchers.mp4
-   ls -l ch2_watchers.mp4    # ≤ 4 MB
-   ```
-4. `Assets/StreamingAssets/Video/`에 배치 → `python -X utf8 .claude/scripts/story_lint.py`(검사 25의 WARN이 줄어든다).
+   `offset` = 앞 샷 길이 − 디졸브 길이. **디졸브는 총 길이를 그만큼 깎는다** — 샷을 디졸브 길이만큼 길게 뽑아 합이 `expectedDuration`과 같게 맞춘다.
+3. 길이·크기 확인(`ffprobe -show_entries format=duration:stream=codec_name,profile,width,height`, ≤ 4 MB) → `Assets/StreamingAssets/Video/`에 배치 → `story_lint`.
 
 ## 6. 검증
 
-- **정적**: `story_lint`(검사 13·25) → `ci_check.py`.
-- **단위**: PlayMode 러너 — `StoryVideoLibraryTests`(길이 상한·큐 정렬·금칙). 배치모드에는 디코더가 없어 재생 자체는 못 본다.
-- **발화**: `StoryBeatWalkthrough -walkMode campaign` — videoId 비트 다음 비트가 정상 도달하는지. 에디터에 파일이 없으면 `[StoryVideo] 파일이 없다` 경고 1줄 뒤 즉시 `Stop()`이라 진행이 산다.
+- **정적**: `story_lint`(검사 13 배타·25 실재성·36 대사 앞 영상 줄 수) → `ci_check.py`.
+- **단위**: PlayMode 러너 — `StoryVideoLibraryTests`(15편 길이·큐·글자 수·금칙·대사 앞 영상 비트), `StoryPreludeTests`(대사 앞 영상의 콜백이
+  모든 종료 경로에서 정확히 한 번 — 끝·건너뛰기·ESC·오류·준비 초과·재생 초과·비활성·재진입, 체인 순서, `PlayReplay`), `StoryJournalVideoTests`(저널 버튼 자리).
+  배치모드에는 디코더가 없어 재생 자체는 못 본다.
+- **발화**: `StoryBeatWalkthrough -walkMode campaign` — 재생 중인 영상을 `CloseModal`로 건너뛰며(로그 남김) 대사 앞 영상 → 대사가 실제 종료 경로로 이어지는지 본다.
+- **실제 재생(Windows QA 빌드)**: `BattleVisualCaptureBuilder.Build` 뒤
+  ```
+  Builds/Windows/BattleVisualQA/BattleVisualQA.exe -battleCaptureOut <빈 폴더> -battleScenario story-video [-videoOnly ch6_wall,ch7_fence] \
+    -screen-fullscreen 0 -screen-width 1280 -screen-height 720      # 세로는 720×1280으로 한 번 더
+  ```
+  진짜 `StoryVideoDirector`로 15편을 차례로 틀어 자막마다 한 장씩 찍고, README에 편마다 재생 여부·첫 프레임까지 걸린 시간·실제 길이를 적는다.
+  저널 「▶ 영상」 → 재생 → ESC로 저널 복귀까지 찍는다(`00-journal-*`). 종료 코드 0 = 전부 재생.
 - **기기**(subst ASCII 드라이브에서 `AndroidReleaseBuilder.BuildDeviceApkFromCommandLine`):
-  1. APK 크기 증분 ≤ 50 MB.
-  2. ch2(연못 NpcTalk)·ch10(갱도 SubAreaEnter)·에필로그(NpcTalk) 3편: 첫 프레임 지연 < 1s, 세로 화면 crop 구도, 자막 타이밍.
-  3. 건너뛰기 버튼·Back키 → 즉시 조작 복구, 카메라 정상.
-  4. `BattleWin` 직후 발화(전투 결과 화면 뒤에 재생되는지 — 지연 큐).
-  5. 재생 중 홈 → 복귀 시 이어서 재생, 다시 홈 → 재생 끝.
-  6. 오프닝 다시보기 중 발화 없음(`playUiRoot`가 꺼져도 `World/` 아래라 살아 있고, 모달 가드가 막는다).
-  7. 파일 하나를 지운 빌드: 경고 1줄 + 다음 비트 정상.
+  1. APK 크기 증분 — 영상 15편 약 30 MB.
+  2. 대사 앞 영상 ch6(`ruins_temple` 진입)·ch7(`ruins_underground` 진입): 영상 → (ch7은 「지난 이야기」 카드) → 대사 순서, 소리, 세로 크롭 구도, 자막 타이밍.
+  3. 최종전 승리(`fin_seal`): 결과 화면을 오래 띄워 둔 뒤 닫아도 영상 → 대사가 이어지는지.
+  4. 건너뛰기 버튼·Back키 → 대사 앞 영상이면 곧바로 대사, 대사 뒤 영상이면 조작 복구.
+  5. 재생 중 홈 → 복귀 시 이어서 재생.
+  6. 저널 「▶ 영상」 → 재생 → Back키로 저널 복귀.
+  7. 파일 하나를 지운 빌드: 경고 1줄 + 대사(또는 다음 비트) 정상.

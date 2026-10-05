@@ -33,7 +33,11 @@ namespace InsectGame.Core
         // **전투 계열이면 IsCombatBgm**. 앞의 셋만 하면 소리는 나지만 긴장 램프(피치)가 빠진다 —
         // 실제로 이 보스 2종이 그렇게 새어 2026-08-08 audit에서 잡혔다.
         BossLedger,
-        BossFinal
+        BossFinal,
+        // 전용 테마 — 수문장 레이드(느리고 무거운 북·낮은 금관)와 라온 대결(밝고 빠른 놀림 주제).
+        // 등록 4지점은 위와 같다. 곡은 ProceduralAudioGenerator.Music.cs.
+        Guardian,
+        Rival
     }
 
     public enum SfxType
@@ -191,7 +195,9 @@ namespace InsectGame.Core
             => type == BgmType.Battle
             || type == BgmType.RaidBattle
             || type == BgmType.BossLedger
-            || type == BgmType.BossFinal;
+            || type == BgmType.BossFinal
+            || type == BgmType.Guardian
+            || type == BgmType.Rival;
 
         public void PlayBGM(BgmType type)
         {
@@ -529,6 +535,8 @@ namespace InsectGame.Core
                 case BgmType.ExploreNameless: return "explore_nameless";
                 case BgmType.BossLedger: return "boss_ledger";
                 case BgmType.BossFinal: return "boss_final";
+                case BgmType.Guardian: return "guardian";
+                case BgmType.Rival: return "rival";
                 default: return "explore";
             }
         }

@@ -20,9 +20,12 @@ namespace InsectGame.UI
         private BattleArenaController.HitCue BuildMemberCue(RaidActionResult action)
         {
             int bossMax = raidController != null && raidController.BossStats != null ? raidController.BossStats.MaxHp : 0;
+            // 치명타는 리졸버가 굴린 진짜 판정이다(RaidActionResult.Critical) — 세기 구간과 치명타 연출이 함께 따른다.
+            bool critical = action.Critical && action.Damage > 0;
+            // 전용기는 리졸버가 1대1과 같은 기준(SignatureSkills)으로 적어 둔 표지다 — 빗나가도 꺼낸 것 자체가 연출거리다.
             return new BattleArenaController.HitCue(action.DisplayName,
-                BattleArenaController.HitCue.WeightFor(action.Damage, Mathf.Max(1, bossMax / 4), false),
-                action.KnockedOut, action.Missed);
+                BattleArenaController.HitCue.WeightFor(action.Damage, Mathf.Max(1, bossMax / 4), critical),
+                action.KnockedOut, action.Missed, critical, action.IsSignature);
         }
 
         /// <summary>보스 공격을 맞는 쪽의 세기 — 피해 ÷ 그 팀원의 최대 HP, 쓰러졌으면 마무리.</summary>
@@ -43,7 +46,26 @@ namespace InsectGame.UI
             int damage = round.BossDamageBySlot[index];
             int maxHp = victim != null ? victim.MaxHp : 0;
             bool fainted = victim != null && damage > 0 && victim.CurrentHp <= 0;
-            return new BattleArenaController.HitCue(null, BattleArenaController.HitCue.WeightFor(damage, maxHp, false), fainted, false);
+            // 보스의 한 행동에 한 번 굴린 판정(전체 공격이면 맞은 전원이 같다) — 붉은 별 빛살·CriticalHit 소리가 따른다.
+            bool critical = round.BossAction != null && round.BossAction.Critical && damage > 0;
+            bool signature = round.BossAction != null && round.BossAction.IsSignature;   // 보스의 지금 모습 기준(리졸버)
+            return new BattleArenaController.HitCue(null, BattleArenaController.HitCue.WeightFor(damage, maxHp, critical),
+                fainted, false, critical, signature);
+        }
+
+        /// <summary>
+        /// 레이드를 시작할 때 이미 기절해 있던 슬롯(HP 0). 아레나가 그 모델을 세우지 않도록
+        /// <c>BattleArenaController.SetupRaidBattle(…, teamDown)</c>에 넘긴다 — 컨트롤러는 그 슬롯을 처음부터
+        /// "쓰러짐을 보여 줬다"로 쳐서(<c>teamFaintPresented</c>) 레이드 내내 아무도 눕히지 않는다.
+        /// </summary>
+        private bool[] TeamDownAtStart()
+        {
+            InsectBattleStats[] team = raidController != null ? raidController.TeamStats : null;
+            if (team == null) return null;
+            var down = new bool[team.Length];
+            for (int i = 0; i < team.Length; i++)
+                down[i] = team[i] == null || team[i].CurrentHp <= 0;
+            return down;
         }
 
         /// <summary>
@@ -62,12 +84,14 @@ namespace InsectGame.UI
 
         private const float TeamStripHeight = 104f;
         private float teamStripDrop;
+        private float teamStripHide;
 
         /// <summary>
         /// 팀 HP 패널 줄의 y. 스킬을 고를 때는 화면 53%(스킬 패널 바로 위), 3D 연출이 도는 동안
         /// (팀원 공격·보스 예고·보스 공격·합체공격)에는 화면 아래로 내려 비켜선다 — 레이드 카메라 구도에서
         /// 팀원 모델이 정확히 그 줄 뒤에 서서, 돌진도 피격도 패널에 가려 보이지 않았다(QA 캡처, 개편 전부터).
-        /// 0.25초에 걸쳐 미끄러진다(실제 시간 — 히트스톱에 멈추지 않게).
+        /// <b>내려갈 때는 곧바로, 올라올 때만 0.25초에 걸쳐 미끄러진다</b>(실제 시간 — 히트스톱에 멈추지 않게, <see cref="RaidTeamStrip.NextDrop"/>).
+        /// 예전엔 내려갈 때도 미끄러져서, 기술을 고른 순간 스킬 패널이 사라진 자리에 줄과 행동 문구 띠가 화면 가운데에 떴다가 내려갔다.
         /// </summary>
         private float TeamStripY()
         {
@@ -76,10 +100,26 @@ namespace InsectGame.UI
             if (!Arena3D) return rest;
             bool acting = phase == Phase.PlayerAttack || phase == Phase.BossTelegraph
                 || phase == Phase.BossAttack || phase == Phase.UniteAttack;
-            if (Event.current == null || Event.current.type == EventType.Repaint)
-                teamStripDrop = Mathf.MoveTowards(teamStripDrop, acting ? 1f : 0f, Time.unscaledDeltaTime / 0.25f);
+            if (acting) teamStripDrop = 1f;   // 이벤트 종류와 무관하게 곧바로 — 레이아웃 패스와 그리기 패스가 같은 자리를 본다
+            else if (Event.current == null || Event.current.type == EventType.Repaint)
+                teamStripDrop = RaidTeamStrip.NextDrop(teamStripDrop, false, Time.unscaledDeltaTime);
             float eased = Mathf.SmoothStep(0f, 1f, teamStripDrop);
             return Mathf.Lerp(rest, UISafeLayout.BottomY(TeamStripHeight), eased);
+        }
+
+        /// <summary>
+        /// 팀 줄의 불투명도(1 = 보임). 수문장 등장·그림자 변신·결과 동안은 숨는다 — 그때 줄이 화면 가운데(53%)에 떠서 보스 아랫부분과
+        /// 변신 연기를 가렸고(3단계 QA), 아래로 내리면 바닥에 서는 수문장 배너·변신 문구와 겹친다. 수문장 등장은 전투 첫 장면이라 곧바로 숨고,
+        /// 나머지는 0.2초에 옅어진다(<see cref="RaidTeamStrip.NextHide"/>). 합체 게이지도 같이 숨는다.
+        /// </summary>
+        private float TeamStripVisibility()
+        {
+            bool guardianIntro = phase == Phase.Intro && IsGuardianRaid;
+            bool hidden = RaidTeamStrip.Hidden(guardianIntro, phase == Phase.BossTransform, phase == Phase.Result);
+            if (hidden && guardianIntro) teamStripHide = 1f;
+            else if (Event.current == null || Event.current.type == EventType.Repaint)
+                teamStripHide = RaidTeamStrip.NextHide(teamStripHide, hidden, false, Time.unscaledDeltaTime);
+            return 1f - teamStripHide;
         }
 
         /// <summary>

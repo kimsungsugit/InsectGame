@@ -62,6 +62,9 @@ PATHS = {
     "village_builder": "Assets/Scripts/Core/VillageBuilder.cs",
     "stage_library": "Assets/Scripts/Story/StoryStageLibrary.cs",
     "subarea_builder": "Assets/Scripts/Core/SubAreaWorldBuilder.cs",
+    # 대결 표 — 명부회 간부(인물당 하나)와 라온 라이벌 단계(인물 하나·단계 여럿). story_lint 검사 35가 duelAfter를 대조한다.
+    "boss_duels": "Assets/Scripts/NPC/NpcBossDuels.cs",
+    "rival_duels": "Assets/Scripts/NPC/NpcRivalDuels.cs",
 }
 
 RARITIES = ("Common", "Uncommon", "Rare", "Epic", "Legendary")
@@ -660,11 +663,10 @@ def quest_progress_wiring() -> dict:
 
 # ── 스토리 ──────────────────────────────────────────────────────────────────
 
-def story_beats() -> list:
-    """Story.json의 비트 목록 (파싱된 dict). json.load라 퀘스트 정규식보다 견고하다.
+def story_document() -> dict:
+    """Story.json 루트 전체 (파싱된 dict) — StoryList 하나다(`beats`·`chapters`).
 
-    설계(Docs/StorySystemDesign.md)가 데이터 모델을 JSON으로 정한 이유가 이것이다 —
-    lines[]/choices[] 중첩 구조를 정규식으로 자르는 대신 네이티브 파싱한다.
+    story_lint 검사 14가 루트 키까지 StoryList 필드와 대조하려고 통째로 읽는다.
     """
     import json
     path = PATHS["story_json"]
@@ -675,10 +677,32 @@ def story_beats() -> list:
             data = json.load(f)
     except (OSError, ValueError) as e:
         raise ExtractorBroken(f"{path} 파싱 실패: {e}")
+    if not isinstance(data, dict):
+        raise ExtractorBroken(f"{path}의 루트가 객체가 아니다 — StoryList 형식이 바뀌었는가?")
+    return data
+
+
+def story_beats() -> list:
+    """Story.json의 비트 목록 (파싱된 dict). json.load라 퀘스트 정규식보다 견고하다.
+
+    설계(Docs/StorySystemDesign.md)가 데이터 모델을 JSON으로 정한 이유가 이것이다 —
+    lines[]/choices[] 중첩 구조를 정규식으로 자르는 대신 네이티브 파싱한다.
+    """
+    data = story_document()
     beats = data.get("beats")
     if beats is None:
-        raise ExtractorBroken(f"{path}에 'beats' 키가 없다 — StoryList 형식이 바뀌었는가?")
+        raise ExtractorBroken(f"{PATHS['story_json']}에 'beats' 키가 없다 — StoryList 형식이 바뀌었는가?")
     return beats
+
+
+def story_chapters() -> list:
+    """Story.json의 장 목록(`chapters`, 파싱된 dict) — 배열 순서가 곧 장 순서다.
+
+    **키가 없으면 빈 목록이다**(추출기 고장이 아니다) — 런타임(JsonUtility)도 옛 JSON을 빈 목록으로 읽는다.
+    장이 비어 있는 게 결함인지는 story_lint 검사 34가 판정한다.
+    """
+    chapters = story_document().get("chapters")
+    return chapters if isinstance(chapters, list) else []
 
 
 def story_trigger_wiring() -> dict:
@@ -1042,6 +1066,62 @@ def blight_sites() -> list:
         sites.append((m.group(1), boss.group(1),
                       name.group(1) if name else "", ret.group(1) if ret else ""))
     return sites
+
+
+def subarea_parent_regions() -> dict:
+    """{subAreaId: regionId} — 서브에리어가 어느 리전 안에 있는가.
+
+    출처: RegionDefinitions.CreateAll()의 각 RegionData 블록 안 `subAreaId = "..."`.
+    서브에리어 안의 행동은 그 리전의 행동이다(RegionManager.ActionRegionId) — `SubAreaEnter` 비트의 리전을 정할 때 쓴다.
+    """
+    src = _read("region_defs")
+    out = {}
+    starts = [m for m in re.finditer(r'regionId = "(\w+)"', src)]
+    for i, m in enumerate(starts):
+        end = starts[i + 1].start() if i + 1 < len(starts) else len(src)
+        for sub in re.findall(r'subAreaId\s*=\s*"([a-z_0-9]+)"', src[m.start():end]):
+            out.setdefault(sub, m.group(1))
+    if not out:
+        raise ExtractorBroken("RegionDefinitions에서 subAreaId를 하나도 못 읽었다 — 구조가 바뀌었는가?")
+    return out
+
+
+def boss_duel_npcs() -> set:
+    """명부회 간부 대결 상대의 storyNpcId 집합 — NpcBossDuels의 표.
+
+    표가 팀 대결로 바뀌어도(2026-10-04 battle-dev) `storyNpcId = "..."` 줄은 대결마다 하나다.
+    """
+    ids = set(re.findall(r'storyNpcId\s*=\s*"([a-z_0-9]+)"', _read("boss_duels")))
+    if not ids:
+        raise ExtractorBroken("NpcBossDuels에서 storyNpcId를 하나도 못 읽었다 — 표 구조가 바뀌었는가?")
+    return ids
+
+
+def rival_duel_stages() -> list:
+    """[{stageId, storyNpcId, regionId, openBeatId, closeBeatId}, ...] — NpcRivalDuels 표(순서 그대로).
+
+    값이 문자열 리터럴이 아니라 같은 파일의 상수(`closeBeatId = InjuryBeatId`)일 수 있어 상수를 먼저 풀어 둔다.
+    상수를 못 풀면 그 칸을 빈 문자열이 아니라 None으로 둔다 — 검사가 "닫힘 없음"으로 오해하지 않게.
+    """
+    src = _read("rival_duels")
+    consts = dict(re.findall(r'const\s+string\s+(\w+)\s*=\s*"([^"]*)"', src))
+    stages = []
+    for block in re.findall(r"new\s+Stage\s*\{(.*?)\}", src, re.S):
+        stage = {}
+        for key in ("stageId", "storyNpcId", "regionId", "openBeatId", "closeBeatId"):
+            lit = re.search(key + r'\s*=\s*"([^"]*)"', block)
+            ref = re.search(key + r'\s*=\s*([A-Za-z_]\w*)\b', block)
+            if lit:
+                stage[key] = lit.group(1)
+            elif ref:
+                stage[key] = consts.get(ref.group(1))
+            else:
+                stage[key] = ""
+        if stage.get("stageId"):
+            stages.append(stage)
+    if not stages:
+        raise ExtractorBroken("NpcRivalDuels에서 단계를 하나도 못 읽었다 — 표 구조가 바뀌었는가?")
+    return stages
 
 
 def team_max_slots() -> int:

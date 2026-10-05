@@ -28,11 +28,30 @@ namespace InsectGame.Core
                 return clip;
             }
 
+            // ── 전투 계열 ── 48~60초 정수 마디 곡, 22.05kHz 모노(ProceduralAudioGenerator.Music.cs).
+            // 여기 키를 늘리면 Music.cs의 CombatSongKeys·ComposeCombatSong에도 같은 키를 둔다.
+            switch (type)
+            {
+                case "battle":
+                case "rival":
+                case "guardian":
+                case "raid":
+                case "boss_ledger":
+                case "boss_final":
+                    float[] song = TakePrewarmed(type) ?? RenderCombatSong(type);
+                    if (song == null)
+                    {
+                        Debug.LogWarning($"[ProceduralAudio] Combat song failed: {type}");
+                        return null;
+                    }
+                    clip = CreateMusicClip("BGM_" + type, song);
+                    cache[key] = clip;
+                    return clip;
+            }
+
             switch (type)
             {
                 case "explore": clip = GenerateExploreBGM(); break;
-                case "battle":  clip = GenerateBattleBGM();  break;
-                case "raid":    clip = GenerateRaidBattleBGM(); break;
                 case "victory": clip = GenerateVictoryBGM(); break;
                 case "defeat":  clip = GenerateDefeatBGM();  break;
                 case "menu":    clip = GenerateMenuBGM();    break;
@@ -51,16 +70,16 @@ namespace InsectGame.Core
                 case "explore_emberfall": clip = GenerateRegionBGM("Emberfall", 88, new[] { C4, D4, F4, G4, C5, D5 }, new[] { D1 * 2f, C3, G3, C3 }, 277); break;
                 case "explore_canopy":   clip = GenerateRegionBGM("Canopy", 112, new[] { G4, A4, B4, D5, E5, G5 }, new[] { G3, D4, E4, C3 }, 307); break;
                 case "explore_nameless": clip = GenerateRegionBGM("Nameless", 58, new[] { C4, D4, F4, G4, B4, C5 }, new[] { D1, D1, C3, D1 }, 331); break;
-                // ── 2막 보스 테마 ── 리전 곡보다 빠르고 베이스가 한 음에 눌러앉는다(압박).
-                // 간부전은 명부회의 사무적인 냉정함, 최종전은 반음 충돌을 섞어 불안정하게.
-                case "boss_ledger": clip = GenerateRegionBGM("BossLedger", 138, new[] { D4, F4, G4, A4, C5, D5 }, new[] { D2, D2, D2, A2 }, 353); break;
-                case "boss_final":  clip = GenerateRegionBGM("BossFinal", 152, new[] { C4, D4, E4, G4, B4, C5 }, new[] { D1, D1, C3, D1 }, 379); break;
+                // 2막 보스 테마(boss_ledger·boss_final)는 위 전투 계열 switch로 옮겼다 — 예전엔 리전 곡 생성기를
+                // 16초로 돌려 에너지의 93%가 300Hz 아래(폰에서 거의 안 들림)였다.
                 default:
                     Debug.LogWarning($"[ProceduralAudio] Unknown BGM type: {type}");
                     return null;
             }
 
             cache[key] = clip;
+            // 첫 탐험 곡을 만든 김에 1대1 전투곡을 작업 스레드에서 미리 굽는다 — 첫 전투가 열릴 때 프레임이 막히지 않게.
+            StartCombatPrewarm();
             return clip;
         }
 
@@ -435,154 +454,8 @@ namespace InsectGame.Core
             return CreateClip("BGM_Explore", data, true);
         }
 
-        /// <summary>전투 BGM: A마이너 기반, 긴장감 있고 빠른 12초 루프.</summary>
-        private static AudioClip GenerateBattleBGM()
-        {
-            const float bpm = 150f;
-            const float durationSec = 12f;
-            int totalSamples = SecondsToSamples(durationSec);
-            float[] data = new float[totalSamples];
-            System.Random rng = new System.Random(77);
-
-            float secPerBeat = 60f / bpm;
-            int samplesPerBeat = SecondsToSamples(secPerBeat);
-            int samplesPerEighth = samplesPerBeat / 2;
-
-            // 코드 진행: Am(A2) -> F(F4*0.5) -> G(G3) -> Am(A2) — 각 2비트
-            float[] chordRoots = { A2, F4 * 0.5f, G3, A2 };
-
-            // 멜로디 패턴
-            float[] melodyNotes = { A4, C5, D5, E5, G5 };
-            int totalEighths = (int)(durationSec / (secPerBeat * 0.5f));
-            int[] melodySeq = new int[totalEighths];
-            for (int i = 0; i < totalEighths; i++)
-            {
-                melodySeq[i] = rng.Next(melodyNotes.Length);
-            }
-
-            // 드럼 패턴 (8비트 단위 1마디)
-            // K=킥, S=스네어, H=하이햇
-            // 비트:  1  &  2  &  3  &  4  &
-            bool[] kick =   { true,  false, false, false, true,  false, false, false };
-            bool[] snare =  { false, false, true,  false, false, false, true,  false };
-            bool[] hihat =  { true,  true,  true,  true,  true,  true,  true,  true  };
-
-            for (int i = 0; i < totalSamples; i++)
-            {
-                float t = (float)i / SampleRate;
-                float beatPos = t / secPerBeat;
-
-                // 베이스: 사각파 스타카토 (8분음표)
-                int chordIdx = ((int)(beatPos / 2f)) % chordRoots.Length;
-                int posInEighth = i % samplesPerEighth;
-                float bassEnv = Decay(posInEighth, samplesPerEighth, 5f);
-                float bass = SquareWave(chordRoots[chordIdx], i) * 0.2f * bassEnv;
-
-                // 드럼
-                int eighthInBar = ((int)(beatPos * 2f)) % 8;
-                float drum = 0f;
-
-                if (kick[eighthInBar])
-                {
-                    int posInDrum = posInEighth;
-                    float kickFreq = 80f * Mathf.Exp(-6f * (float)posInDrum / samplesPerEighth);
-                    drum += SinWave(kickFreq, posInDrum) * Decay(posInDrum, samplesPerEighth, 8f) * 0.35f;
-                }
-                if (snare[eighthInBar])
-                {
-                    int posInDrum = posInEighth;
-                    drum += Noise(rng) * Decay(posInDrum, samplesPerEighth, 12f) * 0.2f;
-                }
-                if (hihat[eighthInBar])
-                {
-                    int posInDrum = posInEighth;
-                    drum += Noise(rng) * Decay(posInDrum, samplesPerEighth / 4, 20f) * 0.08f;
-                }
-
-                // 멜로디: 삼각파
-                int melIdx = ((int)(beatPos * 2f)) % melodySeq.Length;
-                float melFreq = melodyNotes[melodySeq[melIdx]];
-                float melEnv = Envelope(posInEighth, samplesPerEighth / 12, samplesPerEighth / 6,
-                    0.5f, samplesPerEighth / 4, samplesPerEighth);
-                float melody = TriWave(melFreq, i) * 0.2f * melEnv;
-
-                data[i] = bass + drum + melody;
-            }
-
-            return CreateClip("BGM_Battle", data, true);
-        }
-
-        /// <summary>레이드 전투 BGM: D마이너 기반, 웅장하고 위압적 16초 루프.</summary>
-        private static AudioClip GenerateRaidBattleBGM()
-        {
-            const float bpm = 120f;
-            const float durationSec = 16f;
-            int totalSamples = SecondsToSamples(durationSec);
-            float[] data = new float[totalSamples];
-            System.Random rng = new System.Random(99);
-
-            float secPerBeat = 60f / bpm;
-            int samplesPerBeat = SecondsToSamples(secPerBeat);
-            int samplesPerEighth = samplesPerBeat / 2;
-
-            // 멜로디: D4, F4, A4, D5 레가토
-            float[] melodyNotes = { D4, F4, A4, D5 };
-
-            // 드럼 패턴 (4비트 단위)
-            bool[] kick  = { true,  false, false, false };
-            bool[] snare = { false, false, true,  false };
-
-            for (int i = 0; i < totalSamples; i++)
-            {
-                float t = (float)i / SampleRate;
-                float beatPos = t / secPerBeat;
-
-                // 베이스: D2 + A2 옥타브 사각파
-                int posInBeat = i % samplesPerBeat;
-                float bassEnv = Decay(posInBeat, samplesPerBeat, 3f);
-                float bass = (SquareWave(D2, i) * 0.15f + SquareWave(A2, i) * 0.1f) * bassEnv;
-
-                // 서브베이스: D1 사인파 존재감
-                float subBass = SinWave(D1, i) * 0.12f;
-
-                // 드럼: 느린 킥 + 무거운 스네어 + 크래시
-                int beatInBar = ((int)beatPos) % kick.Length;
-                float drum = 0f;
-                int posInEighth = i % samplesPerEighth;
-
-                if (kick[beatInBar] && posInBeat < samplesPerBeat / 2)
-                {
-                    float kickFreq = 60f * Mathf.Exp(-4f * (float)posInBeat / samplesPerBeat);
-                    drum += SinWave(kickFreq, posInBeat) * Decay(posInBeat, samplesPerBeat, 5f) * 0.4f;
-                }
-                if (snare[beatInBar] && posInBeat < samplesPerBeat / 2)
-                {
-                    drum += Noise(rng) * Decay(posInBeat, samplesPerBeat / 2, 8f) * 0.25f;
-                }
-
-                // 크래시: 매 4마디 시작
-                int barIndex = (int)(beatPos / 4f);
-                float barStart = barIndex * 4f * secPerBeat;
-                float timeSinceBar = t - barStart;
-                if (timeSinceBar < 0.5f)
-                {
-                    drum += Noise(rng) * Decay(SecondsToSamples(timeSinceBar),
-                        SecondsToSamples(0.5f), 6f) * 0.1f;
-                }
-
-                // 멜로디: 사인파+삼각파 혼합, 느린 레가토 (1비트당 1음)
-                int melIdx = ((int)beatPos) % melodyNotes.Length;
-                float melFreq = melodyNotes[melIdx];
-                float melEnv = Envelope(posInBeat, samplesPerBeat / 6, samplesPerBeat / 4,
-                    0.7f, samplesPerBeat / 3, samplesPerBeat);
-                float melody = (SinWave(melFreq, i) * 0.5f + TriWave(melFreq, i) * 0.5f)
-                    * 0.2f * melEnv;
-
-                data[i] = bass + subBass + drum + melody;
-            }
-
-            return CreateClip("BGM_Raid", data, true);
-        }
+        // 1대1 전투(battle)·레이드(raid) 곡은 ProceduralAudioGenerator.Music.cs로 옮겼다 — 예전 12초·16초 반복은
+        // 마디 수가 정수가 아니라(12초 = 150bpm 7.5마디) 루프 이음매에서 딸깍 소리가 났고 금방 질렸다.
 
         /// <summary>승리 BGM: C메이저 팡파레 6초 (루프 아님).</summary>
         private static AudioClip GenerateVictoryBGM()

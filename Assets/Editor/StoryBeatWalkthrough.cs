@@ -43,6 +43,8 @@ namespace InsectGame.EditorTools
     ///     영구 미발화 결함이라 FAIL로 잡는다)</item>
     ///   <item>정화 — <c>RegionBlightManager.CleanseByBoss</c> (승리 경로와 같은 함수)</item>
     ///   <item>대사 닫기 — <c>NpcDialogueUI.CloseModal</c> (플레이어가 닫는 그 경로. 보상·열람 기록이 여기서 난다)</item>
+    ///   <item>영상 건너뛰기 — <c>StoryVideoDirector.CloseModal</c> (「건너뛰기」·ESC와 같은 경로). 배치모드엔 디코더가 없다.
+    ///     대사 앞 영상(<c>introVideoId</c>)은 이걸로 끝나야 대사가 열린다 — 영상 → 등장 연출 → 대사 순서를 실제로 지난다.</item>
     /// </list>
     /// <b>선행 비트만</b> <c>CompleteBeat</c>로 채운다 — 여기서 검증하려는 건 <c>bl_*</c>이지
     /// 1막 82비트가 아니다. 무엇을 채웠는지는 보고서에 그대로 적는다.
@@ -179,6 +181,7 @@ namespace InsectGame.EditorTools
                 if (now < bootDeadline) return;
                 if (!Bootstrapped()) { bootDeadline = now + 1f; return; }
                 booted = true;
+                SuspendDuelLauncher();
                 if (IsCampaign) BuildCampaignSteps(); else if (IsTown) BuildTownSteps(); else BuildSteps();
                 if (steps.Count == 0) { Finish("걸어볼 것이 없다"); return; }
                 Log((IsCampaign ? "본편" : IsTown ? "마을 이야기" : "거점 " + SiteCount() + "개")
@@ -204,6 +207,19 @@ namespace InsectGame.EditorTools
             {
                 Log("배지 연출 — " + ceremony.CurrentRegionId);
                 ceremony.CloseModal();
+                return;
+            }
+
+            // 스토리 영상 — 배치모드엔 디코더가 없어 영상은 준비 시간 초과(5초)까지 검은 화면으로 선다. 대사 **앞** 영상
+            // (introVideoId)이면 그동안 대사창이 안 열려 아래 ModalOpenWait 뒤 "직접 완료"로 새고, 그 뒤 영상이 끝나며 콜백이
+            // 같은 대사를 한 번 더 연다. 플레이어가 「건너뛰기」를 누르는 것처럼 닫는다 — Stop → 콜백 → (등장 연출) → 대사.
+            // 이 길이 곧 대사 앞 영상의 진짜 종료 경로라 걸음이 그것까지 검증한다. 떴다는 사실은 보고서에 남긴다(순서 검증).
+            // 파일이 아직 없는 영상은 지휘자가 시작도 안 하고(false) 대사가 곧바로 열린다 — 여기 안 온다.
+            var video = UnityEngine.Object.FindFirstObjectByType<StoryVideoDirector>();
+            if (video != null && video.IsPlaying)
+            {
+                Log((video.IsPlayingPrelude ? "영상(대사 앞) 건너뛰기 — " : "영상 건너뛰기 — ") + video.CurrentVideoId);
+                video.CloseModal();
                 return;
             }
 
@@ -459,8 +475,22 @@ namespace InsectGame.EditorTools
             // 여기서 마지막 두 걸음이 갈린다: 잡몹을 이기면 엔딩이 **안 나야** 하고,
             // 이름 없는 사마귀를 이겨야 난다. 그 순서 그대로 걷는다.
             SubAreaBeat(fin, "nameless_ledger", "ch12_confront", "장부의 방(관장 대면)");
-            SubAreaBeat(fin, "nameless_core", "fin_unnamed", "빈칸(무명 대면·컷신)");
-            // 무명 대면의 선택지 — 고르는 것이 대사창을 닫고, 결과 leaf가 큐 맨 앞에서 곧바로 뜬다.
+            // **대사 직후 대결**(StoryBeat.duelAfter) — 대치가 끝나면 StoryDuelLauncher가 관장전을 대기열에 넣는다.
+            // 걸음은 진짜 전투를 열지 않는다(런처를 멈춰 뒀다 — SuspendDuelLauncher). 대기열에 들어갔는지 보고, 승리를
+            // 실제 구독 경로(BossDuelWon)로 흘린다. 2026-10-04부터 관장을 이겨야 빈칸(fin_unnamed)이 열린다.
+            steps.Add(new Step
+            {
+                site = fin,
+                label = "대사 직후 대결 대기열(관장)",
+                act = () => { },
+                until = () => DuelQueued("ledger_chief"),
+                maxTries = 1,
+            });
+            steps.Add(BeatStep(fin, "관장 대결 승리(대사 직후 대결)", "duel_chief_win",
+                () => WinBossDuel("ledger_chief"), 3));
+            // 대사 앞 영상(vid_fin_shadow)이 먼저 뜬다 — 청소부가 건너뛰기로 닫아야 대사(와 선택지)가 열린다(TickJanitor).
+            SubAreaBeat(fin, "nameless_core", "fin_unnamed", "빈칸(그림자 대면·대사 앞 영상)");
+            // 그림자 대면의 선택지 — 고르는 것이 대사창을 닫고, 결과 leaf가 큐 맨 앞에서 곧바로 뜬다.
             // 첫 항목(거절)이 기본, `-walkChoice last`면 수락 쪽(세라가 막는다). 둘 다 leaf라 진행은 같다.
             steps.Add(BeatStep(fin, walkChoiceLast ? "선택 결과(이름을 준다 → 세라가 막는다)" : "선택 결과(이름을 주지 않는다)",
                 walkChoiceLast ? "fin_named" : "fin_refuse", () => { }, 2));
@@ -919,8 +949,35 @@ namespace InsectGame.EditorTools
                 return;
             }
             d.Invoke(true);
-            // 결과 화면이 닫혔다고 알린다 — 안 알리면 미뤄 둔 트리거가 12초를 기다린다.
+            CloseResultScreens();
+            // 결과 화면이 닫혔다고 알린다 — 안 알리면 미뤄 둔 트리거가 12초를 기다린다(화면이 닫으며 이미 알렸으면 두 번째는 무해하다).
             if (director != null) director.NotifyBattlePresentationClosed();
+        }
+
+        /// <summary>
+        /// 승리 신호로 떠오른 결과 화면을 <b>플레이어가 닫는 길</b>(<c>BattleScreenUI.EndBattle</c>·<c>RaidBattleUI.EndRaid</c>)로 닫는다.
+        ///
+        /// 2026-10-04부터 결과 화면은 눌러야 닫힌다(<c>BattleResultRules</c> — 예전엔 4초·5초 뒤 저절로). 걸음은 탭하지 않으므로 그냥 두면
+        /// 화면이 결과 단계에 영원히 머물러 플레이어를 묶고(<c>TickResultClose</c>), 스토리 큐는 결과 화면 뒤로 계속 미룬다
+        /// (<c>StoryBattleWait</c>의 결과 화면 탐침) — 그 뒤 걸음이 전부 "발화 없음"이 된다.
+        /// </summary>
+        private static void CloseResultScreens()
+        {
+            const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
+            var screen = UnityEngine.Object.FindFirstObjectByType<InsectGame.UI.BattleScreenUI>();
+            if (screen != null && screen.IsBattleActive)
+            {
+                MethodInfo end = typeof(InsectGame.UI.BattleScreenUI).GetMethod("EndBattle", Private);
+                if (end != null) end.Invoke(screen, null);
+                else Log("**BattleScreenUI.EndBattle을 못 찾았다** — 결과 화면이 안 닫혀 뒤 걸음이 막힌다");
+            }
+            var raid = UnityEngine.Object.FindFirstObjectByType<InsectGame.UI.RaidBattleUI>();
+            if (raid != null && raid.IsRaidActive)
+            {
+                MethodInfo end = typeof(InsectGame.UI.RaidBattleUI).GetMethod("EndRaid", Private);
+                if (end != null) end.Invoke(raid, null);
+                else Log("**RaidBattleUI.EndRaid를 못 찾았다** — 결과 화면이 안 닫혀 뒤 걸음이 막힌다");
+            }
         }
 
         /// <summary>
@@ -964,6 +1021,7 @@ namespace InsectGame.EditorTools
                 return;
             }
             d.Invoke(true);
+            CloseResultScreens();
             if (director != null) director.NotifyBattlePresentationClosed();
         }
 
@@ -993,6 +1051,51 @@ namespace InsectGame.EditorTools
             }
             f.SetValue(bc, new InsectGame.Battle.InsectBattleStats(data, 60));
             return true;
+        }
+
+        /// <summary>
+        /// 대사 직후 대결 런처를 멈춘다 — 대기열에는 넣되 진짜 전투는 열지 않는다. 걸음의 선행 채우기가 대치 비트를
+        /// <c>CompleteBeat</c>로 채우는 순간마다 대결이 대기열에 들어오는데, 진짜로 열리면 전투 화면이 다음 행위를 막는다
+        /// (<c>SeatEnemy</c>가 <c>StartDuel</c>을 피하는 것과 같은 이유).
+        /// </summary>
+        private static void SuspendDuelLauncher()
+        {
+            var launcher = UnityEngine.Object.FindFirstObjectByType<StoryDuelLauncher>();
+            if (launcher == null) { Log("**StoryDuelLauncher 없음** — 대사 직후 대결이 배선되지 않았다"); return; }
+            launcher.Suspended = true;
+            Log("대사 직후 대결 런처 정지(대기열만 기록)");
+        }
+
+        /// <summary>대치 대사가 끝난 뒤 그 상대의 대결이 대기열에 들어왔는가.</summary>
+        private static bool DuelQueued(string npcId)
+        {
+            var launcher = UnityEngine.Object.FindFirstObjectByType<StoryDuelLauncher>();
+            bool queued = launcher != null && launcher.PendingNpcId == npcId;
+            if (!queued)
+                Log("**대사 직후 대결이 대기열에 없다** — 기대 " + npcId + ", 실제 "
+                    + (launcher != null ? "'" + launcher.PendingNpcId + "'" : "런처 없음"));
+            return queued;
+        }
+
+        /// <summary>
+        /// 간부 대결 승리를 실제 구독 경로로 흘린다 — <c>NpcDuelController.BossDuelWon</c>(StoryDirector의 <c>DuelWin</c> 소스).
+        /// <c>WinBattleAgainst</c>와 같은 방식이다: 이벤트를 밖에서 못 올리니 대리자를 꺼내 부르고, 구독이 비면 여기서 잡힌다.
+        /// 격파 기록은 적지 않는다 — 걸음이 보려는 건 승리 비트가 뜨는가이고, 기록은 걸음 뒤 원복 대상이다.
+        /// </summary>
+        private static void WinBossDuel(string npcId)
+        {
+            var duel = UnityEngine.Object.FindFirstObjectByType<InsectGame.NPC.NpcDuelController>();
+            if (duel == null) { Log("NpcDuelController 없음"); return; }
+            FieldInfo f = typeof(InsectGame.NPC.NpcDuelController)
+                .GetField("BossDuelWon", BindingFlags.Instance | BindingFlags.NonPublic);
+            var d = f != null ? f.GetValue(duel) as Action<string> : null;
+            if (d == null)
+            {
+                Log("**BossDuelWon 구독자가 없다** — 간부 승리 비트(duel_*_win)가 영영 발화하지 않는다");
+                return;
+            }
+            d.Invoke(npcId);
+            if (director != null) director.NotifyBattlePresentationClosed();
         }
 
         private static void Cleanse(string boss, string regionId)
@@ -1138,6 +1241,10 @@ namespace InsectGame.EditorTools
             // 키 문자열은 RegionManager.GuardianKey가 private이라 여기 한 번 더 적는다 —
             // 어긋나면 초기화가 조용히 아무것도 안 지운다.
             PlayerPrefs.DeleteKey(SaveScope.PrefsKey("InsectGame.DefeatedGuardians"));
+            // 간부 격파 기록 — 본편 걸음만 지운다. 남아 있으면 대치(ch12_confront)를 닫는 순간 자동 통과
+            // (StoryDirector.ResweepPersistentConditions의 DuelWin 재확인)로 승리 비트가 먼저 떠, 대사 직후 대결 걸음이
+            // 무엇을 검증했는지 흐려진다. 키는 NpcDuelController.DefeatedBossKey와 같은 문자열이다(스냅샷 목록에도 있다 — 원복된다).
+            if (IsCampaign) PlayerPrefs.DeleteKey(SaveScope.PrefsKey("InsectGame.DefeatedLedgerBosses"));
             // 배지 이정표 수령 — 격파 기록을 지웠으니 함께 지워야 이정표 지급(4·8)이 다시 걸린다.
             PlayerPrefs.DeleteKey(SaveScope.PrefsKey(GameConstants.PrefsKeys.BadgeMilestonesClaimed));
             PlayerPrefs.Save();
@@ -1153,6 +1260,8 @@ namespace InsectGame.EditorTools
             if (regions != null) regions.ReloadFromDisk();
             var badgeService = UnityEngine.Object.FindFirstObjectByType<GuardianBadgeService>();
             if (badgeService != null) badgeService.ReloadFromDisk();
+            var duelController = UnityEngine.Object.FindFirstObjectByType<InsectGame.NPC.NpcDuelController>();
+            if (duelController != null) duelController.ReloadFromDisk();
             Log("진행 기록 초기화 완료");
         }
 

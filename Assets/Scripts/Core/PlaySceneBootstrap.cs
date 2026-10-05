@@ -633,6 +633,12 @@ namespace InsectGame.Core
             // **전투 화면이 떠 있는지**를 알려 주는 유일한 신호. 이게 없으면 전투 승리와 같은
             // 프레임에 갱신되는 LevelReach·DexProgress·QuestComplete가 결과 화면 위로 대사를 띄운다.
             storyDirector.AutoWire(camFollower);
+            // 결과 화면이 떠 있는가 — 눌러야 닫혀서(BattleResultRules) 미뤄 둔 대사·컷신·영상의 "굳은 화면" 상한이 그 시간을
+            // 세지 않게 한다(StoryBattleWait). Story가 UI 타입을 모르도록 함수 하나로 넘긴다. 아래 컷신·영상 지휘자도 같은 것을 받는다.
+            System.Func<bool> battleResultShowing = () =>
+                (battleScreen != null && battleScreen.ResultShownSeconds > 0f)
+                || (raidBattleUi != null && raidBattleUi.ResultShownSeconds > 0f);
+            storyDirector.AutoWire(battleResultShowing);
             cloudSave.RegisterReloadable(storyDirector);
             // 전투 결과 화면이 닫힌 뒤에 BattleWin·GuardianDefeat 비트를 띄우기 위한 통지 경로.
             battleScreen.AutoWire(storyDirector);
@@ -794,6 +800,8 @@ namespace InsectGame.Core
                 storyDirector.AutoWire(npcDuel);   // DuelWin 트리거 소스 — Start 전(같은 프레임)이라 구독이 걸린다
                 // 라온 라이벌 단계의 열림·닫힘 — 조회 함수만 넘긴다(StoryDirector가 이미 npcDuel을 참조해 역참조는 순환).
                 npcDuel.AutoWireStoryGate(storyDirector.HasSeen);
+                // 이야기 잠금 — 서릿길·잿불 골짜기는 앞 수문장에 더해 간부(집게·저울)를 이겨야 열린다. Core가 NPC를 모르게 조회 함수만.
+                regionMgr.AutoWireDuelGate(npcDuel.IsBossDefeated);
 
                 // 오염 거점 비주얼 — 구조물·안개·지면 탈색, 정화 시 붕괴.
                 // NpcManager가 필요해 여기(NPC 생성 뒤)에 둔다: 거점 좌표를 하수 실물에서
@@ -835,12 +843,16 @@ namespace InsectGame.Core
                 InsectGame.Story.CutsceneDirector cutscene =
                     EnsureComponent<InsectGame.Story.CutsceneDirector>("World/CutsceneDirector");
                 cutscene.AutoWire(storyDirector, camFollower, playerMov, player.transform);
+                cutscene.AutoWire(battleResultShowing);
 
                 // 스토리 영상(mp4) — 컷신과 같은 시점(StoryBeatCompleted)에 화면을 통째로 덮는다.
                 // **World/ 아래여야 한다** — UI 루트 자식이면 오프닝 다시보기가 루트를 끌 때 함께 죽어 복구가 안 된다.
                 InsectGame.Story.StoryVideoDirector storyVideo =
                     EnsureComponent<InsectGame.Story.StoryVideoDirector>("World/StoryVideoDirector");
                 storyVideo.AutoWire(storyDirector, camFollower, playerMov);
+                storyVideo.AutoWire(battleResultShowing);
+                // 저널 「▶ 영상」 다시보기 — 스토리 부수효과 없이 같은 재생기로 튼다(StoryVideoDirector.PlayReplay).
+                storyJournal.AutoWire(storyVideo);
 
                 // NPC 연출 지휘 — 조우 접근(규칙)과 등장/퇴장(저작)을 한 컴포넌트가 맡는다.
                 // 둘 다 같은 VillagerNpc의 Scripted 상태를 쓰므로 나누면 명령이 서로 덮인다.
@@ -848,8 +860,16 @@ namespace InsectGame.Core
                 InsectGame.Story.StoryStageDirector stageDirector =
                     EnsureComponent<InsectGame.Story.StoryStageDirector>("World/StoryStageDirector");
                 stageDirector.AutoWire(storyDirector, objectiveTracker, npcManager, playerMov, player.transform);
-                // 대사 앞 연출 게이트 — stageEnterId가 있으면 모달보다 먼저 돌린다.
-                npcDialogue.AutoWire(stageDirector);
+                // 대사 앞 연출 게이트 — 대화창의 슬롯은 하나라 고리로 잇는다: 영상(introVideoId) → NPC 등장 연출(stageEnterId).
+                // 영상이 설명하고, 인물이 걸어 들어와, (장을 여는 비트면 「지난 이야기」 카드 뒤) 짧게 말한다.
+                npcDialogue.AutoWire(new InsectGame.Story.StoryPreludeChain(storyVideo, stageDirector));
+
+                // 대사 직후 대결(StoryBeat.duelAfter) — 영상·컷신·연출·선택 결과가 다 끝난 첫 순간에 간부전·라온전을 연다.
+                InsectGame.Story.StoryDuelLauncher duelLauncher =
+                    EnsureComponent<InsectGame.Story.StoryDuelLauncher>("World/StoryDuelLauncher");
+                duelLauncher.AutoWire(storyDirector, npcDuel, regionMgr, camFollower, playerMov);
+                // 대화창 마지막 버튼을 「승부!」로 — 선택 결과 대사처럼 자기 duelAfter가 빈 비트 뒤의 대기 대결도 본다.
+                npcDialogue.AutoWire(duelLauncher);
 
                 // 스폰은 배선 완료 후 (컬링 타깃/예약 시스템이 준비된 상태에서)
                 if (villageResult != null)

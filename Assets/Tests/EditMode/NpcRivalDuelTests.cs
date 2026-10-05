@@ -57,13 +57,82 @@ namespace InsectGame.Tests
         [Test]
         public void TrySelect_Defeated_SkipsToNextAvailable()
         {
-            // 엔딩 뒤 연못 — 연못 단계를 이미 이겼으면 재대결이 뜬다(각 단계는 독립이다).
+            // 표 순서대로 첫 단계를 고른다 — 이긴 단계는 건너뛴다(각 단계는 독립이다). 표지만 세운 합성 상황이다.
             var seen = Seen("ch2_water", "post_rival_rematch");
             Assert.IsTrue(NpcRivalDuels.TrySelect("catcher_rival", "pond", seen, NoneDefeated, out NpcRivalDuels.Stage first));
             Assert.AreEqual("rival_pond", first.stageId);
             Assert.IsTrue(NpcRivalDuels.TrySelect("catcher_rival", "pond", seen, id => id == "rival_pond",
                 out NpcRivalDuels.Stage next));
             Assert.AreEqual("rival_final", next.stageId);
+        }
+
+        [Test]
+        public void TrySelect_AfterTheEnding_PreInjuryStagesAreClosed_OnlyTheRematch()
+        {
+            // 실제 엔딩 세이브는 갱도(ch10_confront)를 지나왔다 — 다치기 전 단계는 전부 닫히고 어디서든 재대결만 뜬다.
+            var seen = Seen("ch1_rival_intro", "ch2_water", "ch4_reach_swamp", "ch7_arrive", "ch8_arrive",
+                "ch9_arrive", "ch10_arrive", NpcRivalDuels.InjuryBeatId, "post_rival_rematch");
+            foreach (string region in new[] { "meadow", "pond", "swamp", "hollow", "dunes", "frostline", "emberfall", "nameless" })
+            {
+                Assert.IsTrue(NpcRivalDuels.TrySelect("catcher_rival", region, seen, NoneDefeated, out NpcRivalDuels.Stage s), region);
+                Assert.AreEqual("rival_final", s.stageId, region);
+            }
+        }
+
+        [Test]
+        public void TrySelect_MeadowOpensAtTheFirstMeeting()
+        {
+            // 첫 만남 대사가 "승부다!"로 끝나면 곧바로 이 단계가 열린다(StoryBeat.duelAfter → StoryDuelLauncher).
+            Assert.IsFalse(NpcRivalDuels.TrySelect("catcher_rival", "meadow", Seen("ch1_intro"), NoneDefeated, out _));
+            Assert.IsTrue(NpcRivalDuels.TrySelect("catcher_rival", "meadow", Seen("ch1_rival_intro"), NoneDefeated,
+                out NpcRivalDuels.Stage s));
+            Assert.AreEqual("rival_meadow", s.stageId);
+            Assert.Less(s.level, 6, "첫 파트너(Lv.6)보다 낮다 — 첫 전투에서 막히면 이야기가 시작도 전에 선다");
+        }
+
+        [Test]
+        public void TrySelect_EmberStage_OnlyBetweenArrivalAndTheKiln()
+        {
+            Assert.IsTrue(NpcRivalDuels.TrySelect("catcher_rival", "emberfall", Seen("ch10_arrive"), NoneDefeated,
+                out NpcRivalDuels.Stage s));
+            Assert.AreEqual("rival_ember", s.stageId);
+            Assert.IsFalse(NpcRivalDuels.TrySelect("catcher_rival", "emberfall",
+                Seen("ch10_arrive", "ch10_confront"), NoneDefeated, out _), "갱도에서 다친 뒤엔 싸우지 않는다");
+        }
+
+        [Test]
+        public void EveryPreInjuryStage_ClosesAtTheKiln()
+        {
+            foreach (NpcRivalDuels.Stage s in NpcRivalDuels.All())
+            {
+                if (string.IsNullOrEmpty(s.regionId)) continue;   // 엔딩 뒤 재대결 — 다 나은 뒤다
+                Assert.AreEqual(NpcRivalDuels.InjuryBeatId, s.closeBeatId, $"{s.stageId}: 다친 라온과 싸우게 된다");
+            }
+        }
+
+        [Test]
+        public void EveryChapterWhereRaonStands_HasAStage()
+        {
+            // 「장마다 한 번」 — 라온 앵커가 있는 리전마다 단계가 있다. 이름 없는 자리는 복귀(ch12_echo) 뒤라 엔딩 재대결이 맡는다.
+            string village = ReadRepoText("Assets/Scripts/Core/VillageBuilder.cs");
+            var staged = new HashSet<string>();
+            foreach (NpcRivalDuels.Stage s in NpcRivalDuels.All())
+                if (!string.IsNullOrEmpty(s.regionId)) staged.Add(s.regionId);
+            foreach (Match m in Regex.Matches(village,
+                         @"regionId\s*=\s*""([a-z_]+)"",\s*storyNpcId\s*=\s*""catcher_rival"""))
+            {
+                string region = m.Groups[1].Value;
+                if (region == "nameless") continue;
+                Assert.IsTrue(staged.Contains(region), $"{region}: 라온이 서 있는데 겨룰 단계가 없다");
+            }
+        }
+
+        [Test]
+        public void IsRival_OnlyRaon()
+        {
+            Assert.IsTrue(NpcRivalDuels.IsRival("catcher_rival"));
+            Assert.IsFalse(NpcRivalDuels.IsRival("ledger_grip"));
+            Assert.IsFalse(NpcRivalDuels.IsRival(null));
         }
 
         [Test]

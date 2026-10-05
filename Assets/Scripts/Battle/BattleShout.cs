@@ -102,12 +102,19 @@ namespace InsectGame.Battle
         };
 
         /// <summary>
-        /// 맞았을 때 비명. 세기가 크면(치명타·큰 피해) 길게 끈다. <paramref name="seed"/>로 고르므로
+        /// 큰 비명·센 의성어로 넘어가는 세기. 평타의 세기 천장(<c>BattleArenaController.HitCue.NormalCeiling</c>)은
+        /// 이 아래다 — 그래서 큰 문구는 치명타·마무리(그리고 합체공격 일격처럼 호출부가 1을 넘기는 자리)만 받는다.
+        /// 예전엔 평타도 최대 HP의 25~35%를 깎아 세기 0.6~0.9를 받았고, 매 타격이 "크아악!!"·"콰광!!"이었다.
+        /// </summary>
+        public const float HeavyWeight = 0.6f;
+
+        /// <summary>
+        /// 맞았을 때 비명. 세기가 크면(치명타·마무리) 길게 끈다. <paramref name="seed"/>로 고르므로
         /// 같은 장면은 같은 문구 — 재현 가능한 캡처를 위해서다.
         /// </summary>
         public static string Hurt(Cry cry, float impactWeight, int seed)
         {
-            string[][] table = impactWeight >= 0.6f ? HeavyHurtLines : HurtLines;
+            string[][] table = impactWeight >= HeavyWeight ? HeavyHurtLines : HurtLines;
             string[] row = table[Mathf.Clamp((int)cry, 0, table.Length - 1)];
             return row[Math.Abs(seed) % row.Length];
         }
@@ -118,7 +125,7 @@ namespace InsectGame.Battle
         /// </summary>
         public static string Sound(InsectElement element, float impactWeight)
         {
-            bool heavy = impactWeight >= 0.6f;
+            bool heavy = impactWeight >= HeavyWeight;
             switch (element)
             {
                 case InsectElement.Leaf: return heavy ? "파사사삭!!" : "사각!";

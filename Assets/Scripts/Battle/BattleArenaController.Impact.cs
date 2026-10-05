@@ -29,33 +29,128 @@ namespace InsectGame.Battle
         {
             /// <summary>외칠 기술 이름. null이면 외치지 않는다(기본 공격).</summary>
             public readonly string SkillName;
-            /// <summary>타격 세기 0..1 — 치명타·큰 피해일수록 1. 히트스톱·넉백·카메라 반동이 이걸 따른다.</summary>
+            /// <summary>
+            /// 타격 세기 0..1 — 넉백·불꽃 수·카메라 반동처럼 <b>연속으로 커지는</b> 것이 따른다. 평타는
+            /// <see cref="NormalFloor"/>~<see cref="NormalCeiling"/>, 치명타는 <see cref="CriticalFloor"/> 이상, 마무리는 늘 1이다.
+            /// </summary>
             public readonly float Weight;
-            /// <summary>이 한 방으로 쓰러졌다 — 슬로모션.</summary>
+            /// <summary>이 한 방으로 쓰러졌다 — 슬로모션, 가장 큰 연출.</summary>
             public readonly bool Finisher;
             /// <summary>피해 기술인데 피해가 0 — 빗나감(대상이 피한다).</summary>
             public readonly bool Missed;
+            /// <summary>
+            /// 진짜 치명타 — 컨트롤러·리졸버가 굴린 판정(<c>InsectBattleController.LastPlayerHitCritical</c>·
+            /// <c>RaidActionResult.Critical</c>)을 그대로 옮긴다. 별 빛살·긴 멈춤·<c>CriticalHit</c> 소리가 이걸 따른다.
+            /// </summary>
+            public readonly bool Critical;
+            /// <summary>
+            /// 전용기 — 곤충마다 하나씩 있는 필살기(<see cref="SignatureSkills.IsSignature"/>로 <b>부르는 쪽</b>이 가른다 — 아레나는 판정하지 않는다).
+            /// 1대1은 시전자 클로즈업 컷인 → 속성색 큰 이펙트 → 타격(<c>BattleArenaController.Flourish</c>), 레이드는 기 모으기 + 큰 이펙트.
+            /// </summary>
+            public readonly bool Signature;
 
-            public HitCue(string skillName, float weight, bool finisher, bool missed)
+            public HitCue(string skillName, float weight, bool finisher, bool missed, bool critical = false, bool signature = false)
             {
                 SkillName = skillName;
-                Weight = Mathf.Clamp01(weight);
                 Finisher = finisher;
                 Missed = missed;
+                Critical = critical && !missed;
+                Signature = signature;
+                // 마무리는 늘 만점 — 남은 HP가 적어 평타로 끝냈어도 "가장 크게"가 보여야 한다.
+                Weight = finisher ? 1f : Mathf.Clamp01(weight);
+            }
+
+            /// <summary>같은 타격에 전용기 표지만 붙인 사본 — 부르는 쪽이 <c>BuildHitCue(…).WithSignature(…)</c>로 쓴다.</summary>
+            public HitCue WithSignature(bool signature)
+            {
+                return new HitCue(SkillName, Weight, Finisher, Missed, Critical, signature);
             }
 
             public static readonly HitCue None = new HitCue(null, 0f, false, false);
 
+            // ── 세기 표 ──
+            // 2026-10-04 진짜 치명타(1/16, ×1.5) 도입과 짝. 예전 식(피해 ÷ 최대 HP의 40%)은 3~4라운드 전투의 평타
+            // (최대 HP의 25~35%)에 0.6~0.9를 주어, 평타가 CriticalHit 소리·큰 비명·큰 흔들림·긴 멈춤을 다 받았고
+            // 치명타와 대비가 없었다. 지금은 평타가 "무거운 타격"선(BattleShout.HeavyWeight) 아래에 머문다.
+
+            /// <summary>피해 몫 만점 — 대상 최대 HP의 40%를 깎으면 그 등급의 천장이다.</summary>
+            public const float FullShare = 0.4f;
+            /// <summary>평타 세기 바닥(긁힌 정도의 피해).</summary>
+            public const float NormalFloor = 0.25f;
+            /// <summary>평타 세기 천장 — <see cref="BattleShout.HeavyWeight"/>보다 아래여야 한다(테스트가 고정).</summary>
+            public const float NormalCeiling = 0.5f;
+            /// <summary>치명타 세기 바닥 — 적게 들어간 치명타도 이만큼 무겁다.</summary>
+            public const float CriticalFloor = 0.85f;
+
             /// <summary>
-            /// 피해량과 대상 최대 HP로 세기를 낸다. 최대 HP의 40%면 만점 — 치명타 판정선(25%)이
-            /// 0.63으로 "무거운 타격"(0.6) 위에 오도록 잡았다.
+            /// 피해량·대상 최대 HP·치명타로 세기를 낸다. 같은 피해 몫이라도 평타는
+            /// [<see cref="NormalFloor"/>, <see cref="NormalCeiling"/>], 치명타는 [<see cref="CriticalFloor"/>, 1]에 놓인다 —
+            /// 두 구간이 겹치지 않아 아무리 센 평타도 가장 약한 치명타보다 가볍다.
             /// </summary>
             public static float WeightFor(int damage, int targetMaxHp, bool critical)
             {
                 if (damage <= 0 || targetMaxHp <= 0) return 0f;
-                float w = Mathf.Clamp01(damage / (targetMaxHp * 0.4f));
-                return critical ? Mathf.Max(w, 0.85f) : w;
+                float share = Mathf.Clamp01(damage / (targetMaxHp * FullShare));
+                return critical ? Mathf.Lerp(CriticalFloor, 1f, share) : Mathf.Lerp(NormalFloor, NormalCeiling, share);
             }
+
+            /// <summary>
+            /// 치명타·마무리 — 센 의성어·큰 비명·<c>CriticalHit</c> 소리·보스 비명이 <b>이것만</b> 본다(세기 문턱이 아니다).
+            /// </summary>
+            public bool Heavy => Critical || Finisher;
+
+            // 히트스톱(실제 초) — 평타 0.06~0.08 · 치명타 0.16~0.18 · 마무리 0.19(+슬로모션) · 치명타 마무리 상한 0.24.
+            public const float HitStopBase = 0.045f;
+            public const float HitStopPerWeight = 0.07f;
+            public const float CriticalHitStopBonus = 0.06f;
+            public const float FinisherHitStopBonus = 0.07f;
+            /// <summary>전용기 타격의 멈춤 덧셈 — 큰 이펙트가 터지는 순간을 조금 더 붙든다(상한 <see cref="MaxHitStop"/>는 그대로).</summary>
+            public const float SignatureHitStopBonus = 0.05f;
+            public const float MaxHitStop = 0.24f;
+
+            /// <summary>타격 순간 멈춤(실제 초). 빗나감은 멈추지 않는다.</summary>
+            public float HitStopSeconds => Missed ? 0f : Mathf.Min(MaxHitStop,
+                HitStopBase + HitStopPerWeight * Weight
+                + (Critical ? CriticalHitStopBonus : 0f) + (Finisher ? FinisherHitStopBonus : 0f)
+                + (Signature ? SignatureHitStopBonus : 0f));
+
+            // 카메라 흔들림 — 평타 0.12~0.16 · 치명타 0.32~0.34 · 마무리 0.38. 전체 공격은 +0.12(그래도 평타 전체 공격
+            // 0.24~0.28 < 치명타 한 방 0.32 — 큰 기술이라고 치명타의 몫을 빼앗지 않는다).
+            public const float ShakeBase = 0.08f;
+            public const float ShakePerWeight = 0.16f;
+            public const float HeavyShakeBonus = 0.10f;
+            public const float FinisherShakeBonus = 0.04f;
+            public const float AreaShakeBonus = 0.12f;
+
+            /// <summary>카메라 흔들림 세기. <paramref name="area"/>면 레이드 보스 전체 공격(팀원 다섯이 함께 맞는다).</summary>
+            public float ShakeAmplitude(bool area = false)
+            {
+                if (Missed) return 0f;
+                return ShakeBase + ShakePerWeight * Weight + (Heavy ? HeavyShakeBonus : 0f)
+                    + (Finisher ? FinisherShakeBonus : 0f) + (area ? AreaShakeBonus : 0f);
+            }
+
+            /// <summary>카메라 흔들림 길이(초) — 평타 0.21~0.26 · 치명타·마무리 0.41~0.44, 전체 공격 +0.1.</summary>
+            public float ShakeSeconds(bool area = false)
+            {
+                if (Missed) return 0f;
+                return 0.16f + 0.2f * Weight + (Heavy ? 0.08f : 0f) + (area ? 0.1f : 0f);
+            }
+        }
+
+        /// <summary>
+        /// 치명타 강조색 — 내가 친 치명타는 금빛, 맞은 치명타는 붉은빛. <c>BattleScreenUI.RevealImpact</c>의 화면 섬광과
+        /// 같은 색 규칙이다(그쪽은 화면 전체, 여기는 맞은 자리의 별 빛살).
+        /// </summary>
+        public static Color CriticalAccent(bool struckByUs)
+        {
+            return struckByUs ? new Color(1f, 0.86f, 0.3f) : new Color(1f, 0.3f, 0.24f);
+        }
+
+        /// <summary>이 대상이 상대 쪽(1v1 적·레이드 보스)이다 — 맞힌 쪽이 우리 편이다.</summary>
+        private bool StruckByUs(GameObject target)
+        {
+            return target != null && (target == enemyModel || target == bossModel);
         }
 
         private Vector3 baseCamPos;
@@ -94,12 +189,13 @@ namespace InsectGame.Battle
         /// 외침을 띄운다. <paramref name="delay"/>만큼 늦게 나타난다(실제 초) — 타격음 뒤에 비명이
         /// 따라와야 둘이 한 덩어리로 안 뭉개진다.
         /// </summary>
-        public void PlayShout(BattleShout.Kind kind, Vector3 worldPoint, string text, Color color,
+        /// <returns>띄운 항목(문구가 비면 null) — 일찍 거둬야 하는 쪽(쓰러짐 「털썩…」)이 쥐어 둔다.</returns>
+        public BattleShout.Entry PlayShout(BattleShout.Kind kind, Vector3 worldPoint, string text, Color color,
             float duration, float delay = 0f, float tilt = 0f)
         {
-            if (string.IsNullOrEmpty(text)) return;
+            if (string.IsNullOrEmpty(text)) return null;
             if (activeShouts.Count >= MaxConcurrentShouts) activeShouts.RemoveAt(0);
-            activeShouts.Add(new BattleShout.Entry
+            var entry = new BattleShout.Entry
             {
                 Text = text,
                 Kind = kind,
@@ -109,7 +205,32 @@ namespace InsectGame.Battle
                 StartTime = Time.unscaledTime + Mathf.Max(0f, delay),
                 Duration = duration,
                 Tilt = tilt
-            });
+            };
+            activeShouts.Add(entry);
+            return entry;
+        }
+
+        /// <summary>쓰러짐 의성어(「털썩…」) — 상대 교체 단계가 시작되면 일찍 거둔다(<see cref="RetireFaintShouts"/>).</summary>
+        private readonly List<BattleShout.Entry> faintShouts = new List<BattleShout.Entry>();
+        /// <summary>교체 단계 시작에 「털썩…」이 사라지는 길이(실제 초) — 오버레이의 끝 페이드(0.25초)보다 짧게 접는다.</summary>
+        private const float FaintShoutRetireSeconds = 0.12f;
+
+        /// <summary>
+        /// 남은 「털썩…」을 일찍 거둔다 — 팀 대결에서 첫 상대가 쓰러진 뒤 교체 배너(아래쪽 가운데, ui-dev)가 뜨는 자리와 겹쳤다
+        /// (3단계 QA). 아직 나타나지 않은 것(지연 중)은 지우고, 떠 있는 것은 <see cref="FaintShoutRetireSeconds"/> 안에 사라지게 수명을 줄인다.
+        /// </summary>
+        private void RetireFaintShouts()
+        {
+            float now = Time.unscaledTime;
+            for (int i = 0; i < faintShouts.Count; i++)
+            {
+                BattleShout.Entry e = faintShouts[i];
+                if (e == null || !activeShouts.Contains(e)) continue;
+                float age = now - e.StartTime;
+                if (age < 0f) activeShouts.Remove(e);
+                else e.Duration = Mathf.Min(e.Duration, age + FaintShoutRetireSeconds);
+            }
+            faintShouts.Clear();
         }
 
         private static BattleShout.Cry CryOf(GameObject model, bool boss)
@@ -140,7 +261,7 @@ namespace InsectGame.Battle
             if (attacker == null) return;
             bool boss = attacker == bossModel;
             BattleShout.Cry cry = CryOf(attacker, boss);
-            if (!string.IsNullOrEmpty(cue.SkillName))
+            if (!string.IsNullOrEmpty(cue.SkillName) && (!cue.Signature || ShowSignatureCallout))
             {
                 // 0.95초 — 카메라가 대상 쪽으로 넘어가기 전에 사라진다. 길면 시전자 머리 위에 고정된
                 // 말풍선이 화면 가장자리(HP 상자 위)로 밀려난다(실측).
@@ -174,34 +295,76 @@ namespace InsectGame.Battle
                 return;
             }
 
-            BattlePresentation.HitStop(0.055f + 0.085f * w + (cue.Finisher ? 0.07f : 0f));
+            // 평타는 짧게·가볍게, 치명타는 길게·크게, 마무리는 가장 크게 — 세기 표는 HitCue 한 곳이다.
+            BattlePresentation.HitStop(cue.HitStopSeconds);
             if (cue.Finisher) BattlePresentation.SlowMotion(0.3f, 0.6f);
 
-            StartReact(target, HitReactCoroutine(target, dir, w, boss));
-            if (!BattlePresentation.ReducedFlashes) StartCoroutine(ImpactBurstCoroutine(hitPoint, color, w));
+            Color accent = CriticalAccent(StruckByUs(target));
+            StartReact(target, HitReactCoroutine(target, dir, w, boss, cue.Critical, accent));
+            if (!BattlePresentation.ReducedFlashes)
+            {
+                // 치명타는 불꽃·충격파를 강조색으로 물들이고 별 빛살을 하나 얹는다 — 속성 임팩트는 호출부가 그대로 낸다.
+                StartCoroutine(ImpactBurstCoroutine(hitPoint, cue.Critical ? Color.Lerp(color, accent, 0.65f) : color, w));
+                if (cue.Critical) StartCoroutine(CriticalFlareCoroutine(hitPoint, accent, FlareSize(target)));
+            }
 
             // 자리 나눔 — 피해 숫자·CRITICAL은 대상 몸통 위(BattleScreenUI), 의성어는 맞아서 밀려나는
             // 쪽 아래, 비명은 같은 쪽 머리 높이. 셋을 한 점에 띄우면 타격 순간 글자가 뭉개진다(실측).
-            Color soundColor = Color.Lerp(color, Color.white, 0.35f);
+            Color soundColor = cue.Critical ? Color.Lerp(accent, Color.white, 0.2f) : Color.Lerp(color, Color.white, 0.35f);
+            float shoutWeight = cue.Heavy ? 1f : w;
             PlayShout(BattleShout.Kind.Sound, hitPoint + dir * 0.65f + Vector3.down * 0.1f,
-                BattleShout.Sound(element, cue.Finisher ? 1f : w), soundColor, 0.85f, 0f, Random.Range(-11f, 11f));
-            // 보스는 센 타격·마무리에만 비명을 지른다 — 레이드는 한 라운드에 팀원 다섯이 연달아 때려서
+                BattleShout.Sound(element, shoutWeight), soundColor, 0.85f, 0f, Random.Range(-11f, 11f));
+            // 보스는 치명타·마무리에만 비명을 지른다 — 레이드는 한 라운드에 팀원 다섯이 연달아 때려서
             // 매번 지르면 "그르륵!"이 다섯 번 반복된다.
-            bool voice = !boss || w >= 0.6f || cue.Finisher;
+            bool voice = !boss || cue.Heavy;
             BattleShout.Cry cry = CryOf(target, boss);
             if (voice)
-                PlayShout(BattleShout.Kind.Hurt, HeadPoint(target) + dir * 0.55f,
-                    BattleShout.Hurt(cry, cue.Finisher ? 1f : w, Random.Range(0, 100)),
+                PlayShout(BattleShout.Kind.Hurt, boss ? BossShoutPoint(target) : HeadPoint(target) + dir * 0.55f,
+                    BattleShout.Hurt(cry, shoutWeight, Random.Range(0, 100)),
                     Color.white, 1.0f, 0.12f);
 
             if (AudioManager.Instance != null)
             {
-                AudioManager.Instance.PlaySFX(w >= 0.6f || cue.Finisher ? SfxType.CriticalHit : SfxType.Hit);
+                AudioManager.Instance.PlaySFX(cue.Heavy ? SfxType.CriticalHit : SfxType.Hit);
                 if (voice) StartCoroutine(PlayCryDelayed(CryKey(cry, true), 0.1f));
             }
 
             CameraFollower follower = ResolveFollower();
-            if (follower != null) follower.Shake(0.08f + 0.22f * w, 0.18f + 0.22f * w);
+            if (follower != null) follower.Shake(cue.ShakeAmplitude(), cue.ShakeSeconds());
+        }
+
+        /// <summary>별 빛살 크기 — 대상 몸집을 따른다(레이드 보스는 1v1 곤충의 두 배쯤).</summary>
+        private static float FlareSize(GameObject target)
+        {
+            Bounds b = BattleFraming.ModelBounds(target);
+            return Mathf.Clamp(Mathf.Max(b.extents.x, b.extents.y) * 1.3f, 0.6f, 1.8f);
+        }
+
+        /// <summary>
+        /// 레이드 보스의 비명 자리 — 머리 위가 아니라 <b>머리 옆</b>(카메라 오른쪽). 머리 위에 띄우면 팀원 치명타의 「치명타!」(보스 중심 위
+        /// 피해 숫자 바로 위 — <c>RaidBattleUI.DrawRaidCritCaption</c>)와 같은 세로 줄에 겹쳤다(1단계 QA, 「그오오오!!」).
+        /// 화면에서 보스 중심과의 가로 거리가 짧은 변의 31% 이상이 되게 민다 — 가상 캔버스(짧은 변 1080)로 약 330px,
+        /// 비명 칸 반폭(160) + 「치명타!」 반폭(150)보다 넓다. 화면 오른쪽 끝(86%)을 넘으면 거기서 멈춘다.
+        /// </summary>
+        private Vector3 BossShoutPoint(GameObject boss)
+        {
+            Vector3 head = HeadPoint(boss);
+            Camera cam = Camera.main;
+            if (cam == null || boss == null) return head;
+            Vector3 right = cam.transform.right;
+            right.y = 0f;
+            right = right.sqrMagnitude > 0.0001f ? right.normalized : Vector3.right;
+            Bounds b = BattleFraming.ModelBounds(boss);
+            Vector3 centerScreen = cam.WorldToScreenPoint(b.center);
+            Vector3 headScreen = cam.WorldToScreenPoint(head);
+            Vector3 stepScreen = cam.WorldToScreenPoint(head + right);
+            float pixelsPerMeter = Mathf.Abs(stepScreen.x - headScreen.x);
+            if (centerScreen.z <= 0f || headScreen.z <= 0f || pixelsPerMeter < 1f)
+                return head + right * (b.extents.x + 0.6f);
+            float need = 0.31f * Mathf.Min(Screen.width, Screen.height);
+            float push = Mathf.Max(0f, need - (headScreen.x - centerScreen.x)) / pixelsPerMeter;
+            float room = Mathf.Max(0f, Screen.width * 0.86f - headScreen.x) / pixelsPerMeter;
+            return head + right * Mathf.Min(push, room) + Vector3.down * (b.extents.y * 0.15f);
         }
 
         /// <summary>쓰러짐 — 바닥에 "털썩…"과 마지막 비명. 쓰러지는 동작은 <c>PlayFaintCoroutine</c>이 한다.</summary>
@@ -209,8 +372,9 @@ namespace InsectGame.Battle
         {
             if (model == null) return;
             Bounds b = BattleFraming.ModelBounds(model);
-            PlayShout(BattleShout.Kind.Sound, new Vector3(b.center.x, b.min.y + 0.1f, b.center.z), "털썩…",
+            BattleShout.Entry thud = PlayShout(BattleShout.Kind.Sound, new Vector3(b.center.x, b.min.y + 0.1f, b.center.z), "털썩…",
                 new Color(0.78f, 0.8f, 0.86f), 1.1f, 0.25f, Random.Range(-6f, 6f));
+            if (thud != null) faintShouts.Add(thud);
             if (AudioManager.Instance != null)
                 AudioManager.Instance.PlayCry(CryKey(CryOf(model, model == bossModel), true));
         }
@@ -262,13 +426,22 @@ namespace InsectGame.Battle
             activeReacts.Remove(model);
         }
 
-        /// <summary>
-        /// 피격 — 맞은 방향으로 튕겨 나갔다가(0.07초) 버티며 돌아오고(0.35초), 윗몸이 젖혀지고 눌렸다 편다.
-        /// 동시에 흰 섬광 → 붉은 기가 빠진다. 보스는 무거워서 덜 밀린다.
-        /// </summary>
         private IEnumerator HitReactCoroutine(GameObject model, Vector3 dir, float weight, bool boss)
         {
+            return HitReactCoroutine(model, dir, weight, boss, false, Color.white);
+        }
+
+        /// <summary>
+        /// 피격 — 맞은 방향으로 튕겨 나갔다가(0.07초) 버티며 돌아오고(0.35초), 윗몸이 젖혀지고 눌렸다 편다.
+        /// 동시에 흰 섬광 → 붉은 기가 빠진다. 보스는 무거워서 덜 밀린다. 치명타는 첫 섬광이 강조색(<paramref name="accent"/>)으로
+        /// 조금 더 길게(0.06 → 0.1초) 번쩍인다 — 히트스톱 동안 멈춰 있는 그 색이 "크게 맞았다"를 몸에 남긴다.
+        /// </summary>
+        private IEnumerator HitReactCoroutine(GameObject model, Vector3 dir, float weight, bool boss, bool critical, Color accent)
+        {
             Pose3 rest = reactRestPoses[model];
+            float flashHold = critical ? 0.1f : 0.06f;
+            Color flashTint = critical ? Color.Lerp(accent, Color.white, 0.25f) : Color.white;
+            float flashAmount = critical ? 0.85f : 0.78f;
             float mass = boss ? 0.45f : 1f;
             float distance = (0.22f + 0.30f * weight) * mass;
             float tilt = (10f + 14f * weight) * mass;
@@ -294,9 +467,9 @@ namespace InsectGame.Battle
                 }
                 if (!BattlePresentation.ReducedFlashes)
                 {
-                    if (t < 0.06f) SetFlash(model, Color.white, 0.78f);
+                    if (t < flashHold) SetFlash(model, flashTint, flashAmount);
                     else SetFlash(model, new Color(1f, 0.32f, 0.26f),
-                        0.45f * (1f - Mathf.Clamp01((t - 0.06f) / 0.26f)));
+                        0.45f * (1f - Mathf.Clamp01((t - flashHold) / 0.26f)));
                 }
                 yield return null;
             }
@@ -326,6 +499,9 @@ namespace InsectGame.Battle
         /// 모델 전체에 색을 섞는다. 머티리얼 인스턴스를 만들지 않으려고 PropertyBlock을 쓴다 —
         /// <c>.material</c>로 바꾸면 피격마다 인스턴스가 생기고, 겹친 플래시가 "섞인 색"을 원색으로
         /// 잡아 영구히 물드는 문제가 있었다(<c>PlayHitFlashCoroutine</c>의 방식).
+        ///
+        /// <b>쉬는 색</b>(amount 0)은 보통 원색(PropertyBlock 없음)이고, 그림자 모습을 입은 모델은 그림자 톤이다
+        /// (<c>shadowStrength</c> — Staging partial). 섞을 때도 그 쉬는 색에서 출발한다. 그림자 빛 부위(테두리·눈빛)는 건드리지 않는다.
         /// </summary>
         private void SetFlash(GameObject model, Color tint, float amount)
         {
@@ -333,18 +509,27 @@ namespace InsectGame.Battle
             MeshRenderer[] renderers = GetRenderersCached(model);
             if (renderers == null) return;
             if (flashBlock == null) flashBlock = new MaterialPropertyBlock();
+            bool shadow = shadowStrength.TryGetValue(model, out float shadowAmount) && shadowAmount > 0f;
             for (int i = 0; i < renderers.Length; i++)
             {
                 MeshRenderer r = renderers[i];
                 if (r == null) continue;
+                if (shadow && IsStagingGlow(r)) continue;
+                Material shared = r.sharedMaterial;
                 if (amount <= 0f)
                 {
-                    r.SetPropertyBlock(null);
+                    if (!shadow || shared == null || !shared.HasProperty("_Color"))
+                    {
+                        r.SetPropertyBlock(null);
+                        continue;
+                    }
+                    flashBlock.Clear();
+                    flashBlock.SetColor("_Color", ShadowRestColor(r, shared.color, shadowAmount));
+                    r.SetPropertyBlock(flashBlock);
                     continue;
                 }
-                Material shared = r.sharedMaterial;
                 if (shared == null || !shared.HasProperty("_Color")) continue;
-                Color baseColor = shared.color;
+                Color baseColor = shadow ? ShadowRestColor(r, shared.color, shadowAmount) : shared.color;
                 Color mixed = Color.Lerp(baseColor, tint, amount);
                 mixed.a = baseColor.a;
                 flashBlock.Clear();
@@ -439,6 +624,67 @@ namespace InsectGame.Battle
             Destroy(ringObj);
         }
 
+        /// <summary>
+        /// 치명타 표식 — 맞은 자리 앞에서 별 빛살(십자로 긴 넷 + 사선으로 짧은 넷)이 번쩍 펴졌다가(0.07초) 돌며 잦아든다(0.5초).
+        /// 내 치명타는 금빛, 맞은 치명타는 붉은빛(<see cref="CriticalAccent"/>).
+        ///
+        /// 섬광·불꽃·충격파(<see cref="ImpactBurstCoroutine"/>)와 모양을 갈랐다 — 그쪽은 둥근 구·사방 불꽃·고리, 이쪽은 화면
+        /// 평면의 빛살 넷뿐이다. 그리고 <b>실제 시간</b>(배속은 따른다)으로 돈다: 연출 시계로 돌리면 히트스톱 동안 펴지지 못하고
+        /// 멈춤이 풀린 뒤에야 터지는데, 치명타는 "멈춘 순간 번쩍"이 보여야 한다. 밝은 섬광 줄이기면 호출부가 부르지 않는다.
+        /// </summary>
+        private IEnumerator CriticalFlareCoroutine(Vector3 point, Color accent, float size)
+        {
+            if (arenaRoot == null) yield break;
+            Camera cam = Camera.main;
+            Vector3 toCam = cam != null ? (cam.transform.position - point).normalized : Vector3.back;
+            GameObject root = new GameObject("CriticalFlare");
+            root.transform.SetParent(arenaRoot.transform, false);
+            // 몸 앞으로 당긴다 — 모델 속에 묻히면 빛살 절반이 가려진다.
+            root.transform.position = point + toCam * (0.25f + 0.2f * size);
+            Quaternion facing = Quaternion.LookRotation(-toCam);
+            root.transform.rotation = facing;
+            Material mat = CreateFxMaterial(new Color(accent.r, accent.g, accent.b, 1f), true);
+
+            // 정육면체 하나가 양쪽으로 뻗는다 — 0°·90°는 긴 빛살, 45°·135°는 짧은 빛살.
+            var rays = new Transform[4];
+            for (int i = 0; i < rays.Length; i++)
+            {
+                GameObject ray = FxPrimitive(PrimitiveType.Cube, "CriticalRay", root.transform.position, mat);
+                ray.transform.SetParent(root.transform, false);
+                ray.transform.localPosition = Vector3.zero;
+                ray.transform.localRotation = Quaternion.Euler(0f, 0f, i * 45f);
+                ray.transform.localScale = Vector3.zero;
+                rays[i] = ray.transform;
+            }
+
+            const float Pop = 0.07f;
+            const float Total = 0.5f;
+            float longRay = 1.9f * size;
+            float thickness = Mathf.Sqrt(size);
+            float t = 0f;
+            while (t < Total)
+            {
+                if (arenaRoot == null || root == null) yield break;
+                // 한 프레임이 길게 걸려도(로딩 끝 첫 프레임) 펴지는 순간을 건너뛰지 않게 자른다.
+                t += Mathf.Min(Time.unscaledDeltaTime, 0.05f) * Mathf.Max(0.1f, BattlePresentation.Speed);
+                float pop = Mathf.Clamp01(t / Pop);
+                float grow = 1f - (1f - pop) * (1f - pop);
+                float fade = t <= Pop ? 0f : Mathf.Clamp01((t - Pop) / (Total - Pop));
+                float len = longRay * Mathf.Lerp(0.15f, 1f, grow) * Mathf.Lerp(1f, 0.45f, fade);
+                mat.color = new Color(accent.r, accent.g, accent.b, 1f - fade * fade);
+                root.transform.rotation = facing * Quaternion.Euler(0f, 0f, 28f * fade);
+                for (int i = 0; i < rays.Length; i++)
+                {
+                    if (rays[i] == null) continue;
+                    bool major = i % 2 == 0;
+                    float width = (major ? 0.085f : 0.055f) * thickness * Mathf.Lerp(1f, 0.5f, fade);
+                    rays[i].localScale = new Vector3(major ? len : len * 0.5f, width, 0.02f);
+                }
+                yield return null;
+            }
+            if (root != null) Destroy(root);
+        }
+
         private GameObject FxPrimitive(PrimitiveType type, string name, Vector3 position, Material material)
         {
             GameObject go = GameObject.CreatePrimitive(type);
@@ -500,13 +746,16 @@ namespace InsectGame.Battle
         /// 돌진하는 시전자를 매 프레임 쫓으면 카메라가 덜컹거린다.
         /// </summary>
         private void ApplyCameraShot(float progress, float duration, Vector3 attackerCenter,
-            Vector3 targetCenter, float weight, bool support)
+            Vector3 targetCenter, float weight, bool support, float impactProgress, bool signature)
         {
             if (!hasBaseCam || BattlePresentation.ReducedMotion) return;
             CameraFollower follower = ResolveFollower();
             if (follower == null) return;
-            BattleCameraDirector.Shot shot = BattleCameraDirector.Evaluate(BattleCameraDirector.Current,
-                progress, duration, baseCamPos, baseCamRot, attackerCenter, targetCenter, weight, support);
+            BattleCameraDirector.Shot shot = signature
+                ? BattleCameraDirector.EvaluateSignature(progress, duration, baseCamPos, baseCamRot, attackerCenter, targetCenter,
+                    weight, support, impactProgress)
+                : BattleCameraDirector.Evaluate(BattleCameraDirector.Current, progress, duration, baseCamPos, baseCamRot,
+                    attackerCenter, targetCenter, weight, support, impactProgress);
             follower.SetBattleShot(shot.Position, shot.Rotation, shot.Weight);
         }
 
@@ -523,11 +772,15 @@ namespace InsectGame.Battle
             ClearCameraShot();
             hasBaseCam = false;
             activeShouts.Clear();
+            faintShouts.Clear();
             activeReacts.Clear();
             reactRestPoses.Clear();
             telegraphRoutine = null;          // StopAllCoroutines가 이미 멈췄다 — 참조만 버린다
             telegraphPoseSaved = false;
             telegraphFx.Clear();              // 오브젝트는 arenaRoot와 함께 파기된다
+            ClearStagingState();              // 등장·변신 연출과 그림자 모습(Staging partial)
+            ClearLifeState();                 // 숨쉬기·상태 표시(Life partial)
+            ClearFlourishState();             // 전용기·승리·진입 표지(Flourish partial)
         }
     }
 }

@@ -40,6 +40,8 @@ description: 「챔피언의 꿈」 프롤로그 — 꿈 밖을 건드리지 않
 - `IsSandbox`는 **다음 전투를 시작할 때까지 값을 지킨다**(`BattleEnded` 시점에도 유효). `BeginBattleCommon`이 매번 끈다 —
   표지가 남으면 이후 모든 전투가 보상 0·`BattleWin` 없음이 된다(`NextOrdinaryBattle_DoesNotInheritTheSandboxFlag`).
 - 실제 DB로 길이를 잰다(`RealSandboxBattle_WinsInThreeToFourActions_WithoutFalling`) — 곤충 능력치·기술이 바뀌어도 규칙이 길이를 지킨다.
+- **결과 화면은 샌드박스만 저절로 닫힌다**(4초 — `BattleResultRules.ShouldAutoClose`). 다른 전투는 탭·Space/Enter로만 닫힌다. 지휘자가 결과 화면이
+  닫히는 것(`IsBattleActive`)을 신호로 섬에 넘어가고 상한이 14초라, 이 예외를 지우면 결과 화면이 떠 있는 채로 섬이 열린다(`Screen_DreamChampionResult_ClosesByItself`).
 
 ## 섬
 

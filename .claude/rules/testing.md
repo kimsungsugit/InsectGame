@@ -142,6 +142,8 @@ Skybox 환경광 프로브가 0이었다 — 역광 면이 완전 검정이 되�
 `StoryBeatTriggered`를 구독한 채 게임의 실제 진입점(`OnNpcTalked`·`AddCapturedInsect`·
 `BattleEnded`·`CleanseByBoss`)을 순서대로 두드리고, 뜬 대사는 `NpcDialogueUI.CloseModal`로
 닫는다(닫지 않으면 `DrainPendingTriggers`가 모달 가드에 막혀 **다음 비트가 영영 안 온다**).
+스토리 영상은 `StoryVideoDirector.CloseModal`로 건너뛴다 — 배치모드엔 디코더가 없고, 대사 **앞** 영상(`introVideoId`)은
+건너뛰어야 대사가 열린다(영상 → 등장 연출 → 대사의 진짜 종료 경로를 걸음이 지난다).
 
 ```
 "$UNITY_EDITOR_PATH" -batchmode -projectPath "C:/Project/곤충게임" \
@@ -197,6 +199,12 @@ Skybox 환경광 프로브가 0이었다 — 역광 면이 완전 검정이 되�
 상한·자막 큐·금칙)만 고정하고, `story_lint` 검사 25가 ID·switch·파일 배치를 본다. 실제 재생·
 건너뛰기·조작 복구는 Android 기기에서 확인한다 — 절차는 `Docs/StoryVideos.md`.
 
+Windows QA 빌드는 디코더가 있어 **실제로 튼다** — `-battleScenario story-video`(`StoryVideoVisualCapture`)가 진짜
+`StoryVideoDirector.PlayReplay`로 편마다 첫 자막 0.5초 앞·자막 가운데를 찍고(자막·「건너뛰기」 포함), README에 편마다
+재생 여부·준비/첫 프레임까지 걸린 시간·실제 재생 길이(디코더가 잰 파일 길이·저작 길이와 함께)를 적는다. 일부만은 `-videoOnly ch6_wall,ch7_fence`.
+앞머리 `00-journal-*`는 저널 「▶ 영상」 → ESC가 영상만 닫고 저널이 맨 위로 돌아오는지를 잰다. 종료 코드 0 / 3(한 편이라도 재생 실패) /
+5(저널 ESC 판정 실패) / 2(고를 영상 없음). 전부 찍으면 3분이 넘는다(하네스 감시 시계를 장면이 스스로 늘린다). Android의 jar 경로·기기 디코더는 여전히 기기로 본다.
+
 ### 반투명·발광이 빌드에서 사는지는 QA 빌드로 잰다 — `-battleScenario materials`
 
 에디터와 배치 캡처에는 셰이더 변형이 전부 있어서 **절대 틀리지 않는다.** 결함은 플레이어 빌드가 Standard의
@@ -220,7 +228,7 @@ Builds/Windows/BattleVisualQA/BattleVisualQA.exe -battleCaptureOut <새 빈 폴�
   `insect-ui`(도감·보유 곤충·퀵바), `field-ui`(필드 HUD·포획 선택/채집망/출전/성공·실패 팝업·배틀팀·훈련소 —
   훈련소는 실제 부트스트랩 생성 함수로 방식·기술을 만들어 **가격이 실값**이다),
   `outfit`(의상 창·캐시샵·캐릭터 생성), `island-ui`(나의 섬 — HUD·꾸미기·상점·곤충·방문·가이드. 진짜 `IslandWorldBuilder`가
-  섬을 짓는다), `badge`, `map`, `story`. 전부 저장을 부르지 않는 메모리 fixture다.
+  섬을 짓는다), `badge`, `map`, `story`, `story-video`(스토리 영상 — 실제 디코더, 위 절). 전부 저장을 부르지 않는 메모리 fixture다.
   **검수 빌드는 실제 게임과 같은 저장 폴더를 쓴다** — fixture가 재화를 건드리는 동작(구매·수확)을 부르면 이 PC의 진짜
   세이브를 덮는다. 지갑·캔디는 차감 즉시 파일에 쓰므로 부르지 않고, 섬 매니저는 `PersistenceEnabled`를 끈다.
 - **`ScreenCapture.CaptureScreenshot`은 배치모드에서 조용히 실패한다**(게임뷰가 없다).

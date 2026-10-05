@@ -40,6 +40,10 @@ namespace InsectGame.Story
         private bool hasObjective;
         private StoryObjective objective;
         private string label = string.Empty;
+        // 목표 행 두 번째 줄의 이유 — 목표 비트의 why. 수문장으로 바꿔 쳤거나 의뢰를 따라가면 빈 문자열.
+        private string why = string.Empty;
+        // 이번 Refresh에서 TryRedirectLockedRegion이 목표를 앞 리전 수문장으로 바꿔 쳤는가.
+        private bool redirectedToGatekeeper;
         private bool hasWorldTarget;
         private Vector3 targetPosition;
         private string targetRegionId = string.Empty;
@@ -115,6 +119,14 @@ namespace InsectGame.Story
         public bool HasObjective => hasObjective;
         /// <summary>"세라에게 말 걸기" 같은 한 줄. 목표가 없으면 빈 문자열.</summary>
         public string Label => label;
+        /// <summary>
+        /// 목표 아래에 붙는 짧은 이유 한 줄("상자에 갇힌 곤충이 있대") — 목표 비트의 <see cref="StoryBeat.why"/>.
+        /// <b>null이 아니라 빈 문자열</b>이 기본이다. 비는 경우: 목표가 없음 · 비트에 이유가 없음 ·
+        /// 잠긴 리전이라 앞 리전 수문장으로 바꿔 쳤음(이유가 그 비트 것이라 수문장 안내에 붙으면 엉뚱하다) ·
+        /// 마을 의뢰를 따라가는 중(목표 행이 본편 비트가 아니다). <see cref="Label"/>과 같은 Refresh에서 갱신되고,
+        /// 값이 같으면 참조를 유지한다(HUD의 ReferenceEquals 캐시).
+        /// </summary>
+        public string Why => why;
         /// <summary>
         /// 지금 목표가 가리키는 스토리 NPC 개체. 목표가 <c>TalkToNpc</c>가 아니거나 그 NPC가
         /// 월드에 없으면 null. <see cref="StoryStageDirector"/>의 조우 접근이 읽는다 —
@@ -244,12 +256,14 @@ namespace InsectGame.Story
         {
             EnsureTrackedTaleLoaded();
             RefreshQuestMarks();
-            if (TryResolveTrackedTale()) return;   // false면 trackedObjective도 이미 내려가 있다
+            // 의뢰 따라가기는 본편 비트가 아니라 이유가 없다 — 본편 목표의 이유가 [의뢰] 줄 밑에 남지 않게 비운다.
+            if (TryResolveTrackedTale()) { SetWhy(string.Empty); return; }   // false면 trackedObjective도 이미 내려가 있다
 
             hasObjective = storyDirector != null && storyDirector.TryGetCurrentObjective(out objective);
             if (!hasObjective)
             {
                 label = string.Empty;
+                SetWhy(string.Empty);
                 hasWorldTarget = false;
                 targetRegionId = string.Empty;
                 targetNpc = null;
@@ -258,6 +272,8 @@ namespace InsectGame.Story
 
             // 아래 switch에서 ResolveNpcTarget만 다시 채운다 — 목표 종류가 바뀌면 자동으로 비워진다.
             targetNpc = null;
+            // 아래 해석 중 TryRedirectLockedRegion이 세운다 — 이유를 붙일지가 여기서 갈린다.
+            redirectedToGatekeeper = false;
 
             switch (objective.Kind)
             {
@@ -268,6 +284,9 @@ namespace InsectGame.Story
                 case StoryObjectiveKind.ActInRegion: ResolveActInRegion(); break;
                 default: ResolveFreeform(); break;
             }
+
+            StoryService.TryGetBeat(objective.BeatId, out StoryBeat objectiveBeat);
+            SetWhy(StoryObjectiveResolver.WhyFor(objectiveBeat, redirectedToGatekeeper));
 
             TryAutoStartFirstObjective();
         }
@@ -676,17 +695,54 @@ namespace InsectGame.Story
             if (region == null || regionManager == null) return false;
             if (regionManager.IsRegionAccessible(region)) return false;
 
-            RegionData gate = regionManager.GetGatekeeperRegion(region.regionId);
+            // 잠긴 리전부터 거슬러 올라가며 **지금 손이 닿는 열쇠**를 찾는다. 열쇠는 둘이다 — 앞 리전 수문장, 그리고
+            // 수문장을 이긴 뒤에도 남은 이야기 대결(서릿길 ← 집게, 잿불 골짜기 ← 저울). 수문장만 보던 시절의 로직으로는
+            // 잿불 골짜기를 가리키는 세이브가 "모래언덕 수문장 격파"(이미 이긴 것)로 안내됐다.
+            // 판정은 RegionManager.GetLockKind 하나다 — 필드 차단 문구·지도와 같은 답을 낸다.
             // 최대 리전 수만큼만 거슬러 간다 — 체인은 유한하지만 데이터 오류로 순환하면 여기서 멈춘다.
+            RegionData locked = region;
             int hops = regionManager.Regions != null ? regionManager.Regions.Length : 16;
-            while (gate != null && !regionManager.IsRegionAccessible(gate) && hops-- > 0)
-                gate = regionManager.GetGatekeeperRegion(gate.regionId);
-            if (gate == null || !regionManager.IsRegionAccessible(gate)) return false;   // 순환·상한 소진 — 잠긴 곳을 가리키지 않는다
+            while (locked != null && hops-- > 0)
+            {
+                RegionManager.LockKind kind = regionManager.GetLockKind(
+                    locked, out RegionData gate, out RegionManager.StoryLock storyLock);
 
-            SetLabel(StoryObjectiveResolver.DescribeRegionObjective(
-                region.displayName, false, 0, gate.displayName, gate.guardianLevel));
-            targetPosition = regionManager.GetGuardianPosition(gate);
-            targetRegionId = gate.regionId;
+                if (kind == RegionManager.LockKind.StoryDuel)
+                    return RedirectToDuelOpponent(region, storyLock);
+
+                if (kind != RegionManager.LockKind.Guardian || gate == null) return false;   // 열쇠를 모른다 — 지어내지 않는다
+                if (!regionManager.IsRegionAccessible(gate)) { locked = gate; continue; }   // 앞 리전도 잠겼다 — 한 칸 더
+
+                SetLabel(StoryObjectiveResolver.DescribeRegionObjective(
+                    region.displayName, false, 0, gate.displayName, gate.guardianLevel));
+                targetPosition = regionManager.GetGuardianPosition(gate);
+                targetRegionId = gate.regionId;
+                hasWorldTarget = true;
+                redirectedToGatekeeper = true;   // 이유는 원래 비트의 것 — 수문장 안내 밑에 붙이지 않는다(Refresh가 Why를 비운다)
+                return true;
+            }
+            return false;   // 순환·상한 소진 — 잠긴 곳을 가리키지 않는다
+        }
+
+        /// <summary>
+        /// 이야기 대결이 남은 잠금 — 그 간부에게 안내한다("서릿길(으)로 가려면 집게에게 이기기").
+        /// 대개는 본편 목표가 이미 그 간부의 승리 비트(<c>duel_grip_win</c>, 스파인)라 같은 사람을 가리킨다 —
+        /// 여기는 다른 비트(마을 이야기·곁가지)가 잠긴 리전을 가리킬 때의 안내다. 간부가 월드에 없으면(스폰 전·컬링)
+        /// 문구만 남기고 화살표는 띄우지 않는다 — 다음 Refresh에서 다시 찾는다.
+        /// </summary>
+        private bool RedirectToDuelOpponent(RegionData region, RegionManager.StoryLock storyLock)
+        {
+            SetLabel(StoryObjectiveResolver.DescribeDuelLockObjective(region.displayName, storyLock.displayName));
+            redirectedToGatekeeper = true;   // 원래 비트의 이유는 이 안내와 무관하다
+            VillagerNpc opponent = FindNearestStoryNpc(storyLock.storyNpcId);
+            if (opponent == null)
+            {
+                hasWorldTarget = false;
+                targetRegionId = string.Empty;
+                return true;
+            }
+            targetPosition = opponent.transform.position;
+            targetRegionId = opponent.RegionId ?? string.Empty;
             hasWorldTarget = true;
             return true;
         }
@@ -773,6 +829,13 @@ namespace InsectGame.Story
         {
             if (value == null) value = string.Empty;
             if (!string.Equals(label, value, System.StringComparison.Ordinal)) label = value;
+        }
+
+        // SetLabel과 같은 이유로 값이 같으면 참조를 유지한다.
+        private void SetWhy(string value)
+        {
+            if (value == null) value = string.Empty;
+            if (!string.Equals(why, value, System.StringComparison.Ordinal)) why = value;
         }
 
         private bool InTargetRegion(string regionId)

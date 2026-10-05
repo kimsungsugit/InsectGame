@@ -354,7 +354,7 @@ namespace InsectGame.Core
                 new TutorialQuest
                 {
                     questId = "q_subarea", title = "숨겨진 장소",
-                    description = "동굴이나 갈대밭 같은 숨은 장소에 들어가 보세요 — 도감의 빈칸은 대개 그런 곳에 숨어 있습니다",
+                    description = "동굴이나 갈대밭 같은 숨은 장소에 들어가 보세요 — 아직 못 만난 곤충은 대개 그런 곳에 숨어 있습니다",
                     hint = "연못 주변의 특별한 장소를 찾아보세요",
                     type = QuestType.VisitSubArea, targetCount = 1,
                     prerequisiteQuestId = "q_visit_pond",

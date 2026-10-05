@@ -28,6 +28,13 @@ namespace InsectGame.Battle
         public event Action<RaidRoundResult> RaidBossResponseResolved;
         public event Action<RaidRoundResult> RaidRoundCompleted;
 
+        /// <summary>
+        /// 쓰러지는 모습을 보여 줄 차례가 왔다 — <c>-1</c>이면 보스, 0 이상이면 팀 슬롯. 한 개체에 <b>한 번만</b> 울린다.
+        /// 판정(HP 0)은 행동을 해결하는 순간 끝나지만 연출은 그 뒤에 돌기 때문에, 연출 쪽이 공격 연출을 마친 뒤
+        /// <see cref="PresentPendingFaints"/>로 부른다. 아레나가 없어도 울린다(HP 카드·소리가 들을 수 있게).
+        /// </summary>
+        public event Action<int> FaintPresented;
+
         // 보스가 직전 턴에 쓴 시그니처 스킬(null=기본/AOE) — UI가 BossAttack 페이즈 연출 속성에 사용.
         public InsectSkill LastBossSkill { get; private set; }
 
@@ -42,7 +49,9 @@ namespace InsectGame.Battle
 
         /// <summary>
         /// 보스가 <b>어느 리전의 수문장이었나</b>(수문장이 아니면 빈 문자열). 1v1과 같은 스냅샷이다 —
-        /// 근거는 <c>InsectEntity.GuardianRegionId</c> 주석 참조.
+        /// 근거는 <c>InsectEntity.GuardianRegionId</c> 주석 참조. 첫 <see cref="RaidUpdated"/>(화면이 Intro로 들어가는 신호)보다
+        /// 먼저 채워지고 레이드가 끝난 뒤에도 다음 레이드까지 남는다 — 등장 화면(「○○의 수문장」)은 이 값으로
+        /// <c>RegionManager.GetRegionById</c> → <c>guardianDisplayName</c>을 찾는다.
         /// </summary>
         public string BossGuardianRegionId { get; private set; }
 
@@ -136,10 +145,150 @@ namespace InsectGame.Battle
             if (ratio <= GameConstants.Battle.RaidBossEnrageHpRatio)
                 BossEnraged = true;
         }
+
+        // ── 모습 바꾸기(RaidBossForms) ──────────────────────────────────
+
+        /// <summary>
+        /// 보스가 모습을 바꿨다 — 팀원 한 마리의 행동(또는 합체공격)이 HP 임계를 넘긴 <b>그 자리에서</b>, 행동 이벤트
+        /// (<see cref="RaidMemberActionResolved"/>/<see cref="RaidTeamRushResolved"/>)보다 <b>먼저</b> 울린다.
+        /// 임계 하나에 <b>한 번만</b>(래치 — 회복해도 돌아가지 않는다). 한 번의 피해로 임계를 둘 넘으면 마지막 모습으로
+        /// 곧장 가고 이벤트도 한 번이다(<see cref="RaidBossFormChange.SkippedStages"/>). 보스가 쓰러지는 피해면 울리지 않는다.
+        /// </summary>
+        public event Action<RaidBossFormChange> BossFormChanged;
+
+        /// <summary>지금 보스의 모습 번호 — 0이면 원래 모습. <see cref="RaidBossForms"/> 표에 없는 보스는 늘 0.</summary>
+        public int BossFormIndex { get; private set; }
+
+        /// <summary>보스가 거칠 모습의 수(원래 모습 포함). 표에 없는 보스는 1.</summary>
+        public int BossFormCount { get; private set; } = 1;
+
+        /// <summary>
+        /// 지금 모습의 곤충 — 상성·자속·기술을 이 곤충으로 잰다(<see cref="InsectBattleStats.CombatData"/>). 아레나 모델도 이걸로 세운다.
+        /// 원래 모습이면 <c>BossStats.Data</c>와 같다. 정체(도감·포획·스토리)는 언제나 <c>BossStats.Data</c>다.
+        /// </summary>
+        public InsectData BossFormData => BossStats != null ? BossStats.CombatData : null;
+
+        /// <summary>직전 변신의 표시 한 줄("그림자가 호랑나비의 모습을 빌렸다!"). 아직 안 바뀌었으면 빈 문자열.</summary>
+        public string BossFormLine { get; private set; } = string.Empty;
+
+        // 모습 곤충을 찾지 못했다는 경고를 한 번만 — 매 행동마다 찍으면 로그가 도배된다.
+        private bool bossFormLookupWarned;
+        private Func<string, InsectData> insectLookup;
+
+        /// <summary>
+        /// 모습 곤충 ID → 데이터 조회를 바꾼다(테스트·검수 도구). null이면 보유 곤충 컬렉션의 DB를 쓴다
+        /// (<see cref="PlayerInsectCollection.GetInsectData"/> — 부트스트랩이 이미 배선한다).
+        /// </summary>
+        public void SetInsectLookup(Func<string, InsectData> lookup)
+        {
+            insectLookup = lookup;
+        }
+
+        private InsectData LookupInsect(string insectId)
+        {
+            if (string.IsNullOrEmpty(insectId)) return null;
+            if (insectLookup != null) return insectLookup(insectId);
+            return playerCollection != null ? playerCollection.GetInsectData(insectId) : null;
+        }
+
+        /// <summary>
+        /// HP가 임계를 지났으면 다음 모습으로 바꾼다 — 팀의 피해가 들어간 직후 부른다(보스는 팀 턴에만 HP를 잃는다).
+        /// 바뀌면 이번 라운드에 이미 띄운 예고도 새 모습의 기술로 고쳐 쓴다 — 나비가 된 보스가 사마귀 기술을 쓰면
+        /// "상성이 바뀌었다"가 보스 쪽에서는 거짓이 된다. 대상 슬롯은 그대로다(난수를 다시 굴리지 않는다).
+        /// </summary>
+        private void UpdateBossForm()
+        {
+            if (BossFormCount <= 1 || BossStats == null || BossStats.Data == null || BossStats.CurrentHp <= 0) return;
+            string bossId = BossStats.Data.insectId;
+            int target = RaidBossForms.NextFormIndex(bossId, BossFormIndex, BossStats.CurrentHp, BossStats.MaxHp);
+            if (target <= BossFormIndex) return;
+
+            InsectData form = LookupInsect(RaidBossForms.FormInsectId(bossId, target));
+            if (form == null)
+            {
+                if (!bossFormLookupWarned)
+                {
+                    bossFormLookupWarned = true;
+                    Debug.LogWarning($"[Raid] {bossId}의 {target}번째 모습({RaidBossForms.FormInsectId(bossId, target)})을 곤충 DB에서 못 찾았다 — 모습을 바꾸지 않는다");
+                }
+                return;
+            }
+
+            RaidBossStats formStats = BossStats as RaidBossStats;
+            if (formStats == null) return;
+
+            RaidBossFormChange change = new RaidBossFormChange
+            {
+                FromIndex = BossFormIndex,
+                ToIndex = target,
+                FromData = BossStats.CombatData,
+                ToData = form,
+                Line = RaidBossForms.BuildLine(bossId, target, form.displayName)
+            };
+            BossFormIndex = target;
+            formStats.ChangeForm(form);
+            BossFormLine = change.Line;
+
+            RaidBossIntent pending = roundInProgress != null ? roundInProgress.BossIntent : NextBossIntent;
+            ReskinBossIntent(pending);
+            if (NextBossIntent != null && !ReferenceEquals(NextBossIntent, pending)) ReskinBossIntent(NextBossIntent);
+
+            BossFormChanged?.Invoke(change);
+        }
+
+        // 띄워 둔 예고를 지금 모습의 기술로 고쳐 쓴다. 전체공격 예고는 속성만 따라간다.
+        private void ReskinBossIntent(RaidBossIntent intent)
+        {
+            if (intent == null || BossStats == null) return;
+            if (intent.IsArea)
+            {
+                InsectData form = BossStats.CombatData;
+                intent.Element = form != null ? form.primaryType : InsectElement.Bug;
+                return;
+            }
+            RaidRoundResolver.ApplySingleTargetSkill(intent, PickBossSkill(TurnNumber), BossStats.CombatData);
+        }
+
+        /// <summary>
+        /// 이번 라운드 보스가 쓸 기술 — 지금 모습의 해금된 전용기를 라운드 번호로 돌린다(<see cref="GetUnlockedBossSignature"/>).
+        /// <b>빌린 모습에 전용기가 없으면</b>(호랑나비는 희귀라 전용기가 없다) 그 모습이 아는 가장 센 피해기를 쓴다 —
+        /// 없으면 무속성 「공격」이 되어 "기술이 그 모습의 것으로 바뀐다"가 화면에서 사라지고 피해도 크게 줄어든다.
+        /// 원래 모습은 옛 동작 그대로(전용기만)다 — 변신하지 않는 보스의 레이드는 한 글자도 안 바뀐다.
+        /// </summary>
+        private InsectSkill PickBossSkill(int rotation)
+        {
+            if (BossStats == null) return null;
+            InsectData form = BossStats.CombatData;
+            InsectSkill signature = GetUnlockedBossSignature(form, BossStats.Level, rotation);
+            if (signature != null || BossFormIndex == 0) return signature;
+            return GetStrongestUnlockedDamageSkill(form, BossStats.Level);
+        }
+
+        private static InsectSkill GetStrongestUnlockedDamageSkill(InsectData data, int level)
+        {
+            if (data == null || data.learnset == null) return null;
+            InsectSkill best = null;
+            foreach (InsectLearnableSkill learnable in data.learnset)
+            {
+                if (learnable == null || learnable.skill == null || learnable.learnLevel > level) continue;
+                if (learnable.skill.effectType != SkillEffectType.Damage) continue;
+                // 동점이면 먼저 나온 것 — 결정적이다.
+                if (best == null || learnable.skill.power > best.power) best = learnable.skill;
+            }
+            return best;
+        }
         private bool bossShinyAtStart; // 시작 시점 스냅샷 — 도주/풀 재사용된 라이브 보스 참조로 이로치 오등록 방지
         private RaidRoundStage roundStage = RaidRoundStage.Completed;
         private IRaidRandomSource randomSource = new BattleRandomSource();
+        // 치명타 전용 줄기 — 명중·보스 대상 롤(randomSource)과 따로 돈다. null이면 치명타 없음.
+        // 이유는 InsectBattleController.critSource 주석과 같다(같은 줄기면 시드 고정 시나리오의 롤 순서가 밀린다).
+        private IRaidRandomSource critSource = new BattleRandomSource();
         private bool raidEndedRaised;
+
+        // 쓰러짐 연출을 이미 보여 줬는가 — PresentPendingFaints가 한 개체를 두 번 쓰러뜨리지 않게.
+        // 시작할 때 이미 기절해 있던 팀원은 "보여 준 것"으로 친다(방금 쓰러진 게 아니다).
+        private bool bossFaintPresented;
+        private bool[] teamFaintPresented;
 
         // ── 순차 팀 턴 ──
         // 팀 5마리가 한 라운드 안에서 **하나씩 차례로** 행동한다. 예전엔 리더 한 마리의 스킬만
@@ -284,6 +433,10 @@ namespace InsectGame.Battle
             bossStunned = false;
             bossStunImmuneRounds = 0;
             BossEnraged = false;
+            BossFormIndex = 0;
+            BossFormCount = 1 + RaidBossForms.StageCount(bd.insectId);
+            BossFormLine = string.Empty;
+            bossFormLookupWarned = false;
             TeamStance = RaidTeamStance.Assault;
             LastBossSkill = null;
             RewardCandy = 0;
@@ -294,6 +447,10 @@ namespace InsectGame.Battle
             actedThisRound = null;
             roundInProgress = null;
             roundStunLanded = false;
+            bossFaintPresented = false;
+            teamFaintPresented = new bool[count];
+            for (int i = 0; i < count; i++)
+                teamFaintPresented[i] = TeamStats[i] == null || TeamStats[i].CurrentHp <= 0;
 
             PrepareNextBossIntent();
             BeginRound();   // 첫 라운드를 연다 — ActiveSlot이 첫 생존 슬롯에 선다
@@ -383,7 +540,7 @@ namespace InsectGame.Battle
             int slot = ActiveSlot;
             InsectSkill skill = TeamSkills[slot][skillIndex];
             RaidActionResult action = RaidRoundResolver.ResolveLeaderSkill(
-                slot, skillIndex, TeamStats[slot], BossStats, TeamStats, skill, randomSource);
+                slot, skillIndex, TeamStats[slot], BossStats, TeamStats, skill, randomSource, critSource);
             TeamCooldowns[slot][skillIndex] = skill.cooldownTurns;
             return CommitMemberAction(slot, action);
         }
@@ -423,13 +580,13 @@ namespace InsectGame.Battle
             if (pick < 0)
             {
                 // 스킬이 없거나 전부 쿨다운·0점 — 기본 지원 공격으로 폴백.
-                action = RaidRoundResolver.ResolveSupportAssist(slot, TeamStats[slot], BossStats);
+                action = RaidRoundResolver.ResolveSupportAssist(slot, TeamStats[slot], BossStats, critSource);
             }
             else
             {
                 InsectSkill picked = slotSkills[pick];
                 action = RaidRoundResolver.ResolveSupportSkill(
-                    slot, pick, TeamStats[slot], BossStats, TeamStats, picked, randomSource);
+                    slot, pick, TeamStats[slot], BossStats, TeamStats, picked, randomSource, critSource);
                 TeamCooldowns[slot][pick] = picked.cooldownTurns;
             }
 
@@ -487,6 +644,10 @@ namespace InsectGame.Battle
             LastWasUnite = false;
             UniteSlotDamages = null;
             LastActionText = BuildMemberActionText(action);
+
+            // 이 한 방이 임계를 넘겼으면 그 자리에서 모습을 바꾼다 — 행동 이벤트보다 먼저라, 행동을 받은 화면이
+            // 이미 바뀐 모습(BossFormIndex)을 읽는다. 남은 팀원은 새 상성으로 친다. 쓰러졌으면 바꾸지 않는다.
+            UpdateBossForm();
 
             RaidMemberActionResolved?.Invoke(action);
 
@@ -580,7 +741,8 @@ namespace InsectGame.Battle
             {
                 RaidActionResult bossAction = RaidRoundResolver.ResolveBossIntent(
                     intent, BossStats, TeamStats, result.BossDamageBySlot,
-                    BossEnraged ? GameConstants.Battle.RaidBossEnragedDamageMultiplier : 1f);
+                    BossEnraged ? GameConstants.Battle.RaidBossEnragedDamageMultiplier : 1f,
+                    critSource);
                 result.BossAction = bossAction;
                 result.BossResponseResolved = true;
                 for (int i = 0; i < result.BossDamageBySlot.Length; i++)
@@ -598,7 +760,7 @@ namespace InsectGame.Battle
                 LastDamageToTeam = result.TotalDamageToTeam;
                 LastHitSlot = area ? -1 : (intent != null ? intent.TargetSlot : -1);
                 BossUsedAoe = area;
-                LastActionText += BuildBossResponseText(intent);
+                LastActionText += BuildBossResponseText(intent, bossAction.Critical);
                 UniteGauge = Mathf.Min(
                     UniteGauge + (area ? 18f : 10f),
                     UniteGaugeMax);
@@ -643,15 +805,27 @@ namespace InsectGame.Battle
             return true;
         }
 
+        /// <summary>명중·보스 대상 롤 줄기만 바꾼다. 치명타 줄기는 그대로다(<see cref="SetCritSource"/>).</summary>
         public void SetRandomSource(IRaidRandomSource source)
         {
             randomSource = source ?? new BattleRandomSource();
         }
 
-        /// <summary>Call before StartRaid so the first boss intent uses the same seeded stream.</summary>
+        /// <summary>
+        /// Call before StartRaid so the first boss intent uses the same seeded stream.
+        /// <b>두 줄기를 함께 시드한다</b>(치명타 줄기는 <see cref="InsectBattleController.CritSeedFor"/>) —
+        /// 치명타를 끄려면 이 뒤에 <see cref="SetCritSource"/>(null).
+        /// </summary>
         public void SetRandomSeed(int seed)
         {
             randomSource = new BattleRandomSource(seed);
+            critSource = new BattleRandomSource(InsectBattleController.CritSeedFor(seed));
+        }
+
+        /// <summary>치명타 줄기를 바꾼다. <c>null</c>이면 치명타가 아예 없다(굴리지도 않는다).</summary>
+        public void SetCritSource(IRaidRandomSource source)
+        {
+            critSource = source;
         }
 
         private void PrepareNextBossIntent()
@@ -663,8 +837,8 @@ namespace InsectGame.Battle
             }
 
             UpdateBossPhase();
-            InsectSkill signature = GetUnlockedBossSignature(
-                BossStats.Data, BossStats.Level, TurnNumber);
+            // 지금 모습의 기술 — 변신하지 않는 보스는 옛 동작(정체의 전용기 로테이션) 그대로다.
+            InsectSkill signature = PickBossSkill(TurnNumber);
             NextBossIntent = RaidRoundResolver.CreateBossIntent(
                 TurnNumber + 1,
                 BossStats,
@@ -684,6 +858,7 @@ namespace InsectGame.Battle
             if (action.Missed) return $"{actor}의 {action.DisplayName}! 빗나갔다!";
             if (action.Capped) return $"{actor}의 {action.DisplayName}! 이미 최대치다!";   // 턴은 소비됐다
             if (action.Healing > 0) return $"{actor}의 {action.DisplayName}! HP {action.Healing} 회복!";
+            if (action.Damage > 0 && action.Critical) return $"{actor}의 {action.DisplayName}! 치명타! {action.Damage} 피해!";
             if (action.Damage > 0) return $"{actor}의 {action.DisplayName}! {action.Damage} 피해!";
             return $"{actor}의 {action.DisplayName}!";
         }
@@ -705,13 +880,14 @@ namespace InsectGame.Battle
                 : $"팀원 {slot + 1}";
         }
 
-        private string BuildBossResponseText(RaidBossIntent intent)
+        private string BuildBossResponseText(RaidBossIntent intent, bool critical)
         {
             if (intent == null || BossStats == null || BossStats.Data == null)
                 return string.Empty;
+            string crit = critical ? " 치명타!" : string.Empty;
             return intent.IsArea
-                ? $"\n{BossStats.Data.displayName}의 전체 공격!"
-                : $"\n{BossStats.Data.displayName}의 {intent.DisplayName}!";
+                ? $"\n{BossStats.Data.displayName}의 전체 공격!{crit}"
+                : $"\n{BossStats.Data.displayName}의 {intent.DisplayName}!{crit}";
         }
 
         /// <summary>
@@ -726,29 +902,22 @@ namespace InsectGame.Battle
         {
             if (data == null || data.learnset == null) return null;
 
+            // 전용기 판정은 SignatureSkills 한 곳이다 — 1대1의 전용기 표지(LastPlayerSkillIsSignature)·전용기 연출과 같은 기준.
             int count = 0;
             foreach (InsectLearnableSkill learnable in data.learnset)
-                if (IsUnlockedSignature(learnable, level)) count++;
+                if (SignatureSkills.IsUnlocked(learnable, level)) count++;
             if (count == 0) return null;
 
             int pick = count > 1 ? ((rotation % count) + count) % count : 0;
             int seen = 0;
             foreach (InsectLearnableSkill learnable in data.learnset)
             {
-                if (!IsUnlockedSignature(learnable, level)) continue;
+                if (!SignatureSkills.IsUnlocked(learnable, level)) continue;
                 if (seen == pick) return learnable.skill;
                 seen++;
             }
 
             return null;
-        }
-
-        private static bool IsUnlockedSignature(InsectLearnableSkill learnable, int level)
-        {
-            return learnable != null
-                && learnable.skill != null
-                && learnable.skill.isSignatureSkill
-                && learnable.learnLevel <= level;
         }
 
         private void TickCooldowns()
@@ -887,6 +1056,8 @@ namespace InsectGame.Battle
                 result.EndState = RaidRoundEndState.Victory;
 
             roundInProgress = result;
+            // 합체공격이 임계를 넘겼으면 여기서 — 팀 턴을 닫기(이벤트) 전에. 한 방에 둘을 넘기는 건 대개 이 경로다.
+            UpdateBossForm();
             FinishTeamPhase(result, $"★ 합체공격! {string.Join(" + ", names)} ★");
             return result;
         }
@@ -957,20 +1128,52 @@ namespace InsectGame.Battle
                 StartCoroutine(Arena.PlayHitFlashCoroutine(m));
         }
 
-        private void TryPlayBossFaint()
+        /// <summary>
+        /// HP가 0인데 아직 쓰러지는 모습을 안 보인 쪽(보스·팀원)을 쓰러뜨린다 — <b>연출 쪽이 공격 연출을 마친 뒤</b> 부른다.
+        /// 행동은 커맨드 순간에 동기로 해결되지만(그때 이미 HP 0) 공격 연출은 그 뒤에 돌아서, 해결 시점에 쓰러뜨리면
+        /// 마지막 일격이 닿기도 전에 보스가 눕는다(1v1이 <c>DeferPresentation</c>으로 같은 순서를 지킨다).
+        /// 한 개체에 한 번만 — 다시 불러도 이미 보여 준 쪽은 건너뛴다.
+        /// </summary>
+        /// <returns>아레나에서 쓰러짐이 실제로 시작됐는가 — 호출부는 그동안 다음 화면(결과·다음 차례)을 미룬다.</returns>
+        public bool PresentPendingFaints()
         {
-            if (Arena == null) return;
-            GameObject m = Arena.BossModel;
-            if (m != null && m.activeInHierarchy)
-                StartCoroutine(Arena.PlayFaintCoroutine(m));
+            bool started = false;
+            if (BossStats != null && BossStats.CurrentHp <= 0 && !bossFaintPresented)
+            {
+                bossFaintPresented = true;
+                started |= TryPlayBossFaint();
+                FaintPresented?.Invoke(-1);
+            }
+
+            if (TeamStats != null && teamFaintPresented != null)
+            {
+                for (int i = 0; i < TeamStats.Length && i < teamFaintPresented.Length; i++)
+                {
+                    if (teamFaintPresented[i] || TeamStats[i] == null || TeamStats[i].CurrentHp > 0) continue;
+                    teamFaintPresented[i] = true;
+                    started |= TryPlayTeamFaint(i);
+                    FaintPresented?.Invoke(i);
+                }
+            }
+            return started;
         }
 
-        private void TryPlayTeamFaint(int index)
+        private bool TryPlayBossFaint()
         {
-            if (Arena == null) return;
+            if (Arena == null || !Arena.IsActive) return false;
+            GameObject m = Arena.BossModel;
+            if (m == null || !m.activeInHierarchy) return false;
+            StartCoroutine(Arena.PlayFaintCoroutine(m));
+            return true;
+        }
+
+        private bool TryPlayTeamFaint(int index)
+        {
+            if (Arena == null || !Arena.IsActive) return false;
             GameObject m = Arena.GetTeamModel(index);
-            if (m != null && m.activeInHierarchy)
-                StartCoroutine(Arena.PlayFaintCoroutine(m));
+            if (m == null || !m.activeInHierarchy) return false;
+            StartCoroutine(Arena.PlayFaintCoroutine(m));
+            return true;
         }
 
         private void TryPlayEffectText(string text, Color color)
@@ -990,6 +1193,15 @@ namespace InsectGame.Battle
             Attack = atk;
             Defense = def;
             ResetHp();
+        }
+
+        /// <summary>
+        /// 다른 곤충의 모습을 빌린다 — <b>속성(주·부)과 기술만</b> 그 곤충의 것이 된다(<see cref="InsectBattleStats.CombatData"/>).
+        /// HP·최대 HP·레벨·공격·방어·버프 스택은 그대로다. null이면 원래 모습으로 돌아간다.
+        /// </summary>
+        public void ChangeForm(InsectData form)
+        {
+            CombatData = form != null ? form : Data;
         }
     }
 }

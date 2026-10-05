@@ -160,13 +160,44 @@ namespace InsectGame.NPC
         }
 
         /// <summary>
-        /// 지금 이 간부에게 도전할 수 있는가. 표에 없거나 이미 이겼거나 재도전 쿨다운 중이면 false.
-        /// WorldInteractionController가 프롬프트 표시 여부 판정에도 그대로 쓴다.
+        /// 이 인물과의 대결을 <b>지금 이 리전에서</b> 열 수 있는가 — 오염 거점 보스(<see cref="RegionData.blightBossNpcId"/>)는
+        /// 자기 거점이 있는 리전 안에서만 싸운다. 거점을 맡지 않은 간부(집게·저울·하월)는 리전과 무관하게 true.
+        ///
+        /// 하수 둘은 거점이 없는 리전에도 서 있다(검은 옷의 사내는 연못·습지, 여자는 숲). 거기서 소개 대사를 본 뒤
+        /// 다시 말을 걸면 확인 창 없이 곧바로 대결이 열려 — 연못 구간(Lv6~20)의 플레이어가 Lv34 상대와 붙었다.
+        /// 거점 리전에 서야 대결이 서사(대치 → 격돌 → 정화)와 레벨 대역에 맞는다.
+        ///
+        /// 리전은 <see cref="RegionManager.ActionRegionId"/>로 묻는다(나의 섬에서는 null — 섬은 어느 리전도 아니다).
+        /// 순수 판정이라 테스트가 매니저 없이 본다.
+        /// </summary>
+        public static bool BossDuelAllowedInRegion(string storyNpcId, string actionRegionId, RegionData[] regions)
+        {
+            if (string.IsNullOrEmpty(storyNpcId) || regions == null) return true;
+            bool siteBoss = false;
+            foreach (RegionData region in regions)
+            {
+                if (region == null || !region.HasBlightSite || region.blightBossNpcId != storyNpcId) continue;
+                siteBoss = true;
+                if (!string.IsNullOrEmpty(actionRegionId) && region.regionId == actionRegionId) return true;
+            }
+            return !siteBoss;
+        }
+
+        /// <summary>
+        /// 지금 이 간부에게 도전할 수 있는가. 표에 없거나 이미 이겼거나 재도전 쿨다운 중이거나,
+        /// 오염 거점 보스인데 그 거점 리전 밖이면(<see cref="BossDuelAllowedInRegion"/>) false.
+        /// <c>TryStartBossDuel</c>이 이걸 먼저 묻고, <c>WorldInteractionController</c>는 말을 걸 때
+        /// <c>TryStartBossDuel</c>로 들어오므로 막히면 대결 대신 평소 대사가 나온다.
         /// </summary>
         public bool CanBossDuel(string storyNpcId, float time)
         {
             if (battleController == null || database == null) return false;
             if (!NpcBossDuels.TryGet(storyNpcId, out NpcBossDuels.BossDuel duel)) return false;
+            // 거점 보스는 자기 거점 리전에서만. 리전 표를 모르면(매니저 미배선·초기화 전) 누가 거점 보스인지도
+            // 알 수 없으므로 옛 동작 그대로 둔다 — 실제 게임에서는 부트스트랩이 늘 배선한다.
+            if (regionManager != null && !BossDuelAllowedInRegion(
+                    storyNpcId, regionManager.ActionRegionId, regionManager.Regions))
+                return false;
             // 이미 이긴 상대는 원칙적으로 다시 못 붙는다 — 단 **그자가 맡은 오염 거점이 아직
             // 살아 있는 리전에 서 있다면** 예외다. 이 예외가 없으면 두 하수를 이미 이긴 세이브
             // (2막 진행자 대부분)는 산·유적의 거점을 영영 부수지 못해 기능 자체를 못 본다.
@@ -174,11 +205,41 @@ namespace InsectGame.NPC
             if (IsBossDefeated(storyNpcId) && !CanRematchForBlight(storyNpcId)) return false;
             if (bossRetryAt.TryGetValue(storyNpcId, out float readyAt) && time < readyAt) return false;
             // 상대 곤충이 DB에 없으면(데이터 오타) 프롬프트를 띄우지 않는다 — 눌러도 안 열리는 버튼 방지.
-            if (database.GetById(duel.insectId) == null) return false;
+            // 팀은 한 마리라도 남으면 연다(빠진 곤충은 ResolveBossTeam이 경고하고 건너뛴다 — 이야기를 막지 않는다).
+            if (database.GetById(duel.insectId) == null && !ResolveBossTeam(duel, out _, out _)) return false;
             return FindPlayerLeader() != null;
         }
 
-        /// <summary>간부 대결 시작. 성공하면 true — 이후 흐름은 기존 배틀 화면이 처리한다.</summary>
+        /// <summary>
+        /// 보스가 내보낼 곤충과 레벨(앞에서부터 순서대로). 한 마리 보스면 1칸. DB에 없는 곤충은 경고하고 건너뛴다 —
+        /// 오타 하나로 간부와 영영 못 싸우는 것보다 한 마리 적은 팀이 낫다(오타는 <c>NpcBossDuelTests</c>가 배포 전에 잡는다).
+        /// </summary>
+        private bool ResolveBossTeam(NpcBossDuels.BossDuel duel, out InsectData[] team, out int[] levels)
+        {
+            var teamList = new System.Collections.Generic.List<InsectData>(duel.RosterSize);
+            var levelList = new System.Collections.Generic.List<int>(duel.RosterSize);
+            for (int i = 0; i < duel.RosterSize; i++)
+            {
+                string id = duel.RosterInsectId(i);
+                InsectData data = database != null && !string.IsNullOrEmpty(id) ? database.GetById(id) : null;
+                if (data == null)
+                {
+                    Debug.LogWarning($"[NpcDuel] {duel.storyNpcId}의 {i + 1}번째 곤충 '{id}'가 DB에 없다 — 건너뛴다");
+                    continue;
+                }
+                teamList.Add(data);
+                levelList.Add(duel.RosterLevel(i));
+            }
+            team = teamList.ToArray();
+            levels = levelList.ToArray();
+            return team.Length > 0;
+        }
+
+        /// <summary>
+        /// 간부 대결 시작. 성공하면 true — 이후 흐름은 기존 배틀 화면이 처리한다.
+        /// 표에 팀이 있으면(<see cref="NpcBossDuels.BossDuel.IsTeam"/>) 팀 대결(<see cref="InsectBattleController.StartTeamDuel"/>)로
+        /// 연다 — 상대가 곤충을 차례로 내보내고 마지막이 쓰러져야 이긴다. 승패 처리(<see cref="OnBossDuelEnded"/>)는 같다.
+        /// </summary>
         public bool TryStartBossDuel(string storyNpcId, float time)
         {
             if (!CanBossDuel(storyNpcId, time)) return false;
@@ -186,20 +247,27 @@ namespace InsectGame.NPC
 
             PlayerInsectData leader = FindPlayerLeader();
             InsectData leaderData = leader != null ? database.GetById(leader.insectId) : null;
-            InsectData enemyData = database.GetById(duel.insectId);
-            if (leaderData == null || enemyData == null) return false;
+            if (leaderData == null || !ResolveBossTeam(duel, out InsectData[] team, out int[] levels)) return false;
+            InsectData enemyData = team[team.Length - 1];   // 에이스 — 표의 insectId와 같다
 
             InsectSkill[] equipped = collection != null ? collection.GetEquippedSkills(leader) : null;
 
             // 아이 대결과 달리 레벨을 플레이어에 맞추지 않는다 — 고정 레벨이라야 벽으로 기능한다.
-            if (!battleController.StartDuel(
-                    leaderData, leader.level, enemyData, duel.level,
-                    equippedSkills: equipped, playerPid: leader))
+            // 한 마리만 남았으면(하수, 또는 팀이 데이터 누락으로 줄었으면) 옛 한 마리 대결 그대로다.
+            bool started = team.Length > 1
+                ? battleController.StartTeamDuel(
+                    leaderData, leader.level, team, levels,
+                    equippedSkills: equipped, playerPid: leader)
+                : battleController.StartDuel(
+                    leaderData, leader.level, enemyData, levels[0],
+                    equippedSkills: equipped, playerPid: leader);
+            if (!started)
             {
                 return false;
             }
 
             // 장부를 건다 — 이 압박은 명부회 보스전에만 붙는다(아이 대결·야생 전투엔 없다).
+            // 팀 대결에서도 **한 번만** 건다 — 장부는 인물의 것이라 곤충이 바뀌어도 이어진다(SendOutNextEnemy가 안 건드린다).
             battleController.ArmLedger(duel.ledgerThreshold);
             // 연출이 상대를 알아보게 한다 — 컷인·전투 중 한마디·결과 한마디(BattleScreenUI.Duel).
             battleController.SetDuelOpponent(storyNpcId);
@@ -212,10 +280,7 @@ namespace InsectGame.NPC
             // 보스 테마로 전환 — 간부전과 최종전을 가른다. 전투 종료 시 배틀 화면이
             // 기존 경로로 탐험 BGM을 되돌리므로 여기서 복구를 따로 하지 않는다.
             if (Core.AudioManager.Instance != null)
-            {
-                Core.AudioManager.Instance.PlayBGM(
-                    duel.isFinal ? Core.BgmType.BossFinal : Core.BgmType.BossLedger);
-            }
+                Core.AudioManager.Instance.PlayBGM(BattleMusic.BossDuel(duel.isFinal));
             return true;
         }
 
@@ -264,6 +329,11 @@ namespace InsectGame.NPC
             activeBossId = string.Empty;
             activeRivalStageId = stage.stageId;
             activeRarity = enemyData.rarity;
+
+            // 라온 테마로 전환 — 간부전과 같은 자리·같은 이유다. 시작 신호(BattleUpdated)에 배틀 화면이 일반 전투 곡을 먼저 걸고
+            // 여기서 덮는다(PlayBGM은 한 프레임 늦게 틀어 마지막 요청만 남는다). 끝나면 배틀 화면이 탐험 곡으로 되돌린다.
+            if (Core.AudioManager.Instance != null)
+                Core.AudioManager.Instance.PlayBGM(BattleMusic.RivalDuel);
             return true;
         }
 
@@ -580,8 +650,8 @@ namespace InsectGame.NPC
         /// 결과 문구를 <b>한 번만</b> 꺼내 간다 — 화면에 올리는 쪽이 자기 타이머로 표시한다.
         ///
         /// 옛 구현은 <c>SetResult</c> 시각을 찍고 소비자가 3.5초 창을 봤는데, 그 시각은
-        /// <c>DuelEnded</c> 시점(= 전투 결과 화면이 열리는 프레임)이다. 결과 화면은 4초를
-        /// 채운 뒤에야 닫히고(<c>BattleScreenUI</c>의 <c>resultTimer &gt; 4f</c>) 그동안은
+        /// <c>DuelEnded</c> 시점(= 전투 결과 화면이 열리는 프레임)이다. 결과 화면은 그 뒤에야 닫히고
+        /// (당시 4초 자동 — 지금은 플레이어가 눌러서 닫으니 더 길 수 있다, <c>BattleResultRules</c>) 그동안은
         /// 모달이라 필드가 그리지도 않는다 — **토스트는 필드가 보이기 0.5초 전에 이미 죽었다.**
         /// 승리 아이템도, 거점이 무너졌다는 문구도 플레이어에게 도달한 적이 없다.
         /// </summary>

@@ -123,6 +123,7 @@ namespace InsectGame.UI
         private GUIStyle panelSurfaceBtnStyleCache; // 칩의 UISurface.Button용 (label 파생)
         private GUIStyle objectiveStyleCache;       // 목표 행 (label 파생 — UISurface.Button에 넘긴다)
         private GUIStyle objectiveStatusStyleCache; // 목표 행 아래 일시 안내
+        private GUIStyle objectiveWhyStyleCache;    // 목표 행 둘째 줄(「왜」) — 작고 흐리게
 
         // 메인퀘스트 목표 행. 위치·이름·거리는 전부 트래커가 풀어 준다(UI는 그리기만).
         private InsectGame.Story.StoryObjectiveTracker objectiveTracker;
@@ -136,7 +137,12 @@ namespace InsectGame.UI
         private bool objectiveRowVisible;
 
         // 목표 행 높이 — 칩이 데스크톱에서 이만큼 자리를 비워 두고 위로 올라간다(그리기와 같은 값이어야 한다).
-        private float ObjectiveRowHeight => QuestChipLayout.RowHeight;
+        // 「왜」(트래커의 이유 한 줄)가 있으면 두 줄 높이다 — 칩 자리·그리기·등록이 같은 술어(HasObjectiveWhy)를 본다.
+        private float ObjectiveRowHeight => QuestChipLayout.RowHeightFor(HasObjectiveWhy);
+
+        /// <summary>목표 행에 「왜」 둘째 줄을 붙이는가 — 목표가 있고 트래커의 이유가 비어 있지 않을 때.</summary>
+        private bool HasObjectiveWhy =>
+            objectiveTracker != null && objectiveTracker.HasObjective && !string.IsNullOrEmpty(objectiveTracker.Why);
 
         // 목표 행 문자열 캐시 — OnGUI 매 프레임 보간 문자열 할당 차단.
         private string objectiveLabelCache;
@@ -227,6 +233,11 @@ namespace InsectGame.UI
             objectiveStatusStyleCache = new GUIStyle(GUI.skin.label)
             { fontSize = 23, alignment = TextAnchor.MiddleLeft, wordWrap = false };
             objectiveStatusStyleCache.normal.textColor = UITheme.Instance.accentAmber;
+
+            // 「왜」 줄 — 할 일보다 작고 흐리게. textMuted는 반투명 HUD 카드(밝은 월드 위)에서 대비가 모자라 보조 글자색을 쓴다.
+            objectiveWhyStyleCache = new GUIStyle(GUI.skin.label)
+            { fontSize = QuestChipLayout.WhyFontSize, alignment = TextAnchor.MiddleLeft, wordWrap = false };
+            objectiveWhyStyleCache.normal.textColor = UITheme.Instance.textSecondary;
         }
 
         /// <summary>
@@ -653,9 +664,28 @@ namespace InsectGame.UI
             // 히트 테스트를 가르지 않는다).
             if (ModalUIRegistry.IsAnyOpen()) return;
 
-            UITheme theme = UITheme.Instance;
             // 자리·폭은 칩을 그릴 때 QuestChipLayout이 정해 둔 것을 쓴다(데스크톱은 칩이 이 행 높이만큼 올라가 있다).
-            Rect row = new Rect(objectiveRowLeft, objectiveRowTop, objectiveRowWidth, ObjectiveRowHeight);
+            DrawObjectiveRowAt(new Rect(objectiveRowLeft, objectiveRowTop, objectiveRowWidth, ObjectiveRowHeight));
+        }
+
+        /// <summary>
+        /// 검수 fixture 전용 — 로그인 세션(퀘스트 칩) 없이 목표 행만 칩 자리 아래에 그린다. 자리는 실제와 같은
+        /// <see cref="QuestChipLayout.Row"/>와 <see cref="ObjectiveRowHeight"/>(「왜」가 있으면 두 줄)다. OnGUI 안에서 부를 것.
+        /// </summary>
+        internal void DrawObjectiveRowForCapture(Rect chip, float width)
+        {
+            if (objectiveTracker == null || !objectiveTracker.HasObjective) return;
+            InitQuestPanelStyles();
+            objectiveRowLeft = chip.x;
+            objectiveRowWidth = width;
+            objectiveRowTop = QuestChipLayout.Row(chip, width, ObjectiveRowHeight).y;
+            DrawObjectiveRowAt(new Rect(objectiveRowLeft, objectiveRowTop, objectiveRowWidth, ObjectiveRowHeight));
+        }
+
+        private void DrawObjectiveRowAt(Rect row)
+        {
+            UITheme theme = UITheme.Instance;
+            bool hasWhy = HasObjectiveWhy;
 
             // 칩과 같은 이유로 등록한다 — 여기는 더 나쁘다. 이 행을 누르면 자동 주행이 시작되는데
             // **같은 탭이 클릭-이동으로도 발화해** 목표로 달려가면서 동시에 탭 지점으로 걸어가려
@@ -689,11 +719,13 @@ namespace InsectGame.UI
             // 의뢰를 따라가는 중이면 오른쪽 끝에 ✕(해제 → 본편 목표로 복귀)를 붙인다.
             // **✕를 먼저 그린다** — IMGUI는 먼저 처리된 버튼이 MouseDown을 가져가므로, 행 버튼이
             // 먼저면 ✕를 눌러도 자동 주행이 시작된다. 행은 ✕ 폭만큼 줄여 겹치지 않게 한다.
+            // ✕ 폭은 한 줄 행 높이로 고정한다 — 「왜」 줄로 행이 길어져도 정사각형으로 키우면 할 일 글자 폭만 줄어든다.
             Rect body = row;
             if (objectiveTracker.IsTrackingTale)
             {
-                Rect closeRect = new Rect(row.xMax - row.height, row.y, row.height, row.height);
-                body = new Rect(row.x, row.y, row.width - row.height - UITheme.Space.XS, row.height);
+                float closeW = Mathf.Min(row.height, QuestChipLayout.RowHeight);
+                Rect closeRect = new Rect(row.xMax - closeW, row.y, closeW, row.height);
+                body = new Rect(row.x, row.y, row.width - closeW - UITheme.Space.XS, row.height);
                 if (UISurface.Button(closeRect, "✕", theme.surfaceRaised, panelSurfaceBtnStyleCache))
                 {
                     objectiveTracker.StopTrackingTale();
@@ -706,22 +738,23 @@ namespace InsectGame.UI
                 Color bg = running ? theme.accentCoral : theme.surfaceRaised;
                 if (UISurface.Button(body, string.Empty, bg, panelSurfaceBtnStyleCache))
                     objectiveTracker.Toggle();
-                // 라벨은 좌측 정렬이라 UISurface.Button의 중앙 정렬 스타일을 쓰지 않고 따로 그린다.
-                UIHelper.LabelFit(
-                    new Rect(body.x + UITheme.Space.M, body.y, body.width - UITheme.Space.M * 2f, body.height),
-                    label, objectiveStyleCache);
             }
             else
             {
                 UISurface.HudCard(body);
-                UIHelper.LabelFit(
-                    new Rect(body.x + UITheme.Space.M, body.y, body.width - UITheme.Space.M * 2f, body.height),
-                    label, objectiveStyleCache);
             }
+            // 라벨은 좌측 정렬이라 UISurface.Button의 중앙 정렬 스타일을 쓰지 않고 따로 그린다.
+            // 「왜」가 있으면 할 일은 윗줄, 이유는 그 아래 작고 흐린 한 줄(둘 다 넘치면 글자를 줄여 맞춘다).
+            UIHelper.LabelFit(QuestChipLayout.RowMainLine(body, hasWhy), label, objectiveStyleCache);
 
-            // 일시 안내(길 막힘 / 다른 리전) — 행 아래 한 줄.
+            // 일시 안내(길 막힘 / 다른 리전). 「왜」 줄이 있으면 그 줄을 잠깐 빌린다 — 행 아래에 한 줄을 더 내리면 두 줄 행 밑으로
+            // 무대(가운데 카드 자리) 윗변까지 닿는다(세로 화면). 안내가 사라지면 이유가 돌아온다. 이유가 없으면 예전처럼 행 아래 한 줄.
             string status = objectiveTracker.StatusMessage;
-            if (!string.IsNullOrEmpty(status))
+            bool statusInRow = hasWhy && !string.IsNullOrEmpty(status);
+            if (hasWhy)
+                UIHelper.LabelFit(QuestChipLayout.RowWhyLine(body), statusInRow ? status : objectiveTracker.Why,
+                    statusInRow ? objectiveStatusStyleCache : objectiveWhyStyleCache);
+            if (!statusInRow && !string.IsNullOrEmpty(status))
             {
                 UIHelper.LabelFit(
                     new Rect(row.x + UITheme.Space.XS, row.yMax + 2f,
@@ -1443,8 +1476,43 @@ namespace InsectGame.UI
         /// <summary>모두 끝난 칩 높이(진행 줄 없음, 66).</summary>
         public static float DoneHeight => UITheme.Space.S + LineHeight(TitleFontSize) + UITheme.Space.S;
 
-        /// <summary>목표 행 높이(57).</summary>
+        /// <summary>목표 행 높이(57) — 「왜」 줄이 없을 때.</summary>
         public static float RowHeight => LineHeight(ObjectiveFontSize) + UITheme.Space.S * 2f;
+
+        /// <summary>목표 행 둘째 줄(「왜」 — <c>StoryObjectiveTracker.Why</c>)의 글자 크기. 할 일보다 작고 흐리다.</summary>
+        public const int WhyFontSize = 22;
+        /// <summary>「왜」 줄을 할 일 글자(▶·◈ 다음) 밑에 맞추는 들여쓰기.</summary>
+        public const float WhyIndent = 30f;
+
+        /// <summary>
+        /// 「왜」 줄이 붙은 목표 행 높이(87) — 여백 + 할 일 한 줄 + 이유 한 줄 + 여백. 데스크톱은 칩이 이만큼 더 올라가고,
+        /// 모바일은 행이 그만큼 아래로 길어진다. 가운데 무대(<see cref="HudStage.Area(HudFrame, bool)"/>)는 늘 이 큰 쪽을 피한다.
+        /// </summary>
+        public static float RowHeightWithWhy => LineHeight(ObjectiveFontSize) + LineHeight(WhyFontSize) + UITheme.Space.S * 2f;
+
+        /// <summary>목표 행 높이 — 「왜」가 있으면 두 줄. 칩이 비워 둘 자리·그리기·히트테스트·등록이 전부 이 값을 쓴다.</summary>
+        public static float RowHeightFor(bool hasWhy) => hasWhy ? RowHeightWithWhy : RowHeight;
+
+        /// <summary>
+        /// 목표 행 안 할 일 글자 자리. 「왜」가 없으면 행 전체(가운데 정렬 그대로), 있으면 윗줄.
+        /// <paramref name="body"/>는 행에서 ✕(의뢰 해제) 자리를 뺀 몸통이다.
+        /// </summary>
+        public static Rect RowMainLine(Rect body, bool hasWhy)
+        {
+            float x = body.x + UITheme.Space.M;
+            float w = Mathf.Max(1f, body.width - UITheme.Space.M * 2f);
+            return hasWhy
+                ? new Rect(x, body.y + UITheme.Space.S, w, LineHeight(ObjectiveFontSize))
+                : new Rect(x, body.y, w, body.height);
+        }
+
+        /// <summary>목표 행 둘째 줄(「왜」)의 자리 — 할 일 줄 바로 아래, 글리프 폭만큼 들여 쓴다.</summary>
+        public static Rect RowWhyLine(Rect body)
+        {
+            float x = body.x + UITheme.Space.M + WhyIndent;
+            float w = Mathf.Max(1f, body.width - UITheme.Space.M * 2f - WhyIndent);
+            return new Rect(x, body.y + UITheme.Space.S + LineHeight(ObjectiveFontSize), w, LineHeight(WhyFontSize));
+        }
 
         /// <summary>
         /// 가로 모바일 스택의 윗변 — 안전 영역 위에서 위쪽 가운데 줄(리전 배너·내기 점수판, 데스크톱 코치 배너 띠 높이) 아래까지(260).

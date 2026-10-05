@@ -63,6 +63,53 @@ namespace InsectGame.Tests
             }
             finally { Object.DestroyImmediate(root); }
         }
+
+        // 대사 앞 영상·등장 연출이 씬 재로드·UI 루트 토글로 끊기면 콜백이 ShowStory를 부른다 — 그때 창이 꺼져 있으면
+        // static 모달 레지스트리에 열린 채 남으면 안 된다(새 씬의 조작이 막힌다). 쥐고 있다가 다시 켜지면 연다.
+        [Test]
+        public void ShowStory_WhileDisabled_DoesNotRegister_AndOpensWhenEnabledAgain()
+        {
+            var root = new GameObject("Dialogue disabled test");
+            try
+            {
+                var ui = root.AddComponent<NpcDialogueUI>();
+                var beat = new StoryBeat { beatId = "held", speakerNpcId = "ruins_scholar",
+                    lines = new List<StoryLine> { new StoryLine { speaker = "세라", text = "기다렸어" } } };
+                root.SetActive(false);
+
+                ui.ShowStory(beat);
+                Assert.IsFalse(ui.IsOpen, "꺼진 창은 열리지 않는다");
+                Assert.IsFalse(ReferenceEquals(ModalUIRegistry.TopModal, ui), "꺼진 창이 모달 레지스트리에 올라가면 새 씬 조작이 막힌다");
+
+                root.SetActive(true);
+                Assert.IsTrue(ui.IsOpen, "다시 켜지면 쥐고 있던 비트를 연다");
+                Assert.IsTrue(ReferenceEquals(ModalUIRegistry.TopModal, ui));
+                ui.CloseModal();
+                Assert.IsFalse(ui.IsOpen);
+            }
+            finally { Object.DestroyImmediate(root); }
+        }
+
+        [Test]
+        public void ShowStoryReplay_WhileDisabled_IsDropped_AndDestroyedWindowNeverRegisters()
+        {
+            var root = new GameObject("Dialogue replay disabled test");
+            var beat = new StoryBeat { beatId = "replay", speakerNpcId = "ruins_scholar",
+                lines = new List<StoryLine> { new StoryLine { speaker = "세라", text = "다시 읽기" } } };
+            var ui = root.AddComponent<NpcDialogueUI>();
+            try
+            {
+                root.SetActive(false);
+                ui.ShowStoryReplay(beat);
+                root.SetActive(true);
+                Assert.IsFalse(ui.IsOpen, "다시보기는 쥐지 않는다 — 저널에서 다시 누르면 된다");
+            }
+            finally { Object.DestroyImmediate(root); }
+
+            // 파괴된 창(씬 재로드 뒤 늦게 온 콜백) — 관리 껍데기로 불려도 레지스트리에 오르지 않는다.
+            ui.ShowStory(beat);
+            Assert.IsFalse(ReferenceEquals(ModalUIRegistry.TopModal, ui));
+        }
     }
 }
 #endif

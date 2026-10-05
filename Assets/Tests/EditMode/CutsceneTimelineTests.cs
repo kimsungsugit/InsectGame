@@ -176,7 +176,9 @@ namespace InsectGame.Tests
         {
             // **리플렉션이 빈 배열을 내면 아래 검사들이 전부 "통과"한다** — 0건 통과는 통과가
             // 아니라 검사기 고장이다(rules/testing.md의 "0건 보고는 실패다"와 같은 이야기).
-            Assert.GreaterOrEqual(AllCutscenes.Length, 5,
+            // 2026-10-05에 이야기 장면 넷(이름 벽·울타리·그림자·결말)을 대사 앞 영상으로 옮겨 컷신은 둘이 남았다
+            // (정화 cs_bl_cleanse · 폴백 cs_story_prologue). 하한은 "하나도 못 읽었다"를 잡는 값이다.
+            Assert.GreaterOrEqual(AllCutscenes.Length, 2,
                 "CutsceneLibrary의 const 문자열을 못 읽었다 — 추출이 낡았다");
             CollectionAssert.AllItemsAreNotNull(AllCutscenes);
             CollectionAssert.AllItemsAreUnique(AllCutscenes);
@@ -188,7 +190,7 @@ namespace InsectGame.Tests
         public void Library_Cutscenes_ChainWithoutJumpCut(string cutsceneId)
         {
             // 컷 N+1의 camFrom이 컷 N의 camTo와 다르면 그 경계에서 카메라가 **순간이동한다.**
-            // 지금 5종은 전부 이어져 있지만 아무도 그걸 지키게 하고 있지 않았다 — 좌표 한 줄만
+            // 저작된 컷신은 전부 이어져 있지만 아무도 그걸 지키게 하고 있지 않았다 — 좌표 한 줄만
             // 고쳐도 조용히 점프 컷이 된다(컴파일도 되고 예외도 없다).
             Assert.IsTrue(CutsceneLibrary.TryGet(cutsceneId, out CutsceneShot[] shots));
 
